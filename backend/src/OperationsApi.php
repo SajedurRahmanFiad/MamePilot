@@ -5315,6 +5315,74 @@ final class OperationsApi extends BaseService
         });
     }
 
+    public function deleteEmployeeWalletPayout(array $params): array
+    {
+        $currentUser = $this->currentUser();
+        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
+            throw new RuntimeException('Only admins can delete employee payouts.');
+        }
+
+        $walletEntryId = trim((string) ($params['id'] ?? ''));
+        if ($walletEntryId === '') {
+            throw new RuntimeException('Missing entry ID.');
+        }
+
+        return $this->database->transaction(function () use ($walletEntryId, $currentUser): array {
+            $entry = $this->database->fetchOne(
+                'SELECT * FROM wallet_entries WHERE id = :id FOR UPDATE',
+                [':id' => $walletEntryId]
+            );
+
+            if ($entry === null) {
+                return ['success' => true];
+            }
+
+            if ($entry['entry_type'] !== 'payout') {
+                throw new RuntimeException('Only payouts can be deleted this way.');
+            }
+
+            $payoutId = $entry['wallet_payout_id'] ?? null;
+            $transactionId = null;
+            $accountId = null;
+            $amount = null;
+
+            if ($payoutId !== null) {
+                $payout = $this->database->fetchOne(
+                    'SELECT * FROM wallet_payouts WHERE id = :id FOR UPDATE',
+                    [':id' => $payoutId]
+                );
+                if ($payout !== null) {
+                    $transactionId = $payout['transaction_id'] ?? null;
+                    $accountId = $payout['account_id'] ?? null;
+                    $amount = $payout['amount'] ?? null;
+                }
+            }
+
+            if ($transactionId !== null) {
+                if ($accountId !== null && $amount !== null) {
+                    $this->database->execute(
+                        'UPDATE accounts SET current_balance = current_balance + :amount, updated_at = :updated_at WHERE id = :id',
+                        [
+                            ':amount' => $amount,
+                            ':updated_at' => $this->database->nowUtc(),
+                            ':id' => $accountId,
+                        ]
+                    );
+                }
+                
+                $this->database->execute('DELETE FROM transactions WHERE id = :id', [':id' => $transactionId]);
+            }
+
+            if ($payoutId !== null) {
+                $this->database->execute('DELETE FROM wallet_payouts WHERE id = :id', [':id' => $payoutId]);
+            }
+
+            $this->database->execute('DELETE FROM wallet_entries WHERE id = :id', [':id' => $walletEntryId]);
+
+            return ['success' => true];
+        });
+    }
+
     private function buildRecycleBinItems(): array
     {
         $users = $this->keyBy($this->database->fetchAll('SELECT id, name, phone, role FROM users'), 'id');

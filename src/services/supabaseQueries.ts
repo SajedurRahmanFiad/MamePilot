@@ -264,6 +264,9 @@ export async function fetchWalletActivityPage(page: number = 1, pageSize: number
 export async function payEmployeeWallet(payload: { employeeId: string; amount: number; accountId: string; paymentMethod: string; categoryId: string; paidAt: string; note?: string; }): Promise<WalletPayout> {
   return call<WalletPayout>('payEmployeeWallet', payload);
 }
+export async function deleteEmployeeWalletPayout(id: string): Promise<{ success: boolean }> {
+  return call<{ success: boolean }>('deleteEmployeeWalletPayout', { id });
+}
 
 export async function fetchCarryBeeStores(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeStores', params); }
 export async function fetchCarryBeeCities(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeCities', params); }

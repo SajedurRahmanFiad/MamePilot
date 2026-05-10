@@ -42,6 +42,23 @@ import {
   deleteUnit,
   updateCompanySettings,
   updateOrderSettings,
+  createVendor,
+  updateVendor,
+  deleteVendor,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  createPaymentMethod,
+  updatePaymentMethod,
+  deletePaymentMethod,
+  createUnit,
+  updateUnit,
+  deleteUnit,
+  updateCompanySettings,
+  updateOrderSettings,
   updateInvoiceSettings,
   updateSystemDefaults,
   updateCourierSettings,
@@ -51,6 +68,7 @@ import {
   markPayrollPaid,
   updateWalletSettings,
   payEmployeeWallet,
+  deleteEmployeeWalletPayout,
   batchUpdateSettings,
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
@@ -2425,6 +2443,24 @@ export function usePayEmployeeWallet(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: payEmployeeWallet,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useDeleteEmployeeWalletPayout(): UseMutationResult<
+  { success: boolean },
+  Error,
+  { id: string },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => deleteEmployeeWalletPayout(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });

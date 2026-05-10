@@ -36,6 +36,7 @@ final class ServiceLifecycle
         'deleteUnit',
         'deleteUser',
         'deleteVendor',
+        'deleteEmployeeWalletPayout',
         'markPayrollPaid',
         'payEmployeeWallet',
         'permanentlyDeleteDeletedItem',

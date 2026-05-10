@@ -7,7 +7,7 @@ import { hasAdminAccess, type WalletActivityEntry, type WalletBalanceCard } from
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
-import { usePayEmployeeWallet } from '../src/hooks/useMutations';
+import { usePayEmployeeWallet, useDeleteEmployeeWalletPayout } from '../src/hooks/useMutations';
 import { formatDateTimeParts, getTodayDate } from '../utils';
 import {
   useAccounts,
@@ -106,7 +106,9 @@ const Payroll: React.FC = () => {
   const { user } = useAuth();
   const toast = useToastNotifications();
   const payEmployeeWalletMutation = usePayEmployeeWallet();
+  const deleteEmployeeWalletPayoutMutation = useDeleteEmployeeWalletPayout();
   const [selectedCard, setSelectedCard] = useState<WalletBalanceCard | null>(null);
+  const [deletingPayoutId, setDeletingPayoutId] = useState<string | null>(null);
   const [cardsPage, setCardsPage] = useState<number>(1);
   const [historyPage, setHistoryPage] = useState<number>(1);
   const [cardSearch, setCardSearch] = useState<string>('');
@@ -273,6 +275,25 @@ const Payroll: React.FC = () => {
         label: 'Note',
         render: (value: string) => <span className="text-sm font-medium text-gray-600">{value || '-'}</span>,
       },
+      {
+        key: 'actions',
+        label: '',
+        align: 'right',
+        render: (_value, item: WalletActivityEntry) => {
+          if (item.entryType === 'payout' && item.payoutId) {
+            return (
+              <button
+                onClick={() => setDeletingPayoutId(item.payoutId || null)}
+                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                title="Delete Payout"
+              >
+                {ICONS.Delete}
+              </button>
+            );
+          }
+          return null;
+        },
+      },
     ],
     []
   );
@@ -337,6 +358,23 @@ const Payroll: React.FC = () => {
       toast.update(
         toastId,
         error instanceof Error ? error.message : 'Failed to record wallet payout.',
+        'error'
+      );
+    }
+  };
+
+  const handleConfirmDeletePayout = async () => {
+    if (!deletingPayoutId) return;
+
+    const toastId = toast.loading('Deleting payout and reverting balances...');
+    try {
+      await deleteEmployeeWalletPayoutMutation.mutateAsync({ id: deletingPayoutId });
+      toast.update(toastId, 'Payout deleted successfully.', 'success');
+      setDeletingPayoutId(null);
+    } catch (error) {
+      toast.update(
+        toastId,
+        error instanceof Error ? error.message : 'Failed to delete payout.',
         'error'
       );
     }
@@ -569,6 +607,40 @@ const Payroll: React.FC = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={!!deletingPayoutId}
+        onClose={() => setDeletingPayoutId(null)}
+        title="Delete Payout"
+        size="md"
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setDeletingPayoutId(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleConfirmDeletePayout}
+              loading={deleteEmployeeWalletPayoutMutation.isPending}
+            >
+              Delete Payout
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+            <span className="text-rose-600">{ICONS.AlertCircle}</span>
+          </div>
+          <div className="text-center">
+            <h3 className="text-lg font-black text-gray-900">Are you sure?</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              This action will permanently delete this payout. The deducted amount will be refunded to the associated account and the employee's wallet balance will be restored.
+            </p>
+          </div>
+        </div>
       </Modal>
     </div>
   );
