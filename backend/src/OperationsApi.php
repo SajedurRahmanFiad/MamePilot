@@ -5776,4 +5776,212 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Unsupported recycle bin item type.');
         });
     }
+
+    /**
+     * Look up a single order by its full order_number (e.g. "ORD-123").
+     */
+    public function fetchOrderByNumber(array $params): ?array
+    {
+        $orderNumber = trim((string) ($params['orderNumber'] ?? ''));
+        if ($orderNumber === '') {
+            return null;
+        }
+
+        $row = $this->database->fetchOne(
+            'SELECT * FROM orders_with_customer_creator WHERE orderNumber = :order_number AND deletedAt IS NULL LIMIT 1',
+            [':order_number' => $orderNumber]
+        );
+
+        return $row !== null ? $this->mapOrder($row) : null;
+    }
+
+    /**
+     * Atomically revert an order from its current status to a prior status,
+     * undoing every side-effect produced by the forward transition(s).
+     *
+     * Side-effects reversed:
+     *  1. Linked transactions  → soft-deleted + account balances reverted
+     *  2. Wallet entries       → credit/reversal rows cleaned up
+     *  3. Product stock        → re-computed via applyOrderStockTransition
+     *  4. Order paid_amount    → reset to 0 (pre-completion value)
+     *  5. History keys         → completion/return/payment stamps removed
+     *  6. Customer summaries   → re-synced
+     */
+    public function revertOrderStatus(array $params): array
+    {
+        $actor = $this->currentUser();
+        $hasPermission = $this->currentUserHasPermission('orders.markCompletedOwn')
+            || $this->currentUserHasPermission('orders.markCompletedAny')
+            || $this->currentUserHasPermission('orders.markReturnedOwn')
+            || $this->currentUserHasPermission('orders.markReturnedAny');
+        if (!$hasPermission) {
+            throw new RuntimeException('You do not have permission to revert order statuses.');
+        }
+
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        $targetStatus = trim((string) ($params['targetStatus'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        if ($targetStatus === '') {
+            throw new RuntimeException('Target status is required.');
+        }
+
+        $statusOrder = ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'];
+
+        if (!in_array($targetStatus, $statusOrder, true)) {
+            throw new RuntimeException('Invalid target status.');
+        }
+
+        return $this->database->transaction(function () use ($actor, $orderId, $targetStatus, $statusOrder): array {
+            $orderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $orderId]
+            );
+
+            if ($orderRow === null) {
+                throw new RuntimeException('Order not found.');
+            }
+
+            $currentStatus = trim((string) ($orderRow['status'] ?? ''));
+            $currentIndex = array_search($currentStatus, $statusOrder, true);
+            $targetIndex = array_search($targetStatus, $statusOrder, true);
+
+            if ($currentIndex === false) {
+                throw new RuntimeException('Current order status is unrecognised: ' . $currentStatus);
+            }
+            if ($targetIndex === false) {
+                throw new RuntimeException('Target status is unrecognised.');
+            }
+
+            // "Returned" and "Cancelled" are terminal; treat them at position 4/5 for comparison.
+            // For reverting, we just need the target to be strictly before the current.
+            if ($currentStatus === 'Returned' || $currentStatus === 'Cancelled') {
+                // These are terminal statuses – allow reverting to anything before them
+            } elseif ($targetIndex >= $currentIndex) {
+                throw new RuntimeException('Target status must be prior to the current status.');
+            }
+
+            $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
+            $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
+
+            // ─── 1. Reverse linked transactions (soft-delete + revert account balances) ───
+            $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
+            if ($linkedTransactions !== []) {
+                $this->applyTransactionAccountEffect($linkedTransactions, 'revert');
+                $deletedAt = $this->database->nowUtc();
+                $this->softDeleteTransactionRowsByIds(
+                    array_map(static fn (array $row): string => (string) $row['id'], $linkedTransactions),
+                    $deletedAt,
+                    (string) $actor['id']
+                );
+            }
+
+            // ─── 2. Reverse wallet entries ───
+            $this->revertWalletEntriesForOrder($orderId);
+
+            // ─── 3. Reverse product stock ───
+            $stockUpdates = $this->applyOrderStockTransition($currentStatus, $targetStatus, $previousItems, $previousItems);
+            $this->applyResolvedProductStockUpdates($stockUpdates);
+
+            // ─── 4. Build updated order payload ───
+            $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+
+            // Remove history keys that were set during completion/return
+            $keysToRemove = [];
+            if (in_array($currentStatus, ['Completed', 'Returned'], true)) {
+                $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned']);
+            }
+
+            // If reverting past Picked, remove picked key
+            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
+            if ($targetIdx !== false && $targetIdx < 2) {
+                // Reverting to On Hold or Processing – remove picked
+                $keysToRemove[] = 'picked';
+            }
+            if ($targetIdx !== false && $targetIdx < 1) {
+                // Reverting to On Hold – remove processing
+                $keysToRemove[] = 'processing';
+            }
+
+            foreach (array_unique($keysToRemove) as $key) {
+                unset($history[$key]);
+            }
+
+            // Add an undo audit trail entry
+            $localNow = (new \DateTimeImmutable($this->database->nowUtc(), new \DateTimeZone('UTC')))
+                ->setTimezone(new \DateTimeZone($this->config->timezone()));
+            $history['undone'] = sprintf(
+                'Status reverted from %s to %s by %s on %s at %s.',
+                $currentStatus,
+                $targetStatus,
+                trim((string) ($actor['name'] ?? 'System')),
+                $localNow->format('j M Y'),
+                $localNow->format('H:i')
+            );
+
+            $payload = [
+                'status' => $targetStatus,
+                'history' => $this->jsonEncode($history),
+            ];
+
+            // Reset paid_amount if we're reverting away from Completed/Returned
+            if (in_array($currentStatus, ['Completed', 'Returned'], true)) {
+                $payload['paid_amount'] = $this->formatMoney(0);
+            }
+
+            $this->touchUpdate('orders', $orderId, $payload);
+
+            // ─── 5. Re-sync customer summaries ───
+            $this->syncCustomerOrderSummaries([$customerId]);
+
+            // ─── 6. Re-sync wallet credit for order (target status) ───
+            $updatedRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id LIMIT 1',
+                [':id' => $orderId]
+            );
+            if ($updatedRow !== null) {
+                $this->syncWalletCreditForOrder([
+                    'id' => $orderId,
+                    'createdBy' => (string) ($updatedRow['created_by'] ?? ''),
+                    'status' => $targetStatus,
+                    'orderNumber' => $orderNumber,
+                    'orderDate' => (string) ($updatedRow['order_date'] ?? ''),
+                    'createdAt' => $this->toIso($updatedRow['created_at'] ?? null),
+                ]);
+            }
+
+            // ─── 7. Return the refreshed mapped order ───
+            $finalRow = $this->fetchOrderRowById($orderId);
+            if ($finalRow === null) {
+                throw new RuntimeException('Reverted order could not be loaded.');
+            }
+
+            return $this->mapOrder($finalRow);
+        });
+    }
+
+    /**
+     * Remove all wallet entries (credits + reversals) for an order so the
+     * wallet state can be cleanly re-evaluated by syncWalletCreditForOrder.
+     */
+    private function revertWalletEntriesForOrder(string $orderId): void
+    {
+        if (!$this->tableExists('wallet_entries')) {
+            return;
+        }
+
+        $entries = $this->database->fetchAll(
+            "SELECT id FROM wallet_entries WHERE source_order_id = :order_id",
+            [':order_id' => $orderId]
+        );
+
+        if ($entries === []) {
+            return;
+        }
+
+        $ids = array_map(static fn (array $row): string => (string) $row['id'], $entries);
+        $this->deleteWalletEntryRows($ids);
+    }
 }

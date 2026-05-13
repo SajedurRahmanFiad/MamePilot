@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
+import { RotateCcw } from 'lucide-react';
 import { db } from '../db';
 import { hasAdminAccess } from '../types';
 import { theme } from '../theme';
@@ -337,6 +338,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 {isAdminAccessUser && (
                   <>
                     <SidebarItem to="/settings" icon={ICONS.Settings} label="Settings" active={isActive('/settings')} onClick={() => setIsSidebarOpen(false)} />
+                    <SidebarItem to="/undoer" icon={<RotateCcw size={20} />} label="Undoer" active={isActive('/undoer')} onClick={() => setIsSidebarOpen(false)} />
                     {isDeveloper && (
                       <SidebarItem to="/developer/notifications" icon={ICONS.Bell} label="Notifications" active={isActive('/developer/notifications')} onClick={() => setIsSidebarOpen(false)} />
                     )}

@@ -41,6 +41,7 @@ final class ServiceLifecycle
         'payEmployeeWallet',
         'permanentlyDeleteDeletedItem',
         'restoreDeletedItem',
+        'revertOrderStatus',
         'reviewTransactionApproval',
         'submitCarryBeeOrder',
         'submitPaperflyOrder',

@@ -125,6 +125,7 @@ const UserActivityPerformanceReport = lazyPage(() => import('./pages/reports/Use
 const PrintOrder = lazyPage(() => import('./pages/PrintOrder'));
 const PrintBill = lazyPage(() => import('./pages/PrintBill'));
 const WalletPage = lazyPage(() => import('./pages/Wallet'));
+const Undoer = lazyPage(() => import('./pages/Undoer'));
 
 const RouteFallback: React.FC = () => (
   <div className="min-h-[40vh] flex items-center justify-center px-6 py-12 text-center text-sm font-medium text-gray-500">
@@ -430,6 +431,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
 
       <Route path="/settings" element={
         isAuthenticated ? (isAdmin ? <Layout><SettingsPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+
+      <Route path="/undoer" element={
+        isAuthenticated ? (isAdmin ? <Layout><Undoer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       {/* Catch all - redirect based on auth state */}

@@ -112,6 +112,8 @@ export async function createOrder(order: Omit<Order, 'id'>) { return call<Order>
 export async function updateOrder(id: string, updates: Partial<Order>) { return call<Order | null>('updateOrder', { id, updates }); }
 export async function deleteOrder(id: string) { await remove('deleteOrder', id); }
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
+export async function fetchOrderByNumber(orderNumber: string) { return call<Order | null>('fetchOrderByNumber', { orderNumber }); }
+export async function revertOrderStatus(payload: { orderId: string; targetStatus: string }) { return call<Order>('revertOrderStatus', payload); }
 
 export async function fetchAccounts() { return call<Account[]>('fetchAccounts'); }
 export async function fetchAccountById(id: string) { return call<Account | null>('fetchAccountById', { id }); }

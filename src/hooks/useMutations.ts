@@ -6,6 +6,7 @@ import {
   createNotification,
   createOrder,
   completePickedOrder,
+  revertOrderStatus,
   updateOrder,
   deleteOrder,
   createBill,
@@ -2663,6 +2664,31 @@ export function useBatchUpdateSettings(): UseMutationResult<any, Error, any, unk
       // Refetch all settings in background to validate
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
+    },
+  });
+}
+
+// ========== UNDOER (ORDER STATUS REVERT) ==========
+
+export function useRevertOrderStatus(): UseMutationResult<Order, Error, { orderId: string; targetStatus: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { orderId: string; targetStatus: string }) =>
+      revertOrderStatus(payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', data.id], data);
+      invalidateResourceQueries(queryClient, 'orders');
+      queryClient.invalidateQueries({ queryKey: ['orders-search'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['customers'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['ordersByCustomerId'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['products'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['employeeOrderCounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['payroll'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
+      invalidateRecycleBin(queryClient);
+      invalidateDashboardQueries(queryClient);
     },
   });
 }

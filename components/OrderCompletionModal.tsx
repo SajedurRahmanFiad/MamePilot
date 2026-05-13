@@ -122,7 +122,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative z-[210] w-full max-w-xl rounded-[2.5rem] border border-[#ebf4ff] bg-white p-10 animate-in zoom-in-95 duration-200">
+      <div className="relative z-[210] w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-[#ebf4ff] bg-white p-10 animate-in zoom-in-95 duration-200">
         <div className="mb-8">
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Picked Order</p>
           <h3 className="mt-2 text-2xl font-black text-gray-900">Finalize Order #{order.orderNumber}</h3>
