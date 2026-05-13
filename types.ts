@@ -73,7 +73,8 @@ export type PermissionKey =
   | 'wallet.view'
   | 'payroll.view'
   | 'recycleBin.view'
-  | 'users.view';
+  | 'users.view'
+  | 'undoer.view';
 
 export type RolePermissionMap = Record<PermissionKey, boolean>;
 

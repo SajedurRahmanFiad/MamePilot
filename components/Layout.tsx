@@ -327,7 +327,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <SidebarItem to="/fraud-checker" icon={ICONS.FraudChecker} label="Fraud Checker" active={isActive('/fraud-checker')} onClick={() => setIsSidebarOpen(false)} />
             )}
 
-            {(can('reports.view') || can('recycleBin.view') || isAdminAccessUser) && (
+            {(can('reports.view') || can('recycleBin.view') || can('undoer.view') || isAdminAccessUser) && (
               <>
                 {can('reports.view') && (
                   <SidebarItem to="/reports" icon={ICONS.Reports} label="Reports" active={isActive('/reports')} onClick={() => setIsSidebarOpen(false)} />
@@ -335,10 +335,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 {can('recycleBin.view') && (
                   <SidebarItem to="/recycle-bin" icon={ICONS.RecycleBin} label="Recycle Bin" active={isActive('/recycle-bin')} onClick={() => setIsSidebarOpen(false)} />
                 )}
+                {can('undoer.view') && (
+                  <SidebarItem to="/undoer" icon={<RotateCcw size={20} />} label="Undoer" active={isActive('/undoer')} onClick={() => setIsSidebarOpen(false)} />
+                )}
                 {isAdminAccessUser && (
                   <>
                     <SidebarItem to="/settings" icon={ICONS.Settings} label="Settings" active={isActive('/settings')} onClick={() => setIsSidebarOpen(false)} />
-                    <SidebarItem to="/undoer" icon={<RotateCcw size={20} />} label="Undoer" active={isActive('/undoer')} onClick={() => setIsSidebarOpen(false)} />
                     {isDeveloper && (
                       <SidebarItem to="/developer/notifications" icon={ICONS.Bell} label="Notifications" active={isActive('/developer/notifications')} onClick={() => setIsSidebarOpen(false)} />
                     )}

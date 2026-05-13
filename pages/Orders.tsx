@@ -315,8 +315,9 @@ const Orders: React.FC = () => {
   };
 
   const canEditOrder = (order: Order) => {
+    if (order.status !== OrderStatus.ON_HOLD) return false;
     if (can('orders.editAny')) return true;
-    return can('orders.editOwn') && order.createdBy === user?.id && order.status === OrderStatus.ON_HOLD;
+    return can('orders.editOwn') && order.createdBy === user?.id;
   };
 
   const canDeliverOrder = (order: Order) =>

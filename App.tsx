@@ -240,6 +240,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       preloaders.add(DeveloperNotifications.preload);
       preloaders.add(NotificationDetail.preload);
     }
+    if (can('undoer.view')) preloaders.add(Undoer.preload);
 
     return scheduleIdlePreload(() => {
       Array.from(preloaders).forEach((preload, index) => {
@@ -434,7 +435,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
 
       <Route path="/undoer" element={
-        isAuthenticated ? (isAdmin ? <Layout><Undoer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('undoer.view') ? <Layout><Undoer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       {/* Catch all - redirect based on auth state */}

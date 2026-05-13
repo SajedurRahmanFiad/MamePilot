@@ -191,11 +191,8 @@ const CustomerDetails: React.FC = () => {
                       (() => {
                         const creatorName = order.creatorName || userMap.get(order.createdBy) || '—';
                         const canEditOrder =
-                          can('orders.editAny')
-                          || (
-                            canAccessRecord(order.createdBy, 'orders.editOwn', 'orders.editAny')
-                            && order.status === OrderStatus.ON_HOLD
-                          );
+                          order.status === OrderStatus.ON_HOLD &&
+                          (can('orders.editAny') || canAccessRecord(order.createdBy, 'orders.editOwn', 'orders.editAny'));
                         const canShowOrderActions = canEditOrder || canCreateOrders;
 
                         return (

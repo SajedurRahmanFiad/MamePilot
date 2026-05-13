@@ -179,15 +179,18 @@ const OrderForm: React.FC = () => {
     // user input while editing.
     if (existingOrderData && !initializedRef.current) {
       if (isEdit) {
+        if (existingOrderData.status !== OrderStatus.ON_HOLD) {
+          toast.warning('Orders can only be edited when they are in On Hold status.');
+          navigate('/orders');
+          return;
+        }
+
         const canEditExistingOrder =
           can('orders.editAny')
-          || (
-            canAccessRecord(existingOrderData.createdBy, 'orders.editOwn', 'orders.editAny')
-            && existingOrderData.status === OrderStatus.ON_HOLD
-          );
+          || canAccessRecord(existingOrderData.createdBy, 'orders.editOwn', 'orders.editAny');
 
         if (!canEditExistingOrder) {
-          toast.warning('You can only edit this order if your role allows it, and own-only editing stays limited to On Hold orders.');
+          toast.warning('You do not have permission to edit this order.');
           navigate('/orders');
           return;
         }

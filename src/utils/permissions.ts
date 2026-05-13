@@ -429,6 +429,12 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: 'Open the users and human resource pages.',
     section: 'Other Modules',
   },
+  {
+    key: 'undoer.view',
+    label: 'View Undoer',
+    description: 'Access the status undoer to revert operations securely.',
+    section: 'Other Modules',
+  },
 ];
 
 export const STORED_PERMISSION_DEFINITIONS = PERMISSION_DEFINITIONS.filter(
