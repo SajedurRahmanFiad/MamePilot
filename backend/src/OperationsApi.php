@@ -390,8 +390,8 @@ final class OperationsApi extends BaseService
     private function syncCustomerOrderSummaries(array $customerIds): void
     {
         $normalizedIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) ($id ?? '')), $customerIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) ($id ?? '')), $customerIds),
+            static fn(string $id): bool => $id !== ''
         )));
 
         foreach ($normalizedIds as $customerId) {
@@ -431,8 +431,8 @@ final class OperationsApi extends BaseService
     private function syncVendorPurchaseSummaries(array $vendorIds): void
     {
         $normalizedIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) ($id ?? '')), $vendorIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) ($id ?? '')), $vendorIds),
+            static fn(string $id): bool => $id !== ''
         )));
 
         foreach ($normalizedIds as $vendorId) {
@@ -474,7 +474,7 @@ final class OperationsApi extends BaseService
             $deltas[$productId] = ($deltas[$productId] ?? 0) + ($quantity * $nextCoeff);
         }
 
-        return array_filter($deltas, static fn (int $delta): bool => $delta !== 0);
+        return array_filter($deltas, static fn(int $delta): bool => $delta !== 0);
     }
 
     /**
@@ -599,7 +599,7 @@ final class OperationsApi extends BaseService
      */
     private function softDeleteTransactionRowsByIds(array $ids, string $deletedAt, string $deletedBy): void
     {
-        $ids = array_values(array_filter(array_map('strval', $ids), static fn (string $id): bool => trim($id) !== ''));
+        $ids = array_values(array_filter(array_map('strval', $ids), static fn(string $id): bool => trim($id) !== ''));
         if ($ids === []) {
             return;
         }
@@ -622,7 +622,7 @@ final class OperationsApi extends BaseService
      */
     private function restoreTransactionRowsByIds(array $ids): void
     {
-        $ids = array_values(array_filter(array_map('strval', $ids), static fn (string $id): bool => trim($id) !== ''));
+        $ids = array_values(array_filter(array_map('strval', $ids), static fn(string $id): bool => trim($id) !== ''));
         if ($ids === []) {
             return;
         }
@@ -642,7 +642,7 @@ final class OperationsApi extends BaseService
      */
     private function permanentlyDeleteTransactionRowsByIds(array $ids): void
     {
-        $ids = array_values(array_filter(array_map('strval', $ids), static fn (string $id): bool => trim($id) !== ''));
+        $ids = array_values(array_filter(array_map('strval', $ids), static fn(string $id): bool => trim($id) !== ''));
         if ($ids === []) {
             return;
         }
@@ -787,17 +787,17 @@ final class OperationsApi extends BaseService
             (
                 (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates))
                 && $this->nullableString($updates['carrybeeConsignmentId'] ?? $updates['carrybee_consignment_id'] ?? null)
-                    !== $this->nullableString($existingRow['carrybee_consignment_id'] ?? null)
+                !== $this->nullableString($existingRow['carrybee_consignment_id'] ?? null)
             )
             || (
                 (array_key_exists('steadfastConsignmentId', $updates) || array_key_exists('steadfast_consignment_id', $updates))
                 && $this->nullableString($updates['steadfastConsignmentId'] ?? $updates['steadfast_consignment_id'] ?? null)
-                    !== $this->nullableString($existingRow['steadfast_consignment_id'] ?? null)
+                !== $this->nullableString($existingRow['steadfast_consignment_id'] ?? null)
             )
             || (
                 (array_key_exists('paperflyTrackingNumber', $updates) || array_key_exists('paperfly_tracking_number', $updates))
                 && $this->nullableString($updates['paperflyTrackingNumber'] ?? $updates['paperfly_tracking_number'] ?? null)
-                    !== $this->nullableString($existingRow['paperfly_tracking_number'] ?? null)
+                !== $this->nullableString($existingRow['paperfly_tracking_number'] ?? null)
             )
             || $this->historyValue($nextHistory, 'courier') !== $this->historyValue($existingHistory, 'courier');
 
@@ -931,7 +931,7 @@ final class OperationsApi extends BaseService
         if (
             array_key_exists('history', $updates)
             && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
-                !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
         ) {
             $businessChanged = true;
         }
@@ -1055,7 +1055,7 @@ final class OperationsApi extends BaseService
         if (
             array_key_exists('history', $updates)
             && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'received', 'cancelled', 'paid']))
-                !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'received', 'cancelled', 'paid']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'received', 'cancelled', 'paid']))
         ) {
             $businessChanged = true;
         }
@@ -1191,7 +1191,7 @@ final class OperationsApi extends BaseService
             'SELECT * FROM orders_with_customer_creator ORDER BY createdAt DESC'
         );
 
-        return array_map(fn (array $row): array => $this->mapOrder($row), $rows);
+        return array_map(fn(array $row): array => $this->mapOrder($row), $rows);
     }
 
     public function fetchOrderSearchPreview(array $params): array
@@ -1220,7 +1220,7 @@ final class OperationsApi extends BaseService
             $bindings
         );
 
-        return array_map(static fn (array $row): array => [
+        return array_map(static fn(array $row): array => [
             'id' => (string) ($row['id'] ?? ''),
             'orderNumber' => (string) ($row['orderNumber'] ?? ''),
             'customerName' => $row['customerName'] !== null ? (string) $row['customerName'] : null,
@@ -1251,7 +1251,7 @@ final class OperationsApi extends BaseService
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
-        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn (string $id): bool => trim($id) !== ''));
+        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND createdBy IN (' . implode(', ', $placeholders) . ')';
@@ -1302,7 +1302,7 @@ final class OperationsApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapOrder($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapOrder($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -1325,7 +1325,7 @@ final class OperationsApi extends BaseService
             [':customer_id' => $customerId]
         );
 
-        return array_map(fn (array $row): array => $this->mapOrder($row), $rows);
+        return array_map(fn(array $row): array => $this->mapOrder($row), $rows);
     }
 
     public function fetchEmployeeOrderCounts(array $params): array
@@ -1485,12 +1485,12 @@ final class OperationsApi extends BaseService
         );
 
         $derivedMetrics = $this->fetchUserActivityPerformanceDerivedMetrics(
-            array_map(static fn (array $row): string => (string) ($row['id'] ?? ''), $rows),
+            array_map(static fn(array $row): string => (string) ($row['id'] ?? ''), $rows),
             $filters
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapUserActivityPerformanceSummary($row, $derivedMetrics[(string) ($row['id'] ?? '')] ?? []), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapUserActivityPerformanceSummary($row, $derivedMetrics[(string) ($row['id'] ?? '')] ?? []), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
             'totals' => [
                 'users' => (int) ($totalsRow['users'] ?? 0),
@@ -1684,8 +1684,8 @@ final class OperationsApi extends BaseService
     private function fetchUserActivityPerformanceDerivedMetrics(array $userIds, array $filters): array
     {
         $normalizedIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) $id), $userIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) $id), $userIds),
+            static fn(string $id): bool => $id !== ''
         )));
 
         if ($normalizedIds === []) {
@@ -2267,7 +2267,7 @@ final class OperationsApi extends BaseService
         );
 
         $topCustomers = array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'name' => (string) ($row['customerName'] ?? 'Unknown Customer'),
                 'orders' => (int) ($row['orderCount'] ?? 0),
                 'amount' => (float) ($row['totalAmount'] ?? 0),
@@ -2415,7 +2415,7 @@ final class OperationsApi extends BaseService
         );
 
         $employeeComparisonRows = array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'userId' => (string) ($row['userId'] ?? ''),
                 'name' => (string) ($row['name'] ?? 'Unknown Employee'),
                 'role' => (string) ($row['role'] ?? 'Employee'),
@@ -2540,14 +2540,14 @@ final class OperationsApi extends BaseService
             'totalRevenue' => $totalRevenue,
             'averageTransactionSize' => $transactionCount > 0 ? $totalRevenue / $transactionCount : 0,
             'revenueMix' => array_map(
-                static fn (array $row): array => [
+                static fn(array $row): array => [
                     'name' => (string) ($row['name'] ?? 'Uncategorized'),
                     'value' => (float) ($row['value'] ?? 0),
                 ],
                 $revenueMixRows
             ),
             'topCustomers' => array_map(
-                static fn (array $row): array => [
+                static fn(array $row): array => [
                     'id' => (string) ($row['customerId'] ?? ''),
                     'name' => (string) ($row['customerName'] ?? 'Unknown Customer'),
                     'revenue' => (float) ($row['revenue'] ?? 0),
@@ -2605,14 +2605,14 @@ final class OperationsApi extends BaseService
         return [
             'totalOutflow' => (float) ($summary['totalOutflow'] ?? 0),
             'byCategory' => array_map(
-                static fn (array $row): array => [
+                static fn(array $row): array => [
                     'name' => (string) ($row['name'] ?? 'Uncategorized'),
                     'value' => (float) ($row['value'] ?? 0),
                 ],
                 $categoryRows
             ),
             'recentExpenses' => array_map(
-                fn (array $row): array => [
+                fn(array $row): array => [
                     'id' => (string) ($row['id'] ?? ''),
                     'date' => $this->toIso($row['date'] ?? null) ?? (string) ($row['date'] ?? ''),
                     'categoryName' => (string) ($row['categoryName'] ?? 'Uncategorized'),
@@ -2654,7 +2654,7 @@ final class OperationsApi extends BaseService
         );
 
         return array_map(
-            fn (array $row): array => [
+            fn(array $row): array => [
                 'date' => $this->toIso($row['date'] ?? null) ?? (string) ($row['date'] ?? ''),
                 'categoryName' => (string) ($row['categoryName'] ?? 'Uncategorized'),
                 'contactName' => (string) ($row['contactName'] ?? 'N/A'),
@@ -2726,7 +2726,7 @@ final class OperationsApi extends BaseService
         }
 
         $chartData = array_map(
-            static fn (string $key): array => $buckets[$key],
+            static fn(string $key): array => $buckets[$key],
             $bucketOrder
         );
 
@@ -2844,7 +2844,7 @@ final class OperationsApi extends BaseService
             : (float) ($billSummary['totalPurchases'] ?? 0);
         $grossProfit = $grossSales - $costOfPurchases;
         $expenses = array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'categoryName' => (string) ($row['categoryName'] ?? 'Uncategorized'),
                 'amount' => (float) ($row['amount'] ?? 0),
             ],
@@ -2852,7 +2852,7 @@ final class OperationsApi extends BaseService
         );
         $totalOperatingExpenses = array_reduce(
             $expenses,
-            static fn (float $carry, array $row): float => $carry + (float) ($row['amount'] ?? 0),
+            static fn(float $carry, array $row): float => $carry + (float) ($row['amount'] ?? 0),
             0.0
         );
 
@@ -2927,7 +2927,7 @@ final class OperationsApi extends BaseService
         if ($search !== '') {
             $reportRows = array_values(array_filter(
                 $reportRows,
-                fn (array $row): bool => str_contains(
+                fn(array $row): bool => str_contains(
                     $this->normalizeReportSearchTerm((string) ($row['productName'] ?? '')),
                     $search
                 )
@@ -2935,7 +2935,7 @@ final class OperationsApi extends BaseService
         }
 
         $mappedRows = array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'productName' => (string) ($row['productName'] ?? 'Unnamed Product'),
                 'quantity' => (float) ($row['quantity'] ?? 0),
                 'revenue' => (float) ($row['revenue'] ?? 0),
@@ -2947,7 +2947,7 @@ final class OperationsApi extends BaseService
             'rows' => $mappedRows,
             'totalQty' => array_reduce(
                 $mappedRows,
-                static fn (float $carry, array $row): float => $carry + (float) ($row['quantity'] ?? 0),
+                static fn(float $carry, array $row): float => $carry + (float) ($row['quantity'] ?? 0),
                 0.0
             ),
         ];
@@ -3021,7 +3021,7 @@ final class OperationsApi extends BaseService
         if ($search !== '') {
             $reportRows = array_values(array_filter(
                 $reportRows,
-                fn (array $row): bool => str_contains(
+                fn(array $row): bool => str_contains(
                     $this->normalizeReportSearchTerm((string) ($row['name'] ?? '')),
                     $search
                 )
@@ -3029,7 +3029,7 @@ final class OperationsApi extends BaseService
         }
 
         $mappedRows = array_map(
-            static fn (array $row): array => [
+            static fn(array $row): array => [
                 'name' => (string) ($row['name'] ?? 'Unknown Customer'),
                 'orders' => (int) ($row['orders'] ?? 0),
                 'quantity' => (float) ($row['quantity'] ?? 0),
@@ -3042,17 +3042,17 @@ final class OperationsApi extends BaseService
             'rows' => $mappedRows,
             'totalAmount' => array_reduce(
                 $mappedRows,
-                static fn (float $carry, array $row): float => $carry + (float) ($row['amount'] ?? 0),
+                static fn(float $carry, array $row): float => $carry + (float) ($row['amount'] ?? 0),
                 0.0
             ),
             'totalOrders' => array_reduce(
                 $mappedRows,
-                static fn (int $carry, array $row): int => $carry + (int) ($row['orders'] ?? 0),
+                static fn(int $carry, array $row): int => $carry + (int) ($row['orders'] ?? 0),
                 0
             ),
             'totalQuantity' => array_reduce(
                 $mappedRows,
-                static fn (float $carry, array $row): float => $carry + (float) ($row['quantity'] ?? 0),
+                static fn(float $carry, array $row): float => $carry + (float) ($row['quantity'] ?? 0),
                 0.0
             ),
         ];
@@ -3469,10 +3469,10 @@ final class OperationsApi extends BaseService
 
             $order = $this->mapOrder($row);
             $pendingTransactionIds = array_values(array_map(
-                static fn (array $transaction): string => (string) ($transaction['id'] ?? ''),
+                static fn(array $transaction): string => (string) ($transaction['id'] ?? ''),
                 array_filter(
                     $createdTransactions,
-                    static fn (array $transaction): bool => (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending'
+                    static fn(array $transaction): bool => (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending'
                 )
             ));
             $order['pendingTransactionCount'] = count($pendingTransactionIds);
@@ -3513,7 +3513,7 @@ final class OperationsApi extends BaseService
 
             $this->applyTransactionAccountEffect($relatedTransactions, 'revert');
             $this->softDeleteTransactionRowsByIds(
-                array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions),
+                array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions),
                 $deletedAt,
                 (string) $actor['id']
             );
@@ -3575,7 +3575,7 @@ final class OperationsApi extends BaseService
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
-        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn (string $id): bool => trim($id) !== ''));
+        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND createdBy IN (' . implode(', ', $placeholders) . ')';
@@ -3609,7 +3609,7 @@ final class OperationsApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapBill($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapBill($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -3617,7 +3617,7 @@ final class OperationsApi extends BaseService
     public function fetchBills(array $params = []): array
     {
         $rows = $this->database->fetchAll('SELECT * FROM bills_with_vendor_creator ORDER BY createdAt DESC');
-        return array_map(fn (array $row): array => $this->mapBill($row), $rows);
+        return array_map(fn(array $row): array => $this->mapBill($row), $rows);
     }
 
     public function fetchBillsByVendorId(array $params): array
@@ -3632,7 +3632,7 @@ final class OperationsApi extends BaseService
             [':vendor_id' => $vendorId]
         );
 
-        return array_map(fn (array $row): array => $this->mapBill($row), $rows);
+        return array_map(fn(array $row): array => $this->mapBill($row), $rows);
     }
 
     public function fetchBillById(array $params): ?array
@@ -3806,7 +3806,7 @@ final class OperationsApi extends BaseService
             $relatedTransactions = $this->fetchBillLinkedTransactionRows($id, 'active');
             $this->applyTransactionAccountEffect($relatedTransactions, 'revert');
             $this->softDeleteTransactionRowsByIds(
-                array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions),
+                array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions),
                 $deletedAt,
                 (string) $actor['id']
             );
@@ -3831,7 +3831,7 @@ final class OperationsApi extends BaseService
     public function fetchTransactions(array $params = []): array
     {
         $rows = $this->database->fetchAll('SELECT * FROM transactions_with_relations ORDER BY createdAt DESC');
-        return array_map(fn (array $row): array => $this->mapTransaction($row), $rows);
+        return array_map(fn(array $row): array => $this->mapTransaction($row), $rows);
     }
 
     public function fetchTransactionsPage(array $params): array
@@ -3887,7 +3887,7 @@ final class OperationsApi extends BaseService
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
-        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn (string $id): bool => trim($id) !== ''));
+        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND twr.createdBy IN (' . implode(', ', $placeholders) . ')';
@@ -3932,7 +3932,7 @@ final class OperationsApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapTransaction($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapTransaction($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -4030,7 +4030,7 @@ final class OperationsApi extends BaseService
     {
         $actor = $this->currentUser();
 
-        return $this->database->transaction(fn () => $this->createTransactionRecord($params, (string) $actor['id'], $actor));
+        return $this->database->transaction(fn() => $this->createTransactionRecord($params, (string) $actor['id'], $actor));
     }
 
     public function updateTransaction(array $params): array
@@ -4343,7 +4343,7 @@ final class OperationsApi extends BaseService
      */
     private function deleteWalletEntryRows(array $entryIds): void
     {
-        $entryIds = array_values(array_filter(array_map('strval', $entryIds), static fn (string $id): bool => trim($id) !== ''));
+        $entryIds = array_values(array_filter(array_map('strval', $entryIds), static fn(string $id): bool => trim($id) !== ''));
         if ($entryIds === []) {
             return;
         }
@@ -4436,27 +4436,29 @@ final class OperationsApi extends BaseService
         }
 
         if ($creditEntry === null && $reversalEntries !== []) {
-            $this->deleteWalletEntryRows(array_map(static fn (array $entry): string => (string) $entry['id'], $reversalEntries));
+            $this->deleteWalletEntryRows(array_map(static fn(array $entry): string => (string) $entry['id'], $reversalEntries));
         }
 
         if ($this->isWalletStatusPayable($status, $countedStatuses)) {
             if ($reversalEntries !== []) {
-                $this->deleteWalletEntryRows(array_map(static fn (array $entry): string => (string) $entry['id'], $reversalEntries));
+                $this->deleteWalletEntryRows(array_map(static fn(array $entry): string => (string) $entry['id'], $reversalEntries));
             }
 
             if ($creditEntry === null && (float) ($effectiveSettings['unitAmount'] ?? 0) > 0) {
                 $unitAmount = (float) ($effectiveSettings['unitAmount'] ?? 0);
-                $this->insertWalletEntryRows([[
-                    'employee_id' => $createdBy,
-                    'entry_type' => 'order_credit',
-                    'amount_delta' => $unitAmount,
-                    'unit_amount_snapshot' => $unitAmount,
-                    'source_order_id' => $orderId,
-                    'source_order_number' => $order['orderNumber'] ?? null,
-                    'note' => 'Wallet credit added because the order is in a payable status.',
-                    'created_at' => $now,
-                    'created_by' => $actorId !== '' ? $actorId : $createdBy,
-                ]]);
+                $this->insertWalletEntryRows([
+                    [
+                        'employee_id' => $createdBy,
+                        'entry_type' => 'order_credit',
+                        'amount_delta' => $unitAmount,
+                        'unit_amount_snapshot' => $unitAmount,
+                        'source_order_id' => $orderId,
+                        'source_order_number' => $order['orderNumber'] ?? null,
+                        'note' => 'Wallet credit added because the order is in a payable status.',
+                        'created_at' => $now,
+                        'created_by' => $actorId !== '' ? $actorId : $createdBy,
+                    ]
+                ]);
             }
 
             return;
@@ -4464,17 +4466,19 @@ final class OperationsApi extends BaseService
 
         if ($creditEntry !== null && $reversalEntries === []) {
             $creditAmount = abs((float) ($creditEntry['amount_delta'] ?? 0));
-            $this->insertWalletEntryRows([[
-                'employee_id' => $createdBy,
-                'entry_type' => 'order_reversal',
-                'amount_delta' => -$creditAmount,
-                'unit_amount_snapshot' => $creditEntry['unit_amount_snapshot'] ?? $creditAmount,
-                'source_order_id' => $orderId,
-                'source_order_number' => $order['orderNumber'] ?? ($creditEntry['source_order_number'] ?? null),
-                'note' => 'Wallet credit reversed because the order is not in a payable status.',
-                'created_at' => $now,
-                'created_by' => $actorId !== '' ? $actorId : $createdBy,
-            ]]);
+            $this->insertWalletEntryRows([
+                [
+                    'employee_id' => $createdBy,
+                    'entry_type' => 'order_reversal',
+                    'amount_delta' => -$creditAmount,
+                    'unit_amount_snapshot' => $creditEntry['unit_amount_snapshot'] ?? $creditAmount,
+                    'source_order_id' => $orderId,
+                    'source_order_number' => $order['orderNumber'] ?? ($creditEntry['source_order_number'] ?? null),
+                    'note' => 'Wallet credit reversed because the order is not in a payable status.',
+                    'created_at' => $now,
+                    'created_by' => $actorId !== '' ? $actorId : $createdBy,
+                ]
+            ]);
         }
     }
 
@@ -4512,17 +4516,19 @@ final class OperationsApi extends BaseService
         }
 
         $creditAmount = abs((float) ($creditRow['amount_delta'] ?? 0));
-        $this->insertWalletEntryRows([[
-            'employee_id' => (string) ($params['createdBy'] ?? ''),
-            'entry_type' => 'order_reversal',
-            'amount_delta' => -$creditAmount,
-            'unit_amount_snapshot' => $creditRow['unit_amount_snapshot'] ?? $creditAmount,
-            'source_order_id' => (string) ($params['id'] ?? ''),
-            'source_order_number' => $params['orderNumber'] ?? null,
-            'note' => 'Wallet credit reversed because the order was moved to the recycle bin.',
-            'created_at' => $this->database->nowUtc(),
-            'created_by' => $params['deletedBy'] ?? null,
-        ]]);
+        $this->insertWalletEntryRows([
+            [
+                'employee_id' => (string) ($params['createdBy'] ?? ''),
+                'entry_type' => 'order_reversal',
+                'amount_delta' => -$creditAmount,
+                'unit_amount_snapshot' => $creditRow['unit_amount_snapshot'] ?? $creditAmount,
+                'source_order_id' => (string) ($params['id'] ?? ''),
+                'source_order_number' => $params['orderNumber'] ?? null,
+                'note' => 'Wallet credit reversed because the order was moved to the recycle bin.',
+                'created_at' => $this->database->nowUtc(),
+                'created_by' => $params['deletedBy'] ?? null,
+            ]
+        ]);
     }
 
     /**
@@ -4532,8 +4538,8 @@ final class OperationsApi extends BaseService
     private function syncWalletCreditsForEmployees(array $employeeIds, ?array $walletSettings = null): void
     {
         $employeeIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) $id), $employeeIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) $id), $employeeIds),
+            static fn(string $id): bool => $id !== ''
         )));
         if ($employeeIds === []) {
             return;
@@ -4572,8 +4578,8 @@ final class OperationsApi extends BaseService
         ?string $periodEnd = null
     ): array {
         $employeeIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) $id), $employeeIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) $id), $employeeIds),
+            static fn(string $id): bool => $id !== ''
         )));
         if ($employeeIds === [] || $countedStatuses === []) {
             return [];
@@ -4622,8 +4628,8 @@ final class OperationsApi extends BaseService
     private function fetchLiveWalletAmountsByEmployeeIds(array $employeeIds): array
     {
         $employeeIds = array_values(array_unique(array_filter(
-            array_map(static fn ($id): string => trim((string) $id), $employeeIds),
-            static fn (string $id): bool => $id !== ''
+            array_map(static fn($id): string => trim((string) $id), $employeeIds),
+            static fn(string $id): bool => $id !== ''
         )));
         if ($employeeIds === []) {
             return [];
@@ -4714,7 +4720,7 @@ final class OperationsApi extends BaseService
         $countedStatuses = is_array($effectiveSettings['countedStatuses'] ?? null)
             ? $effectiveSettings['countedStatuses']
             : [];
-        $employeeIds = array_map(static fn (array $employee): string => (string) ($employee['id'] ?? ''), $employees);
+        $employeeIds = array_map(static fn(array $employee): string => (string) ($employee['id'] ?? ''), $employees);
         $orderCounts = $this->fetchEligibleOrderCountsByEmployeeIds($employeeIds, $countedStatuses);
         $walletAmounts = $this->fetchLiveWalletAmountsByEmployeeIds($employeeIds);
 
@@ -4789,7 +4795,7 @@ final class OperationsApi extends BaseService
             return;
         }
 
-        $employeeIds = array_map(static fn (array $row): string => (string) $row['id'], $employees);
+        $employeeIds = array_map(static fn(array $row): string => (string) $row['id'], $employees);
         $this->syncWalletCreditsForEmployees($employeeIds, $walletSettings);
     }
 
@@ -4814,7 +4820,7 @@ final class OperationsApi extends BaseService
                     )
                 ),
             ],
-            fn (): array => $this->fetchPayrollSettingsInternal()
+            fn(): array => $this->fetchPayrollSettingsInternal()
         );
     }
 
@@ -4826,14 +4832,14 @@ final class OperationsApi extends BaseService
              WHERE deleted_at IS NULL AND role IN ('Employee', 'Employee1')
              ORDER BY name ASC"
         );
-        $employees = array_map(fn (array $row): array => $this->mapUser($row), $rows);
+        $employees = array_map(fn(array $row): array => $this->mapUser($row), $rows);
 
         if ($currentUser === null || $this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
             return $employees;
         }
 
         if ($this->isEmployeeRole((string) ($currentUser['role'] ?? ''))) {
-            return array_values(array_filter($employees, fn (array $employee): bool => $employee['id'] === (string) $currentUser['id']));
+            return array_values(array_filter($employees, fn(array $employee): bool => $employee['id'] === (string) $currentUser['id']));
         }
 
         return [];
@@ -4869,7 +4875,7 @@ final class OperationsApi extends BaseService
         $users = $this->database->fetchAll('SELECT id, name, role FROM users WHERE deleted_at IS NULL');
         $userMap = $this->keyBy($users, 'id');
 
-        return array_map(fn (array $row): array => $this->mapPayrollPayment($row, $userMap), $rows);
+        return array_map(fn(array $row): array => $this->mapPayrollPayment($row, $userMap), $rows);
     }
 
     public function fetchPayrollSummaries(array $params): array
@@ -4889,13 +4895,13 @@ final class OperationsApi extends BaseService
 
         $employees = $this->fetchPayrollEmployees();
         if ($targetEmployeeId !== '') {
-            $employees = array_values(array_filter($employees, fn (array $employee): bool => $employee['id'] === $targetEmployeeId));
+            $employees = array_values(array_filter($employees, fn(array $employee): bool => $employee['id'] === $targetEmployeeId));
         }
         if ($employees === []) {
             return [];
         }
 
-        $employeeIds = array_map(static fn (array $employee): string => (string) $employee['id'], $employees);
+        $employeeIds = array_map(static fn(array $employee): string => (string) $employee['id'], $employees);
         $orderCounts = $this->fetchEligibleOrderCountsByEmployeeIds($employeeIds, $countedStatuses, $periodStart, $periodEnd);
 
         $paymentBindings = [
@@ -5156,7 +5162,7 @@ final class OperationsApi extends BaseService
             "SELECT * FROM wallet_activity_with_relations {$where} ORDER BY createdAt DESC",
             $bindings
         );
-        return array_map(fn (array $row): array => $this->mapWalletActivityEntry($row), $rows);
+        return array_map(fn(array $row): array => $this->mapWalletActivityEntry($row), $rows);
     }
 
     public function fetchWalletActivityPage(array $params): array
@@ -5187,7 +5193,7 @@ final class OperationsApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapWalletActivityEntry($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapWalletActivityEntry($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -5216,11 +5222,13 @@ final class OperationsApi extends BaseService
 
             $walletSettings = $this->fetchWalletSettings();
             $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
-            $walletCards = $this->buildWalletCardsForEmployees([[
-                'id' => $employeeId,
-                'name' => (string) ($employee['name'] ?? 'Unknown Employee'),
-                'role' => (string) ($employee['role'] ?? 'Employee'),
-            ]], $walletSettings);
+            $walletCards = $this->buildWalletCardsForEmployees([
+                [
+                    'id' => $employeeId,
+                    'name' => (string) ($employee['name'] ?? 'Unknown Employee'),
+                    'role' => (string) ($employee['role'] ?? 'Employee'),
+                ]
+            ], $walletSettings);
             $walletBalance = (float) (($walletCards[0]['currentBalance'] ?? 0));
             if ($amount > $walletBalance) {
                 throw new RuntimeException('Payout amount exceeds the current wallet balance.');
@@ -5300,15 +5308,17 @@ final class OperationsApi extends BaseService
                 ]
             );
 
-            $this->insertWalletEntryRows([[
-                'employee_id' => $employeeId,
-                'entry_type' => 'payout',
-                'amount_delta' => -abs($amount),
-                'wallet_payout_id' => $payoutId,
-                'note' => $this->nullableString($params['note'] ?? null) ?? $description,
-                'created_at' => $createdAt,
-                'created_by' => (string) $currentUser['id'],
-            ]]);
+            $this->insertWalletEntryRows([
+                [
+                    'employee_id' => $employeeId,
+                    'entry_type' => 'payout',
+                    'amount_delta' => -abs($amount),
+                    'wallet_payout_id' => $payoutId,
+                    'note' => $this->nullableString($params['note'] ?? null) ?? $description,
+                    'created_at' => $createdAt,
+                    'created_by' => (string) $currentUser['id'],
+                ]
+            ]);
 
             return $this->mapWalletPayout([
                 'id' => $payoutId,
@@ -5380,7 +5390,7 @@ final class OperationsApi extends BaseService
                         ]
                     );
                 }
-                
+
                 $this->database->execute('DELETE FROM transactions WHERE id = :id', [':id' => $transactionId]);
             }
 
@@ -5657,7 +5667,7 @@ final class OperationsApi extends BaseService
                 }
                 $relatedTransactions = $this->fetchOrderLinkedTransactionRows($id, (string) ($orderRow['order_number'] ?? ''), 'deleted');
                 $this->restoreSoftDeletedRow('orders', $id);
-                $this->restoreTransactionRowsByIds(array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions));
+                $this->restoreTransactionRowsByIds(array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions));
                 $this->applyTransactionAccountEffect($relatedTransactions, 'apply');
                 $this->syncWalletCreditForOrder([
                     'id' => $id,
@@ -5681,7 +5691,7 @@ final class OperationsApi extends BaseService
                 }
                 $relatedTransactions = $this->fetchBillLinkedTransactionRows($id, 'deleted');
                 $this->restoreSoftDeletedRow('bills', $id);
-                $this->restoreTransactionRowsByIds(array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions));
+                $this->restoreTransactionRowsByIds(array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions));
                 $this->applyTransactionAccountEffect($relatedTransactions, 'apply');
                 $this->syncVendorPurchaseSummaries([(string) ($billRow['vendor_id'] ?? '')]);
                 return ['success' => true];
@@ -5743,7 +5753,7 @@ final class OperationsApi extends BaseService
                     throw new RuntimeException('Deleted order not found.');
                 }
                 $relatedTransactions = $this->fetchOrderLinkedTransactionRows($id, (string) ($orderRow['order_number'] ?? ''), 'deleted');
-                $this->permanentlyDeleteTransactionRowsByIds(array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions));
+                $this->permanentlyDeleteTransactionRowsByIds(array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions));
                 $this->permanentlyDeleteSoftDeletedRow('orders', $id);
                 $this->syncCustomerOrderSummaries([(string) ($orderRow['customer_id'] ?? '')]);
                 return ['success' => true];
@@ -5758,7 +5768,7 @@ final class OperationsApi extends BaseService
                     throw new RuntimeException('Deleted bill not found.');
                 }
                 $relatedTransactions = $this->fetchBillLinkedTransactionRows($id, 'deleted');
-                $this->permanentlyDeleteTransactionRowsByIds(array_map(static fn (array $row): string => (string) $row['id'], $relatedTransactions));
+                $this->permanentlyDeleteTransactionRowsByIds(array_map(static fn(array $row): string => (string) $row['id'], $relatedTransactions));
                 $this->permanentlyDeleteSoftDeletedRow('bills', $id);
                 $this->syncVendorPurchaseSummaries([(string) ($billRow['vendor_id'] ?? '')]);
                 return ['success' => true];
@@ -5883,7 +5893,7 @@ final class OperationsApi extends BaseService
                 $this->applyTransactionAccountEffect($linkedTransactions, 'revert');
                 $deletedAt = $this->database->nowUtc();
                 $this->softDeleteTransactionRowsByIds(
-                    array_map(static fn (array $row): string => (string) $row['id'], $linkedTransactions),
+                    array_map(static fn(array $row): string => (string) $row['id'], $linkedTransactions),
                     $deletedAt,
                     (string) $actor['id']
                 );
@@ -5992,7 +6002,7 @@ final class OperationsApi extends BaseService
             return;
         }
 
-        $ids = array_map(static fn (array $row): string => (string) $row['id'], $entries);
+        $ids = array_map(static fn(array $row): string => (string) $row['id'], $entries);
         $this->deleteWalletEntryRows($ids);
     }
 }

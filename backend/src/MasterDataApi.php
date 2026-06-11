@@ -59,7 +59,7 @@ final class MasterDataApi extends BaseService
              ORDER BY created_at DESC, name ASC'
         );
 
-        return array_map(fn (array $row): array => $this->mapUser($row), $rows);
+        return array_map(fn(array $row): array => $this->mapUser($row), $rows);
     }
 
     public function fetchUsersPage(array $params): array
@@ -99,10 +99,10 @@ final class MasterDataApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapUser($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapUser($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
             'roles' => array_values(array_filter(array_map(
-                static fn (array $row): string => trim((string) ($row['role'] ?? '')),
+                static fn(array $row): string => trim((string) ($row['role'] ?? '')),
                 $roleRows
             ))),
         ];
@@ -256,7 +256,7 @@ final class MasterDataApi extends BaseService
              ORDER BY created_at DESC'
         );
 
-        return array_map(fn (array $row): array => $this->mapCustomer($row), $rows);
+        return array_map(fn(array $row): array => $this->mapCustomer($row), $rows);
     }
 
     public function fetchCustomersPage(array $params): array
@@ -286,7 +286,7 @@ final class MasterDataApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapCustomer($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapCustomer($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -383,7 +383,7 @@ final class MasterDataApi extends BaseService
              ORDER BY created_at DESC'
         );
 
-        return array_map(fn (array $row): array => $this->mapVendor($row), $rows);
+        return array_map(fn(array $row): array => $this->mapVendor($row), $rows);
     }
 
     public function fetchVendorsPage(array $params): array
@@ -413,7 +413,7 @@ final class MasterDataApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapVendor($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapVendor($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -504,7 +504,7 @@ final class MasterDataApi extends BaseService
         $sql .= ' ORDER BY created_at DESC';
 
         $rows = $this->database->fetchAll($sql, $bindings);
-        return array_map(fn (array $row): array => $this->mapProduct($row), $rows);
+        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
     }
 
     public function fetchProductsPage(array $params): array
@@ -526,7 +526,7 @@ final class MasterDataApi extends BaseService
             $where .= ' AND category = :category';
             $bindings[':category'] = $category;
         }
-        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn (string $id): bool => trim($id) !== ''));
+        $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND created_by IN (' . implode(', ', $placeholders) . ')';
@@ -544,7 +544,7 @@ final class MasterDataApi extends BaseService
         );
 
         return [
-            'data' => array_map(fn (array $row): array => $this->mapProduct($row), $rows),
+            'data' => array_map(fn(array $row): array => $this->mapProduct($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
@@ -555,7 +555,7 @@ final class MasterDataApi extends BaseService
             'SELECT id, name, sale_price, purchase_price, stock FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
         );
 
-        return array_map(fn (array $row): array => $this->mapProduct($row), $rows);
+        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
     }
 
     public function fetchProductsSearch(array $params): array
@@ -575,7 +575,7 @@ final class MasterDataApi extends BaseService
             [':search' => '%' . $query . '%']
         );
 
-        return array_map(fn (array $row): array => $this->mapProduct($row), $rows);
+        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
     }
 
     public function fetchProductById(array $params): ?array
@@ -596,7 +596,7 @@ final class MasterDataApi extends BaseService
     public function fetchProductImagesByIds(array $params): array
     {
         $productIds = is_array($params['productIds'] ?? null) ? $params['productIds'] : [];
-        $productIds = array_values(array_filter(array_map('strval', $productIds), static fn (string $id): bool => trim($id) !== ''));
+        $productIds = array_values(array_filter(array_map('strval', $productIds), static fn(string $id): bool => trim($id) !== ''));
         if ($productIds === []) {
             return [];
         }
@@ -672,7 +672,7 @@ final class MasterDataApi extends BaseService
     public function fetchAccounts(array $params = []): array
     {
         $rows = $this->database->fetchAll('SELECT * FROM accounts ORDER BY created_at DESC');
-        return array_map(fn (array $row): array => $this->mapAccount($row), $rows);
+        return array_map(fn(array $row): array => $this->mapAccount($row), $rows);
     }
 
     public function fetchAccountById(array $params): ?array
@@ -755,7 +755,7 @@ final class MasterDataApi extends BaseService
         $sql .= ' ORDER BY name ASC';
         $rows = $this->database->fetchAll($sql, $bindings);
 
-        return array_map(fn (array $row): array => $this->mapCategory($row), $rows);
+        return array_map(fn(array $row): array => $this->mapCategory($row), $rows);
     }
 
     public function fetchCategoriesById(array $params): ?array
@@ -827,7 +827,7 @@ final class MasterDataApi extends BaseService
         $sql .= ' ORDER BY name ASC';
         $rows = $this->database->fetchAll($sql);
 
-        return array_map(fn (array $row): array => $this->mapPaymentMethod($row), $rows);
+        return array_map(fn(array $row): array => $this->mapPaymentMethod($row), $rows);
     }
 
     public function fetchPaymentMethodById(array $params): ?array
@@ -890,7 +890,7 @@ final class MasterDataApi extends BaseService
     public function fetchUnits(array $params = []): array
     {
         $rows = $this->database->fetchAll('SELECT * FROM units ORDER BY name ASC');
-        return array_map(fn (array $row): array => $this->mapUnit($row), $rows);
+        return array_map(fn(array $row): array => $this->mapUnit($row), $rows);
     }
 
     public function fetchUnitById(array $params): ?array
@@ -1016,7 +1016,7 @@ final class MasterDataApi extends BaseService
                 'logo' => $globalPage['logo'] ?? $current['logo'],
                 'pages' => $this->jsonEncode($pages),
             ],
-            fn (): array => $this->fetchCompanySettings()
+            fn(): array => $this->fetchCompanySettings()
         );
     }
 
@@ -1040,7 +1040,7 @@ final class MasterDataApi extends BaseService
                 'prefix' => $params['prefix'] ?? $current['prefix'],
                 'next_number' => array_key_exists('nextNumber', $params) ? (int) $params['nextNumber'] : $current['nextNumber'],
             ],
-            fn (): array => $this->fetchOrderSettings()
+            fn(): array => $this->fetchOrderSettings()
         );
     }
 
@@ -1068,7 +1068,7 @@ final class MasterDataApi extends BaseService
                 'logo_height' => array_key_exists('logoHeight', $params) ? (int) $params['logoHeight'] : $current['logoHeight'],
                 'footer' => array_key_exists('footer', $params) ? $params['footer'] : $current['footer'],
             ],
-            fn (): array => $this->fetchInvoiceSettings()
+            fn(): array => $this->fetchInvoiceSettings()
         );
     }
 
@@ -1100,7 +1100,7 @@ final class MasterDataApi extends BaseService
                 'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
                 'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
             ],
-            fn (): array => $this->fetchSystemDefaults()
+            fn(): array => $this->fetchSystemDefaults()
         );
     }
 
@@ -1178,7 +1178,7 @@ final class MasterDataApi extends BaseService
             'courier_settings',
             'courier-default',
             $updates,
-            fn (): array => $this->fetchCourierSettings()
+            fn(): array => $this->fetchCourierSettings()
         );
     }
 
@@ -1530,22 +1530,22 @@ final class MasterDataApi extends BaseService
     {
         $mappedNotification = $this->mapNotification($notification);
         $recipientRows = $this->fetchNotificationTargetViewerRows($notification);
-        $recipients = array_map(fn (array $row): array => $this->mapNotificationRecipient($row), $recipientRows);
+        $recipients = array_map(fn(array $row): array => $this->mapNotificationRecipient($row), $recipientRows);
         $readCount = count(array_filter(
             $recipients,
-            static fn (array $recipient): bool => (bool) ($recipient['isRead'] ?? false)
+            static fn(array $recipient): bool => (bool) ($recipient['isRead'] ?? false)
         ));
         $actedCount = count(array_filter(
             $recipients,
-            static fn (array $recipient): bool => trim((string) ($recipient['actionResult'] ?? '')) !== ''
+            static fn(array $recipient): bool => trim((string) ($recipient['actionResult'] ?? '')) !== ''
         ));
         $acceptedCount = count(array_filter(
             $recipients,
-            static fn (array $recipient): bool => (string) ($recipient['actionResult'] ?? '') === 'accepted'
+            static fn(array $recipient): bool => (string) ($recipient['actionResult'] ?? '') === 'accepted'
         ));
         $declinedCount = count(array_filter(
             $recipients,
-            static fn (array $recipient): bool => (string) ($recipient['actionResult'] ?? '') === 'declined'
+            static fn(array $recipient): bool => (string) ($recipient['actionResult'] ?? '') === 'declined'
         ));
 
         return [
@@ -1814,13 +1814,13 @@ final class MasterDataApi extends BaseService
             : null;
 
         $items = $this->tableExists('service_subscription_items')
-            ? array_map(fn (array $row): array => $this->mapServiceSubscriptionItem($row), $this->database->fetchAll(
+            ? array_map(fn(array $row): array => $this->mapServiceSubscriptionItem($row), $this->database->fetchAll(
                 'SELECT * FROM service_subscription_items ORDER BY is_active DESC, display_order ASC, created_at ASC'
             ))
             : [];
 
         $methods = $this->tableExists('service_subscription_methods')
-            ? array_map(fn (array $row): array => $this->mapServiceSubscriptionMethod($row), $this->database->fetchAll(
+            ? array_map(fn(array $row): array => $this->mapServiceSubscriptionMethod($row), $this->database->fetchAll(
                 'SELECT * FROM service_subscription_methods ORDER BY is_active DESC, display_order ASC, created_at ASC'
             ))
             : [];
@@ -1834,7 +1834,7 @@ final class MasterDataApi extends BaseService
                  ORDER BY p.submitted_at DESC, p.created_at DESC
                  LIMIT 100"
             );
-            $payments = array_map(fn (array $row): array => $this->mapServiceSubscriptionPayment($row), $paymentRows);
+            $payments = array_map(fn(array $row): array => $this->mapServiceSubscriptionPayment($row), $paymentRows);
         }
 
         $billingVersion = max(1, (int) ($settingsRow['billing_version'] ?? $state['billingVersion'] ?? 1));
@@ -1900,7 +1900,7 @@ final class MasterDataApi extends BaseService
                 [':prefix' => $prefix]
             );
             $activeKeys = array_values(array_unique(array_filter(array_map(
-                static fn (array $row): string => trim((string) ($row['system_key'] ?? '')),
+                static fn(array $row): string => trim((string) ($row['system_key'] ?? '')),
                 $activeRows
             ))));
             sort($activeKeys);
@@ -1993,7 +1993,7 @@ final class MasterDataApi extends BaseService
         try {
             $rows = $this->database->fetchAll(
                 $hasReceiptsTable
-                    ? "SELECT
+                ? "SELECT
                         n.*,
                         creator.name AS created_by_name,
                         nr.is_read,
@@ -2013,7 +2013,7 @@ final class MasterDataApi extends BaseService
                        AND nr.notification_id IS NULL
                      ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
                      LIMIT 200"
-                    : "SELECT
+                : "SELECT
                         n.*,
                         creator.name AS created_by_name,
                         0 AS is_read,
@@ -2038,10 +2038,10 @@ final class MasterDataApi extends BaseService
             ];
         }
 
-        $items = array_map(fn (array $row): array => $this->mapNotification($row), $rows);
+        $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
         $unreadCount = count(array_filter(
             $items,
-            static fn (array $item): bool => !((bool) ($item['isRead'] ?? false)) && ((bool) ($item['isActive'] ?? true))
+            static fn(array $item): bool => !((bool) ($item['isRead'] ?? false)) && ((bool) ($item['isActive'] ?? true))
         ));
 
         return [
@@ -2140,7 +2140,7 @@ final class MasterDataApi extends BaseService
             }
 
             $rows = $this->database->fetchAll($query, $queryBindings);
-            $items = array_map(fn (array $row): array => $this->mapNotification($row), $rows);
+            $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
         } catch (\Throwable $e) {
             // If query fails, return what we have
             $items = [];
@@ -2170,7 +2170,7 @@ final class MasterDataApi extends BaseService
              LIMIT 500"
         );
 
-        return array_map(fn (array $row): array => $this->mapNotification($row), $rows);
+        return array_map(fn(array $row): array => $this->mapNotification($row), $rows);
     }
 
     public function fetchNotificationHistoryPage(array $params = []): array
@@ -2203,7 +2203,7 @@ final class MasterDataApi extends BaseService
         );
 
         return [
-            'items' => array_map(fn (array $row): array => $this->mapNotification($row), $rows),
+            'items' => array_map(fn(array $row): array => $this->mapNotification($row), $rows),
             'total' => $total,
             'page' => $page,
             'pageSize' => $pageSize,
@@ -2342,7 +2342,7 @@ final class MasterDataApi extends BaseService
                 [':role_needle' => $roleNeedle] + $bindings
             );
             $allowedIds = array_values(array_filter(array_map(
-                static fn (array $row): string => trim((string) ($row['id'] ?? '')),
+                static fn(array $row): string => trim((string) ($row['id'] ?? '')),
                 $rows
             )));
             if ($allowedIds === []) {
@@ -2470,7 +2470,7 @@ final class MasterDataApi extends BaseService
             }
 
             $targetViewerIds = array_values(array_filter(array_map(
-                static fn (array $row): string => trim((string) ($row['user_id'] ?? '')),
+                static fn(array $row): string => trim((string) ($row['user_id'] ?? '')),
                 $this->fetchNotificationTargetViewerRows($notification)
             )));
             if ($this->haveAllNotificationTargetUsersActed($notificationId, $targetViewerIds)) {

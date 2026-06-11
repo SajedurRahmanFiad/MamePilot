@@ -478,7 +478,7 @@ abstract class BaseService
         $filtered['created_at'] = $this->database->nowUtc();
         $filtered['updated_at'] = $this->database->nowUtc();
         $columns = implode(', ', array_keys($filtered));
-        $placeholders = implode(', ', array_map(static fn (string $column): string => ':' . $column, array_keys($filtered)));
+        $placeholders = implode(', ', array_map(static fn(string $column): string => ':' . $column, array_keys($filtered)));
         $bindings = [];
         foreach ($filtered as $column => $value) {
             $bindings[':' . $column] = $value;
@@ -1291,7 +1291,7 @@ abstract class BaseService
     {
         return $this->normalizeDateTimeInput(
             $this->config->get('WALLET_CUTOFF_AT_UTC', self::DEFAULT_WALLET_CUTOFF_AT_UTC)
-                ?? self::DEFAULT_WALLET_CUTOFF_AT_UTC
+            ?? self::DEFAULT_WALLET_CUTOFF_AT_UTC
         );
     }
 
