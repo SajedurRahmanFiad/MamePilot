@@ -1,6 +1,7 @@
 import type { CompanyPage, CompanySettings, Order } from '../../types';
 
-const DEFAULT_COMPANY_NAME = 'BD Hatbela';
+const DEFAULT_COMPANY_NAME = 'Mame Pilot';
+const DEFAULT_COMPANY_LOGO = '/uploads/Avatar.png';
 const DEFAULT_COMPANY_PHONE = '+880';
 const DEFAULT_COMPANY_EMAIL = 'info@company.com';
 const DEFAULT_PAGE_ID = 'company-default-page';
@@ -20,7 +21,7 @@ export function normalizeCompanyPage(
   return {
     id,
     name,
-    logo: String(page?.logo || fallback.logo || ''),
+    logo: String(page?.logo || fallback.logo || (index === 0 ? DEFAULT_COMPANY_LOGO : '')),
     phone: String(page?.phone || fallback.phone || DEFAULT_COMPANY_PHONE),
     email: String(page?.email || fallback.email || DEFAULT_COMPANY_EMAIL),
     address: String(page?.address || fallback.address || ''),

@@ -165,7 +165,7 @@ const ProfitLoss: React.FC = () => {
         </div>
         
         <div className="p-8 text-center text-[10px] text-gray-300 italic border-t border-gray-50">
-          This report is generated automatically by BD Hatbela Financial Management System.
+          This report is generated automatically by {db.settings.company.name || 'Mame Pilot'} Financial Management System.
         </div>
       </div>
     </div>

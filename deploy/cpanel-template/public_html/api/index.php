@@ -13,7 +13,7 @@ use App\OperationsApi;
 $configuredRoot = getenv('BDHATBELA_APP_ROOT');
 $appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
     ? rtrim($configuredRoot, DIRECTORY_SEPARATOR)
-    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'bdhatbela_app';
+    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend';
 
 $bootstrapPath = $appRoot . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 if (!is_file($bootstrapPath)) {

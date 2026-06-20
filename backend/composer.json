@@ -1,6 +1,6 @@
 {
   "name": "bdhatbela/mariadb-backend",
-  "description": "MariaDB + PHP backend for BD Hatbela management",
+  "description": "MariaDB + PHP backend for Mame Pilot management",
   "type": "project",
   "require": {},
   "autoload": {

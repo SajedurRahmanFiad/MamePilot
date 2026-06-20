@@ -8,7 +8,7 @@ import {
 } from '../../types';
 
 export const RESERVED_PERMISSION_ROLES = [UserRole.ADMIN, UserRole.DEVELOPER] as const;
-export const BUILT_IN_PERMISSION_ROLES = [UserRole.EMPLOYEE, UserRole.EMPLOYEE1] as const;
+export const BUILT_IN_PERMISSION_ROLES = [UserRole.EMPLOYEE] as const;
 
 const LEGACY_SCOPED_PERMISSION_KEYS: Array<{
   legacyKey: string;
@@ -476,23 +476,6 @@ export const DEFAULT_ROLE_PERMISSION_SETTINGS: PermissionsSettings = {
         'wallet.view',
       ]),
     },
-    {
-      roleName: UserRole.EMPLOYEE1,
-      isCustom: false,
-      permissions: createPermissionMap([
-        'dashboard.viewEmployee',
-        'orders.view',
-        'orders.create',
-        'orders.editOwn',
-        'orders.moveOnHoldToProcessingOwn',
-        'customers.view',
-        'customers.create',
-        'customers.edit',
-        'products.view',
-        'fraudChecker.check',
-        'wallet.view',
-      ]),
-    },
   ],
 };
 
@@ -693,7 +676,6 @@ export function getAssignableUserRoles(
   const roles = new Set<string>([
     UserRole.ADMIN,
     UserRole.EMPLOYEE,
-    UserRole.EMPLOYEE1,
     ...getPermissionRoles(value)
       .filter((role) => role.isCustom)
       .map((role) => role.roleName),

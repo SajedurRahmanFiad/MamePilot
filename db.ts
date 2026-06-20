@@ -6,14 +6,14 @@ import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from './sr
 // Default Settings (Only for UI, all data comes from the API)
 const defaultSettings: Settings = {
   company: normalizeCompanySettings({
-    name: 'BD Hatbela',
-    logo: '',
+    name: 'Mame Pilot',
+    logo: '/uploads/Avatar.png',
     phone: '',
     email: '',
     address: '',
   }),
   order: { prefix: 'BDH-', nextNumber: 1 },
-  invoice: { title: 'Tax Invoice', logoWidth: 60, logoHeight: 60, footer: 'Thank you for shopping with BD Hatbela!' },
+  invoice: { title: 'Tax Invoice', logoWidth: 60, logoHeight: 60, footer: 'Thank you for choosing Mame Pilot!' },
   defaults: {
     defaultAccountId: '',
     defaultPaymentMethod: 'Cash',
@@ -21,6 +21,7 @@ const defaultSettings: Settings = {
     expenseCategoryId: '',
     recordsPerPage: 20,
     maxTransactionAmount: 0,
+    whiteLabel: false,
   },
   categories: [],
   paymentMethods: [],

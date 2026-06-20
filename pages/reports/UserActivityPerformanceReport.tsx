@@ -864,7 +864,7 @@ const UserActivityPerformanceReport: React.FC = () => {
       }),
     []
   );
-  const companyName = companySettings?.name || db.settings.company.name || 'BD Hatbela';
+  const companyName = companySettings?.name || db.settings.company.name || 'Mame Pilot';
   const companyLogo = companySettings?.logo || db.settings.company.logo || '';
   const selectedPeriod = useMemo(() => periodLabel(filterRange, customDates), [filterRange, customDates]);
   const reportFilters = useMemo(

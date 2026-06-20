@@ -2,13 +2,12 @@
 export enum UserRole {
   ADMIN = 'Admin',
   DEVELOPER = 'Developer',
-  EMPLOYEE = 'Employee',
-  EMPLOYEE1 = 'Employee1'
+  EMPLOYEE = 'Employee'
 }
 
 export type AppRole = UserRole | string;
 
-export const isEmployeeRole = (r?: UserRole | string | null) => r === UserRole.EMPLOYEE || r === UserRole.EMPLOYEE1;
+export const isEmployeeRole = (r?: UserRole | string | null) => r === UserRole.EMPLOYEE;
 export const isDeveloperRole = (r?: UserRole | string | null) => r === UserRole.DEVELOPER;
 export const hasAdminAccess = (r?: UserRole | string | null) => r === UserRole.ADMIN || r === UserRole.DEVELOPER;
 
@@ -594,6 +593,7 @@ export interface Settings {
     expenseCategoryId: string;
     recordsPerPage: number;
     maxTransactionAmount?: number;
+    whiteLabel: boolean;
   };
   categories: {
     id: string;

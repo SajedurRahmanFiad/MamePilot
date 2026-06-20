@@ -1648,7 +1648,7 @@ final class OperationsApi extends BaseService
         if ($roleFilter === 'Admins') {
             $conditions[] = "u.role IN ('Admin', 'Developer')";
         } elseif ($roleFilter === 'Employees') {
-            $conditions[] = "u.role IN ('Employee', 'Employee1')";
+            $conditions[] = "u.role IN ('Employee')";
         }
 
         if ($search !== '') {
@@ -2409,7 +2409,7 @@ final class OperationsApi extends BaseService
                ON o.created_by = u.id
               AND ' . implode(' AND ', $comparisonConditions) . '
              WHERE u.deleted_at IS NULL
-               AND u.role IN (\'Employee\', \'Employee1\')
+               AND u.role IN (\'Employee\')
              GROUP BY u.id, u.name, u.role',
             $comparisonBindings
         );
@@ -4788,7 +4788,7 @@ final class OperationsApi extends BaseService
     private function syncWalletCreditsForPayableStatuses(array $walletSettings): void
     {
         $employees = $this->database->fetchAll(
-            "SELECT id FROM users WHERE deleted_at IS NULL AND role IN ('Employee', 'Employee1')"
+            "SELECT id FROM users WHERE deleted_at IS NULL AND role IN ('Employee')"
         );
 
         if ($employees === []) {
@@ -4829,7 +4829,7 @@ final class OperationsApi extends BaseService
         $currentUser = $this->auth->userFromToken(Http::bearerToken());
         $rows = $this->database->fetchAll(
             "SELECT * FROM users
-             WHERE deleted_at IS NULL AND role IN ('Employee', 'Employee1')
+             WHERE deleted_at IS NULL AND role IN ('Employee')
              ORDER BY name ASC"
         );
         $employees = array_map(fn(array $row): array => $this->mapUser($row), $rows);

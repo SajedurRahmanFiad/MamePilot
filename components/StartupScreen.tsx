@@ -41,8 +41,8 @@ const StartupScreen: React.FC<StartupScreenProps> = ({
 }) => {
   const [retrying, setRetrying] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const companyName = db.settings.company.name?.trim() || 'BD Hatbela';
-  const companyLogo = db.settings.company.logo?.trim() || '';
+  const companyName = db.settings.company.name?.trim() || 'Mame Pilot';
+  const companyLogo = db.settings.company.logo?.trim() || '/uploads/Avatar.png';
   const copy = STATUS_COPY[status];
   const isChecking = status === 'idle' || status === 'checking';
 
@@ -67,61 +67,41 @@ const StartupScreen: React.FC<StartupScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#dbeafe,_#f8fafc_45%,_#e2e8f0_100%)] flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-xl rounded-[28px] border border-white/80 bg-white/90 shadow-[0_30px_80px_rgba(15,47,87,0.18)] backdrop-blur-xl overflow-hidden">
-        <div className="bg-[#0f2f57] px-8 py-7 text-white">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center overflow-hidden">
-              {companyLogo ? (
-                <img src={companyLogo} alt={`${companyName} logo`} className="h-full w-full object-cover" />
-              ) : (
-                <span className="text-lg font-black tracking-wide">{companyName.slice(0, 2).toUpperCase()}</span>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.3em] text-blue-100">Startup</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight">{companyName}</h1>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-8 py-8">
-          <div className="flex items-start gap-4">
-            <div className={`mt-1 flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${isChecking ? 'bg-[#ebf4ff]' : status === 'offline' ? 'bg-red-50' : 'bg-amber-50'}`}>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-8 py-10">
+          <div className="flex items-center justify-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
               {isChecking ? (
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#b1c7e3] border-t-[#0f2f57]" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-gray-600" />
               ) : (
-                <div className={`text-2xl ${status === 'offline' ? 'text-red-600' : 'text-amber-600'}`}>
+                <div className={`text-2xl ${status === 'offline' ? 'text-red-600' : 'text-gray-600'}`}>
                   {status === 'offline' ? '!' : 'i'}
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="flex-1">
-              <h2 className="text-2xl font-black tracking-tight text-gray-900">{copy.title}</h2>
-              <p className="mt-3 text-sm font-medium leading-6 text-gray-600">{copy.description}</p>
-              {error && !isChecking ? (
-                <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-700">
-                  {error}
-                </div>
-              ) : null}
-            </div>
+          <div className="mt-8 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight text-gray-900">{copy.title}</h2>
+            <p className="mt-3 text-sm leading-6 text-gray-600">{copy.description}</p>
+            {error && !isChecking ? (
+              <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                {error}
+              </div>
+            ) : null}
           </div>
 
           {!isChecking ? (
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button type="button" onClick={handleRetry} loading={retrying} className="sm:min-w-[180px]">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <Button type="button" onClick={handleRetry} loading={retrying} className="w-full sm:w-auto">
                 Retry Session Restore
               </Button>
-              <Button type="button" variant="outline" onClick={handleBackToLogin} loading={signingOut} className="sm:min-w-[160px]">
+              <Button type="button" variant="outline" onClick={handleBackToLogin} loading={signingOut} className="w-full sm:w-auto">
                 Back To Login
               </Button>
             </div>
-          ) : (
-            <p className="mt-8 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
-              Secure startup in progress
-            </p>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

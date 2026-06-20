@@ -13,7 +13,7 @@ abstract class BaseService
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';
     protected const RESERVED_PERMISSION_ROLES = ['Admin', 'Developer'];
-    protected const BUILT_IN_PERMISSION_ROLES = ['Employee', 'Employee1'];
+    protected const BUILT_IN_PERMISSION_ROLES = ['Employee'];
     protected const ROLE_PERMISSION_KEYS = [
         'dashboard.viewAdmin',
         'dashboard.viewEmployee',
@@ -83,18 +83,6 @@ abstract class BaseService
             'orders.view' => true,
             'orders.create' => true,
             'orders.editOwn' => true,
-            'customers.view' => true,
-            'customers.create' => true,
-            'customers.edit' => true,
-            'products.view' => true,
-            'wallet.view' => true,
-        ],
-        'Employee1' => [
-            'dashboard.viewEmployee' => true,
-            'orders.view' => true,
-            'orders.create' => true,
-            'orders.editOwn' => true,
-            'orders.moveOnHoldToProcessingOwn' => true,
             'customers.view' => true,
             'customers.create' => true,
             'customers.edit' => true,
@@ -494,7 +482,7 @@ abstract class BaseService
     protected function normalizeCompanyPage($value, int $index = 0, array $fallback = []): array
     {
         $page = is_array($value) ? $value : [];
-        $fallbackName = trim((string) ($fallback['name'] ?? '')) ?: ($index === 0 ? 'BD Hatbela' : 'Page ' . ($index + 1));
+        $fallbackName = trim((string) ($fallback['name'] ?? '')) ?: ($index === 0 ? 'Mame Pilot' : 'Page ' . ($index + 1));
         $id = trim((string) ($page['id'] ?? $fallback['id'] ?? ''));
 
         if ($id === '') {
@@ -521,8 +509,8 @@ abstract class BaseService
         $fallbackPage = $this->normalizeCompanyPage(
             [
                 'id' => $legacyRow['id'] ?? 'company-default-page',
-                'name' => $legacyRow['name'] ?? 'BD Hatbela',
-                'logo' => $legacyRow['logo'] ?? '',
+                'name' => $legacyRow['name'] ?? 'Mame Pilot',
+                'logo' => $legacyRow['logo'] ?? '/uploads/Avatar.png',
                 'phone' => $legacyRow['phone'] ?? '+880',
                 'email' => $legacyRow['email'] ?? 'info@company.com',
                 'address' => $legacyRow['address'] ?? '',
@@ -1151,6 +1139,17 @@ abstract class BaseService
                 continue;
             }
 
+            if ($roleName === 'Employee1') {
+                // Employee1 was removed as a built-in role, so ignore any stale stored entries.
+                continue;
+            }
+
+            $isCustomRow = (int) ($row['is_custom'] ?? 0) === 1;
+            if (!$this->isBuiltInPermissionRole($roleName) && !$isCustomRow) {
+                // Ignore stale stored rows for roles that used to be built-in but are no longer defined.
+                continue;
+            }
+
             $defaultPermissions = isset($rolesByName[$roleName]['permissions']) && is_array($rolesByName[$roleName]['permissions'])
                 ? $rolesByName[$roleName]['permissions']
                 : $this->defaultRolePermissions($roleName);
@@ -1245,7 +1244,7 @@ abstract class BaseService
 
     protected function isEmployeeRole(string $role): bool
     {
-        return in_array($role, ['Employee', 'Employee1'], true);
+        return in_array($role, ['Employee'], true);
     }
 
     protected function hasAdminAccess(string $role): bool

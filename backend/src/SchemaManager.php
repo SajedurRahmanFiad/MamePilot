@@ -19,7 +19,7 @@ final class SchemaManager
 
     public function databaseName(): string
     {
-        return $this->config->get('DB_NAME', 'bdhatbela_management') ?? 'bdhatbela_management';
+        return $this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot';
     }
 
     public function provision(bool $fresh = false, ?string $schemaPath = null, bool $includeSeedData = true): void

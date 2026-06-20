@@ -1,5 +1,5 @@
 {
-  "name": "bd-hatbela---financial-management-system",
+  "name": "mamepilot",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,10 +7,7 @@
     "dev": "vite",
     "backend:serve": "php -S 127.0.0.1:8001 -t backend/public",
     "backend:setup": "php backend/bin/setup.php",
-    "backend:import": "php backend/bin/import_supabase.php",
-    "backend:refresh-from-supabase": "php backend/bin/refresh_from_supabase.php",
     "backend:resync-wallet": "php backend/bin/resync_wallet_credits.php",
-    "backend:setup-import": "php backend/bin/setup.php --with-import",
     "deploy:cpanel:prepare": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1",
     "deploy:cpanel:prepare:admin": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder admin.bdhatbela.com -BackendFolder bdhatbela_app -PackageName cpanel-admin-package",
     "deploy:cpanel:prepare:admin1": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder admin1.bdhatbela.com -BackendFolder bdhatbela_app -PackageName cpanel-admin1-package",

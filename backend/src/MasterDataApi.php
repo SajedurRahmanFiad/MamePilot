@@ -960,11 +960,11 @@ final class MasterDataApi extends BaseService
 
         return [
             'id' => (string) ($row['id'] ?? 'company-default'),
-            'name' => (string) ($globalPage['name'] ?? 'Your Company'),
+            'name' => (string) ($globalPage['name'] ?? 'Mame Pilot'),
             'phone' => (string) ($globalPage['phone'] ?? '+880'),
             'email' => (string) ($globalPage['email'] ?? 'info@company.com'),
             'address' => (string) ($globalPage['address'] ?? ''),
-            'logo' => (string) ($globalPage['logo'] ?? ''),
+            'logo' => (string) ($globalPage['logo'] ?? '/uploads/Avatar.png'),
             'pages' => $pages,
         ];
     }
@@ -1082,6 +1082,7 @@ final class MasterDataApi extends BaseService
             'expenseCategoryId' => (string) ($row['expense_category_id'] ?? ''),
             'recordsPerPage' => (int) ($row['records_per_page'] ?? 10),
             'maxTransactionAmount' => (float) ($row['max_transaction_amount'] ?? 0),
+            'whiteLabel' => (bool) ($row['white_label'] ?? 0),
         ];
     }
 
@@ -1099,6 +1100,7 @@ final class MasterDataApi extends BaseService
                 'expense_category_id' => array_key_exists('expenseCategoryId', $params) ? $this->nullableString($params['expenseCategoryId']) : $current['expenseCategoryId'],
                 'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
                 'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
+                'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
             ],
             fn(): array => $this->fetchSystemDefaults()
         );
@@ -1244,6 +1246,27 @@ final class MasterDataApi extends BaseService
                 $bindings
             );
         }
+
+        $builtInRoleNames = array_values(self::BUILT_IN_PERMISSION_ROLES);
+        if ($builtInRoleNames !== []) {
+            $builtInPlaceholders = [];
+            $builtInBindings = [];
+            foreach ($builtInRoleNames as $index => $roleName) {
+                $placeholder = ':builtin_role_' . $index;
+                $builtInPlaceholders[] = $placeholder;
+                $builtInBindings[$placeholder] = $roleName;
+            }
+
+            $this->database->execute(
+                'DELETE FROM role_permissions WHERE is_custom = 0 AND role_name NOT IN (' . implode(', ', $builtInPlaceholders) . ')',
+                $builtInBindings
+            );
+        }
+
+        $this->database->execute(
+            'DELETE FROM role_permissions WHERE role_name = :deprecated_role_name',
+            [':deprecated_role_name' => 'Employee1']
+        );
 
         $this->permissionsSettingsPayloadCache = null;
         return $this->fetchPermissionsSettings();

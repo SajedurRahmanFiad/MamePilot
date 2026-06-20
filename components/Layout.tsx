@@ -8,7 +8,7 @@ import { hasAdminAccess } from '../types';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useSearch } from '../src/contexts/SearchContext';
-import { useCompanySettings, useOrderSearchPreview } from '../src/hooks/useQueries';
+import { useCompanySettings, useOrderSearchPreview, useSystemDefaults } from '../src/hooks/useQueries';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -91,13 +91,38 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
   const { searchQuery, setSearchQuery, clearSearch } = useSearch();
-  const { data: fetchedCompanySettings } = useCompanySettings();
+  const { data: fetchedCompanySettings, isLoading: isCompanySettingsLoading } = useCompanySettings();
+  const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const whiteLabelEnabled = Boolean(systemDefaults?.whiteLabel);
+  const brandLoading = isSystemDefaultsLoading || (whiteLabelEnabled && isCompanySettingsLoading);
+
   const companySettings = useMemo(() => {
+    if (isSystemDefaultsLoading) {
+      return {
+        name: 'Loading...',
+        logo: '',
+      };
+    }
+
+    if (!whiteLabelEnabled) {
+      return {
+        name: 'Mame Pilot',
+        logo: '/uploads/Full Branding.png',
+      };
+    }
+
+    if (isCompanySettingsLoading) {
+      return {
+        name: 'Loading...',
+        logo: '',
+      };
+    }
+
     const normalizedCompany = normalizeCompanySettings(fetchedCompanySettings || db.settings.company);
     const globalPage = getGlobalCompanyPage(normalizedCompany);
 
@@ -105,7 +130,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       name: globalPage?.name || db.settings.company.name,
       logo: globalPage?.logo || db.settings.company.logo,
     };
-  }, [fetchedCompanySettings]);
+  }, [fetchedCompanySettings, whiteLabelEnabled, isCompanySettingsLoading, isSystemDefaultsLoading]);
   
   // Use profile from Auth context if available, fallback to db.currentUser
   const user = profile || db.currentUser;
@@ -117,7 +142,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Update favicon links when company logo becomes available
   useEffect(() => {
-    if (!companySettings?.logo) return;
+    const faviconUrl = whiteLabelEnabled ? companySettings.logo : '/uploads/Avatar.png';
+    if (!faviconUrl) return;
     try {
       const setLink = (rel: string) => {
         let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
@@ -126,7 +152,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           el.rel = rel;
           document.head.appendChild(el);
         }
-        el.href = companySettings.logo;
+        el.href = faviconUrl;
       };
 
       setLink('icon');
@@ -258,16 +284,36 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div className="flex flex-col h-full">
           <div className="p-8">
             <div className="flex items-center gap-3">
-              <div className={`p-1 ${theme.colors.primary[50]} rounded-[50%]`}>
-                {companySettings.logo && (
-                  <img src={companySettings.logo} alt="Logo" className="w-10 h-10 rounded-lg object-cover" />
-                )}
+            {whiteLabelEnabled ? (
+              <>
+                <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white`}>
+                  {companySettings.logo ? (
+                    <img
+                      src={companySettings.logo}
+                      alt={companySettings.name || 'Mame Pilot'}
+                      className="w-10 h-10 object-contain"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-200" />
+                  )}
+                </div>
+                <div>
+                  <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
+                    {brandLoading ? 'Loading...' : companySettings.name || 'Mame Pilot'}
+                  </h1>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest`}>Business Management</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-start">
+                <img
+                  src="/uploads/Full Branding.png"
+                  alt="Mame Pilot"
+                  className="h-16 object-contain"
+                />
               </div>
-              <div>
-                <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>{companySettings.name}</h1>
-                <span className={`text-[10px] font-bold uppercase tracking-widest`}>Management</span>
-              </div>
-            </div>
+            )}
+          </div>
           </div>
 
           <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
@@ -342,7 +388,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <>
                     <SidebarItem to="/settings" icon={ICONS.Settings} label="Settings" active={isActive('/settings')} onClick={() => setIsSidebarOpen(false)} />
                     {isDeveloper && (
-                      <SidebarItem to="/developer/notifications" icon={ICONS.Bell} label="Notifications" active={isActive('/developer/notifications')} onClick={() => setIsSidebarOpen(false)} />
+                      <SidebarItem
+                        icon={ICONS.AlertCircle}
+                        label="Developer-only"
+                        active={isActive('/developer')}
+                        children={[
+                          { to: '/developer/notifications', label: 'Notifications', active: isActive('/developer/notifications') },
+                          { to: '/developer/settings', label: 'General', active: isActive('/developer/settings') },
+                        ]}
+                        onClick={() => setIsSidebarOpen(false)}
+                      />
                     )}
                   </>
                 )}
@@ -472,10 +527,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <IncidentModeBanner />
           {children}
           <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
-            <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>© {new Date().getFullYear()} {companySettings.name}. All rights reserved.</p>
-            <a href="https://sajedurrahmanfiad.me" target="_blank" rel="noreferrer" className={`group flex items-center gap-1.5 text-[11px] font-bold ${theme.colors.text.secondary} hover:${theme.colors.primary.text} ${theme.transitions.normal} uppercase tracking-widest`}>
-              Developed by <span className={`${theme.colors.text.secondary} group-hover:${theme.colors.primary.text} underline underline-offset-4 decoration-[#0f2f57]/20`}>Md Sajedur Rahman Fiad</span>
-            </a>
+            <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>© {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}. All rights reserved.</p>
+            <p className={`text-[11px] font-bold uppercase tracking-widest ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
           </footer>
         </main>
       </div>

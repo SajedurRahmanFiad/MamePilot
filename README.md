@@ -1,157 +1,53 @@
-# BDHATBELA Management System
+# MamePilot
 
-A modern React + TypeScript management system with Supabase backend for handling customers, orders, transactions, and business operations.
+MamePilot is an ecommerce business management system that brings together the key parts of online selling into a single dashboard.
 
-## Architecture
+This repository contains the source for MamePilot, the tool that helps ecommerce teams manage customers, orders, inventory, payments, reporting, and daily operations with clarity.
 
-```
-┌─────────────────────────────┐
-│   React + TypeScript UI     │
-│  (pages, components)        │
-└────────────┬────────────────┘
-             │
-      ┌──────▼──────────┐
-      │ Services Layer  │
-      │ supabaseQueries │
-      │ AuthProvider    │
-      └──────┬──────────┘
-             │
-      ┌──────▼──────────┐
-      │  Supabase       │
-      │  - Auth         │
-      │  - PostgreSQL   │
-      │  - RLS Policies │
-      └─────────────────┘
-```
+## What MamePilot does
 
-**Architecture Pattern:** Supabase-direct (no middle-tier Node.js API)
-- **Frontend:** React + TypeScript + Vite
-- **Backend:** Supabase (managed PostgreSQL + Auth)
-- **Data Access:** Centralized query helpers in `src/services/supabaseQueries.ts`
-- **Security:** Row Level Security (RLS) policies on all tables
+- Keeps customer information organized in one place
+- Tracks orders from creation to fulfillment
+- Manages products, stock, and item details
+- Captures financial records like invoices, bills, and transactions
+- Helps teams stay on top of delivery and courier status
+- Provides quick business summaries and reports for decision-making
 
-## Quick Start
+## Who it is for
 
-### Prerequisites
-- Node.js 16+
-- Supabase account
+MamePilot is designed for ecommerce store owners, operations managers, and administrative teams who need a practical system to run their business more efficiently.
 
-### 1. Clone & Install
-```bash
-npm install
-```
+It is especially useful for businesses that want a clear view of daily activity without juggling multiple spreadsheets or separate tools.
 
-### 2. Configure Supabase
-1. Copy `.env.example` to `.env.local`
-2. Add your Supabase credentials:
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-public-key
-   ```
+## Why it matters
 
-### 3. Set Up Database
-Run the SQL blocks from [RLS_SETUP.sql](RLS_SETUP.sql) in your Supabase SQL Editor:
-1. Go to https://app.supabase.com → Your Project → SQL Editor
-2. Create a new query
-3. Paste the entire [RLS_SETUP.sql](RLS_SETUP.sql)
-4. Click Run
+MamePilot helps reduce manual work and keeps business information connected. Instead of searching across different systems, users can access customers, orders, inventory, and financials from the same interface.
 
-### 4. Start Development Server
-```bash
-npm run dev
-```
+That means faster order handling, cleaner record keeping, and better visibility into how the business is performing.
 
-Open http://localhost:5173 and log in with your credentials.
+## What is included here
 
-### 5. Build for Production
-```bash
-npm run build
-npm run preview
-```
+- A web-based dashboard for managing ecommerce operations
+- Tools for customer, order, and product management
+- Support for financial tracking and reporting
+- A backend that keeps data organized and accessible for the app
 
-## Key Features
+## Getting started
 
-✅ **Authentication**
-- Phone-based login via Supabase Auth
-- Automatic profile syncing
-- Session management
+This repo is the working source of the MamePilot application. It is meant to be run as a modern web application with a simple local development setup.
 
-✅ **Data Management**
-- Customers, Orders, Transactions, Bills
-- Vendors, Products, Accounts, Users
-- Settings and Reports
+For a developer or administrator, the main entry points are:
 
-✅ **Security**
-- Row Level Security (RLS) policies
-- Role-based access control (Admin/Employee)
-- Environment variable-based configuration
+- `App.tsx` and `index.tsx` for the user interface
+- `src/` for the application logic
+- `backend/` for the supporting backend services
 
-✅ **Developer Experience**
-- TypeScript for type safety
-- Centralized query helpers
-- Consistent error handling
-- Comprehensive logging
+## How to use this repo
 
-## File Structure
+If you are maintaining or deploying MamePilot, this repository is the place to keep the app code and the backend helpers together.
 
-```
-src/
-├── contexts/
-│   └── AuthProvider.tsx          # Auth state management
-├── services/
-│   ├── supabaseClient.ts         # Supabase initialization
-│   └── supabaseQueries.ts        # CRUD helpers (customers, orders, etc.)
-├── pages/                        # Page components
-├── components/                   # Reusable UI components
-└── types.ts                      # TypeScript types
-
-.env.local                         # Your Supabase credentials (DO NOT COMMIT)
-RLS_SETUP.sql                      # Database and RLS policy setup
-```
-
-## Documentation
-
-- **[SUPABASE_INTEGRATION.md](SUPABASE_INTEGRATION.md)** - Complete Supabase setup guide (tables, RLS, troubleshooting)
-- **[SUBABASE_SETUP_COMPLETE.md](SUBABASE_SETUP_COMPLETE.md)** - What's been implemented and next steps
-- **[DO_THIS_NOW.md](DO_THIS_NOW.md)** - 2-minute fix to apply RLS policies
-- **[SUPABASE_MIGRATION_CHECKLIST.md](SUPABASE_MIGRATION_CHECKLIST.md)** - 10-phase implementation roadmap
-
-## Troubleshooting
-
-### Customers page stuck in loading state?
-1. Apply RLS policies: Run [RLS_SETUP.sql](RLS_SETUP.sql) in Supabase SQL Editor
-2. Refresh the app (Ctrl+F5)
-3. Check browser DevTools Console for errors
-
-### Login fails?
-1. Verify `.env.local` has correct Supabase credentials
-2. Check that user exists in Supabase Auth settings
-3. Verify `users` table has a matching row
-
-### "Missing environment variables" error?
-1. Ensure `.env.local` file exists (not `.env`)
-2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
-3. Restart dev server after updating `.env.local`
-
-## Development Commands
-
-```bash
-npm run dev           # Start development server
-npm run build         # Build for production
-npm run preview       # Preview production build
-npm run type-check    # Type checking
-```
-
-## Support
-
-For questions or issues:
-1. Check the troubleshooting section above
-2. Review [SUPABASE_INTEGRATION.md](SUPABASE_INTEGRATION.md) for detailed setup
-3. Check browser DevTools Console for error messages
-4. Review `RLS_SETUP.sql` to ensure policies are applied
+The goal is to keep ecommerce operations running smoothly, with a clean user experience and reliable data flow.
 
 ---
 
-**Last Updated:** February 7, 2026  
-**Status:** ✅ Production Ready  
-**Backend:** Supabase (Auth + PostgreSQL + RLS)
+MamePilot is built to make ecommerce business management straightforward, so teams can focus more on customers and growth.

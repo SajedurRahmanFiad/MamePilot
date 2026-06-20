@@ -2,8 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../db';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { fetchCompanySettings } from '../src/services/supabaseQueries';
+import { fetchCompanySettings, fetchSystemDefaults } from '../src/services/supabaseQueries';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
+
+const defaultBranding = {
+  name: 'Mame Pilot',
+  logo: '/uploads/Avatar.png',
+};
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -13,10 +18,9 @@ const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [companySettings, setCompanySettings] = useState({
-    name: 'BD Hatbela',
-    logo: db.settings.company.logo
-  });
+  const [companySettings, setCompanySettings] = useState(defaultBranding);
+  const [whiteLabelEnabled, setWhiteLabelEnabled] = useState(false);
+  const [brandLoading, setBrandLoading] = useState(true);
 
   // Redirect to dashboard when user is fully authenticated
   // Profile is now GUARANTEED to exist when user exists (never null)
@@ -29,29 +33,65 @@ const Login: React.FC = () => {
   }, [user, isLoading, navigate]);
 
   useEffect(() => {
-    const loadSettings = async () => {
+    const loadBranding = async () => {
       try {
+        const defaults = await fetchSystemDefaults();
+        const enabled = Boolean(defaults.whiteLabel);
+        setWhiteLabelEnabled(enabled);
+
+        if (!enabled) {
+          setCompanySettings(defaultBranding);
+          return;
+        }
+
         const settings = await fetchCompanySettings();
         const globalPage = getGlobalCompanyPage(normalizeCompanySettings(settings));
         setCompanySettings({
-          name: globalPage.name || db.settings.company.name,
-          logo: globalPage.logo || db.settings.company.logo
+          name: globalPage.name || defaultBranding.name,
+          logo: globalPage.logo || defaultBranding.logo,
         });
       } catch (err) {
-        console.error('Failed to load company settings:', err);
-        setCompanySettings({
-          name: db.settings.company.name || 'BD Hatbela',
-          logo: db.settings.company.logo
-        });
+        console.error('Failed to load branding settings:', err);
+        setWhiteLabelEnabled(false);
+        setCompanySettings(defaultBranding);
+      } finally {
+        setBrandLoading(false);
       }
     };
-    loadSettings();
+
+    loadBranding();
   }, []);
 
   useEffect(() => {
-    const pageTitle = companySettings.name?.trim() || 'Management';
+    const pageTitle = whiteLabelEnabled
+      ? brandLoading
+        ? 'Loading...'
+        : companySettings.name?.trim() || 'Management'
+      : 'Mame Pilot';
     document.title = `${pageTitle} - Management`;
-  }, [companySettings.name]);
+  }, [brandLoading, whiteLabelEnabled, companySettings.name]);
+
+  useEffect(() => {
+    if (!companySettings?.logo) return;
+
+    try {
+      const setLink = (rel: string) => {
+        let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+        if (!el) {
+          el = document.createElement('link');
+          el.rel = rel;
+          document.head.appendChild(el);
+        }
+        el.href = companySettings.logo;
+      };
+
+      setLink('icon');
+      setLink('shortcut icon');
+      setLink('apple-touch-icon');
+    } catch (e) {
+      console.warn('Failed to update login favicon:', e);
+    }
+  }, [companySettings.logo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,11 +126,19 @@ const Login: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow p-8">
         <div className="flex items-center gap-4 mb-6">
-          {companySettings.logo && (
-            <img src={companySettings.logo} alt="Logo" className="w-12 h-12 rounded-md object-cover" />
+          {brandLoading && whiteLabelEnabled ? (
+            <div className="flex h-12 w-12 items-center justify-center rounded-md bg-gray-100 text-sm font-semibold text-gray-500">
+              ...
+            </div>
+          ) : (
+            companySettings.logo && (
+              <img src={companySettings.logo} alt="Logo" className="w-12 h-12 rounded-md object-cover" />
+            )
           )}
           <div>
-            <h1 className="text-xl font-bold">{companySettings.name}</h1>
+            <h1 className="text-xl font-bold">
+              {brandLoading && whiteLabelEnabled ? 'Loading...' : companySettings.name}
+            </h1>
             <p className="text-sm text-gray-500">Sign in to continue</p>
           </div>
         </div>

@@ -47,7 +47,7 @@ const SummaryCard: React.FC<{
 const Wallet: React.FC = () => {
   const { user } = useAuth();
   const [historyPage, setHistoryPage] = useState(1);
-  const isEmployee = user?.role === UserRole.EMPLOYEE || user?.role === UserRole.EMPLOYEE1;
+  const isEmployee = user?.role === UserRole.EMPLOYEE;
   const { data: walletSettings = { unitAmount: 0, countedStatuses: [] }, isPending: walletSettingsLoading } = useWalletSettings();
   const { data: myWallet, isPending: myWalletLoading } = useMyWallet();
   const { data: systemDefaults } = useSystemDefaults();

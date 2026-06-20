@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
@@ -29,6 +29,7 @@ import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../s
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const urlTab = searchParams.get('tab') || 'company';
   const [activeTab, setActiveTab] = useState(urlTab);
   const [showModal, setShowModal] = useState<'category' | 'payment' | 'unit' | null>(null);
@@ -62,6 +63,12 @@ const SettingsPage: React.FC = () => {
 
   // Local state for forms (these need to be maintained locally until save)
   const [companySettings, setCompanySettings] = useState<Settings['company']>(() => normalizeCompanySettings(db.settings.company));
+  const [expandedCompanyPages, setExpandedCompanyPages] = useState<Record<string, boolean>>(() =>
+    normalizeCompanySettings(db.settings.company).pages.reduce<Record<string, boolean>>((acc, page) => {
+      acc[page.id] = false;
+      return acc;
+    }, {}),
+  );
   const [orderSettings, setOrderSettings] = useState({ prefix: 'ORD-', nextNumber: 1 });
   const [courierSettings, setCourierSettings] = useState<CourierSettings>({
     steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
@@ -89,6 +96,7 @@ const SettingsPage: React.FC = () => {
     expenseCategoryId: '', 
     recordsPerPage: 10,
     maxTransactionAmount: 0,
+    whiteLabel: false,
   });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
@@ -104,7 +112,14 @@ const SettingsPage: React.FC = () => {
 
   // Initialize forms when data loads from React Query
   React.useEffect(() => {
-    if (companySettingsData) setCompanySettings(normalizeCompanySettings(companySettingsData));
+    const normalized = normalizeCompanySettings(companySettingsData || db.settings.company);
+    setCompanySettings(normalized);
+    setExpandedCompanyPages(
+      normalized.pages.reduce<Record<string, boolean>>((acc, page) => {
+        acc[page.id] = false;
+        return acc;
+      }, {}),
+    );
   }, [companySettingsData]);
 
   React.useEffect(() => {
@@ -118,6 +133,8 @@ const SettingsPage: React.FC = () => {
   React.useEffect(() => {
     if (systemDefaultsData) setSystemDefaults(systemDefaultsData);
   }, [systemDefaultsData]);
+
+  const isDeveloper = user?.role === 'Developer';
 
   React.useEffect(() => {
     if (courierSettingsData) setCourierSettings(courierSettingsData);
@@ -147,6 +164,19 @@ const SettingsPage: React.FC = () => {
   }, [urlTab]); // Removed activeTab from dependencies to prevent unnecessary re-runs
 
   React.useEffect(() => {
+    if (activeTab === 'developer') {
+      if (!isDeveloper) {
+        setActiveTab('company');
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete('tab');
+        setSearchParams(nextParams, { replace: true });
+        return;
+      }
+
+      navigate('/developer/settings', { replace: true });
+      return;
+    }
+
     const currentTab = searchParams.get('tab') || 'company';
     if (currentTab === activeTab) return;
 
@@ -157,7 +187,7 @@ const SettingsPage: React.FC = () => {
       nextParams.set('tab', activeTab);
     }
     setSearchParams(nextParams, { replace: true });
-  }, [activeTab, searchParams, setSearchParams]);
+  }, [activeTab, searchParams, setSearchParams, isDeveloper, navigate]);
 
   // Fetch CarryBee stores when credentials change (debounced to avoid rapid calls while typing)
   useEffect(() => {
@@ -212,11 +242,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleAddCompanyPage = () => {
+    const newPageId = crypto.randomUUID();
     updateCompanyPages((pages) => [
       ...pages,
       normalizeCompanyPage(
         {
-          id: crypto.randomUUID(),
+          id: newPageId,
           name: `Page ${pages.length + 1}`,
           logo: '',
           phone: '',
@@ -227,6 +258,7 @@ const SettingsPage: React.FC = () => {
         pages.length,
       ),
     ]);
+    setExpandedCompanyPages((current) => ({ ...current, [newPageId]: false }));
   };
 
   const handleCompanyPageChange = (pageId: string, key: 'name' | 'logo' | 'phone' | 'email' | 'address', value: string) => {
@@ -261,6 +293,11 @@ const SettingsPage: React.FC = () => {
     updateCompanyPages((pages) => {
       const remainingPages = pages.filter((page) => page.id !== pageId);
       return remainingPages.length > 0 ? remainingPages : pages;
+    });
+    setExpandedCompanyPages((current) => {
+      const next = { ...current };
+      delete next[pageId];
+      return next;
     });
   };
 
@@ -627,110 +664,138 @@ const SettingsPage: React.FC = () => {
               </div>
 
               <div className="space-y-6">
-                {companySettings.pages.map((page, index) => (
-                  <div key={page.id} className="rounded-2xl border border-gray-100 bg-gray-50/60 p-6 shadow-sm">
-                    <div className="border-b border-gray-100 pb-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="flex cursor-pointer items-center gap-2 rounded-full border border-[#c7dff5] bg-[#ebf4ff] px-4 py-2 text-xs font-black uppercase tracking-widest text-[#0f2f57]">
-                          <input
-                            type="checkbox"
-                            checked={page.isGlobalBranding}
-                            onChange={() => handleSetGlobalCompanyPage(page.id)}
-                            className="h-4 w-4 rounded border-gray-300 text-[#0f2f57] focus:ring-[#0f2f57]"
-                          />
-                          Global Branding
-                        </label>
-                        <button
-                          type="button"
-                          aria-label={`Remove page ${index + 1}`}
-                          title="Remove Page"
-                          onClick={() => handleRequestRemoveCompanyPage(page.id, page.name || `Page ${index + 1}`)}
-                          disabled={companySettings.pages.length === 1}
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-red-100 text-red-500 transition-all hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-                        >
-                          {ICONS.Delete}
-                        </button>
-                      </div>
+                {companySettings.pages.map((page, index) => {
+                  const isExpanded = expandedCompanyPages[page.id] ?? false;
+                  return (
+                    <div key={page.id} className="rounded-2xl border border-gray-100 bg-gray-50/60 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedCompanyPages((current) => ({
+                          ...current,
+                          [page.id]: !current[page.id],
+                        }))}
+                        className="w-full px-6 py-5 flex items-center justify-between gap-4 text-left"
+                      >
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Page {index + 1}</p>
+                          <h4 className="mt-2 text-lg font-black text-gray-900">{page.name || `Page ${index + 1}`}</h4>
+                          <p className="mt-1 text-sm text-gray-500 truncate">
+                            {page.email || page.phone || page.address || 'Tap to view details.'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {page.isGlobalBranding ? (
+                            <span className="rounded-full border border-[#c7dff5] bg-[#ebf4ff] px-3 py-1 text-xs font-black uppercase tracking-widest text-[#0f2f57]">
+                              Global Branding
+                            </span>
+                          ) : null}
+                          <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                            {ICONS.ChevronRight}
+                          </span>
+                        </div>
+                      </button>
 
-                      <div className="mt-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Page {index + 1}</p>
-                        <h4 className="mt-2 text-lg font-black text-gray-900">{page.name || `Page ${index + 1}`}</h4>
-                        <p className="mt-1 text-xs font-medium text-gray-500">
-                          This branding will be available in the order form page selector.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-                      <div className="md:col-span-2 flex items-center gap-6 rounded-2xl border border-gray-100 bg-white p-6">
-                        <div className="h-20 w-20 overflow-hidden rounded-xl border bg-gray-50">
-                          {page.logo ? (
-                            <img src={page.logo} className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[10px] font-black uppercase tracking-widest text-gray-300">
-                              No Logo
+                      {isExpanded && (
+                        <div className="border-t border-gray-100 bg-white p-6 space-y-6">
+                          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div className="md:col-span-2 flex items-center gap-6 rounded-2xl border border-gray-100 bg-gray-50 p-6">
+                              <div className="h-20 w-20 overflow-hidden rounded-xl border bg-gray-50">
+                                {page.logo ? (
+                                  <img src={page.logo} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-[10px] font-black uppercase tracking-widest text-gray-300">
+                                    No Logo
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-2">
+                                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Logo</p>
+                                <input
+                                  type="file"
+                                  id={`logo-input-${page.id}`}
+                                  className="hidden"
+                                  onChange={(event) => handleCompanyPageLogoUpload(page.id, event)}
+                                />
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => document.getElementById(`logo-input-${page.id}`)?.click()}
+                                >
+                                  {page.logo ? 'Change Logo' : 'Upload Logo'}
+                                </Button>
+                              </div>
                             </div>
-                          )}
+
+                            <div className="md:col-span-2 space-y-2">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Page Name</label>
+                                  <input
+                                    type="text"
+                                    value={page.name}
+                                    onChange={(event) => handleCompanyPageChange(page.id, 'name', event.target.value)}
+                                    className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove page ${index + 1}`}
+                                  title="Remove Page"
+                                  onClick={() => handleRequestRemoveCompanyPage(page.id, page.name || `Page ${index + 1}`)}
+                                  disabled={companySettings.pages.length === 1}
+                                  className="inline-flex h-10 items-center justify-center rounded-full border border-red-100 px-4 text-sm font-medium text-red-500 transition-all hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
+                                >
+                                  Remove Page
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone</label>
+                              <input
+                                type="text"
+                                value={page.phone}
+                                onChange={(event) => handleCompanyPageChange(page.id, 'phone', event.target.value)}
+                                className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Email</label>
+                              <input
+                                type="email"
+                                value={page.email}
+                                onChange={(event) => handleCompanyPageChange(page.id, 'email', event.target.value)}
+                                className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                              />
+                            </div>
+
+                            <div className="md:col-span-2 space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Office Address</label>
+                              <textarea
+                                value={page.address}
+                                onChange={(event) => handleCompanyPageChange(page.id, 'address', event.target.value)}
+                                className="h-24 w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                              />
+                            </div>
+
+                            <div className="md:col-span-2">
+                              <label className="flex cursor-pointer items-center gap-3 rounded-full border border-[#c7dff5] bg-[#ebf4ff] px-4 py-3 text-sm font-black uppercase tracking-widest text-[#0f2f57]">
+                                <input
+                                  type="checkbox"
+                                  checked={page.isGlobalBranding}
+                                  onChange={() => handleSetGlobalCompanyPage(page.id)}
+                                  className="h-4 w-4 rounded border-gray-300 text-[#0f2f57] focus:ring-[#0f2f57]"
+                                />
+                                Global Branding
+                              </label>
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Logo</p>
-                          <input
-                            type="file"
-                            id={`logo-input-${page.id}`}
-                            className="hidden"
-                            onChange={(event) => handleCompanyPageLogoUpload(page.id, event)}
-                          />
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => document.getElementById(`logo-input-${page.id}`)?.click()}
-                          >
-                            {page.logo ? 'Change Logo' : 'Upload Logo'}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="md:col-span-2 space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Page Name</label>
-                        <input
-                          type="text"
-                          value={page.name}
-                          onChange={(event) => handleCompanyPageChange(page.id, 'name', event.target.value)}
-                          className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone</label>
-                        <input
-                          type="text"
-                          value={page.phone}
-                          onChange={(event) => handleCompanyPageChange(page.id, 'phone', event.target.value)}
-                          className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Email</label>
-                        <input
-                          type="email"
-                          value={page.email}
-                          onChange={(event) => handleCompanyPageChange(page.id, 'email', event.target.value)}
-                          className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
-                        />
-                      </div>
-
-                      <div className="md:col-span-2 space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Office Address</label>
-                        <textarea
-                          value={page.address}
-                          onChange={(event) => handleCompanyPageChange(page.id, 'address', event.target.value)}
-                          className="h-24 w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
-                        />
-                      </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -879,6 +944,37 @@ const SettingsPage: React.FC = () => {
                   <p className="text-xs font-medium text-gray-400">
                     Transactions above this amount will stay pending until an admin accepts or declines them.
                   </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'developer' && (
+            <div className="space-y-10 animate-in fade-in duration-300">
+              <div className="border-b pb-4">
+                <h3 className="text-xl font-bold text-gray-800">Developer Only</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  This area is reserved for developers. Toggle white label mode to switch between hardcoded Mame Pilot branding and dynamic company branding.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold text-gray-900">White Label</h4>
+                    <p className="text-sm text-gray-500">
+                      When enabled, login and sidebar branding use the current company settings. When disabled, the app uses hardcoded Mame Pilot branding.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-3 cursor-pointer rounded-full bg-white px-4 py-3 border border-gray-200">
+                    <span className="text-sm font-medium text-gray-700">Enabled</span>
+                    <input
+                      type="checkbox"
+                      checked={systemDefaults.whiteLabel}
+                      onChange={(e) => setSystemDefaults({ ...systemDefaults, whiteLabel: e.target.checked })}
+                      className="h-5 w-10 rounded-full border-gray-300 bg-gray-200 accent-blue-600"
+                    />
+                  </label>
                 </div>
               </div>
             </div>

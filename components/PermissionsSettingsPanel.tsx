@@ -268,13 +268,13 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       {isRoleModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={resetRoleModal} />
-          <div className="relative z-10 max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="relative z-10 flex h-full w-full max-h-[90vh] max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl flex-col">
             <div className="border-b border-gray-100 px-8 py-6">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Custom Role</p>
               <h3 className="mt-2 text-2xl font-black text-gray-900">Add a role with its own permission set</h3>
             </div>
 
-            <div className="max-h-[calc(90vh-150px)] overflow-y-auto px-8 py-6">
+            <div className="flex-1 overflow-y-auto px-8 py-6">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-xs font-black uppercase tracking-[0.18em] text-gray-400">Role Name</label>
@@ -311,7 +311,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                       All Privileges
                     </label>
                   </div>
-                  <div className="grid gap-6 px-6 py-6 md:grid-cols-2">
+                  <div className="grid gap-6 px-6 py-6">
                     {groupedDefinitions.map((group) => (
                       <div key={group.section} className="space-y-4 rounded-2xl border border-gray-100 p-5">
                         <h4 className="text-sm font-black uppercase tracking-[0.16em] text-[#0f2f57]">{group.section}</h4>

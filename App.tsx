@@ -1,7 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from './src/contexts/AuthProvider';
+import { useAuth } from './src/contexts/AuthProvider';
 import { ToastProvider } from './src/contexts/ToastContext';
 import { SearchProvider } from './src/contexts/SearchContext';
 import { RealtimeProvider } from './src/contexts/RealtimeProvider';
@@ -44,43 +43,7 @@ function scheduleIdlePreload(task: () => void): () => void {
   return () => window.clearTimeout(timer);
 }
 
-// Create a client for React Query
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes - data is considered fresh for 5 min
-      gcTime: 30 * 60 * 1000, // 30 minutes (formerly cacheTime) - keep in memory for 30 min
-      retry: (failureCount, error) => {
-        // Keep safe reads resilient without multiplying load during outages.
-        if (error instanceof ApiError) {
-          if (error.code === 'SERVICE_EXPIRED' || error.code === 'SERVICE_RENEWAL_PENDING') {
-            return false;
-          }
 
-          if (error.code === 'NETWORK' || error.code === 'TIMEOUT') {
-            return failureCount < 1;
-          }
-
-          if (typeof error.status === 'number') {
-            return error.status >= 500 && failureCount < 1;
-          }
-
-          return false;
-        }
-
-        return failureCount < 1;
-      },
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff, max 10s
-      refetchOnWindowFocus: false, // Don't auto-refetch on window focus (optimistic updates handle changes)
-      refetchOnReconnect: false, // Don't auto-refetch on reconnect (optimistic updates handle changes)
-      refetchOnMount: false, // Don't auto-refetch on mount (avoid unnecessary requests)
-    },
-    mutations: {
-      retry: 0, // Avoid duplicate writes when the network is degraded
-      retryDelay: 1000, // 1 second delay between retries
-    },
-  },
-});
 import { hasAdminAccess } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
 import StartupScreen from './components/StartupScreen';
@@ -105,6 +68,7 @@ const UserForm = lazyPage(() => import('./pages/UserForm'));
 const UserDetails = lazyPage(() => import('./pages/UserDetails'));
 const SettingsPage = lazyPage(() => import('./pages/Settings'));
 const DeveloperNotifications = lazyPage(() => import('./pages/DeveloperNotifications'));
+const DeveloperSettings = lazyPage(() => import('./pages/DeveloperSettings'));
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
@@ -238,6 +202,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (isAdmin) preloaders.add(SettingsPage.preload);
     if (activeUser?.role === 'Developer') {
       preloaders.add(DeveloperNotifications.preload);
+      preloaders.add(DeveloperSettings.preload);
       preloaders.add(NotificationDetail.preload);
     }
     if (can('undoer.view')) preloaders.add(Undoer.preload);
@@ -274,6 +239,12 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
 
       <Route path="/developer/notifications/:id" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><NotificationDetail /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/developer/settings" element={
+        isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSettings /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/developer" element={
+        isAuthenticated ? (activeUser?.role === 'Developer' ? <Navigate to="/developer/settings" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       
       <Route path="/orders" element={
@@ -469,24 +440,20 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <NetworkProvider>
-          <ToastProvider>
-            <SearchProvider>
-              <RealtimeProvider>
-                <HashRouter>
-                  <AppContent />
-                  <GlobalApiEventWatcher />
-                  <NetworkStatusBanner />
-                  <ToastContainer />
-                </HashRouter>
-              </RealtimeProvider>
-            </SearchProvider>
-          </ToastProvider>
-        </NetworkProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <NetworkProvider>
+      <ToastProvider>
+        <SearchProvider>
+          <RealtimeProvider>
+            <HashRouter>
+              <AppContent />
+              <GlobalApiEventWatcher />
+              <NetworkStatusBanner />
+              <ToastContainer />
+            </HashRouter>
+          </RealtimeProvider>
+        </SearchProvider>
+      </ToastProvider>
+    </NetworkProvider>
   );
 };
 
