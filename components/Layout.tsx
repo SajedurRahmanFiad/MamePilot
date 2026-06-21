@@ -12,6 +12,7 @@ import { useCompanySettings, useOrderSearchPreview, useSystemDefaults } from '..
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import IncidentModeBanner from './IncidentModeBanner';
 import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 import NotificationCenterButton from './NotificationCenterButton';
@@ -94,6 +95,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { data: fetchedCompanySettings, isLoading: isCompanySettingsLoading } = useCompanySettings();
   const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
+  const { hasCapability } = useCapabilities(Boolean(profile));
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
@@ -237,34 +239,34 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
-  const canViewDashboard = canViewAdminDashboard || canViewEmployeeDashboard;
+  const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
   const isAdminAccessUser = hasAdminAccess(user.role);
   const isDeveloper = user.role === 'Developer';
-  const canViewWalletInSidebar = !isAdminAccessUser && can('wallet.view');
+  const canViewWalletInSidebar = !isAdminAccessUser && can('wallet.view') && hasCapability('human_resources');
   const salesChildren = [
-    can('orders.view') ? { to: '/orders', label: 'Orders', active: isActive('/orders') } : null,
-    can('customers.view') ? { to: '/customers', label: 'Customers', active: isActive('/customers') } : null,
+    can('orders.view') && hasCapability('sales') ? { to: '/orders', label: 'Orders', active: isActive('/orders') } : null,
+    can('customers.view') && hasCapability('sales') ? { to: '/customers', label: 'Customers', active: isActive('/customers') } : null,
   ].filter(Boolean) as { to: string; label: string; active: boolean }[];
   const purchasesChildren = [
-    can('bills.view') ? { to: '/bills', label: 'Bills', active: isActive('/bills') } : null,
-    can('vendors.view') ? { to: '/vendors', label: 'Vendors', active: isActive('/vendors') } : null,
+    can('bills.view') && hasCapability('purchases') ? { to: '/bills', label: 'Bills', active: isActive('/bills') } : null,
+    can('vendors.view') && hasCapability('purchases') ? { to: '/vendors', label: 'Vendors', active: isActive('/vendors') } : null,
   ].filter(Boolean) as { to: string; label: string; active: boolean }[];
   const bankingChildren = [
-    can('accounts.view') ? { to: '/banking/accounts', label: 'Accounts', active: isActive('/banking/accounts') } : null,
-    can('transactions.view') ? { to: '/banking/transactions', label: 'Transactions', active: isActive('/banking/transactions') } : null,
-    can('transfers.create') ? { to: '/banking/transfer', label: 'Transfer', active: isActive('/banking/transfer') } : null,
+    can('accounts.view') && hasCapability('banking') ? { to: '/banking/accounts', label: 'Accounts', active: isActive('/banking/accounts') } : null,
+    can('transactions.view') && hasCapability('banking') ? { to: '/banking/transactions', label: 'Transactions', active: isActive('/banking/transactions') } : null,
+    can('transfers.create') && hasCapability('banking') ? { to: '/banking/transfer', label: 'Transfer', active: isActive('/banking/transfer') } : null,
   ].filter(Boolean) as { to: string; label: string; active: boolean }[];
   const hrChildren = [
-    can('users.view') ? { to: '/users', label: 'Users', active: isActive('/users') } : null,
-    can('payroll.view') ? { to: '/payroll', label: 'Payroll', active: isActive('/payroll') } : null,
+    can('users.view') && hasCapability('human_resources') ? { to: '/users', label: 'Users', active: isActive('/users') } : null,
+    can('payroll.view') && hasCapability('human_resources') ? { to: '/payroll', label: 'Payroll', active: isActive('/payroll') } : null,
   ].filter(Boolean) as { to: string; label: string; active: boolean }[];
   const quickActions = [
-    can('orders.create') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
-    can('bills.create') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
-    can('customers.create') ? { label: 'New Customer', to: '/customers/new', icon: ICONS.Customers } : null,
-    can('vendors.create') ? { label: 'New Vendor', to: '/vendors/new', icon: ICONS.Vendors } : null,
-    can('transactions.create') ? { label: 'Add Income', to: '/transactions/new/income', icon: ICONS.PlusCircle } : null,
-    can('transactions.create') ? { label: 'Add Expense', to: '/transactions/new/expense', icon: ICONS.Delete } : null,
+    can('orders.create') && hasCapability('sales') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
+    can('bills.create') && hasCapability('purchases') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
+    can('customers.create') && hasCapability('sales') ? { label: 'New Customer', to: '/customers/new', icon: ICONS.Customers } : null,
+    can('vendors.create') && hasCapability('purchases') ? { label: 'New Vendor', to: '/vendors/new', icon: ICONS.Vendors } : null,
+    can('transactions.create') && hasCapability('banking') ? { label: 'Add Income', to: '/transactions/new/income', icon: ICONS.PlusCircle } : null,
+    can('transactions.create') && hasCapability('banking') ? { label: 'Add Expense', to: '/transactions/new/expense', icon: ICONS.Delete } : null,
   ].filter(Boolean) as { label: string; to: string; icon: React.ReactNode }[];
 
   return (
@@ -321,7 +323,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <SidebarItem to="/dashboard" icon={ICONS.Dashboard} label="Dashboard" active={isActive('/dashboard')} onClick={() => setIsSidebarOpen(false)} />
             )}
             
-            {can('products.view') && (
+            {can('products.view') && hasCapability('inventory') && (
               <SidebarItem to="/products" icon={ICONS.Products} label="Products" active={isActive('/products')} onClick={() => setIsSidebarOpen(false)} />
             )}
 
@@ -369,23 +371,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               />
             )}
 
-            {can('fraudChecker.check') && (
+            {can('fraudChecker.check') && hasCapability('fraud_checker') && (
               <SidebarItem to="/fraud-checker" icon={ICONS.FraudChecker} label="Fraud Checker" active={isActive('/fraud-checker')} onClick={() => setIsSidebarOpen(false)} />
             )}
 
-            {(can('reports.view') || can('recycleBin.view') || can('undoer.view') || isAdminAccessUser) && (
+            {((can('reports.view') && hasCapability('advanced_reports')) || (can('recycleBin.view') && hasCapability('recycle_bin_undoer')) || (can('undoer.view') && hasCapability('recycle_bin_undoer')) || isAdminAccessUser) && (
               <>
-                {can('reports.view') && (
+                {can('reports.view') && hasCapability('advanced_reports') && (
                   <SidebarItem to="/reports" icon={ICONS.Reports} label="Reports" active={isActive('/reports')} onClick={() => setIsSidebarOpen(false)} />
                 )}
-                {can('recycleBin.view') && (
+                {can('recycleBin.view') && hasCapability('recycle_bin_undoer') && (
                   <SidebarItem to="/recycle-bin" icon={ICONS.RecycleBin} label="Recycle Bin" active={isActive('/recycle-bin')} onClick={() => setIsSidebarOpen(false)} />
                 )}
-                {can('undoer.view') && (
+                {can('undoer.view') && hasCapability('recycle_bin_undoer') && (
                   <SidebarItem to="/undoer" icon={<RotateCcw size={20} />} label="Undoer" active={isActive('/undoer')} onClick={() => setIsSidebarOpen(false)} />
                 )}
                 {isAdminAccessUser && (
                   <>
+                    <SidebarItem to="/subscriptions" icon={ICONS.Bell} label="Subscriptions" active={isActive('/subscriptions')} onClick={() => setIsSidebarOpen(false)} />
                     <SidebarItem to="/settings" icon={ICONS.Settings} label="Settings" active={isActive('/settings')} onClick={() => setIsSidebarOpen(false)} />
                     {isDeveloper && (
                       <SidebarItem
@@ -395,6 +398,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                         children={[
                           { to: '/developer/notifications', label: 'Notifications', active: isActive('/developer/notifications') },
                           { to: '/developer/settings', label: 'General', active: isActive('/developer/settings') },
+                          { to: '/developer/subscriptions', label: 'Subscriptions', active: isActive('/developer/subscriptions') },
                         ]}
                         onClick={() => setIsSidebarOpen(false)}
                       />

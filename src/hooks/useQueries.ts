@@ -54,6 +54,10 @@ import {
   fetchOrderSettings,
   fetchInvoiceSettings,
   fetchSystemDefaults,
+  fetchCapabilitySettings,
+  fetchCentralLicenseTiers,
+  fetchLocalUsageSummary,
+  fetchPaymentGatewaySettings,
   fetchCourierSettings,
   fetchPermissionsSettings,
   fetchPayrollSettings,
@@ -85,6 +89,7 @@ import type {
   Product,
   CompanySettings,
   CourierSettings,
+  CapabilitySettings,
   CustomerSalesReportData,
   DashboardSnapshot,
   ExpenseSummaryCsvRow,
@@ -110,6 +115,9 @@ import type {
   WalletBalanceCardPage,
   WalletSettings,
   RecycleBinItem,
+  LocalUsageSummary,
+  PaymentGatewaySettings,
+  LicenseTier,
 } from '../../types';
 import { db } from '../../db';
 import { hasAdminAccess } from '../../types';
@@ -796,6 +804,45 @@ export function useSystemDefaults(): UseQueryResult<any, Error> {
     queryKey: ['settings', 'defaults'],
     queryFn: fetchSystemDefaults,
     staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useCapabilitySettings(enabled: boolean = true): UseQueryResult<CapabilitySettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'capabilities'],
+    queryFn: fetchCapabilitySettings,
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useCentralLicenseTiers(
+  payload?: { licenseApiUrl?: string; licenseOwnerToken?: string },
+  enabled: boolean = true
+): UseQueryResult<{ tiers: LicenseTier[] }, Error> {
+  return useQuery({
+    queryKey: ['central-license-tiers', payload?.licenseApiUrl],
+    queryFn: () => fetchCentralLicenseTiers(payload),
+    staleTime: 10 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function usePaymentGatewaySettings(enabled: boolean = true): UseQueryResult<PaymentGatewaySettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'payment-gateway'],
+    queryFn: fetchPaymentGatewaySettings,
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useLocalUsageSummary(enabled: boolean = true): UseQueryResult<LocalUsageSummary, Error> {
+  return useQuery({
+    queryKey: ['local-usage-summary'],
+    queryFn: fetchLocalUsageSummary,
+    staleTime: 2 * 60 * 1000,
+    enabled,
   });
 }
 

@@ -103,7 +103,7 @@ const BillForm: React.FC = () => {
 
   // Vendors: fetch just the visible search window instead of the full list.
   const vendorPageSize = 20;
-  const { data: vendorsPage } = useQuery({
+  const { data: vendorsPage, isFetching: vendorsFetching } = useQuery({
     queryKey: ['vendors', 1, vendorPageSize, debouncedVendorSearch],
     queryFn: () => fetchVendorsPage(1, vendorPageSize, debouncedVendorSearch),
     enabled: showVendorSearch,
@@ -311,12 +311,21 @@ const BillForm: React.FC = () => {
                     <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
                   </div>
                   <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {(visibleVendors || []).map((v: any) => (
-                      <button key={v.id} onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="w-full px-4 py-2.5 text-left hover:bg-[#e6f0ff] rounded-lg group transition-colors">
-                        <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]}">{v.name}</p>
-                        <p className="text-[10px] text-gray-400 group-hover:${theme.colors.secondary[600]}/60">{v.phone}</p>
-                      </button>
-                    ))}
+                    {vendorsFetching ? (
+                      <div className="p-4 space-y-3">
+                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                      </div>
+                    ) : (visibleVendors || []).length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
+                    ) : (
+                      (visibleVendors || []).map((v: any) => (
+                        <button key={v.id} onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="w-full px-4 py-2.5 text-left hover:bg-[#e6f0ff] rounded-lg group transition-colors">
+                          <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]}">{v.name}</p>
+                          <p className="text-[10px] text-gray-400 group-hover:${theme.colors.secondary[600]}/60">{v.phone}</p>
+                        </button>
+                      ))
+                    )}
                   </div>
                   <Button onClick={() => {
                     const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
@@ -392,18 +401,28 @@ const BillForm: React.FC = () => {
                           <input autoFocus type="text" placeholder="Search product..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                         <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-                            <button key={p.id} onClick={() => addItem(p.id)} className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#e6f0ff] rounded-xl group transition-all">
-                              {p.image && (
-                                <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]} truncate">{p.name}</p>
-                                <p className="text-[10px] font-bold ${theme.colors.secondary[600]}/60 uppercase tracking-widest">Cost: {formatCurrency(p.purchasePrice)}</p>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Stock: {p.stock ?? 0}</p>
-                              </div>
-                            </button>
-                          ))}
+                          {productsMiniLoading || productsSearchLoading ? (
+                            <div className="p-4 space-y-3">
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                            </div>
+                          ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                            <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                          ) : (
+                            products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                              <button key={p.id} onClick={() => addItem(p.id)} className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#e6f0ff] rounded-xl group transition-all">
+                                {p.image && (
+                                  <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]} truncate">{p.name}</p>
+                                  <p className="text-[10px] font-bold ${theme.colors.secondary[600]}/60 uppercase tracking-widest">Cost: {formatCurrency(p.purchasePrice)}</p>
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Stock: {p.stock ?? 0}</p>
+                                </div>
+                              </button>
+                            ))
+                          )}
                         </div>
                       </div>
                     )}

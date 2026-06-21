@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './src/contexts/AuthProvider';
 import { ToastProvider } from './src/contexts/ToastContext';
 import { SearchProvider } from './src/contexts/SearchContext';
@@ -11,6 +11,7 @@ import ToastContainer from './components/ToastContainer';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { WRITE_FREEZE_ENABLED } from './src/config/incidentMode';
 import GlobalApiEventWatcher from './src/components/GlobalApiEventWatcher';
+import FeatureLocked from './src/components/FeatureLocked';
 
 type PreloadableComponent<T extends React.ComponentType<any>> = React.LazyExoticComponent<T> & {
   preload: () => Promise<unknown>;
@@ -46,6 +47,8 @@ function scheduleIdlePreload(task: () => void): () => void {
 
 import { hasAdminAccess } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
+import { useCapabilities } from './src/hooks/useCapabilities';
+import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
 
 const Login = lazyPage(() => import('./pages/Login'));
@@ -67,8 +70,10 @@ const Users = lazyPage(() => import('./pages/Users'));
 const UserForm = lazyPage(() => import('./pages/UserForm'));
 const UserDetails = lazyPage(() => import('./pages/UserDetails'));
 const SettingsPage = lazyPage(() => import('./pages/Settings'));
+const AdminSubscriptions = lazyPage(() => import('./pages/AdminSubscriptions'));
 const DeveloperNotifications = lazyPage(() => import('./pages/DeveloperNotifications'));
 const DeveloperSettings = lazyPage(() => import('./pages/DeveloperSettings'));
+const DeveloperSubscriptions = lazyPage(() => import('./pages/DeveloperSubscriptions'));
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
@@ -104,39 +109,41 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   const isAuthenticated = !!user;
   const activeUser = profile || user;
   const isAdmin = hasAdminAccess(activeUser?.role);
+  const location = useLocation();
   const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
+  const { hasCapability, isDeveloper } = useCapabilities(isAuthenticated);
   const writeFreezeEnabled = WRITE_FREEZE_ENABLED;
-  const canViewDashboard = canViewAdminDashboard || canViewEmployeeDashboard;
+  const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
   const defaultProtectedRoute = canViewDashboard
     ? '/dashboard'
-    : can('orders.view')
+    : can('orders.view') && hasCapability('sales')
       ? '/orders'
-      : can('customers.view')
+      : can('customers.view') && hasCapability('sales')
         ? '/customers'
-        : can('products.view')
+        : can('products.view') && hasCapability('inventory')
           ? '/products'
-          : can('bills.view')
+          : can('bills.view') && hasCapability('purchases')
             ? '/bills'
-            : can('vendors.view')
+            : can('vendors.view') && hasCapability('purchases')
               ? '/vendors'
-              : can('transactions.view')
+              : can('transactions.view') && hasCapability('banking')
                 ? '/banking/transactions'
-                : can('accounts.view')
+                : can('accounts.view') && hasCapability('banking')
                   ? '/banking/accounts'
-                  : can('fraudChecker.check')
+                  : can('fraudChecker.check') && hasCapability('fraud_checker')
                     ? '/fraud-checker'
-                  : can('transfers.create')
+                  : can('transfers.create') && hasCapability('banking')
                     ? '/banking/transfer'
-                    : can('wallet.view')
+                    : can('wallet.view') && hasCapability('human_resources')
                       ? '/wallet'
-                      : can('reports.view')
+                      : can('reports.view') && hasCapability('advanced_reports')
                         ? '/reports'
-                        : can('recycleBin.view')
+                        : can('recycleBin.view') && hasCapability('recycle_bin_undoer')
                           ? '/recycle-bin'
-          : can('users.view')
+          : can('users.view') && hasCapability('human_resources')
             ? '/users'
             : isAdmin
-              ? '/settings'
+              ? '/subscriptions'
             : '/dashboard';
 
   React.useEffect(() => {
@@ -203,6 +210,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (activeUser?.role === 'Developer') {
       preloaders.add(DeveloperNotifications.preload);
       preloaders.add(DeveloperSettings.preload);
+      preloaders.add(DeveloperSubscriptions.preload);
       preloaders.add(NotificationDetail.preload);
     }
     if (can('undoer.view')) preloaders.add(Undoer.preload);
@@ -216,6 +224,11 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     });
   }, [isAuthenticated, can, canAny, canViewDashboard, isAdmin, activeUser?.role]);
   
+  const lockedCapability = isAuthenticated && !isDeveloper ? capabilityForPath(location.pathname) : null;
+  if (lockedCapability && !hasCapability(lockedCapability)) {
+    return <Layout><FeatureLocked capability={lockedCapability} /></Layout>;
+  }
+
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
@@ -242,6 +255,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/developer/settings" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSettings /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/developer/subscriptions" element={
+        isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/developer" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Navigate to="/developer/settings" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -403,6 +419,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
 
       <Route path="/settings" element={
         isAuthenticated ? (isAdmin ? <Layout><SettingsPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+
+      <Route path="/subscriptions" element={
+        isAuthenticated ? (isAdmin ? <Layout><AdminSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/undoer" element={

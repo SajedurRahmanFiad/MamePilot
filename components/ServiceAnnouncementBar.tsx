@@ -14,10 +14,10 @@ const ServiceAnnouncementBar: React.FC = () => {
   if (!isAdminAccessUser || !overview) return null;
   const dueAt = overview.dueAt
     ? new Date(overview.dueAt).toLocaleDateString('en-BD', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
     : '';
 
   let message = '';
@@ -25,15 +25,15 @@ const ServiceAnnouncementBar: React.FC = () => {
 
   if (overview.currentPayment?.status === 'processing' || overview.state === 'renewing') {
     barClassName = 'bg-amber-500';
-    message = 'Service renewal is processing. The backend will be fully available again within 10 minutes.';
+    message = 'Your subscription renewal is processing. It will take a while, please wait.';
   } else if (overview.state === 'expired') {
     message = isAdminAccessUser
-      ? 'The backend tools have expired. Please renew them from Settings > Service Subscriptions to restore normal operations.'
-      : 'The backend tools have expired. Please ask an admin to renew them from Settings > Service Subscriptions.';
+      ? 'The subscription has expired. Please renew it to restore normal operations.'
+      : 'The subscription has expired. Please ask an admin to renew it to restore normal operations.';
   } else if (overview.state === 'warning') {
     message = isAdminAccessUser
-      ? `The backend services will expire soon. Please make the payment within ${dueAt}.`
-      : `The backend services will expire soon on ${dueAt}. Please ask an admin to renew them in time.`;
+      ? `Your subscription will expire soon. Please make the payment within ${dueAt}.`
+      : `Your subscription will expire soon on ${dueAt}. Please ask an admin to renew it in time.`;
   }
 
   if (!message) return null;
@@ -47,7 +47,7 @@ const ServiceAnnouncementBar: React.FC = () => {
         </div>
         {isAdminAccessUser && (
           <button
-            onClick={() => navigate('/settings?tab=subscriptions')}
+            onClick={() => navigate('/subscriptions')}
             className="rounded-full bg-white/15 px-4 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-white/25"
           >
             Open Subscriptions

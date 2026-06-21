@@ -127,7 +127,7 @@ const OrderForm: React.FC = () => {
 
   // Customers: fetch just the visible search window instead of the full list.
   const custPageSize = 20;
-  const { data: customersPage } = useQuery({
+  const { data: customersPage, isFetching: customersFetching } = useQuery({
     queryKey: ['customers', 1, custPageSize, debouncedCustSearch],
     queryFn: () => fetchCustomersPage(1, custPageSize, debouncedCustSearch),
     enabled: showCustomerSearch,
@@ -513,16 +513,25 @@ const OrderForm: React.FC = () => {
                     />
                   </div>
                   <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {(allVisibleCustomers || []).map((c: any) => (
-                      <button 
-                        key={c.id} 
-                        onClick={() => handleCustomerSelect(c)} 
-                        className="w-full px-4 py-2.5 text-left hover:bg-[#ebf4ff] rounded-lg group transition-colors"
-                      >
-                        <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]}">{c.name}</p>
-                        <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60">{c.phone}</p>
-                      </button>
-                    ))}
+                    {customersFetching ? (
+                      <div className="p-4 space-y-3">
+                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                      </div>
+                    ) : (allVisibleCustomers || []).length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
+                    ) : (
+                      (allVisibleCustomers || []).map((c: any) => (
+                        <button 
+                          key={c.id} 
+                          onClick={() => handleCustomerSelect(c)} 
+                          className="w-full px-4 py-2.5 text-left hover:bg-[#ebf4ff] rounded-lg group transition-colors"
+                        >
+                          <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]}">{c.name}</p>
+                          <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60">{c.phone}</p>
+                        </button>
+                      ))
+                    )}
                   </div>
                   <button 
                     onClick={() => {
@@ -632,22 +641,32 @@ const OrderForm: React.FC = () => {
                           />
                         </div>
                         <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-                            <button 
-                              key={p.id} 
-                              onClick={() => addItem(p.id)} 
-                              className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#ebf4ff] rounded-xl group transition-all"
-                            >
-                              {p.image && (
-                                <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{p.name}</p>
-                                <p className="text-[10px] font-bold ${theme.colors.primary[600]}/60 uppercase tracking-widest">{formatCurrency(p.salePrice)}</p>
-                                <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
-                              </div>
-                            </button>
-                          ))}
+                          {productsMiniLoading || productsSearchLoading ? (
+                            <div className="p-4 space-y-3">
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                            </div>
+                          ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                            <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                          ) : (
+                            products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                              <button 
+                                key={p.id} 
+                                onClick={() => addItem(p.id)} 
+                                className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#ebf4ff] rounded-xl group transition-all"
+                              >
+                                {p.image && (
+                                  <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{p.name}</p>
+                                  <p className="text-[10px] font-bold ${theme.colors.primary[600]}/60 uppercase tracking-widest">{formatCurrency(p.salePrice)}</p>
+                                  <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
+                                </div>
+                              </button>
+                            ))
+                          )}
                         </div>
                       </div>
                     )}

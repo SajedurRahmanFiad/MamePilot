@@ -18,6 +18,7 @@ final class MasterDataApi extends BaseService
         return [
             'user' => $this->mapUser($this->currentUser()),
             'permissions' => $this->buildPermissionsSettingsPayload(),
+            'capabilities' => $this->fetchCapabilitySettings(),
         ];
     }
 
@@ -1075,6 +1076,7 @@ final class MasterDataApi extends BaseService
     public function fetchSystemDefaults(array $params = []): array
     {
         $row = $this->database->fetchOne('SELECT * FROM system_defaults LIMIT 1');
+        $capabilitySettings = $this->fetchCapabilitySettings();
         return [
             'defaultAccountId' => (string) ($row['default_account_id'] ?? ''),
             'defaultPaymentMethod' => (string) ($row['default_payment_method'] ?? ''),
@@ -1082,7 +1084,7 @@ final class MasterDataApi extends BaseService
             'expenseCategoryId' => (string) ($row['expense_category_id'] ?? ''),
             'recordsPerPage' => (int) ($row['records_per_page'] ?? 10),
             'maxTransactionAmount' => (float) ($row['max_transaction_amount'] ?? 0),
-            'whiteLabel' => (bool) ($row['white_label'] ?? 0),
+            'whiteLabel' => (bool) (($capabilitySettings['capabilities']['whitelabel'] ?? null) ?? ($row['white_label'] ?? 0)),
         ];
     }
 
@@ -1104,6 +1106,843 @@ final class MasterDataApi extends BaseService
             ],
             fn(): array => $this->fetchSystemDefaults()
         );
+    }
+
+    private function normalizeCapabilities($value): array
+    {
+        $defaults = FeatureAccess::defaultCapabilities();
+        $raw = is_array($value) ? $value : $this->jsonDecodeAssoc($value);
+        foreach ($defaults as $key => $default) {
+            if (array_key_exists($key, $raw)) {
+                $defaults[$key] = (bool) $raw[$key];
+            }
+        }
+
+        return $defaults;
+    }
+
+    private function capabilityRow(): ?array
+    {
+        return $this->tableExists('app_capability_settings')
+            ? $this->database->fetchOne('SELECT * FROM app_capability_settings LIMIT 1')
+            : null;
+    }
+
+    public function fetchCapabilitySettings(array $params = []): array
+    {
+        $user = null;
+        try {
+            $user = $this->currentUser();
+        } catch (\Throwable) {
+            $user = null;
+        }
+        $isDeveloper = trim((string) ($user['role'] ?? '')) === 'Developer';
+        $row = $this->capabilityRow();
+        $capabilities = $this->normalizeCapabilities($row['capabilities'] ?? null);
+
+        return [
+            'capabilities' => $capabilities,
+            'tierKey' => $this->nullableString($row['tier_key'] ?? null),
+            'planName' => $this->nullableString($row['plan_name'] ?? null),
+            'licenseStatus' => (string) ($row['license_status'] ?? 'local'),
+            'renewalDate' => $this->toIso($row['renewal_date'] ?? null),
+            'overrideEnabled' => !empty($row['override_enabled']),
+            'availableTiers' => $this->normalizeLicenseTiers($row['available_tiers'] ?? null),
+            'pricingMetadata' => $this->jsonDecodeAssoc($row['pricing_metadata'] ?? null),
+            'lastSyncedAt' => $this->toIso($row['last_synced_at'] ?? null),
+            'lastSyncStatus' => $this->nullableString($row['last_sync_status'] ?? null),
+            'lastSyncMessage' => $this->nullableString($row['last_sync_message'] ?? null),
+            'syncGraceUntil' => $this->toIso($row['sync_grace_until'] ?? null),
+            'licenseKey' => $isDeveloper ? (string) ($row['license_key'] ?? '') : '',
+            'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
+            'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
+        ];
+    }
+
+    public function updateCapabilitySettings(array $params): array
+    {
+        if (empty($params['__skipDeveloperCheck'])) {
+            $this->requireDeveloperUser();
+        }
+        if (!$this->tableExists('app_capability_settings')) {
+            throw new RuntimeException('Capability settings table is missing. Run the latest migration first.');
+        }
+
+        $current = $this->fetchCapabilitySettings();
+        $capabilities = array_key_exists('capabilities', $params)
+            ? $this->normalizeCapabilities($params['capabilities'])
+            : $this->normalizeCapabilities($current['capabilities'] ?? []);
+
+        $row = $this->capabilityRow();
+        $id = (string) ($row['id'] ?? 'app-capabilities-default');
+        $payload = [
+            'capabilities' => $this->jsonEncode($capabilities),
+            'license_key' => array_key_exists('licenseKey', $params) ? $this->nullableString($params['licenseKey']) : $this->nullableString($row['license_key'] ?? null),
+            'license_api_url' => array_key_exists('licenseApiUrl', $params) ? $this->nullableString($params['licenseApiUrl']) : $this->nullableString($row['license_api_url'] ?? null),
+            'license_owner_token' => array_key_exists('licenseOwnerToken', $params) ? $this->nullableString($params['licenseOwnerToken']) : $this->nullableString($row['license_owner_token'] ?? null),
+            'tier_key' => array_key_exists('tierKey', $params) ? $this->nullableString($params['tierKey']) : $this->nullableString($row['tier_key'] ?? null),
+            'plan_name' => array_key_exists('planName', $params) ? $this->nullableString($params['planName']) : $this->nullableString($row['plan_name'] ?? null),
+            'license_status' => array_key_exists('licenseStatus', $params) ? trim((string) $params['licenseStatus']) : (string) ($row['license_status'] ?? 'local'),
+            'renewal_date' => array_key_exists('renewalDate', $params) && $params['renewalDate'] ? $this->normalizeDateTimeInput((string) $params['renewalDate']) : ($row['renewal_date'] ?? null),
+            'override_enabled' => array_key_exists('overrideEnabled', $params) ? (!empty($params['overrideEnabled']) ? 1 : 0) : (int) ($row['override_enabled'] ?? 0),
+            'available_tiers' => array_key_exists('availableTiers', $params) ? $this->jsonEncode($this->normalizeLicenseTiers($params['availableTiers'])) : ($row['available_tiers'] ?? null),
+            'pricing_metadata' => array_key_exists('pricingMetadata', $params) ? $this->jsonEncode(is_array($params['pricingMetadata']) ? $params['pricingMetadata'] : []) : ($row['pricing_metadata'] ?? null),
+            'last_sync_status' => array_key_exists('lastSyncStatus', $params) ? trim((string) $params['lastSyncStatus']) : 'manual',
+            'last_sync_message' => array_key_exists('lastSyncMessage', $params) ? $this->nullableString($params['lastSyncMessage']) : 'Saved manually by developer.',
+        ];
+
+        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'available_tiers', 'pricing_metadata'] as $column) {
+            if (!$this->columnExists('app_capability_settings', $column)) {
+                unset($payload[$column]);
+            }
+        }
+
+        if ($row !== null) {
+            $payload['updated_at'] = $this->database->nowUtc();
+            [$setClause, $bindings] = $this->database->buildSetClause($payload);
+            $bindings[':id'] = $id;
+            $this->database->execute("UPDATE app_capability_settings SET {$setClause} WHERE id = :id", $bindings);
+        } else {
+            $payload['id'] = $id;
+            $payload['created_at'] = $this->database->nowUtc();
+            $payload['updated_at'] = $this->database->nowUtc();
+            $columns = implode(', ', array_keys($payload));
+            $placeholders = implode(', ', array_map(static fn(string $column): string => ':' . $column, array_keys($payload)));
+            $bindings = [];
+            foreach ($payload as $column => $value) {
+                $bindings[':' . $column] = $value;
+            }
+            $this->database->execute("INSERT INTO app_capability_settings ({$columns}) VALUES ({$placeholders})", $bindings);
+        }
+
+        $this->database->execute(
+            'UPDATE system_defaults SET white_label = :white_label, updated_at = :updated_at',
+            [
+                ':white_label' => !empty($capabilities['whitelabel']) ? 1 : 0,
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+
+        return $this->fetchCapabilitySettings();
+    }
+
+    public function fetchCentralLicenseTiers(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        if ($apiUrl === '') {
+            throw new RuntimeException('License API URL is required before loading tiers.');
+        }
+
+        $response = $this->centralLicenseRequest($apiUrl, null, 'list_tiers');
+        $tiers = $this->normalizeLicenseTiers($response['tiers'] ?? []);
+
+        $this->updateCapabilitySettings([
+            '__skipDeveloperCheck' => true,
+            'licenseApiUrl' => $apiUrl,
+            'licenseOwnerToken' => $params['licenseOwnerToken'] ?? $settingsRow['license_owner_token'] ?? null,
+            'availableTiers' => $tiers,
+            'lastSyncStatus' => 'tiers_loaded',
+            'lastSyncMessage' => 'Central license tiers loaded successfully.',
+        ]);
+
+        return ['tiers' => $tiers];
+    }
+
+    public function createOrUpdateCentralLicense(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($params['licenseOwnerToken'] ?? $settingsRow['license_owner_token'] ?? ''));
+        $tierKey = trim((string) ($params['tierKey'] ?? ''));
+        if ($apiUrl === '' || $ownerToken === '' || $tierKey === '') {
+            throw new RuntimeException('License API URL, owner token, and tier are required.');
+        }
+
+        $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $payload = [
+            'license_key' => $licenseKey ?: null,
+            'client_name' => trim((string) ($params['clientName'] ?? $host ?: 'MamePilot Client')),
+            'domain' => trim((string) ($params['domain'] ?? $host)),
+            'tier_key' => $tierKey,
+            'status' => trim((string) ($params['status'] ?? 'active')),
+            'renewal_date' => $params['renewalDate'] ?? $settingsRow['renewal_date'] ?? null,
+        ];
+
+        $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'create_or_update_license', $payload);
+        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central license saved successfully.');
+    }
+
+    public function updateCentralLicenseOverride(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($params['licenseOwnerToken'] ?? $settingsRow['license_owner_token'] ?? ''));
+        $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
+        if ($apiUrl === '' || $ownerToken === '' || $licenseKey === '') {
+            throw new RuntimeException('License API URL, owner token, and license key are required.');
+        }
+
+        $capabilities = array_keys(array_filter($this->normalizeCapabilities($params['capabilities'] ?? [])));
+        $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'update_license_override', [
+            'license_key' => $licenseKey,
+            'capabilities' => $capabilities,
+        ]);
+
+        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
+    }
+
+    public function resetCentralLicenseOverride(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($params['licenseOwnerToken'] ?? $settingsRow['license_owner_token'] ?? ''));
+        $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
+        if ($apiUrl === '' || $ownerToken === '' || $licenseKey === '') {
+            throw new RuntimeException('License API URL, owner token, and license key are required.');
+        }
+
+        $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'reset_license_override', [
+            'license_key' => $licenseKey,
+        ]);
+
+        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override reset to tier defaults.');
+    }
+
+    public function syncLicenseCapabilities(array $params = []): array
+    {
+        $cronSecret = trim((string) ($params['cronSecret'] ?? ''));
+        $expectedCronSecret = trim((string) ($this->config->get('LICENSE_CRON_SECRET', '') ?? ''));
+        if ($cronSecret === '' || $expectedCronSecret === '' || !hash_equals($expectedCronSecret, $cronSecret)) {
+            $user = $this->currentUser();
+            if (!$this->hasAdminAccess((string) ($user['role'] ?? ''))) {
+                throw new ApiException('Admin access required.', 403, 'ADMIN_ACCESS_REQUIRED');
+            }
+            if (
+                trim((string) ($user['role'] ?? '')) !== 'Developer'
+                && (array_key_exists('licenseKey', $params) || array_key_exists('licenseApiUrl', $params))
+            ) {
+                throw new ApiException('Developer access required.', 403, 'DEVELOPER_ACCESS_REQUIRED');
+            }
+        }
+
+        $settingsRow = $this->capabilityRow();
+        $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        if ($licenseKey === '' || $apiUrl === '') {
+            throw new RuntimeException('License key and license API URL are required before syncing.');
+        }
+
+        $response = $this->httpJson('POST', $apiUrl, [], [
+            'action' => 'resolve_license',
+            'license_key' => $licenseKey,
+            'domain' => $_SERVER['HTTP_HOST'] ?? '',
+        ]);
+        if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
+            $this->updateCapabilitySettings([
+                '__skipDeveloperCheck' => true,
+                'licenseKey' => $licenseKey,
+                'licenseApiUrl' => $apiUrl,
+                'lastSyncStatus' => 'failed',
+            ]);
+            throw new RuntimeException('License sync failed.');
+        }
+
+        return $this->storeResolvedLicensePayload($response['json'], $apiUrl, $settingsRow['license_owner_token'] ?? null, 'License capabilities synced successfully.');
+    }
+
+    private function centralLicenseRequest(string $apiUrl, ?string $ownerToken, string $action, array $payload = []): array
+    {
+        $apiUrl = trim($apiUrl);
+        $headers = ['Accept' => 'application/json'];
+        $ownerToken = trim((string) ($ownerToken ?? ''));
+        if ($ownerToken !== '') {
+            $headers['X-MamePilot-Owner-Token'] = $ownerToken;
+        }
+
+        $response = $this->httpJson('POST', $apiUrl, $headers, ['action' => $action] + $payload);
+        if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
+            $message = is_array($response['json'] ?? null)
+                ? (string) (($response['json']['error'] ?? null) ?: 'Central license request failed.')
+                : 'Central license request failed.';
+            if ((int) $response['status'] === 404) {
+                $message = 'Central license API endpoint not found at ' . $apiUrl . '. Upload deploy/central-license-api-template.php as api.php on the license subdomain, then use the full /api.php URL.';
+            }
+            throw new RuntimeException($message);
+        }
+
+        return $response['json'];
+    }
+
+    private function storeResolvedLicensePayload(array $payload, string $apiUrl, $ownerToken, string $message): array
+    {
+        $licenseKey = trim((string) ($payload['license_key'] ?? $payload['licenseKey'] ?? ''));
+        $pricingMetadata = is_array($payload['pricing_metadata'] ?? null)
+            ? $payload['pricing_metadata']
+            : (is_array($payload['pricingMetadata'] ?? null) ? $payload['pricingMetadata'] : []);
+
+        $this->updateCapabilitySettings([
+            '__skipDeveloperCheck' => true,
+            'capabilities' => $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'] ?? []),
+            'licenseKey' => $licenseKey,
+            'licenseApiUrl' => $apiUrl,
+            'licenseOwnerToken' => $ownerToken,
+            'tierKey' => $payload['tier_key'] ?? $payload['tierKey'] ?? null,
+            'planName' => $payload['plan_name'] ?? $payload['planName'] ?? null,
+            'licenseStatus' => $payload['status'] ?? 'active',
+            'renewalDate' => $payload['renewal_date'] ?? $payload['renewalDate'] ?? null,
+            'overrideEnabled' => !empty($payload['override_enabled'] ?? $payload['overrideEnabled'] ?? false),
+            'availableTiers' => $payload['available_tiers'] ?? $payload['availableTiers'] ?? [],
+            'pricingMetadata' => $pricingMetadata,
+            'lastSyncStatus' => 'success',
+            'lastSyncMessage' => $message,
+        ]);
+
+        $row = $this->capabilityRow();
+        if ($row !== null) {
+            $this->touchUpdate('app_capability_settings', (string) $row['id'], [
+                'last_synced_at' => $this->database->nowUtc(),
+                'last_sync_status' => 'success',
+                'last_sync_message' => $message,
+            ]);
+        }
+
+        $this->syncLocalSubscriptionPlanFromLicense($payload, $pricingMetadata);
+        return $this->fetchCapabilitySettings();
+    }
+
+    private function syncLocalSubscriptionPlanFromLicense(array $payload, array $pricingMetadata): void
+    {
+        if (!$this->tableExists('service_subscription_settings')) {
+            return;
+        }
+
+        $monthlyAmount = max(0.0, (float) ($pricingMetadata['monthly'] ?? $pricingMetadata['monthly_price'] ?? 0));
+        $planName = $this->nullableString($payload['plan_name'] ?? $payload['planName'] ?? null);
+        $status = trim((string) ($payload['status'] ?? 'active')) ?: 'active';
+        $renewalDate = $this->nullableString($payload['renewal_date'] ?? $payload['renewalDate'] ?? null);
+        $currentPeriodEnd = $renewalDate !== null ? $this->normalizeDateTimeInput($renewalDate) : null;
+        $row = $this->database->fetchOne('SELECT id, billing_interval FROM service_subscription_settings LIMIT 1');
+        $settingsId = (string) ($row['id'] ?? 'service-subscriptions-default');
+        $updates = [
+            'plan_name' => $planName,
+            'billing_interval' => $this->nullableString($row['billing_interval'] ?? null) ?? 'monthly',
+            'subscription_status' => $status,
+            'current_period_end' => $currentPeriodEnd,
+            'due_at' => $currentPeriodEnd,
+        ];
+        if ($monthlyAmount > 0) {
+            $updates['total_amount'] = $this->formatMoney($monthlyAmount);
+        }
+
+        if ($row !== null) {
+            $this->touchUpdate('service_subscription_settings', $settingsId, $updates);
+            return;
+        }
+
+        $updates['id'] = $settingsId;
+        $updates['warning_days'] = 7;
+        $updates['billing_version'] = 1;
+        $updates['created_at'] = $this->database->nowUtc();
+        $updates['updated_at'] = $this->database->nowUtc();
+        $columns = implode(', ', array_keys($updates));
+        $placeholders = implode(', ', array_map(static fn(string $column): string => ':' . $column, array_keys($updates)));
+        $bindings = [];
+        foreach ($updates as $column => $value) {
+            $bindings[':' . $column] = $value;
+        }
+        $this->database->execute("INSERT INTO service_subscription_settings ({$columns}) VALUES ({$placeholders})", $bindings);
+    }
+
+    private function capabilityMapFromRemote($rawCapabilities): array
+    {
+        $capabilityMap = FeatureAccess::defaultCapabilities();
+        $isList = is_array($rawCapabilities) && ($rawCapabilities === [] || array_keys($rawCapabilities) === range(0, count($rawCapabilities) - 1));
+        if ($isList) {
+            foreach ($capabilityMap as $key => $_) {
+                $capabilityMap[$key] = in_array($key, $rawCapabilities, true);
+            }
+            return $capabilityMap;
+        }
+
+        return $this->normalizeCapabilities($rawCapabilities);
+    }
+
+    private function normalizeLicenseTiers($tiers): array
+    {
+        $rows = is_array($tiers) ? array_values($tiers) : $this->jsonDecodeList($tiers);
+        $normalized = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $tierKey = trim((string) ($row['tierKey'] ?? $row['tier_key'] ?? ''));
+            if ($tierKey === '') {
+                continue;
+            }
+            $capabilities = is_array($row['capabilities'] ?? null) ? array_values($row['capabilities']) : [];
+            $normalized[] = [
+                'tierKey' => $tierKey,
+                'tierName' => (string) ($row['tierName'] ?? $row['tier_name'] ?? ucfirst(str_replace('_', ' ', $tierKey))),
+                'monthlyPrice' => (float) ($row['monthlyPrice'] ?? $row['monthly_price'] ?? 0),
+                'yearlyPrice' => (float) ($row['yearlyPrice'] ?? $row['yearly_price'] ?? 0),
+                'capabilities' => array_values(array_filter(array_map('strval', $capabilities))),
+            ];
+        }
+
+        return $normalized;
+    }
+
+    public function fetchPaymentGatewaySettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->tableExists('payment_gateway_settings')
+            ? $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1')
+            : null;
+
+        return [
+            'piprapayBaseUrl' => (string) ($row['piprapay_base_url'] ?? ''),
+            'piprapayApiKey' => (string) ($row['piprapay_api_key'] ?? ''),
+            'piprapayMerchantId' => (string) ($row['piprapay_merchant_id'] ?? ''),
+            'piprapayIpnSecret' => (string) ($row['piprapay_ipn_secret'] ?? ''),
+        ];
+    }
+
+    public function updatePaymentGatewaySettings(array $params): array
+    {
+        $this->requireDeveloperUser();
+        if (!$this->tableExists('payment_gateway_settings')) {
+            throw new RuntimeException('Payment gateway settings table is missing. Run the latest migration first.');
+        }
+
+        $row = $this->database->fetchOne('SELECT id FROM payment_gateway_settings LIMIT 1');
+        $id = (string) ($row['id'] ?? 'payment-gateway-default');
+        $payload = [
+            'piprapay_base_url' => $this->nullableString($params['piprapayBaseUrl'] ?? null),
+            'piprapay_api_key' => $this->nullableString($params['piprapayApiKey'] ?? null),
+            'piprapay_merchant_id' => $this->nullableString($params['piprapayMerchantId'] ?? null),
+            'piprapay_ipn_secret' => $this->nullableString($params['piprapayIpnSecret'] ?? null),
+        ];
+
+        if ($row !== null) {
+            $this->touchUpdate('payment_gateway_settings', $id, $payload);
+        } else {
+            $payload['id'] = $id;
+            $payload['created_at'] = $this->database->nowUtc();
+            $payload['updated_at'] = $this->database->nowUtc();
+            $columns = implode(', ', array_keys($payload));
+            $placeholders = implode(', ', array_map(static fn(string $column): string => ':' . $column, array_keys($payload)));
+            $bindings = [];
+            foreach ($payload as $column => $value) {
+                $bindings[':' . $column] = $value;
+            }
+            $this->database->execute("INSERT INTO payment_gateway_settings ({$columns}) VALUES ({$placeholders})", $bindings);
+        }
+
+        return $this->fetchPaymentGatewaySettings();
+    }
+
+    public function fetchLocalUsageSummary(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $count = function (string $table, string $where = ''): int {
+            if (!$this->tableExists($table)) {
+                return 0;
+            }
+            $row = $this->database->fetchOne("SELECT COUNT(*) AS count FROM {$table} {$where}");
+            return (int) ($row['count'] ?? 0);
+        };
+
+        return [
+            'activeUsers' => $count('users', 'WHERE deleted_at IS NULL'),
+            'totalTransactions' => $count('transactions', 'WHERE deleted_at IS NULL'),
+            'totalOrders' => $count('orders', 'WHERE deleted_at IS NULL'),
+            'totalBills' => $count('bills', 'WHERE deleted_at IS NULL'),
+            'totalCustomers' => $count('customers', 'WHERE deleted_at IS NULL'),
+            'totalProducts' => $count('products', 'WHERE deleted_at IS NULL'),
+        ];
+    }
+
+    public function initiatePipraPayCheckout(array $params): array
+    {
+        $user = $this->currentUser();
+        if (!$this->hasAdminAccess((string) ($user['role'] ?? ''))) {
+            throw new ApiException('Admin access required.', 403, 'ADMIN_ACCESS_REQUIRED');
+        }
+        if (!$this->tableExists('payment_gateway_settings') || !$this->tableExists('service_subscription_payments')) {
+            throw new RuntimeException('Payment gateway tables are missing. Run the latest migration first.');
+        }
+
+        $gateway = $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1');
+        $baseUrl = preg_replace('#/api$#', '', rtrim(trim((string) ($gateway['piprapay_base_url'] ?? '')), '/'));
+        $apiKey = trim((string) ($gateway['piprapay_api_key'] ?? ''));
+        if ($baseUrl === '' || $apiKey === '') {
+            throw new RuntimeException('PipraPay gateway is not configured yet.');
+        }
+
+        $interval = trim((string) ($params['interval'] ?? 'monthly')) === 'yearly' ? 'yearly' : 'monthly';
+        $capabilitySettings = $this->fetchCapabilitySettings();
+        $pricing = is_array($capabilitySettings['pricingMetadata'] ?? null) ? $capabilitySettings['pricingMetadata'] : [];
+        $amount = max(0.0, (float) ($pricing[$interval] ?? 0));
+        if ($amount <= 0) {
+            $amount = max(0.0, (float) ($params['amount'] ?? 0));
+        }
+        if ($amount <= 0) {
+            $overview = $this->buildServiceSubscriptionOverview($user);
+            $amount = (float) ($overview['totalAmount'] ?? 0);
+        }
+        if ($amount <= 0) {
+            throw new RuntimeException('Checkout amount must be greater than zero.');
+        }
+
+        $settings = $this->tableExists('service_subscription_settings') ? $this->database->fetchOne('SELECT * FROM service_subscription_settings LIMIT 1') : null;
+        $billingVersion = max(1, (int) ($settings['billing_version'] ?? 1));
+        $reference = 'SUB-' . strtoupper(substr($this->uuid4(), 0, 12));
+
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+        if ($origin !== '') {
+            $returnBase = $origin;
+        } else {
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $returnBase = $scheme . '://' . $host;
+        }
+        $metadataArray = [
+            'local_reference' => $reference,
+            'billing_interval' => $interval,
+            'billing_version' => (string) $billingVersion,
+            'license_key' => (string) (($capabilitySettings['licenseKey'] ?? '') ?: ''),
+            'tier_key' => (string) (($capabilitySettings['tierKey'] ?? '') ?: ''),
+            'plan_name' => (string) (($capabilitySettings['planName'] ?? '') ?: ''),
+            'domain' => $host,
+        ];
+        $payload = [
+            'full_name' => (string) ($user['name'] ?? 'Admin'),
+            'email_address' => (string) (($user['email'] ?? null) ?: 'admin@example.com'),
+            'mobile_number' => (string) (($user['phone'] ?? null) ?: '01700000000'),
+            'amount' => round($amount, 2),
+            'currency' => 'BDT',
+            'order_id' => $reference,
+            'metadata' => json_encode($metadataArray),
+            'return_url' => $returnBase . '/api/?action=pipraPayReturn&reference=' . rawurlencode($reference),
+            'webhook_url' => $returnBase . '/api/?action=handlePipraPayIpn',
+        ];
+
+        $response = $this->httpJson('POST', $baseUrl . '/api/checkout/redirect', [
+            'mhs-piprapay-api-key' => $apiKey,
+            'Accept' => 'application/json',
+        ], $payload);
+        if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
+            throw new RuntimeException('PipraPay checkout initialization failed: ' . $this->jsonEncode($response['json']));
+        }
+
+        $body = $response['json'];
+        $checkoutUrl = (string) ($body['pp_url'] ?? $body['checkout_url'] ?? $body['url'] ?? $body['data']['pp_url'] ?? $body['data']['checkout_url'] ?? '');
+        $gatewayPaymentId = (string) ($body['pp_id'] ?? $body['payment_id'] ?? $body['data']['pp_id'] ?? '');
+        if ($checkoutUrl === '') {
+            throw new RuntimeException('PipraPay did not return a checkout URL.');
+        }
+
+        $paymentId = $this->uuid4();
+        $actorId = (string) ($user['id'] ?? $this->resolveSystemActorId());
+        $this->database->execute(
+            'INSERT INTO service_subscription_payments (
+                id, billing_version, local_reference, gateway_payment_id, gateway_name, billing_interval,
+                amount, base_amount, tip_amount, payment_method_id, payment_method_name, transaction_id,
+                submitted_by, status, submitted_at, reactivate_at, processed_at, raw_payload, created_at, updated_at
+             ) VALUES (
+                :id, :billing_version, :local_reference, :gateway_payment_id, :gateway_name, :billing_interval,
+                :amount, :base_amount, :tip_amount, NULL, :payment_method_name, :transaction_id,
+                :submitted_by, :status, :submitted_at, NULL, NULL, :raw_payload, :created_at, :updated_at
+             )',
+            [
+                ':id' => $paymentId,
+                ':billing_version' => $billingVersion,
+                ':local_reference' => $reference,
+                ':gateway_payment_id' => $gatewayPaymentId ?: null,
+                ':gateway_name' => 'piprapay',
+                ':billing_interval' => $interval,
+                ':amount' => $this->formatMoney($amount),
+                ':base_amount' => $this->formatMoney($amount),
+                ':tip_amount' => $this->formatMoney(0),
+                ':payment_method_name' => 'PipraPay',
+                ':transaction_id' => $gatewayPaymentId ?: $reference,
+                ':submitted_by' => $actorId,
+                ':status' => 'processing',
+                ':submitted_at' => $this->database->nowUtc(),
+                ':raw_payload' => $this->jsonEncode($body),
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+
+        return [
+            'checkoutUrl' => $checkoutUrl,
+            'localReference' => $reference,
+            'gatewayPaymentId' => $gatewayPaymentId,
+        ];
+    }
+
+    public function pipraPayReturn(array $params = []): array
+    {
+        $reference = trim((string) ($params['reference'] ?? ''));
+        $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? '')));
+
+        // Determine payment outcome
+        $isSuccess = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid', ''], true);
+        $isCancelled = in_array($status, ['cancelled', 'canceled'], true);
+        $paymentState = $isCancelled ? 'cancelled' : ($isSuccess ? 'success' : 'failed');
+
+        // Build redirect base from Origin or HTTP_HOST
+        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '');
+        if ($origin !== '') {
+            $parsed = parse_url($origin);
+            $base = ($parsed['scheme'] ?? 'http') . '://' . ($parsed['host'] ?? '') . (isset($parsed['port']) ? ':' . $parsed['port'] : '');
+        } else {
+            $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $base = $scheme . '://' . $host;
+        }
+
+        $qs = '?payment=' . $paymentState;
+        if ($reference !== '') {
+            $qs .= '&reference=' . rawurlencode($reference);
+        }
+        header('Location: ' . $base . '/#/subscriptions' . $qs);
+        exit;
+    }
+
+    public function handlePipraPayIpn(array $params = []): array
+    {
+        $gateway = $this->tableExists('payment_gateway_settings')
+            ? $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1')
+            : null;
+        $apiKey = trim((string) ($gateway['piprapay_api_key'] ?? ''));
+        $baseUrl = preg_replace('#/api$#', '', rtrim(trim((string) ($gateway['piprapay_base_url'] ?? '')), '/'));
+        
+        $eventId = trim((string) ($params['pp_id'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
+        $rawMetadata = $params['metadata'] ?? null;
+        $metadata = is_array($rawMetadata) ? $rawMetadata : (is_string($rawMetadata) ? (json_decode($rawMetadata, true) ?: []) : []);
+        $reference = trim((string) ($metadata['local_reference'] ?? $params['order_id'] ?? $params['local_reference'] ?? ''));
+        $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? '')));
+
+        if ($eventId !== '' && $this->tableExists('payment_webhook_logs')) {
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM payment_webhook_logs WHERE gateway = :gateway AND event_id = :event_id LIMIT 1',
+                [':gateway' => 'piprapay', ':event_id' => $eventId]
+            );
+            if ($existing !== null) {
+                return ['success' => true, 'duplicate' => true];
+            }
+        }
+
+        if ($baseUrl !== '' && $apiKey !== '' && $eventId !== '') {
+            $verify = $this->httpJson('POST', $baseUrl . '/api/verify-payment', [
+                'mhs-piprapay-api-key' => $apiKey,
+                'Accept' => 'application/json',
+            ], ['pp_id' => $eventId]);
+            if ($verify['status'] >= 200 && $verify['status'] < 300 && is_array($verify['json'])) {
+                $verified = $verify['json'];
+                $status = strtolower(trim((string) ($verified['status'] ?? $verified['payment_status'] ?? $status)));
+                if ($reference === '') {
+                    $verifiedRawMeta = $verified['metadata'] ?? null;
+                    $verifiedMeta = is_array($verifiedRawMeta) ? $verifiedRawMeta : (is_string($verifiedRawMeta) ? (json_decode($verifiedRawMeta, true) ?: []) : []);
+                    $reference = trim((string) ($verified['order_id'] ?? $verifiedMeta['local_reference'] ?? ''));
+                }
+            }
+        }
+
+        $isSuccess = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true);
+        $isFailure = in_array($status, ['failed', 'cancelled', 'canceled', 'expired'], true);
+        $payment = $reference !== ''
+            ? $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE local_reference = :reference LIMIT 1', [':reference' => $reference])
+            : null;
+        if ($payment === null && $eventId !== '') {
+            $payment = $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE gateway_payment_id = :gateway_payment_id OR transaction_id = :transaction_id LIMIT 1', [
+                ':gateway_payment_id' => $eventId,
+                ':transaction_id' => $eventId,
+            ]);
+        }
+
+        if ($payment !== null) {
+            $nextStatus = $isSuccess ? 'approved' : ($isFailure ? 'rejected' : (string) ($payment['status'] ?? 'processing'));
+            $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
+                'gateway_payment_id' => $eventId ?: ($payment['gateway_payment_id'] ?? null),
+                'transaction_id' => $eventId ?: ($payment['transaction_id'] ?? $reference),
+                'status' => $nextStatus,
+                'processed_at' => $isSuccess ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
+                'raw_payload' => $this->jsonEncode($params),
+            ]);
+
+            if ($isSuccess) {
+                $this->extendSubscriptionFromPayment($payment);
+            } elseif ($isFailure) {
+                $this->markSubscriptionPastDue();
+            }
+        }
+
+        if ($this->tableExists('payment_webhook_logs')) {
+            $this->database->execute(
+                'INSERT INTO payment_webhook_logs (id, gateway, event_id, local_reference, status, verified, raw_payload, created_at)
+                 VALUES (:id, :gateway, :event_id, :local_reference, :status, :verified, :raw_payload, :created_at)',
+                [
+                    ':id' => $this->uuid4(),
+                    ':gateway' => 'piprapay',
+                    ':event_id' => $eventId ?: null,
+                    ':local_reference' => $reference ?: null,
+                    ':status' => $status ?: null,
+                    ':verified' => 1,
+                    ':raw_payload' => $this->jsonEncode($params),
+                    ':created_at' => $this->database->nowUtc(),
+                ]
+            );
+        }
+
+        return ['success' => true];
+    }
+
+    /**
+     * @return array{status:int, body:string, json:mixed}
+     */
+    private function httpJson(string $method, string $url, array $headers = [], ?array $jsonBody = null): array
+    {
+        $body = $jsonBody !== null ? json_encode($jsonBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+
+        if (function_exists('curl_init')) {
+            $handle = curl_init($url);
+            if ($handle === false) {
+                throw new RuntimeException('Failed to initialize HTTP request.');
+            }
+
+            $headerList = [];
+            foreach ($headers as $name => $value) {
+                $headerList[] = $name . ': ' . $value;
+            }
+            if ($body !== null) {
+                $headerList[] = 'Content-Type: application/json';
+            }
+
+            curl_setopt_array($handle, [
+                CURLOPT_CUSTOMREQUEST => strtoupper($method),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => $headerList,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+            ]);
+
+            if ($body !== null) {
+                curl_setopt($handle, CURLOPT_POSTFIELDS, $body);
+            }
+
+            $responseBody = curl_exec($handle);
+            if ($responseBody === false) {
+                $message = curl_error($handle) ?: 'Unknown cURL error';
+                curl_close($handle);
+                throw new RuntimeException($message);
+            }
+
+            $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+            curl_close($handle);
+        } else {
+            $headerList = [];
+            foreach ($headers as $name => $value) {
+                $headerList[] = $name . ': ' . $value;
+            }
+            if ($body !== null) {
+                $headerList[] = 'Content-Type: application/json';
+            }
+
+            $context = stream_context_create([
+                'http' => [
+                    'method' => strtoupper($method),
+                    'header' => implode("\r\n", $headerList),
+                    'content' => $body ?? '',
+                    'timeout' => 30,
+                    'ignore_errors' => true,
+                ],
+            ]);
+
+            $responseBody = file_get_contents($url, false, $context);
+            if ($responseBody === false) {
+                throw new RuntimeException('HTTP request failed.');
+            }
+
+            $status = 200;
+            foreach (($http_response_header ?? []) as $headerLine) {
+                if (preg_match('/^HTTP\/\S+\s+(\d{3})/', $headerLine, $matches) === 1) {
+                    $status = (int) $matches[1];
+                    break;
+                }
+            }
+        }
+
+        $decoded = json_decode((string) $responseBody, true);
+        return [
+            'status' => $status,
+            'body' => (string) $responseBody,
+            'json' => $decoded,
+        ];
+    }
+
+    private function resolveSystemActorId(): string
+    {
+        $row = $this->database->fetchOne(
+            "SELECT id FROM users WHERE role IN ('Developer', 'Admin') AND deleted_at IS NULL ORDER BY FIELD(role, 'Developer', 'Admin'), created_at ASC LIMIT 1"
+        );
+
+        return (string) ($row['id'] ?? '');
+    }
+
+    private function extendSubscriptionFromPayment(array $payment): void
+    {
+        if (!$this->tableExists('service_subscription_settings')) {
+            return;
+        }
+
+        $settings = $this->database->fetchOne('SELECT * FROM service_subscription_settings LIMIT 1');
+        if ($settings === null) {
+            return;
+        }
+
+        $interval = trim((string) ($payment['billing_interval'] ?? 'monthly')) === 'yearly' ? 'yearly' : 'monthly';
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $currentEnd = $this->parseDateTimeValue((string) ($settings['current_period_end'] ?? $settings['due_at'] ?? ''), new \DateTimeZone('UTC'));
+        $base = $currentEnd instanceof \DateTimeImmutable && $currentEnd > $now ? $currentEnd : $now;
+        $nextEnd = $base->modify($interval === 'yearly' ? '+365 days' : '+30 days');
+        $settingsId = (string) ($settings['id'] ?? 'service-subscriptions-default');
+        $billingVersion = max(1, (int) ($settings['billing_version'] ?? 1)) + 1;
+
+        $this->touchUpdate('service_subscription_settings', $settingsId, [
+            'subscription_status' => 'active',
+            'billing_interval' => $interval,
+            'current_period_end' => $nextEnd->format('Y-m-d H:i:s'),
+            'due_at' => $nextEnd->format('Y-m-d H:i:s'),
+            'billing_version' => $billingVersion,
+        ]);
+    }
+
+    private function markSubscriptionPastDue(): void
+    {
+        if (!$this->tableExists('service_subscription_settings')) {
+            return;
+        }
+
+        $settings = $this->database->fetchOne('SELECT * FROM service_subscription_settings LIMIT 1');
+        if ($settings === null) {
+            return;
+        }
+
+        $this->touchUpdate('service_subscription_settings', (string) $settings['id'], [
+            'subscription_status' => 'past_due',
+        ]);
     }
 
     public function fetchCourierSettings(array $params = []): array
@@ -1712,6 +2551,11 @@ final class MasterDataApi extends BaseService
         return [
             'id' => (string) ($row['id'] ?? ''),
             'billingVersion' => (int) ($row['billing_version'] ?? 1),
+            'localReference' => $this->nullableString($row['local_reference'] ?? null),
+            'gatewayPaymentId' => $this->nullableString($row['gateway_payment_id'] ?? null),
+            'gatewayName' => $this->nullableString($row['gateway_name'] ?? null),
+            'billingInterval' => $this->nullableString($row['billing_interval'] ?? null),
+            'invoiceUrl' => $this->nullableString($row['invoice_url'] ?? null),
             'amount' => (float) ($row['amount'] ?? 0),
             'baseAmount' => (float) ($row['base_amount'] ?? 0),
             'tipAmount' => (float) ($row['tip_amount'] ?? 0),
@@ -1861,6 +2705,10 @@ final class MasterDataApi extends BaseService
         }
 
         $billingVersion = max(1, (int) ($settingsRow['billing_version'] ?? $state['billingVersion'] ?? 1));
+        $capabilityRow = $this->capabilityRow();
+        $pricingMetadata = $this->jsonDecodeAssoc($capabilityRow['pricing_metadata'] ?? null);
+        $monthlyAmount = max(0.0, (float) ($pricingMetadata['monthly'] ?? $settingsRow['total_amount'] ?? 0));
+        $yearlyAmount = max(0.0, (float) ($pricingMetadata['yearly'] ?? ($monthlyAmount > 0 ? $monthlyAmount * 12 : 0)));
         $currentPayment = null;
         foreach ($payments as $payment) {
             if ((int) ($payment['billingVersion'] ?? 0) === $billingVersion) {
@@ -1873,12 +2721,18 @@ final class MasterDataApi extends BaseService
             'state' => (string) ($state['state'] ?? 'unconfigured'),
             'writeBlocked' => (bool) ($state['writeBlocked'] ?? false),
             'canManageConfig' => trim((string) ($user['role'] ?? '')) === 'Developer',
+            'planName' => $this->nullableString($settingsRow['plan_name'] ?? null),
+            'billingInterval' => $this->nullableString($settingsRow['billing_interval'] ?? null),
+            'subscriptionStatus' => $this->nullableString($settingsRow['subscription_status'] ?? null),
+            'currentPeriodEnd' => $this->toIso($settingsRow['current_period_end'] ?? null),
             'dueAt' => $this->toIso($settingsRow['due_at'] ?? $state['dueAt'] ?? null),
             'resetDayOfMonth' => $this->resolveServiceSubscriptionResetDayOfMonth($settingsRow, $state),
             'warningDays' => max(1, (int) ($settingsRow['warning_days'] ?? $state['warningDays'] ?? 7)),
             'billingVersion' => $billingVersion,
-            'totalAmount' => (float) ($settingsRow['total_amount'] ?? 0),
-            'minimumPaymentAmount' => (float) ($settingsRow['total_amount'] ?? 0),
+            'totalAmount' => $monthlyAmount,
+            'yearlyAmount' => $yearlyAmount,
+            'pricingMetadata' => $pricingMetadata,
+            'minimumPaymentAmount' => $monthlyAmount,
             'nagadNumber' => $this->nullableString($settingsRow['nagad_number'] ?? null),
             'items' => $items,
             'methods' => $methods,
@@ -1896,7 +2750,7 @@ final class MasterDataApi extends BaseService
         $activeKey = null;
         $state = trim((string) ($overview['state'] ?? ''));
         $dueLabel = $this->formatLocalDateTimeLabel((string) ($overview['dueAt'] ?? ''));
-        $linkUrl = '/settings?tab=subscriptions';
+        $linkUrl = '/subscriptions';
         $actionConfig = [
             'kind' => 'link',
             'linkLabel' => 'Open subscriptions',
@@ -1954,7 +2808,7 @@ final class MasterDataApi extends BaseService
             $this->upsertSystemNotification(
                 $activeKey,
                 'Backend services have expired',
-                '<p>The backend tools have expired. Please renew the services from <strong>Settings &gt; Service Subscriptions</strong>.</p><p>' . ($dueLabel !== '' ? 'Due date: <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p>' : '') . '<a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to renew them.</p>',
+                '<p>The backend tools have expired. Please renew the services from <strong>Subscriptions</strong>.</p><p>' . ($dueLabel !== '' ? 'Due date: <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p>' : '') . '<a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to renew them.</p>',
                 ['Admin', 'Developer'],
                 $actionConfig,
                 [

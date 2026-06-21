@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, PermissionsSettingsPanel } from '../components';
-import ServiceSubscriptionsPanel from '../components/ServiceSubscriptionsPanel';
 import { theme } from '../theme';
 import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type PermissionsSettings, type Settings } from '../types';
 import { 
@@ -25,6 +24,7 @@ import { LoadingOverlay } from '../components';
 import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -60,6 +60,7 @@ const SettingsPage: React.FC = () => {
   const deleteUnitMutation = useDeleteUnit();
   const batchUpdateMutation = useBatchUpdateSettings();
   const toast = useToastNotifications();
+  const { hasCapability } = useCapabilities(Boolean(user));
 
   // Local state for forms (these need to be maintained locally until save)
   const [companySettings, setCompanySettings] = useState<Settings['company']>(() => normalizeCompanySettings(db.settings.company));
@@ -348,17 +349,24 @@ const SettingsPage: React.FC = () => {
     try {
       // Show toast immediately (optimistic UI)
       const toastId = toast.loading('Saving all settings...');
-      
-      // Save all settings in background without waiting
-      batchUpdateMutation.mutateAsync({
+      const updates: any = {
         company: normalizedCompany,
         order: orderSettings,
         invoice: invoiceSettings,
         defaults: systemDefaults,
-        courier: courierSettings,
-        permissions: permissionsSettings,
         wallet: walletSettings,
-      }).then(() => {
+      };
+      if (hasCapability('courier_automation')) {
+        updates.courier = courierSettings;
+      } else if (hasCapability('fraud_checker')) {
+        updates.courier = { fraudChecker: courierSettings.fraudChecker };
+      }
+      if (hasCapability('custom_roles')) {
+        updates.permissions = permissionsSettings;
+      }
+      
+      // Save all settings in background without waiting
+      batchUpdateMutation.mutateAsync(updates).then(() => {
         // Update mock db for backward compatibility
         db.settings.company = normalizedCompany;
         db.settings.order = orderSettings;
@@ -578,14 +586,25 @@ const SettingsPage: React.FC = () => {
     { id: 'company', label: 'Company', icon: ICONS.Dashboard },
     { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales },
     { id: 'defaults', label: 'Defaults', icon: ICONS.Settings },
-    { id: 'subscriptions', label: 'Subscription', icon: ICONS.Bell },
     { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll },
-    { id: 'fraud-checker', label: 'Fraud Checker', icon: ICONS.FraudChecker },
-    { id: 'permissions', label: 'Permissions', icon: ICONS.Users },
+    hasCapability('fraud_checker') ? { id: 'fraud-checker', label: 'Fraud Checker', icon: ICONS.FraudChecker } : null,
+    hasCapability('custom_roles') ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     { id: 'categories', label: 'Categories', icon: ICONS.More },
     { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking },
-    { id: 'courier', label: 'Courier', icon: ICONS.Courier },
-  ];
+    hasCapability('courier_automation') ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
+  ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
+  const availableTabIds = tabs.map((tab) => tab.id).join('|');
+
+  React.useEffect(() => {
+    if (tabs.some((tab) => tab.id === activeTab)) {
+      return;
+    }
+
+    setActiveTab('company');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('tab');
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, availableTabIds, searchParams, setSearchParams]);
 
   if (!user) {
     return <div className="p-8 text-center text-gray-500">Loading settings access...</div>;
@@ -612,15 +631,13 @@ const SettingsPage: React.FC = () => {
         <div>
           <h2 className="md:text-2xl text-xl font-bold text-gray-900">Settings</h2>
         </div>
-        {activeTab !== 'subscriptions' && (
-          <Button
-            onClick={handleSave}
-            variant="primary"
-            size="md"
-          >
-            Save Changes
-          </Button>
-        )}
+        <Button
+          onClick={handleSave}
+          variant="primary"
+          size="md"
+        >
+          Save Changes
+        </Button>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
@@ -948,39 +965,6 @@ const SettingsPage: React.FC = () => {
               </div>
             </div>
           )}
-
-          {activeTab === 'developer' && (
-            <div className="space-y-10 animate-in fade-in duration-300">
-              <div className="border-b pb-4">
-                <h3 className="text-xl font-bold text-gray-800">Developer Only</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  This area is reserved for developers. Toggle white label mode to switch between hardcoded Mame Pilot branding and dynamic company branding.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h4 className="text-lg font-semibold text-gray-900">White Label</h4>
-                    <p className="text-sm text-gray-500">
-                      When enabled, login and sidebar branding use the current company settings. When disabled, the app uses hardcoded Mame Pilot branding.
-                    </p>
-                  </div>
-                  <label className="inline-flex items-center gap-3 cursor-pointer rounded-full bg-white px-4 py-3 border border-gray-200">
-                    <span className="text-sm font-medium text-gray-700">Enabled</span>
-                    <input
-                      type="checkbox"
-                      checked={systemDefaults.whiteLabel}
-                      onChange={(e) => setSystemDefaults({ ...systemDefaults, whiteLabel: e.target.checked })}
-                      className="h-5 w-10 rounded-full border-gray-300 bg-gray-200 accent-blue-600"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'subscriptions' && <ServiceSubscriptionsPanel />}
 
           {activeTab === 'payroll' && (
             <div className="space-y-10 animate-in fade-in duration-300">

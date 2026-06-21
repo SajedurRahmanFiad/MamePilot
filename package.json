@@ -9,8 +9,9 @@
     "backend:setup": "php backend/bin/setup.php",
     "backend:resync-wallet": "php backend/bin/resync_wallet_credits.php",
     "deploy:cpanel:prepare": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1",
-    "deploy:cpanel:prepare:admin": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder admin.bdhatbela.com -BackendFolder bdhatbela_app -PackageName cpanel-admin-package",
-    "deploy:cpanel:prepare:admin1": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder admin1.bdhatbela.com -BackendFolder bdhatbela_app -PackageName cpanel-admin1-package",
+    "deploy:central-license:prepare": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-central-license-api.ps1",
+    "deploy:cpanel:prepare:admin": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder public_html -BackendFolder mamepilot_backend -PackageName cpanel-mamepilot-package",
+    "deploy:cpanel:prepare:admin1": "powershell -ExecutionPolicy Bypass -File .\\scripts\\prepare-cpanel-deploy.ps1 -DocumentRootFolder public_html -BackendFolder mamepilot_backend -PackageName cpanel-mamepilot-package",
     "build": "vite build",
     "preview": "vite preview"
   },

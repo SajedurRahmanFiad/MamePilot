@@ -14,6 +14,7 @@ import { LoadingOverlay } from '../components';
 import { handlePrintOrder } from '../src/utils/printUtils';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   buildLocalDateTime,
   extractSteadfastTrackingFromHistory,
@@ -32,6 +33,7 @@ const OrderDetails: React.FC = () => {
   const { user: authUser } = useAuth();
   const user = authUser || db.currentUser;
   const { can, canAccessRecord, isAdminAccessUser } = useRolePermissions();
+  const { hasCapability } = useCapabilities(Boolean(user));
   const createCompletionForm = (activeOrder?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
     date: getTodayDate(),
@@ -122,7 +124,8 @@ const OrderDetails: React.FC = () => {
   );
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const canCancelCurrentOrder = canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny');
-  const canUseFraudChecker = can('fraudChecker.check');
+  const canUseFraudChecker = can('fraudChecker.check') && hasCapability('fraud_checker');
+  const canUseCourierAutomation = hasCapability('courier_automation');
   const canRunFraudChecker = canUseFraudChecker && /^0\d{10}$/.test(normalizedOrderPhone);
   const courierHistoryLower = String(order.history?.courier || '').toLowerCase();
   const sentToSteadfast = courierHistoryLower.includes('steadfast') || !!order.steadfastConsignmentId;
@@ -362,6 +365,7 @@ const OrderDetails: React.FC = () => {
 
   const canSendCurrentOrderToCourier =
     canSendCurrentOrderToCourierPermission
+    && canUseCourierAutomation
     && order.status !== OrderStatus.PICKED
     && order.status !== OrderStatus.COMPLETED
     && order.status !== OrderStatus.RETURNED
@@ -373,7 +377,7 @@ const OrderDetails: React.FC = () => {
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder
-    || sentToAnyCourier
+    || (sentToAnyCourier && canUseCourierAutomation)
     || canCancelCurrentOrder
     || canUseFraudChecker;
 
@@ -404,13 +408,13 @@ const OrderDetails: React.FC = () => {
           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
             {order.status}
           </span>
-          {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
+          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
             <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
           )}
-          {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToCarryBee && (
+          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToCarryBee && (
             <img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full" />
           )}
-          {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToPaperfly && (
+          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToPaperfly && (
             <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
           )}
         </div>
@@ -454,7 +458,7 @@ const OrderDetails: React.FC = () => {
                         {ICONS.FraudChecker} Check Courier History
                       </button>
                     )}
-                    {sentToAnyCourier && (
+                    {sentToAnyCourier && canUseCourierAutomation && (
                       <button
                         className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-[#0f2f57]"
                         onClick={handleOpenTracking}
@@ -647,7 +651,7 @@ const OrderDetails: React.FC = () => {
                   )
                 )}
 
-                {sentToAnyCourier ? (
+                {canUseCourierAutomation && sentToAnyCourier ? (
                   <p className="text-xs text-gray-700 leading-relaxed font-bold bg-gray-50 p-3 rounded-xl">{order.history.courier}</p>
                 ) : (
                   canSendCurrentOrderToCourier && (
@@ -774,30 +778,36 @@ const OrderDetails: React.FC = () => {
         allowReturnedOutcome={canMarkCurrentOrderReturned}
       />
 
-      <SteadfastModal 
-        isOpen={showSteadfast} 
-        onClose={() => setShowSteadfast(false)}
-        order={order}
-        customer={customer}
-      />
-      <CarryBeeModal 
-        isOpen={showCarryBee} 
-        onClose={() => setShowCarryBee(false)}
-        order={order}
-        customer={customer}
-      />
-      <PaperflyModal
-        isOpen={showPaperfly}
-        onClose={() => setShowPaperfly(false)}
-        order={order}
-        customer={customer}
-      />
-      <FraudCheckModal
-        isOpen={showFraudCheckModal}
-        onClose={() => setShowFraudCheckModal(false)}
-        phone={orderPhone}
-        customerName={customer?.name || order.customerName || ''}
-      />
+      {canUseCourierAutomation && (
+        <>
+          <SteadfastModal 
+            isOpen={showSteadfast} 
+            onClose={() => setShowSteadfast(false)}
+            order={order}
+            customer={customer}
+          />
+          <CarryBeeModal 
+            isOpen={showCarryBee} 
+            onClose={() => setShowCarryBee(false)}
+            order={order}
+            customer={customer}
+          />
+          <PaperflyModal
+            isOpen={showPaperfly}
+            onClose={() => setShowPaperfly(false)}
+            order={order}
+            customer={customer}
+          />
+        </>
+      )}
+      {canUseFraudChecker && (
+        <FraudCheckModal
+          isOpen={showFraudCheckModal}
+          onClose={() => setShowFraudCheckModal(false)}
+          phone={orderPhone}
+          customerName={customer?.name || order.customerName || ''}
+        />
+      )}
     </div>
   );
 };

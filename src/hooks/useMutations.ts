@@ -62,6 +62,13 @@ import {
   updateOrderSettings,
   updateInvoiceSettings,
   updateSystemDefaults,
+  updateCapabilitySettings,
+  syncLicenseCapabilities,
+  createOrUpdateCentralLicense,
+  updateCentralLicenseOverride,
+  resetCentralLicenseOverride,
+  updatePaymentGatewaySettings,
+  initiatePipraPayCheckout,
   updateCourierSettings,
   checkFraudCourierHistory,
   updatePermissionsSettings,
@@ -97,6 +104,9 @@ import type {
   RecycleBinEntityType,
   CompletePickedOrderPayload,
   FraudCheckResult,
+  CapabilitySettings,
+  PaymentGatewaySettings,
+  AppCapabilityMap,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -2283,6 +2293,103 @@ export function useUpdateSystemDefaults(): UseMutationResult<any, Error, any, un
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
     },
+  });
+}
+
+export function useUpdateCapabilitySettings(): UseMutationResult<CapabilitySettings, Error, Partial<CapabilitySettings>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateCapabilitySettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+    },
+  });
+}
+
+export function useSyncLicenseCapabilities(): UseMutationResult<CapabilitySettings, Error, { licenseKey?: string; licenseApiUrl?: string } | undefined, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: syncLicenseCapabilities,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+    },
+  });
+}
+
+export function useCreateOrUpdateCentralLicense(): UseMutationResult<
+  CapabilitySettings,
+  Error,
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createOrUpdateCentralLicense,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['central-license-tiers'], exact: false });
+    },
+  });
+}
+
+export function useUpdateCentralLicenseOverride(): UseMutationResult<
+  CapabilitySettings,
+  Error,
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateCentralLicenseOverride,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+    },
+  });
+}
+
+export function useResetCentralLicenseOverride(): UseMutationResult<
+  CapabilitySettings,
+  Error,
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string } | undefined,
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: resetCentralLicenseOverride,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+    },
+  });
+}
+
+export function useUpdatePaymentGatewaySettings(): UseMutationResult<PaymentGatewaySettings, Error, PaymentGatewaySettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updatePaymentGatewaySettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'payment-gateway'] });
+    },
+  });
+}
+
+export function useInitiatePipraPayCheckout(): UseMutationResult<
+  { checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null },
+  Error,
+  { interval: 'monthly' | 'yearly'; amount: number },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: initiatePipraPayCheckout,
   });
 }
 

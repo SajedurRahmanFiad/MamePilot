@@ -615,6 +615,68 @@ export interface Settings {
   permissions?: PermissionsSettings;
 }
 
+export type AppCapabilityKey =
+  | 'dashboard'
+  | 'inventory'
+  | 'sales'
+  | 'recycle_bin_undoer'
+  | 'purchases'
+  | 'banking'
+  | 'human_resources'
+  | 'advanced_reports'
+  | 'fraud_checker'
+  | 'whitelabel'
+  | 'custom_roles'
+  | 'courier_automation';
+
+export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
+
+export interface LicenseTier {
+  tierKey: string;
+  tierName: string;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  capabilities: AppCapabilityKey[];
+}
+
+export interface CapabilitySettings {
+  capabilities: AppCapabilityMap;
+  tierKey?: string | null;
+  planName?: string | null;
+  licenseStatus: string;
+  renewalDate?: string | null;
+  overrideEnabled?: boolean;
+  availableTiers?: LicenseTier[];
+  pricingMetadata?: {
+    monthly?: number;
+    yearly?: number;
+    [key: string]: number | undefined;
+  };
+  lastSyncedAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncMessage?: string | null;
+  syncGraceUntil?: string | null;
+  licenseKey?: string;
+  licenseApiUrl?: string;
+  licenseOwnerToken?: string;
+}
+
+export interface PaymentGatewaySettings {
+  piprapayBaseUrl: string;
+  piprapayApiKey: string;
+  piprapayMerchantId: string;
+  piprapayIpnSecret: string;
+}
+
+export interface LocalUsageSummary {
+  activeUsers: number;
+  totalTransactions: number;
+  totalOrders: number;
+  totalBills: number;
+  totalCustomers: number;
+  totalProducts: number;
+}
+
 export interface FraudCheckCourierHistory {
   key: string;
   name: string;
@@ -870,6 +932,11 @@ export interface ServiceSubscriptionMethod {
 export interface ServiceSubscriptionPayment {
   id: string;
   billingVersion: number;
+  localReference?: string | null;
+  gatewayPaymentId?: string | null;
+  gatewayName?: string | null;
+  billingInterval?: string | null;
+  invoiceUrl?: string | null;
   amount: number;
   baseAmount: number;
   tipAmount: number;
@@ -892,11 +959,21 @@ export interface ServiceSubscriptionOverview {
   state: ServiceSubscriptionState;
   writeBlocked: boolean;
   canManageConfig: boolean;
+  planName?: string | null;
+  billingInterval?: string | null;
+  subscriptionStatus?: string | null;
+  currentPeriodEnd?: string | null;
   dueAt?: string | null;
   resetDayOfMonth?: number | null;
   warningDays: number;
   billingVersion: number;
   totalAmount: number;
+  yearlyAmount?: number;
+  pricingMetadata?: {
+    monthly?: number;
+    yearly?: number;
+    [key: string]: number | undefined;
+  };
   minimumPaymentAmount: number;
   nagadNumber?: string | null;
   items: ServiceSubscriptionItem[];

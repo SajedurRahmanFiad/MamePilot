@@ -28,7 +28,7 @@ final class Http
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Mh-Piprapay-Api-Key, mh-piprapay-api-key, X-Piprapay-Signature');
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
         echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }

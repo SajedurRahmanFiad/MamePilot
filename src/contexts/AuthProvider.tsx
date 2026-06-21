@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { fetchAccounts, fetchBootstrapSession, fetchSystemDefaults, loginUser } from '../services/supabaseQueries';
+import { fetchAccounts, fetchBootstrapSession, fetchSystemDefaults, loginUser, syncLicenseCapabilities } from '../services/supabaseQueries';
 import { ApiError, clearAuthToken, getAuthToken, setAuthToken } from '../services/apiClient';
 import { useQueryClient } from '@tanstack/react-query';
-import type { PermissionsSettings, User } from '../../types';
+import { hasAdminAccess, type CapabilitySettings, type PermissionsSettings, type User } from '../../types';
 import { db, saveDb } from '../../db';
 
 export type StartupStatus = 'idle' | 'checking' | 'ready' | 'anonymous' | 'timeout' | 'offline' | 'error';
@@ -21,6 +21,7 @@ type AuthContextType = {
 type BootstrapSessionData = {
   user: User;
   permissions: PermissionsSettings;
+  capabilities: CapabilitySettings;
 };
 
 type BootstrapFailure = {
@@ -44,6 +45,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const BOOTSTRAP_TIMEOUT_MS = 15000;
 const BOOTSTRAP_CACHE_KEY = 'bootstrapSessionCache';
 const BOOTSTRAP_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+const LICENSE_SYNC_STORAGE_KEY = 'licenseCapabilitiesLastSyncAttempt';
+const LICENSE_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LEGACY_SESSION_KEYS = ['currentUserId', 'isLoggedIn', 'userProfile', 'userData', 'currentUser'] as const;
 
 function readBootstrapCache(token: string): BootstrapSessionData | null {
@@ -144,6 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(session.user);
     db.currentUser = session.user;
     queryClient.setQueryData(['settings', 'permissions'], session.permissions);
+    queryClient.setQueryData(['settings', 'capabilities'], session.capabilities);
     setStartupError(null);
     setStartupStatus('ready');
     saveDb();
@@ -153,6 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     db.currentUser = null;
     queryClient.removeQueries({ queryKey: ['settings', 'permissions'], exact: true });
+    queryClient.removeQueries({ queryKey: ['settings', 'capabilities'], exact: true });
     setStartupError(null);
     setStartupStatus('anonymous');
 
@@ -181,6 +186,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.warn('[Auth] Background prefetch failed to start:', error);
     }
+  }, [queryClient]);
+
+  const maybeSyncLicenseCapabilities = useCallback((session: BootstrapSessionData) => {
+    if (!hasAdminAccess(session.user.role)) {
+      return;
+    }
+
+    const now = Date.now();
+    const lastAttempt = Number(localStorage.getItem(LICENSE_SYNC_STORAGE_KEY) || '0');
+    if (Number.isFinite(lastAttempt) && now - lastAttempt < LICENSE_SYNC_INTERVAL_MS) {
+      return;
+    }
+
+    localStorage.setItem(LICENSE_SYNC_STORAGE_KEY, String(now));
+    syncLicenseCapabilities()
+      .then((capabilities) => {
+        queryClient.setQueryData(['settings', 'capabilities'], capabilities);
+        queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      })
+      .catch(() => {});
   }, [queryClient]);
 
   const bootstrapFromToken = useCallback(async (): Promise<BootstrapResult> => {
@@ -218,6 +243,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         applyAuthenticatedState(session);
+        maybeSyncLicenseCapabilities(session);
         prefetchPostBootstrap();
         window.dispatchEvent(new Event('authChange'));
         return { kind: 'success', data: session };
@@ -236,6 +262,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (cachedSession) {
           console.warn('[Auth] Session bootstrap failed, using cached session snapshot:', error);
+          maybeSyncLicenseCapabilities(cachedSession);
           prefetchPostBootstrap();
           return { kind: 'success', data: cachedSession };
         }
@@ -258,7 +285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     bootstrapInFlightRef.current = { token, promise: request };
     return request;
-  }, [applyAuthenticatedState, prefetchPostBootstrap, queryClient, setAnonymousState]);
+  }, [applyAuthenticatedState, maybeSyncLicenseCapabilities, prefetchPostBootstrap, queryClient, setAnonymousState]);
 
   useEffect(() => {
     mountedRef.current = true;

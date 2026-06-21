@@ -74,6 +74,8 @@ final class SchemaManager
             'INSERT INTO invoice_settings ',
             'INSERT INTO system_defaults ',
             'INSERT INTO courier_settings ',
+            'INSERT INTO app_capability_settings ',
+            'INSERT INTO payment_gateway_settings ',
             'INSERT INTO payroll_settings ',
         ];
 

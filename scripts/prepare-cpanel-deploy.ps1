@@ -1,7 +1,7 @@
 param(
-  [string]$DocumentRootFolder = 'admin.bdhatbela.com',
-  [string]$BackendFolder = 'bdhatbela_app',
-  [string]$PackageName = 'cpanel-admin-package',
+  [string]$DocumentRootFolder = 'public_html',
+  [string]$BackendFolder = 'mamepilot_backend',
+  [string]$PackageName = 'cpanel-mamepilot-package',
   [switch]$SkipBuild,
   [switch]$NoZip
 )
@@ -49,9 +49,13 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -De
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $templateRoot 'bdhatbela_app\.env.example') -Destination (Join-Path $appRoot '.env.example') -Force
-Copy-Item -LiteralPath (Join-Path $repoRoot 'SUPABASE_TO_MARIADB_REFRESH.md') -Destination (Join-Path $appRoot 'SUPABASE_TO_MARIADB_REFRESH.md') -Force
-Copy-Item -LiteralPath (Join-Path $repoRoot 'CPANEL_DEPLOYMENT.md') -Destination (Join-Path $packageRoot 'CPANEL_DEPLOYMENT.md') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot '.env.example') -Destination (Join-Path $appRoot '.env.example') -Force
+foreach ($guideName in @('CPANEL_DEPLOYMENT.md', 'SUPABASE_TO_MARIADB_REFRESH.md')) {
+  $guidePath = Join-Path $repoRoot $guideName
+  if (Test-Path $guidePath) {
+    Copy-Item -LiteralPath $guidePath -Destination (Join-Path $packageRoot $guideName) -Force
+  }
+}
 $serverOpsGuide = Join-Path $repoRoot 'SERVER_OPS_ACTION_GUIDE.md'
 if (Test-Path $serverOpsGuide) {
   Copy-Item -LiteralPath $serverOpsGuide -Destination (Join-Path $packageRoot 'SERVER_OPS_ACTION_GUIDE.md') -Force

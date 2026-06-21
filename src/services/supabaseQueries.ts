@@ -41,7 +41,12 @@ import type {
   WalletSettings,
   CompletePickedOrderPayload,
   CourierSettings,
+  CapabilitySettings,
   FraudCheckResult,
+  LocalUsageSummary,
+  PaymentGatewaySettings,
+  LicenseTier,
+  AppCapabilityMap,
 } from '../../types';
 import { apiAction, type ApiActionOptions } from './apiClient';
 
@@ -138,7 +143,7 @@ export async function fetchUsersMini() { return call<Array<{ id: string; name: s
 export async function fetchUserByPhone(phone: string) { return call<User | null>('fetchUserByPhone', { phone }); }
 export async function fetchUserById(id: string) { return call<User | null>('fetchUserById', { id }); }
 export async function fetchBootstrapSession(options?: ApiActionOptions) {
-  return call<{ user: User; permissions: PermissionsSettings }>('bootstrapSession', {}, options);
+  return call<{ user: User; permissions: PermissionsSettings; capabilities: CapabilitySettings }>('bootstrapSession', {}, options);
 }
 export async function fetchUserActivityPerformanceReportPage(
   page: number = 1,
@@ -222,6 +227,16 @@ export async function fetchInvoiceSettings() { return call<any>('fetchInvoiceSet
 export async function updateInvoiceSettings(updates: { title?: string; logoWidth?: number; logoHeight?: number; footer?: string; }) { return call<any>('updateInvoiceSettings', updates); }
 export async function fetchSystemDefaults(): Promise<{ defaultAccountId: string; defaultPaymentMethod: string; incomeCategoryId: string; expenseCategoryId: string; recordsPerPage: number; maxTransactionAmount: number; whiteLabel: boolean; }> { return call<any>('fetchSystemDefaults'); }
 export async function updateSystemDefaults(updates: { defaultAccountId?: string; defaultPaymentMethod?: string; incomeCategoryId?: string; expenseCategoryId?: string; recordsPerPage?: number; maxTransactionAmount?: number; whiteLabel?: boolean; }) { return call<any>('updateSystemDefaults', updates); }
+export async function fetchCapabilitySettings(): Promise<CapabilitySettings> { return call<CapabilitySettings>('fetchCapabilitySettings'); }
+export async function updateCapabilitySettings(updates: Partial<CapabilitySettings>): Promise<CapabilitySettings> { return call<CapabilitySettings>('updateCapabilitySettings', updates); }
+export async function syncLicenseCapabilities(payload?: { licenseKey?: string; licenseApiUrl?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('syncLicenseCapabilities', payload || {}, { timeoutMs: 30000 }); }
+export async function fetchCentralLicenseTiers(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string }): Promise<{ tiers: LicenseTier[] }> { return call<{ tiers: LicenseTier[] }>('fetchCentralLicenseTiers', payload || {}, { timeoutMs: 30000 }); }
+export async function createOrUpdateCentralLicense(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null }): Promise<CapabilitySettings> { return call<CapabilitySettings>('createOrUpdateCentralLicense', payload, { timeoutMs: 30000 }); }
+export async function updateCentralLicenseOverride(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap }): Promise<CapabilitySettings> { return call<CapabilitySettings>('updateCentralLicenseOverride', payload, { timeoutMs: 30000 }); }
+export async function resetCentralLicenseOverride(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('resetCentralLicenseOverride', payload || {}, { timeoutMs: 30000 }); }
+export async function fetchPaymentGatewaySettings(): Promise<PaymentGatewaySettings> { return call<PaymentGatewaySettings>('fetchPaymentGatewaySettings'); }
+export async function updatePaymentGatewaySettings(updates: PaymentGatewaySettings): Promise<PaymentGatewaySettings> { return call<PaymentGatewaySettings>('updatePaymentGatewaySettings', updates); }
+export async function fetchLocalUsageSummary(): Promise<LocalUsageSummary> { return call<LocalUsageSummary>('fetchLocalUsageSummary'); }
 export async function fetchCourierSettings(): Promise<CourierSettings> { return call<CourierSettings>('fetchCourierSettings'); }
 export async function updateCourierSettings(updates: {
   steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string };
@@ -383,6 +398,13 @@ export async function submitServiceSubscriptionPayment(payload: {
   transactionId: string;
 }): Promise<ServiceSubscriptionOverview> {
   return call<ServiceSubscriptionOverview>('submitServiceSubscriptionPayment', payload);
+}
+
+export async function initiatePipraPayCheckout(payload: {
+  interval: 'monthly' | 'yearly';
+  amount: number;
+}): Promise<{ checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null }> {
+  return call('initiatePipraPayCheckout', payload, { timeoutMs: 30000 });
 }
 
 export async function batchUpdateSettings(updates: { company?: Partial<CompanySettings>; order?: { prefix?: string; nextNumber?: number; }; invoice?: { title?: string; logoWidth?: number; logoHeight?: number; footer?: string; }; defaults?: { defaultAccountId?: string; defaultPaymentMethod?: string; incomeCategoryId?: string; expenseCategoryId?: string; recordsPerPage?: number; maxTransactionAmount?: number; whiteLabel?: boolean; }; courier?: { steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string }; carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string }; paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number }; fraudChecker?: { apiKey?: string }; }; permissions?: PermissionsSettings; payroll?: { unitAmount?: number; countedStatuses?: any[]; }; wallet?: { unitAmount?: number; countedStatuses?: any[]; }; }) {

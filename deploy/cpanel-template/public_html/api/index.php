@@ -6,11 +6,12 @@ use App\Auth;
 use App\Config;
 use App\CourierApi;
 use App\Database;
+use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
 use App\OperationsApi;
 
-$configuredRoot = getenv('BDHATBELA_APP_ROOT');
+$configuredRoot = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
 $appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
     ? rtrim($configuredRoot, DIRECTORY_SEPARATOR)
     : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend';
@@ -53,6 +54,8 @@ try {
     $config = Config::load($appRoot);
     $database = new Database($config);
     $auth = new Auth($config, $database);
+    $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
+    $featureAccess = new FeatureAccess($database, $auth);
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
@@ -67,8 +70,17 @@ try {
         exit;
     }
 
+    $serviceLifecycle->assertActionAllowed($action);
+    $featureAccess->assertActionAllowed($action, $payload);
+
     if ($action === 'batchUpdateSettings') {
         $updates = is_array($payload['updates'] ?? null) ? $payload['updates'] : $payload;
+        if (isset($updates['courier']) && is_array($updates['courier'])) {
+            $featureAccess->assertActionAllowed('updateCourierSettings', $updates['courier']);
+        }
+        if (isset($updates['permissions'])) {
+            $featureAccess->assertActionAllowed('updatePermissionsSettings', []);
+        }
         $walletPayload = $updates['wallet'] ?? (isset($updates['payroll']) ? [
             'unitAmount' => $updates['payroll']['unitAmount'] ?? null,
             'countedStatuses' => $updates['payroll']['countedStatuses'] ?? null,
@@ -98,6 +110,12 @@ try {
     }
 
     Http::error(404, 'Unknown action.');
+} catch (\App\ApiException $exception) {
+    Http::error(
+        $exception->httpStatus(),
+        $exception->getMessage(),
+        array_merge(['code' => $exception->errorCode()], $exception->extra())
+    );
 } catch (Throwable $exception) {
     $message = $exception->getMessage();
     $status = 500;

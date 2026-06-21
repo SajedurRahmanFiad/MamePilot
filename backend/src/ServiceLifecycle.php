@@ -110,7 +110,7 @@ final class ServiceLifecycle
         }
 
         throw new ApiException(
-            'The backend tools have expired. Please renew the services from Settings > Service Subscriptions to restore normal operations.',
+            'The backend tools have expired. Please renew the services from Subscriptions to restore normal operations.',
             423,
             'SERVICE_EXPIRED',
             ['serviceState' => $status]
@@ -156,6 +156,17 @@ final class ServiceLifecycle
         $billingVersion = max(1, (int) ($settings['billing_version'] ?? 1));
         $dueAt = $this->normalizeDateTimeString($settings['due_at'] ?? null);
         $totalAmount = max(0.0, (float) ($settings['total_amount'] ?? 0));
+        $subscriptionStatus = strtolower(trim((string) ($settings['subscription_status'] ?? '')));
+        if (in_array($subscriptionStatus, ['past_due', 'expired', 'cancelled', 'canceled'], true)) {
+            return [
+                'state' => $subscriptionStatus === 'past_due' ? 'warning' : 'expired',
+                'writeBlocked' => $subscriptionStatus !== 'past_due',
+                'dueAt' => $dueAt,
+                'warningDays' => $warningDays,
+                'billingVersion' => $billingVersion,
+                'payment' => null,
+            ];
+        }
         if ($dueAt === null || $totalAmount <= 0) {
             return [
                 'state' => 'unconfigured',

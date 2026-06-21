@@ -453,7 +453,7 @@ const DeveloperNotifications: React.FC = () => {
                   type="text"
                   value={form.linkUrl}
                   onChange={(event) => setForm((current) => ({ ...current, linkUrl: event.target.value }))}
-                  placeholder="/settings?tab=subscriptions"
+                  placeholder="/subscriptions"
                   className="w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
                 />
               </div>

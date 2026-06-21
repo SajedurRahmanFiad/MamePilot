@@ -7,6 +7,7 @@ use App\ApiException;
 use App\Config;
 use App\CourierApi;
 use App\Database;
+use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
 use App\OperationsApi;
@@ -39,6 +40,7 @@ try {
     $database = new Database($config);
     $auth = new Auth($config, $database);
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
+    $featureAccess = new FeatureAccess($database, $auth);
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
@@ -53,9 +55,16 @@ try {
     }
 
     $serviceLifecycle->assertActionAllowed($action);
+    $featureAccess->assertActionAllowed($action, $payload);
 
     if ($action === 'batchUpdateSettings') {
         $updates = is_array($payload['updates'] ?? null) ? $payload['updates'] : $payload;
+        if (isset($updates['courier']) && is_array($updates['courier'])) {
+            $featureAccess->assertActionAllowed('updateCourierSettings', $updates['courier']);
+        }
+        if (isset($updates['permissions'])) {
+            $featureAccess->assertActionAllowed('updatePermissionsSettings', []);
+        }
         $walletPayload = $updates['wallet'] ?? (isset($updates['payroll']) ? [
             'unitAmount' => $updates['payroll']['unitAmount'] ?? null,
             'countedStatuses' => $updates['payroll']['countedStatuses'] ?? null,
