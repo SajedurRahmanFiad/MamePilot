@@ -45,13 +45,8 @@ declare(strict_types=1);
  *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
  * );
  *
- * INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
- * ('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
- * ('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
- * ('advanced', 'Advanced', 4990, 49900, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3);
- *
  * CREATE TABLE notifications (
- *   id VARCHAR(64) NOT NULL PRIMARY KEY,
+ *   id VARCHAR(255) NOT NULL PRIMARY KEY,
  *   subject VARCHAR(255) NOT NULL,
  *   content_html LONGTEXT NOT NULL,
  *   target_roles LONGTEXT NOT NULL,
@@ -65,11 +60,16 @@ declare(strict_types=1);
  *   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
  * );
+ *
+ * INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
+ * ('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
+ * ('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
+ * ('advanced', 'Advanced', 4990, 49900, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3);
  */
 
-const LICENSE_DB_DSN = 'mysql:host=localhost;dbname=YOUR_CPANEL_DATABASE;charset=utf8mb4';
-const LICENSE_DB_USER = 'YOUR_CPANEL_DATABASE_USER';
-const LICENSE_DB_PASS = 'YOUR_CPANEL_DATABASE_PASSWORD';
+const LICENSE_DB_DSN = 'mysql:host=localhost;dbname=zomesnze_mamepilotlicense;charset=utf8mb4';
+const LICENSE_DB_USER = 'zomesnze_admin';
+const LICENSE_DB_PASS = 'admin@crossintbd';
 const CENTRAL_OWNER_TOKEN = 'fthderthynersgjsyrhgrdryhrtfjutfjdshnrxethmezrejt';
 const RESPONSE_SIGNING_SECRET = 'syghbaweoiwnfouvyzsnruvygebrgyhusbdrgvhjsdnrzubgjhyrdngb';
 
@@ -279,6 +279,59 @@ try {
         respond(200, ['notification' => notificationPayload($row)]);
     }
 
+    if ($action === 'create_notification') {
+        $subject = trim((string) ($body['subject'] ?? ''));
+        $contentHtml = trim((string) ($body['contentHtml'] ?? $body['content_html'] ?? ''));
+        $targetRoles = capabilitiesFrom($body['targetRoles'] ?? $body['target_roles'] ?? []);
+        if ($subject === '') {
+            respond(400, ['error' => 'Notification subject is required.']);
+        }
+        if ($contentHtml === '') {
+            respond(400, ['error' => 'Notification content is required.']);
+        }
+        if ($targetRoles === []) {
+            respond(400, ['error' => 'At least one target role is required.']);
+        }
+
+        $startsAt = trim((string) ($body['startsAt'] ?? $body['starts_at'] ?? '')) ?: null;
+        $endsAt = trim((string) ($body['endsAt'] ?? $body['ends_at'] ?? '')) ?: null;
+        $actionConfig = $body['actionConfig'] ?? $body['action_config'] ?? [];
+        if (!is_array($actionConfig)) {
+            $actionConfig = json_decode((string) $actionConfig, true) ?: [];
+        }
+        $metadata = $body['metadata'] ?? [];
+        if (!is_array($metadata)) {
+            $metadata = json_decode((string) $metadata, true) ?: [];
+        }
+
+        $notificationId = generateNotificationId();
+        $statement = $pdo->prepare(
+            'INSERT INTO notifications (
+                 id, subject, content_html, target_roles, starts_at, ends_at,
+                 action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
+             ) VALUES (
+                 :id, :subject, :content_html, :target_roles, :starts_at, :ends_at,
+                 :action_config, :metadata, :created_by, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )'
+        );
+        $statement->execute([
+            ':id' => $notificationId,
+            ':subject' => $subject,
+            ':content_html' => $contentHtml,
+            ':target_roles' => json_encode($targetRoles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':starts_at' => $startsAt !== '' ? $startsAt : null,
+            ':ends_at' => $endsAt !== '' ? $endsAt : null,
+            ':action_config' => json_encode($actionConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':created_by' => null,
+        ]);
+
+        $created = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
+        $created->execute([':id' => $notificationId]);
+        $row = $created->fetch();
+        respond(200, ['notification' => notificationPayload($row ?: [])]);
+    }
+
     requireOwnerToken();
 
     if ($action === 'create_or_update_license') {
@@ -359,59 +412,6 @@ try {
         $statement->execute([':license_key' => $licenseKey]);
 
         respond(200, resolveLicense($pdo, $licenseKey));
-    }
-
-    if ($action === 'create_notification') {
-        $subject = trim((string) ($body['subject'] ?? ''));
-        $contentHtml = trim((string) ($body['contentHtml'] ?? $body['content_html'] ?? ''));
-        $targetRoles = capabilitiesFrom($body['targetRoles'] ?? $body['target_roles'] ?? []);
-        if ($subject === '') {
-            respond(400, ['error' => 'Notification subject is required.']);
-        }
-        if ($contentHtml === '') {
-            respond(400, ['error' => 'Notification content is required.']);
-        }
-        if ($targetRoles === []) {
-            respond(400, ['error' => 'At least one target role is required.']);
-        }
-
-        $startsAt = trim((string) ($body['startsAt'] ?? $body['starts_at'] ?? '')) ?: null;
-        $endsAt = trim((string) ($body['endsAt'] ?? $body['ends_at'] ?? '')) ?: null;
-        $actionConfig = $body['actionConfig'] ?? $body['action_config'] ?? [];
-        if (!is_array($actionConfig)) {
-            $actionConfig = json_decode((string) $actionConfig, true) ?: [];
-        }
-        $metadata = $body['metadata'] ?? [];
-        if (!is_array($metadata)) {
-            $metadata = json_decode((string) $metadata, true) ?: [];
-        }
-
-        $notificationId = generateNotificationId();
-        $statement = $pdo->prepare(
-            'INSERT INTO notifications (
-                 id, subject, content_html, target_roles, starts_at, ends_at,
-                 action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
-             ) VALUES (
-                 :id, :subject, :content_html, :target_roles, :starts_at, :ends_at,
-                 :action_config, :metadata, :created_by, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-             )'
-        );
-        $statement->execute([
-            ':id' => $notificationId,
-            ':subject' => $subject,
-            ':content_html' => $contentHtml,
-            ':target_roles' => json_encode($targetRoles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ':starts_at' => $startsAt !== '' ? $startsAt : null,
-            ':ends_at' => $endsAt !== '' ? $endsAt : null,
-            ':action_config' => json_encode($actionConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ':metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ':created_by' => null,
-        ]);
-
-        $created = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
-        $created->execute([':id' => $notificationId]);
-        $row = $created->fetch();
-        respond(200, ['notification' => notificationPayload($row ?: [])]);
     }
 
     respond(400, ['error' => 'Unknown action.']);

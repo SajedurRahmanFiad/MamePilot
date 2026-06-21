@@ -45,6 +45,22 @@ declare(strict_types=1);
  *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
  * );
  *
+ * CREATE TABLE notifications (
+ *   id VARCHAR(255) NOT NULL PRIMARY KEY,
+ *   subject VARCHAR(255) NOT NULL,
+ *   content_html LONGTEXT NOT NULL,
+ *   target_roles LONGTEXT NOT NULL,
+ *   starts_at DATETIME NULL,
+ *   ends_at DATETIME NULL,
+ *   action_config LONGTEXT NULL,
+ *   metadata LONGTEXT NULL,
+ *   created_by VARCHAR(255) NULL,
+ *   is_active TINYINT(1) NOT NULL DEFAULT 1,
+ *   is_system_generated TINYINT(1) NOT NULL DEFAULT 0,
+ *   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+ * );
+ *
  * INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
  * ('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
  * ('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
@@ -225,6 +241,95 @@ try {
             respond(400, ['error' => 'license_key is required.']);
         }
         respond(200, resolveLicense($pdo, $licenseKey));
+    }
+
+    if ($action === 'list_notifications') {
+        $targetRoles = capabilitiesFrom($body['targetRoles'] ?? $body['target_roles'] ?? []);
+        $sql = 'SELECT * FROM notifications WHERE is_active = 1';
+        $bindings = [];
+        if ($targetRoles !== []) {
+            $clauses = [];
+            foreach ($targetRoles as $index => $role) {
+                $clauses[] = 'target_roles LIKE :role_' . $index;
+                $bindings[':role_' . $index] = '%"' . $role . '"%';
+            }
+            $sql .= ' AND (' . implode(' OR ', $clauses) . ')';
+        }
+        $sql .= ' ORDER BY COALESCE(starts_at, created_at) DESC, created_at DESC LIMIT 500';
+        $statement = $pdo->prepare($sql);
+        $statement->execute($bindings);
+        $items = [];
+        while ($row = $statement->fetch()) {
+            $items[] = notificationPayload($row);
+        }
+        respond(200, ['notifications' => $items]);
+    }
+
+    if ($action === 'fetch_notification_by_id') {
+        $notificationId = trim((string) ($body['id'] ?? ''));
+        if ($notificationId === '') {
+            respond(400, ['error' => 'id is required.']);
+        }
+        $statement = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
+        $statement->execute([':id' => $notificationId]);
+        $row = $statement->fetch();
+        if (!$row) {
+            respond(404, ['error' => 'Notification not found.']);
+        }
+        respond(200, ['notification' => notificationPayload($row)]);
+    }
+
+    if ($action === 'create_notification') {
+        $subject = trim((string) ($body['subject'] ?? ''));
+        $contentHtml = trim((string) ($body['contentHtml'] ?? $body['content_html'] ?? ''));
+        $targetRoles = capabilitiesFrom($body['targetRoles'] ?? $body['target_roles'] ?? []);
+        if ($subject === '') {
+            respond(400, ['error' => 'Notification subject is required.']);
+        }
+        if ($contentHtml === '') {
+            respond(400, ['error' => 'Notification content is required.']);
+        }
+        if ($targetRoles === []) {
+            respond(400, ['error' => 'At least one target role is required.']);
+        }
+
+        $startsAt = trim((string) ($body['startsAt'] ?? $body['starts_at'] ?? '')) ?: null;
+        $endsAt = trim((string) ($body['endsAt'] ?? $body['ends_at'] ?? '')) ?: null;
+        $actionConfig = $body['actionConfig'] ?? $body['action_config'] ?? [];
+        if (!is_array($actionConfig)) {
+            $actionConfig = json_decode((string) $actionConfig, true) ?: [];
+        }
+        $metadata = $body['metadata'] ?? [];
+        if (!is_array($metadata)) {
+            $metadata = json_decode((string) $metadata, true) ?: [];
+        }
+
+        $notificationId = generateNotificationId();
+        $statement = $pdo->prepare(
+            'INSERT INTO notifications (
+                 id, subject, content_html, target_roles, starts_at, ends_at,
+                 action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
+             ) VALUES (
+                 :id, :subject, :content_html, :target_roles, :starts_at, :ends_at,
+                 :action_config, :metadata, :created_by, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )'
+        );
+        $statement->execute([
+            ':id' => $notificationId,
+            ':subject' => $subject,
+            ':content_html' => $contentHtml,
+            ':target_roles' => json_encode($targetRoles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':starts_at' => $startsAt !== '' ? $startsAt : null,
+            ':ends_at' => $endsAt !== '' ? $endsAt : null,
+            ':action_config' => json_encode($actionConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':created_by' => null,
+        ]);
+
+        $created = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
+        $created->execute([':id' => $notificationId]);
+        $row = $created->fetch();
+        respond(200, ['notification' => notificationPayload($row ?: [])]);
     }
 
     requireOwnerToken();

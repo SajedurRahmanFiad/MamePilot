@@ -1445,15 +1445,27 @@ final class MasterDataApi extends BaseService
             $this->upsertCentralNotificationLocally($notification);
         }
 
-        if ($remoteIds !== []) {
-            [$placeholders, $bindings] = $this->inClause($remoteIds, 'notification_id');
-            $this->database->execute(
-                'UPDATE notifications
-                 SET is_active = 0, updated_at = :updated_at
-                 WHERE system_key LIKE :central_key
-                   AND id NOT IN (' . implode(', ', $placeholders) . ')',
-                array_merge([':central_key' => 'central:%', ':updated_at' => $this->database->nowUtc()], $bindings)
-            );
+        $roleNeedle = '%"' . trim((string) ($targetRoles[0] ?? '')) . '"%';
+        if ($roleNeedle !== '%""%') {
+            if ($remoteIds !== []) {
+                [$placeholders, $bindings] = $this->inClause($remoteIds, 'notification_id');
+                $this->database->execute(
+                    'UPDATE notifications
+                     SET is_active = 0, updated_at = :updated_at
+                     WHERE system_key LIKE :central_key
+                       AND target_roles LIKE :role_needle
+                       AND id NOT IN (' . implode(', ', $placeholders) . ')',
+                    array_merge([':central_key' => 'central:%', ':role_needle' => $roleNeedle, ':updated_at' => $this->database->nowUtc()], $bindings)
+                );
+            } else {
+                $this->database->execute(
+                    'UPDATE notifications
+                     SET is_active = 0, updated_at = :updated_at
+                     WHERE system_key LIKE :central_key
+                       AND target_roles LIKE :role_needle',
+                    [':central_key' => 'central:%', ':role_needle' => $roleNeedle, ':updated_at' => $this->database->nowUtc()]
+                );
+            }
         }
     }
 
@@ -2988,6 +3000,8 @@ final class MasterDataApi extends BaseService
             $this->syncServiceSubscriptionNotifications($this->buildServiceSubscriptionOverview($user));
         }
 
+        $this->syncCentralNotifications([$user['role'] ?? '']);
+
         $now = $this->database->nowUtc();
         $baseBindings = [
             ':role_needle' => '%"' . trim((string) ($user['role'] ?? '')) . '"%',
@@ -3048,16 +3062,6 @@ final class MasterDataApi extends BaseService
         }
 
         $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
-        $centralNotifications = $this->fetchCentralNotifications(['targetRoles' => $user['role'] ? [$user['role']] : []]);
-        foreach ($centralNotifications as $notification) {
-            if (!is_array($notification)) {
-                continue;
-            }
-            $items[] = array_merge(
-                ['isRead' => false, 'isActive' => true, 'createdBy' => null, 'createdByName' => null, 'actionResult' => null, 'actedAt' => null, 'metadata' => null],
-                $notification
-            );
-        }
 
         usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
         $unreadCount = count(array_filter(
@@ -3094,6 +3098,8 @@ final class MasterDataApi extends BaseService
         if ($this->hasAdminAccess((string) ($user['role'] ?? ''))) {
             $this->syncServiceSubscriptionNotifications($this->buildServiceSubscriptionOverview($user));
         }
+
+        $this->syncCentralNotifications([$user['role'] ?? '']);
 
         $now = $this->database->nowUtc();
         $baseBindings = [
@@ -3289,7 +3295,61 @@ final class MasterDataApi extends BaseService
             ? $this->nullableString($params['startsAt'])
             : $this->database->nowUtc();
         $startsAt = $startsAt !== null ? $this->normalizeDateTimeInput($startsAt) : $this->database->nowUtc();
+        $endsAt = array_key_exists('endsAt', $params) ? $this->nullableString($params['endsAt']) : null;
+        $endsAt = $endsAt !== null ? $this->normalizeDateTimeInput($endsAt) : null;
         $actionConfig = $this->normalizeNotificationActionConfig($params['actionConfig'] ?? [], $targetRoles);
+        $metadata = array_key_exists('metadata', $params)
+            ? (is_array($params['metadata']) ? $params['metadata'] : (is_string($params['metadata']) ? json_decode((string) $params['metadata'], true) : []))
+            : [];
+        if (!is_array($metadata)) {
+            $metadata = [];
+        }
+
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+
+        $payload = [
+            'subject' => $subject,
+            'contentHtml' => $contentHtml,
+            'targetRoles' => $targetRoles,
+            'startsAt' => $startsAt,
+            'endsAt' => $endsAt,
+            'actionConfig' => $actionConfig,
+            'metadata' => $metadata,
+        ];
+
+        if ($apiUrl !== '') {
+            try {
+                $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'create_notification', $payload);
+                if (!is_array($response['notification'] ?? null)) {
+                    throw new RuntimeException('Central notification response is invalid.');
+                }
+
+                $notification = $response['notification'];
+                $this->upsertCentralNotificationLocally($notification);
+
+                $row = $this->database->fetchOne(
+                    "SELECT n.*, creator.name AS created_by_name
+                     FROM notifications n
+                     LEFT JOIN users creator ON creator.id = n.created_by
+                     WHERE n.id = :id
+                     LIMIT 1",
+                    [':id' => trim((string) ($notification['id'] ?? ''))]
+                );
+
+                if ($row !== null) {
+                    return $this->mapNotification($row);
+                }
+
+                return array_merge(
+                    ['isRead' => false, 'isActive' => true, 'createdBy' => null, 'createdByName' => null, 'actionResult' => null, 'actedAt' => null],
+                    $notification
+                );
+            } catch (\Throwable $e) {
+                throw new RuntimeException('Failed to create notification on central server: ' . $e->getMessage());
+            }
+        }
 
         $id = $this->uuid4();
         $now = $this->database->nowUtc();
@@ -3307,9 +3367,9 @@ final class MasterDataApi extends BaseService
                 ':content_html' => $contentHtml,
                 ':target_roles' => $this->jsonEncode($targetRoles),
                 ':starts_at' => $startsAt,
-                ':ends_at' => null,
+                ':ends_at' => $endsAt,
                 ':action_config' => $this->jsonEncode($actionConfig),
-                ':metadata' => $this->jsonEncode([]),
+                ':metadata' => $this->jsonEncode($metadata),
                 ':created_by' => (string) ($developer['id'] ?? ''),
                 ':created_at' => $now,
                 ':updated_at' => $now,
