@@ -121,6 +121,31 @@ function tierPayload(array $row): array
     ];
 }
 
+function notificationPayload(array $row): array
+{
+    return [
+        'id' => (string) ($row['id'] ?? ''),
+        'subject' => (string) ($row['subject'] ?? ''),
+        'contentHtml' => (string) ($row['content_html'] ?? $row['contentHtml'] ?? ''),
+        'targetRoles' => capabilitiesFrom($row['target_roles'] ?? $row['targetRoles'] ?? '[]'),
+        'startsAt' => $row['starts_at'] ?? $row['startsAt'] ?? null,
+        'endsAt' => $row['ends_at'] ?? $row['endsAt'] ?? null,
+        'createdAt' => $row['created_at'] ?? $row['createdAt'] ?? null,
+        'updatedAt' => $row['updated_at'] ?? $row['updatedAt'] ?? null,
+        'createdBy' => $row['created_by'] ?? $row['createdBy'] ?? null,
+        'createdByName' => $row['created_by'] ?? $row['createdByName'] ?? null,
+        'isActive' => (int) ($row['is_active'] ?? $row['isActive'] ?? 1) === 1,
+        'isSystemGenerated' => (int) ($row['is_system_generated'] ?? $row['isSystemGenerated'] ?? 0) === 1,
+        'systemKey' => $row['system_key'] ?? $row['systemKey'] ?? null,
+        'isRead' => false,
+        'readAt' => null,
+        'actionResult' => null,
+        'actedAt' => null,
+        'actionConfig' => is_array($row['action_config'] ?? $row['actionConfig'] ?? null) ? ($row['action_config'] ?? $row['actionConfig'] ?? []) : json_decode((string) ($row['action_config'] ?? $row['actionConfig'] ?? '[]'), true),
+        'metadata' => is_array($row['metadata'] ?? null) ? $row['metadata'] : json_decode((string) ($row['metadata'] ?? '[]'), true),
+    ];
+}
+
 function activeTiers(PDO $pdo): array
 {
     $rows = $pdo->query('SELECT * FROM license_tiers WHERE is_active = 1 ORDER BY sort_order ASC, tier_name ASC')->fetchAll();
@@ -177,6 +202,11 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
 function generateLicenseKey(): string
 {
     return 'MP-' . strtoupper(bin2hex(random_bytes(8)));
+}
+
+function generateNotificationId(): string
+{
+    return 'NT-' . strtoupper(bin2hex(random_bytes(8)));
 }
 
 $body = requestBody();

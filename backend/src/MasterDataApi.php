@@ -1379,6 +1379,138 @@ final class MasterDataApi extends BaseService
         return $response['json'];
     }
 
+    private function fetchCentralNotifications(array $params = []): array
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($params['licenseApiUrl'] ?? $settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($params['licenseOwnerToken'] ?? $settingsRow['license_owner_token'] ?? ''));
+        if ($apiUrl === '') {
+            return [];
+        }
+
+        $action = array_key_exists('id', $params) && trim((string) ($params['id'] ?? '')) !== ''
+            ? 'fetch_notification_by_id'
+            : 'list_notifications';
+
+        $payload = [];
+        if ($action === 'fetch_notification_by_id') {
+            $payload['id'] = trim((string) ($params['id'] ?? ''));
+        } else {
+            $payload['targetRoles'] = $params['targetRoles'] ?? [];
+        }
+
+        $response = $this->centralLicenseRequest($apiUrl, $ownerToken, $action, $payload);
+        if ($action === 'fetch_notification_by_id') {
+            if (!is_array($response['notification'])) {
+                return [];
+            }
+            return [ $response['notification'] ];
+        }
+
+        if (!is_array($response['notifications'])) {
+            return [];
+        }
+
+        return array_values(array_filter($response['notifications'], static fn($item): bool => is_array($item)));
+    }
+
+    private function syncCentralNotifications(array $targetRoles = []): void
+    {
+        if (!$this->tableExists('notifications')) {
+            return;
+        }
+
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        if ($apiUrl === '') {
+            return;
+        }
+
+        try {
+            $notifications = $this->fetchCentralNotifications(['targetRoles' => $targetRoles]);
+        } catch (Throwable $e) {
+            return;
+        }
+
+        $remoteIds = [];
+        foreach ($notifications as $notification) {
+            if (!is_array($notification)) {
+                continue;
+            }
+            $remoteIds[] = trim((string) ($notification['id'] ?? ''));
+            if ($remoteIds[count($remoteIds) - 1] === '') {
+                array_pop($remoteIds);
+                continue;
+            }
+            $this->upsertCentralNotificationLocally($notification);
+        }
+
+        if ($remoteIds !== []) {
+            [$placeholders, $bindings] = $this->inClause($remoteIds, 'notification_id');
+            $this->database->execute(
+                'UPDATE notifications
+                 SET is_active = 0, updated_at = :updated_at
+                 WHERE system_key LIKE :central_key
+                   AND id NOT IN (' . implode(', ', $placeholders) . ')',
+                array_merge([':central_key' => 'central:%', ':updated_at' => $this->database->nowUtc()], $bindings)
+            );
+        }
+    }
+
+    private function upsertCentralNotificationLocally(array $notification): void
+    {
+        $id = trim((string) ($notification['id'] ?? ''));
+        if ($id === '' || !$this->tableExists('notifications')) {
+            return;
+        }
+
+        $subject = trim((string) ($notification['subject'] ?? ''));
+        $contentHtml = trim((string) ($notification['contentHtml'] ?? $notification['content_html'] ?? ''));
+        $targetRoles = $this->normalizeNotificationTargetRoles($notification['targetRoles'] ?? $notification['target_roles'] ?? []);
+        $startsAt = $this->nullableString($notification['startsAt'] ?? $notification['starts_at'] ?? null);
+        $endsAt = $this->nullableString($notification['endsAt'] ?? $notification['ends_at'] ?? null);
+        $actionConfig = is_array($notification['actionConfig'] ?? null) ? $notification['actionConfig'] : $this->jsonDecodeAssoc($notification['actionConfig'] ?? $notification['action_config'] ?? []);
+        $metadata = is_array($notification['metadata'] ?? null) ? $notification['metadata'] : $this->jsonDecodeAssoc($notification['metadata'] ?? []);
+
+        if ($subject === '' || $contentHtml === '' || $targetRoles === []) {
+            return;
+        }
+
+        $now = $this->database->nowUtc();
+        $this->database->execute(
+            'INSERT INTO notifications (
+                id, system_key, subject, content_html, target_roles, starts_at, ends_at,
+                action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
+             ) VALUES (
+                :id, :system_key, :subject, :content_html, :target_roles, :starts_at, :ends_at,
+                :action_config, :metadata, NULL, 1, 0, :created_at, :updated_at
+             )
+             ON DUPLICATE KEY UPDATE
+                subject = VALUES(subject),
+                content_html = VALUES(content_html),
+                target_roles = VALUES(target_roles),
+                starts_at = VALUES(starts_at),
+                ends_at = VALUES(ends_at),
+                action_config = VALUES(action_config),
+                metadata = VALUES(metadata),
+                is_active = VALUES(is_active),
+                updated_at = VALUES(updated_at)',
+            [
+                ':id' => $id,
+                ':system_key' => 'central:' . $id,
+                ':subject' => $subject,
+                ':content_html' => $contentHtml,
+                ':target_roles' => $this->jsonEncode($targetRoles),
+                ':starts_at' => $startsAt,
+                ':ends_at' => $endsAt,
+                ':action_config' => $this->jsonEncode($actionConfig),
+                ':metadata' => $this->jsonEncode($metadata),
+                ':created_at' => $this->normalizeDateTimeInput($notification['createdAt'] ?? $notification['created_at'] ?? $now),
+                ':updated_at' => $this->normalizeDateTimeInput($notification['updatedAt'] ?? $notification['updated_at'] ?? $now),
+            ]
+        );
+    }
+
     private function storeResolvedLicensePayload(array $payload, string $apiUrl, $ownerToken, string $message): array
     {
         $licenseKey = trim((string) ($payload['license_key'] ?? $payload['licenseKey'] ?? ''));
@@ -2916,13 +3048,25 @@ final class MasterDataApi extends BaseService
         }
 
         $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        $centralNotifications = $this->fetchCentralNotifications(['targetRoles' => $user['role'] ? [$user['role']] : []]);
+        foreach ($centralNotifications as $notification) {
+            if (!is_array($notification)) {
+                continue;
+            }
+            $items[] = array_merge(
+                ['isRead' => false, 'isActive' => true, 'createdBy' => null, 'createdByName' => null, 'actionResult' => null, 'actedAt' => null, 'metadata' => null],
+                $notification
+            );
+        }
+
+        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
         $unreadCount = count(array_filter(
             $items,
             static fn(array $item): bool => !((bool) ($item['isRead'] ?? false)) && ((bool) ($item['isActive'] ?? true))
         ));
 
         return [
-            'items' => $items,
+            'items' => array_slice($items, 0, 200),
             'unreadCount' => $unreadCount,
         ];
     }
@@ -3109,7 +3253,16 @@ final class MasterDataApi extends BaseService
             [':id' => $notificationId]
         );
 
-        return $row !== null ? $this->buildNotificationDetailPayload($row) : null;
+        if ($row !== null) {
+            return $this->buildNotificationDetailPayload($row);
+        }
+
+        $centralNotification = $this->fetchCentralNotifications(['id' => $notificationId]);
+        if (is_array($centralNotification) && count($centralNotification) === 1) {
+            return array_merge(['isRead' => false, 'isActive' => true, 'actionResult' => null, 'actedAt' => null], $centralNotification[0]);
+        }
+
+        return null;
     }
 
     public function createNotification(array $params): array

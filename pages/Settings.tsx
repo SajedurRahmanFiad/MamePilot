@@ -358,8 +358,6 @@ const SettingsPage: React.FC = () => {
       };
       if (hasCapability('courier_automation')) {
         updates.courier = courierSettings;
-      } else if (hasCapability('fraud_checker')) {
-        updates.courier = { fraudChecker: courierSettings.fraudChecker };
       }
       if (hasCapability('custom_roles')) {
         updates.permissions = permissionsSettings;
@@ -587,7 +585,6 @@ const SettingsPage: React.FC = () => {
     { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales },
     { id: 'defaults', label: 'Defaults', icon: ICONS.Settings },
     { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll },
-    hasCapability('fraud_checker') ? { id: 'fraud-checker', label: 'Fraud Checker', icon: ICONS.FraudChecker } : null,
     hasCapability('custom_roles') ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     { id: 'categories', label: 'Categories', icon: ICONS.More },
     { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking },

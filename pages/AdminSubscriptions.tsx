@@ -12,6 +12,7 @@ const AdminSubscriptions: React.FC = () => {
   const { data: capabilitySettings, isPending: loadingCapabilities } = useCapabilitySettings(true);
   const checkoutMutation = useInitiatePipraPayCheckout();
   const [interval, setInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const toast = useToastNotifications();
   const queryClient = useQueryClient();
 
@@ -25,15 +26,28 @@ const AdminSubscriptions: React.FC = () => {
     const cleanHash = window.location.hash.split('?')[0];
     window.history.replaceState(null, '', window.location.pathname + cleanHash);
 
-    if (paymentStatus === 'success') {
-      toast.success('Payment completed successfully! Your subscription will be updated shortly.');
+    const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
+      ? 'cancelled'
+      : paymentStatus === 'failed'
+        ? 'failed'
+        : 'success';
+
+    let message = '';
+    if (normalizedStatus === 'success') {
+      message = 'Payment completed successfully. Your subscription is being verified and will update shortly.';
       queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
-    } else if (paymentStatus === 'cancelled' || paymentStatus === 'canceled') {
-      toast.warning('Payment was cancelled. No charges were made.');
-    } else if (paymentStatus === 'failed') {
-      toast.error('Payment failed. Please try again or use a different payment method.');
+      toast.success(message);
+    } else if (normalizedStatus === 'cancelled') {
+      message = 'Payment was cancelled. No charges were made.';
+      toast.warning(message);
+    } else {
+      message = 'Payment failed. Please try again or use a different payment method.';
+      toast.error(message);
     }
-  }, []);
+
+    setCheckoutStatus(normalizedStatus);
+    setCheckoutMessage(message);
+  }, [queryClient, toast]);
 
   const capabilities = useMemo(() => normalizeCapabilities(capabilitySettings?.capabilities), [capabilitySettings]);
   const monthlyAmount = Number(capabilitySettings?.pricingMetadata?.monthly || overview?.pricingMetadata?.monthly || overview?.totalAmount || 0);
@@ -41,6 +55,7 @@ const AdminSubscriptions: React.FC = () => {
   const selectedAmount = interval === 'yearly' ? yearlyAmount : monthlyAmount;
   const status = overview?.subscriptionStatus || overview?.state || 'unconfigured';
   const renewalDate = overview?.currentPeriodEnd || overview?.dueAt || capabilitySettings?.renewalDate;
+  const processingPayment = overview?.currentPayment?.status === 'processing';
 
   const startCheckout = async () => {
     try {
@@ -68,6 +83,11 @@ const AdminSubscriptions: React.FC = () => {
             <p className="mt-2 text-sm font-medium text-white/75">
               Renewal: {renewalDate ? new Date(renewalDate).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not configured'}
             </p>
+            {processingPayment && (
+              <p className="mt-2 text-sm font-medium text-white/80">
+                Your payment has been submitted. Renewal date will update after PipraPay verification.
+              </p>
+            )}
           </div>
           <span className="inline-flex w-fit rounded-full bg-white/15 px-4 py-2 text-xs font-black uppercase tracking-[0.18em]">
             {status.replace(/_/g, ' ')}
@@ -103,6 +123,11 @@ const AdminSubscriptions: React.FC = () => {
         <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-black text-gray-900">Renew</h2>
           <p className="mt-1 text-sm text-gray-500">Choose a billing interval and continue to PipraPay checkout.</p>
+          {checkoutMessage && (
+            <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700">
+              {checkoutMessage}
+            </div>
+          )}
           <div className="mt-5 grid gap-3">
             {(['monthly', 'yearly'] as const).map((option) => (
               <button
@@ -115,9 +140,18 @@ const AdminSubscriptions: React.FC = () => {
               </button>
             ))}
           </div>
-          <Button onClick={startCheckout} variant="primary" size="lg" disabled={selectedAmount <= 0 || checkoutMutation.isPending} className="mt-5 w-full">
-            {checkoutMutation.isPending ? 'Redirecting to Gateway...' : 'Continue to Checkout'}
+          <Button
+            onClick={startCheckout}
+            variant="primary"
+            size="lg"
+            disabled={selectedAmount <= 0 || checkoutMutation.isPending || processingPayment}
+            className="mt-5 w-full"
+          >
+            {checkoutMutation.isPending ? 'Redirecting to Gateway...' : processingPayment ? 'Payment Processing...' : 'Continue to Checkout'}
           </Button>
+          {processingPayment && (
+            <p className="mt-3 text-sm text-gray-500">A renewal payment is already in progress. Please wait for verification to complete before starting another checkout.</p>
+          )}
         </section>
       </div>
 

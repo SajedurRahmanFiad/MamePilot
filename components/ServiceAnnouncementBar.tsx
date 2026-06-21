@@ -25,7 +25,9 @@ const ServiceAnnouncementBar: React.FC = () => {
 
   if (overview.currentPayment?.status === 'processing' || overview.state === 'renewing') {
     barClassName = 'bg-amber-500';
-    message = 'Your subscription renewal is processing. It will take a while, please wait.';
+    message = overview.currentPayment?.status === 'processing'
+      ? 'Your subscription renewal is processing. We are verifying the payment and will update the renewal date shortly.'
+      : 'Your subscription renewal is processing. It will take a while, please wait.';
   } else if (overview.state === 'expired') {
     message = isAdminAccessUser
       ? 'The subscription has expired. Please renew it to restore normal operations.'
@@ -42,7 +44,7 @@ const ServiceAnnouncementBar: React.FC = () => {
     <div className={`flex-shrink-0 ${barClassName} px-4 py-3 text-white shadow-sm`}>
       <div className="mx-auto flex max-w-7xl flex-col gap-2 text-sm font-medium md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5">{overview.state === 'renewing' ? ICONS.Clock : ICONS.AlertCircle}</span>
+          <span className="mt-0.5">{overview.currentPayment?.status === 'processing' || overview.state === 'renewing' ? ICONS.Clock : ICONS.AlertCircle}</span>
           <p>{message}</p>
         </div>
         {isAdminAccessUser && (

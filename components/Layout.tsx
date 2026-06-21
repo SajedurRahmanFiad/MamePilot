@@ -397,7 +397,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                         active={isActive('/developer')}
                         children={[
                           { to: '/developer/notifications', label: 'Notifications', active: isActive('/developer/notifications') },
-                          { to: '/developer/settings', label: 'General', active: isActive('/developer/settings') },
+                          { to: '/developer/settings', label: 'Settings', active: isActive('/developer/settings') },
                           { to: '/developer/subscriptions', label: 'Subscriptions', active: isActive('/developer/subscriptions') },
                         ]}
                         onClick={() => setIsSidebarOpen(false)}
