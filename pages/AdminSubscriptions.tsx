@@ -6,6 +6,7 @@ import { useInitiatePipraPayCheckout } from '../src/hooks/useMutations';
 import { CAPABILITY_KEYS, CAPABILITY_LABELS, normalizeCapabilities } from '../src/utils/capabilities';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
 
 const AdminSubscriptions: React.FC = () => {
   const { data: overview, isPending: loadingOverview } = useServiceSubscriptionOverview(true);
@@ -18,35 +19,80 @@ const AdminSubscriptions: React.FC = () => {
 
   // Handle payment return from PipraPay gateway
   useEffect(() => {
+    let cancelled = false;
+
     const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1] || '');
     const paymentStatus = params.get('payment');
-    if (!paymentStatus) return;
+    if (!paymentStatus) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     // Clean up URL query params so they don't trigger again on re-render
     const cleanHash = window.location.hash.split('?')[0];
     window.history.replaceState(null, '', window.location.pathname + cleanHash);
 
+    const reference = params.get('reference') || '';
+    const ppId = params.get('pp_id') || params.get('payment_id') || '';
     const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
       ? 'cancelled'
       : paymentStatus === 'failed'
         ? 'failed'
-        : 'success';
+        : paymentStatus === 'success'
+          ? 'success'
+          : 'processing';
 
-    let message = '';
-    if (normalizedStatus === 'success') {
-      message = 'Payment completed successfully. Your subscription is being verified and will update shortly.';
+    const verifyReturn = async () => {
+      if (normalizedStatus === 'cancelled') {
+        const message = 'Payment was cancelled. No charges were made.';
+        toast.warning(message);
+        if (!cancelled) setCheckoutMessage(message);
+        return;
+      }
+
+      if (normalizedStatus === 'failed') {
+        const message = 'Payment failed. Please try again or use a different payment method.';
+        toast.error(message);
+        if (!cancelled) setCheckoutMessage(message);
+        return;
+      }
+
+      if (ppId || reference) {
+        const verifyingMessage = 'Payment received by gateway. Verifying payment status...';
+        if (!cancelled) setCheckoutMessage(verifyingMessage);
+        try {
+          const result = await verifyPipraPayPayment({ reference, ppId });
+          queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+          if (result.paid) {
+            const message = 'Payment verified successfully. Your subscription has been renewed.';
+            toast.success(message);
+            if (!cancelled) setCheckoutMessage(message);
+            return;
+          }
+
+          const message = 'Payment is still being verified. Your subscription will update after PipraPay confirms payment.';
+          toast.info(message);
+          if (!cancelled) setCheckoutMessage(message);
+          return;
+        } catch (error: any) {
+          const message = error?.message || 'Payment is being verified. Please refresh the subscription page shortly.';
+          toast.warning(message);
+          if (!cancelled) setCheckoutMessage(message);
+          return;
+        }
+      }
+
+      const message = 'Payment has returned from gateway and is awaiting PipraPay verification.';
+      toast.info(message);
+      if (!cancelled) setCheckoutMessage(message);
       queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
-      toast.success(message);
-    } else if (normalizedStatus === 'cancelled') {
-      message = 'Payment was cancelled. No charges were made.';
-      toast.warning(message);
-    } else {
-      message = 'Payment failed. Please try again or use a different payment method.';
-      toast.error(message);
-    }
+    };
 
-    setCheckoutStatus(normalizedStatus);
-    setCheckoutMessage(message);
+    void verifyReturn();
+    return () => {
+      cancelled = true;
+    };
   }, [queryClient, toast]);
 
   const capabilities = useMemo(() => normalizeCapabilities(capabilitySettings?.capabilities), [capabilitySettings]);

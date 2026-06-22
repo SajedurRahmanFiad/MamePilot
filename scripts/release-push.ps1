@@ -79,16 +79,7 @@ try {
   & powershell.exe -ExecutionPolicy Bypass -File '.\scripts\sync-schema-only.ps1'
   if ($LASTEXITCODE -ne 0) { throw "sync-schema-only.ps1 failed with exit code $LASTEXITCODE" }
 
-  git add VERSION package.json
-  if (Test-Path (Join-Path $repoRoot 'dist')) { git add dist }
-  if (Test-Path $schemaPath) { git add backend/database/schema.sql }
-  if (Test-Path $seedPath) { git add backend/database/seed.sql }
-  if (Test-Path $schemaOnlyPath) { git add backend/database/schema-only.sql }
-  if (Test-Path (Join-Path $repoRoot 'deploy\releases')) { git add deploy/releases }
-  if (Test-Path (Join-Path $repoRoot 'docs\AUTOMATIC_DEPLOYMENTS.md')) { git add docs/AUTOMATIC_DEPLOYMENTS.md }
-  if (Test-Path (Join-Path $repoRoot 'CPANEL_DEPLOYMENT_GUIDE.md')) { git add CPANEL_DEPLOYMENT_GUIDE.md }
-  if (Test-Path (Join-Path $repoRoot '.env.example')) { git add .env.example }
-  git add scripts/release-push.ps1 scripts/sync-schema-only.ps1 scripts/publish-cpanel-release.ps1 scripts/prepare-cpanel-deploy.ps1
+  git add .
 
   $commitMessage = if ($Message.Trim() -ne '') { $Message.Trim() } else { "Release v$newVersion" }
   git commit -m $commitMessage

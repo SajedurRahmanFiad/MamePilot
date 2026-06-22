@@ -411,6 +411,32 @@ try {
 
     requireOwnerToken();
 
+    if ($action === 'list_notifications_all') {
+        $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        $hasReceiptsTable = tableExists($pdo, 'notification_receipts');
+        $receiptSelect = '';
+        $receiptJoin = '';
+        $bindings = [];
+        if ($userId !== '' && $hasReceiptsTable) {
+            $receiptSelect = ', nr.is_read, nr.read_at, nr.action_result, nr.acted_at';
+            $receiptJoin = ' LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id';
+            $bindings[':user_id'] = $userId;
+        }
+
+        $statement = $pdo->prepare(
+            'SELECT n.*' . $receiptSelect . '
+             FROM notifications n' . $receiptJoin . '
+             ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
+             LIMIT 500'
+        );
+        $statement->execute($bindings);
+        $items = [];
+        while ($row = $statement->fetch()) {
+            $items[] = notificationPayload($row);
+        }
+        respond(200, ['notifications' => $items]);
+    }
+
     if ($action === 'mark_notification_read') {
         $notificationIds = [];
         if (is_array($body['notificationIds'] ?? null)) {

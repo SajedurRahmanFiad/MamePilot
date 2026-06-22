@@ -409,6 +409,14 @@ export async function initiatePipraPayCheckout(payload: {
   return call('initiatePipraPayCheckout', payload, { timeoutMs: 30000 });
 }
 
+export async function verifyPipraPayPayment(payload: {
+  reference?: string;
+  ppId?: string;
+  paymentId?: string;
+}): Promise<{ success: boolean; paid: boolean; status: string; reference?: string; paymentFound?: boolean }> {
+  return call('verifyPipraPayPayment', payload, { timeoutMs: 30000 });
+}
+
 export async function batchUpdateSettings(updates: { company?: Partial<CompanySettings>; order?: { prefix?: string; nextNumber?: number; }; invoice?: { title?: string; logoWidth?: number; logoHeight?: number; footer?: string; }; defaults?: { defaultAccountId?: string; defaultPaymentMethod?: string; incomeCategoryId?: string; expenseCategoryId?: string; recordsPerPage?: number; maxTransactionAmount?: number; whiteLabel?: boolean; }; courier?: { steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string }; carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string }; paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number }; fraudChecker?: { apiKey?: string }; }; permissions?: PermissionsSettings; payroll?: { unitAmount?: number; countedStatuses?: any[]; }; wallet?: { unitAmount?: number; countedStatuses?: any[]; }; }) {
   const { permissions, ...batchEligibleUpdates } = updates;
   const hasBatchEligibleUpdates = Object.keys(batchEligibleUpdates).length > 0;

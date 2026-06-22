@@ -390,7 +390,7 @@ const NotificationCenterButton: React.FC = () => {
       {showAttentionCue && !isOpen && (
         <>
           <span className="pointer-events-none absolute inset-0 z-0 rounded-xl ring-4 ring-[#0f2f57]/15 animate-pulse" />
-          <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 rounded-full bg-[#0f2f57] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white shadow-[0_18px_40px_rgba(15,47,87,0.25)]">
+          <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 rounded-md bg-[#0f2f57] px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-white shadow-[0_18px_40px_rgba(15,47,87,0.25)]">
             New notification
           </div>
         </>

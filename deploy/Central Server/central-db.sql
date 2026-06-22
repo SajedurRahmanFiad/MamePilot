@@ -1,4 +1,7 @@
-CREATE TABLE license_tiers (
+SET NAMES utf8mb4;
+SET time_zone = '+00:00';
+
+CREATE TABLE IF NOT EXISTS license_tiers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tier_key VARCHAR(64) NOT NULL UNIQUE,
   tier_name VARCHAR(255) NOT NULL,
@@ -9,9 +12,9 @@ CREATE TABLE license_tiers (
   sort_order INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE licenses (
+CREATE TABLE IF NOT EXISTS licenses (
   license_key VARCHAR(255) NOT NULL PRIMARY KEY,
   client_name VARCHAR(255) NOT NULL,
   domain VARCHAR(255) NULL,
@@ -23,13 +26,13 @@ CREATE TABLE licenses (
   notes TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE maintenance_settings (
+CREATE TABLE IF NOT EXISTS maintenance_settings (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   enabled TINYINT(1) NOT NULL DEFAULT 0,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
   ON DUPLICATE KEY UPDATE enabled = VALUES(enabled);
@@ -37,9 +40,10 @@ INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
 INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
 ('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
 ('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
-('advanced', 'Advanced', 4990, 49900, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3);
+('advanced', 'Advanced', 4990, 49900, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3)
+ON DUPLICATE KEY UPDATE tier_name = VALUES(tier_name), monthly_price = VALUES(monthly_price), yearly_price = VALUES(yearly_price), capabilities = VALUES(capabilities), sort_order = VALUES(sort_order);
 
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   subject VARCHAR(255) NOT NULL,
   content_html LONGTEXT NOT NULL,
@@ -53,9 +57,15 @@ CREATE TABLE notifications (
   is_system_generated TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE notification_receipts (
+ALTER TABLE notifications
+  ENGINE = InnoDB,
+  DEFAULT CHARSET = utf8mb4,
+  COLLATE = utf8mb4_unicode_ci,
+  MODIFY COLUMN id VARCHAR(64) NOT NULL;
+
+CREATE TABLE IF NOT EXISTS notification_receipts (
   notification_id VARCHAR(64) NOT NULL,
   user_id VARCHAR(64) NOT NULL,
   is_read TINYINT(1) NOT NULL DEFAULT 0,
@@ -69,3 +79,8 @@ CREATE TABLE notification_receipts (
   KEY idx_notification_receipts_action_result (action_result),
   CONSTRAINT fk_notification_receipts_notification FOREIGN KEY (notification_id) REFERENCES notifications (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE notification_receipts
+  ENGINE = InnoDB,
+  DEFAULT CHARSET = utf8mb4,
+  COLLATE = utf8mb4_unicode_ci;

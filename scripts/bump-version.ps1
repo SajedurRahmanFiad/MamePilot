@@ -7,6 +7,16 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $versionPath = Join-Path $repoRoot 'VERSION'
 $packagePath = Join-Path $repoRoot 'package.json'
 
+function Write-Utf8NoBom {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  $encoding = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $Value, $encoding)
+}
+
 if (-not (Test-Path $versionPath)) {
   throw "VERSION file not found: $versionPath"
 }
@@ -32,10 +42,11 @@ switch ($Part) {
 }
 
 $newVersion = '{0}.{1}.{2}' -f $parts[0], $parts[1], $parts[2]
-Set-Content -Path $versionPath -Value "$newVersion`n" -Encoding utf8
+Write-Utf8NoBom -Path $versionPath -Value "$newVersion`n"
 
 $packageJson = Get-Content $packagePath -Raw
+$packageJson = $packageJson.TrimStart([char]0xFEFF)
 $packageJson = $packageJson -replace '"version"\s*:\s*"[^"]*"', "`"version`": `"$newVersion`""
-Set-Content -Path $packagePath -Value $packageJson -Encoding utf8
+Write-Utf8NoBom -Path $packagePath -Value $packageJson
 
 Write-Host "Bumped version from $currentVersion to $newVersion"
