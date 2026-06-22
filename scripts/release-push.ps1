@@ -12,6 +12,16 @@ $schemaPath = Join-Path $repoRoot 'backend\database\schema.sql'
 $seedPath = Join-Path $repoRoot 'backend\database\seed.sql'
 $schemaOnlyPath = Join-Path $repoRoot 'backend\database\schema-only.sql'
 
+function Write-Utf8NoBom {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  $encoding = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($Path, $Value, $encoding)
+}
+
 if (-not (Test-Path $versionPath)) {
   throw "VERSION file not found: $versionPath"
 }
@@ -37,17 +47,28 @@ switch ($Part) {
 }
 
 $newVersion = '{0}.{1}.{2}' -f $parts[0], $parts[1], $parts[2]
-Set-Content -Path $versionPath -Value "$newVersion`n" -Encoding utf8
+Write-Utf8NoBom -Path $versionPath -Value "$newVersion`n"
 
 $packageJson = Get-Content $packagePath -Raw
+$packageJson = $packageJson.TrimStart([char]0xFEFF)
 $packageJson = $packageJson -replace '"version"\s*:\s*"[^"]*"', "`"version`": `"$newVersion`""
-Set-Content -Path $packagePath -Value $packageJson -Encoding utf8
+Write-Utf8NoBom -Path $packagePath -Value $packageJson
 
 Write-Host 'Building frontend before release...'
 Push-Location $repoRoot
 try {
   npm run build
   if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
+}
+finally {
+  Pop-Location
+}
+
+Write-Host 'Preparing cPanel auto-update release package...'
+Push-Location $repoRoot
+try {
+  & powershell.exe -ExecutionPolicy Bypass -File '.\scripts\publish-cpanel-release.ps1' -SkipBuild
+  if ($LASTEXITCODE -ne 0) { throw "publish-cpanel-release.ps1 failed with exit code $LASTEXITCODE" }
 }
 finally {
   Pop-Location
@@ -63,10 +84,11 @@ try {
   if (Test-Path $schemaPath) { git add backend/database/schema.sql }
   if (Test-Path $seedPath) { git add backend/database/seed.sql }
   if (Test-Path $schemaOnlyPath) { git add backend/database/schema-only.sql }
+  if (Test-Path (Join-Path $repoRoot 'deploy\releases')) { git add deploy/releases }
   if (Test-Path (Join-Path $repoRoot 'docs\AUTOMATIC_DEPLOYMENTS.md')) { git add docs/AUTOMATIC_DEPLOYMENTS.md }
   if (Test-Path (Join-Path $repoRoot 'CPANEL_DEPLOYMENT_GUIDE.md')) { git add CPANEL_DEPLOYMENT_GUIDE.md }
   if (Test-Path (Join-Path $repoRoot '.env.example')) { git add .env.example }
-  git add scripts/release-push.ps1 scripts/sync-schema-only.ps1
+  git add scripts/release-push.ps1 scripts/sync-schema-only.ps1 scripts/publish-cpanel-release.ps1 scripts/prepare-cpanel-deploy.ps1
 
   $commitMessage = if ($Message.Trim() -ne '') { $Message.Trim() } else { "Release v$newVersion" }
   git commit -m $commitMessage

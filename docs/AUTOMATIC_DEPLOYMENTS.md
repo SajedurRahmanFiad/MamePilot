@@ -12,12 +12,14 @@ npm run release:push
 
 That command:
 
-1. Runs `npm run build`
-2. Increases `VERSION`
-3. Updates `package.json`
-4. Saves schema/seed changes
-5. Commits
-6. Pushes to git
+1. Increases `VERSION`
+2. Updates `package.json`
+3. Runs `npm run build`
+4. Prepares `deploy/releases/VERSION`
+5. Prepares `deploy/releases/cpanel-mamepilot-package.zip`
+6. Saves schema/seed changes
+7. Commits
+8. Pushes to git
 
 After that, each production deployment can update itself automatically, but only after the deployment is configured correctly.
 
@@ -209,7 +211,7 @@ npm run release:push
 
 That is the only release command you normally need.
 
-After pushing, upload this folder to your central hosting/domain:
+The command prepares this folder for you. After pushing, upload it to your central hosting/domain:
 
 ```text
 deploy/releases/

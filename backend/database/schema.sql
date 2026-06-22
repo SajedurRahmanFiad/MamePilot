@@ -383,7 +383,8 @@ ALTER TABLE `service_subscription_payments`
   ADD COLUMN IF NOT EXISTS `gateway_name` VARCHAR(64) NULL,
   ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
   ADD COLUMN IF NOT EXISTS `invoice_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `raw_payload` LONGTEXT NULL;
+  ADD COLUMN IF NOT EXISTS `raw_payload` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(255) NULL;
 CREATE TABLE IF NOT EXISTS payment_webhook_logs (
   id VARCHAR(64) NOT NULL,
   gateway VARCHAR(64) NOT NULL,
@@ -490,6 +491,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   type VARCHAR(32) NOT NULL,
   category VARCHAR(255) NOT NULL,
   account_id VARCHAR(64) NOT NULL,
+  transaction_id VARCHAR(255) NULL,
+  account_name VARCHAR(255) NULL,
   to_account_id VARCHAR(64) NULL,
   amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   description TEXT NOT NULL,
@@ -531,6 +534,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   CONSTRAINT fk_transactions_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE RESTRICT,
   CONSTRAINT fk_transactions_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `transactions`
+  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `account_name` VARCHAR(255) NULL;
 CREATE TABLE IF NOT EXISTS payroll_payments (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
@@ -576,6 +582,8 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   CONSTRAINT fk_wallet_payouts_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE RESTRICT,
   CONSTRAINT fk_wallet_payouts_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `wallet_payouts`
+  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(64) NULL;
 CREATE TABLE IF NOT EXISTS wallet_entries (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
