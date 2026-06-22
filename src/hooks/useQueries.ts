@@ -55,6 +55,7 @@ import {
   fetchInvoiceSettings,
   fetchSystemDefaults,
   fetchCapabilitySettings,
+  fetchMaintenanceStatus,
   fetchCentralLicenseTiers,
   fetchLocalUsageSummary,
   fetchPaymentGatewaySettings,
@@ -812,6 +813,17 @@ export function useCapabilitySettings(enabled: boolean = true): UseQueryResult<C
     queryKey: ['settings', 'capabilities'],
     queryFn: fetchCapabilitySettings,
     staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useMaintenanceStatus(enabled: boolean = true): UseQueryResult<{ maintenanceEnabled: boolean }, Error> {
+  return useQuery({
+    queryKey: ['maintenance-status'],
+    queryFn: fetchMaintenanceStatus,
+    staleTime: 5000,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
     enabled,
   });
 }

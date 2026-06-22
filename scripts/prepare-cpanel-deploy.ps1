@@ -46,15 +46,24 @@ Write-Host 'Copying cPanel frontend template...'
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\.htaccess') -Destination (Join-Path $publicRoot '.htaccess') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\.htaccess') -Destination (Join-Path $publicRoot 'api\.htaccess') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -Destination (Join-Path $publicRoot 'api\index.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\update.php') -Destination (Join-Path $publicRoot 'api\update.php') -Force
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot '.env.example') -Destination (Join-Path $appRoot '.env.example') -Force
-foreach ($guideName in @('CPANEL_DEPLOYMENT.md', 'SUPABASE_TO_MARIADB_REFRESH.md')) {
+Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $appRoot 'VERSION') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $packageRoot 'VERSION') -Force
+foreach ($guideName in @('CPANEL_DEPLOYMENT_GUIDE.md', 'CPANEL_DEPLOYMENT.md', 'SUPABASE_TO_MARIADB_REFRESH.md')) {
   $guidePath = Join-Path $repoRoot $guideName
   if (Test-Path $guidePath) {
     Copy-Item -LiteralPath $guidePath -Destination (Join-Path $packageRoot $guideName) -Force
   }
+}
+$autoDeployGuide = Join-Path $repoRoot 'docs\AUTOMATIC_DEPLOYMENTS.md'
+if (Test-Path $autoDeployGuide) {
+  $docsDir = Join-Path $packageRoot 'docs'
+  if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
+  Copy-Item -LiteralPath $autoDeployGuide -Destination (Join-Path $docsDir 'AUTOMATIC_DEPLOYMENTS.md') -Force
 }
 $serverOpsGuide = Join-Path $repoRoot 'SERVER_OPS_ACTION_GUIDE.md'
 if (Test-Path $serverOpsGuide) {

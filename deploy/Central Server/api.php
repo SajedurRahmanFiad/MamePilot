@@ -32,7 +32,7 @@ declare(strict_types=1);
  * );
  *
  * CREATE TABLE licenses (
- *   license_key VARCHAR(255) NOT NULL PRIMARY KEY,
+ *   license_key VARCHAR(64) NOT NULL PRIMARY KEY,
  *   client_name VARCHAR(255) NOT NULL,
  *   domain VARCHAR(255) NULL,
  *   tier_key VARCHAR(64) NOT NULL,
@@ -46,7 +46,7 @@ declare(strict_types=1);
  * );
  *
  * CREATE TABLE notifications (
- *   id VARCHAR(255) NOT NULL PRIMARY KEY,
+ *   id VARCHAR(64) NOT NULL PRIMARY KEY,
  *   subject VARCHAR(255) NOT NULL,
  *   content_html LONGTEXT NOT NULL,
  *   target_roles LONGTEXT NOT NULL,
@@ -59,6 +59,19 @@ declare(strict_types=1);
  *   is_system_generated TINYINT(1) NOT NULL DEFAULT 0,
  *   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+ * );
+ *
+ * CREATE TABLE notification_receipts (
+ *   notification_id VARCHAR(64) NOT NULL,
+ *   user_id VARCHAR(64) NOT NULL,
+ *   is_read TINYINT(1) NOT NULL DEFAULT 0,
+ *   read_at DATETIME NULL,
+ *   action_result VARCHAR(32) NULL,
+ *   acted_at DATETIME NULL,
+ *   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ *   PRIMARY KEY (notification_id, user_id),
+ *   CONSTRAINT fk_notification_receipts_notification FOREIGN KEY (notification_id) REFERENCES notifications (id) ON DELETE CASCADE
  * );
  *
  * INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
@@ -108,6 +121,13 @@ function db(): PDO
     ]);
 }
 
+function tableExists(PDO $pdo, string $table): bool
+{
+    $statement = $pdo->prepare('SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table LIMIT 1');
+    $statement->execute([':table' => $table]);
+    return $statement->fetch() !== false;
+}
+
 function requireOwnerToken(): void
 {
     $provided = trim((string) ($_SERVER['HTTP_X_MAMEPILOT_OWNER_TOKEN'] ?? ''));
@@ -139,6 +159,7 @@ function tierPayload(array $row): array
 
 function notificationPayload(array $row): array
 {
+    $isRead = (int) ($row['is_read'] ?? $row['isRead'] ?? 0) === 1;
     return [
         'id' => (string) ($row['id'] ?? ''),
         'subject' => (string) ($row['subject'] ?? ''),
@@ -153,13 +174,45 @@ function notificationPayload(array $row): array
         'isActive' => (int) ($row['is_active'] ?? $row['isActive'] ?? 1) === 1,
         'isSystemGenerated' => (int) ($row['is_system_generated'] ?? $row['isSystemGenerated'] ?? 0) === 1,
         'systemKey' => $row['system_key'] ?? $row['systemKey'] ?? null,
-        'isRead' => false,
-        'readAt' => null,
-        'actionResult' => null,
-        'actedAt' => null,
+        'isRead' => $isRead,
+        'readAt' => $row['read_at'] ?? $row['readAt'] ?? null,
+        'actionResult' => $row['action_result'] ?? $row['actionResult'] ?? null,
+        'actedAt' => $row['acted_at'] ?? $row['actedAt'] ?? null,
         'actionConfig' => is_array($row['action_config'] ?? $row['actionConfig'] ?? null) ? ($row['action_config'] ?? $row['actionConfig'] ?? []) : json_decode((string) ($row['action_config'] ?? $row['actionConfig'] ?? '[]'), true),
         'metadata' => is_array($row['metadata'] ?? null) ? $row['metadata'] : json_decode((string) ($row['metadata'] ?? '[]'), true),
     ];
+}
+
+function maintenancePayload(array $row): array
+{
+    return [
+        'maintenanceEnabled' => (int) ($row['enabled'] ?? 0) === 1,
+    ];
+}
+
+function fetchMaintenanceStatus(PDO $pdo): array
+{
+    $statement = $pdo->prepare('SELECT * FROM maintenance_settings WHERE id = :id LIMIT 1');
+    $statement->execute([':id' => 'maintenance']);
+    $row = $statement->fetch();
+    if (!$row) {
+        return ['maintenanceEnabled' => false];
+    }
+    return maintenancePayload($row);
+}
+
+function setMaintenanceStatus(PDO $pdo, bool $enabled): array
+{
+    $statement = $pdo->prepare(
+        'INSERT INTO maintenance_settings (id, enabled, updated_at)
+         VALUES (:id, :enabled, CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE enabled = :enabled, updated_at = CURRENT_TIMESTAMP'
+    );
+    $statement->execute([
+        ':id' => 'maintenance',
+        ':enabled' => $enabled ? 1 : 0,
+    ]);
+    return ['maintenanceEnabled' => $enabled];
 }
 
 function activeTiers(PDO $pdo): array
@@ -245,17 +298,27 @@ try {
 
     if ($action === 'list_notifications') {
         $targetRoles = capabilitiesFrom($body['targetRoles'] ?? $body['target_roles'] ?? []);
-        $sql = 'SELECT * FROM notifications WHERE is_active = 1';
+        $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        $hasReceiptsTable = tableExists($pdo, 'notification_receipts');
+        $receiptSelect = '';
+        $receiptJoin = '';
         $bindings = [];
+        if ($userId !== '' && $hasReceiptsTable) {
+            $receiptSelect = ', nr.is_read, nr.read_at, nr.action_result, nr.acted_at';
+            $receiptJoin = ' LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id';
+            $bindings[':user_id'] = $userId;
+        }
+
+        $sql = 'SELECT n.*' . $receiptSelect . ' FROM notifications n' . $receiptJoin . ' WHERE n.is_active = 1 AND (n.starts_at IS NULL OR n.starts_at <= CURRENT_TIMESTAMP) AND (n.ends_at IS NULL OR n.ends_at >= CURRENT_TIMESTAMP)';
         if ($targetRoles !== []) {
             $clauses = [];
             foreach ($targetRoles as $index => $role) {
-                $clauses[] = 'target_roles LIKE :role_' . $index;
+                $clauses[] = 'n.target_roles LIKE :role_' . $index;
                 $bindings[':role_' . $index] = '%"' . $role . '"%';
             }
             $sql .= ' AND (' . implode(' OR ', $clauses) . ')';
         }
-        $sql .= ' ORDER BY COALESCE(starts_at, created_at) DESC, created_at DESC LIMIT 500';
+        $sql .= ' ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC LIMIT 500';
         $statement = $pdo->prepare($sql);
         $statement->execute($bindings);
         $items = [];
@@ -270,8 +333,18 @@ try {
         if ($notificationId === '') {
             respond(400, ['error' => 'id is required.']);
         }
-        $statement = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
-        $statement->execute([':id' => $notificationId]);
+        $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        $hasReceiptsTable = tableExists($pdo, 'notification_receipts');
+        $receiptSelect = '';
+        $receiptJoin = '';
+        $bindings = [':id' => $notificationId];
+        if ($userId !== '' && $hasReceiptsTable) {
+            $receiptSelect = ', nr.is_read, nr.read_at, nr.action_result, nr.acted_at';
+            $receiptJoin = ' LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id';
+            $bindings[':user_id'] = $userId;
+        }
+        $statement = $pdo->prepare('SELECT n.*' . $receiptSelect . ' FROM notifications n' . $receiptJoin . ' WHERE n.id = :id LIMIT 1');
+        $statement->execute($bindings);
         $row = $statement->fetch();
         if (!$row) {
             respond(404, ['error' => 'Notification not found.']);
@@ -332,7 +405,138 @@ try {
         respond(200, ['notification' => notificationPayload($row ?: [])]);
     }
 
+    if ($action === 'fetch_maintenance_status') {
+        respond(200, fetchMaintenanceStatus($pdo));
+    }
+
     requireOwnerToken();
+
+    if ($action === 'mark_notification_read') {
+        $notificationIds = [];
+        if (is_array($body['notificationIds'] ?? null)) {
+            foreach ($body['notificationIds'] as $notificationId) {
+                $notificationId = trim((string) $notificationId);
+                if ($notificationId !== '' && !in_array($notificationId, $notificationIds, true)) {
+                    $notificationIds[] = $notificationId;
+                }
+            }
+        } else {
+            $notificationId = trim((string) ($body['notificationId'] ?? $body['id'] ?? ''));
+            if ($notificationId !== '') {
+                $notificationIds[] = $notificationId;
+            }
+        }
+        $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        if ($notificationIds === [] || $userId === '') {
+            respond(400, ['error' => 'notificationId(s) and userId are required.']);
+        }
+        if (!tableExists($pdo, 'notification_receipts')) {
+            respond(500, ['error' => 'notification_receipts table is missing. Run the central database migration first.']);
+        }
+
+        $statement = $pdo->prepare(
+            'INSERT INTO notification_receipts (
+                 notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
+             ) VALUES (
+                 :notification_id, :user_id, 1, CURRENT_TIMESTAMP, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )
+             ON DUPLICATE KEY UPDATE
+                 is_read = 1,
+                 read_at = COALESCE(notification_receipts.read_at, CURRENT_TIMESTAMP),
+                 updated_at = CURRENT_TIMESTAMP'
+        );
+        foreach ($notificationIds as $notificationId) {
+            $statement->execute([
+                ':notification_id' => $notificationId,
+                ':user_id' => $userId,
+            ]);
+        }
+        respond(200, ['success' => true]);
+    }
+
+    if ($action === 'respond_to_notification') {
+        $notificationId = trim((string) ($body['notificationId'] ?? $body['id'] ?? ''));
+        $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        $decision = trim((string) ($body['decision'] ?? ''));
+        if ($notificationId === '' || $userId === '') {
+            respond(400, ['error' => 'notificationId and userId are required.']);
+        }
+        if (!in_array($decision, ['accepted', 'declined'], true)) {
+            respond(400, ['error' => 'A valid notification decision is required.']);
+        }
+        if (!tableExists($pdo, 'notification_receipts')) {
+            respond(500, ['error' => 'notification_receipts table is missing. Run the central database migration first.']);
+        }
+
+        $statement = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
+        $statement->execute([':id' => $notificationId]);
+        $row = $statement->fetch();
+        if (!$row) {
+            respond(404, ['error' => 'Notification not found.']);
+        }
+        if ((int) ($row['is_active'] ?? 1) !== 1) {
+            respond(400, ['error' => 'This notification is no longer active.']);
+        }
+
+        $actionConfig = is_array($row['action_config'] ?? null)
+            ? $row['action_config']
+            : json_decode((string) ($row['action_config'] ?? '[]'), true);
+        if (!is_array($actionConfig)) {
+            $actionConfig = [];
+        }
+        $kind = trim((string) ($actionConfig['kind'] ?? 'none'));
+        if (!in_array($kind, ['decision', 'link_and_decision'], true)) {
+            respond(400, ['error' => 'This notification does not support decisions.']);
+        }
+
+        $receiptStatement = $pdo->prepare(
+            'INSERT INTO notification_receipts (
+                 notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
+             ) VALUES (
+                 :notification_id, :user_id, 1, CURRENT_TIMESTAMP, :action_result, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )
+             ON DUPLICATE KEY UPDATE
+                 is_read = 1,
+                 read_at = COALESCE(notification_receipts.read_at, CURRENT_TIMESTAMP),
+                 action_result = :action_result,
+                 acted_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP'
+        );
+        $receiptStatement->execute([
+            ':notification_id' => $notificationId,
+            ':user_id' => $userId,
+            ':action_result' => $decision,
+        ]);
+
+        $decisionScope = trim((string) ($actionConfig['decisionScope'] ?? 'all_users'));
+        if ($decisionScope === 'single_user') {
+            $deactivateStatement = $pdo->prepare(
+                'UPDATE notifications
+                 SET is_active = 0,
+                     metadata = JSON_SET(COALESCE(metadata, JSON_OBJECT()),
+                         \'$.resolvedDecision\', :resolved_decision,
+                         \'$.resolvedAt\', CURRENT_TIMESTAMP,
+                         \'$.resolvedByUserId\', :resolved_by_user_id,
+                         \'$.resolvedByName\', :resolved_by_user_name
+                     ),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id'
+            );
+            $deactivateStatement->execute([
+                ':id' => $notificationId,
+                ':resolved_decision' => $decision,
+                ':resolved_by_user_id' => $userId,
+                ':resolved_by_user_name' => $body['resolvedByName'] ?? null,
+            ]);
+        }
+
+        respond(200, ['success' => true]);
+    }
+
+    if ($action === 'set_maintenance_status') {
+        $enabled = !empty($body['maintenanceEnabled'] ?? $body['maintenance_enabled'] ?? false);
+        respond(200, setMaintenanceStatus($pdo, $enabled));
+    }
 
     if ($action === 'create_or_update_license') {
         $tierKey = trim((string) ($body['tier_key'] ?? ''));

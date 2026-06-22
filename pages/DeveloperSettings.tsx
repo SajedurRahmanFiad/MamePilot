@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, usePaymentGatewaySettings } from '../src/hooks/useQueries';
-import { useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings } from '../src/hooks/useMutations';
+import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings } from '../src/hooks/useMutations';
 import { hasAdminAccess, type PaymentGatewaySettings } from '../types';
 import { theme } from '../theme';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance';
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
@@ -24,12 +24,16 @@ const DeveloperSettings: React.FC = () => {
   const { data: capabilitySettings, isPending: loadingCapabilities } = useCapabilitySettings(Boolean(user));
   const { data: courierSettings, isPending: loadingCourierSettings } = useCourierSettings();
   const { data: gatewaySettings, isPending: loadingGateway } = usePaymentGatewaySettings(user?.role === 'Developer');
+  const { data: maintenanceStatus, isPending: loadingMaintenance } = useMaintenanceStatus(Boolean(user));
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
+  const setMaintenanceStatus = useSetMaintenanceStatus();
+
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'payment-gateway', 'fraud-checker'];
+  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -55,6 +59,12 @@ const DeveloperSettings: React.FC = () => {
       setFraudSettings(courierSettings.fraudChecker || { apiKey: '' });
     }
   }, [courierSettings]);
+
+  useEffect(() => {
+    if (maintenanceStatus?.maintenanceEnabled !== undefined) {
+      setMaintenanceEnabled(maintenanceStatus.maintenanceEnabled);
+    }
+  }, [maintenanceStatus]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -118,8 +128,20 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveMaintenanceMode = async () => {
+    const toastId = toast.loading('Updating maintenance mode...');
+    try {
+      const result = await setMaintenanceStatus.mutateAsync({ maintenanceEnabled: !maintenanceEnabled });
+      setMaintenanceEnabled(result.maintenanceEnabled);
+      toast.update(toastId, result.maintenanceEnabled ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to update maintenance mode.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
+    { id: 'maintenance', label: 'Maintenance Mode' },
     { id: 'payment-gateway', label: 'Payment Gateway' },
     { id: 'fraud-checker', label: 'Fraud Checker' },
   ];
@@ -127,7 +149,7 @@ const DeveloperSettings: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay
-        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending}
+        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending}
         message="Loading developer settings..."
       />
 
@@ -135,9 +157,10 @@ const DeveloperSettings: React.FC = () => {
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Developer Access Only</p>
           <h2 className="mt-1 md:text-2xl text-xl font-bold text-gray-900">Developer Settings</h2>
-          <p className="mt-1 text-sm text-gray-500">Control central license sync and PipraPay credentials.</p>
+          <p className="mt-1 text-sm text-gray-500">Control central license sync, maintenance mode, and service configuration.</p>
         </div>
         {activeTab === 'license' && <Button onClick={syncNow} variant="primary">Sync Now</Button>}
+        {activeTab === 'maintenance' && <Button onClick={saveMaintenanceMode} variant="primary">{maintenanceEnabled ? 'Disable Maintenance' : 'Enable Maintenance'}</Button>}
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
       </div>
@@ -185,6 +208,34 @@ const DeveloperSettings: React.FC = () => {
                 <p><span className="font-black text-gray-900">Status:</span> {capabilitySettings?.licenseStatus || 'local'}</p>
                 <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? new Date(capabilitySettings.lastSyncedAt).toLocaleString() : 'Never'}</p>
                 {capabilitySettings?.lastSyncMessage && <p className="mt-1">{capabilitySettings.lastSyncMessage}</p>}
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'maintenance' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">Maintenance Mode</h3>
+                <p className="mt-1 text-sm text-gray-500">When enabled, all non-developer users are redirected to the maintenance page and login is restricted to developer users only.</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Maintenance Enabled</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={maintenanceEnabled}
+                      onChange={() => setMaintenanceEnabled((current) => !current)}
+                      className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">{maintenanceEnabled ? 'Maintenance mode is currently enabled.' : 'Maintenance mode is currently disabled.'}</span>
+                  </div>
+                </label>
+              </div>
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
+                <p className="font-semibold text-gray-900">Status</p>
+                <p>{maintenanceEnabled ? 'Maintenance mode is active. Non-developer users are blocked from signing in.' : 'Maintenance mode is inactive.'}</p>
+                <p className="mt-2">When central license sync is configured, maintenance status will also be persisted to the central API if possible.</p>
               </div>
             </section>
           )}

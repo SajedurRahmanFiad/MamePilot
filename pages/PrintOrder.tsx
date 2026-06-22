@@ -180,6 +180,14 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
               </p>
             </div>
           )}
+
+          {(invoiceSettings?.footer || db.settings.invoice.footer) && (
+            <div className="bg-gray-50 p-4 rounded-[10px] border border-gray-100 print:bg-white print:p-3 print:rounded-lg print:border-gray-300">
+              <p className="text-sm text-gray-500 font-medium leading-relaxed whitespace-pre-line print:text-gray-700">
+                {invoiceSettings?.footer || db.settings.invoice.footer}
+              </p>
+            </div>
+          )}
     </div>
   );
 };

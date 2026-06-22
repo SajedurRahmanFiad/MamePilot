@@ -25,6 +25,15 @@ CREATE TABLE licenses (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE maintenance_settings (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  enabled TINYINT(1) NOT NULL DEFAULT 0,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
+  ON DUPLICATE KEY UPDATE enabled = VALUES(enabled);
+
 INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
 ('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
 ('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
@@ -45,3 +54,18 @@ CREATE TABLE notifications (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+CREATE TABLE notification_receipts (
+  notification_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  read_at DATETIME NULL,
+  action_result VARCHAR(32) NULL,
+  acted_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (notification_id, user_id),
+  KEY idx_notification_receipts_user_read (user_id, is_read, read_at),
+  KEY idx_notification_receipts_action_result (action_result),
+  CONSTRAINT fk_notification_receipts_notification FOREIGN KEY (notification_id) REFERENCES notifications (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

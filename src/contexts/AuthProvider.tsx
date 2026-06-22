@@ -361,7 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export function useAuth() {
+export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);
   if (!ctx) {
     console.warn('[Auth] useAuth called without AuthProvider, falling back to db.currentUser');

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../db';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { fetchCompanySettings, fetchSystemDefaults } from '../src/services/supabaseQueries';
+import { useMaintenanceStatus } from '../src/hooks/useQueries';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 
 const defaultBranding = {
@@ -21,6 +22,7 @@ const Login: React.FC = () => {
   const [companySettings, setCompanySettings] = useState(defaultBranding);
   const [whiteLabelEnabled, setWhiteLabelEnabled] = useState(false);
   const [brandLoading, setBrandLoading] = useState(true);
+  const { data: maintenanceStatus, isPending: maintenanceLoading } = useMaintenanceStatus(true);
 
   // Redirect to dashboard when user is fully authenticated
   // Profile is now GUARANTEED to exist when user exists (never null)
@@ -122,9 +124,17 @@ const Login: React.FC = () => {
     }
   };
 
+  const maintenanceEnabled = maintenanceStatus?.maintenanceEnabled ?? false;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow p-8">
+        {maintenanceEnabled && (
+          <div className="mb-6 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
+            <p className="font-semibold">Server under maintenance</p>
+            <p>The new updates are about to appear, please wait...</p>
+          </div>
+        )}
         <div className="flex items-center gap-4 mb-6">
           {brandLoading && whiteLabelEnabled ? (
             <div className="flex h-12 w-12 items-center justify-center rounded-md bg-gray-100 text-sm font-semibold text-gray-500">

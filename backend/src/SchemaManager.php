@@ -22,7 +22,7 @@ final class SchemaManager
         return $this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot';
     }
 
-    public function provision(bool $fresh = false, ?string $schemaPath = null, bool $includeSeedData = true): void
+    public function provision(bool $fresh = false, ?string $schemaPath = null, ?string $seedPath = null, bool $includeSeedData = true): void
     {
         $dbName = $this->databaseName();
         $server = $this->database->connectServer();
@@ -35,8 +35,15 @@ final class SchemaManager
             'CREATE DATABASE IF NOT EXISTS `' . str_replace('`', '``', $dbName) . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
         );
 
-        $path = $schemaPath ?? dirname(__DIR__) . '/database/schema.sql';
-        $this->runSqlFile($path, $includeSeedData);
+        $schema = $schemaPath ?? dirname(__DIR__) . '/database/schema.sql';
+        $this->runSqlFile($schema, false);
+
+        if ($includeSeedData) {
+            $seed = $seedPath ?? dirname(__DIR__) . '/database/seed.sql';
+            if (is_file($seed)) {
+                $this->runSqlFile($seed, true);
+            }
+        }
     }
 
     public function runSqlFile(string $path, bool $includeSeedData = true): void
@@ -65,26 +72,6 @@ final class SchemaManager
 
     private function shouldSkipSeedStatement(string $statement): bool
     {
-        $seedPrefixes = [
-            'INSERT INTO payment_methods ',
-            'INSERT INTO units ',
-            'INSERT INTO categories ',
-            'INSERT INTO company_settings ',
-            'INSERT INTO order_settings ',
-            'INSERT INTO invoice_settings ',
-            'INSERT INTO system_defaults ',
-            'INSERT INTO courier_settings ',
-            'INSERT INTO app_capability_settings ',
-            'INSERT INTO payment_gateway_settings ',
-            'INSERT INTO payroll_settings ',
-        ];
-
-        foreach ($seedPrefixes as $prefix) {
-            if (stripos($statement, $prefix) === 0) {
-                return true;
-            }
-        }
-
-        return false;
+        return stripos($statement, 'INSERT INTO ') === 0;
     }
 }

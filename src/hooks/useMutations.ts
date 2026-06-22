@@ -63,6 +63,7 @@ import {
   updateInvoiceSettings,
   updateSystemDefaults,
   updateCapabilitySettings,
+  setMaintenanceStatus,
   syncLicenseCapabilities,
   createOrUpdateCentralLicense,
   updateCentralLicenseOverride,
@@ -2303,6 +2304,18 @@ export function useUpdateCapabilitySettings(): UseMutationResult<CapabilitySetti
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
       queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance-status'] });
+    },
+  });
+}
+
+export function useSetMaintenanceStatus(): UseMutationResult<{ maintenanceEnabled: boolean }, Error, { maintenanceEnabled: boolean }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setMaintenanceStatus,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenance-status'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'capabilities'] });
     },
   });
 }

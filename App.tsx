@@ -48,10 +48,12 @@ function scheduleIdlePreload(task: () => void): () => void {
 import { hasAdminAccess } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
 import { useCapabilities } from './src/hooks/useCapabilities';
+import { useMaintenanceStatus } from './src/hooks/useQueries';
 import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
 
 const Login = lazyPage(() => import('./pages/Login'));
+const MaintenancePage = lazyPage(() => import('./pages/Maintenance'));
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const Orders = lazyPage(() => import('./pages/Orders'));
 const OrderForm = lazyPage(() => import('./pages/OrderForm'));
@@ -224,6 +226,16 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     });
   }, [isAuthenticated, can, canAny, canViewDashboard, isAdmin, activeUser?.role]);
   
+  const maintenanceQuery = useMaintenanceStatus(true);
+  const maintenanceEnabled = maintenanceQuery.data?.maintenanceEnabled ?? false;
+  const isMaintenanceRoute = location.pathname === '/maintenance' || location.pathname.startsWith('/maintenance');
+  const isLoginRoute = location.pathname === '/login';
+  const isDeveloperRoute = activeUser?.role === 'Developer' && location.pathname.startsWith('/developer');
+
+  if (maintenanceEnabled && !isDeveloper && !isLoginRoute && !isMaintenanceRoute) {
+    return <Navigate to="/maintenance" replace />;
+  }
+
   const lockedCapability = isAuthenticated && !isDeveloper ? capabilityForPath(location.pathname) : null;
   if (lockedCapability && !hasCapability(lockedCapability)) {
     return <Layout><FeatureLocked capability={lockedCapability} /></Layout>;
@@ -232,6 +244,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
+      <Route path="/maintenance" element={
+        maintenanceEnabled ? <MaintenancePage /> : (isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Navigate to="/login" replace />)
+      } />
       {/* Public login route - redirect to dashboard if logged in */}
       <Route path="/login" element={
         isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Login />

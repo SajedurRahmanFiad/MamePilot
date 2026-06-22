@@ -2,6 +2,8 @@
 
 This guide describes how to deploy the **MamePilot** frontend and backend to a cPanel hosting server, set up the MariaDB database, and configure your `.env` variables.
 
+It also supports automated updates for many deployments. See [docs/AUTOMATIC_DEPLOYMENTS.md](docs/AUTOMATIC_DEPLOYMENTS.md) for the simple workflow: bump version, commit/push once, and let each server update itself.
+
 ---
 
 ## 1. Directory Structure Mapping
@@ -53,8 +55,13 @@ Follow these steps to configure your MariaDB/MySQL database on cPanel:
 1. From cPanel home, open **phpMyAdmin**.
 2. Select your new database from the left-hand menu.
 3. Click on the **Import** tab at the top.
-4. Click **Choose File** and select the [schema-only.sql](file:///f:/Projects/React/MamePilot/backend/database/schema-only.sql) file from the `backend/database/` directory of your local workspace.
+4. Click **Choose File** and select the [schema.sql](file:///f:/Projects/React/MamePilot/backend/database/schema.sql) file from the `backend/database/` directory of your local workspace.
 5. Click **Import** (or **Go** depending on the cPanel version).
+
+Then import [seed.sql](file:///f:/Projects/React/MamePilot/backend/database/seed.sql) only for fresh installs.
+
+> [!IMPORTANT]
+> Do **not** run `seed.sql` repeatedly on existing customer databases. It contains default rows with `ON DUPLICATE KEY UPDATE` and can overwrite settings or the default developer user. Existing deployments should only receive `schema.sql` during updates.
 
 ---
 
@@ -83,7 +90,93 @@ VITE_API_BASE_URL=/api/
 
 ---
 
-## 4. Verification & Troubleshooting
+## 4. Database Backups and Schema Updates
+
+Before updating an important deployment, create a database backup:
+
+```bash
+php backend/bin/backup_db.php
+```
+
+This creates a compressed `.sql.gz` backup in `DB_BACKUP_ROOT`.
+
+To restore a backup:
+
+```bash
+php backend/bin/restore_db.php --file /path/to/backup.sql.gz
+```
+
+For an existing deployment, code updates should be followed by the pure schema update:
+
+```bash
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php
+```
+
+The update agent applies `backend/database/schema.sql` automatically and does not run `seed.sql` unless `UPDATE_RUN_SEED=1`.
+
+---
+
+## 5. Optional Automatic Updates
+
+Each deployment can check for updates automatically using the update agent. This is useful when you manage many domains, but it must be configured carefully.
+
+Add these optional values to `/mamepilot_backend/.env`:
+
+```ini
+UPDATE_ENABLED=0
+# Choose one method:
+# Git method:
+UPDATE_USE_GIT=0
+UPDATE_GIT_URL=
+UPDATE_GIT_BRANCH=main
+UPDATE_GIT_DEPLOY_ROOT=/home/username/repositories/Mame Pilot
+UPDATE_DOCUMENT_ROOT=/home/username/public_html
+UPDATE_BACKEND_ROOT=/home/username/mamepilot_backend
+UPDATE_SKIP_BUILD=0
+UPDATE_BUILD_COMMAND=npm run build
+# Release package method:
+UPDATE_BASE_URL=https://your-central-domain.com/mamepilot
+UPDATE_VERSION_FILENAME=VERSION
+UPDATE_PACKAGE_NAME=cpanel-mamepilot-package
+UPDATE_APP_ROOT=/home/your-cpanel-user/mamepilot_backend
+UPDATE_PUBLIC_ROOT=/home/your-cpanel-user/public_html/your-subdomain
+UPDATE_DOCUMENT_ROOT_FOLDER=public_html
+UPDATE_BACKEND_FOLDER=mamepilot_backend
+UPDATE_RUN_SCHEMA=1
+UPDATE_RUN_SEED=0
+UPDATE_RUN_MIGRATIONS=0
+UPDATE_BACKUP_BEFORE_UPDATE=1
+UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
+UPDATE_CRON_SECRET=use-a-long-random-secret-here
+```
+
+Check manually from the backend folder:
+
+```bash
+php backend/bin/update.php --check
+php backend/bin/update.php
+```
+
+You can also call the protected web endpoint:
+
+```text
+/api/update.php?action=check&secret=YOUR_UPDATE_CRON_SECRET
+/api/update.php?action=update&secret=YOUR_UPDATE_CRON_SECRET
+```
+
+The update agent preserves the existing `.env` file. It does not overwrite it.
+
+If an update breaks the site, restore code files from the latest backup:
+
+```bash
+php backend/bin/rollback.php
+```
+
+Database rollback is not automatic. Keep database backups separately if you need to undo data/schema changes.
+
+---
+
+## 6. Verification & Troubleshooting
 
 Once files are uploaded and config is set, verify the setup by navigating to your API health endpoint in the browser:
 `https://subdomain.yourdomain.com/api/health`

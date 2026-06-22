@@ -44,11 +44,61 @@ final class MasterDataApi extends BaseService
             return ['user' => null, 'error' => 'Invalid password'];
         }
 
+        $maintenanceStatus = $this->fetchMaintenanceStatus();
+        $isDeveloper = trim((string) ($row['role'] ?? '')) === 'Developer';
+        if (!empty($maintenanceStatus['maintenanceEnabled']) && !$isDeveloper) {
+            return ['user' => null, 'error' => 'Server under maintenance.'];
+        }
+
         return [
             'user' => $this->mapUser($row),
             'token' => $this->auth->issueToken($row),
             'error' => null,
         ];
+    }
+
+    public function fetchMaintenanceStatus(array $params = []): array
+    {
+        $row = $this->capabilityRow();
+        $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
+
+        if ($row !== null && trim((string) ($row['license_api_url'] ?? '')) !== '') {
+            try {
+                $remoteMaintenanceEnabled = $this->fetchRemoteMaintenanceEnabled((string) $row['license_api_url']);
+                if ($remoteMaintenanceEnabled !== $maintenanceEnabled) {
+                    $maintenanceEnabled = $remoteMaintenanceEnabled;
+                    $this->touchUpdate('app_capability_settings', (string) $row['id'], [
+                        'maintenance_enabled' => $maintenanceEnabled ? 1 : 0,
+                    ]);
+                }
+            } catch (\Throwable $exception) {
+                // Preserve local maintenance state if central API is temporarily unavailable.
+            }
+        }
+
+        return ['maintenanceEnabled' => $maintenanceEnabled];
+    }
+
+    public function setMaintenanceStatus(array $params): array
+    {
+        $enabled = !empty($params['maintenanceEnabled'] ?? $params['maintenance_enabled'] ?? false);
+        $this->requireDeveloperUser();
+
+        $row = $this->capabilityRow();
+        $apiUrl = trim((string) ($row['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($row['license_owner_token'] ?? ''));
+        if ($apiUrl !== '') {
+            try {
+                $this->centralLicenseRequest($apiUrl, $ownerToken, 'set_maintenance_status', [
+                    'maintenanceEnabled' => $enabled,
+                ]);
+            } catch (\Throwable $exception) {
+                // Central persistence is best-effort; keep local state up-to-date even if remote fails.
+            }
+        }
+
+        $result = $this->updateCapabilitySettings(['maintenanceEnabled' => $enabled]);
+        return ['maintenanceEnabled' => $result['maintenanceEnabled'] ?? $enabled];
     }
 
     public function fetchUsers(array $params = []): array
@@ -1139,6 +1189,21 @@ final class MasterDataApi extends BaseService
         $isDeveloper = trim((string) ($user['role'] ?? '')) === 'Developer';
         $row = $this->capabilityRow();
         $capabilities = $this->normalizeCapabilities($row['capabilities'] ?? null);
+        $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
+
+        if ($row !== null && trim((string) ($row['license_api_url'] ?? '')) !== '') {
+            try {
+                $remoteMaintenanceEnabled = $this->fetchRemoteMaintenanceEnabled((string) $row['license_api_url']);
+                if ($remoteMaintenanceEnabled !== $maintenanceEnabled) {
+                    $maintenanceEnabled = $remoteMaintenanceEnabled;
+                    $this->touchUpdate('app_capability_settings', (string) $row['id'], [
+                        'maintenance_enabled' => $maintenanceEnabled ? 1 : 0,
+                    ]);
+                }
+            } catch (\Throwable $exception) {
+                // Preserve local maintenance state if central API is temporarily unavailable.
+            }
+        }
 
         return [
             'capabilities' => $capabilities,
@@ -1147,6 +1212,7 @@ final class MasterDataApi extends BaseService
             'licenseStatus' => (string) ($row['license_status'] ?? 'local'),
             'renewalDate' => $this->toIso($row['renewal_date'] ?? null),
             'overrideEnabled' => !empty($row['override_enabled']),
+            'maintenanceEnabled' => $maintenanceEnabled,
             'availableTiers' => $this->normalizeLicenseTiers($row['available_tiers'] ?? null),
             'pricingMetadata' => $this->jsonDecodeAssoc($row['pricing_metadata'] ?? null),
             'lastSyncedAt' => $this->toIso($row['last_synced_at'] ?? null),
@@ -1157,6 +1223,12 @@ final class MasterDataApi extends BaseService
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
         ];
+    }
+
+    private function fetchRemoteMaintenanceEnabled(string $apiUrl): bool
+    {
+        $response = $this->centralLicenseRequest($apiUrl, null, 'fetch_maintenance_status');
+        return !empty($response['maintenanceEnabled'] ?? $response['maintenance_enabled'] ?? false);
     }
 
     public function updateCapabilitySettings(array $params): array
@@ -1185,13 +1257,14 @@ final class MasterDataApi extends BaseService
             'license_status' => array_key_exists('licenseStatus', $params) ? trim((string) $params['licenseStatus']) : (string) ($row['license_status'] ?? 'local'),
             'renewal_date' => array_key_exists('renewalDate', $params) && $params['renewalDate'] ? $this->normalizeDateTimeInput((string) $params['renewalDate']) : ($row['renewal_date'] ?? null),
             'override_enabled' => array_key_exists('overrideEnabled', $params) ? (!empty($params['overrideEnabled']) ? 1 : 0) : (int) ($row['override_enabled'] ?? 0),
+            'maintenance_enabled' => array_key_exists('maintenanceEnabled', $params) ? (!empty($params['maintenanceEnabled']) ? 1 : 0) : (int) ($row['maintenance_enabled'] ?? 0),
             'available_tiers' => array_key_exists('availableTiers', $params) ? $this->jsonEncode($this->normalizeLicenseTiers($params['availableTiers'])) : ($row['available_tiers'] ?? null),
             'pricing_metadata' => array_key_exists('pricingMetadata', $params) ? $this->jsonEncode(is_array($params['pricingMetadata']) ? $params['pricingMetadata'] : []) : ($row['pricing_metadata'] ?? null),
             'last_sync_status' => array_key_exists('lastSyncStatus', $params) ? trim((string) $params['lastSyncStatus']) : 'manual',
             'last_sync_message' => array_key_exists('lastSyncMessage', $params) ? $this->nullableString($params['lastSyncMessage']) : 'Saved manually by developer.',
         ];
 
-        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'available_tiers', 'pricing_metadata'] as $column) {
+        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -1397,6 +1470,10 @@ final class MasterDataApi extends BaseService
             $payload['id'] = trim((string) ($params['id'] ?? ''));
         } else {
             $payload['targetRoles'] = $params['targetRoles'] ?? [];
+        }
+        $userId = trim((string) ($params['userId'] ?? $params['user_id'] ?? ''));
+        if ($userId !== '') {
+            $payload['userId'] = $userId;
         }
 
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, $action, $payload);
@@ -1948,6 +2025,324 @@ final class MasterDataApi extends BaseService
         }
 
         return ['success' => true];
+    }
+
+    public function mameChat(array $params): array
+    {
+        $this->currentUser();
+
+        $message = trim((string) ($params['message'] ?? ''));
+        if ($message === '') {
+            throw new ApiException('Message cannot be empty.', 400);
+        }
+
+        $facts = $this->buildMameDatabaseFacts();
+        $systemMessage = <<<'TXT'
+You are Mame, an exclusive AI assistant made by Mame Studios. Assist the user with business operations, customers, vendors, products, orders, transactions, and accounts.
+Use only the facts provided below and avoid inventing details not supported by the database summary. If you cannot answer from the available facts, explain that the information is not available and suggest a follow-up question.
+TXT;
+
+        $prompt = "Business facts:\n" . implode("\n", $facts) . "\n\nUser question:\n{$message}";
+        $payload = [
+            'messages' => [
+                ['role' => 'system', 'content' => $systemMessage],
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => 0.3,
+        ];
+
+        $geminiKey = trim((string) ($this->config->get('GEMINI_API_KEY') ?? ''));
+        $openRouterKey = trim((string) ($this->config->get('OPENROUTER_API_KEY') ?? ''));
+        $errors = [];
+
+        if ($geminiKey !== '') {
+            try {
+                $answer = $this->callGeminiChat($payload, $geminiKey);
+                return ['answer' => $answer];
+            } catch (\Throwable $exception) {
+                $errors[] = 'Gemini: ' . $exception->getMessage();
+            }
+        }
+
+        if ($openRouterKey !== '') {
+            try {
+                $answer = $this->callOpenRouterChat($payload, $openRouterKey);
+                return ['answer' => $answer];
+            } catch (\Throwable $exception) {
+                $errors[] = 'OpenRouter: ' . $exception->getMessage();
+            }
+        }
+
+        if (!empty($errors)) {
+            throw new ApiException('Failed to generate Mame response: ' . implode(' | ', $errors), 502);
+        }
+
+        throw new ApiException('Mame is not configured. Set GEMINI_API_KEY or OPENROUTER_API_KEY in backend config.', 500);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function buildMameDatabaseFacts(): array
+    {
+        $facts = [];
+
+        $counts = $this->database->fetchOne(
+            'SELECT
+                (SELECT COUNT(*) FROM orders WHERE deleted_at IS NULL) AS total_orders,
+                (SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL) AS total_customers,
+                (SELECT COUNT(*) FROM vendors WHERE deleted_at IS NULL) AS total_vendors,
+                (SELECT COUNT(*) FROM products WHERE deleted_at IS NULL) AS total_products,
+                (SELECT COUNT(*) FROM transactions WHERE deleted_at IS NULL) AS total_transactions'
+        );
+
+        if ($counts !== null) {
+            $facts[] = 'Total orders: ' . (int) ($counts['total_orders'] ?? 0);
+            $facts[] = 'Total customers: ' . (int) ($counts['total_customers'] ?? 0);
+            $facts[] = 'Total vendors: ' . (int) ($counts['total_vendors'] ?? 0);
+            $facts[] = 'Total products: ' . (int) ($counts['total_products'] ?? 0);
+            $facts[] = 'Total transactions: ' . (int) ($counts['total_transactions'] ?? 0);
+        }
+
+        $recentOrders = $this->database->fetchAll(
+            'SELECT o.order_number, o.status, o.created_at, c.name AS customer_name
+             FROM orders o
+             LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE o.deleted_at IS NULL
+             ORDER BY o.created_at DESC
+             LIMIT 3'
+        );
+        if (!empty($recentOrders)) {
+            $facts[] = 'Recent orders:';
+            foreach ($recentOrders as $row) {
+                $facts[] = sprintf(
+                    '- %s (%s) for %s',
+                    (string) ($row['order_number'] ?? 'Unknown'),
+                    (string) ($row['status'] ?? 'Unknown'),
+                    $this->nullableString($row['customer_name']) ?? 'Unknown customer'
+                );
+            }
+        }
+
+        $recentCustomers = $this->database->fetchAll(
+            'SELECT name, phone, created_at
+             FROM customers
+             WHERE deleted_at IS NULL
+             ORDER BY created_at DESC
+             LIMIT 3'
+        );
+        if (!empty($recentCustomers)) {
+            $facts[] = 'Recent customers:';
+            foreach ($recentCustomers as $row) {
+                $facts[] = sprintf(
+                    '- %s (%s)',
+                    (string) ($row['name'] ?? 'Unknown'),
+                    $this->nullableString($row['phone']) ?? 'No phone'
+                );
+            }
+        }
+
+        $recentProducts = $this->database->fetchAll(
+            'SELECT name, sale_price, stock
+             FROM products
+             WHERE deleted_at IS NULL
+             ORDER BY created_at DESC
+             LIMIT 3'
+        );
+        if (!empty($recentProducts)) {
+            $facts[] = 'Recent products:';
+            foreach ($recentProducts as $row) {
+                $facts[] = sprintf(
+                    '- %s (₹%s, stock %s)',
+                    (string) ($row['name'] ?? 'Unknown'),
+                    (string) ($row['sale_price'] ?? '0'),
+                    (string) ($row['stock'] ?? '0')
+                );
+            }
+        }
+
+        $recentTransactions = $this->database->fetchAll(
+            'SELECT type, amount, created_at
+             FROM transactions
+             WHERE deleted_at IS NULL
+             ORDER BY created_at DESC
+             LIMIT 3'
+        );
+        if (!empty($recentTransactions)) {
+            $facts[] = 'Recent transactions:';
+            foreach ($recentTransactions as $row) {
+                $facts[] = sprintf(
+                    '- %s %s',
+                    (string) ($row['type'] ?? 'Unknown'),
+                    (string) ($row['amount'] ?? '0')
+                );
+            }
+        }
+
+        return $facts;
+    }
+
+    private function callGeminiChat(array $payload, string $apiKey): string
+    {
+        $endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+        $headers = ['Content-Type' => 'application/json'];
+        $url = $endpoint;
+
+        if (str_starts_with($apiKey, 'ya29.') || str_starts_with($apiKey, 'Bearer ')) {
+            $cleanKey = preg_replace('/^Bearer\s+/i', '', $apiKey);
+            $headers['Authorization'] = 'Bearer ' . $cleanKey;
+        } else {
+            $headers['x-goog-api-key'] = $apiKey;
+        }
+
+        $systemContent = (string) ($payload['messages'][0]['content'] ?? '');
+        $userContent = (string) ($payload['messages'][1]['content'] ?? '');
+
+        $requestBody = [
+            'contents' => [
+                [
+                    'role' => 'system',
+                    'parts' => [
+                        ['text' => $systemContent],
+                    ],
+                ],
+                [
+                    'role' => 'user',
+                    'parts' => [
+                        ['text' => $userContent],
+                    ],
+                ],
+            ],
+            'generationConfig' => [
+                'temperature' => $payload['temperature'] ?? 0.3,
+                'topP' => 0.95,
+                'candidateCount' => 1,
+            ],
+        ];
+
+        $response = $this->httpJson(
+            'POST',
+            $url,
+            $headers,
+            $requestBody
+        );
+
+        $json = $response['json'] ?? null;
+        if ($response['status'] !== 200) {
+            $message = 'HTTP ' . $response['status'];
+            if (is_array($json) && isset($json['error']['message'])) {
+                $message .= ': ' . $json['error']['message'];
+            }
+            throw new RuntimeException($message);
+        }
+
+        $text = $this->extractGeminiResponseText($json);
+        if ($text !== '') {
+            return $text;
+        }
+
+        throw new RuntimeException('Unexpected Gemini response format.');
+    }
+
+    private function extractGeminiResponseText(mixed $json): string
+    {
+        if (!is_array($json)) {
+            return '';
+        }
+
+        if (isset($json['candidates'][0]['content'])) {
+            $candidate = $json['candidates'][0]['content'];
+            if (is_string($candidate)) {
+                return trim($candidate);
+            }
+            if (is_array($candidate)) {
+                if (isset($candidate['text'])) {
+                    return trim((string) $candidate['text']);
+                }
+                if (isset($candidate['parts'][0]['text'])) {
+                    return trim((string) $candidate['parts'][0]['text']);
+                }
+            }
+        }
+
+        if (isset($json['output']['content']) && is_array($json['output']['content'])) {
+            foreach ($json['output']['content'] as $contentItem) {
+                if (is_array($contentItem) && isset($contentItem['type']) && $contentItem['type'] === 'output_text' && isset($contentItem['text'])) {
+                    return trim((string) $contentItem['text']);
+                }
+            }
+        }
+
+        if (isset($json['candidates'][0]['content'])) {
+            $candidate = $json['candidates'][0]['content'];
+            if (is_string($candidate)) {
+                return trim($candidate);
+            }
+            if (is_array($candidate)) {
+                foreach ($candidate as $item) {
+                    if (is_string($item)) {
+                        return trim($item);
+                    }
+                    if (is_array($item)) {
+                        if (isset($item['text'])) {
+                            return trim((string) $item['text']);
+                        }
+                        if (isset($item['content']) && is_string($item['content'])) {
+                            return trim($item['content']);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isset($json['output'][0]['content']) && is_array($json['output'][0]['content'])) {
+            foreach ($json['output'][0]['content'] as $contentItem) {
+                if (!is_array($contentItem)) {
+                    continue;
+                }
+                if (isset($contentItem['type']) && $contentItem['type'] === 'output_text' && isset($contentItem['text'])) {
+                    return trim((string) $contentItem['text']);
+                }
+                if (isset($contentItem['text'])) {
+                    return trim((string) $contentItem['text']);
+                }
+                if (isset($contentItem['content']) && is_string($contentItem['content'])) {
+                    return trim($contentItem['content']);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function callOpenRouterChat(array $payload, string $apiKey): string
+    {
+        $payload['model'] = 'nex-agi/nex-n2-pro:free';
+
+        $response = $this->httpJson(
+            'POST',
+            'https://openrouter.ai/v1/chat/completions',
+            ['Authorization' => 'Bearer ' . $apiKey],
+            $payload
+        );
+
+        $json = $response['json'] ?? null;
+        if (is_array($json)) {
+            if (isset($json['choices'][0]['message']['content'])) {
+                return trim((string) $json['choices'][0]['message']['content']);
+            }
+            if (isset($json['choices'][0]['message']['content'][0]['text'])) {
+                return trim((string) $json['choices'][0]['message']['content'][0]['text']);
+            }
+            if (isset($json['choices'][0]['text'])) {
+                return trim((string) $json['choices'][0]['text']);
+            }
+            if (isset($json['choices'][0]['delta']['content'])) {
+                return trim((string) $json['choices'][0]['delta']['content']);
+            }
+        }
+
+        throw new RuntimeException('Unexpected OpenRouter response format.');
     }
 
     /**
@@ -2567,6 +2962,25 @@ final class MasterDataApi extends BaseService
         ];
     }
 
+    private function buildCentralNotificationDetailPayload(array $notification): array
+    {
+        $mappedNotification = $this->mapNotification($notification);
+        $isRead = (bool) ($mappedNotification['isRead'] ?? false);
+        $actionResult = trim((string) ($mappedNotification['actionResult'] ?? ''));
+
+        return [
+            'notification' => $mappedNotification,
+            'recipients' => [],
+            'summary' => [
+                'recipientCount' => 0,
+                'readCount' => $isRead ? 1 : 0,
+                'actedCount' => $actionResult !== '' ? 1 : 0,
+                'acceptedCount' => $actionResult === 'accepted' ? 1 : 0,
+                'declinedCount' => $actionResult === 'declined' ? 1 : 0,
+            ],
+        ];
+    }
+
     /**
      * @param array<int, string> $userIds
      */
@@ -2937,7 +3351,7 @@ final class MasterDataApi extends BaseService
             $this->upsertSystemNotification(
                 $activeKey,
                 'Service renewal is processing',
-                '<p>A renewal payment is being processed. The backend will be available again within 10 minutes.</p><p><a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to view the subscription status.</p>',
+                '<p>A renewal payment is being processed. The subscription will be available again within 10 minutes.</p><p><a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to view the subscription status.</p>',
                 ['Admin', 'Developer'],
                 $actionConfig,
                 [
@@ -3000,8 +3414,6 @@ final class MasterDataApi extends BaseService
             $this->syncServiceSubscriptionNotifications($this->buildServiceSubscriptionOverview($user));
         }
 
-        $this->syncCentralNotifications([$user['role'] ?? '']);
-
         $now = $this->database->nowUtc();
         $baseBindings = [
             ':role_needle' => '%"' . trim((string) ($user['role'] ?? '')) . '"%',
@@ -3034,8 +3446,7 @@ final class MasterDataApi extends BaseService
                        AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
                        AND n.is_active = 1
                        AND nr.notification_id IS NULL
-                     ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
-                     LIMIT 200"
+                     ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC"
                 : "SELECT
                         n.*,
                         creator.name AS created_by_name,
@@ -3050,8 +3461,7 @@ final class MasterDataApi extends BaseService
                        AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
                        AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
                        AND n.is_active = 1
-                     ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
-                     LIMIT 200",
+                     ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC",
                 $queryBindings
             );
         } catch (\Throwable $e) {
@@ -3062,8 +3472,48 @@ final class MasterDataApi extends BaseService
         }
 
         $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        $indexedItems = [];
+        foreach ($items as $item) {
+            $indexedItems[(string) ($item['id'] ?? '')] = $item;
+        }
 
+        try {
+            $centralNotifications = $this->fetchCentralNotifications([
+                'targetRoles' => [trim((string) ($user['role'] ?? ''))],
+                'userId' => (string) ($user['id'] ?? ''),
+            ]);
+            foreach ($centralNotifications as $notification) {
+                if (!is_array($notification)) {
+                    continue;
+                }
+                $notificationId = trim((string) ($notification['id'] ?? ''));
+                if ($notificationId === '') {
+                    continue;
+                }
+
+                $isRead = (bool) ($notification['isRead'] ?? false);
+                if (array_key_exists($notificationId, $indexedItems)) {
+                    if ($isRead) {
+                        unset($indexedItems[$notificationId]);
+                        continue;
+                    }
+                    $indexedItems[$notificationId] = $this->mapNotification($notification);
+                    continue;
+                }
+
+                if ($isRead) {
+                    continue;
+                }
+
+                $indexedItems[$notificationId] = $this->mapNotification($notification);
+            }
+        } catch (Throwable) {
+            // Ignore central fetch failures and continue with local notifications.
+        }
+
+        $items = array_values($indexedItems);
         usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
+
         $unreadCount = count(array_filter(
             $items,
             static fn(array $item): bool => !((bool) ($item['isRead'] ?? false)) && ((bool) ($item['isActive'] ?? true))
@@ -3099,8 +3549,6 @@ final class MasterDataApi extends BaseService
             $this->syncServiceSubscriptionNotifications($this->buildServiceSubscriptionOverview($user));
         }
 
-        $this->syncCentralNotifications([$user['role'] ?? '']);
-
         $now = $this->database->nowUtc();
         $baseBindings = [
             ':role_needle' => '%"' . trim((string) ($user['role'] ?? '')) . '"%',
@@ -3112,33 +3560,11 @@ final class MasterDataApi extends BaseService
             $queryBindings[':user_id'] = (string) ($user['id'] ?? '');
         }
 
-        // Build base WHERE clause
-        $whereClause = "WHERE n.target_roles LIKE :role_needle
-                          AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
-                          AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
-                          AND n.is_active = 1";
-
-        // Get total count
+        $localRows = [];
         try {
-            $countResult = $this->database->fetchOne("SELECT COUNT(*) as total FROM notifications n {$whereClause}", $baseBindings);
-            $total = (int) ($countResult['total'] ?? 0);
-        } catch (\Throwable $e) {
-            // If count fails, return empty
-            return [
-                'items' => [],
-                'total' => 0,
-                'page' => $page,
-                'pageSize' => $pageSize,
-                'totalPages' => 0,
-            ];
-        }
-
-        $totalPages = max(1, (int) ceil($total / $pageSize));
-
-        // Get paginated results - show ALL notifications (both read and unread)
-        try {
-            if ($hasReceiptsTable) {
-                $query = "SELECT
+            $localRows = $this->database->fetchAll(
+                $hasReceiptsTable
+                ? "SELECT
                             n.*,
                             creator.name AS created_by_name,
                             IFNULL(nr.is_read, 0) AS is_read,
@@ -3148,11 +3574,12 @@ final class MasterDataApi extends BaseService
                          FROM notifications n
                          LEFT JOIN users creator ON creator.id = n.created_by
                          LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id
-                         {$whereClause}
-                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
-                         LIMIT {$pageSize} OFFSET {$offset}";
-            } else {
-                $query = "SELECT
+                        WHERE n.target_roles LIKE :role_needle
+                          AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
+                          AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
+                          AND n.is_active = 1
+                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC"
+                : "SELECT
                             n.*,
                             creator.name AS created_by_name,
                             0 AS is_read,
@@ -3161,20 +3588,54 @@ final class MasterDataApi extends BaseService
                             NULL AS acted_at
                          FROM notifications n
                          LEFT JOIN users creator ON creator.id = n.created_by
-                         {$whereClause}
-                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC
-                         LIMIT {$pageSize} OFFSET {$offset}";
-            }
-
-            $rows = $this->database->fetchAll($query, $queryBindings);
-            $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+                        WHERE n.target_roles LIKE :role_needle
+                          AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
+                          AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
+                          AND n.is_active = 1
+                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC",
+                $queryBindings
+            );
         } catch (\Throwable $e) {
-            // If query fails, return what we have
-            $items = [];
+            // Ignore local fetch failures and fall back to remote-only result set.
         }
 
+        $items = array_map(fn(array $row): array => $this->mapNotification($row), $localRows);
+        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
+
+        $remoteItems = [];
+        try {
+            $centralNotifications = $this->fetchCentralNotifications([
+                'targetRoles' => [trim((string) ($user['role'] ?? ''))],
+                'userId' => (string) ($user['id'] ?? ''),
+            ]);
+            foreach ($centralNotifications as $notification) {
+                if (!is_array($notification)) {
+                    continue;
+                }
+                $remoteItems[] = $notification;
+            }
+        } catch (Throwable) {
+            // Ignore central fetch failures and continue with local notifications.
+        }
+
+        if ($remoteItems !== []) {
+            $existingIds = array_column($items, 'id');
+            foreach ($remoteItems as $notification) {
+                $notificationId = trim((string) ($notification['id'] ?? ''));
+                if ($notificationId === '' || in_array($notificationId, $existingIds, true)) {
+                    continue;
+                }
+                $items[] = $this->mapNotification($notification);
+            }
+            usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
+        }
+
+        $total = count($items);
+        $totalPages = max(1, (int) ceil($total / $pageSize));
+        $pageItems = array_slice($items, $offset, $pageSize);
+
         return [
-            'items' => $items,
+            'items' => $pageItems,
             'total' => $total,
             'page' => $page,
             'pageSize' => $pageSize,
@@ -3189,15 +3650,28 @@ final class MasterDataApi extends BaseService
             return [];
         }
 
-        $rows = $this->database->fetchAll(
-            "SELECT n.*, creator.name AS created_by_name
-             FROM notifications n
-             LEFT JOIN users creator ON creator.id = n.created_by
-             ORDER BY n.created_at DESC
-             LIMIT 500"
-        );
+        try {
+            $this->syncCentralNotifications([]);
+        } catch (Throwable) {
+            // Ignore central sync failures and continue with local notifications.
+        }
 
-        return array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        $items = [];
+        try {
+            $rows = $this->database->fetchAll(
+                "SELECT n.*, creator.name AS created_by_name
+                 FROM notifications n
+                 LEFT JOIN users creator ON creator.id = n.created_by
+                 ORDER BY n.created_at DESC
+                 LIMIT 500"
+            );
+            $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        } catch (\Throwable $e) {
+            // Ignore local fetch failures and continue with remote results only.
+        }
+
+        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
+        return array_slice($items, 0, 500);
     }
 
     public function fetchNotificationHistoryPage(array $params = []): array
@@ -3217,20 +3691,40 @@ final class MasterDataApi extends BaseService
         $pageSize = max(1, min(100, (int) ($params['pageSize'] ?? 12)));
         $offset = ($page - 1) * $pageSize;
 
-        $countRow = $this->database->fetchOne('SELECT COUNT(*) AS total FROM notifications');
-        $total = (int) ($countRow['total'] ?? 0);
+        $items = [];
+        try {
+            $rows = $this->database->fetchAll(
+                "SELECT n.*, creator.name AS created_by_name
+                 FROM notifications n
+                 LEFT JOIN users creator ON creator.id = n.created_by
+                 WHERE (n.system_key IS NULL OR n.system_key NOT LIKE 'central:%')
+                 ORDER BY n.created_at DESC"
+            );
+            $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        } catch (\Throwable $e) {
+            // Ignore local fetch failures and continue with remote results only.
+        }
+
+        try {
+            $centralNotifications = $this->fetchCentralNotifications([
+                'userId' => (string) ($this->currentUser()['id'] ?? ''),
+            ]);
+            foreach ($centralNotifications as $notification) {
+                if (!is_array($notification)) {
+                    continue;
+                }
+                $items[] = $this->mapNotification($notification);
+            }
+        } catch (Throwable $e) {
+            // Ignore central fetch failures.
+        }
+
+        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
+        $total = count($items);
         $totalPages = $total > 0 ? (int) ceil($total / $pageSize) : 0;
 
-        $rows = $this->database->fetchAll(
-            "SELECT n.*, creator.name AS created_by_name
-             FROM notifications n
-             LEFT JOIN users creator ON creator.id = n.created_by
-             ORDER BY n.created_at DESC
-             LIMIT {$pageSize} OFFSET {$offset}"
-        );
-
         return [
-            'items' => array_map(fn(array $row): array => $this->mapNotification($row), $rows),
+            'items' => array_slice($items, $offset, $pageSize),
             'total' => $total,
             'page' => $page,
             'pageSize' => $pageSize,
@@ -3259,13 +3753,28 @@ final class MasterDataApi extends BaseService
             [':id' => $notificationId]
         );
 
+        $currentUser = $this->currentUser();
         if ($row !== null) {
+            $systemKey = trim((string) ($row['system_key'] ?? ''));
+            if ($systemKey !== '' && strpos($systemKey, 'central:') === 0) {
+                $centralNotification = $this->fetchCentralNotifications([
+                    'id' => $notificationId,
+                    'userId' => (string) ($currentUser['id'] ?? ''),
+                ]);
+                if (is_array($centralNotification) && count($centralNotification) === 1) {
+                    return $this->buildCentralNotificationDetailPayload($centralNotification[0]);
+                }
+            }
+
             return $this->buildNotificationDetailPayload($row);
         }
 
-        $centralNotification = $this->fetchCentralNotifications(['id' => $notificationId]);
+        $centralNotification = $this->fetchCentralNotifications([
+            'id' => $notificationId,
+            'userId' => (string) ($currentUser['id'] ?? ''),
+        ]);
         if (is_array($centralNotification) && count($centralNotification) === 1) {
-            return array_merge(['isRead' => false, 'isActive' => true, 'actionResult' => null, 'actedAt' => null], $centralNotification[0]);
+            return $this->buildCentralNotificationDetailPayload($centralNotification[0]);
         }
 
         return null;
@@ -3327,21 +3836,6 @@ final class MasterDataApi extends BaseService
                 }
 
                 $notification = $response['notification'];
-                $this->upsertCentralNotificationLocally($notification);
-
-                $row = $this->database->fetchOne(
-                    "SELECT n.*, creator.name AS created_by_name
-                     FROM notifications n
-                     LEFT JOIN users creator ON creator.id = n.created_by
-                     WHERE n.id = :id
-                     LIMIT 1",
-                    [':id' => trim((string) ($notification['id'] ?? ''))]
-                );
-
-                if ($row !== null) {
-                    return $this->mapNotification($row);
-                }
-
                 return array_merge(
                     ['isRead' => false, 'isActive' => true, 'createdBy' => null, 'createdByName' => null, 'actionResult' => null, 'actedAt' => null],
                     $notification
@@ -3391,58 +3885,134 @@ final class MasterDataApi extends BaseService
     public function markNotificationRead(array $params): array
     {
         $user = $this->currentUser();
-        $notificationIds = [];
+        $requestedIds = [];
         $primaryId = trim((string) ($params['notificationId'] ?? ''));
         if ($primaryId !== '') {
-            $notificationIds[] = $primaryId;
+            $requestedIds[] = $primaryId;
         }
         if (is_array($params['notificationIds'] ?? null)) {
             foreach ($params['notificationIds'] as $candidateId) {
                 $trimmedId = trim((string) $candidateId);
-                if ($trimmedId !== '' && !in_array($trimmedId, $notificationIds, true)) {
-                    $notificationIds[] = $trimmedId;
+                if ($trimmedId !== '' && !in_array($trimmedId, $requestedIds, true)) {
+                    $requestedIds[] = $trimmedId;
                 }
             }
         }
 
-        if ($notificationIds === [] || !$this->tableExists('notifications') || !$this->tableExists('notification_receipts')) {
+        if ($requestedIds === []) {
             return ['success' => true];
         }
 
         $roleNeedle = '%"' . trim((string) ($user['role'] ?? '')) . '"%';
-        if (count($notificationIds) === 1) {
-            $notification = $this->database->fetchOne(
-                'SELECT id FROM notifications WHERE id = :id AND target_roles LIKE :role_needle LIMIT 1',
-                [
-                    ':id' => $notificationIds[0],
-                    ':role_needle' => $roleNeedle,
-                ]
-            );
-            if ($notification === null) {
-                throw new RuntimeException('Notification not found.');
-            }
-            $allowedIds = [(string) ($notification['id'] ?? '')];
-        } else {
-            [$placeholders, $bindings] = $this->inClause($notificationIds, 'notification_id');
-            $rows = $this->database->fetchAll(
-                'SELECT id
-                 FROM notifications
-                 WHERE id IN (' . implode(', ', $placeholders) . ')
-                   AND target_roles LIKE :role_needle',
-                [':role_needle' => $roleNeedle] + $bindings
-            );
-            $allowedIds = array_values(array_filter(array_map(
-                static fn(array $row): string => trim((string) ($row['id'] ?? '')),
-                $rows
-            )));
-            if ($allowedIds === []) {
-                return ['success' => true];
+        $localAllowedIds = [];
+        $centralIds = [];
+        $missingIds = $requestedIds;
+
+        if ($this->tableExists('notifications')) {
+            if (count($requestedIds) === 1) {
+                $notification = $this->database->fetchOne(
+                    'SELECT id, target_roles, system_key FROM notifications WHERE id = :id AND target_roles LIKE :role_needle LIMIT 1',
+                    [
+                        ':id' => $requestedIds[0],
+                        ':role_needle' => $roleNeedle,
+                    ]
+                );
+                if ($notification !== null) {
+                    $systemKey = trim((string) ($notification['system_key'] ?? ''));
+                    if (strpos($systemKey, 'central:') === 0) {
+                        $centralIds[] = (string) ($notification['id'] ?? '');
+                    } else {
+                        $localAllowedIds[] = (string) ($notification['id'] ?? '');
+                    }
+                    $missingIds = [];
+                }
+            } else {
+                [$placeholders, $bindings] = $this->inClause($requestedIds, 'notification_id');
+                $rows = $this->database->fetchAll(
+                    'SELECT id, system_key FROM notifications WHERE id IN (' . implode(', ', $placeholders) . ') AND target_roles LIKE :role_needle',
+                    [':role_needle' => $roleNeedle] + $bindings
+                );
+                foreach ($rows as $row) {
+                    $id = (string) ($row['id'] ?? '');
+                    $systemKey = trim((string) ($row['system_key'] ?? ''));
+                    if (strpos($systemKey, 'central:') === 0) {
+                        $centralIds[] = $id;
+                    } else {
+                        $localAllowedIds[] = $id;
+                    }
+                }
+                $missingIds = array_values(array_diff($requestedIds, array_merge($localAllowedIds, $centralIds)));
             }
         }
 
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        if ($missingIds !== [] && $apiUrl !== '') {
+            foreach ($missingIds as $missingId) {
+                try {
+                    $centralNotifications = $this->fetchCentralNotifications([
+                        'id' => $missingId,
+                        'userId' => (string) ($user['id'] ?? ''),
+                    ]);
+                    if (is_array($centralNotifications) && count($centralNotifications) === 1) {
+                        $notification = $centralNotifications[0];
+                        $targetRoles = $this->normalizeNotificationTargetRoles($notification['targetRoles'] ?? $notification['target_roles'] ?? []);
+                        if (in_array((string) ($user['role'] ?? ''), $targetRoles, true)) {
+                            $centralIds[] = $missingId;
+                        }
+                    }
+                } catch (Throwable $e) {
+                    // Ignore central lookup failures for missing IDs.
+                }
+            }
+        }
+
+        $centralIds = array_values(array_unique(array_filter($centralIds)));
+        $centralMarkSucceeded = false;
+        if ($centralIds !== [] && $apiUrl !== '') {
+            try {
+                $this->centralLicenseRequest($apiUrl, $ownerToken, 'mark_notification_read', [
+                    'notificationIds' => $centralIds,
+                    'userId' => (string) ($user['id'] ?? ''),
+                ]);
+                $centralMarkSucceeded = true;
+            } catch (Throwable) {
+                // Ignore remote mark failures so local notification state can still be updated.
+            }
+        }
+
+        if ($centralMarkSucceeded && $centralIds !== [] && $this->tableExists('notification_receipts')) {
+            $now = $this->database->nowUtc();
+            foreach ($centralIds as $notificationId) {
+                $this->database->execute(
+                    'INSERT INTO notification_receipts (
+                        notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
+                     ) VALUES (
+                        :notification_id, :user_id, 1, :read_at, NULL, NULL, :created_at, :updated_at
+                     )
+                     ON DUPLICATE KEY UPDATE
+                        is_read = 1,
+                        read_at = COALESCE(notification_receipts.read_at, VALUES(read_at)),
+                        updated_at = VALUES(updated_at)',
+                    [
+                        ':notification_id' => $notificationId,
+                        ':user_id' => (string) ($user['id'] ?? ''),
+                        ':read_at' => $now,
+                        ':created_at' => $now,
+                        ':updated_at' => $now,
+                    ]
+                );
+            }
+        }
+
+        if ($localAllowedIds === [] || !$this->tableExists('notification_receipts')) {
+            return ['success' => true];
+        }
+
         $now = $this->database->nowUtc();
-        $this->database->transaction(function () use ($allowedIds, $user, $now): void {
-            foreach ($allowedIds as $notificationId) {
+        $this->database->transaction(function () use ($localAllowedIds, $user, $now): void {
+            foreach ($localAllowedIds as $notificationId) {
                 $this->database->execute(
                     'INSERT INTO notification_receipts (
                         notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
@@ -3478,32 +4048,76 @@ final class MasterDataApi extends BaseService
         if (!in_array($decision, ['accepted', 'declined'], true)) {
             throw new RuntimeException('A valid notification decision is required.');
         }
-        if (!$this->tableExists('notifications') || !$this->tableExists('notification_receipts')) {
-            throw new RuntimeException('Notifications migration is missing. Run the latest migration first.');
-        }
 
-        return $this->database->transaction(function () use ($user, $notificationId, $decision): array {
-            $notification = $this->database->fetchOne(
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+
+        $localNotification = null;
+        if ($this->tableExists('notifications')) {
+            $localNotification = $this->database->fetchOne(
                 'SELECT * FROM notifications WHERE id = :id AND target_roles LIKE :role_needle LIMIT 1 FOR UPDATE',
                 [
                     ':id' => $notificationId,
                     ':role_needle' => '%"' . trim((string) ($user['role'] ?? '')) . '"%',
                 ]
             );
-            if ($notification === null) {
-                throw new RuntimeException('Notification not found.');
-            }
-            if ((int) ($notification['is_active'] ?? 1) !== 1) {
-                throw new RuntimeException('This notification is no longer active.');
-            }
+        }
 
-            $targetRoles = $this->normalizeNotificationTargetRoles($notification['target_roles'] ?? []);
-            $actionConfig = $this->normalizeNotificationActionConfig($notification['action_config'] ?? [], $targetRoles);
-            $kind = (string) ($actionConfig['kind'] ?? 'none');
-            if (!in_array($kind, ['decision', 'link_and_decision'], true)) {
-                throw new RuntimeException('This notification does not support decisions.');
+        $isCentralNotification = false;
+        $notification = $localNotification;
+        $systemKey = trim((string) ($localNotification['system_key'] ?? ''));
+        if ($localNotification === null || strpos($systemKey, 'central:') === 0) {
+            $isCentralNotification = true;
+            if ($apiUrl !== '') {
+                try {
+                    $centralResult = $this->fetchCentralNotifications([
+                        'id' => $notificationId,
+                        'userId' => (string) ($user['id'] ?? ''),
+                    ]);
+                    if (is_array($centralResult) && count($centralResult) === 1) {
+                        $notification = $centralResult[0];
+                    }
+                } catch (Throwable $e) {
+                    if ($localNotification === null) {
+                        throw $e;
+                    }
+                }
             }
+        }
 
+        if ($notification === null) {
+            throw new RuntimeException('Notification not found.');
+        }
+        if (((int) ($notification['is_active'] ?? $notification['isActive'] ?? 1)) !== 1) {
+            throw new RuntimeException('This notification is no longer active.');
+        }
+
+        $targetRoles = $this->normalizeNotificationTargetRoles($notification['target_roles'] ?? $notification['targetRoles'] ?? []);
+        if (!in_array((string) ($user['role'] ?? ''), $targetRoles, true)) {
+            throw new RuntimeException('This notification is not assigned to your role.');
+        }
+        $actionConfig = $this->normalizeNotificationActionConfig($notification['action_config'] ?? $notification['actionConfig'] ?? [], $targetRoles);
+        $kind = (string) ($actionConfig['kind'] ?? 'none');
+        if (!in_array($kind, ['decision', 'link_and_decision'], true)) {
+            throw new RuntimeException('This notification does not support decisions.');
+        }
+
+        if ($isCentralNotification && $apiUrl !== '') {
+            $this->centralLicenseRequest($apiUrl, $ownerToken, 'respond_to_notification', [
+                'notificationId' => $notificationId,
+                'userId' => (string) ($user['id'] ?? ''),
+                'decision' => $decision,
+                'resolvedByName' => $this->nullableString($user['name'] ?? null),
+            ]);
+            return ['success' => true];
+        }
+
+        if (!$this->tableExists('notification_receipts')) {
+            throw new RuntimeException('Notifications migration is missing. Run the latest migration first.');
+        }
+
+        return $this->database->transaction(function () use ($user, $notificationId, $decision, $notification, $actionConfig): array {
             if ((string) ($actionConfig['decisionMode'] ?? 'record_only') === 'transaction_approval') {
                 $decisionContext = is_array($actionConfig['decisionContext'] ?? null) ? $actionConfig['decisionContext'] : [];
                 $transactionId = trim((string) ($decisionContext['transactionId'] ?? ''));

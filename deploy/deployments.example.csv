@@ -1,0 +1,3 @@
+id,name,environment,host,user,app_root,public_root,document_root_folder,backend_folder,version_url,release_url,enabled,notes
+test,MamePilot Test Site,staging,ssh.example.com,cpaneluser,/home/cpaneluser/mamepilot_backend,/home/cpaneluser/public_html/test,/home/cpaneluser/public_html/test,public_html,mamepilot_backend,https://your-central-domain.com/mamepilot/VERSION,https://your-central-domain.com/mamepilot/cpanel-mamepilot-package.zip,1,Update this row for a real deployment.
+customer-001,Customer One,production,,,,,,,https://your-central-domain.com/mamepilot/VERSION,https://your-central-domain.com/mamepilot/cpanel-mamepilot-package.zip,0,Fill host/user/app_root/public_root before enabling.

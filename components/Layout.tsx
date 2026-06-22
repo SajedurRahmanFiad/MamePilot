@@ -17,6 +17,7 @@ import IncidentModeBanner from './IncidentModeBanner';
 import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 import NotificationCenterButton from './NotificationCenterButton';
 import ServiceAnnouncementBar from './ServiceAnnouncementBar';
+import MameChat from './MameChat';
 
 interface SidebarItemProps {
   to?: string;
@@ -531,10 +532,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <IncidentModeBanner />
           {children}
           <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
-            <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>© {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}. All rights reserved.</p>
+            <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>
+              © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}.
+              <span className="mx-2">|</span>
+              Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
+              <span className="mx-2">|</span>
+              All rights reserved.
+            </p>
             <p className={`text-[11px] font-bold uppercase tracking-widest ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
           </footer>
         </main>
+        <MameChat />
       </div>
     </div>
   );

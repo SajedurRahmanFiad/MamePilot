@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\AppVersion;
 use App\Auth;
 use App\Config;
 use App\CourierApi;
@@ -61,12 +62,12 @@ try {
     $courier = new CourierApi($database, $auth, $config, $operations);
 
     if ($action === 'health') {
-        Http::ok([
+        Http::ok(array_merge([
             'ok' => true,
             'time' => gmdate('c'),
             'db' => $database->fetchOne('SELECT 1 AS ok'),
             'appRoot' => $appRoot,
-        ]);
+        ], AppVersion::info($appRoot)));
         exit;
     }
 

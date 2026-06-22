@@ -646,6 +646,7 @@ export interface CapabilitySettings {
   licenseStatus: string;
   renewalDate?: string | null;
   overrideEnabled?: boolean;
+  maintenanceEnabled?: boolean;
   availableTiers?: LicenseTier[];
   pricingMetadata?: {
     monthly?: number;

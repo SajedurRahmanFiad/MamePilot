@@ -102,7 +102,7 @@ final class ServiceLifecycle
 
         if ($status === 'renewing') {
             throw new ApiException(
-                'Service renewal is processing. The backend will be available again within 10 minutes.',
+                'Service renewal is processing. The subscription will be available again within 10 minutes.',
                 423,
                 'SERVICE_RENEWAL_PENDING',
                 ['serviceState' => $status]

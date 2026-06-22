@@ -32,6 +32,8 @@ interface StatCardProps {
   isProfitCard?: boolean;
   profitValue?: number;
   subtotalAmount?: string; // Optional: amount to show in brackets, e.g. "৳ 670"
+  onClick?: () => void;
+  className?: string;
 }
 
 const statCardVariants: Record<StatCardVariant, { bg: string; text: string; icon: string }> = {
@@ -77,7 +79,7 @@ const statCardVariants: Record<StatCardVariant, { bg: string; text: string; icon
   },
 };
 
-export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant = 'primary', bgColor, textColor: textColorProp, iconBgColor: iconBgColorProp, isProfitCard = false, profitValue, subtotalAmount }) => {
+export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant = 'primary', bgColor, textColor: textColorProp, iconBgColor: iconBgColorProp, isProfitCard = false, profitValue, subtotalAmount, onClick, className = '' }) => {
   const style = statCardVariants[variant];
   
   // Use provided colors or determine from profit card logic
@@ -98,10 +100,17 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
       iconBgColor = 'bg-red-600';
     }
   }
-  
+
+  const containerClasses = `p-4 flex items-start gap-3 text-left ${cardBgColor} rounded-xl shadow-lg border border-gray-100 ${borderStyle} ${className}`;
+  const clickableClasses = onClick ? 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500' : '';
+  const Container = onClick ? 'button' : 'div';
+
   return (
-    // reduced padding for compact widgets
-    <div className={`p-4 flex items-center gap-3 ${cardBgColor} rounded-xl shadow-lg border border-gray-100 ${borderStyle}`}>
+    <Container
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`${containerClasses} ${clickableClasses}`}
+    >
       <div className={`${iconBgColor} p-3 rounded-lg flex items-center justify-center`}>
         <div className={textColor}>{icon}</div>
       </div>
@@ -117,6 +126,6 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
           )}
         </h3>
       </div>
-    </div>
+    </Container>
   );
 };

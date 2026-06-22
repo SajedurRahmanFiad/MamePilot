@@ -194,6 +194,16 @@ const Dashboard: React.FC = () => {
     ...entry,
     color: EXPENSE_COLORS[index % EXPENSE_COLORS.length],
   }));
+
+  const handleOpenOrdersByStatus = (status: OrderStatus) => {
+    const params = new URLSearchParams();
+    params.set('status', status);
+    if (filterRange !== 'All Time') params.set('range', filterRange);
+    if (customDates.from) params.set('from', customDates.from);
+    if (customDates.to) params.set('to', customDates.to);
+    if (includeTime) params.set('includeTime', 'true');
+    navigate(`/orders?${params.toString()}`);
+  };
   const employeeComparisonRows = employeeSnapshot?.employeeComparisonRows ?? [];
   const employeeComparisonMax = Math.max(0, ...employeeComparisonRows.map((row) => row.orderCount));
 
@@ -223,11 +233,56 @@ const Dashboard: React.FC = () => {
             <StatCard title="Total Profit" value={adminSnapshot ? formatCurrency(adminSnapshot.totalProfit) : inlinePlaceholder} icon={ICONS.Reports} isProfitCard={true} profitValue={adminSnapshot?.totalProfit} />
             <StatCard title="Total Orders" value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder} icon={ICONS.Dashboard} bgColor="bg-indigo-700" textColor="text-white" iconBgColor="bg-indigo-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.total) : undefined} />
 
-            <StatCard title="On Hold Orders" value={adminSnapshot ? adminSnapshot.orderCounts.onHold : inlinePlaceholder} icon={ICONS.More} bgColor="bg-orange-500" textColor="text-white" iconBgColor="bg-orange-600" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.onHold) : undefined} />
-            <StatCard title="Processing Orders" value={adminSnapshot ? adminSnapshot.orderCounts.processing : inlinePlaceholder} icon={ICONS.More} bgColor="bg-sky-500" textColor="text-white" iconBgColor="bg-sky-600" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.processing) : undefined} />
-            <StatCard title="Picked Orders" value={adminSnapshot ? adminSnapshot.orderCounts.picked : inlinePlaceholder} icon={ICONS.Courier} bgColor="bg-cyan-500" textColor="text-white" iconBgColor="bg-cyan-600" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.picked) : undefined} />
-            <StatCard title="Completed Orders" value={adminSnapshot ? adminSnapshot.orderCounts.completed : inlinePlaceholder} icon={ICONS.PlusCircle} bgColor="bg-teal-600" textColor="text-white" iconBgColor="bg-teal-700" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.completed) : undefined} />
-            <StatCard title="Cancelled Orders" value={adminSnapshot ? adminSnapshot.orderCounts.cancelled : inlinePlaceholder} icon={ICONS.AlertCircle} bgColor="bg-red-500" textColor="text-white" iconBgColor="bg-red-600" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.cancelled) : undefined} />
+            <StatCard
+              title="On Hold Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.onHold : inlinePlaceholder}
+              icon={ICONS.More}
+              bgColor="bg-orange-500"
+              textColor="text-white"
+              iconBgColor="bg-orange-600"
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.onHold) : undefined}
+              onClick={() => handleOpenOrdersByStatus(OrderStatus.ON_HOLD)}
+            />
+            <StatCard
+              title="Processing Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.processing : inlinePlaceholder}
+              icon={ICONS.More}
+              bgColor="bg-sky-500"
+              textColor="text-white"
+              iconBgColor="bg-sky-600"
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.processing) : undefined}
+              onClick={() => handleOpenOrdersByStatus(OrderStatus.PROCESSING)}
+            />
+            <StatCard
+              title="Picked Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.picked : inlinePlaceholder}
+              icon={ICONS.Courier}
+              bgColor="bg-cyan-500"
+              textColor="text-white"
+              iconBgColor="bg-cyan-600"
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.picked) : undefined}
+              onClick={() => handleOpenOrdersByStatus(OrderStatus.PICKED)}
+            />
+            <StatCard
+              title="Completed Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.completed : inlinePlaceholder}
+              icon={ICONS.PlusCircle}
+              bgColor="bg-teal-600"
+              textColor="text-white"
+              iconBgColor="bg-teal-700"
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.completed) : undefined}
+              onClick={() => handleOpenOrdersByStatus(OrderStatus.COMPLETED)}
+            />
+            <StatCard
+              title="Cancelled Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.cancelled : inlinePlaceholder}
+              icon={ICONS.AlertCircle}
+              bgColor="bg-red-500"
+              textColor="text-white"
+              iconBgColor="bg-red-600"
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.cancelled) : undefined}
+              onClick={() => handleOpenOrdersByStatus(OrderStatus.CANCELLED)}
+            />
           </div>
         </div>
 
