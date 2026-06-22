@@ -1,4 +1,4 @@
-﻿-- MamePilot seed data file.
+-- MamePilot seed data file.
 -- Use only for fresh installs or when intentionally refreshing defaults.
 
 INSERT INTO payment_methods (id, name, description, is_active)

@@ -1,4 +1,4 @@
-﻿-- MamePilot pure schema file.
+-- MamePilot pure schema file.
 -- Safe for fresh installs and repeated production updates.
 -- This file must not contain INSERT/seed data.
 
