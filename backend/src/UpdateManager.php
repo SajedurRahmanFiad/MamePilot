@@ -226,6 +226,7 @@ final class UpdateManager
         $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . '.htaccess', $apiRoot . DIRECTORY_SEPARATOR . '.htaccess');
         $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'index.php', $apiRoot . DIRECTORY_SEPARATOR . 'index.php');
         $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'update.php', $apiRoot . DIRECTORY_SEPARATOR . 'update.php');
+        $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'trigger_update.php', $apiRoot . DIRECTORY_SEPARATOR . 'trigger_update.php');
 
         if (!is_dir($backendRoot) && !mkdir($backendRoot, 0755, true) && !is_dir($backendRoot)) {
             throw new RuntimeException("Failed to create backend root: {$backendRoot}");
