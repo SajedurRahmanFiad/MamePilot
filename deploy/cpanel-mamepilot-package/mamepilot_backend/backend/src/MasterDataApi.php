@@ -1440,12 +1440,32 @@ final class MasterDataApi extends BaseService
         }
 
         $response = $this->httpJson('POST', $apiUrl, $headers, ['action' => $action] + $payload);
+        $triedFallback = false;
+        if ((stripos($apiUrl, '/api.php') === false) && (
+            ($response['status'] === 404 || $response['status'] === 405)
+            || ($response['status'] >= 200 && $response['status'] < 300 && !is_array($response['json']))
+        )) {
+            $fallbackUrl = rtrim($apiUrl, '/') . '/api.php';
+            if ($fallbackUrl !== $apiUrl) {
+                $fallbackResponse = $this->httpJson('POST', $fallbackUrl, $headers, ['action' => $action] + $payload);
+                if ($fallbackResponse['status'] >= 200 && $fallbackResponse['status'] < 300 && is_array($fallbackResponse['json'])) {
+                    return $fallbackResponse['json'];
+                }
+                $response = $fallbackResponse;
+                $apiUrl = $fallbackUrl;
+                $triedFallback = true;
+            }
+        }
+
         if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
             $message = is_array($response['json'] ?? null)
                 ? (string) (($response['json']['error'] ?? null) ?: 'Central license request failed.')
                 : 'Central license request failed.';
             if ((int) $response['status'] === 404) {
                 $message = 'Central license API endpoint not found at ' . $apiUrl . '. Upload deploy/central-license-api-template.php as api.php on the license subdomain, then use the full /api.php URL.';
+            }
+            if ($triedFallback) {
+                $message .= ' Tried fallback path /api.php automatically.';
             }
             throw new RuntimeException($message);
         }
