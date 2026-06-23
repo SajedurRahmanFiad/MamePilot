@@ -249,7 +249,7 @@ const NotificationCenterButton: React.FC = () => {
 
     const syncNotifications = () => {
       if (!mounted) return;
-      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchInactive: true });
     };
 
     const handleStorage = (event: StorageEvent) => {

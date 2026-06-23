@@ -861,15 +861,14 @@ export function useLocalUsageSummary(enabled: boolean = true): UseQueryResult<Lo
 export function useMyNotifications(enabled: boolean = true): UseQueryResult<NotificationListResponse, Error> {
   const currentUser = db.currentUser ?? null;
   const { isOnline } = useNetwork();
-  const isPageVisible = usePageVisibility();
-  const canPoll = enabled && !!currentUser?.id && isOnline && isPageVisible;
+  const canPoll = enabled && !!currentUser?.id && isOnline;
 
   return useQuery({
     queryKey: ['notifications', 'me', currentUser?.id, currentUser?.role],
     queryFn: fetchMyNotifications,
     staleTime: 30 * 1000,
     refetchInterval: canPoll ? 30 * 1000 : false,
-    refetchIntervalInBackground: false,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchOnMount: true,
@@ -892,11 +891,7 @@ export function useMyNotificationsPaginated(
 ): UseQueryResult<NotificationListPageResponse, Error> {
   const currentUser = db.currentUser ?? null;
   const { isOnline } = useNetwork();
-  const isPageVisible = usePageVisibility();
-  const effectiveRefetchInterval =
-    isOnline && isPageVisible
-      ? (options?.refetchInterval ?? false)
-      : false;
+  const effectiveRefetchInterval = isOnline ? (options?.refetchInterval ?? false) : false;
 
   return useQuery({
     queryKey: ['notifications', 'me', 'paginated', page, pageSize, currentUser?.id, currentUser?.role],
@@ -904,7 +899,7 @@ export function useMyNotificationsPaginated(
     placeholderData: (previousData) => previousData,
     staleTime: options?.staleTime ?? 5 * 60 * 1000,
     refetchInterval: effectiveRefetchInterval,
-    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? true,
     refetchOnWindowFocus: options?.refetchOnWindowFocus ?? false,
     refetchOnReconnect: options?.refetchOnReconnect ?? true,
     refetchOnMount: options?.refetchOnMount ?? true,

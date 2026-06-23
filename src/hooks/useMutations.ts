@@ -2603,7 +2603,7 @@ export function useCreateNotification() {
   return useMutation({
     mutationFn: createNotification,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchInactive: true });
       broadcastNotificationsUpdated();
     },
   });
@@ -2615,7 +2615,7 @@ export function useMarkNotificationRead() {
   return useMutation({
     mutationFn: markNotificationRead,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchInactive: true });
       broadcastNotificationsUpdated();
     },
   });
@@ -2627,7 +2627,7 @@ export function useRespondToNotification() {
   return useMutation({
     mutationFn: respondToNotification,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchInactive: true });
       broadcastNotificationsUpdated();
     },
   });
