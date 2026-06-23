@@ -927,15 +927,16 @@ const SettingsPage: React.FC = () => {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Expense Category</label>
-                  <select 
-                    value={systemDefaults.expenseCategoryId}
-                    onChange={e => setSystemDefaults({...systemDefaults, expenseCategoryId: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
-                  >
-                    <option value="">Select a category...</option>
-                    {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                  </select>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Theme Color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={systemDefaults.themeColor}
+                      onChange={e => setSystemDefaults({...systemDefaults, themeColor: e.target.value})}
+                      className="w-28 h-12 p-0 border border-gray-100 rounded-2xl cursor-pointer"
+                    />
+                    <span className="text-sm font-medium text-gray-600">{systemDefaults.themeColor}</span>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Records Per Page</label>
@@ -947,13 +948,15 @@ const SettingsPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Theme Color</label>
-                  <input
-                    type="color"
-                    value={systemDefaults.themeColor}
-                    onChange={e => setSystemDefaults({...systemDefaults, themeColor: e.target.value})}
-                    className="w-20 h-12 p-0 border border-gray-100 rounded-xl"
-                  />
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Expense Category</label>
+                  <select 
+                    value={systemDefaults.expenseCategoryId}
+                    onChange={e => setSystemDefaults({...systemDefaults, expenseCategoryId: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                  >
+                    <option value="">Select a category...</option>
+                    {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Max Transaction Amount Without Approval</label>
