@@ -1,8 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useToastNotifications } from './ToastContext';
 import { useAuth } from './AuthProvider';
 import { useServiceSubscriptionOverview } from '../hooks/useQueries';
+import { isDeveloperRole } from '../../types';
 
 interface SubscriptionReadOnlyContextType {
   isReadOnly: boolean;
@@ -12,6 +13,7 @@ interface SubscriptionReadOnlyContextType {
 const SubscriptionReadOnlyContext = createContext<SubscriptionReadOnlyContextType | undefined>(undefined);
 
 const EXEMPT_PATHS = ['/subscriptions', '/developer/subscriptions'];
+const ACTION_LINK_PATTERNS = [/\/new(?:$|[/?#])/, /\/edit(?:$|[/?#])/, /\/duplicate(?:$|[/?#])/];
 
 export const SubscriptionReadOnlyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -21,20 +23,33 @@ export const SubscriptionReadOnlyProvider: React.FC<{ children: React.ReactNode 
 
   const overviewQuery = useServiceSubscriptionOverview(!!user);
   const overview = overviewQuery.data;
+  const [isServiceBlocked, setIsServiceBlocked] = useState(false);
+  const isDeveloper = isDeveloperRole(user?.role);
 
   const isReadOnly = useMemo(() => {
+    if (isDeveloper) return false;
+    if (isServiceBlocked) return true;
     if (!overview) return false;
     return overview.state === 'expired' || overview.writeBlocked === true;
-  }, [overview]);
+  }, [overview, isServiceBlocked, isDeveloper]);
 
   const isExemptPath = useMemo(() => {
     return EXEMPT_PATHS.some((path) => location.pathname.startsWith(path));
   }, [location.pathname]);
 
-  const showReadOnlyWarning = useCallback((action?: string) => {
-    const message = action
-      ? `${action} is disabled because your subscription has expired. Please renew to continue.`
-      : 'Actions are disabled because your subscription has expired. Please renew to continue.';
+  const isExemptTarget = useCallback((element: HTMLElement | null) => {
+    if (!element) return false;
+
+    if (element.tagName === 'A') {
+      const href = (element as HTMLAnchorElement).getAttribute('href') || '';
+      return EXEMPT_PATHS.some((path) => href.startsWith(path) || href.includes(path));
+    }
+
+    return false;
+  }, []);
+
+  const showReadOnlyWarning = useCallback((_action?: string) => {
+    const message = 'Subscribe to continue. The app is currently in read-only mode.';
 
     const now = Date.now();
     const previous = lastToastRef.current;
@@ -51,7 +66,7 @@ export const SubscriptionReadOnlyProvider: React.FC<{ children: React.ReactNode 
       return;
     }
 
-    const handleClick = (event: MouseEvent) => {
+    const handleBlockedInteraction = (event: Event) => {
       if (isExemptPath) {
         return;
       }
@@ -62,26 +77,68 @@ export const SubscriptionReadOnlyProvider: React.FC<{ children: React.ReactNode 
       }
 
       const actionable = target.closest(
-        'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]'
+        'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"], a'
       ) as HTMLElement | null;
       if (!actionable) {
         return;
       }
 
-      const disabledAttr = actionable.getAttribute('disabled');
-      if (disabledAttr !== null) {
+      if (isExemptTarget(actionable)) {
         return;
       }
 
-      const actionText = actionable.getAttribute('aria-label') || actionable.getAttribute('title') || actionable.textContent?.trim();
-      showReadOnlyWarning(actionText || 'This action');
+      if (actionable.tagName === 'A') {
+        const href = (actionable as HTMLAnchorElement).getAttribute('href') || '';
+        const isActionLink = ACTION_LINK_PATTERNS.some((pattern) => pattern.test(href));
+        if (!isActionLink && actionable.getAttribute('role') !== 'button') {
+          return;
+        }
+      }
+
+      showReadOnlyWarning();
       event.preventDefault();
       event.stopPropagation();
     };
 
-    window.addEventListener('click', handleClick, true);
-    return () => window.removeEventListener('click', handleClick, true);
-  }, [isReadOnly, isExemptPath, showReadOnlyWarning]);
+    const handleSubmit = (event: Event) => {
+      if (isExemptPath) {
+        return;
+      }
+
+      const form = event.target as HTMLFormElement | null;
+      if (!form || form.nodeName !== 'FORM') {
+        return;
+      }
+
+      showReadOnlyWarning('Form submission');
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    window.addEventListener('pointerdown', handleBlockedInteraction, true);
+    window.addEventListener('click', handleBlockedInteraction, true);
+    window.addEventListener('submit', handleSubmit, true);
+    return () => {
+      window.removeEventListener('pointerdown', handleBlockedInteraction, true);
+      window.removeEventListener('click', handleBlockedInteraction, true);
+      window.removeEventListener('submit', handleSubmit, true);
+    };
+  }, [isReadOnly, isExemptPath, isExemptTarget, showReadOnlyWarning]);
+
+  useEffect(() => {
+    const handleServiceBlockedEvent = (event: Event) => {
+      setIsServiceBlocked(true);
+    };
+
+    window.addEventListener('api:service-blocked', handleServiceBlockedEvent);
+    return () => window.removeEventListener('api:service-blocked', handleServiceBlockedEvent);
+  }, []);
+
+  useEffect(() => {
+    if (!overview || overview.state !== 'expired') {
+      setIsServiceBlocked(false);
+    }
+  }, [overview]);
 
   return (
     <SubscriptionReadOnlyContext.Provider value={{ isReadOnly, showReadOnlyWarning }}>

@@ -110,7 +110,7 @@ final class ServiceLifecycle
         }
 
         throw new ApiException(
-            'The backend tools have expired. Please renew the services from Subscriptions to restore normal operations.',
+            'Your subscription has expired. Please renew it from Subscriptions to restore normal operations.',
             423,
             'SERVICE_EXPIRED',
             ['serviceState' => $status]

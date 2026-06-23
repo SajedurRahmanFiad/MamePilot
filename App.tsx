@@ -12,6 +12,7 @@ import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { WRITE_FREEZE_ENABLED } from './src/config/incidentMode';
 import GlobalApiEventWatcher from './src/components/GlobalApiEventWatcher';
 import FeatureLocked from './src/components/FeatureLocked';
+import { SubscriptionReadOnlyProvider, useSubscriptionReadOnly } from './src/contexts/SubscriptionReadOnlyContext';
 
 type PreloadableComponent<T extends React.ComponentType<any>> = React.LazyExoticComponent<T> & {
   preload: () => Promise<unknown>;
@@ -115,6 +116,8 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability, isDeveloper } = useCapabilities(isAuthenticated);
   const writeFreezeEnabled = WRITE_FREEZE_ENABLED;
+  const { isReadOnly } = useSubscriptionReadOnly();
+  const writeDisabled = writeFreezeEnabled || isReadOnly;
   const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
   const defaultProtectedRoute = canViewDashboard
     ? '/dashboard'
@@ -282,10 +285,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('orders.view') ? <Layout><Orders /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/orders/new" element={
-        isAuthenticated ? (can('orders.create') ? (writeFreezeEnabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('orders.create') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/orders/edit/:id" element={
-        isAuthenticated ? (canAny(['orders.editOwn', 'orders.editAny']) ? (writeFreezeEnabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (canAny(['orders.editOwn', 'orders.editAny']) ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/orders/:id" element={
         isAuthenticated ? (can('orders.view') ? <Layout><OrderDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -298,10 +301,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('bills.view') ? <Layout><Bills /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/bills/new" element={
-        isAuthenticated ? (can('bills.create') ? (writeFreezeEnabled ? <Navigate to="/bills" replace /> : <Layout><BillForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('bills.create') ? (writeDisabled ? <Navigate to="/bills" replace /> : <Layout><BillForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/bills/edit/:id" element={
-        isAuthenticated ? (canAny(['bills.editOwn', 'bills.editAny']) ? (writeFreezeEnabled ? <Navigate to="/bills" replace /> : <Layout><BillForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (canAny(['bills.editOwn', 'bills.editAny']) ? (writeDisabled ? <Navigate to="/bills" replace /> : <Layout><BillForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/bills/:id" element={
         isAuthenticated ? (can('bills.view') ? <Layout><BillDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -317,7 +320,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('fraudChecker.check') ? <Layout><FraudCheckerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transfer" element={
-        isAuthenticated ? (can('transfers.create') ? <Layout><Transfer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transfers.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transactions" element={
         isAuthenticated ? (can('transactions.view') ? <Layout><Transactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -327,20 +330,20 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('transactions.view') ? <Navigate to="/banking/transactions" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/transactions/new/:type" element={
-        isAuthenticated ? (can('transactions.create') ? (writeFreezeEnabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/transactions/edit/:id" element={
-        isAuthenticated ? (can('transactions.edit') ? (writeFreezeEnabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.edit') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/customers" element={
         isAuthenticated ? (can('customers.view') ? <Layout><Customers /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/customers/new" element={
-        isAuthenticated ? (can('customers.create') ? (writeFreezeEnabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('customers.create') ? (writeDisabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/customers/edit/:id" element={
-        isAuthenticated ? (can('customers.edit') ? (writeFreezeEnabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('customers.edit') ? (writeDisabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/customers/:id" element={
         isAuthenticated ? (can('customers.view') ? <Layout><CustomerDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -350,10 +353,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('vendors.view') ? <Layout><Vendors /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/vendors/new" element={
-        isAuthenticated ? (can('vendors.create') ? (writeFreezeEnabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('vendors.create') ? (writeDisabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/vendors/edit/:id" element={
-        isAuthenticated ? (can('vendors.edit') ? (writeFreezeEnabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('vendors.edit') ? (writeDisabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/vendors/:id" element={
         isAuthenticated ? (can('vendors.view') ? <Layout><VendorDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -363,20 +366,20 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('products.view') ? <Layout><Products /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/products/new" element={
-        isAuthenticated ? (can('products.create') ? (writeFreezeEnabled ? <Navigate to="/products" replace /> : <Layout><ProductForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('products.create') ? (writeDisabled ? <Navigate to="/products" replace /> : <Layout><ProductForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/products/edit/:id" element={
-        isAuthenticated ? (can('products.edit') ? (writeFreezeEnabled ? <Navigate to="/products" replace /> : <Layout><ProductForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('products.edit') ? (writeDisabled ? <Navigate to="/products" replace /> : <Layout><ProductForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/users" element={
         isAuthenticated ? (can('users.view') ? <Layout><Users /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/new" element={
-        isAuthenticated ? (can('users.view') ? (writeFreezeEnabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.view') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/edit/:id" element={
-        isAuthenticated ? (can('users.view') ? (writeFreezeEnabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.view') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/:id" element={
         isAuthenticated ? (can('users.view') ? <Layout><UserDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -480,11 +483,13 @@ const App: React.FC = () => {
         <SearchProvider>
           <RealtimeProvider>
             <HashRouter>
+            <SubscriptionReadOnlyProvider>
               <AppContent />
-              <GlobalApiEventWatcher />
-              <NetworkStatusBanner />
-              <ToastContainer />
-            </HashRouter>
+            </SubscriptionReadOnlyProvider>
+            <GlobalApiEventWatcher />
+            <NetworkStatusBanner />
+            <ToastContainer />
+          </HashRouter>
           </RealtimeProvider>
         </SearchProvider>
       </ToastProvider>

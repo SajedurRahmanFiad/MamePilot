@@ -2886,6 +2886,7 @@ TXT;
             $normalized = 'createTransaction';
         }
 
+        $this->serviceLifecycle()->assertActionAllowed($normalized);
         $this->validateMameToolPayload($normalized, $payload);
         $operations = null;
         $operationsActions = [
@@ -2905,6 +2906,13 @@ TXT;
             $record = $operations->{$normalized}($payload);
         } else {
             $record = $this->{$normalized}($payload);
+        }
+
+        if ($record === null || $record === false) {
+            throw new RuntimeException('No matching record was changed.');
+        }
+        if (is_array($record) && array_key_exists('success', $record) && !$record['success']) {
+            throw new RuntimeException('The requested change was not applied.');
         }
 
         return [
@@ -4335,7 +4343,7 @@ TXT;
             $this->upsertSystemNotification(
                 $activeKey,
                 'Backend services have expired',
-                '<p>The backend tools have expired. Please renew the services from <strong>Subscriptions</strong>.</p><p>' . ($dueLabel !== '' ? 'Due date: <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p>' : '') . '<a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to renew them.</p>',
+                '<p>Your subscription has expired. Please renew it from <strong>Subscriptions</strong>.</p><p>' . ($dueLabel !== '' ? 'Due date: <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p>' : '') . '<a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to renew them.</p>',
                 ['Admin', 'Developer'],
                 $actionConfig,
                 [

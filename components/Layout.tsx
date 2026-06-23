@@ -13,6 +13,7 @@ import { buildHistoryBackState } from '../src/utils/navigation';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
 import IncidentModeBanner from './IncidentModeBanner';
 import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 import NotificationCenterButton from './NotificationCenterButton';
@@ -97,6 +98,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability } = useCapabilities(Boolean(profile));
+  const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
@@ -460,13 +462,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className="relative">
               <button
                 onClick={() => {
-                  if (!WRITE_FREEZE_ENABLED && quickActions.length > 0) {
+                  if (isReadOnly) {
+                    showReadOnlyWarning();
+                    return;
+                  }
+                  if (!WRITE_FREEZE_ENABLED && !isReadOnly && quickActions.length > 0) {
                     setIsPlusOpen(!isPlusOpen);
                   }
                 }}
                 disabled={WRITE_FREEZE_ENABLED || quickActions.length === 0}
-                title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : quickActions.length === 0 ? 'No quick actions available for this role' : 'Quick actions'}
-                className={`${theme.colors.primary[600]} text-white w-10 h-10 flex items-center justify-center ${theme.radius.md} ${theme.transitions.normal} shadow-lg shadow-[#0f2f57]/20 active:scale-95 ${WRITE_FREEZE_ENABLED || quickActions.length === 0 ? 'cursor-not-allowed opacity-50' : `hover:${theme.colors.primary[700]}`}`}
+                title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : isReadOnly ? 'Subscribe to continue. The app is currently in read-only mode.' : quickActions.length === 0 ? 'No quick actions available for this role' : 'Quick actions'}
+                className={`${theme.colors.primary[600]} text-white w-10 h-10 flex items-center justify-center ${theme.radius.md} ${theme.transitions.normal} shadow-lg shadow-[#0f2f57]/20 active:scale-95 ${WRITE_FREEZE_ENABLED || isReadOnly || quickActions.length === 0 ? 'cursor-not-allowed opacity-50' : `hover:${theme.colors.primary[700]}`}`}
               >
                 {ICONS.Plus}
               </button>

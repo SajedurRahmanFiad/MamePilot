@@ -9,9 +9,9 @@ const ServiceAnnouncementBar: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdminAccessUser = hasAdminAccess(user?.role);
-  const { data: overview } = useServiceSubscriptionOverview(!!user && isAdminAccessUser);
+  const { data: overview } = useServiceSubscriptionOverview(!!user);
 
-  if (!isAdminAccessUser || !overview) return null;
+  if (!overview) return null;
   const dueAt = overview.dueAt
     ? new Date(overview.dueAt).toLocaleDateString('en-BD', {
       day: 'numeric',
@@ -29,9 +29,10 @@ const ServiceAnnouncementBar: React.FC = () => {
       ? 'Your subscription renewal is processing. We are verifying the payment and will update the renewal date shortly.'
       : 'Your subscription renewal is processing. It will take a while, please wait.';
   } else if (overview.state === 'expired') {
+    barClassName = 'bg-red-600';
     message = isAdminAccessUser
-      ? 'The subscription has expired. Please renew it to restore normal operations.'
-      : 'The subscription has expired. Please ask an admin to renew it to restore normal operations.';
+      ? 'Subscribe to continue. The app is currently in read-only mode.'
+      : 'Subscription is required to continue. The app is currently in read-only mode. Please ask an admin to renew it.';
   } else if (overview.state === 'warning') {
     message = isAdminAccessUser
       ? `Your subscription will expire soon. Please make the payment within ${dueAt}.`
