@@ -14,10 +14,10 @@ $lockFile = __DIR__ . '/trigger_update.lock';
 $cooldown = 60;
 
 $phpBinary = getenv('UPDATE_PHP_BINARY') ?: getenv('PHP_BINARY') ?: 'php';
-$scriptPath = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
-$scriptPath = is_string($scriptPath) && trim($scriptPath) !== ''
-    ? rtrim($scriptPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'update.php'
-    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'update.php';
+$scriptRoot = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
+$scriptPath = is_string($scriptRoot) && trim($scriptRoot) !== ''
+    ? rtrim($scriptRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'update.php'
+    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend' . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'update.php';
 
 if (!is_file($scriptPath)) {
     echo json_encode([
