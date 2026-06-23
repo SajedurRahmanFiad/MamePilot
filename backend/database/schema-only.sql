@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   records_per_page INT NOT NULL DEFAULT 10,
   max_transaction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   white_label TINYINT(1) NOT NULL DEFAULT 0,
+  theme_color VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -188,7 +189,8 @@ CREATE TABLE IF NOT EXISTS system_defaults (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Upgrade compatibility for existing databases
 ALTER TABLE `system_defaults`
-  ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57';
 CREATE TABLE IF NOT EXISTS courier_settings (
   id VARCHAR(64) NOT NULL,
   steadfast_enabled TINYINT(1) NOT NULL DEFAULT 0,
@@ -878,11 +880,12 @@ ON DUPLICATE KEY UPDATE
   logo_width = VALUES(logo_width),
   logo_height = VALUES(logo_height),
   footer = VALUES(footer);
-INSERT INTO system_defaults (id, records_per_page, white_label)
-VALUES ('defaults-default', 10, 0)
+INSERT INTO system_defaults (id, records_per_page, white_label, theme_color)
+VALUES ('defaults-default', 10, 0, '#0f2f57')
 ON DUPLICATE KEY UPDATE
   records_per_page = VALUES(records_per_page),
-  white_label = VALUES(white_label);
+  white_label = VALUES(white_label),
+  theme_color = VALUES(theme_color);
 INSERT INTO courier_settings (
   id,
   steadfast_enabled,

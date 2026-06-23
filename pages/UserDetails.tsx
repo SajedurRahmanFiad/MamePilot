@@ -119,7 +119,7 @@ const UserDetails: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className={`h-32 bg-gradient-to-r from-[#0f2f57] to-[#1a3a6e]`}></div>
+        <div className="h-32" style={{ background: 'linear-gradient(90deg, var(--primary-color, #0f2f57), var(--primary-dark, #1a3a6e))' }}></div>
         <div className="px-8 pb-8">
           <div className="relative flex justify-between items-end -mt-12 mb-8">
             <div className="p-1 bg-white rounded-full shadow-xl">
@@ -161,12 +161,12 @@ const UserDetails: React.FC = () => {
                         type={showPassword ? 'text' : 'password'}
                         value={editedPassword}
                         onChange={(e) => setEditedPassword(e.target.value)}
-                        className="w-full px-4 py-3 pr-10 bg-white border border-purple-300 rounded-lg font-mono text-sm text-gray-700 focus:ring-2 focus:ring-purple-500"
+                        className="w-full px-4 py-3 pr-10 bg-white rounded-lg font-mono text-sm text-gray-700 border-[var(--primary-medium,#3c5a82)] focus:ring-2 focus:ring-[var(--primary-medium,#3c5a82)] focus:border-transparent"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-purple-600 hover:text-purple-800"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--primary-color,#0f2f57)] hover:text-[var(--primary-dark,#0c203b)]"
                       >
                         {showPassword ? (
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"></path><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"></path></svg>
@@ -178,11 +178,11 @@ const UserDetails: React.FC = () => {
                     <button
                       onClick={handleUpdatePassword}
                       disabled={updateUserMutation.isPending || editedPassword === user.password}
-                      className="mt-3 w-full px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className={`mt-3 w-full px-3 py-2 ${theme.colors.primary[600]} text-white rounded-lg text-sm font-bold hover:${theme.colors.primary[700]} disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
                     >
                       {updateUserMutation.isPending ? 'Updating...' : 'Update Password'}
                     </button>
-                    <p className="text-[10px] text-purple-600 font-medium mt-2">Admin access only. Edit and save password here.</p>
+                    <p className="text-[10px] text-[var(--primary-color,#0f2f57)] font-medium mt-2">Admin access only. Edit and save password here.</p>
                   </div>
                 </div>
               ) : (

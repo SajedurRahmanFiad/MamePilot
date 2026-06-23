@@ -1136,6 +1136,7 @@ final class MasterDataApi extends BaseService
             'recordsPerPage' => (int) ($row['records_per_page'] ?? 10),
             'maxTransactionAmount' => (float) ($row['max_transaction_amount'] ?? 0),
             'whiteLabel' => (bool) (($capabilitySettings['capabilities']['whitelabel'] ?? null) ?? ($row['white_label'] ?? 0)),
+            'themeColor' => trim((string) ($row['theme_color'] ?? '#0f2f57')),
         ];
     }
 
@@ -1154,6 +1155,7 @@ final class MasterDataApi extends BaseService
                 'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
                 'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
                 'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
+                'theme_color' => array_key_exists('themeColor', $params) ? $this->nullableString($params['themeColor']) : $current['themeColor'],
             ],
             fn(): array => $this->fetchSystemDefaults()
         );
@@ -4358,7 +4360,7 @@ TXT;
             $this->upsertSystemNotification(
                 $activeKey,
                 'Backend services will expire soon',
-                '<p>The shared backend services will expire soon. Please make the renewal payment before <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p><a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to open the subscription page.</p>',
+                '<p>Your subscription will expire soon. Please make the renewal payment before <strong>' . htmlspecialchars($dueLabel, ENT_QUOTES, 'UTF-8') . '</strong>.</p><p><a href="' . htmlspecialchars($linkUrl, ENT_QUOTES, 'UTF-8') . '">Click Here</a> to open the subscription page.</p>',
                 ['Admin', 'Developer'],
                 $actionConfig,
                 [

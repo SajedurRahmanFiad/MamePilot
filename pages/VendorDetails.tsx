@@ -78,8 +78,8 @@ const VendorDetails: React.FC = () => {
             </div>
           </div>
 
-          <div className={`bg-white p-6 rounded-lg shadow-lg shadow-[#0f2f57]/20 text-white`}>
-            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">Total Payable</p>
+          <div className="bg-[var(--primary-soft,#ebf4ff)] p-6 rounded-lg shadow-lg shadow-[var(--primary-color,#0f2f57)]/20 text-white">
+            <p className="text-[var(--primary-color,#0f2f57)] text-[10px] font-bold uppercase tracking-wider mb-1">Total Payable</p>
             <h4 className="text-lg font-black text-red-600">{formatCurrency(vendor.dueAmount)}</h4>
           </div>
         </div>

@@ -68,11 +68,12 @@ ON DUPLICATE KEY UPDATE
   logo_width = VALUES(logo_width),
   logo_height = VALUES(logo_height),
   footer = VALUES(footer);
-INSERT INTO system_defaults (id, records_per_page, white_label)
-VALUES ('defaults-default', 10, 0)
+INSERT INTO system_defaults (id, records_per_page, white_label, theme_color)
+VALUES ('defaults-default', 10, 0, '#0f2f57')
 ON DUPLICATE KEY UPDATE
   records_per_page = VALUES(records_per_page),
-  white_label = VALUES(white_label);
+  white_label = VALUES(white_label),
+  theme_color = VALUES(theme_color);
 INSERT INTO courier_settings (
   id,
   steadfast_enabled,

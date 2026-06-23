@@ -139,7 +139,7 @@ const CustomerDetails: React.FC = () => {
         {/* Left Profile Info */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 text-center">
-            <div className="w-24 h-24 rounded-full bg-[#ebf4ff] text-[#0f2f57] flex items-center justify-center font-black text-4xl mx-auto mb-4 border-2 border-[#c7dff5]">
+            <div className="w-24 h-24 rounded-full bg-[var(--primary-soft,#ebf4ff)] text-[var(--primary-color,#0f2f57)] flex items-center justify-center font-black text-4xl mx-auto mb-4 border-2 border-[var(--primary-medium,#3c5a82)]">
               {customer.name.charAt(0)}
             </div>
             <h3 className="text-xl font-bold text-gray-900">{customer.name}</h3>
@@ -157,9 +157,9 @@ const CustomerDetails: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-[#0f2f57] p-6 rounded-lg shadow-lg shadow-[#0f2f57]/20 border border-[#0f2f57] text-white">
-            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">Due Amount</p>
-            <h4 className="text-lg font-black text-white">{formatCurrency(dueAmount)}</h4>
+          <div className="bg-[var(--primary-color,#0f2f57)] p-6 rounded-lg shadow-lg shadow-[var(--primary-color,#0f2f57)]/20 border border-[var(--primary-color,#0f2f57)] text-white">
+            <p className="text-[var(--primary-soft,#ebf4ff)] text-[10px] font-bold uppercase tracking-wider mb-1">Due Amount</p>
+            <h4 className="text-lg font-black">{formatCurrency(dueAmount)}</h4>
           </div>
         </div>
 

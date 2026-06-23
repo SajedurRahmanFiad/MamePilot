@@ -315,7 +315,7 @@ const DeveloperNotifications: React.FC = () => {
           <button
             onClick={handleSubmit}
             disabled={createNotificationMutation.isPending}
-            className="rounded-xl bg-[#0f2f57] px-4 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[#143b6d] disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl bg-[var(--primary-color,#0f2f57)] px-4 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[var(--primary-dark,#0c203b)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {createNotificationMutation.isPending ? 'Sending...' : 'Send Now'}
           </button>
@@ -345,8 +345,8 @@ const DeveloperNotifications: React.FC = () => {
                     onClick={() => toggleRole(roleName)}
                     className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition-all ${
                       selected
-                        ? 'bg-[#0f2f57] text-white'
-                        : 'border border-gray-200 bg-white text-gray-500 hover:border-[#c7dff5] hover:bg-[#f8fbff] hover:text-[#0f2f57]'
+                        ? 'bg-[var(--primary-color,#0f2f57)] text-white'
+                        : 'border border-gray-200 bg-white text-gray-500 hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)] hover:text-[var(--primary-color,#0f2f57)]'
                     }`}
                   >
                     {roleName}

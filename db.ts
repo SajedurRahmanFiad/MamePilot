@@ -22,6 +22,7 @@ const defaultSettings: Settings = {
     recordsPerPage: 20,
     maxTransactionAmount: 0,
     whiteLabel: false,
+    themeColor: '#0f2f57',
   },
   categories: [],
   paymentMethods: [],
@@ -71,6 +72,9 @@ const mergedSettings: Settings = _storedSettings
           (_storedSettings as any).defaults?.defaultPaymentMethod ??
           (_storedSettings as any).defaults?.paymentMethod ??
           defaultSettings.defaults.defaultPaymentMethod,
+        themeColor:
+          (_storedSettings as any).defaults?.themeColor ??
+          defaultSettings.defaults.themeColor,
       },
       categories: Array.isArray((_storedSettings as any).categories) ? (_storedSettings as any).categories : defaultSettings.categories,
       paymentMethods: Array.isArray((_storedSettings as any).paymentMethods) ? (_storedSettings as any).paymentMethods : defaultSettings.paymentMethods,

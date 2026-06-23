@@ -5,7 +5,7 @@ import { ICONS } from '../constants';
 import { RotateCcw } from 'lucide-react';
 import { db } from '../db';
 import { hasAdminAccess } from '../types';
-import { theme } from '../theme';
+import { resolveThemeColorPalette, theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useCompanySettings, useOrderSearchPreview, useSystemDefaults } from '../src/hooks/useQueries';
@@ -145,6 +145,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     document.title = `${pageTitle} - Management`;
   }, [companySettings.name]);
 
+  useEffect(() => {
+    if (!systemDefaults?.themeColor) return;
+
+    const { primary, medium, dark, soft } = resolveThemeColorPalette(systemDefaults.themeColor);
+    const root = document.documentElement;
+
+    root.style.setProperty('--primary-color', primary);
+    root.style.setProperty('--primary-medium', medium);
+    root.style.setProperty('--primary-dark', dark);
+    root.style.setProperty('--primary-soft', soft);
+  }, [systemDefaults?.themeColor]);
+
   // Update favicon links when company logo becomes available
   useEffect(() => {
     const faviconUrl = whiteLabelEnabled ? companySettings.logo : '/uploads/Avatar.png';
@@ -167,6 +179,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       console.error('Failed to set favicon:', e);
     }
   }, [companySettings.logo]);
+
+  const avatarBackgroundColor = useMemo(() => {
+    if (!systemDefaults?.themeColor) return '0f2f57';
+    return resolveThemeColorPalette(systemDefaults.themeColor).primary.replace('#', '');
+  }, [systemDefaults?.themeColor]);
 
   // Reset main scroll position when route changes so each page starts at top
   React.useEffect(() => {
@@ -501,7 +518,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <p className={`text-sm font-black ${theme.colors.text.primary} leading-none`}>{user.name}</p>
                   <p className={`text-[10px] font-bold ${theme.colors.primary.text} uppercase tracking-widest mt-1`}>{user.role}</p>
                 </div>
-                <img src={user.image || `https://ui-avatars.com/api/?name=${user.name}&background=0f2f57&color=fff`} alt="Profile" className="w-10 h-10 rounded-[50%] object-cover cursor-pointer" />
+                <img src={user.image || `https://ui-avatars.com/api/?name=${user.name}&background=${avatarBackgroundColor}&color=fff`} alt="Profile" className="w-10 h-10 rounded-[50%] object-cover cursor-pointer" />
               </button>
               {isProfileOpen && (
                 <>

@@ -372,7 +372,7 @@ const BillDetails: React.FC = () => {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
               <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">1. Creation</h3>
-              <div className="p-1 bg-[#ebf4ff] text-white rounded-full">{ICONS.Plus}</div>
+              <div className="p-1 bg-[var(--primary-soft,#ebf4ff)] text-white rounded-full">{ICONS.Plus}</div>
             </div>
             <div className="p-5">
               <p className="text-xs text-gray-500 leading-relaxed font-medium">
@@ -385,13 +385,13 @@ const BillDetails: React.FC = () => {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
               <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">2. Processing</h3>
-              <div className={`p-1 rounded-full ${bill.status === BillStatus.PROCESSING ? 'bg-[#ebf4ff] text-white' : 'bg-gray-200 text-gray-400'}`}>
+              <div className={`p-1 rounded-full ${bill.status === BillStatus.PROCESSING ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
                 {ICONS.ChevronRight}
               </div>
             </div>
             <div className="p-5">
               {bill.history?.processing ? (
-                <p className="text-xs text-blue-600 leading-relaxed font-bold bg-[#ebf4ff] p-3 rounded-xl">
+                <p className="text-xs text-[var(--primary-color,#0f2f57)] leading-relaxed font-bold bg-[var(--primary-soft,#ebf4ff)] p-3 rounded-xl">
                   {bill.history.processing}
                 </p>
               ) : (

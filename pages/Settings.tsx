@@ -98,6 +98,7 @@ const SettingsPage: React.FC = () => {
     recordsPerPage: 10,
     maxTransactionAmount: 0,
     whiteLabel: false,
+    themeColor: '#0f2f57',
   });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
@@ -132,7 +133,12 @@ const SettingsPage: React.FC = () => {
   }, [invoiceSettingsData]);
 
   React.useEffect(() => {
-    if (systemDefaultsData) setSystemDefaults(systemDefaultsData);
+    if (systemDefaultsData) {
+      setSystemDefaults({
+        ...systemDefaultsData,
+        themeColor: systemDefaultsData.themeColor || '#0f2f57',
+      });
+    }
   }, [systemDefaultsData]);
 
   const isDeveloper = user?.role === 'Developer';
@@ -938,6 +944,15 @@ const SettingsPage: React.FC = () => {
                     value={systemDefaults.recordsPerPage} 
                     onChange={e => setSystemDefaults({...systemDefaults, recordsPerPage: parseInt(e.target.value)})}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Theme Color</label>
+                  <input
+                    type="color"
+                    value={systemDefaults.themeColor}
+                    onChange={e => setSystemDefaults({...systemDefaults, themeColor: e.target.value})}
+                    className="w-20 h-12 p-0 border border-gray-100 rounded-xl"
                   />
                 </div>
                 <div className="space-y-2">

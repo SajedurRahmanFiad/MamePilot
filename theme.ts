@@ -3,20 +3,163 @@
  * Update values here to change the entire app's appearance
  */
 
+export type ThemeColorKey = 'navy' | 'blue' | 'emerald' | 'purple';
+
+const themeColorPalette: Record<ThemeColorKey, { primary: string; medium: string; dark: string; soft: string }> = {
+  navy: {
+    primary: '#0f2f57',
+    medium: '#3c5a82',
+    dark: '#0c203b',
+    soft: '#ebf4ff',
+  },
+  blue: {
+    primary: '#1d4ed8',
+    medium: '#2563eb',
+    dark: '#1e40af',
+    soft: '#eff6ff',
+  },
+  emerald: {
+    primary: '#047857',
+    medium: '#059669',
+    dark: '#065f46',
+    soft: '#ecfdf5',
+  },
+  purple: {
+    primary: '#7c3aed',
+    medium: '#8b5cf6',
+    dark: '#5b21b6',
+    soft: '#f3e8ff',
+  },
+};
+
+const hexToRgb = (hex: string) => {
+  const value = hex.replace('#', '').trim();
+  if (value.length === 3) {
+    return {
+      r: parseInt(value[0] + value[0], 16),
+      g: parseInt(value[1] + value[1], 16),
+      b: parseInt(value[2] + value[2], 16),
+    };
+  }
+  if (value.length !== 6) return null;
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  };
+};
+
+const rgbToHex = (r: number, g: number, b: number) => {
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  const pad = (value: number) => clamp(value).toString(16).padStart(2, '0');
+  return `#${pad(r)}${pad(g)}${pad(b)}`;
+};
+
+const rgbToHsl = (r: number, g: number, b: number) => {
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case rNorm:
+        h = (gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0);
+        break;
+      case gNorm:
+        h = (bNorm - rNorm) / d + 2;
+        break;
+      case bNorm:
+        h = (rNorm - gNorm) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  return { h, s, l };
+};
+
+const hslToRgb = (h: number, s: number, l: number) => {
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+
+  if (s === 0) {
+    const value = Math.round(l * 255);
+    return { r: value, g: value, b: value };
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+
+  return {
+    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h) * 255),
+    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  };
+};
+
+const adjustLightness = (hex: string, delta: number) => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '#0f2f57';
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  return rgbToHex(...Object.values(hslToRgb(h, s, Math.max(0, Math.min(1, l + delta)))));
+};
+
+export function resolveThemeColorPalette(themeColor: string) {
+  const normalized = themeColor.trim();
+  const key = normalized.toLowerCase() as ThemeColorKey;
+  if (Object.prototype.hasOwnProperty.call(themeColorPalette, key)) {
+    return themeColorPalette[key as ThemeColorKey];
+  }
+
+  const hex = normalized.startsWith('#') ? normalized : `#${normalized}`;
+  const rgb = hexToRgb(hex);
+  if (!rgb) {
+    return themeColorPalette['navy'];
+  }
+
+  return {
+    primary: hex,
+    medium: adjustLightness(hex, 0.08),
+    dark: adjustLightness(hex, -0.15),
+    soft: adjustLightness(hex, 0.8),
+  };
+}
+
+const buildPrimaryColorTokens = (color: { primary: string; medium: string; dark: string; soft: string }) => ({
+  50: `bg-[var(--primary-soft,${color.soft})]`,
+  100: `bg-[var(--primary-medium,${color.medium})]`,
+  200: `bg-[var(--primary-medium,${color.medium})]`,
+  500: `bg-[var(--primary-medium,${color.medium})]`,
+  600: `bg-[var(--primary-color,${color.primary})]`,
+  700: `bg-[var(--primary-dark,${color.dark})]`,
+  text: `text-[var(--primary-color,${color.primary})]`,
+  textLight: `text-[var(--primary-color,${color.primary})]`,
+  shadow: `shadow-[var(--primary-color,${color.primary})]/20`,
+  focusRing: `focus:ring-[var(--primary-medium,${color.medium})]`,
+  border: `border-[var(--primary-medium,${color.medium})]`,
+});
+
+const defaultThemeColor: ThemeColorKey = 'navy';
+let primary = buildPrimaryColorTokens(themeColorPalette[defaultThemeColor]);
+
 export const theme = {
   // Primary Colors
   colors: {
     // Brand colors - change these to update entire app theme
-    primary: {
-      50: 'bg-[#ebf4ff]',
-      100: 'bg-[#b1c7e3]',
-      200: 'bg-[#6e8db5]',
-      500: 'bg-[#3c5a82]',
-      600: 'bg-[#0f2f57]',
-      700: 'bg-[#0c203b]',
-      text: 'text-[#0f2f57]',
-      textLight: 'text-[#0f2f57]',
-    },
+    primary,
     secondary: {
       50: 'bg-blue-50',
       100: 'bg-blue-100',
@@ -122,7 +265,7 @@ export const theme = {
   // Button styles
   buttons: {
     base: 'inline-flex items-center justify-center gap-2 font-bold rounded-xl transition-all duration-300 cursor-pointer',
-    primary: 'bg-[#0f2f57] text-white hover:bg-[#0c203b] shadow-lg shadow-blue-100',
+    primary: `${primary[600]} text-white hover:${primary[700]} shadow-lg ${primary.shadow}`,
     secondary: 'bg-gray-100 text-gray-600 hover:bg-gray-200',
     danger: 'bg-red-600 text-white hover:bg-red-700',
     outline: 'border-2 border-gray-200 text-gray-700 hover:bg-gray-50',
@@ -135,7 +278,7 @@ export const theme = {
 
   // Input styles
   inputs: {
-    base: 'w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] focus:border-transparent transition-all',
+    base: `w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 ${primary.focusRing} focus:border-transparent transition-all`,
     label: 'block text-sm font-semibold text-gray-700 mb-2',
     error: 'border-red-500 focus:ring-red-500',
   },
@@ -145,7 +288,7 @@ export const theme = {
     header: 'bg-gray-50 border-b border-gray-100',
     headerCell: 'px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]',
     bodyCell: 'px-6 py-5',
-    row: 'border-b border-gray-50 hover:bg-[#ebf4ff]/50 cursor-pointer transition-all',
+    row: `border-b border-gray-50 hover:${primary[50]}/50 cursor-pointer transition-all`,
   },
 
   // Card styles

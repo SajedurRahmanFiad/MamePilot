@@ -638,13 +638,13 @@ const OrderDetails: React.FC = () => {
                     type="button"
                     onClick={openFraudChecker}
                     disabled={!canRunFraudChecker}
-                    className={`w-full rounded-xl py-3 font-bold shadow-md transition-all active:scale-95 ${canRunFraudChecker ? 'bg-[#0f2f57] text-white hover:bg-[#0a1f38]' : 'cursor-not-allowed bg-gray-100 text-gray-400 shadow-none'}`}
+                    className={`w-full rounded-xl py-3 font-bold shadow-md transition-all active:scale-95 ${canRunFraudChecker ? `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}` : 'cursor-not-allowed bg-gray-100 text-gray-400 shadow-none'}`}
                   >
                     Check Courier History
                   </button>
                 )}
                 {order.history.processing ? (
-                  <p className="text-xs ${theme.colors.primary[600]} leading-relaxed font-bold bg-[#ebf4ff] p-3 rounded-xl">
+                  <p className={`text-xs ${theme.colors.primary[600]} leading-relaxed font-bold bg-[var(--primary-soft,#ebf4ff)] p-3 rounded-xl`}>
                     {order.history.processing}
                   </p>
                 ) : (
@@ -652,7 +652,7 @@ const OrderDetails: React.FC = () => {
                     <button 
                       disabled={order.status !== OrderStatus.ON_HOLD}
                       onClick={markProcessing}
-                      className={`w-full py-3 ${theme.colors.secondary[600]} hover:${theme.colors.secondary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
+                      className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
                     >
                       Mark as Processing
                     </button>
@@ -666,19 +666,19 @@ const OrderDetails: React.FC = () => {
                     <>
                       <button 
                         onClick={() => setShowSteadfast(true)}
-                        className="w-full py-3 bg-[#0f2f57] hover:bg-[#0a1f38] text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2`}
                       >
                         <img src="/uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full" /> Add to Steadfast
                       </button>
                       <button 
                         onClick={() => setShowCarryBee(true)}
-                        className="w-full py-3 bg-[#0f2f57] hover:bg-[#0a1f38] text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2`}
                       >
                         <img src="/uploads/carrybee.png" alt="CarryBee" className="w-5 h-5 rounded-full" /> Add to CarryBee
                       </button>
                       <button
                         onClick={() => setShowPaperfly(true)}
-                        className="w-full py-3 bg-[#0f2f57] hover:bg-[#0a1f38] text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2`}
                       >
                         <img src="/uploads/paperfly.png" alt="Paperfly" className="w-5 h-5 rounded-full" /> Add to Paperfly
                       </button>
@@ -708,7 +708,7 @@ const OrderDetails: React.FC = () => {
                     <button 
                       disabled={!canMarkCurrentOrderPicked}
                       onClick={markPicked}
-                      className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95"
+                      className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
                     >
                       Mark as Picked
                     </button>

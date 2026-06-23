@@ -121,7 +121,7 @@ const AdminSubscriptions: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-6">
       <LoadingOverlay isLoading={loadingOverview || loadingCapabilities} message="Loading subscription..." />
 
-      <section className="rounded-3xl border border-[#c7dff5] bg-gradient-to-br from-[#0f2f57] to-[#143b6d] p-8 text-white shadow-sm">
+      <section className="rounded-3xl border border-[var(--primary-medium,#3c5a82)] bg-gradient-to-br from-[var(--primary-color,#0f2f57)] to-[var(--primary-dark,#0c203b)] p-8 text-white shadow-sm">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Current Plan</p>
         <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>

@@ -594,6 +594,7 @@ export interface Settings {
     recordsPerPage: number;
     maxTransactionAmount?: number;
     whiteLabel: boolean;
+    themeColor: string;
   };
   categories: {
     id: string;
