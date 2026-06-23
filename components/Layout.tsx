@@ -556,7 +556,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           {children}
           <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>
-              © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}.
+              © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}
               <span className="mx-2">|</span>
               Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
               <span className="mx-2">|</span>
