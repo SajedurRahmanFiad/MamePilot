@@ -12,6 +12,65 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+
+        @keyframes chat-shockwave {
+            0% {
+                transform: scale(0.85);
+                opacity: 0.65;
+                box-shadow: 0 0 0 0 rgba(15, 47, 87, 0.32);
+            }
+            30% {
+                transform: scale(1.05);
+                opacity: 0.5;
+                box-shadow: 0 0 0 8px rgba(15, 47, 87, 0.22);
+            }
+            60% {
+                transform: scale(1.2);
+                opacity: 0.25;
+                box-shadow: 0 0 0 14px rgba(15, 47, 87, 0.14);
+            }
+            100% {
+                transform: scale(1.4);
+                opacity: 0;
+                box-shadow: 0 0 0 24px rgba(15, 47, 87, 0);
+            }
+        }
+
+        .animate-chat-shockwave {
+            animation: chat-shockwave 2.4s ease-out infinite;
+            will-change: transform, opacity, box-shadow;
+            background-color: rgba(15, 47, 87, 0.16);
+        }
+
+        @keyframes chat-panel-enter {
+            0% {
+                opacity: 0;
+                transform: translateY(120vh);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes chat-panel-close {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(120vh);
+            }
+        }
+
+        .animate-chat-panel-enter {
+            animation: chat-panel-enter 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .animate-chat-panel-close {
+            animation: chat-panel-close 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
     </style>
 <script type="importmap">
 {

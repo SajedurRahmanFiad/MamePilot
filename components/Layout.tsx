@@ -521,14 +521,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <IncidentModeBanner />
           {children}
           <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
-            <p className={`text-sm font-medium ${theme.colors.text.secondary}`}>
+            <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
               © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}
               <span className="mx-2">|</span>
               Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
               <span className="mx-2">|</span>
               All rights reserved.
             </p>
-            <p className={`text-[11px] font-bold uppercase tracking-widest ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
+            <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
           </footer>
         </main>
         <MameChat />

@@ -119,11 +119,13 @@ const INITIAL_MESSAGE: ChatMessage = {
   id: 'welcome-message',
   role: 'assistant',
   content:
-    'Hello! I am Mame, your exclusive AI assistant from Mame Studios. Ask me anything about your business, orders, customers, products, vendors, accounts, or transactions.',
+    'Hello! I am Mame, your business assistant. How can I help you today?.',
 };
 
 const MameChat: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [hasOpenedOnce, setHasOpenedOnce] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [draft, setDraft] = useState('');
@@ -251,9 +253,33 @@ const MameChat: React.FC = () => {
     }
   };
 
+  const openPanel = () => {
+    setHasOpenedOnce(true);
+    setIsClosing(false);
+    setIsOpen(true);
+  };
+
+  const closePanel = () => {
+    if (!isOpen) return;
+    setIsClosing(true);
+  };
+
+  useEffect(() => {
+    if (!isClosing) return;
+
+    const timeout = window.setTimeout(() => {
+      setIsOpen(false);
+      setIsClosing(false);
+    }, 280);
+
+    return () => window.clearTimeout(timeout);
+  }, [isClosing]);
+
   const widgetContainer = isMobile
     ? 'fixed inset-0 z-[100] bg-white'
-    : 'fixed right-4 bottom-4 z-[100] w-[360px] h-[520px] rounded-[32px] shadow-2xl';
+    : 'fixed bottom-4 right-[112px] z-[100] w-[360px] h-[520px] rounded-[32px] shadow-2xl';
+
+  const widgetAnimationClass = isClosing ? 'animate-chat-panel-close' : 'animate-chat-panel-enter';
 
   const widgetBodyClass = isMobile
     ? 'flex flex-col h-full'
@@ -261,37 +287,53 @@ const MameChat: React.FC = () => {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className={`fixed right-4 bottom-4 z-[90] inline-flex items-center gap-2 rounded-full px-4 py-3 shadow-2xl ${theme.colors.primary[600]} text-white ${theme.transitions.normal} hover:${theme.colors.primary[700]}`}
-      >
-        <MessageSquare size={18} />
-        <span className="hidden sm:inline-block text-sm font-semibold">Ask Mame</span>
-      </button>
+      <div className="fixed right-6 bottom-6 z-[90] flex items-center gap-3">
+        {!hasOpenedOnce && (
+          <div className="flex h-10 items-center rounded-full bg-white px-4 text-xs font-semibold text-slate-900 shadow-lg md:h-12 md:px-5 md:text-sm">
+            Chat with Mame
+          </div>
+        )}
+        <div className="relative flex h-14 w-14 md:h-[72px] md:w-[72px] items-center justify-center rounded-full">
+          <span className="pointer-events-none absolute inset-0 rounded-full border border-[var(--primary-color,#0f2f57)]/30 bg-[var(--primary-color,#0f2f57)]/20 opacity-0 shadow-[0_0_0_0_rgba(15,47,87,0.25)] animate-chat-shockwave" />
+          <button
+            type="button"
+            onClick={() => {
+              if (isOpen && !isClosing) {
+                closePanel();
+              } else {
+                openPanel();
+              }
+            }}
+            className={`relative inline-flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-transparent shadow-2xl ${theme.transitions.normal}`}
+            aria-label={isOpen ? 'Close chat' : 'Open chat'}
+          >
+            <img src="/uploads/Mame%20AI.png" alt="Mame AI" className="h-full w-full object-cover" />
+          </button>
+        </div>
+      </div>
 
-      {isOpen && (
-        <div className={widgetContainer}>
+      {(isOpen || isClosing) && (
+        <div className={`${widgetContainer} ${widgetAnimationClass}`}>
           {isMobile && (
             <div
               className="absolute inset-0 bg-black/20"
-              onClick={() => setIsOpen(false)}
+              onClick={closePanel}
             />
           )}
           <div className={`${widgetBodyClass} ${isMobile ? 'relative m-0 rounded-none' : 'bg-white'} ${theme.radius.lg}`} style={{ margin: isMobile ? 0 : undefined }}>
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200 bg-white">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-color,#0f2f57)]/10 text-[var(--primary-color,#0f2f57)]">
-                  <MessageSquare size={20} />
+                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[var(--primary-color,#0f2f57)]/10">
+                  <img src="/uploads/Avatar.png" alt="Mame avatar" className="h-10 w-10 object-cover" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Mame</p>
-                  <p className="text-xs text-gray-500">Ask anything about your business.</p>
+                  <p className="text-xs text-gray-500">Ask anything.</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={closePanel}
                 className="inline-flex items-center justify-center rounded-full p-2 text-gray-500 hover:bg-gray-100"
                 aria-label="Close chat"
               >
@@ -301,20 +343,32 @@ const MameChat: React.FC = () => {
 
             <div className="flex-1 overflow-hidden px-4 py-0" style={{ minHeight: 0 }}>
               <div className="flex min-h-0 h-full flex-col gap-3 overflow-y-auto pr-1" style={isMobile ? { maxHeight: chatHeight } : undefined}>
-                {messages.map((message) => (
+                {messages.map((message, index) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex items-end gap-1 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${!index && message.role === 'assistant' ? 'mt-5' : ''}`}
                   >
+                    {message.role === 'assistant' && (
+                      <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-[var(--primary-color,#0f2f57)]/10 ring-1 ring-[var(--primary-color,#0f2f57)]/20">
+                        <img src="/uploads/Avatar.png" alt="Mame avatar" className="h-full w-full object-cover" />
+                      </div>
+                    )}
+
                     <div
-                      className={`max-w-[85%] rounded-3xl px-4 py-3 text-sm leading-6 ${
+                      className={`max-w-[85%] rounded-3xl px-3 py-2 text-sm leading-6 ${
                         message.role === 'user'
                           ? `${theme.colors.primary[600]} text-white rounded-br-[4px]`
-                          : 'bg-[var(--primary-soft,#ebf4ff)] text-gray-900 rounded-bl-[4px]'
+                          : 'bg-[var(--primary-soft,#dbeafe)] text-gray-900 rounded-bl-[4px] border border-slate-200 shadow-sm'
                       }`}
                     >
                       {renderMessageContent(message.content)}
                     </div>
+
+                    {message.role === 'user' && (
+                      <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-gray-100">
+                        <img src="/uploads/Empty_avatar.png" alt="Your avatar" className="h-full w-full object-cover" />
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
