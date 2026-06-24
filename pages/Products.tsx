@@ -118,7 +118,7 @@ const Products: React.FC = () => {
             render: (_, product) => (
               <div className="flex items-center gap-4">
                 <img
-                  src={productImages[product.id] || 'https://via.placeholder.com/100'}
+                  src={productImages[product.id] || '/uploads/Empty_product.png'}
                   alt={product.name}
                   className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm"
                 />

@@ -281,7 +281,7 @@ const MameChat: React.FC = () => {
           <div className={`${widgetBodyClass} ${isMobile ? 'relative m-0 rounded-none' : 'bg-white'} ${theme.radius.lg}`} style={{ margin: isMobile ? 0 : undefined }}>
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200 bg-white">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0f2f57]/10 text-[#0f2f57]">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--primary-color,#0f2f57)]/10 text-[var(--primary-color,#0f2f57)]">
                   <MessageSquare size={20} />
                 </div>
                 <div>
@@ -309,8 +309,8 @@ const MameChat: React.FC = () => {
                     <div
                       className={`max-w-[85%] rounded-3xl px-4 py-3 text-sm leading-6 ${
                         message.role === 'user'
-                          ? 'bg-[#0f2f57] text-white rounded-br-[4px]'
-                          : 'bg-gray-100 text-gray-900 rounded-bl-[4px]'
+                          ? `${theme.colors.primary[600]} text-white rounded-br-[4px]`
+                          : 'bg-[var(--primary-soft,#ebf4ff)] text-gray-900 rounded-bl-[4px]'
                       }`}
                     >
                       {renderMessageContent(message.content)}
@@ -326,7 +326,7 @@ const MameChat: React.FC = () => {
               style={{ paddingBottom: isMobile ? `${keyboardOffset + 14}px` : '12px' }}
             >
               <div
-                className="relative flex items-center border border-gray-200 bg-gray-50 transition duration-200 focus-within:border-[#0f2f57] focus-within:ring-2 focus-within:ring-[#0f2f57]/20"
+                className="relative flex items-center border border-gray-200 bg-gray-50 transition duration-200 focus-within:border-[var(--primary-color,#0f2f57)] focus-within:ring-2 focus-within:ring-[var(--primary-color,#0f2f57)]/20"
                 style={{ borderRadius: `${inputRadius}px`, padding: '10px 50px 10px 14px', minHeight: '44px', maxHeight: '108px' }}
               >
                 <textarea

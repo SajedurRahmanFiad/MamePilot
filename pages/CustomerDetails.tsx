@@ -139,8 +139,12 @@ const CustomerDetails: React.FC = () => {
         {/* Left Profile Info */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 text-center">
-            <div className="w-24 h-24 rounded-full bg-[var(--primary-soft,#ebf4ff)] text-[var(--primary-color,#0f2f57)] flex items-center justify-center font-black text-4xl mx-auto mb-4 border-2 border-[var(--primary-medium,#3c5a82)]">
-              {customer.name.charAt(0)}
+            <div className="w-24 h-24 rounded-full overflow-hidden mx-auto mb-4 border-2 border-[var(--primary-medium,#3c5a82)]">
+              <img
+                src="/uploads/Empty_avatar.png"
+                alt={customer.name}
+                className="w-full h-full object-cover"
+              />
             </div>
             <h3 className="text-xl font-bold text-gray-900">{customer.name}</h3>
             <p className="text-sm text-gray-400 mt-1">{customer.phone}</p>

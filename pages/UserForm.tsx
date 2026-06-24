@@ -161,7 +161,7 @@ const UserForm: React.FC = () => {
           <div className="space-y-6">
             <div className="flex items-center gap-6 p-6 bg-gray-50 rounded-lg">
               <div className="w-20 h-20 rounded-[50%] overflow-hidden bg-white border">
-                <img src={form.image || `https://ui-avatars.com/api/?name=${form.name || 'User'}&background=10b981&color=fff`} className="w-full h-full object-cover" />
+                <img src={form.image || '/uploads/Empty_avatar.png'} className="w-full h-full object-cover" />
               </div>
               <div className="space-y-2">
                 <p className="text-xs font-bold text-gray-400 uppercase mb-2">Profile Photo</p>

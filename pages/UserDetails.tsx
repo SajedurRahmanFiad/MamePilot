@@ -124,7 +124,7 @@ const UserDetails: React.FC = () => {
           <div className="relative flex justify-between items-end -mt-12 mb-8">
             <div className="p-1 bg-white rounded-full shadow-xl">
               <img 
-                src={user.image || 'https://picsum.photos/200/200?random=' + user.id} 
+                src={user.image || '/uploads/Empty_avatar.png'} 
                 className="w-24 h-24 rounded-full object-cover border-1 border-black" 
               />
             </div>

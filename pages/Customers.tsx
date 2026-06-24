@@ -170,9 +170,11 @@ const Customers: React.FC = () => {
             label: 'Customer Name',
             render: (_, customer) => (
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full bg-blue-400 flex items-center justify-center font-bold text-white`}>
-                  {customer.name.charAt(0)}
-                </div>
+                <img
+                  src="/uploads/Empty_avatar.png"
+                  alt={customer.name}
+                  className="w-10 h-10 rounded-full object-cover border"
+                />
                 <div>
                   <span className="font-bold text-gray-900 block">{customer.name}</span>
                   <p className="text-xs text-gray-400 truncate max-w-[200px]">{customer.address}</p>

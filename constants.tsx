@@ -32,7 +32,8 @@ import {
   Bell,
   CircleHelp,
   X,
-  Clock3
+  Clock3,
+  RotateCcw
 } from 'lucide-react';
 
 // Fixed missing properties on ICONS object by adding 'Users' and 'Briefcase' keys
@@ -47,6 +48,7 @@ export const ICONS = {
   Banking: <CreditCard size={20} />,
   Payroll: <Wallet size={20} />,
   RecycleBin: <Trash2 size={20} />,
+  Undoer: <RotateCcw size={20} />,
   Reports: <BarChart3 size={20} />,
   Settings: <Settings size={20} />,
   Courier: <Truck size={20} />,

@@ -14,11 +14,17 @@ import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/com
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
+import { SidebarConfigItem, buildSidebarItems } from '../src/sidebarConfig';
 import IncidentModeBanner from './IncidentModeBanner';
 import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 import NotificationCenterButton from './NotificationCenterButton';
 import ServiceAnnouncementBar from './ServiceAnnouncementBar';
 import MameChat from './MameChat';
+
+type SidebarConfigItemWithActive = SidebarConfigItem & {
+  active: boolean;
+  children?: SidebarConfigItemWithActive[];
+};
 
 interface SidebarItemProps {
   to?: string;
@@ -26,39 +32,54 @@ interface SidebarItemProps {
   label: string;
   active: boolean;
   onClick?: () => void;
-  children?: { to: string; label: string; active: boolean }[];
+  children?: SidebarConfigItemWithActive[];
+  expanded?: boolean;
 }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onClick, children }) => {
+const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onClick, children, expanded = true }) => {
   const [isOpen, setIsOpen] = useState(active);
+
+  useEffect(() => {
+    if (!expanded) {
+      setIsOpen(false);
+    }
+  }, [expanded]);
+
+  const iconNode = (
+    <span className="flex items-center justify-center w-8 h-8 text-current">
+      {icon}
+    </span>
+  );
 
   if (children) {
     return (
       <div className="space-y-1">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between w-full px-4 py-3 ${theme.radius.md} ${theme.transitions.normal} ${
+          className={`flex items-center ${expanded ? 'justify-between' : 'justify-center'} w-full h-11 px-3 ${theme.radius.md} ${theme.transitions.colors} ${
             active 
               ? `${theme.colors.primary[50]} ${theme.colors.primary.text}` 
               : `text-gray-500 hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text}`
           }`}
         >
-          <div className="flex items-center gap-3">
-            {icon}
-            <span className="font-semibold text-sm">{label}</span>
+          <div className={`flex items-center ${expanded ? 'gap-3' : ''}`}>
+            {iconNode}
+            <span className={`font-semibold text-sm ${expanded ? 'block' : 'hidden'} leading-none`}>{label}</span>
           </div>
-          <div className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
-            {ICONS.ChevronRight}
-          </div>
+          {expanded && (
+            <div className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
+              {ICONS.ChevronRight}
+            </div>
+          )}
         </button>
-        {isOpen && (
+        {isOpen && expanded && (
           <div className="pl-11 space-y-1">
             {children.map((child) => (
               <Link
-                key={child.to}
-                to={child.to}
+                key={child.key}
+                to={child.to ?? '#'}
                 onClick={onClick}
-                className={`block px-4 py-2 text-sm font-medium ${theme.radius.sm} ${theme.transitions.normal} ${
+                className={`block px-4 py-2 text-sm font-medium ${theme.radius.sm} ${theme.transitions.colors} ${
                   child.active 
                     ? `${theme.colors.primary[600]} text-white` 
                     : `text-gray-400 hover:${theme.colors.primary.text} hover:${theme.colors.primary[50]}/30`
@@ -77,14 +98,14 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
     <Link
       to={to || '#'}
       onClick={onClick}
-      className={`flex items-center gap-3 px-4 py-3 ${theme.radius.md} ${theme.transitions.normal} ${
+      className={`flex items-center ${expanded ? 'justify-start gap-3' : 'justify-center'} w-full h-11 px-3 ${theme.radius.md} ${theme.transitions.colors} ${
         active 
           ? `${theme.colors.primary[600]} text-white shadow-lg shadow-emerald-200/50` 
           : `text-gray-500 hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text}`
       }`}
     >
-      {icon}
-      <span className="font-semibold text-sm">{label}</span>
+      {iconNode}
+      <span className={`font-semibold text-sm ${expanded ? 'block' : 'hidden'} leading-none`}>{label}</span>
     </Link>
   );
 };
@@ -101,9 +122,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const whiteLabelEnabled = Boolean(systemDefaults?.whiteLabel);
+  const isSidebarExpanded = isSidebarOpen || isSidebarHovered;
+  const sidebarWidth = isSidebarOpen || isSidebarExpanded ? 288 : 80;
+  const sidebarTransitionStyle = {
+    width: sidebarWidth,
+    minWidth: 80,
+    transition: 'width 220ms ease-in-out',
+    willChange: 'width',
+  };
   const brandLoading = isSystemDefaultsLoading || (whiteLabelEnabled && isCompanySettingsLoading);
 
   const companySettings = useMemo(() => {
@@ -262,24 +292,30 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
   const isAdminAccessUser = hasAdminAccess(user.role);
   const isDeveloper = user.role === 'Developer';
-  const canViewWalletInSidebar = !isAdminAccessUser && can('wallet.view') && hasCapability('human_resources');
-  const salesChildren = [
-    can('orders.view') && hasCapability('sales') ? { to: '/orders', label: 'Orders', active: isActive('/orders') } : null,
-    can('customers.view') && hasCapability('sales') ? { to: '/customers', label: 'Customers', active: isActive('/customers') } : null,
-  ].filter(Boolean) as { to: string; label: string; active: boolean }[];
-  const purchasesChildren = [
-    can('bills.view') && hasCapability('purchases') ? { to: '/bills', label: 'Bills', active: isActive('/bills') } : null,
-    can('vendors.view') && hasCapability('purchases') ? { to: '/vendors', label: 'Vendors', active: isActive('/vendors') } : null,
-  ].filter(Boolean) as { to: string; label: string; active: boolean }[];
-  const bankingChildren = [
-    can('accounts.view') && hasCapability('banking') ? { to: '/banking/accounts', label: 'Accounts', active: isActive('/banking/accounts') } : null,
-    can('transactions.view') && hasCapability('banking') ? { to: '/banking/transactions', label: 'Transactions', active: isActive('/banking/transactions') } : null,
-    can('transfers.create') && hasCapability('banking') ? { to: '/banking/transfer', label: 'Transfer', active: isActive('/banking/transfer') } : null,
-  ].filter(Boolean) as { to: string; label: string; active: boolean }[];
-  const hrChildren = [
-    can('users.view') && hasCapability('human_resources') ? { to: '/users', label: 'Users', active: isActive('/users') } : null,
-    can('payroll.view') && hasCapability('human_resources') ? { to: '/payroll', label: 'Payroll', active: isActive('/payroll') } : null,
-  ].filter(Boolean) as { to: string; label: string; active: boolean }[];
+
+  const sidebarPermissionContext = useMemo(
+    () => ({
+      can,
+      hasCapability,
+      canViewDashboard,
+      isAdminAccessUser,
+      isDeveloper,
+    }),
+    [can, hasCapability, canViewDashboard, isAdminAccessUser, isDeveloper]
+  );
+
+  const sidebarItems = useMemo(() => {
+    const items = buildSidebarItems(sidebarPermissionContext);
+
+    const normalizeItem = (item: SidebarConfigItem): SidebarConfigItemWithActive => {
+      const children = item.children?.map(normalizeItem) as SidebarConfigItemWithActive[] | undefined;
+      const active = Boolean((item.to && isActive(item.to)) || children?.some((child) => child.active));
+      return { ...item, active, children };
+    };
+
+    return items.map(normalizeItem);
+  }, [sidebarPermissionContext, location.pathname]);
+
   const quickActions = [
     can('orders.create') && hasCapability('sales') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
     can('bills.create') && hasCapability('purchases') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
@@ -299,39 +335,45 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       )}
 
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-72 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} ${theme.transitions.normal} transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        onMouseEnter={() => setIsSidebarHovered(true)}
+        onMouseLeave={() => setIsSidebarHovered(false)}
+        className={`fixed inset-y-0 left-0 z-50 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } overflow-hidden`}
+        style={sidebarTransitionStyle}
       >
         <div className="flex flex-col h-full">
-          <div className="p-8">
-            <div className="flex items-center gap-3">
+          <div className={isSidebarExpanded ? 'p-8 h-28' : 'px-3 py-4 h-28'}>
+            <div className={`flex items-center h-full ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}>
             {whiteLabelEnabled ? (
               <>
-                <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white`}>
+                <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white ${isSidebarExpanded ? '' : 'mx-auto'}`}>
                   {companySettings.logo ? (
                     <img
                       src={companySettings.logo}
                       alt={companySettings.name || 'Mame Pilot'}
-                      className="w-10 h-10 object-contain"
+                      className="w-10 h-10 rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-200" />
                   )}
                 </div>
-                <div>
-                  <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
-                    {brandLoading ? 'Loading...' : companySettings.name || 'Mame Pilot'}
-                  </h1>
-                  <span className={`text-[10px] font-bold uppercase tracking-widest`}>Business Management</span>
-                </div>
+
+                {isSidebarExpanded && (
+                  <div>
+                    <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
+                      {brandLoading ? 'Loading...' : companySettings.name || 'Mame Pilot'}
+                    </h1>
+                    <span className={`text-[10px] font-bold uppercase tracking-widest`}>Business Management</span>
+                  </div>
+                )}
               </>
             ) : (
-              <div className="flex items-center justify-start">
+              <div className={`flex items-center ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
                 <img
-                  src="/uploads/Full Branding.png"
+                  src={isSidebarExpanded ? '/uploads/Full Branding.png' : '/uploads/Avatar.png'}
                   alt="Mame Pilot"
-                  className="h-16 object-contain"
+                  className={`object-contain ${isSidebarExpanded ? 'h-14 w-auto' : 'h-10 w-10 rounded-full'}`}
                 />
               </div>
             )}
@@ -339,94 +381,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
 
           <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-            {canViewDashboard && (
-              <SidebarItem to="/dashboard" icon={ICONS.Dashboard} label="Dashboard" active={isActive('/dashboard')} onClick={() => setIsSidebarOpen(false)} />
-            )}
-            
-            {can('products.view') && hasCapability('inventory') && (
-              <SidebarItem to="/products" icon={ICONS.Products} label="Products" active={isActive('/products')} onClick={() => setIsSidebarOpen(false)} />
-            )}
-
-            {salesChildren.length > 0 && (
-              <SidebarItem 
-                icon={ICONS.Sales} 
-                label="Sales" 
-                active={isActive('/orders') || isActive('/customers')} 
-                children={salesChildren}
-                onClick={() => setIsSidebarOpen(false)}
-              />
-            )}
-
-            {canViewWalletInSidebar && (
-              <SidebarItem to="/wallet" icon={ICONS.Payroll} label="Wallet" active={isActive('/wallet')} onClick={() => setIsSidebarOpen(false)} />
-            )}
-
-            {purchasesChildren.length > 0 && (
-              <SidebarItem 
-                icon={ICONS.Briefcase} 
-                label="Purchases" 
-                active={isActive('/bills') || isActive('/vendors')} 
-                children={purchasesChildren}
-                onClick={() => setIsSidebarOpen(false)}
-              />
-            )}
-
-            {hrChildren.length > 0 && (
-              <SidebarItem
-                icon={ICONS.Users}
-                label="Human Resource"
-                active={isActive('/users') || isActive('/payroll')}
-                children={hrChildren}
-                onClick={() => setIsSidebarOpen(false)}
-              />
-            )}
-
-            {bankingChildren.length > 0 && (
-              <SidebarItem 
-                icon={ICONS.Banking} 
-                label="Banking" 
-                active={isActive('/banking')} 
-                children={bankingChildren}
-                onClick={() => setIsSidebarOpen(false)}
-              />
-            )}
-
-            {can('fraudChecker.check') && hasCapability('fraud_checker') && (
-              <SidebarItem to="/fraud-checker" icon={ICONS.FraudChecker} label="Fraud Checker" active={isActive('/fraud-checker')} onClick={() => setIsSidebarOpen(false)} />
-            )}
-
-            {((can('reports.view') && hasCapability('advanced_reports')) || (can('recycleBin.view') && hasCapability('recycle_bin_undoer')) || (can('undoer.view') && hasCapability('recycle_bin_undoer')) || isAdminAccessUser) && (
-              <>
-                {can('reports.view') && hasCapability('advanced_reports') && (
-                  <SidebarItem to="/reports" icon={ICONS.Reports} label="Reports" active={isActive('/reports')} onClick={() => setIsSidebarOpen(false)} />
-                )}
-                {can('recycleBin.view') && hasCapability('recycle_bin_undoer') && (
-                  <SidebarItem to="/recycle-bin" icon={ICONS.RecycleBin} label="Recycle Bin" active={isActive('/recycle-bin')} onClick={() => setIsSidebarOpen(false)} />
-                )}
-                {can('undoer.view') && hasCapability('recycle_bin_undoer') && (
-                  <SidebarItem to="/undoer" icon={<RotateCcw size={20} />} label="Undoer" active={isActive('/undoer')} onClick={() => setIsSidebarOpen(false)} />
-                )}
-                {isAdminAccessUser && (
-                  <>
-                    <SidebarItem to="/subscriptions" icon={ICONS.Bell} label="Subscriptions" active={isActive('/subscriptions')} onClick={() => setIsSidebarOpen(false)} />
-                    <SidebarItem to="/settings" icon={ICONS.Settings} label="Settings" active={isActive('/settings')} onClick={() => setIsSidebarOpen(false)} />
-                    {isDeveloper && (
-                      <SidebarItem
-                        icon={ICONS.AlertCircle}
-                        label="Developer-only"
-                        active={isActive('/developer')}
-                        children={[
-                          { to: '/developer/notifications', label: 'Notifications', active: isActive('/developer/notifications') },
-                          { to: '/developer/settings', label: 'Settings', active: isActive('/developer/settings') },
-                          { to: '/developer/subscriptions', label: 'Subscriptions', active: isActive('/developer/subscriptions') },
-                        ]}
-                        onClick={() => setIsSidebarOpen(false)}
-                      />
-                    )}
-                  </>
-                )}
-              </>
-            )}
+            {sidebarItems.map((item) => (
+            <SidebarItem
+              key={item.key}
+              expanded={isSidebarExpanded}
+              to={item.to}
+              icon={item.icon}
+              label={item.label}
+              active={item.active}
+              children={item.children}
+              onClick={() => setIsSidebarOpen(false)}
+            />
+          ))}
           </nav>
 
 
@@ -518,7 +484,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <p className={`text-sm font-black ${theme.colors.text.primary} leading-none`}>{user.name}</p>
                   <p className={`text-[10px] font-bold ${theme.colors.primary.text} uppercase tracking-widest mt-1`}>{user.role}</p>
                 </div>
-                <img src={user.image || `https://ui-avatars.com/api/?name=${user.name}&background=${avatarBackgroundColor}&color=fff`} alt="Profile" className="w-10 h-10 rounded-[50%] object-cover cursor-pointer" />
+                <img src={user.image || '/uploads/Empty_avatar.png'} alt="Profile" className="w-10 h-10 rounded-[50%] object-cover cursor-pointer" />
               </button>
               {isProfileOpen && (
                 <>

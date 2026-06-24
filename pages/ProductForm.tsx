@@ -87,7 +87,7 @@ const ProductForm: React.FC = () => {
       const productData: Omit<Product, 'id'> = {
         name: form.name || '',
         category: form.category || '',
-        image: form.image || 'https://picsum.photos/200/200?random=' + Math.random(),
+        image: form.image || '/uploads/Empty_product.png',
         salePrice: form.salePrice || 0,
         purchasePrice: form.purchasePrice || 0,
         stock: Math.max(0, Number(form.stock || 0)),

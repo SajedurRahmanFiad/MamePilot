@@ -175,7 +175,7 @@ const Users: React.FC = () => {
             render: (_, user) => (
               <div className="flex items-center gap-4">
                 <img
-                  src={user.image || 'https://picsum.photos/100/100?random=' + user.id}
+                  src={user.image || '/uploads/Empty_avatar.png'}
                   className="w-10 h-10 rounded-full object-cover border"
                 />
                 <span className="font-bold text-gray-900">{user.name}</span>

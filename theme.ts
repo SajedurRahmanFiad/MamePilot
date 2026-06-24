@@ -260,6 +260,9 @@ export const theme = {
     fast: 'transition-all duration-150',
     normal: 'transition-all duration-300',
     slow: 'transition-all duration-500',
+    colors: 'transition-colors duration-200 ease-in-out',
+    transform: 'transition-transform duration-200 ease-in-out',
+    opacity: 'transition-opacity duration-200 ease-in-out',
   },
 
   // Button styles
