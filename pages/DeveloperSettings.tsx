@@ -160,7 +160,6 @@ const DeveloperSettings: React.FC = () => {
           <p className="mt-1 text-sm text-gray-500">Control central license sync, maintenance mode, and service configuration.</p>
         </div>
         {activeTab === 'license' && <Button onClick={syncNow} variant="primary">Sync Now</Button>}
-        {activeTab === 'maintenance' && <Button onClick={saveMaintenanceMode} variant="primary">{maintenanceEnabled ? 'Disable Maintenance' : 'Enable Maintenance'}</Button>}
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
       </div>
@@ -218,24 +217,10 @@ const DeveloperSettings: React.FC = () => {
                 <h3 className="text-xl font-black text-gray-900">Maintenance Mode</h3>
                 <p className="mt-1 text-sm text-gray-500">When enabled, all non-developer users are redirected to the maintenance page and login is restricted to developer users only.</p>
               </div>
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 md:col-span-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Maintenance Enabled</span>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={maintenanceEnabled}
-                      onChange={() => setMaintenanceEnabled((current) => !current)}
-                      className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{maintenanceEnabled ? 'Maintenance mode is currently enabled.' : 'Maintenance mode is currently disabled.'}</span>
-                  </div>
-                </label>
-              </div>
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
-                <p className="font-semibold text-gray-900">Status</p>
-                <p>{maintenanceEnabled ? 'Maintenance mode is active. Non-developer users are blocked from signing in.' : 'Maintenance mode is inactive.'}</p>
-                <p className="mt-2">When central license sync is configured, maintenance status will also be persisted to the central API if possible.</p>
+              <div>
+                <Button onClick={saveMaintenanceMode} variant="primary">
+                  {maintenanceEnabled ? 'Disable Maintenance' : 'Enable Maintenance'}
+                </Button>
               </div>
             </section>
           )}

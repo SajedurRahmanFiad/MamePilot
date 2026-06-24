@@ -881,7 +881,7 @@ ON DUPLICATE KEY UPDATE
   logo_height = VALUES(logo_height),
   footer = VALUES(footer);
 INSERT INTO system_defaults (id, records_per_page, white_label, theme_color)
-VALUES ('defaults-default', 10, 0, '#0f2f57')
+VALUES ('defaults-default', 10, 0, '#294b57')
 ON DUPLICATE KEY UPDATE
   records_per_page = VALUES(records_per_page),
   white_label = VALUES(white_label),
