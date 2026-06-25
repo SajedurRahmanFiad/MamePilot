@@ -100,6 +100,7 @@ export interface PermissionsSettings {
 export enum OrderStatus {
   ON_HOLD = 'On Hold',
   PROCESSING = 'Processing',
+  COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
   RETURNED = 'Returned',
@@ -235,9 +236,11 @@ export interface Order {
     created: string;
     courier?: string;
     processing?: string;
+    packed?: string;
     picked?: string;
     completed?: string;
     returned?: string;
+    cancelled?: string;
     payment?: string;
   };
   paidAmount: number;

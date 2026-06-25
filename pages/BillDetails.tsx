@@ -69,6 +69,16 @@ const BillDetails: React.FC = () => {
   const canMarkCurrentBillPaid = canAccessRecord(bill.createdBy, 'bills.markPaidOwn', 'bills.markPaidAny');
   const canCancelCurrentBill = canAccessRecord(bill.createdBy, 'bills.cancelOwn', 'bills.cancelAny');
 
+  // Calculate payment status
+  const getPaymentStatus = () => {
+    const dueAmount = bill.total - bill.paidAmount;
+    if (bill.paidAmount === 0) return 'Unpaid';
+    if (dueAmount > 0) return 'Partially Paid';
+    if (dueAmount === 0) return 'Paid';
+    if (dueAmount < 0) return 'Overpaid';
+    return 'Unpaid';
+  };
+
   const updateStatus = async (newStatus: BillStatus, historyKey?: keyof Exclude<Bill['history'], undefined>, historyText?: string) => {
     if (!bill) return;
     try {
@@ -366,25 +376,62 @@ const BillDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Sidebar Lifecycle Sections */}
+        {/* Sidebar Payment & Lifecycle Sections */}
         <div className="space-y-6">
-          {/* Creation Section */}
+          {/* Payment Section */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">1. Creation</h3>
-              <div className="p-1 bg-[var(--primary-soft,#ebf4ff)] text-white rounded-full">{ICONS.Plus}</div>
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                Payment
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-wider">
+                  {getPaymentStatus()}
+                </span>
+              </h3>
+              <div className="p-1 bg-[var(--primary-soft,#ebf4ff)] text-white rounded-full">{ICONS.Banking}</div>
             </div>
-            <div className="p-5">
-              <p className="text-xs text-gray-500 leading-relaxed font-medium">
-                {bill.history?.created || 'Creation information unavailable'}
-              </p>
+            <div className="p-5 space-y-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-xs text-gray-500 font-medium">Total Amount</span>
+                  <span className="font-bold text-gray-900">{formatCurrency(bill.total)}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                  <span className="text-xs text-gray-500 font-medium">Received</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(bill.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                  <span className="text-xs text-gray-500 font-medium">Refunded</span>
+                  <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                  <span className="text-xs text-gray-500 font-medium">Due Amount</span>
+                  <span className={`font-bold ${bill.total - bill.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {formatCurrency(Math.max(bill.total - bill.paidAmount, 0))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={openPayment}
+                  disabled={!canMarkCurrentBillPaid || bill.paidAmount >= bill.total}
+                  className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm`}
+                >
+                  Add Payment
+                </button>
+                <button
+                  className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm"
+                >
+                  Issue Refund
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Processing Section */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">2. Processing</h3>
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Processing</h3>
               <div className={`p-1 rounded-full ${bill.status === BillStatus.PROCESSING ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
                 {ICONS.ChevronRight}
               </div>
@@ -409,7 +456,7 @@ const BillDetails: React.FC = () => {
           {/* Received Section */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">3. Received</h3>
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Received</h3>
               <div className={`p-1 rounded-full ${bill.status === BillStatus.RECEIVED ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'}`}>
                 {ICONS.ChevronRight}
               </div>
@@ -430,59 +477,83 @@ const BillDetails: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Payment Section */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">4. Payment</h3>
-              <div className={`p-1 rounded-full ${bill.paidAmount > 0 ? 'bg-[#ebf4ff] text-white' : 'bg-gray-200 text-gray-400'}`}>
-                {ICONS.Banking}
+      {/* Activity Timeline Section - Full Width */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 bg-gray-50 border-b">
+          <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Activity Timeline</h3>
+        </div>
+        <div className="p-5 space-y-4">
+          {bill.history?.created && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100">
+                  {ICONS.Plus}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-500 leading-relaxed font-medium">{bill.history.created}</p>
               </div>
             </div>
-            <div className="p-5 space-y-3">
-              {bill.paidAmount > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-blue-600 leading-relaxed font-bold bg-[#ebf4ff] p-3 rounded-xl">
-                    {bill.history?.paid}
-                  </p>
-                  {bill.paidAt && (
-                    <p className="text-xs text-gray-500 leading-relaxed font-medium">
-                      Payment Date: {new Date(bill.paidAt).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </p>
-                  )}
-                  {bill.paidAmount < bill.total && (
-                    <>
-                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-100 mt-2">
-                        <p className="text-[10px] font-black text-yellow-600 uppercase">Remaining Amount</p>
-                        <p className="text-lg font-black text-yellow-700">{formatCurrency(bill.total - bill.paidAmount)}</p>
-                      </div>
-                      <button 
-                        onClick={openPayment}
-                        className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                        disabled={!canMarkCurrentBillPaid}
-                      >
-                        Add Balance Payment
-                      </button>
-                    </>
-                  )}
+          )}
+          
+          {bill.history?.processing && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100">
+                  {ICONS.ChevronRight}
                 </div>
-              ) : (
-                <div className="space-y-4 text-center">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-[10px] font-black text-gray-400 uppercase">Amount Due</p>
-                    <p className="text-lg font-black text-gray-900">{formatCurrency(bill.total - bill.paidAmount)}</p>
-                  </div>
-                  <button 
-                    onClick={openPayment}
-                    className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                    disabled={!canMarkCurrentBillPaid}
-                  >
-                    Record Payment
-                  </button>
-                </div>
-              )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-700 leading-relaxed font-bold">{bill.history.processing}</p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {bill.history?.received && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-emerald-100">
+                  {ICONS.Check}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-emerald-700 leading-relaxed font-bold">{bill.history.received}</p>
+              </div>
+            </div>
+          )}
+
+          {bill.history?.paid && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-emerald-100">
+                  {ICONS.Banking}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-emerald-700 leading-relaxed font-bold">{bill.history.paid}</p>
+              </div>
+            </div>
+          )}
+
+          {bill.history?.cancelled && (
+            <div className="flex gap-3">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-red-100">
+                  {ICONS.Close}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-red-700 leading-relaxed font-bold">{bill.history.cancelled}</p>
+              </div>
+            </div>
+          )}
+
+          {!bill.history?.created && !bill.history?.processing && !bill.history?.received && !bill.history?.paid && !bill.history?.cancelled && (
+            <p className="text-xs text-gray-400 text-center py-4">No activity recorded yet</p>
+          )}
         </div>
       </div>
 

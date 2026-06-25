@@ -73,7 +73,8 @@ export const ICONS = {
   Bell: <Bell size={20} />,
   Help: <CircleHelp size={18} />,
   Close: <X size={18} />,
-  Clock: <Clock3 size={18} />
+  Clock: <Clock3 size={18} />,
+  Return: <RotateCcw size={20} />
 };
 
 export const formatCurrency = (amount: number) => {
@@ -93,9 +94,11 @@ export const getStatusColor = (status: string): string => {
     'COMPLETED': 'bg-green-100 text-green-600',
     'RETURNED': 'bg-orange-100 text-orange-700',
     'CANCELLED': 'bg-red-100 text-red-600',
+    'COURIER_ASSIGNED': 'bg-blue-100 text-blue-600',
     'RECEIVED': 'bg-green-100 text-green-600',
     'On Hold': 'bg-gray-100 text-gray-600',
     'Processing': 'bg-blue-100 text-blue-600',
+    'Courier assigned': 'bg-blue-100 text-blue-600',
     'Picked': 'bg-purple-100 text-purple-600',
     'Completed': 'bg-green-100 text-green-600',
     'Returned': 'bg-orange-100 text-orange-700',

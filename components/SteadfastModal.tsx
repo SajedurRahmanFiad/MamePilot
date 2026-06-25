@@ -160,6 +160,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         const historyText = `Sent to Steadfast by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}${trackingOrConsignment ? ` (Tracking: ${trackingOrConsignment})` : ''}${courierStatus ? ` (Submit status: ${courierStatus})` : ''}`;
         console.log('[SteadfastModal] Setting courier history:', historyText);
         const updates: any = {
+          status: OrderStatus.COURIER_ASSIGNED,
           history: {
             ...order.history,
             courier: historyText,

@@ -166,6 +166,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
       const historyText = historyParts.map((part, index) => (index === 0 ? part : `(${part})`)).join(' ');
 
       const updates: any = {
+        status: OrderStatus.COURIER_ASSIGNED,
         history: {
           ...order.history,
           courier: historyText,

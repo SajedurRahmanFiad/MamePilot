@@ -530,7 +530,7 @@ final class CourierApi extends BaseService
                 WHERE deleted_at IS NULL
                   AND carrybee_consignment_id IS NOT NULL
                   AND carrybee_consignment_id <> ''
-                  AND status IN ('On Hold', 'Processing')";
+                  AND status IN ('On Hold', 'Processing', 'Courier assigned')";
         $bindings = [];
         if (!empty($params['orderId'])) {
             $sql .= ' AND id = :id';
@@ -905,7 +905,7 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND paperfly_tracking_number IS NOT NULL
                AND paperfly_tracking_number <> ''
-               AND status IN ('On Hold', 'Processing')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned')"
         );
 
         $checked = 0;
@@ -969,7 +969,7 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND steadfast_consignment_id IS NOT NULL
                AND steadfast_consignment_id <> ''
-               AND status IN ('On Hold', 'Processing')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned')"
         );
 
         $checked = 0;

@@ -2076,6 +2076,7 @@ final class OperationsApi extends BaseService
         $statusKeyMap = [
             'On Hold' => 'onHold',
             'Processing' => 'processing',
+            'Courier assigned' => 'processing',
             'Picked' => 'picked',
             'Completed' => 'completed',
             'Returned' => 'returned',
@@ -2387,6 +2388,9 @@ final class OperationsApi extends BaseService
 
         foreach ($statusRows as $row) {
             $status = trim((string) ($row['status'] ?? ''));
+            if ($status === 'Courier assigned') {
+                $status = 'Processing';
+            }
             if (!array_key_exists($status, $statusCounts)) {
                 continue;
             }
@@ -5848,7 +5852,7 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Target status is required.');
         }
 
-        $statusOrder = ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'];
+        $statusOrder = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'];
 
         if (!in_array($targetStatus, $statusOrder, true)) {
             throw new RuntimeException('Invalid target status.');

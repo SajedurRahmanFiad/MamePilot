@@ -52,6 +52,11 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
     barClass: 'bg-sky-500',
     trackClass: 'bg-sky-100',
   },
+  [OrderStatus.COURIER_ASSIGNED]: {
+    valueClass: 'text-blue-600',
+    barClass: 'bg-blue-600',
+    trackClass: 'bg-blue-100',
+  },
   [OrderStatus.PICKED]: {
     valueClass: 'text-cyan-500',
     barClass: 'bg-cyan-500',

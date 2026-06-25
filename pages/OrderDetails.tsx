@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
 import { OrderStatus, Order } from '../types';
 import { formatCurrency, ICONS, getStatusColor } from '../constants';
-import { Button, FraudCheckModal, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder } from '../src/hooks/useMutations';
@@ -71,6 +71,150 @@ const OrderDetails: React.FC = () => {
   const [showFraudCheckModal, setShowFraudCheckModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
   const [isActionOpen, setIsActionOpen] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showStatusTransitionModal, setShowStatusTransitionModal] = useState(false);
+  const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
+  const [showManualCourierModal, setShowManualCourierModal] = useState(false);
+  const [manualCourierNote, setManualCourierNote] = useState('');
+  const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
+  type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete';
+  type OrderStatusTransition = {
+    action: OrderStatusTransitionAction;
+    label: string;
+    nextStatus: OrderStatus;
+    historyKey?: keyof Order['history'];
+    description: string;
+    enabled: boolean;
+  };
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Returned' | 'Cancelled';
+  type OrderTimelineItem = {
+    label: OrderTimelineLabel;
+    historyKey: keyof Order['history'];
+    description: string;
+  };
+  const [pendingStatusTransition, setPendingStatusTransition] = useState<OrderStatusTransition | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: getTodayDate(),
+    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    accountId: db.settings.defaults.defaultAccountId || '',
+    amount: 0
+  });
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const timelineItems = React.useMemo<OrderTimelineItem[]>(
+    () => [
+      { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
+      { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
+      { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
+      { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
+      { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
+      { label: 'Returned', historyKey: 'returned', description: 'The order has been returned.' },
+      { label: 'Cancelled', historyKey: 'cancelled', description: 'The order has been cancelled and will not be fulfilled.' },
+    ],
+    []
+  );
+
+  const getTimelineIndex = (order?: Order) => {
+    if (!order) return 0;
+    if (order.status === OrderStatus.CANCELLED) return timelineItems.length - 1;
+    if (order.status === OrderStatus.RETURNED) return timelineItems.findIndex((item) => item.label === 'Returned');
+    if (order.status === OrderStatus.COMPLETED) return timelineItems.findIndex((item) => item.label === 'Delivered');
+    if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
+    if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
+    if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
+    return timelineItems.findIndex((item) => item.label === 'Created');
+  };
+
+  const parseHistoryTimestamp = (value?: string | null) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const onAtMatch = raw.match(/on\s+(.+?),\s*at\s*(\d{1,2}:\d{2}(?::\d{2})?)/i);
+    if (onAtMatch) {
+      const datePart = onAtMatch[1].trim();
+      const timePart = onAtMatch[2].trim();
+      const parsed = new Date(`${datePart} ${timePart}`);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    if (isoMatch) {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    const dateOnly = new Date(raw);
+    if (!Number.isNaN(dateOnly.getTime())) return dateOnly;
+
+    return null;
+  };
+
+  const formatStatusTimestamp = (date: Date) => {
+    const now = new Date();
+    const local = new Date(date);
+    const isToday = local.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = local.toDateString() === yesterday.toDateString();
+
+    const time = local.toLocaleTimeString('en-BD', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    if (isToday) return time;
+    if (isYesterday) return `Yesterday, ${time}`;
+
+    return `${local.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}, ${time}`;
+  };
+
+  const getStatusSuffix = (item: OrderTimelineItem, index: number) => {
+    if (index === timelineIndex) {
+      return ' (In Progress)';
+    }
+    if (index > timelineIndex) {
+      return '';
+    }
+
+    if (!order) return '';
+
+    const rawValue = (() => {
+      switch (item.label) {
+        case 'Created':
+          return order.createdAt || order.history?.created;
+        case 'Processing':
+          return order.processedAt || order.history?.processing;
+        case 'Courier assigned':
+          return order.history?.courier;
+        case 'Picked up':
+          return order.history?.picked;
+        case 'Delivered':
+          return order.completedAt || order.history?.completed;
+        case 'Returned':
+          return order.history?.returned;
+        case 'Cancelled':
+          return order.history?.cancelled;
+        default:
+          return item.historyKey ? order.history?.[item.historyKey] : '';
+      }
+    })();
+
+    const parsed = parseHistoryTimestamp(rawValue);
+    if (parsed) {
+      return ` (${formatStatusTimestamp(parsed)})`;
+    }
+
+    return '';
+  };
+
+  const timelineIndex = React.useMemo(
+    () => getTimelineIndex(order),
+    [order]
+  );
+
+  const toggleSection = (section: string) => {
+    setExpandedSection((current) => (current === section ? null : section));
+  };
   
   // Get customer and created by user from query results
   // `customer` is obtained via `useCustomer` above
@@ -84,6 +228,16 @@ const OrderDetails: React.FC = () => {
     [customer?.phone, order?.customerPhone],
   );
   const normalizedOrderPhone = normalizePhoneSearchValue(orderPhone);
+  
+  // Calculate payment status
+  const getPaymentStatus = () => {
+    const dueAmount = order.total - order.paidAmount;
+    if (order.paidAmount === 0) return 'Unpaid';
+    if (dueAmount > 0) return 'Partially Paid';
+    if (dueAmount === 0) return 'Paid';
+    if (dueAmount < 0) return 'Overpaid';
+    return 'Unpaid';
+  };
   
   const loading = orderLoading;
 
@@ -128,10 +282,20 @@ const OrderDetails: React.FC = () => {
   const canUseCourierAutomation = hasCapability('courier_automation');
   const canRunFraudChecker = canUseFraudChecker && /^0\d{10}$/.test(normalizedOrderPhone);
   const courierHistoryLower = String(order.history?.courier || '').toLowerCase();
+
   const sentToSteadfast = courierHistoryLower.includes('steadfast') || !!order.steadfastConsignmentId;
   const sentToCarryBee = courierHistoryLower.includes('carrybee') || !!order.carrybeeConsignmentId;
   const sentToPaperfly = courierHistoryLower.includes('paperfly') || !!order.paperflyTrackingNumber;
   const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly;
+  const canSendCurrentOrderToCourier =
+    canSendCurrentOrderToCourierPermission
+    && canUseCourierAutomation
+    && order.status !== OrderStatus.PICKED
+    && order.status !== OrderStatus.COMPLETED
+    && order.status !== OrderStatus.RETURNED
+    && order.status !== OrderStatus.CANCELLED
+    && order.status !== OrderStatus.ON_HOLD
+    && !sentToAnyCourier;
 
   const updateStatus = async (newStatus: OrderStatus, historyKey?: keyof Order['history'], historyText?: string) => {
     if (!order) return;
@@ -146,10 +310,20 @@ const OrderDetails: React.FC = () => {
 
       await updateMutation.mutateAsync({ id: id!, updates });
       setIsActionOpen(false);
+      toast.success('Order status updated successfully');
     } catch (err) {
       console.error('Failed to update order status:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to update order status');
     }
+  };
+
+  const markConfirmed = async () => {
+    if (!canMoveCurrentOrderToProcessing) {
+      toast.error('You do not have permission to confirm this order.');
+      return;
+    }
+    const historyText = `Confirmed by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    await updateStatus(order.status, 'payment', historyText);
   };
 
   const markProcessing = async () => {
@@ -161,6 +335,66 @@ const OrderDetails: React.FC = () => {
     await updateStatus(OrderStatus.PROCESSING, 'processing', historyText);
   };
 
+  const markPacked = async () => {
+    if (!canMoveCurrentOrderToProcessing) {
+      toast.error('You do not have permission to mark this order packed.');
+      return;
+    }
+    const historyText = `Marked as packed by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    await updateStatus(order.status, 'packed', historyText);
+  };
+
+  const assignCourier = async (details?: string) => {
+    if (!canSendCurrentOrderToCourier) {
+      toast.error('You do not have permission to assign a courier to this order.');
+      return;
+    }
+    const noteText = details ? ` ${details.trim()}` : '';
+    const historyText = `Courier assigned by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}.${noteText}`;
+    await updateStatus(OrderStatus.COURIER_ASSIGNED, 'courier', historyText);
+  };
+
+  const openCourierSelectionModal = () => {
+    setShowCourierSelectionModal(true);
+  };
+
+  const closeCourierSelectionModal = () => {
+    setShowCourierSelectionModal(false);
+  };
+
+  const handleSelectCourierOption = (option: 'steadfast' | 'carrybee' | 'paperfly' | 'manual') => {
+    setShowCourierSelectionModal(false);
+    if (option === 'steadfast') {
+      setShowSteadfast(true);
+    } else if (option === 'carrybee') {
+      setShowCarryBee(true);
+    } else if (option === 'paperfly') {
+      setShowPaperfly(true);
+    } else {
+      setShowManualCourierModal(true);
+    }
+  };
+
+  const handleAssignManualCourier = async () => {
+    if (!order) return;
+    if (!manualCourierNote.trim()) {
+      toast.error('Please enter courier assignment details.');
+      return;
+    }
+    setIsAssigningManualCourier(true);
+    try {
+      await assignCourier(manualCourierNote);
+      setShowManualCourierModal(false);
+      setManualCourierNote('');
+      toast.success('Courier assigned successfully.');
+    } catch (err) {
+      console.error('Failed to assign courier manually:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to assign courier');
+    } finally {
+      setIsAssigningManualCourier(false);
+    }
+  };
+
   const markPicked = async () => {
     if (!canMoveCurrentOrderToPickedPermission) {
       toast.error('You do not have permission to mark orders as picked.');
@@ -169,6 +403,140 @@ const OrderDetails: React.FC = () => {
     const historyText = `Marked as picked by courier, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
     await updateStatus(OrderStatus.PICKED, 'picked', historyText);
   };
+
+  const statusTransition = useMemo<OrderStatusTransition | null>(() => {
+    if (!order) return null;
+    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED) {
+      return null;
+    }
+
+    const hasConfirmed = Boolean(order.paidAt || order.history?.payment);
+    const hasProcessing = order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.processing);
+    const hasPacked = Boolean(order.history?.packed);
+    const hasCourierAssigned = order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.courier);
+    const hasPicked = Boolean(order.history?.picked) || order.status === OrderStatus.PICKED;
+
+    if (!hasConfirmed) {
+      return {
+        action: 'confirm' as const,
+        label: 'Confirm',
+        nextStatus: order.status,
+        historyKey: 'payment',
+        description: 'Confirm the order and mark payment as verified.',
+        enabled: canMoveCurrentOrderToProcessing,
+      };
+    }
+
+    if (!hasProcessing) {
+      return {
+        action: 'process' as const,
+        label: 'Start processing',
+        nextStatus: OrderStatus.PROCESSING,
+        historyKey: 'processing',
+        description: 'Move the order into processing and begin fulfillment.',
+        enabled: canMoveCurrentOrderToProcessing,
+      };
+    }
+
+    if (!hasCourierAssigned) {
+      return {
+        action: 'assignCourier' as const,
+        label: 'Assign courier',
+        nextStatus: order.status,
+        historyKey: 'courier',
+        description: 'Assign a courier for pickup and delivery.',
+        enabled: canSendCurrentOrderToCourier,
+      };
+    }
+
+    if (!hasPicked) {
+      return {
+        action: 'pick' as const,
+        label: 'Mark picked',
+        nextStatus: OrderStatus.PICKED,
+        historyKey: 'picked',
+        description: 'Record when the courier picks up the order.',
+        enabled: canMoveCurrentOrderToPickedPermission,
+      };
+    }
+
+    return {
+      action: 'complete' as const,
+      label: 'Complete order',
+      nextStatus: OrderStatus.COMPLETED,
+      description: 'Complete the order by marking it delivered or returned.',
+      enabled: canFinalizeOrders,
+    };
+  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders]);
+
+  const handleConfirmStatusTransition = async () => {
+    if (!pendingStatusTransition) return;
+    setShowStatusTransitionModal(false);
+    setPendingStatusTransition(null);
+
+    if (pendingStatusTransition.action === 'confirm') {
+      await markConfirmed();
+    } else if (pendingStatusTransition.action === 'process') {
+      await markProcessing();
+    } else if (pendingStatusTransition.action === 'assignCourier') {
+      setShowCourierSelectionModal(true);
+    } else if (pendingStatusTransition.action === 'pick') {
+      await markPicked();
+    } else if (pendingStatusTransition.action === 'complete') {
+      setShowCompletionModal(true);
+    }
+  };
+
+  const handleCancelStatusTransition = () => {
+    setPendingStatusTransition(null);
+    setShowStatusTransitionModal(false);
+  };
+
+  const getNextStatusTransitionCTA = () => {
+    if (!statusTransition) return null;
+    const transition = statusTransition;
+    return (
+      <div className="pt-4">
+        <button
+          type="button"
+          disabled={!transition.enabled}
+          onClick={() => {
+            if (transition.action === 'assignCourier') {
+              setShowCourierSelectionModal(true);
+              return;
+            }
+            setPendingStatusTransition(transition);
+            setShowStatusTransitionModal(true);
+          }}
+          className={`w-full rounded-xl py-3 text-sm font-bold transition ${transition.enabled ? `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}` : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+        >
+          {transition.label}
+        </button>
+      </div>
+    );
+  };
+
+  const transitionModalMessage = pendingStatusTransition
+    ? `Are you sure you want to ${pendingStatusTransition.label.toLowerCase()}? This will move the order to ${pendingStatusTransition.nextStatus}.`
+    : '';
+
+  const transitionModalConfirmText = pendingStatusTransition?.label || 'Confirm';
+
+  const transitionModalTitle = pendingStatusTransition
+    ? `Confirm ${pendingStatusTransition.label}`
+    : 'Confirm status change';
+
+  const transitionModalVariant = pendingStatusTransition?.action === 'complete' ? 'warning' : 'info';
+
+  const transitionModalDescription = pendingStatusTransition?.description || 'This action will advance the order to the next stage.';
+
+  const transitionModalFooterText = pendingStatusTransition?.description || '';
+
+  const transitionModalMessageText = pendingStatusTransition?.description || 'This action will advance the order to the next stage.';
+
+  const transitionModalBodyMessage = pendingStatusTransition
+    ? `${pendingStatusTransition.description} ${transitionModalMessage}`
+    : '';
 
   const handleCompletePickedOrder = async () => {
     if (!order) return;
@@ -363,16 +731,7 @@ const OrderDetails: React.FC = () => {
     setIsActionOpen(false);
   };
 
-  const canSendCurrentOrderToCourier =
-    canSendCurrentOrderToCourierPermission
-    && canUseCourierAutomation
-    && order.status !== OrderStatus.PICKED
-    && order.status !== OrderStatus.COMPLETED
-    && order.status !== OrderStatus.RETURNED
-    && order.status !== OrderStatus.CANCELLED
-    && order.status !== OrderStatus.ON_HOLD
-    && !sentToAnyCourier;
-  const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && order.status === OrderStatus.PROCESSING;
+  const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED);
   const canFinalizeCurrentOrder = canFinalizeOrders && order.status === OrderStatus.PICKED;
   const canShowActionsMenu =
     canEditCurrentOrder
@@ -408,13 +767,13 @@ const OrderDetails: React.FC = () => {
           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
             {order.status}
           </span>
-          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
+          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToSteadfast && (
             <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
           )}
-          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToCarryBee && (
+          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToCarryBee && (
             <img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full" />
           )}
-          {canUseCourierAutomation && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToPaperfly && (
+          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToPaperfly && (
             <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
           )}
         </div>
@@ -608,62 +967,186 @@ const OrderDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Sidebar Lifecycle Dropdowns */}
+        {/* Sidebar Payment Section */}
         <div className="space-y-6">
-          {/* Create Section */}
+          {/* Payment Section */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">1. Creation</h3>
-              <div className="p-1 bg-[#ebf4ff]0 text-white rounded-full">{ICONS.Plus}</div>
-            </div>
-            <div className="p-5">
-              <p className="text-xs text-gray-500 leading-relaxed font-medium">
-                {order.history.created || `Created by ${createdByUser?.name || 'Unknown'} on ${order.orderDate}`}
-              </p>
-            </div>
+            <button
+              type="button"
+              className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+              onClick={() => toggleSection('payment')}
+              aria-expanded={expandedSection === 'payment'}
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                  Payment
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-wider">
+                    {getPaymentStatus()}
+                  </span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-[var(--primary-soft,#ebf4ff)] text-white rounded-full">{ICONS.Banking}</div>
+                <div className={`transition-transform duration-200 ${expandedSection === 'payment' ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
+                </div>
+              </div>
+            </button>
+            {expandedSection === 'payment' && (
+              <div className="p-5 space-y-4">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-xs text-gray-500 font-medium">Total Amount</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(order.total)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Received</span>
+                    <span className="font-bold text-emerald-600">{formatCurrency(order.paidAmount)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Due Amount</span>
+                    <span className={`font-bold ${order.total - order.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(Math.max(order.total - order.paidAmount, 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Refunded</span>
+                    <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <button
+                    onClick={() => setShowPaymentModal(true)}
+                    className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm`}
+                  >
+                    Add Payment
+                  </button>
+                  <button
+                    className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm"
+                  >
+                    Issue Refund
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Process Section */}
-          {order.history?.processing || canMoveCurrentOrderToProcessing || canSendCurrentOrderToCourier || canUseFraudChecker ? (
+          {/* Order Status Section */}
+          {order ? (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">2. Processing</h3>
-              <div className={`p-1 rounded-full ${order.history.processing ? 'bg-[#ebf4ff]0 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                {ICONS.ChevronRight}
-              </div>
+              <button
+                type="button"
+                className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+                onClick={() => toggleSection('status')}
+                aria-expanded={expandedSection === 'status'}
+              >
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+                  Order Status ({Math.round((timelineIndex / Math.max(1, timelineItems.length - 1)) * 100)}%)
+                </h3>
+                <div className="flex items-center gap-2">
+                  <div className={`p-1 rounded-full ${order.status !== OrderStatus.ON_HOLD ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                  <div className={`transition-transform duration-200 ${expandedSection === 'status' ? 'rotate-90' : ''}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                </div>
+              </button>
+              {expandedSection === 'status' && (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <div className="mb-3 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                      <span>Progress</span>
+                      <span>{Math.round((timelineIndex / Math.max(1, timelineItems.length - 1)) * 100)}%</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                        style={{ width: `${Math.round((timelineIndex / Math.max(1, timelineItems.length - 1)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-0.5">
+                    {timelineItems.map((item, index) => {
+                      const isActive = index === timelineIndex;
+                      const isPast = index < timelineIndex;
+
+                      return (
+                        <div
+                          key={item.label}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-1 text-left ${isActive ? 'bg-emerald-50' : ''}`}
+                        >
+                          <div className="flex h-5 w-5 items-center justify-center">
+                            {isPast ? (
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                                {ICONS.Check}
+                              </span>
+                            ) : isActive ? (
+                              <span className="flex h-3.5 w-3.5 rounded-full bg-emerald-600 shadow-[0_0_0_6px_rgba(16,185,129,0.12)] animate-pulse" />
+                            ) : (
+                              <span className="mx-auto h-2.5 w-2.5 rounded-full bg-gray-300" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-semibold ${isActive ? 'text-gray-900' : isPast ? 'text-gray-700' : 'text-gray-500'}`}>
+                              {item.label}
+                              <span className="text-xs font-medium text-gray-500">{getStatusSuffix(item, index)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {getNextStatusTransitionCTA()}
+                </div>
+              )}
             </div>
-            <div className="p-5 space-y-4">
-                {canUseFraudChecker && (
-                  <button
-                    type="button"
-                    onClick={openFraudChecker}
-                    disabled={!canRunFraudChecker}
-                    className={`w-full rounded-xl py-3 font-bold shadow-md transition-all active:scale-95 ${canRunFraudChecker ? `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}` : 'cursor-not-allowed bg-gray-100 text-gray-400 shadow-none'}`}
-                  >
-                    Check Courier History
-                  </button>
-                )}
-                {order.history.processing ? (
-                  <p className={`text-xs ${theme.colors.primary[600]} leading-relaxed font-bold bg-[var(--primary-soft,#ebf4ff)] p-3 rounded-xl`}>
-                    {order.history.processing}
-                  </p>
-                ) : (
-                  canMoveCurrentOrderToProcessing && (
+          ) : null}
+
+          {/* Courier Section */}
+          {order.history.picked || canMoveCurrentOrderToPickedPermission || canSendCurrentOrderToCourier ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <button
+                type="button"
+                className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+                onClick={() => toggleSection('courier')}
+                aria-expanded={expandedSection === 'courier'}
+              >
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Courier</h3>
+                <div className="flex items-center gap-2">
+                  <div className={`p-1 rounded-full ${order.history.picked ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
+                    {ICONS.Courier}
+                  </div>
+                  <div className={`transition-transform duration-200 ${expandedSection === 'courier' ? 'rotate-90' : ''}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                </div>
+              </button>
+              {expandedSection === 'courier' && (
+                <div className="p-5 space-y-4">
+                  {order.history.picked ? (
+                    <p className="text-xs text-purple-600 leading-relaxed font-bold bg-purple-50 p-3 rounded-xl">
+                      {order.history.picked}
+                    </p>
+                  ) : canMoveCurrentOrderToPickedPermission ? (
                     <button 
-                      disabled={order.status !== OrderStatus.ON_HOLD}
-                      onClick={markProcessing}
+                      disabled={!canMarkCurrentOrderPicked}
+                      onClick={markPicked}
                       className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
                     >
-                      Mark as Processing
+                      Mark as Picked
                     </button>
-                  )
-                )}
+                  ) : null}
 
-                {canUseCourierAutomation && sentToAnyCourier ? (
-                  <p className="text-xs text-gray-700 leading-relaxed font-bold bg-gray-50 p-3 rounded-xl">{order.history.courier}</p>
-                ) : (
-                  canSendCurrentOrderToCourier && (
-                    <>
+                  {order.history.courier && (
+                    <p className="text-xs text-gray-700 leading-relaxed font-bold bg-gray-50 p-3 rounded-xl">
+                      {order.history.courier}
+                    </p>
+                  )}
+
+                  {canUseCourierAutomation && !sentToAnyCourier && canSendCurrentOrderToCourier && (
+                    <div className="space-y-3">
                       <button 
                         onClick={() => setShowSteadfast(true)}
                         className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2`}
@@ -682,97 +1165,77 @@ const OrderDetails: React.FC = () => {
                       >
                         <img src="/uploads/paperfly.png" alt="Paperfly" className="w-5 h-5 rounded-full" /> Add to Paperfly
                       </button>
-                    </>
-                  )
-                )}
-            </div>
-            </div>
-          ) : null}
-
-          {/* Picked Section */}
-          {order.history.picked || canMoveCurrentOrderToPickedPermission ? (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">3. Courier Picked</h3>
-              <div className={`p-1 rounded-full ${order.history.picked ? 'bg-[#ebf4ff]0 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                {ICONS.Courier}
-              </div>
-            </div>
-            <div className="p-5">
-                {order.history.picked ? (
-                  <p className="text-xs text-purple-600 leading-relaxed font-bold bg-purple-50 p-3 rounded-xl">
-                    {order.history.picked}
-                  </p>
-                ) : (
-                  canMoveCurrentOrderToPickedPermission && (
-                    <button 
-                      disabled={!canMarkCurrentOrderPicked}
-                      onClick={markPicked}
-                      className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                    >
-                      Mark as Picked
-                    </button>
-                  )
-                )}
-            </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : null}
 
           {/* Completion Section */}
           {completionHistory || canFinalizeOrders ? (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">4. Completion</h3>
-                <div className={`p-1 rounded-full ${order.status === OrderStatus.COMPLETED || order.status === OrderStatus.RETURNED ? 'bg-[#ebf4ff]0 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                  {ICONS.Check}
-                </div>
-              </div>
-              <div className="p-5 space-y-3">
-                {completionHistory ? (
-                  <div className="space-y-2">
-                    {order.history.completed && (
-                      <p className="text-xs ${theme.colors.primary[600]} leading-relaxed font-bold bg-[#ebf4ff] p-3 rounded-xl">
-                        {order.history.completed}
-                      </p>
-                    )}
-                    {order.history.payment && (
-                      <p className="text-xs text-emerald-600 leading-relaxed font-bold bg-emerald-50 p-3 rounded-xl">
-                        {order.history.payment}
-                      </p>
-                    )}
-                    {order.history.returned && (
-                      <p className="text-xs text-orange-700 leading-relaxed font-bold bg-orange-50 p-3 rounded-xl">
-                        {order.history.returned}
-                      </p>
-                    )}
+              <button
+                type="button"
+                className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+                onClick={() => toggleSection('completion')}
+                aria-expanded={expandedSection === 'completion'}
+              >
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Completion</h3>
+                <div className="flex items-center gap-2">
+                  <div className={`p-1 rounded-full ${order.status === OrderStatus.COMPLETED || order.status === OrderStatus.RETURNED ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
+                    {ICONS.Check}
                   </div>
-                ) : (
-                  canFinalizeOrders && (
-                    <div className="space-y-4 text-center">
-                      <div className="p-4 bg-gray-50 rounded-lg">
-                        <p className="text-[10px] font-black text-gray-400 uppercase">Amount Due</p>
-                        <p className="text-lg font-black text-gray-900">{formatCurrency(order.total - order.paidAmount)}</p>
-                      </div>
-                      <button 
-                        onClick={openCompletion}
-                        disabled={!canFinalizeCurrentOrder}
-                        className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                      >
-                        Finalize Order
-                      </button>
-                      {order.status !== OrderStatus.PICKED && (
-                        <p className="text-xs font-medium text-gray-400">
-                          Picked orders can be finalized as delivered or returned from here.
+                  <div className={`transition-transform duration-200 ${expandedSection === 'completion' ? 'rotate-90' : ''}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                </div>
+              </button>
+              {expandedSection === 'completion' && (
+                <div className="p-5 space-y-3">
+                  {completionHistory ? (
+                    <div className="space-y-2">
+                      {order.history.completed && (
+                        <p className="text-xs text-blue-600 leading-relaxed font-bold bg-[var(--primary-soft,#ebf4ff)] p-3 rounded-xl">
+                          {order.history.completed}
+                        </p>
+                      )}
+                      {order.history.returned && (
+                        <p className="text-xs text-orange-700 leading-relaxed font-bold bg-orange-50 p-3 rounded-xl">
+                          {order.history.returned}
                         </p>
                       )}
                     </div>
-                  )
-                )}
-              </div>
+                  ) : (
+                    canFinalizeOrders && (
+                      <div className="space-y-4 text-center">
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">Amount Due</p>
+                          <p className="text-lg font-black text-gray-900">{formatCurrency(order.total - order.paidAmount)}</p>
+                        </div>
+                        <button 
+                          onClick={openCompletion}
+                          disabled={!canFinalizeCurrentOrder}
+                          className={`w-full py-3 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
+                        >
+                          Finalize Order
+                        </button>
+                        {order.status !== OrderStatus.PICKED && (
+                          <p className="text-xs font-medium text-gray-400">
+                            Picked orders can be finalized as delivered or returned from here.
+                          </p>
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
             </div>
           ) : null}
+
         </div>
       </div>
+
 
       <OrderCompletionModal
         isOpen={showCompletionModal}
@@ -785,6 +1248,108 @@ const OrderDetails: React.FC = () => {
         allowDeliveredOutcome={canMarkCurrentOrderCompleted}
         allowReturnedOutcome={canMarkCurrentOrderReturned}
       />
+
+      <Dialog
+        isOpen={showStatusTransitionModal}
+        onClose={handleCancelStatusTransition}
+        onConfirm={handleConfirmStatusTransition}
+        title={transitionModalTitle}
+        message={transitionModalBodyMessage || 'Confirm this status change.'}
+        confirmText={transitionModalConfirmText}
+        cancelText="Cancel"
+        variant={transitionModalVariant}
+      />
+
+      {showCourierSelectionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={closeCourierSelectionModal} />
+          <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Assign Courier</h2>
+                <p className="text-sm text-gray-500">Choose a courier service or assign manually.</p>
+              </div>
+              <button onClick={closeCourierSelectionModal} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
+            </div>
+            <div className="space-y-4 p-6">
+              <button
+                type="button"
+                onClick={() => handleSelectCourierOption('steadfast')}
+                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+              >
+                <img src="/uploads/steadfast.png" alt="Steadfast" className="h-6 w-6 rounded-full" />
+                <span>Steadfast</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectCourierOption('carrybee')}
+                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+              >
+                <img src="/uploads/carrybee.png" alt="CarryBee" className="h-6 w-6 rounded-full" />
+                <span>CarryBee</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectCourierOption('paperfly')}
+                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+              >
+                <img src="/uploads/paperfly.png" alt="Paperfly" className="h-6 w-6 rounded-full" />
+                <span>Paperfly</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectCourierOption('manual')}
+                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-gray-50"
+              >
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-600">+</span>
+                <span>Other / Manual courier assignment</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showManualCourierModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setShowManualCourierModal(false)} />
+          <div className="relative w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Manual Courier Assignment</h2>
+                <p className="text-sm text-gray-500">Add a note and assign the order to a courier manually.</p>
+              </div>
+              <button onClick={() => setShowManualCourierModal(false)} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <label className="block text-sm font-semibold text-gray-700">Courier assignment details</label>
+              <textarea
+                value={manualCourierNote}
+                onChange={(e) => setManualCourierNote(e.target.value)}
+                rows={5}
+                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                placeholder="Enter courier name, pickup instructions, or booking reference"
+              />
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowManualCourierModal(false)}
+                  className="w-full sm:w-auto rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAssignManualCourier}
+                  disabled={isAssigningManualCourier}
+                  className="w-full sm:w-auto rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAssigningManualCourier ? 'Assigning...' : 'Assign Courier'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {canUseCourierAutomation && (
         <>

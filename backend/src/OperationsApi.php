@@ -1383,7 +1383,7 @@ final class OperationsApi extends BaseService
                     o.created_by AS user_id,
                     COUNT(*) AS ordersCreated,
                     SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END) AS completedOrders,
-                    SUM(CASE WHEN o.status = 'Processing' THEN 1 ELSE 0 END) AS processingOrders,
+                    SUM(CASE WHEN o.status IN ('Processing', 'Courier assigned') THEN 1 ELSE 0 END) AS processingOrders,
                     SUM(CASE WHEN o.status = 'Picked' THEN 1 ELSE 0 END) AS pickedOrders,
                     SUM(CASE WHEN o.status = 'On Hold' THEN 1 ELSE 0 END) AS onHoldOrders,
                     SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelledOrders,
@@ -2076,6 +2076,7 @@ final class OperationsApi extends BaseService
         $statusKeyMap = [
             'On Hold' => 'onHold',
             'Processing' => 'processing',
+            'Courier assigned' => 'processing',
             'Picked' => 'picked',
             'Completed' => 'completed',
             'Returned' => 'returned',
@@ -2387,6 +2388,9 @@ final class OperationsApi extends BaseService
 
         foreach ($statusRows as $row) {
             $status = trim((string) ($row['status'] ?? ''));
+            if ($status === 'Courier assigned') {
+                $status = 'Processing';
+            }
             if (!array_key_exists($status, $statusCounts)) {
                 continue;
             }
@@ -5848,7 +5852,7 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Target status is required.');
         }
 
-        $statusOrder = ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'];
+        $statusOrder = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'];
 
         if (!in_array($targetStatus, $statusOrder, true)) {
             throw new RuntimeException('Invalid target status.');
@@ -5915,10 +5919,10 @@ final class OperationsApi extends BaseService
                 $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned']);
             }
 
-            // If reverting past Picked, remove picked key
-            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
-            if ($targetIdx !== false && $targetIdx < 2) {
-                // Reverting to On Hold or Processing – remove picked
+            // If reverting before Picked, remove picked key
+            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
+            if ($targetIdx !== false && $targetIdx < 3) {
+                // Reverting to On Hold, Processing, or Courier assigned – remove picked
                 $keysToRemove[] = 'picked';
             }
             if ($targetIdx !== false && $targetIdx < 1) {
