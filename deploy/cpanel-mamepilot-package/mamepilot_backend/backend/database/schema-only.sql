@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS categories (
   type VARCHAR(32) NOT NULL,
   color VARCHAR(16) NOT NULL DEFAULT '#3B82F6',
   parent_id VARCHAR(64) NULL,
+  is_system BOOLEAN NOT NULL DEFAULT FALSE,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -840,22 +841,22 @@ ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   short_name = VALUES(short_name),
   description = VALUES(description);
-INSERT INTO categories (id, name, type, color, parent_id)
+INSERT INTO categories (id, name, type, color, parent_id, is_system)
 VALUES
-  ('income_sales', 'Sales', 'Income', '#10B981', NULL),
-  ('income_services', 'Services', 'Income', '#3B82F6', NULL),
-  ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL),
-  ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL),
-  ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL),
-  ('expense_utilities', 'Utilities', 'Expense', '#F59E0B', NULL),
-  ('expense_salaries', 'Salaries', 'Expense', '#EC4899', NULL),
-  ('expense_rent', 'Rent', 'Expense', '#6366F1', NULL),
-  ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL),
-  ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL),
-  ('product_electronics', 'Electronics', 'Product', '#3B82F6', NULL),
-  ('product_clothing', 'Clothing', 'Product', '#EC4899', NULL),
-  ('product_food', 'Food & Beverage', 'Product', '#10B981', NULL),
-  ('product_other', 'Other Products', 'Product', '#8B5CF6', NULL)
+  ('income_sales', 'Sales', 'Income', '#10B981', NULL, TRUE),
+  ('income_services', 'Services', 'Income', '#3B82F6', NULL, FALSE),
+  ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL, FALSE),
+  ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL, TRUE),
+  ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL, FALSE),
+  ('expense_utilities', 'Utilities', 'Expense', '#F59E0B', NULL, FALSE),
+  ('expense_salaries', 'Salaries', 'Expense', '#EC4899', NULL, FALSE),
+  ('expense_rent', 'Rent', 'Expense', '#6366F1', NULL, FALSE),
+  ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL, TRUE),
+  ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL, FALSE),
+  ('product_electronics', 'Electronics', 'Product', '#3B82F6', NULL, FALSE),
+  ('product_clothing', 'Clothing', 'Product', '#EC4899', NULL, FALSE),
+  ('product_food', 'Food & Beverage', 'Product', '#10B981', NULL, FALSE),
+  ('product_other', 'Other Products', 'Product', '#8B5CF6', NULL, FALSE)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   type = VALUES(type),

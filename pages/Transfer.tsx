@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { db } from '../db';
 import { formatCurrency } from '../constants';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
 import { useCreateTransaction } from '../src/hooks/useMutations';
@@ -97,7 +97,13 @@ const Transfer: React.FC = () => {
       <div className="bg-white p-8 lg:p-12 rounded-lg border border-gray-100 shadow-xl space-y-8">
         <div className="space-y-2">
           <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Amount to Transfer (BDT)</label>
-          <input type="number" className={`w-full text-lg font-black px-6 py-4 bg-[#ebf4ff] border-2 border-transparent focus:border-[#3c5a82] rounded-xl transition-all outline-none ${theme.colors.primary[600]}`} value={form.amount} onChange={e => setForm({...form, amount: parseFloat(e.target.value) || 0})} placeholder="0.00" />
+          <NumericInput 
+            value={form.amount} 
+            onChange={amount => setForm({...form, amount})} 
+            className={`text-lg ${theme.colors.primary[600]} bg-[#ebf4ff] border-2 border-transparent focus:border-[#3c5a82] rounded-xl px-6 py-4`}
+            allowDecimals={true}
+            decimalPlaces={2}
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

@@ -98,6 +98,7 @@ export interface PermissionsSettings {
 }
 
 export enum OrderStatus {
+  CREATED = 'Created',
   ON_HOLD = 'On Hold',
   PROCESSING = 'Processing',
   COURIER_ASSIGNED = 'Courier assigned',
@@ -605,6 +606,7 @@ export interface Settings {
     type: 'Income' | 'Expense' | 'Product' | 'Other';
     color: string;
     parentId?: string;
+    isSystem?: boolean;
   }[];
   paymentMethods: {
     id: string;
@@ -829,8 +831,8 @@ export interface CompletePickedOrderPayload {
   orderId: string;
   outcome: OrderCompletionOutcome;
   date: string;
-  accountId: string;
-  amount: number;
+  accountId?: string;
+  amount?: number;
   paymentMethod?: string;
   categoryId?: string;
   note?: string;

@@ -4,8 +4,9 @@ import PortalMenu from '../components/PortalMenu';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
-import { formatCurrency, ICONS, getStatusColor } from '../constants';
+import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -61,8 +62,18 @@ const Orders: React.FC = () => {
   const currentSearchParams = searchParams.toString();
   const urlPage = getPositivePageParam(searchParams.get('page'));
   const urlStatusTab = (searchParams.get('status') as OrderStatus | null) || 'All';
+  const urlStatusNot = searchParams.get('statusNot') || '';
+  const urlPaymentStatus = searchParams.get('paymentStatus') || '';
+  const urlPaymentStatusNot = searchParams.get('paymentStatusNot') || '';
+  const urlOrderNumber = searchParams.get('orderNumber') || '';
+  const urlOrderNumberNot = searchParams.get('orderNumberNot') || '';
+  const urlCustomerName = searchParams.get('customerName') || '';
+  const urlCustomerNameNot = searchParams.get('customerNameNot') || '';
+  const urlCustomerPhone = searchParams.get('customerPhone') || '';
+  const urlCustomerPhoneNot = searchParams.get('customerPhoneNot') || '';
   const urlFilterRange = (searchParams.get('range') as FilterRange | null) || 'All Time';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
+  const urlCreatedByNot = searchParams.get('createdByNot') || '';
   const urlCustomDates = {
     from: searchParams.get('from') || '',
     to: searchParams.get('to') || '',
@@ -76,7 +87,17 @@ const Orders: React.FC = () => {
   const [customDates, setCustomDates] = useState(urlCustomDates);
   const [includeTime, setIncludeTime] = useState<boolean>(urlIncludeTime);
   const [statusTab, setStatusTab] = useState<OrderStatus | 'All'>(urlStatusTab);
+  const [statusNot, setStatusNot] = useState<string>(urlStatusNot);
+  const [paymentStatus, setPaymentStatus] = useState<string>(urlPaymentStatus);
+  const [paymentStatusNot, setPaymentStatusNot] = useState<string>(urlPaymentStatusNot);
+  const [orderNumber, setOrderNumber] = useState<string>(urlOrderNumber);
+  const [orderNumberNot, setOrderNumberNot] = useState<string>(urlOrderNumberNot);
+  const [customerName, setCustomerName] = useState<string>(urlCustomerName);
+  const [customerNameNot, setCustomerNameNot] = useState<string>(urlCustomerNameNot);
+  const [customerPhone, setCustomerPhone] = useState<string>(urlCustomerPhone);
+  const [customerPhoneNot, setCustomerPhoneNot] = useState<string>(urlCustomerPhoneNot);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
+  const [createdByNot, setCreatedByNot] = useState<string>(urlCreatedByNot);
   const [page, setPage] = useState<number>(urlPage);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [openActionsMenu, setOpenActionsMenu] = useState<string | null>(null);
@@ -97,8 +118,18 @@ const Orders: React.FC = () => {
 
     setPage(urlPage);
     setStatusTab(urlStatusTab);
-    setFilterRange(urlFilterRange);
+    setStatusNot(urlStatusNot);
+    setPaymentStatus(urlPaymentStatus);
+    setPaymentStatusNot(urlPaymentStatusNot);
+    setOrderNumber(urlOrderNumber);
+    setOrderNumberNot(urlOrderNumberNot);
+    setCustomerName(urlCustomerName);
+    setCustomerNameNot(urlCustomerNameNot);
+    setCustomerPhone(urlCustomerPhone);
+    setCustomerPhoneNot(urlCustomerPhoneNot);
     setCreatedByFilter(urlCreatedByFilter);
+    setCreatedByNot(urlCreatedByNot);
+    setFilterRange(urlFilterRange);
     setCustomDates(urlCustomDates);
     setIncludeTime(urlIncludeTime);
     setSyncedSearchParams(currentSearchParams);
@@ -106,8 +137,18 @@ const Orders: React.FC = () => {
     shouldHydrateFromUrl,
     urlPage,
     urlStatusTab,
-    urlFilterRange,
+    urlStatusNot,
+    urlPaymentStatus,
+    urlPaymentStatusNot,
+    urlOrderNumber,
+    urlOrderNumberNot,
+    urlCustomerName,
+    urlCustomerNameNot,
+    urlCustomerPhone,
+    urlCustomerPhoneNot,
     urlCreatedByFilter,
+    urlCreatedByNot,
+    urlFilterRange,
     urlCustomDates,
     urlIncludeTime,
     currentSearchParams,
@@ -136,8 +177,18 @@ const Orders: React.FC = () => {
 
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
   const effectiveStatusTab = shouldHydrateFromUrl ? urlStatusTab : statusTab;
-  const effectiveFilterRange = shouldHydrateFromUrl ? urlFilterRange : filterRange;
+  const effectiveStatusNot = shouldHydrateFromUrl ? urlStatusNot : statusNot;
+  const effectivePaymentStatus = shouldHydrateFromUrl ? urlPaymentStatus : paymentStatus;
+  const effectivePaymentStatusNot = shouldHydrateFromUrl ? urlPaymentStatusNot : paymentStatusNot;
+  const effectiveOrderNumber = shouldHydrateFromUrl ? urlOrderNumber : orderNumber;
+  const effectiveOrderNumberNot = shouldHydrateFromUrl ? urlOrderNumberNot : orderNumberNot;
+  const effectiveCustomerName = shouldHydrateFromUrl ? urlCustomerName : customerName;
+  const effectiveCustomerNameNot = shouldHydrateFromUrl ? urlCustomerNameNot : customerNameNot;
+  const effectiveCustomerPhone = shouldHydrateFromUrl ? urlCustomerPhone : customerPhone;
+  const effectiveCustomerPhoneNot = shouldHydrateFromUrl ? urlCustomerPhoneNot : customerPhoneNot;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
+  const effectiveCreatedByNot = shouldHydrateFromUrl ? urlCreatedByNot : createdByNot;
+  const effectiveFilterRange = shouldHydrateFromUrl ? urlFilterRange : filterRange;
   const effectiveCustomDates = shouldHydrateFromUrl ? urlCustomDates : customDates;
   const effectiveIncludeTime = shouldHydrateFromUrl ? urlIncludeTime : includeTime;
 
@@ -150,24 +201,52 @@ const Orders: React.FC = () => {
   const createdByIds = useMemo(() => {
     if (effectiveCreatedByFilter === 'all') return undefined;
     if (effectiveCreatedByFilter === 'admins') {
-      return users.filter(u => hasAdminAccess(u.role)).map(u => u.id);
+      return users.filter((u) => u.role === 'Admin').map((u) => u.id);
     }
     if (effectiveCreatedByFilter === 'employees') {
-      return users.filter(u => isEmployeeRole(u.role)).map(u => u.id);
+      return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+    }
+    if (effectiveCreatedByFilter === 'developers') {
+      return users.filter((u) => u.role === 'Developer').map((u) => u.id);
     }
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
 
   const { data: ordersPage, isFetching: ordersLoading } = useOrdersPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
+    statusNot: effectiveStatusNot || undefined,
+    paymentStatus: effectivePaymentStatus || undefined,
+    paymentStatusNot: effectivePaymentStatusNot || undefined,
+    orderNumber: effectiveOrderNumber || undefined,
+    orderNumberNot: effectiveOrderNumberNot || undefined,
+    customerName: effectiveCustomerName || undefined,
+    customerNameNot: effectiveCustomerNameNot || undefined,
+    customerPhone: effectiveCustomerPhone || undefined,
+    customerPhoneNot: effectiveCustomerPhoneNot || undefined,
     from: timeFilters.from,
     to: timeFilters.to,
     search: searchQuery,
     createdByIds,
+    createdByNot: effectiveCreatedByNot || undefined,
   }, {
     enabled: canLoadOrders,
   });
   const orders = ordersPage?.data ?? [];
+
+  const freeTextMetadataValues = useMemo(() => {
+    return Array.from(
+      new Set(
+        orders.flatMap((order) => [
+          order.id,
+          order.orderNumber,
+          order.customerName || '',
+          order.customerPhone || '',
+          order.customerAddress || '',
+          order.creatorName || '',
+        ]).filter((value) => typeof value === 'string' && value.trim() !== '')
+      )
+    );
+  }, [orders]);
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
   const totalOrdersCount = ordersPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalOrdersCount / pageSize));
@@ -203,11 +282,21 @@ const Orders: React.FC = () => {
     const params: Record<string, string> = {};
     if (effectivePage && effectivePage > 1) params.page = String(effectivePage);
     if (effectiveStatusTab && effectiveStatusTab !== 'All') params.status = String(effectiveStatusTab);
+    if (effectiveStatusNot) params.statusNot = String(effectiveStatusNot);
+    if (effectivePaymentStatus) params.paymentStatus = String(effectivePaymentStatus);
+    if (effectivePaymentStatusNot) params.paymentStatusNot = String(effectivePaymentStatusNot);
+    if (effectiveOrderNumber) params.orderNumber = effectiveOrderNumber;
+    if (effectiveOrderNumberNot) params.orderNumberNot = effectiveOrderNumberNot;
+    if (effectiveCustomerName) params.customerName = effectiveCustomerName;
+    if (effectiveCustomerNameNot) params.customerNameNot = effectiveCustomerNameNot;
+    if (effectiveCustomerPhone) params.customerPhone = effectiveCustomerPhone;
+    if (effectiveCustomerPhoneNot) params.customerPhoneNot = effectiveCustomerPhoneNot;
     if (effectiveFilterRange && effectiveFilterRange !== 'All Time') params.range = effectiveFilterRange;
     if (effectiveCustomDates.from) params.from = effectiveCustomDates.from;
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
     if (effectiveIncludeTime) params.includeTime = 'true';
     if (effectiveCreatedByFilter && effectiveCreatedByFilter !== 'all') params.createdBy = effectiveCreatedByFilter;
+    if (effectiveCreatedByNot) params.createdByNot = effectiveCreatedByNot;
     if (searchQuery) params.search = searchQuery;
 
     if (new URLSearchParams(params).toString() !== currentSearchParams) {
@@ -219,11 +308,21 @@ const Orders: React.FC = () => {
     currentSearchParams,
     effectivePage,
     effectiveStatusTab,
+    effectiveStatusNot,
+    effectivePaymentStatus,
+    effectivePaymentStatusNot,
+    effectiveOrderNumber,
+    effectiveOrderNumberNot,
+    effectiveCustomerName,
+    effectiveCustomerNameNot,
+    effectiveCustomerPhone,
+    effectiveCustomerPhoneNot,
     effectiveFilterRange,
     effectiveCustomDates.from,
     effectiveCustomDates.to,
     effectiveIncludeTime,
     effectiveCreatedByFilter,
+    effectiveCreatedByNot,
     searchQuery,
     setSearchParams,
   ]);
@@ -356,23 +455,23 @@ const Orders: React.FC = () => {
         return;
       }
 
-      if (!completionForm.accountId) {
-        toast.error('Please select an account');
-        return;
-      }
-      if (completionForm.amount <= 0) {
-        toast.error(completionForm.outcome === 'Returned' ? 'Please enter the return expense amount' : 'Please enter the received amount');
-        return;
-      }
-      if (completionForm.outcome === 'Returned' && !completionForm.paymentMethod) {
-        toast.error('Please select a payment method');
-        return;
-      }
-      if (completionForm.outcome === 'Returned' && !completionForm.categoryId) {
-        toast.error('Please select an expense category');
-        return;
-      }
       if (completionForm.outcome === 'Returned') {
+        if (!completionForm.accountId) {
+          toast.error('Please select an account');
+          return;
+        }
+        if (completionForm.amount <= 0) {
+          toast.error('Please enter the return expense amount');
+          return;
+        }
+        if (!completionForm.paymentMethod) {
+          toast.error('Please select a payment method');
+          return;
+        }
+        if (!completionForm.categoryId) {
+          toast.error('Please select an expense category');
+          return;
+        }
         const selectedAccount = accounts.find((account) => account.id === completionForm.accountId);
         if (selectedAccount && selectedAccount.currentBalance < completionForm.amount) {
           toast.error(
@@ -387,16 +486,19 @@ const Orders: React.FC = () => {
         toast.error('Please enter a valid date and time');
         return;
       }
-      const updatedOrder = await completePickedOrderMutation.mutateAsync({
+      const payload: any = {
         orderId: completionOrder.id,
         outcome: completionForm.outcome,
         date: fullDatetime.toISOString(),
-        accountId: completionForm.accountId,
-        amount: completionForm.amount,
-        paymentMethod: completionForm.outcome === 'Returned' ? completionForm.paymentMethod : undefined,
-        categoryId: completionForm.outcome === 'Returned' ? completionForm.categoryId : undefined,
-        note: completionForm.outcome === 'Returned' ? completionForm.note : undefined,
-      });
+      };
+      if (completionForm.outcome === 'Returned') {
+        payload.accountId = completionForm.accountId;
+        payload.amount = completionForm.amount;
+        payload.paymentMethod = completionForm.paymentMethod;
+        payload.categoryId = completionForm.categoryId;
+        payload.note = completionForm.note;
+      }
+      const updatedOrder = await completePickedOrderMutation.mutateAsync(payload);
 
       setCompletionOrder(null);
       setCompletionForm(createCompletionForm());
@@ -493,8 +595,22 @@ const Orders: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Orders</h2>
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div>
+            <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Orders</h2>
+          </div>
+          <div className="hidden sm:block">
+            <FilterBar 
+              title="Orders"
+              filterRange={effectiveFilterRange}
+              setFilterRange={handleFilterRangeChange}
+              customDates={effectiveCustomDates}
+              setCustomDates={handleCustomDatesChange}
+              includeTime={effectiveIncludeTime}
+              setIncludeTime={handleIncludeTimeChange}
+              compact={true}
+            />
+          </div>
         </div>
         {canCreateOrders && (
           <Button
@@ -507,44 +623,124 @@ const Orders: React.FC = () => {
           </Button>
         )}
       </div>
+      <div className="sm:hidden">
+        <FilterBar 
+          title="Orders"
+          filterRange={effectiveFilterRange}
+          setFilterRange={handleFilterRangeChange}
+          customDates={effectiveCustomDates}
+          setCustomDates={handleCustomDatesChange}
+          includeTime={effectiveIncludeTime}
+          setIncludeTime={handleIncludeTimeChange}
+        />
+      </div>
       {/* Pagination controls moved below the table to match other pages */}
 
-      <FilterBar 
-        title="Orders"
-        filterRange={effectiveFilterRange}
-        setFilterRange={handleFilterRangeChange}
-        customDates={effectiveCustomDates}
-        setCustomDates={handleCustomDatesChange}
-        includeTime={effectiveIncludeTime}
-        setIncludeTime={handleIncludeTimeChange}
-        statusTab={effectiveStatusTab}
-        setStatusTab={handleStatusTabChange}
-        statusOptions={Object.values(OrderStatus)}
-      />
+      {/* Created By row removed per request */}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <label className="text-sm font-bold text-gray-700">Created By:</label>
-          <select
-            value={effectiveCreatedByFilter}
-            onChange={(e) => handleCreatedByFilterChange(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Users</option>
-            {users.some(u => hasAdminAccess(u.role)) && <option value="admins">Admin Access</option>}
-            {users.some(u => isEmployeeRole(u.role)) && <option value="employees">All Employees</option>}
-            <optgroup label="Specific Users">
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-              ))}
-            </optgroup>
-          </select>
-          {isEmployee && (
-            <p className="text-xs font-semibold text-gray-500">
-              Order actions follow your role permissions, including whether an action is limited to your own records or all users.
-            </p>
-          )}
-        </div>
+      <div className="mt-4">
+        <DynamicFilterBar
+          users={users}
+          customers={Array.from(new Map(orders.map(o => [o.customerId || o.id, { id: o.customerId || o.id, name: o.customerName || '', phone: o.customerPhone || '' }])).values())}
+          orderNumberOptions={Array.from(new Set(orders.map(o => o.orderNumber).filter(Boolean)))}
+          suggestionValues={freeTextMetadataValues}
+          freeTextLabel="Orders"
+          onApply={(appliedFilters) => {
+            // Apply filters: map known types to query params, others to search
+            const params: Record<string, string> = {};
+            // keep existing pagination reset
+            setPage(1);
+
+            const statusFilter = appliedFilters.find(f => f.type === 'Order Status');
+            if (statusFilter) {
+              if (statusFilter.operator === '≠') {
+                // Exclude this status on the server
+                setStatusTab('All');
+                setStatusNot(statusFilter.value);
+                params.statusNot = statusFilter.value;
+              } else {
+                setStatusTab(statusFilter.value as OrderStatus | 'All');
+                setStatusNot('');
+                params.status = statusFilter.value;
+              }
+            }
+
+                const paymentFilter = appliedFilters.find(f => f.type === 'Payment Status');
+                if (paymentFilter) {
+                  if (paymentFilter.operator === '≠') {
+                    setPaymentStatus('');
+                    setPaymentStatusNot(paymentFilter.value);
+                    params.paymentStatusNot = paymentFilter.value;
+                  } else {
+                    setPaymentStatus(paymentFilter.value);
+                    setPaymentStatusNot('');
+                    params.paymentStatus = paymentFilter.value;
+                  }
+                }
+
+            const createdByFilter = appliedFilters.find(f => f.type === 'Created by' && f.operator === '=');
+            const createdByNotFilter = appliedFilters.find(f => f.type === 'Created by' && f.operator === '≠');
+            if (createdByFilter) {
+              setCreatedByFilter(createdByFilter.value);
+              setCreatedByNot('');
+              params.createdBy = createdByFilter.value;
+            } else if (createdByNotFilter) {
+              setCreatedByFilter('all');
+              setCreatedByNot(createdByNotFilter.value);
+              params.createdByNot = createdByNotFilter.value;
+            }
+
+            const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && f.operator === '=');
+            const orderIdNotFilter = appliedFilters.find(f => f.type === 'Order ID' && f.operator === '≠');
+            if (orderIdFilter) {
+              setOrderNumber(orderIdFilter.value);
+              setOrderNumberNot('');
+              params.orderNumber = orderIdFilter.value;
+            } else if (orderIdNotFilter) {
+              setOrderNumber('');
+              setOrderNumberNot(orderIdNotFilter.value);
+              params.orderNumberNot = orderIdNotFilter.value;
+            }
+
+            const customerNameFilter = appliedFilters.find(f => f.type === 'Customer Name' && f.operator === '=');
+            const customerNameNotFilter = appliedFilters.find(f => f.type === 'Customer Name' && f.operator === '≠');
+            if (customerNameFilter) {
+              setCustomerName(customerNameFilter.value);
+              setCustomerNameNot('');
+              params.customerName = customerNameFilter.value;
+            } else if (customerNameNotFilter) {
+              setCustomerName('');
+              setCustomerNameNot(customerNameNotFilter.value);
+              params.customerNameNot = customerNameNotFilter.value;
+            }
+
+            const customerPhoneFilter = appliedFilters.find(f => f.type === 'Customer Phone' && f.operator === '=');
+            const customerPhoneNotFilter = appliedFilters.find(f => f.type === 'Customer Phone' && f.operator === '≠');
+            if (customerPhoneFilter) {
+              setCustomerPhone(customerPhoneFilter.value);
+              setCustomerPhoneNot('');
+              params.customerPhone = customerPhoneFilter.value;
+            } else if (customerPhoneNotFilter) {
+              setCustomerPhone('');
+              setCustomerPhoneNot(customerPhoneNotFilter.value);
+              params.customerPhoneNot = customerPhoneNotFilter.value;
+            }
+
+            // other filters => search string
+            const searchTerms = appliedFilters
+              .filter(f => f.type === 'Free Text' || !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone'].includes(f.type))
+              .map(f => f.value);
+            if (searchTerms.length > 0) params.search = searchTerms.join(' ');
+
+            // also preserve existing range and from/to/includeTime if set
+            if (filterRange && filterRange !== 'All Time') params.range = filterRange;
+            if (customDates.from) params.from = customDates.from;
+            if (customDates.to) params.to = customDates.to;
+            if (includeTime) params.includeTime = 'true';
+
+            setSearchParams(params, { replace: true });
+          }}
+        />
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
@@ -582,6 +778,8 @@ const Orders: React.FC = () => {
                   || canFinalizeSelectedOrder
                   || canSendSelectedOrderToCourier
                   || canTrackSelectedOrder;
+                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.total);
+                const paymentStatusBadge = getPaymentStatusBadgeColor(paymentStatusLabel);
                 return (
                 <tr 
                   key={order.id} 
@@ -607,15 +805,20 @@ const Orders: React.FC = () => {
                     </td>
                     <td className="px-6 py-5 text-xs font-bold text-gray-500">{getCreatorName(order) || '—'}</td>
                     <td className="px-6 py-5">
-                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status}</span>
+                      <div className="flex flex-col gap-2">
+                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{getStatusDisplayName(order.status)}</span>
+                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${paymentStatusBadge}`}>
+                          {paymentStatusLabel}
+                        </span>
+                      </div>
                       {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
-                        <img src="/uploads/steadfast.png" alt="Steadfast" className="inline-block w-5 h-5 rounded-full ml-2" />
+                        <img src="/uploads/steadfast.png" alt="Steadfast" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
                       {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToCarryBee && (
-                        <img src="/uploads/carrybee.png" alt="CarryBee" className="inline-block w-5 h-5 rounded-full ml-2" />
+                        <img src="/uploads/carrybee.png" alt="CarryBee" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
                       {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToPaperfly && (
-                        <img src="/uploads/paperfly.png" alt="Paperfly" className="inline-block w-5 h-5 rounded-full ml-2" />
+                        <img src="/uploads/paperfly.png" alt="Paperfly" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
                     </td>
                     <td className="px-6 py-5 text-right">

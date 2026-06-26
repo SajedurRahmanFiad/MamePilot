@@ -4,7 +4,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { db } from '../db';
 import { BillStatus, OrderItem } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useBill, useVendor } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -378,7 +378,7 @@ const BillForm: React.FC = () => {
                   </td>
                   <td className="px-4 py-4 text-center text-sm font-bold text-gray-600">{formatCurrency(item.rate)}</td>
                   <td className="px-4 py-4 text-center">
-                    <input type="number" value={item.quantity} onChange={(e) => updateQuantity(idx, parseInt(e.target.value))} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-bold outline-none" />
+                    <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
                   </td>
                   <td className="px-6 py-4 text-right font-black text-gray-900 text-sm">{formatCurrency(item.amount)}</td>
                   <td className="px-4 py-4 text-right">
@@ -440,8 +440,8 @@ const BillForm: React.FC = () => {
           </div>
           <div className="w-full md:w-96 space-y-4 bg-gray-50/50 p-8 rounded-[2rem] border border-gray-100">
             <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Subtotal</span><span className="text-gray-900 font-black">{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Discount</span><input type="number" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] font-black text-gray-900 bg-white" /></div>
-            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Shipping</span><input type="number" value={shipping} onChange={(e) => setShipping(parseFloat(e.target.value) || 0)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] font-black text-gray-900 bg-white" /></div>
+            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Discount</span><NumericInput value={discount} onChange={(value) => setDiscount(value)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} /></div>
+            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Shipping</span><NumericInput value={shipping} onChange={(value) => setShipping(value)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} /></div>
             <div className="pt-6 border-t-4 border-[#c7e0f5] flex justify-between items-center"><span className="text-lg font-bold text-gray-900 uppercase tracking-tighter">Total Bill</span><span className="text-lg font-black">{formatCurrency(total)}</span></div>
             <Button 
               onClick={handleSave}

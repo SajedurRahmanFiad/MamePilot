@@ -107,3 +107,22 @@ export const getStatusColor = (status: string): string => {
   };
   return statusMap[status] || 'bg-gray-100 text-gray-600';
 };
+
+export const getPaymentStatusLabel = (paidAmount: number, total: number): string => {
+  if (paidAmount === 0) return 'Unpaid';
+  if (paidAmount >= total) return 'Paid';
+  return 'Partially paid';
+};
+
+export const getPaymentStatusBadgeColor = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    'Unpaid': 'bg-red-100 text-red-600',
+    'Paid': 'bg-green-100 text-green-600',
+    'Partially paid': 'bg-amber-100 text-amber-700',
+    'Partially Paid': 'bg-amber-100 text-amber-700',
+    'Overpaid': 'bg-green-100 text-green-600',
+  };
+  return statusMap[status] || 'bg-gray-100 text-gray-600';
+};
+
+export const getStatusDisplayName = (status: string): string => status === 'Completed' ? 'Delivered' : status;

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Button } from './index';
+import { Button, NumericInput } from './index';
 import { formatCurrency } from '../constants';
 import { Order, OrderCompletionOutcome } from '../types';
 import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
@@ -114,20 +114,42 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
     }
   }, [form.outcome, shippingCostsCategory, form.categoryId, setForm, availableOutcomes]);
 
+  useEffect(() => {
+    if (!order) return;
+    if (form.outcome === 'Returned' && !form.amount && order.shipping > 0) {
+      setForm((current) => ({ ...current, amount: order.shipping }));
+    }
+  }, [form.outcome, form.amount, order, setForm]);
+
   if (!isOpen || !order || availableOutcomes.length === 0) return null;
 
   const isReturned = form.outcome === 'Returned';
   const outstanding = Math.max(order.total - order.paidAmount, 0);
 
+  const dueAmount = Math.max(order.total - order.paidAmount, 0);
+  const isFullyPaid = dueAmount === 0;
+  const dueLabel = isFullyPaid
+    ? 'Fully paid'
+    : `${formatCurrency(dueAmount)} (${order.paidAmount > 0 ? 'Partially paid' : 'Not paid yet'})`;
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative z-[210] w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-[#ebf4ff] bg-white p-10 animate-in zoom-in-95 duration-200">
+      <div className="relative z-[210] w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl border border-[#ebf4ff] bg-white p-10 animate-in zoom-in-95 duration-200">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-6 top-6 rounded-full border border-gray-200 bg-white p-2 text-gray-500 transition hover:border-gray-300 hover:text-gray-900"
+          aria-label="Close"
+        >
+          ×
+        </button>
         <div className="mb-8">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Picked Order</p>
-          <h3 className="mt-2 text-2xl font-black text-gray-900">Finalize Order #{order.orderNumber}</h3>
-          <p className="mt-2 text-sm font-medium text-gray-500">
-            Outstanding amount {formatCurrency(outstanding)}
+          <h3 className="mt-2 text-2xl font-black text-gray-900">Complete order #{order.orderNumber}</h3>
+          <p className="mt-2 text-sm font-medium">
+            <span className={`font-black ${isFullyPaid ? 'text-emerald-600' : 'text-red-600'}`}>
+              {isFullyPaid ? dueLabel : `Due amount ${dueLabel}`}
+            </span>
           </p>
         </div>
 
@@ -136,12 +158,14 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
             <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Outcome</label>
             <select
               value={form.outcome}
-              onChange={(event) =>
+              onChange={(event) => {
+                const nextOutcome = event.target.value as OrderCompletionOutcome;
                 setForm((current) => ({
                   ...current,
-                  outcome: event.target.value as OrderCompletionOutcome,
-                }))
-              }
+                  outcome: nextOutcome,
+                  amount: nextOutcome === 'Returned' ? order.shipping : current.amount,
+                }));
+              }}
               disabled={isLoading}
               className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
             >
@@ -150,75 +174,25 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Date</label>
-              <input
-                type="date"
-                value={form.date}
-                onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
-                disabled={isLoading}
-                className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Time</label>
-              <input
-                type="time"
-                value={form.time}
-                onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))}
-                disabled={isLoading}
-                className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-              {isReturned ? 'Expense From Account' : 'Receive To Account'}
-            </label>
-            <select
-              value={form.accountId}
-              onChange={(event) => setForm((current) => ({ ...current, accountId: event.target.value }))}
-              disabled={isLoading}
-              className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-            >
-              <option value="">Select an account...</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} ({formatCurrency(account.currentBalance)})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-              {isReturned ? 'Return Expense Amount' : 'Amount Received'}
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.amount}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  amount: Number.parseFloat(event.target.value || '0') || 0,
-                }))
-              }
-              disabled={isLoading}
-              className="w-full rounded-lg border-2 border-[#c7dff5] bg-[#ebf4ff] px-6 py-4 text-lg font-black text-[#0f2f57] outline-none disabled:opacity-50"
-            />
-            {!isReturned && (
-              <p className="ml-2 text-xs font-medium text-gray-400">
-                If this is lower than the due amount, the remaining balance will be recorded as an expense.
-              </p>
-            )}
-          </div>
-
           {isReturned && (
             <>
+              <div className="space-y-1">
+                <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Return Expense Amount</label>
+                <NumericInput
+                  value={form.amount}
+                  onChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      amount: value,
+                    }))
+                  }
+                  disabled={isLoading}
+                  className="border-2 border-[#c7dff5] bg-[#ebf4ff] text-lg text-[#0f2f57]"
+                  decimalPlaces={2}
+                  allowDecimals={true}
+                />
+              </div>
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1">
                   <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Payment Method</label>
@@ -252,11 +226,6 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                       </option>
                     ))}
                   </select>
-                  {shippingCostsCategory && (
-                    <p className="ml-2 text-xs font-medium text-gray-400">
-                      Returned orders use the Shipping Costs category automatically.
-                    </p>
-                  )}
                 </div>
               </div>
 

@@ -1241,6 +1241,67 @@ final class OperationsApi extends BaseService
             $where .= ' AND status = :status';
             $bindings[':status'] = $status;
         }
+        // Support exclusion filter from frontend: statusNot
+        $statusNot = trim((string) ($filters['statusNot'] ?? ''));
+        if ($statusNot !== '') {
+            $where .= ' AND status <> :status_not';
+            $bindings[':status_not'] = $statusNot;
+        }
+        // Support payment status filters (Paid / Partially Paid / Unpaid)
+        $paymentStatus = trim((string) ($filters['paymentStatus'] ?? ''));
+        if ($paymentStatus !== '') {
+            if ($paymentStatus === 'Paid') {
+                $where .= ' AND paidAmount >= total';
+            } elseif ($paymentStatus === 'Partially Paid') {
+                $where .= ' AND paidAmount > 0 AND paidAmount < total';
+            } elseif ($paymentStatus === 'Unpaid') {
+                $where .= ' AND paidAmount = 0';
+            }
+        }
+        $paymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
+        if ($paymentStatusNot !== '') {
+            if ($paymentStatusNot === 'Paid') {
+                $where .= ' AND NOT (paidAmount >= total)';
+            } elseif ($paymentStatusNot === 'Partially Paid') {
+                $where .= ' AND NOT (paidAmount > 0 AND paidAmount < total)';
+            } elseif ($paymentStatusNot === 'Unpaid') {
+                $where .= ' AND NOT (paidAmount = 0)';
+            }
+        }
+
+        $orderNumber = trim((string) ($filters['orderNumber'] ?? ''));
+        if ($orderNumber !== '') {
+            $where .= ' AND orderNumber = :order_number';
+            $bindings[':order_number'] = $orderNumber;
+        }
+        $orderNumberNot = trim((string) ($filters['orderNumberNot'] ?? ''));
+        if ($orderNumberNot !== '') {
+            $where .= ' AND orderNumber <> :order_number_not';
+            $bindings[':order_number_not'] = $orderNumberNot;
+        }
+
+        $customerName = trim((string) ($filters['customerName'] ?? ''));
+        if ($customerName !== '') {
+            $where .= ' AND customerName = :customer_name';
+            $bindings[':customer_name'] = $customerName;
+        }
+        $customerNameNot = trim((string) ($filters['customerNameNot'] ?? ''));
+        if ($customerNameNot !== '') {
+            $where .= ' AND customerName <> :customer_name_not';
+            $bindings[':customer_name_not'] = $customerNameNot;
+        }
+
+        $customerPhone = trim((string) ($filters['customerPhone'] ?? ''));
+        if ($customerPhone !== '') {
+            $where .= ' AND customerPhone = :customer_phone';
+            $bindings[':customer_phone'] = $customerPhone;
+        }
+        $customerPhoneNot = trim((string) ($filters['customerPhoneNot'] ?? ''));
+        if ($customerPhoneNot !== '') {
+            $where .= ' AND customerPhone <> :customer_phone_not';
+            $bindings[':customer_phone_not'] = $customerPhoneNot;
+        }
+
         if (!empty($filters['from'])) {
             $where .= ' AND createdAt >= :from';
             $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
@@ -1256,6 +1317,12 @@ final class OperationsApi extends BaseService
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND createdBy IN (' . implode(', ', $placeholders) . ')';
             $bindings += $inBindings;
+        }
+
+        $createdByNot = trim((string) ($filters['createdByNot'] ?? ''));
+        if ($createdByNot !== '') {
+            $where .= ' AND createdBy <> :created_by_not';
+            $bindings[':created_by_not'] = $createdByNot;
         }
 
         $search = trim((string) ($filters['search'] ?? ''));
@@ -1383,7 +1450,7 @@ final class OperationsApi extends BaseService
                     o.created_by AS user_id,
                     COUNT(*) AS ordersCreated,
                     SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END) AS completedOrders,
-                    SUM(CASE WHEN o.status = 'Processing' THEN 1 ELSE 0 END) AS processingOrders,
+                    SUM(CASE WHEN o.status IN ('Processing', 'Courier assigned') THEN 1 ELSE 0 END) AS processingOrders,
                     SUM(CASE WHEN o.status = 'Picked' THEN 1 ELSE 0 END) AS pickedOrders,
                     SUM(CASE WHEN o.status = 'On Hold' THEN 1 ELSE 0 END) AS onHoldOrders,
                     SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelledOrders,
@@ -3282,24 +3349,23 @@ final class OperationsApi extends BaseService
 
         $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
         $accountId = trim((string) ($params['accountId'] ?? ''));
-        if ($accountId === '') {
-            throw new RuntimeException('Account is required.');
-        }
-
         $amount = (float) ($params['amount'] ?? 0);
-        if ($amount <= 0) {
-            throw new RuntimeException($outcome === 'Returned'
-                ? 'Return expense amount must be greater than zero.'
-                : 'Received amount must be greater than zero.');
-        }
-
         $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
         $categoryId = trim((string) ($params['categoryId'] ?? ''));
-        if ($outcome === 'Returned' && $paymentMethod === '') {
-            throw new RuntimeException('Payment method is required for returned orders.');
-        }
-        if ($outcome === 'Returned' && $categoryId === '') {
-            throw new RuntimeException('Expense category is required for returned orders.');
+
+        if ($outcome === 'Returned') {
+            if ($accountId === '') {
+                throw new RuntimeException('Account is required.');
+            }
+            if ($amount <= 0) {
+                throw new RuntimeException('Return expense amount must be greater than zero.');
+            }
+            if ($paymentMethod === '') {
+                throw new RuntimeException('Payment method is required for returned orders.');
+            }
+            if ($categoryId === '') {
+                throw new RuntimeException('Expense category is required for returned orders.');
+            }
         }
 
         return $this->database->transaction(function () use ($actor, $orderId, $outcome, $recordedAt, $accountId, $amount, $paymentMethod, $categoryId, $params): array {
@@ -3372,61 +3438,12 @@ final class OperationsApi extends BaseService
             $createdTransactions = [];
 
             if ($outcome === 'Delivered') {
-                $remainingCollectible = max($orderTotal - $paidAmount, 0);
-                if ($remainingCollectible <= 0) {
-                    throw new RuntimeException('This order is already fully paid.');
-                }
-                if ($amount > $remainingCollectible) {
-                    throw new RuntimeException('Received amount cannot exceed the remaining due amount.');
-                }
-
-                $incomeToCreate = max($orderTotal - $existingIncome, 0);
-                $updatedPaidAmount = $paidAmount + $amount;
-                $deliveryExpenseTarget = max($orderTotal - $updatedPaidAmount, 0);
-                $expenseToCreate = max($deliveryExpenseTarget - $existingExpense, 0);
-
-                if ($incomeToCreate > 0) {
-                    $createdTransactions[] = $this->createTransactionRecord([
-                        'date' => $recordedAt,
-                        'type' => 'Income',
-                        'category' => $incomeCategoryId,
-                        'accountId' => $accountId,
-                        'amount' => $incomeToCreate,
-                        'description' => "Payment for Order #{$orderNumber}",
-                        'referenceId' => $orderId,
-                        'contactId' => $customerId,
-                        'paymentMethod' => $paymentMethod !== '' ? $paymentMethod : $defaultPaymentMethod,
-                    ], (string) $actor['id'], $actor);
-                }
-
-                if ($expenseToCreate > 0) {
-                    $createdTransactions[] = $this->createTransactionRecord([
-                        'date' => $recordedAt,
-                        'type' => 'Expense',
-                        'category' => 'expense_shipping',
-                        'accountId' => $accountId,
-                        'amount' => $expenseToCreate,
-                        'description' => "Shipping costs for Order #{$orderNumber}",
-                        'referenceId' => $orderId,
-                        'contactId' => $customerId,
-                        'paymentMethod' => $paymentMethod !== '' ? $paymentMethod : $defaultPaymentMethod,
-                    ], (string) $actor['id'], $actor);
-                }
-
                 $history['completed'] = sprintf(
                     'Marked as delivered by %s on %s at %s.',
                     trim((string) ($actor['name'] ?? 'System')),
                     $dateLabel,
                     $timeLabel
                 );
-                $history['payment'] = sprintf(
-                    'Payment of %s received on %s at %s.%s',
-                    $this->formatMoney($amount),
-                    $dateLabel,
-                    $timeLabel,
-                    $expenseToCreate > 0 ? ' Remaining amount recorded as expense.' : ''
-                );
-                $payload['paid_amount'] = $this->formatMoney($updatedPaidAmount);
                 $payload['history'] = $this->jsonEncode($history);
             } else {
                 $createdTransactions[] = $this->createTransactionRecord([
@@ -5919,10 +5936,10 @@ final class OperationsApi extends BaseService
                 $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned']);
             }
 
-            // If reverting past Picked, remove picked key
-            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
-            if ($targetIdx !== false && $targetIdx < 2) {
-                // Reverting to On Hold or Processing – remove picked
+            // If reverting before Picked, remove picked key
+            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
+            if ($targetIdx !== false && $targetIdx < 3) {
+                // Reverting to On Hold, Processing, or Courier assigned – remove picked
                 $keysToRemove[] = 'picked';
             }
             if ($targetIdx !== false && $targetIdx < 1) {

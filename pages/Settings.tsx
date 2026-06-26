@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
-import { Button, PermissionsSettingsPanel } from '../components';
+import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
 import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type PermissionsSettings, type Settings } from '../types';
 import { 
@@ -836,11 +836,11 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Next Number</label>
-                    <input 
-                      type="number" 
+                    <NumericInput 
                       value={orderSettings.nextNumber} 
-                      onChange={e => setOrderSettings({...orderSettings, nextNumber: parseInt(e.target.value)})}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                      onChange={value => setOrderSettings({...orderSettings, nextNumber: Math.max(0, value)})}
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3" 
+                      allowDecimals={false}
                     />
                   </div>
                 </div>
@@ -860,20 +860,20 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Logo Width (px)</label>
-                    <input 
-                      type="number" 
+                    <NumericInput 
                       value={invoiceSettings.logoWidth} 
-                      onChange={e => setInvoiceSettings({...invoiceSettings, logoWidth: parseInt(e.target.value)})}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                      onChange={value => setInvoiceSettings({...invoiceSettings, logoWidth: Math.max(0, value)})}
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3" 
+                      allowDecimals={false}
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Logo Height (px)</label>
-                    <input 
-                      type="number" 
+                    <NumericInput 
                       value={invoiceSettings.logoHeight} 
-                      onChange={e => setInvoiceSettings({...invoiceSettings, logoHeight: parseInt(e.target.value)})}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                      onChange={value => setInvoiceSettings({...invoiceSettings, logoHeight: Math.max(0, value)})}
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3" 
+                      allowDecimals={false}
                     />
                   </div>
                   <div className="md:col-span-3 space-y-2">
@@ -940,11 +940,11 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Records Per Page</label>
-                  <input 
-                    type="number" 
+                  <NumericInput 
                     value={systemDefaults.recordsPerPage} 
-                    onChange={e => setSystemDefaults({...systemDefaults, recordsPerPage: parseInt(e.target.value)})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                    onChange={value => setSystemDefaults({...systemDefaults, recordsPerPage: Math.max(1, value)})}
+                    className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                    allowDecimals={false}
                   />
                 </div>
                 <div className="space-y-2">
@@ -960,18 +960,17 @@ const SettingsPage: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Max Transaction Amount Without Approval</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <NumericInput
                     value={systemDefaults.maxTransactionAmount ?? 0}
-                    onChange={e =>
+                    onChange={value =>
                       setSystemDefaults({
                         ...systemDefaults,
-                        maxTransactionAmount: Number.parseFloat(e.target.value || '0') || 0,
+                        maxTransactionAmount: Math.max(0, value),
                       })
                     }
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                    className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                    allowDecimals={true}
+                    decimalPlaces={2}
                   />
                   <p className="text-xs font-medium text-gray-400">
                     Transactions above this amount will stay pending until an admin accepts or declines them.
@@ -991,18 +990,16 @@ const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (BDT)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
+                    <NumericInput
                       value={walletSettings.unitAmount}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setWalletSettings((current) => ({
                           ...current,
-                          unitAmount: Number.parseFloat(event.target.value || '0') || 0,
+                          unitAmount: Math.max(0, value),
                         }))
                       }
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                      allowDecimals={false}
                     />
                     <p className="text-xs font-medium text-gray-400">
                       Employees earn this amount only when their order matches one of the payable statuses below.
@@ -1088,18 +1085,16 @@ const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (BDT)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
+                    <NumericInput
                       value={walletSettings.unitAmount}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setWalletSettings((current) => ({
                           ...current,
-                          unitAmount: Number.parseFloat(event.target.value || '0') || 0,
+                          unitAmount: Math.max(0, value),
                         }))
                       }
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                      allowDecimals={false}
                     />
                     <p className="text-xs font-medium text-gray-400">
                       Employees earn this amount every time they create a new order.
@@ -1204,12 +1199,21 @@ const SettingsPage: React.FC = () => {
                     <div key={cat.id} className="flex items-center gap-4 p-4 border rounded-lg bg-gray-50/50 hover:shadow-sm transition-all">
                       <div className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }}></div>
                       <div className="flex-1">
-                        <p className="font-bold text-gray-800">{cat.name}</p>
+                        <p className="font-bold text-gray-800">
+                          {cat.name}
+                          {cat.isSystem && !['income_sales', 'expense_purchases', 'expense_shipping'].includes(cat.id) && (
+                            <span className="ml-3 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-black uppercase tracking-widest text-gray-500">
+                              System
+                            </span>
+                          )}
+                        </p>
                         <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{cat.type}</p>
                       </div>
                       <button
                         onClick={() => handleDeleteCategory(cat.id)}
-                        className="text-red-500 hover:text-red-700 px-2"
+                        disabled={!!cat.isSystem}
+                        title={cat.isSystem ? 'System categories cannot be deleted' : 'Delete'}
+                        className={`px-2 ${cat.isSystem ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:text-red-700'}`}
                       >
                         {ICONS.Delete}
                       </button>
@@ -1427,19 +1431,18 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Max Weight (kg)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <NumericInput
                       value={courierSettings.paperfly.maxWeightKg ?? 0.3}
-                      onChange={e => setCourierSettings({
+                      onChange={value => setCourierSettings({
                         ...courierSettings,
                         paperfly: {
                           ...courierSettings.paperfly,
-                          maxWeightKg: Number.parseFloat(e.target.value || '0'),
+                          maxWeightKg: Math.max(0, value),
                         }
                       })}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                      allowDecimals={true}
+                      decimalPlaces={2}
                     />
                   </div>
                 </div>

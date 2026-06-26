@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Customer, Order, OrderStatus, OrderItem } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useCompanySettings, useCustomer, useOrder, useOrderSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -600,11 +600,11 @@ const OrderForm: React.FC = () => {
                   </td>
                   <td className="px-4 py-4 text-center text-sm font-bold text-gray-600">{formatCurrency(item.rate)}</td>
                   <td className="px-4 py-4 text-center">
-                    <input 
-                      type="number" 
+                    <NumericInput 
                       value={item.quantity} 
-                      onChange={(e) => updateQuantity(idx, parseInt(e.target.value))} 
-                      className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-bold outline-none" 
+                      onChange={(value) => updateQuantity(idx, value)} 
+                      className="w-16 text-center border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] py-2"
+                      allowDecimals={false}
                     />
                   </td>
                   <td className="px-6 py-4 text-right font-black text-gray-900 text-sm">{formatCurrency(item.amount)}</td>
@@ -696,11 +696,12 @@ const OrderForm: React.FC = () => {
               <span>Discount</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 font-black">৳</span>
-                <input 
-                  type="number" 
+                <NumericInput 
                   value={discount} 
-                  onChange={(e) => setDiscount(e.target.value)} 
-                  className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] font-black text-gray-900 bg-white" 
+                  onChange={(value) => setDiscount(value)} 
+                  className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white"
+                  allowDecimals={true}
+                  decimalPlaces={2}
                 />
               </div>
             </div>
@@ -708,11 +709,12 @@ const OrderForm: React.FC = () => {
               <span>Shipping</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 font-black">৳</span>
-                <input
-                  type="number"
+                <NumericInput
                   value={shipping}
-                  onChange={(e) => setShipping(e.target.value)}
-                  className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] font-black text-gray-900 bg-white"
+                  onChange={(value) => setShipping(value)}
+                  className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white"
+                  allowDecimals={true}
+                  decimalPlaces={2}
                 />
               </div>
             </div>

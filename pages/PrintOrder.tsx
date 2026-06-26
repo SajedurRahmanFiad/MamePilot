@@ -77,7 +77,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
               </p>
               <h3 className="text-md font-black text-gray-900 print:text-gray-800">{customer?.name}</h3>
               <p className="text-sm text-gray-500 leading-relaxed print:text-gray-600">{customer?.address}</p>
-              <p className={`text-sm font-bold mt-2 print:mt-1`}>{customer?.phone}</p>
+              <p className={`text-sm font-bold mt-2 print:mt-1 text-gray-900 print:text-gray-800`}>{customer?.phone}</p>
             </div>
           </div>
 

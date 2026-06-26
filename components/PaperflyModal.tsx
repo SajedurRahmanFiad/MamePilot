@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { theme } from '../theme';
+import { NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { fetchPaperflyOrderTracking, submitPaperflyOrder } from '../src/services/supabaseQueries';
@@ -264,13 +265,12 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Max Weight (kg)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <NumericInput
                 value={maxWeightKg}
-                onChange={(e) => setMaxWeightKg(Number.parseFloat(e.target.value || '0'))}
-                className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg"
+                onChange={(value) => setMaxWeightKg(value)}
+                className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2"
+                allowDecimals={true}
+                decimalPlaces={2}
               />
             </div>
 

@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Account } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
 import { useCreateAccount, useDeleteAccount } from '../src/hooks/useMutations';
@@ -198,12 +198,12 @@ const Banking: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-700">Opening Balance</label>
-                <input 
-                  type="number" 
-                  placeholder="0.00" 
-                  className="w-full px-4 py-2 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-emerald-500"
+                <NumericInput 
                   value={newAcc.openingBalance}
-                  onChange={e => setNewAcc({...newAcc, openingBalance: parseFloat(e.target.value) || 0})}
+                  onChange={value => setNewAcc({...newAcc, openingBalance: value})}
+                  className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-emerald-500 px-4 py-2"
+                  allowDecimals={true}
+                  decimalPlaces={2}
                 />
               </div>
             </div>

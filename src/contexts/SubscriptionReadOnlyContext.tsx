@@ -150,7 +150,15 @@ export const SubscriptionReadOnlyProvider: React.FC<{ children: React.ReactNode 
 export const useSubscriptionReadOnly = (): SubscriptionReadOnlyContextType => {
   const context = useContext(SubscriptionReadOnlyContext);
   if (!context) {
-    throw new Error('useSubscriptionReadOnly must be used within SubscriptionReadOnlyProvider');
+    // Fail-safe: return sensible defaults when provider is missing to avoid crashing
+    // This can happen during tests or if the provider mounting order is incorrect.
+    // Log a warning to help debugging.
+    // eslint-disable-next-line no-console
+    console.warn('useSubscriptionReadOnly called without SubscriptionReadOnlyProvider; returning safe defaults.');
+    return {
+      isReadOnly: false,
+      showReadOnlyWarning: () => {},
+    };
   }
   return context;
 };

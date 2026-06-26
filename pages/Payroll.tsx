@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, LoadingOverlay, Modal, Table } from '../components';
+import { Button, LoadingOverlay, Modal, Table, NumericInput } from '../components';
 import type { TableColumn } from '../components/Table';
 import { ICONS, formatCurrency } from '../constants';
 import Pagination from '../src/components/Pagination';
@@ -536,14 +536,11 @@ const Payroll: React.FC = () => {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Amount</label>
-                <input
-                  type="number"
-                  min="0"
-                  max={selectedCard.currentBalance}
-                  step="1"
+                <NumericInput
                   value={payoutForm.amount}
-                  onChange={(event) => setPayoutForm((current) => ({ ...current, amount: event.target.value }))}
-                  className="w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#3c5a82]"
+                  onChange={(value) => setPayoutForm((current) => ({ ...current, amount: value }))}
+                  className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#3c5a82]"
+                  allowDecimals={false}
                 />
                 <p className="text-xs font-medium text-gray-400">
                   Any amount up to {formatCurrency(selectedCard.currentBalance)}.

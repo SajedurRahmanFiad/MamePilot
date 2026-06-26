@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { theme } from '../theme';
+import { NumericInput } from './index';
 import { fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder } from '../src/services/supabaseQueries';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
@@ -156,12 +157,11 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                 Weight <span className="text-red-500">*</span>
               </label>
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
+                <NumericInput
                   value={weight}
-                  onChange={(e) => setWeight(Number(e.target.value))}
-                  className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg"
-                  min="1"
+                  onChange={(value) => setWeight(value)}
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2"
+                  allowDecimals={false}
                 />
                 <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">grams</span>
               </div>

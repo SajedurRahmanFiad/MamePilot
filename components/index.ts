@@ -13,7 +13,7 @@ export { Card, StatCard } from './Card';
 
 export { Table, TableCell, TableHeader, TableBody, TableRow } from './Table';
 
-export { Input, Select, TextArea } from './Input';
+export { Input, Select, TextArea, NumericInput } from './Input';
 
 export { Modal, Dialog } from './Modal';
 

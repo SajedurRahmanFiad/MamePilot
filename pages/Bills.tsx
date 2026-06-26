@@ -101,10 +101,13 @@ const Bills: React.FC = () => {
   const createdByIds = useMemo(() => {
     if (effectiveCreatedByFilter === 'all') return undefined;
     if (effectiveCreatedByFilter === 'admins') {
-      return users.filter(u => hasAdminAccess(u.role)).map(u => u.id);
+      return users.filter((u) => u.role === 'Admin').map((u) => u.id);
     }
     if (effectiveCreatedByFilter === 'employees') {
-      return users.filter(u => isEmployeeRole(u.role)).map(u => u.id);
+      return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+    }
+    if (effectiveCreatedByFilter === 'developers') {
+      return users.filter(u => u.role === 'Developer').map(u => u.id);
     }
     // Specific user ID
     return [effectiveCreatedByFilter];
@@ -269,8 +272,23 @@ const Bills: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Purchase Bills</h2>
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div>
+            <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Purchase Bills</h2>
+          </div>
+          <div className="hidden sm:block">
+            <FilterBar 
+              title="Bills"
+              filterRange={effectiveFilterRange}
+              setFilterRange={handleFilterRangeChange}
+              customDates={effectiveCustomDates}
+              setCustomDates={handleCustomDatesChange}
+              statusTab={effectiveStatusTab}
+              setStatusTab={handleStatusTabChange}
+              statusOptions={Object.values(BillStatus)}
+              compact={true}
+            />
+          </div>
         </div>
         {canCreateBills && (
           <Button
@@ -283,17 +301,18 @@ const Bills: React.FC = () => {
           </Button>
         )}
       </div>
-
-      <FilterBar 
-        title="Bills"
-        filterRange={effectiveFilterRange}
-        setFilterRange={handleFilterRangeChange}
-        customDates={effectiveCustomDates}
-        setCustomDates={handleCustomDatesChange}
-        statusTab={effectiveStatusTab}
-        setStatusTab={handleStatusTabChange}
-        statusOptions={Object.values(BillStatus)}
-      />
+      <div className="sm:hidden">
+        <FilterBar 
+          title="Bills"
+          filterRange={effectiveFilterRange}
+          setFilterRange={handleFilterRangeChange}
+          customDates={effectiveCustomDates}
+          setCustomDates={handleCustomDatesChange}
+          statusTab={effectiveStatusTab}
+          setStatusTab={handleStatusTabChange}
+          statusOptions={Object.values(BillStatus)}
+        />
+      </div>
 
       {/* Created By Filter Dropdown */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -305,8 +324,9 @@ const Bills: React.FC = () => {
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">All Users</option>
-            {users.some(u => hasAdminAccess(u.role)) && <option value="admins">Admin Access</option>}
-            {users.some(u => isEmployeeRole(u.role)) && <option value="employees">All Employees</option>}
+            {users.some((u) => u.role === 'Admin') && <option value="admins">Admins</option>}
+            {users.some((u) => isEmployeeRole(u.role)) && <option value="employees">Employees</option>}
+            {users.some((user) => user.role === 'Developer') && <option value="developers">Developers</option>}
             <optgroup label="Specific Users">
               {users.map(u => (
                 <option key={u.id} value={u.id}>{u.name} ({u.role})</option>

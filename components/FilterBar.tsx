@@ -18,6 +18,7 @@ interface FilterBarProps {
   setStatusTab?: (status: any) => void;
   statusOptions?: string[];
   title?: string;
+  compact?: boolean;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -31,6 +32,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   setStatusTab,
   statusOptions = [],
   title
+  , compact = false
 }) => {
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const { searchQuery, setSearchQuery } = useSearch();
@@ -41,7 +43,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${compact ? '' : 'mb-6'}`}>
         {/* Desktop Filter Bar */}
         <div className="hidden sm:flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-gray-100 shadow-sm">

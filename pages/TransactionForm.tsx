@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db';
 import { Transaction } from '../types';
 import { ICONS, formatCurrency } from '../constants';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults, useTransaction } from '../src/hooks/useQueries';
 import { useCreateTransaction, useUpdateTransaction } from '../src/hooks/useMutations';
@@ -331,12 +331,12 @@ const TransactionForm: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="space-y-2">
             <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Amount (BDT)</label>
-            <input
-              type="number"
-              className={`w-full text-lg font-black px-6 py-4 bg-gray-50 border-2 border-transparent focus:border-[#3c5a82] focus:bg-white rounded-xl transition-all outline-none ${isIncome ? theme.colors.primary.text : 'text-red-600'}`}
+            <NumericInput
               value={form.amount}
-              onChange={(event) => setForm({ ...form, amount: parseFloat(event.target.value) || 0 })}
-              placeholder="0.00"
+              onChange={(value) => setForm({ ...form, amount: value })}
+              className={`text-lg bg-gray-50 border-2 border-transparent focus:border-[#3c5a82] focus:bg-white rounded-xl px-6 py-4 transition-all ${isIncome ? theme.colors.primary.text : 'text-red-600'}`}
+              allowDecimals={true}
+              decimalPlaces={2}
             />
           </div>
           <div className="space-y-2">

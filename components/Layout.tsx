@@ -42,8 +42,13 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
   useEffect(() => {
     if (!expanded) {
       setIsOpen(false);
+      return;
     }
-  }, [expanded]);
+
+    if (active) {
+      setIsOpen(true);
+    }
+  }, [expanded, active]);
 
   const iconNode = (
     <span className="flex items-center justify-center w-8 h-8 text-current">
@@ -52,13 +57,17 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
   );
 
   if (children) {
+    const activeCollapsedClasses = `${theme.colors.primary[600]} text-white shadow-lg shadow-emerald-200/50`;
+    const activeExpandedClasses = `${theme.colors.primary[50]} ${theme.colors.primary.text}`;
     return (
       <div className="space-y-1">
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center ${expanded ? 'justify-between' : 'justify-center'} w-full h-11 px-3 ${theme.radius.md} ${theme.transitions.colors} ${
             active 
-              ? `${theme.colors.primary[50]} ${theme.colors.primary.text}` 
+              ? expanded
+                ? activeExpandedClasses
+                : activeCollapsedClasses
               : `text-gray-500 hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text}`
           }`}
         >

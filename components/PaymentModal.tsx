@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from './index';
+import { Button, NumericInput } from './index';
 import { formatCurrency } from '../constants';
 import { theme } from '../theme';
 import { Account } from '../types';
@@ -64,11 +64,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <div className="space-y-1">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Amount (BDT)</label>
-              <input 
-                type="number" 
+              <NumericInput 
                 value={paymentForm.amount} 
-                onChange={e => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value) || 0})} 
-                className={`w-full px-6 py-4 bg-[#ebf4ff] border-2 border-[#c7dff5] rounded-lg font-black ${theme.colors.primary[600]} text-lg outline-none`}
+                onChange={amount => setPaymentForm({...paymentForm, amount})} 
+                className={`bg-[#ebf4ff] border-2 border-[#c7dff5] text-lg ${theme.colors.primary[600]}`}
+                disabled={isLoading}
+                decimalPlaces={2}
+                allowDecimals={true}
               />
             </div>
 
@@ -126,11 +128,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           </div>
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Amount to Pay</label>
-            <input 
-              type="number" 
+            <NumericInput 
               value={paymentForm.amount} 
-              onChange={e => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value) || 0})} 
-              className="w-full px-4 py-3 bg-gray-50 border rounded-xl font-bold"
+              onChange={amount => setPaymentForm({...paymentForm, amount})} 
+              className="bg-gray-50 border"
+              disabled={isLoading}
+              decimalPlaces={2}
+              allowDecimals={true}
             />
           </div>
           <div className="pt-4 flex gap-3">

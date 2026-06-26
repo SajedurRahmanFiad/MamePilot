@@ -1,4 +1,5 @@
 import React from 'react';
+import { NumericInput } from '../../components';
 
 interface Props {
   page: number;
@@ -42,15 +43,15 @@ const Pagination: React.FC<Props> = ({ page, totalPages, onPageChange, pageSize,
           ‹
         </button>
 
-        <input
-          type="number"
-          min={1}
-          max={totalPages}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onBlur={applyInput}
-          onKeyDown={(e) => { if (e.key === 'Enter') applyInput(); }}
+        <NumericInput
+          value={input || 1}
+          onChange={(value) => {
+            let p = Math.max(1, Math.min(totalPages, value || 1));
+            setInput(String(p));
+            if (p !== page) onPageChange(p);
+          }}
           className="w-16 px-2 py-1 border rounded-md text-center text-sm"
+          allowDecimals={false}
         />
 
         <button

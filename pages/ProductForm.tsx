@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db';
 import { Product, UserRole, isEmployeeRole } from '../types';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useProduct, useCategories } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
@@ -181,20 +181,22 @@ const ProductForm: React.FC = () => {
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sale Price (BDT)</label>
-            <input 
-              type="number" 
-              className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-bold`}
+            <NumericInput 
               value={form.salePrice}
-              onChange={e => setForm({...form, salePrice: parseFloat(e.target.value) || 0})}
+              onChange={value => setForm({...form, salePrice: value})}
+              className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3"
+              allowDecimals={true}
+              decimalPlaces={2}
             />
           </div>
           <div className="flex-1 space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Purchase Price (BDT)</label>
-            <input 
-              type="number" 
-              className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] text-gray-600 font-bold`}
+            <NumericInput 
               value={form.purchasePrice}
-              onChange={e => setForm({...form, purchasePrice: parseFloat(e.target.value) || 0})}
+              onChange={value => setForm({...form, purchasePrice: value})}
+              className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] text-gray-600 px-4 py-3"
+              allowDecimals={true}
+              decimalPlaces={2}
             />
           </div>
         </div>
@@ -202,13 +204,11 @@ const ProductForm: React.FC = () => {
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isEdit ? 'Stock' : 'Opening Stock'}</label>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-bold"
+            <NumericInput
               value={form.stock ?? 0}
-              onChange={e => setForm({ ...form, stock: Math.max(0, parseInt(e.target.value || '0', 10) || 0) })}
+              onChange={value => setForm({ ...form, stock: Math.max(0, value) })}
+              className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3"
+              allowDecimals={false}
             />
           </div>
         </div>

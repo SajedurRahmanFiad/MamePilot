@@ -37,8 +37,8 @@ const Products: React.FC = () => {
 
   const createdByIds = useMemo(() => {
     if (createdByFilter === 'all') return undefined;
-    if (createdByFilter === 'admins') return users.filter(u => hasAdminAccess(u.role)).map(u => u.id);
-    if (createdByFilter === 'employees') return users.filter(u => isEmployeeRole(u.role)).map(u => u.id);
+    if (createdByFilter === 'admins') return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+    if (createdByFilter === 'employees') return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
     return [createdByFilter];
   }, [createdByFilter, users]);
 

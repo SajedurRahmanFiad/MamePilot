@@ -336,7 +336,7 @@ export function useOrderSearchPreview(
 export function useOrdersPage(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
-  filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[] },
+  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string },
   options?: { enabled?: boolean }
 ): UseQueryResult<{ data: Order[]; count: number }, Error> {
   return useQuery({

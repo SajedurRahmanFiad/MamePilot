@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { formatCurrency, ICONS } from '../constants';
+import { NumericInput } from './index';
 import { hasAdminAccess, isDeveloperRole, type ServiceSubscriptionItem, type ServiceSubscriptionMethod } from '../types';
 import { useServiceSubscriptionOverview } from '../src/hooks/useQueries';
 import { useSaveServiceSubscriptionSettings, useSubmitServiceSubscriptionPayment } from '../src/hooks/useMutations';
@@ -292,18 +293,17 @@ const ServiceSubscriptionsPanel: React.FC = () => {
                   {ICONS.Help}
                 </span>
               </div>
-              <input
-                type="number"
-                min={minimumAmount}
-                step="0.01"
+              <NumericInput
                 value={paymentForm.amount}
-                onChange={(event) =>
+                onChange={(value) =>
                   setPaymentForm((current) => ({
                     ...current,
-                    amount: Number.parseFloat(event.target.value || '0') || 0,
+                    amount: value,
                   }))
                 }
-                className="w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                allowDecimals={true}
+                decimalPlaces={2}
               />
               <p className="text-xs font-medium text-gray-500">
                 Minimum required amount: {formatCurrency(minimumAmount)}
@@ -448,33 +448,31 @@ const ServiceSubscriptionsPanel: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black uppercase tracking-widest text-gray-400">Warning Window (days)</label>
-                  <input
-                    type="number"
-                    min="1"
+                  <NumericInput
                     value={configForm.warningDays}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setConfigForm((current) => ({
                         ...current,
-                        warningDays: Math.max(1, Number.parseInt(event.target.value || '7', 10) || 7),
+                        warningDays: Math.max(1, value),
                       }))
                     }
-                    className="w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                    className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                    allowDecimals={false}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-black uppercase tracking-widest text-gray-400">Global Total Amount</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <NumericInput
                     value={configForm.totalAmount}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setConfigForm((current) => ({
                         ...current,
-                        totalAmount: Number.parseFloat(event.target.value || '0') || 0,
+                        totalAmount: Math.max(0, value),
                       }))
                     }
-                    className="w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                    className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 font-medium transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                    allowDecimals={true}
+                    decimalPlaces={2}
                   />
                 </div>
                 <div className="space-y-2">

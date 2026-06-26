@@ -845,6 +845,16 @@ final class MasterDataApi extends BaseService
         $this->requireAdmin();
         $id = trim((string) ($params['id'] ?? ''));
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        
+        // Check if category is a system category
+        $category = $this->database->fetchOne(
+            'SELECT is_system FROM categories WHERE id = :id LIMIT 1',
+            [':id' => $id]
+        );
+        if ($category && $category['is_system']) {
+            throw new RuntimeException('System categories cannot be edited.');
+        }
+        
         $payload = [];
         if (array_key_exists('name', $updates)) {
             $payload['name'] = trim((string) $updates['name']);
@@ -865,7 +875,18 @@ final class MasterDataApi extends BaseService
     public function deleteCategory(array $params): array
     {
         $this->requireAdmin();
-        $this->database->execute('DELETE FROM categories WHERE id = :id', [':id' => trim((string) ($params['id'] ?? ''))]);
+        $id = trim((string) ($params['id'] ?? ''));
+        
+        // Check if category is a system category
+        $category = $this->database->fetchOne(
+            'SELECT is_system FROM categories WHERE id = :id LIMIT 1',
+            [':id' => $id]
+        );
+        if ($category && $category['is_system']) {
+            throw new RuntimeException('System categories cannot be deleted.');
+        }
+        
+        $this->database->execute('DELETE FROM categories WHERE id = :id', [':id' => $id]);
         return ['success' => true];
     }
 

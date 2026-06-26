@@ -777,6 +777,7 @@ abstract class BaseService
             'name' => (string) ($row['name'] ?? ''),
             'type' => (string) ($row['type'] ?? ''),
             'color' => (string) ($row['color'] ?? '#3B82F6'),
+            'isSystem' => (bool) ($row['is_system'] ?? $row['isSystem'] ?? false),
             'parentId' => $this->nullableString($row['parent_id'] ?? $row['parentId'] ?? null),
             'createdAt' => $this->toIso($row['created_at'] ?? $row['createdAt'] ?? null),
             'updatedAt' => $this->toIso($row['updated_at'] ?? $row['updatedAt'] ?? null),
