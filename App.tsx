@@ -80,6 +80,7 @@ const DeveloperSettings = lazyPage(() => import('./pages/DeveloperSettings'));
 const DeveloperSubscriptions = lazyPage(() => import('./pages/DeveloperSubscriptions'));
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
+const Leads = lazyPage(() => import('./pages/Leads'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
 const CustomerDetails = lazyPage(() => import('./pages/CustomerDetails'));
 const Vendors = lazyPage(() => import('./pages/Vendors'));
@@ -87,6 +88,9 @@ const VendorForm = lazyPage(() => import('./pages/VendorForm'));
 const VendorDetails = lazyPage(() => import('./pages/VendorDetails'));
 const Reports = lazyPage(() => import('./pages/Reports'));
 const Payroll = lazyPage(() => import('./pages/Payroll'));
+const HumanResourceDashboard = lazyPage(() => import('./pages/HumanResourceDashboard'));
+const SocialMediaAdsDashboard = lazyPage(() => import('./pages/SocialMediaAdsDashboard'));
+const MetaAds = lazyPage(() => import('./pages/MetaAds'));
 const RecycleBin = lazyPage(() => import('./pages/RecycleBin'));
 const ExpenseSummary = lazyPage(() => import('./pages/reports/ExpenseSummary'));
 const IncomeSummary = lazyPage(() => import('./pages/reports/IncomeSummary'));
@@ -320,6 +324,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       <Route path="/fraud-checker" element={
         isAuthenticated ? (can('fraudChecker.check') ? <Layout><FraudCheckerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
+      <Route path="/leads" element={
+        isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
       <Route path="/banking/transfer" element={
         isAuthenticated ? (can('transfers.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -388,6 +395,27 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
 
       <Route path="/reports" element={
         isAuthenticated ? (can('reports.view') ? <Layout><Reports /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/human-resource-dashboard" element={
+        isAuthenticated
+          ? can('users.view') && hasCapability('human_resources')
+            ? <Layout><HumanResourceDashboard /></Layout>
+            : <Navigate to={defaultProtectedRoute} replace />
+          : <Navigate to="/login" replace />
+      } />
+      <Route path="/social-media-ads" element={
+        isAuthenticated
+          ? canViewDashboard
+            ? <Layout><SocialMediaAdsDashboard /></Layout>
+            : <Navigate to={defaultProtectedRoute} replace />
+          : <Navigate to="/login" replace />
+      } />
+      <Route path="/meta-ads" element={
+        isAuthenticated
+          ? canViewDashboard
+            ? <Layout><MetaAds /></Layout>
+            : <Navigate to={defaultProtectedRoute} replace />
+          : <Navigate to="/login" replace />
       } />
       <Route path="/payroll" element={
         isAuthenticated

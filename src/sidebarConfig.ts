@@ -35,16 +35,23 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     visible: ({ can, hasCapability }) => can('products.view') && hasCapability('inventory'),
   },
   {
-    key: 'sales',
-    label: 'Sales',
+    key: 'orders',
+    label: 'Orders',
+    to: '/orders',
     icon: ICONS.Sales,
+    visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sales'),
+  },
+  {
+    key: 'customer_relationship',
+    label: 'Customer Relationship',
+    icon: ICONS.Customers,
     children: [
       {
-        key: 'orders',
-        label: 'Orders',
-        to: '/orders',
-        icon: ICONS.Sales,
-        visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sales'),
+        key: 'leads',
+        label: 'Leads',
+        to: '/leads',
+        icon: ICONS.Customers,
+        visible: ({ can, hasCapability }) => can('customers.view') && hasCapability('sales'),
       },
       {
         key: 'customers',
@@ -52,6 +59,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         to: '/customers',
         icon: ICONS.Customers,
         visible: ({ can, hasCapability }) => can('customers.view') && hasCapability('sales'),
+      },
+      {
+        key: 'fraud_checker',
+        label: 'Fraud Checker',
+        to: '/fraud-checker',
+        icon: ICONS.FraudChecker,
+        visible: ({ can, hasCapability }) => can('fraudChecker.check') && hasCapability('fraud_checker'),
       },
     ],
   },
@@ -89,6 +103,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     icon: ICONS.Users,
     children: [
       {
+        key: 'hr-dashboard',
+        label: 'Dashboard',
+        to: '/human-resource-dashboard',
+        icon: ICONS.Dashboard,
+        visible: ({ can, hasCapability }) => can('users.view') && hasCapability('human_resources'),
+      },
+      {
         key: 'users',
         label: 'Users',
         to: '/users',
@@ -101,6 +122,27 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         to: '/payroll',
         icon: ICONS.Payroll,
         visible: ({ can, hasCapability }) => can('payroll.view') && hasCapability('human_resources'),
+      },
+    ],
+  },
+  {
+    key: 'social_media_ads',
+    label: 'Social Media Ads',
+    icon: ICONS.Bell,
+    children: [
+      {
+        key: 'social_ads_dashboard',
+        label: 'Dashboard',
+        to: '/social-media-ads',
+        icon: ICONS.Dashboard,
+        visible: ({ canViewDashboard }) => canViewDashboard,
+      },
+      {
+        key: 'meta_ads',
+        label: 'Meta Ads',
+        to: '/meta-ads',
+        icon: ICONS.Bell,
+        visible: ({ canViewDashboard }) => canViewDashboard,
       },
     ],
   },
@@ -131,13 +173,6 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         visible: ({ can, hasCapability }) => can('transfers.create') && hasCapability('banking'),
       },
     ],
-  },
-  {
-    key: 'fraud_checker',
-    label: 'Fraud Checker',
-    to: '/fraud-checker',
-    icon: ICONS.FraudChecker,
-    visible: ({ can, hasCapability }) => can('fraudChecker.check') && hasCapability('fraud_checker'),
   },
   {
     key: 'reports',
