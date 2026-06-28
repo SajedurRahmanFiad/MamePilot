@@ -54,7 +54,13 @@ final class UpdateManager
         $documentRootFolder = $this->config->get('UPDATE_DOCUMENT_ROOT_FOLDER', 'public_html');
         $backendFolder = $this->config->get('UPDATE_BACKEND_FOLDER', 'mamepilot_backend');
         $tempRoot = $this->temporaryDirectory();
-        $backupRoot = $this->backupRoot($appRoot, $publicRoot, $tempRoot);
+        
+        // Check if UPDATE_BACKUP_ROOT is configured
+        $backupRootConfigured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', '')) !== '';
+        $backupRoot = null;
+        if ($backupRootConfigured) {
+            $backupRoot = $this->backupRoot($appRoot, $publicRoot, $tempRoot);
+        }
 
         try {
             $zipPath = $tempRoot . DIRECTORY_SEPARATOR . 'release.zip';
@@ -67,7 +73,7 @@ final class UpdateManager
             $this->extractZip($zipPath, $extractRoot);
 
             $actualBackupRoot = null;
-            if ($this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
+            if ($backupRootConfigured && $backupRoot !== null && $this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
                 $actualBackupRoot = $this->backupDirectories([$appRoot => 'backend', $publicRoot => 'public'], $backupRoot);
                 $this->rememberLatestBackup($actualBackupRoot, $backupRoot);
             }
@@ -135,11 +141,18 @@ final class UpdateManager
         $branch = $this->config->get('UPDATE_GIT_BRANCH', 'main');
         $documentRoot = $this->requiredConfig('UPDATE_DOCUMENT_ROOT');
         $backendRoot = $this->config->get('UPDATE_BACKEND_ROOT', dirname($gitRoot) . DIRECTORY_SEPARATOR . 'mamepilot_backend');
-        $backupRoot = $this->backupRoot($backendRoot, $documentRoot, $this->temporaryDirectory());
+        
+        // Check if UPDATE_BACKUP_ROOT is configured
+        $backupRootConfigured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', '')) !== '';
+        $backupRoot = null;
+        if ($backupRootConfigured) {
+            $backupRoot = $this->backupRoot($backendRoot, $documentRoot, $this->temporaryDirectory());
+        }
+        
         $actualBackupRoot = null;
 
         try {
-            if ($this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
+            if ($backupRootConfigured && $backupRoot !== null && $this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
                 $actualBackupRoot = $this->backupDirectories([$backendRoot => 'backend', $documentRoot => 'public'], $backupRoot);
                 $this->rememberLatestBackup($actualBackupRoot, $backupRoot);
             }

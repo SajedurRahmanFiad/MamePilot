@@ -15,7 +15,8 @@ export function normalizeCompanyPage(
   fallback: Partial<CompanyPage> = {},
 ): CompanyPage {
   const fallbackName = String(fallback.name || '').trim() || (index === 0 ? DEFAULT_COMPANY_NAME : `Page ${index + 1}`);
-  const name = String(page?.name || fallback.name || '').trim() || fallbackName;
+  // Don't trim user-provided names - preserve their input as-is, only trim fallback values
+  const name = (page?.name !== undefined && page?.name !== null) ? String(page.name) : (String(fallback.name || '').trim() || fallbackName);
   const id = String(page?.id || fallback.id || '').trim() || (index === 0 ? DEFAULT_PAGE_ID : `company-page-${index + 1}`);
 
   return {

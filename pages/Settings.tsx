@@ -260,12 +260,12 @@ const SettingsPage: React.FC = () => {
           phone: '',
           email: '',
           address: '',
-          isGlobalBranding: false,
+          isGlobalBranding: pages.length === 0, // First page should be marked as global branding
         },
         pages.length,
       ),
     ]);
-    setExpandedCompanyPages((current) => ({ ...current, [newPageId]: false }));
+    setExpandedCompanyPages((current) => ({ ...current, [newPageId]: true })); // Auto-expand first page for user to fill details
   };
 
   const handleCompanyPageChange = (pageId: string, key: 'name' | 'logo' | 'phone' | 'email' | 'address', value: string) => {

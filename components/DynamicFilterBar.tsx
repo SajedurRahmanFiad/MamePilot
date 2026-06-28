@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { OrderStatus } from '../types';
 import { ICONS } from '../constants';
 
-type FilterType = 'Created by' | 'Order ID' | 'Customer Name' | 'Order Status' | 'Payment Status' | 'Customer Phone' | 'Free Text';
+type FilterType = 'Created by' | 'Order ID' | 'Customer Name' | 'Company' | 'Order Status' | 'Payment Status' | 'Customer Phone' | 'Assigned courier' | 'Free Text';
 
 interface CombinedFilter {
   id: string;
@@ -17,14 +17,16 @@ interface DynamicFilterBarProps {
   customers?: { id?: string; name?: string; phone?: string }[];
   orderNumberOptions?: string[];
   suggestionValues?: string[];
+  companies?: string[];
+  couriers?: string[];
   freeTextLabel?: string;
   onApply?: (filters: CombinedFilter[]) => void;
   className?: string;
 }
-const TYPE_OPTIONS: FilterType[] = ['Created by', 'Order ID', 'Customer Name', 'Order Status', 'Payment Status', 'Customer Phone'];
+const TYPE_OPTIONS: FilterType[] = ['Created by', 'Order ID', 'Customer Name', 'Company', 'Order Status', 'Payment Status', 'Customer Phone', 'Assigned courier'];
 const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid'];
 
-const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], freeTextLabel = 'Free text', onApply, className }) => {
+const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', onApply, className }) => {
   const [inputValue, setInputValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   // stage: 0=pick type,1=pick operator,2=pick value
@@ -116,8 +118,18 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     [inputValue, matchSuggestions]
   );
 
+  const companyItems = useMemo(() => {
+    const source = companies || suggestionValues || [];
+    return Array.from(new Set(source.filter(Boolean).map(String).map((value) => value.trim())));
+  }, [companies, suggestionValues]);
+
+  const courierItems = useMemo(() => {
+    const source = couriers || suggestionValues || [];
+    const base = Array.from(new Set(source.filter(Boolean).map(String).map((value) => value.trim())));
+    return Array.from(new Set([...base, 'Manual/Other']));
+  }, [couriers, suggestionValues]);
+
   const handleSelectValue = (val: string, display?: string) => {
-    // Immediately combine into final filter (no transient display)
     const combined: CombinedFilter = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
       type: currentType || 'Free Text',
@@ -127,14 +139,11 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     };
     const newFilters = [...filters, combined];
     setFilters(newFilters);
-    // reset transient parts
     setCurrentType(null);
     setCurrentOperator(null);
     setCurrentValue('');
     setStage(0);
     setInputValue('');
-    // keep dropdown open for further input
-    // immediately notify consumer so the table updates
     onApply?.(newFilters);
   };
 
@@ -149,7 +158,6 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      // If in stage 0 and there's text but no matching type, treat as free-text search
       if (effectiveStage === 0 && inputValue.trim() && filteredTypes.length === 0) {
         const combined: CombinedFilter = {
           id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
@@ -158,21 +166,20 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
           value: inputValue.trim(),
           display: `${freeTextLabel} containing ${inputValue.trim()}`,
         };
-        setFilters(prev => [...prev, combined]);
+        const newFilters = [...filters, combined];
+        setFilters(newFilters);
         setInputValue('');
         setIsOpen(false);
-        onApply?.([...filters, combined]);
+        onApply?.(newFilters);
         return;
       }
 
-      // If a type/operator are selected and there is a typed value, accept it as the value
       if (effectiveStage === 2 && inputValue.trim()) {
         handleSelectValue(inputValue.trim());
         setIsOpen(false);
         return;
       }
 
-      // If there are filters, apply
       if (filters.length > 0) {
         onApply?.(filters);
         setIsOpen(false);
@@ -305,6 +312,42 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
         const shown = inputValue.trim() ? list.filter(n => n.toLowerCase().includes(inputValue.trim().toLowerCase())) : list.slice(0, 20);
         const normalized = inputValue.trim();
         const showFallback = normalized && !list.some((n) => n.toLowerCase() === normalized.toLowerCase());
+        return (
+          <div className="py-2">
+            {shown.map(s => (
+              <button key={s} onMouseDown={() => handleSelectValue(s)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">{s}</button>
+            ))}
+            {showFallback && (
+              <button onMouseDown={() => handleSelectValue(normalized)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Use "{normalized}"</button>
+            )}
+            <div className="px-4 py-2 text-sm text-gray-400">Type a value and press Enter to add</div>
+          </div>
+        );
+      }
+
+      // Company suggestions
+      if (currentType === 'Company') {
+        const shown = inputValue.trim() ? companyItems.filter(n => n.toLowerCase().includes(inputValue.trim().toLowerCase())) : companyItems.slice(0, 20);
+        const normalized = inputValue.trim();
+        const showFallback = normalized && !companyItems.some((n) => n.toLowerCase() === normalized.toLowerCase());
+        return (
+          <div className="py-2">
+            {shown.map(s => (
+              <button key={s} onMouseDown={() => handleSelectValue(s)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">{s}</button>
+            ))}
+            {showFallback && (
+              <button onMouseDown={() => handleSelectValue(normalized)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Use "{normalized}"</button>
+            )}
+            <div className="px-4 py-2 text-sm text-gray-400">Type a value and press Enter to add</div>
+          </div>
+        );
+      }
+
+      // Assigned courier suggestions
+      if (currentType === 'Assigned courier') {
+        const shown = inputValue.trim() ? courierItems.filter(n => n.toLowerCase().includes(inputValue.trim().toLowerCase())) : courierItems.slice(0, 20);
+        const normalized = inputValue.trim();
+        const showFallback = normalized && !courierItems.some((n) => n.toLowerCase() === normalized.toLowerCase());
         return (
           <div className="py-2">
             {shown.map(s => (

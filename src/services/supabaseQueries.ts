@@ -104,7 +104,7 @@ export async function fetchProductQuantitySoldReport(params?: { filterRange?: st
 export async function fetchCustomerSalesReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<CustomerSalesReportData>('fetchCustomerSalesReport', params || {});
 }
-export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string }) {
+export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string }) {
   return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters });
 }
 export async function fetchOrderById(id: string) { return call<Order | null>('fetchOrderById', { id }); }

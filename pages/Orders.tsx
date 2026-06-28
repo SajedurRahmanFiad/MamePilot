@@ -10,7 +10,7 @@ import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useCompletePickedOrder, useCreateOrder } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
@@ -71,6 +71,10 @@ const Orders: React.FC = () => {
   const urlCustomerNameNot = searchParams.get('customerNameNot') || '';
   const urlCustomerPhone = searchParams.get('customerPhone') || '';
   const urlCustomerPhoneNot = searchParams.get('customerPhoneNot') || '';
+  const urlCompany = searchParams.get('company') || '';
+  const urlCompanyNot = searchParams.get('companyNot') || '';
+  const urlCourier = searchParams.get('courier') || '';
+  const urlCourierNot = searchParams.get('courierNot') || '';
   const urlFilterRange = (searchParams.get('range') as FilterRange | null) || 'All Time';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
   const urlCreatedByNot = searchParams.get('createdByNot') || '';
@@ -96,6 +100,10 @@ const Orders: React.FC = () => {
   const [customerNameNot, setCustomerNameNot] = useState<string>(urlCustomerNameNot);
   const [customerPhone, setCustomerPhone] = useState<string>(urlCustomerPhone);
   const [customerPhoneNot, setCustomerPhoneNot] = useState<string>(urlCustomerPhoneNot);
+  const [company, setCompany] = useState<string>(urlCompany);
+  const [companyNot, setCompanyNot] = useState<string>(urlCompanyNot);
+  const [courier, setCourier] = useState<string>(urlCourier);
+  const [courierNot, setCourierNot] = useState<string>(urlCourierNot);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
   const [createdByNot, setCreatedByNot] = useState<string>(urlCreatedByNot);
   const [page, setPage] = useState<number>(urlPage);
@@ -127,6 +135,10 @@ const Orders: React.FC = () => {
     setCustomerNameNot(urlCustomerNameNot);
     setCustomerPhone(urlCustomerPhone);
     setCustomerPhoneNot(urlCustomerPhoneNot);
+    setCompany(urlCompany);
+    setCompanyNot(urlCompanyNot);
+    setCourier(urlCourier);
+    setCourierNot(urlCourierNot);
     setCreatedByFilter(urlCreatedByFilter);
     setCreatedByNot(urlCreatedByNot);
     setFilterRange(urlFilterRange);
@@ -186,6 +198,10 @@ const Orders: React.FC = () => {
   const effectiveCustomerNameNot = shouldHydrateFromUrl ? urlCustomerNameNot : customerNameNot;
   const effectiveCustomerPhone = shouldHydrateFromUrl ? urlCustomerPhone : customerPhone;
   const effectiveCustomerPhoneNot = shouldHydrateFromUrl ? urlCustomerPhoneNot : customerPhoneNot;
+  const effectiveCompany = shouldHydrateFromUrl ? urlCompany : company;
+  const effectiveCompanyNot = shouldHydrateFromUrl ? urlCompanyNot : companyNot;
+  const effectiveCourier = shouldHydrateFromUrl ? urlCourier : courier;
+  const effectiveCourierNot = shouldHydrateFromUrl ? urlCourierNot : courierNot;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
   const effectiveCreatedByNot = shouldHydrateFromUrl ? urlCreatedByNot : createdByNot;
   const effectiveFilterRange = shouldHydrateFromUrl ? urlFilterRange : filterRange;
@@ -223,6 +239,10 @@ const Orders: React.FC = () => {
     customerNameNot: effectiveCustomerNameNot || undefined,
     customerPhone: effectiveCustomerPhone || undefined,
     customerPhoneNot: effectiveCustomerPhoneNot || undefined,
+    company: effectiveCompany || undefined,
+    companyNot: effectiveCompanyNot || undefined,
+    courier: effectiveCourier || undefined,
+    courierNot: effectiveCourierNot || undefined,
     from: timeFilters.from,
     to: timeFilters.to,
     search: searchQuery,
@@ -232,6 +252,8 @@ const Orders: React.FC = () => {
     enabled: canLoadOrders,
   });
   const orders = ordersPage?.data ?? [];
+
+  const { data: companySettings } = useCompanySettings();
 
   const freeTextMetadataValues = useMemo(() => {
     return Array.from(
@@ -246,6 +268,30 @@ const Orders: React.FC = () => {
         ]).filter((value) => typeof value === 'string' && value.trim() !== '')
       )
     );
+  }, [orders]);
+
+  const companyNames = useMemo(() => {
+    const fromOrders = orders.map(o => String(o.pageSnapshot?.name || '').trim()).filter(Boolean);
+    const fromSettings = (companySettings?.pages || []).map(p => String(p.name || '').trim()).filter(Boolean);
+    const globalName = String(companySettings?.name || '').trim();
+    return Array.from(new Set([...fromSettings, globalName, ...fromOrders].filter(Boolean)));
+  }, [orders, companySettings]);
+
+  const courierNames = useMemo(() => {
+    const names = new Set<string>();
+    orders.forEach(o => {
+      const raw = String(o.history?.courier || '').trim();
+      if (raw) names.add(raw);
+      if (o.carrybeeConsignmentId) names.add('CarryBee');
+      if (o.paperflyTrackingNumber) names.add('Paperfly');
+      if (o.steadfastConsignmentId) names.add('Steadfast');
+      const pref = getPreferredCourierFromHistory(o.history?.courier);
+      if (pref === 'paperfly') names.add('Paperfly');
+      if (pref === 'carrybee') names.add('CarryBee');
+      if (pref === 'steadfast') names.add('Steadfast');
+    });
+    names.add('Manual/Other');
+    return Array.from(names);
   }, [orders]);
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
   const totalOrdersCount = ordersPage?.count ?? 0;
@@ -644,6 +690,8 @@ const Orders: React.FC = () => {
           customers={Array.from(new Map(orders.map(o => [o.customerId || o.id, { id: o.customerId || o.id, name: o.customerName || '', phone: o.customerPhone || '' }])).values())}
           orderNumberOptions={Array.from(new Set(orders.map(o => o.orderNumber).filter(Boolean)))}
           suggestionValues={freeTextMetadataValues}
+          companies={companyNames}
+          couriers={courierNames}
           freeTextLabel="Orders"
           onApply={(appliedFilters) => {
             // Apply filters: map known types to query params, others to search
@@ -726,9 +774,25 @@ const Orders: React.FC = () => {
               params.customerPhoneNot = customerPhoneNotFilter.value;
             }
 
+            const companyFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '=');
+            const companyNotFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '≠');
+            if (companyFilter) {
+              params.company = companyFilter.value;
+            } else if (companyNotFilter) {
+              params.companyNot = companyNotFilter.value;
+            }
+
+            const courierFilter = appliedFilters.find(f => f.type === 'Assigned courier' && f.operator === '=');
+            const courierNotFilter = appliedFilters.find(f => f.type === 'Assigned courier' && f.operator === '≠');
+            if (courierFilter) {
+              params.courier = courierFilter.value;
+            } else if (courierNotFilter) {
+              params.courierNot = courierNotFilter.value;
+            }
+
             // other filters => search string
             const searchTerms = appliedFilters
-              .filter(f => f.type === 'Free Text' || !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone'].includes(f.type))
+              .filter(f => f.type === 'Free Text' || !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone', 'Company', 'Assigned courier'].includes(f.type))
               .map(f => f.value);
             if (searchTerms.length > 0) params.search = searchTerms.join(' ');
 
@@ -737,6 +801,10 @@ const Orders: React.FC = () => {
             if (customDates.from) params.from = customDates.from;
             if (customDates.to) params.to = customDates.to;
             if (includeTime) params.includeTime = 'true';
+            if (company) params.company = company;
+            if (companyNot) params.companyNot = companyNot;
+            if (courier) params.courier = courier;
+            if (courierNot) params.courierNot = courierNot;
 
             setSearchParams(params, { replace: true });
           }}

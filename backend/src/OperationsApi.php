@@ -1302,6 +1302,28 @@ final class OperationsApi extends BaseService
             $bindings[':customer_phone_not'] = $customerPhoneNot;
         }
 
+        $company = trim((string) ($filters['company'] ?? ''));
+        if ($company !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) = :company';
+            $bindings[':company'] = $company;
+        }
+        $companyNot = trim((string) ($filters['companyNot'] ?? ''));
+        if ($companyNot !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) <> :company_not';
+            $bindings[':company_not'] = $companyNot;
+        }
+
+        $courier = trim((string) ($filters['courier'] ?? ''));
+        if ($courier !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) = :courier';
+            $bindings[':courier'] = $courier;
+        }
+        $courierNot = trim((string) ($filters['courierNot'] ?? ''));
+        if ($courierNot !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) <> :courier_not';
+            $bindings[':courier_not'] = $courierNot;
+        }
+
         if (!empty($filters['from'])) {
             $where .= ' AND createdAt >= :from';
             $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
@@ -1327,14 +1349,24 @@ final class OperationsApi extends BaseService
 
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
+            $searchTerm = '%' . $search . '%';
             if (preg_match('/\d/', $search) === 1) {
-                $where .= ' AND (customerPhone LIKE :search_phone OR orderNumber LIKE :search_number)';
-                $bindings[':search_phone'] = '%' . $search . '%';
-                $bindings[':search_number'] = '%' . $search . '%';
+                $where .= ' AND (
+                    customerPhone LIKE :search_term
+                    OR orderNumber LIKE :search_term
+                    OR customerName LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
+                )';
+                $bindings[':search_term'] = $searchTerm;
             } else {
-                $where .= ' AND (customerName LIKE :search_name OR orderNumber LIKE :search_number)';
-                $bindings[':search_name'] = '%' . $search . '%';
-                $bindings[':search_number'] = '%' . $search . '%';
+                $where .= ' AND (
+                    customerName LIKE :search_term
+                    OR orderNumber LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
+                )';
+                $bindings[':search_term'] = $searchTerm;
             }
         }
 
