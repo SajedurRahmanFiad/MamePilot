@@ -144,11 +144,13 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     onApply?.(newFilters);
   };
 
+  const effectiveStage = currentType ? (currentOperator ? 2 : 1) : stage;
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       // If in stage 0 and there's text but no matching type, treat as free-text search
-      if (stage === 0 && inputValue.trim() && filteredTypes.length === 0) {
+      if (effectiveStage === 0 && inputValue.trim() && filteredTypes.length === 0) {
         const combined: CombinedFilter = {
           id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
           type: 'Free Text',
@@ -163,8 +165,8 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
         return;
       }
 
-      // If in stage 2 and typing a value, accept it as the value
-      if (stage === 2 && inputValue.trim()) {
+      // If a type/operator are selected and there is a typed value, accept it as the value
+      if (effectiveStage === 2 && inputValue.trim()) {
         handleSelectValue(inputValue.trim());
         setIsOpen(false);
         return;
