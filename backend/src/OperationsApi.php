@@ -1315,13 +1315,95 @@ final class OperationsApi extends BaseService
 
         $courier = trim((string) ($filters['courier'] ?? ''));
         if ($courier !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) = :courier';
-            $bindings[':courier'] = $courier;
+            $normalizedCourier = strtolower($courier);
+            switch ($normalizedCourier) {
+                case 'steadfast':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%steadfast%';
+                    break;
+                case 'carrybee':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%carrybee%';
+                    break;
+                case 'paperfly':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%paperfly%';
+                    break;
+                case 'manual':
+                case 'manual/other':
+                case 'manual-other':
+                    $where .= ' AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) <> ""'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_steadfast'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_carrybee'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_paperfly'
+                        . ' AND TRIM(COALESCE(steadfastConsignmentId, "")) = ""'
+                        . ' AND TRIM(COALESCE(carrybeeConsignmentId, "")) = ""'
+                        . ' AND TRIM(COALESCE(paperflyTrackingNumber, "")) = ""';
+                    $bindings[':manual_avoid_steadfast'] = '%steadfast%';
+                    $bindings[':manual_avoid_carrybee'] = '%carrybee%';
+                    $bindings[':manual_avoid_paperfly'] = '%paperfly%';
+                    break;
+                default:
+                    $where .= ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like';
+                    $bindings[':courier_like'] = '%' . strtolower($courier) . '%';
+                    break;
+            }
         }
         $courierNot = trim((string) ($filters['courierNot'] ?? ''));
         if ($courierNot !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) <> :courier_not';
-            $bindings[':courier_not'] = $courierNot;
+            $normalizedCourierNot = strtolower($courierNot);
+            switch ($normalizedCourierNot) {
+                case 'steadfast':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%steadfast%';
+                    break;
+                case 'carrybee':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%carrybee%';
+                    break;
+                case 'paperfly':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%paperfly%';
+                    break;
+                case 'manual':
+                case 'manual/other':
+                case 'manual-other':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_steadfast
+                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_carrybee
+                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_paperfly
+                        OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) = ""
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':manual_not_match_steadfast'] = '%steadfast%';
+                    $bindings[':manual_not_match_carrybee'] = '%carrybee%';
+                    $bindings[':manual_not_match_paperfly'] = '%paperfly%';
+                    break;
+                default:
+                    $where .= ' AND NOT LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like';
+                    $bindings[':courier_not_like'] = '%' . strtolower($courierNot) . '%';
+                    break;
+            }
         }
 
         if (!empty($filters['from'])) {

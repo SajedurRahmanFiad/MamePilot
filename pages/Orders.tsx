@@ -30,6 +30,31 @@ import {
   getTodayDate,
 } from '../utils';
 
+const normalizeCourierFilterValue = (value: string | null | undefined): string => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized.includes('steadfast')) return 'steadfast';
+  if (normalized.includes('carrybee')) return 'carrybee';
+  if (normalized.includes('paperfly')) return 'paperfly';
+  if (normalized.includes('manual') || normalized.includes('other')) return 'manual';
+  return normalized;
+};
+
+const getCourierFilterLabel = (value: string | null | undefined): string => {
+  switch (normalizeCourierFilterValue(value)) {
+    case 'steadfast':
+      return 'SteadFast';
+    case 'carrybee':
+      return 'CarryBee';
+    case 'paperfly':
+      return 'Paperfly';
+    case 'manual':
+      return 'Manual/Other';
+    default:
+      return String(value || '').trim() || 'Manual/Other';
+  }
+};
+
 const Orders: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -228,6 +253,9 @@ const Orders: React.FC = () => {
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
 
+  const normalizedEffectiveCourier = useMemo(() => normalizeCourierFilterValue(effectiveCourier), [effectiveCourier]);
+  const normalizedEffectiveCourierNot = useMemo(() => normalizeCourierFilterValue(effectiveCourierNot), [effectiveCourierNot]);
+
   const { data: ordersPage, isFetching: ordersLoading } = useOrdersPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
     statusNot: effectiveStatusNot || undefined,
@@ -241,8 +269,8 @@ const Orders: React.FC = () => {
     customerPhoneNot: effectiveCustomerPhoneNot || undefined,
     company: effectiveCompany || undefined,
     companyNot: effectiveCompanyNot || undefined,
-    courier: effectiveCourier || undefined,
-    courierNot: effectiveCourierNot || undefined,
+    courier: normalizedEffectiveCourier || undefined,
+    courierNot: normalizedEffectiveCourierNot || undefined,
     from: timeFilters.from,
     to: timeFilters.to,
     search: searchQuery,
@@ -277,20 +305,26 @@ const Orders: React.FC = () => {
     return Array.from(new Set([...fromSettings, globalName, ...fromOrders].filter(Boolean)));
   }, [orders, companySettings]);
 
+  const orderNumberOptions = useMemo(() => {
+    return Array.from(new Set(orders.map((order) => String(order.orderNumber || '').trim()).filter(Boolean)));
+  }, [orders]);
+
   const courierNames = useMemo(() => {
-    const names = new Set<string>();
-    orders.forEach(o => {
+    const names = new Set<string>(['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other']);
+    orders.forEach((o) => {
       const raw = String(o.history?.courier || '').trim();
-      if (raw) names.add(raw);
-      if (o.carrybeeConsignmentId) names.add('CarryBee');
-      if (o.paperflyTrackingNumber) names.add('Paperfly');
-      if (o.steadfastConsignmentId) names.add('Steadfast');
+      const historyText = raw.toLowerCase();
+      if (o.carrybeeConsignmentId || historyText.includes('carrybee')) names.add('CarryBee');
+      if (o.paperflyTrackingNumber || historyText.includes('paperfly')) names.add('Paperfly');
+      if (o.steadfastConsignmentId || historyText.includes('steadfast')) names.add('SteadFast');
       const pref = getPreferredCourierFromHistory(o.history?.courier);
       if (pref === 'paperfly') names.add('Paperfly');
       if (pref === 'carrybee') names.add('CarryBee');
-      if (pref === 'steadfast') names.add('Steadfast');
+      if (pref === 'steadfast') names.add('SteadFast');
+      if (raw && !historyText.includes('steadfast') && !historyText.includes('carrybee') && !historyText.includes('paperfly')) {
+        names.add('Manual/Other');
+      }
     });
-    names.add('Manual/Other');
     return Array.from(names);
   }, [orders]);
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
@@ -337,6 +371,10 @@ const Orders: React.FC = () => {
     if (effectiveCustomerNameNot) params.customerNameNot = effectiveCustomerNameNot;
     if (effectiveCustomerPhone) params.customerPhone = effectiveCustomerPhone;
     if (effectiveCustomerPhoneNot) params.customerPhoneNot = effectiveCustomerPhoneNot;
+    if (effectiveCompany) params.company = effectiveCompany;
+    if (effectiveCompanyNot) params.companyNot = effectiveCompanyNot;
+    if (effectiveCourier) params.courier = effectiveCourier;
+    if (effectiveCourierNot) params.courierNot = effectiveCourierNot;
     if (effectiveFilterRange && effectiveFilterRange !== 'All Time') params.range = effectiveFilterRange;
     if (effectiveCustomDates.from) params.from = effectiveCustomDates.from;
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
@@ -363,6 +401,10 @@ const Orders: React.FC = () => {
     effectiveCustomerNameNot,
     effectiveCustomerPhone,
     effectiveCustomerPhoneNot,
+    effectiveCompany,
+    effectiveCompanyNot,
+    effectiveCourier,
+    effectiveCourierNot,
     effectiveFilterRange,
     effectiveCustomDates.from,
     effectiveCustomDates.to,
@@ -688,7 +730,7 @@ const Orders: React.FC = () => {
         <DynamicFilterBar
           users={users}
           customers={Array.from(new Map(orders.map(o => [o.customerId || o.id, { id: o.customerId || o.id, name: o.customerName || '', phone: o.customerPhone || '' }])).values())}
-          orderNumberOptions={Array.from(new Set(orders.map(o => o.orderNumber).filter(Boolean)))}
+          orderNumberOptions={orderNumberOptions}
           suggestionValues={freeTextMetadataValues}
           companies={companyNames}
           couriers={courierNames}
@@ -711,6 +753,9 @@ const Orders: React.FC = () => {
                 setStatusNot('');
                 params.status = statusFilter.value;
               }
+            } else {
+              setStatusTab('All');
+              setStatusNot('');
             }
 
                 const paymentFilter = appliedFilters.find(f => f.type === 'Payment Status');
@@ -724,6 +769,9 @@ const Orders: React.FC = () => {
                     setPaymentStatusNot('');
                     params.paymentStatus = paymentFilter.value;
                   }
+                } else {
+                  setPaymentStatus('');
+                  setPaymentStatusNot('');
                 }
 
             const createdByFilter = appliedFilters.find(f => f.type === 'Created by' && f.operator === '=');
@@ -736,6 +784,9 @@ const Orders: React.FC = () => {
               setCreatedByFilter('all');
               setCreatedByNot(createdByNotFilter.value);
               params.createdByNot = createdByNotFilter.value;
+            } else {
+              setCreatedByFilter('all');
+              setCreatedByNot('');
             }
 
             const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && f.operator === '=');
@@ -748,6 +799,9 @@ const Orders: React.FC = () => {
               setOrderNumber('');
               setOrderNumberNot(orderIdNotFilter.value);
               params.orderNumberNot = orderIdNotFilter.value;
+            } else {
+              setOrderNumber('');
+              setOrderNumberNot('');
             }
 
             const customerNameFilter = appliedFilters.find(f => f.type === 'Customer Name' && f.operator === '=');
@@ -760,6 +814,9 @@ const Orders: React.FC = () => {
               setCustomerName('');
               setCustomerNameNot(customerNameNotFilter.value);
               params.customerNameNot = customerNameNotFilter.value;
+            } else {
+              setCustomerName('');
+              setCustomerNameNot('');
             }
 
             const customerPhoneFilter = appliedFilters.find(f => f.type === 'Customer Phone' && f.operator === '=');
@@ -772,22 +829,41 @@ const Orders: React.FC = () => {
               setCustomerPhone('');
               setCustomerPhoneNot(customerPhoneNotFilter.value);
               params.customerPhoneNot = customerPhoneNotFilter.value;
+            } else {
+              setCustomerPhone('');
+              setCustomerPhoneNot('');
             }
 
             const companyFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '=');
             const companyNotFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '≠');
             if (companyFilter) {
+              setCompany(companyFilter.value);
+              setCompanyNot('');
               params.company = companyFilter.value;
             } else if (companyNotFilter) {
+              setCompany('');
+              setCompanyNot(companyNotFilter.value);
               params.companyNot = companyNotFilter.value;
+            } else {
+              setCompany('');
+              setCompanyNot('');
             }
 
             const courierFilter = appliedFilters.find(f => f.type === 'Assigned courier' && f.operator === '=');
             const courierNotFilter = appliedFilters.find(f => f.type === 'Assigned courier' && f.operator === '≠');
             if (courierFilter) {
-              params.courier = courierFilter.value;
+              const normalizedCourier = normalizeCourierFilterValue(courierFilter.value);
+              setCourier(normalizedCourier);
+              setCourierNot('');
+              params.courier = normalizedCourier;
             } else if (courierNotFilter) {
-              params.courierNot = courierNotFilter.value;
+              const normalizedCourierNot = normalizeCourierFilterValue(courierNotFilter.value);
+              setCourier('');
+              setCourierNot(normalizedCourierNot);
+              params.courierNot = normalizedCourierNot;
+            } else {
+              setCourier('');
+              setCourierNot('');
             }
 
             // other filters => search string
@@ -801,10 +877,6 @@ const Orders: React.FC = () => {
             if (customDates.from) params.from = customDates.from;
             if (customDates.to) params.to = customDates.to;
             if (includeTime) params.includeTime = 'true';
-            if (company) params.company = company;
-            if (companyNot) params.companyNot = companyNot;
-            if (courier) params.courier = courier;
-            if (courierNot) params.courierNot = courierNot;
 
             setSearchParams(params, { replace: true });
           }}
