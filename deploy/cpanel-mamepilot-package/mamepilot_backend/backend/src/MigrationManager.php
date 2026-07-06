@@ -142,7 +142,7 @@ final class MigrationManager
                 ':applied_at' => gmdate('Y-m-d H:i:s'),
             ]);
 
-            if ($startedTransaction) {
+            if ($startedTransaction && $pdo->inTransaction()) {
                 $pdo->commit();
             }
         } catch (\Throwable $exception) {

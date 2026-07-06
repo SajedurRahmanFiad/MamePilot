@@ -277,6 +277,8 @@ CREATE TABLE IF NOT EXISTS payment_gateway_settings (
   piprapay_api_key VARCHAR(500) NULL,
   piprapay_merchant_id VARCHAR(255) NULL,
   piprapay_ipn_secret VARCHAR(500) NULL,
+  piprapay_webhook_url VARCHAR(1000) NULL,
+  piprapay_return_url VARCHAR(1000) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)

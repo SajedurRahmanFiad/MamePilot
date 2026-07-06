@@ -273,9 +273,6 @@ const UserForm: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-400 font-medium">
-                  Developer is reserved for direct database assignment only.
-                </p>
               </div>
             )}
 

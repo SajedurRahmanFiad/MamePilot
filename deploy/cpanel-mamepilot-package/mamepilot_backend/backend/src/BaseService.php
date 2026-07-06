@@ -220,6 +220,164 @@ abstract class BaseService
         return $timestamp === false ? '' : gmdate('Y-m-d', $timestamp);
     }
 
+    protected function normalizeUploadedFileValue(?string $value, string $category, ?string $originalFileName = null): ?string
+    {
+        $trimmed = trim((string) ($value ?? ''));
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (!$this->isDataUrl($trimmed)) {
+            return $trimmed;
+        }
+
+        return $this->saveUploadedFileFromDataUrl($trimmed, $category, $originalFileName);
+    }
+
+    protected function isDataUrl(string $value): bool
+    {
+        return preg_match('/^\s*data:[^;]+;base64,/', $value) === 1;
+    }
+
+    protected function decodeDataUrl(string $value): ?array
+    {
+        if (!preg_match('/^\s*data:([^;]+);base64,(.+)$/i', trim($value), $matches)) {
+            return null;
+        }
+
+        $mimeType = strtolower(trim($matches[1]));
+        $payload = preg_replace('/\s+/', '', $matches[2]);
+        $decoded = base64_decode($payload, true);
+        if ($decoded === false) {
+            return null;
+        }
+
+        return [$mimeType, $decoded];
+    }
+
+    protected function saveUploadedFileFromDataUrl(string $dataUrl, string $category, ?string $originalFileName = null): string
+    {
+        $decoded = $this->decodeDataUrl($dataUrl);
+        if ($decoded === null) {
+            return trim($dataUrl);
+        }
+
+        [$mimeType, $data] = $decoded;
+        $uploadDir = $this->uploadPublicPath($category);
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            throw new \RuntimeException(sprintf('Failed to create upload directory: %s', $uploadDir));
+        }
+
+        $fileName = $this->uniqueUploadFilename($this->extensionFromMimeType($mimeType, $originalFileName), $originalFileName);
+        $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $fileName;
+
+        if ($this->isImageMimeType($mimeType)) {
+            $webpFileName = $this->uniqueUploadFilename('webp', $originalFileName);
+            $webpTargetPath = $uploadDir . DIRECTORY_SEPARATOR . $webpFileName;
+            if ($this->saveImageAsWebp($data, $webpTargetPath)) {
+                return '/uploads/' . trim($category, '/') . '/' . $webpFileName;
+            }
+        }
+
+        if (file_put_contents($targetPath, $data) === false) {
+            throw new \RuntimeException(sprintf('Failed to save uploaded file to %s', $targetPath));
+        }
+
+        return '/uploads/' . trim($category, '/') . '/' . $fileName;
+    }
+
+    protected function uploadPublicPath(string $category): string
+    {
+        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . trim($category, '/');
+    }
+
+    protected function uniqueUploadFilename(string $extension, ?string $originalFileName = null): string
+    {
+        $baseName = $this->sanitizeFileName(pathinfo((string) ($originalFileName ?? ''), PATHINFO_FILENAME));
+        if ($baseName === '') {
+            $baseName = $this->uuid4();
+        }
+
+        return sprintf('%s-%s.%s', $baseName, bin2hex(random_bytes(4)), $extension);
+    }
+
+    protected function extensionFromMimeType(string $mimeType, ?string $originalFileName = null): string
+    {
+        $extensionMap = [
+            'image/jpeg' => 'jpg',
+            'image/pjpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'image/svg+xml' => 'svg',
+            'application/pdf' => 'pdf',
+            'text/plain' => 'txt',
+            'application/msword' => 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel' => 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            'application/zip' => 'zip',
+            'application/octet-stream' => 'bin',
+        ];
+
+        if (isset($extensionMap[$mimeType])) {
+            return $extensionMap[$mimeType];
+        }
+
+        $originalExtension = strtolower(pathinfo((string) ($originalFileName ?? ''), PATHINFO_EXTENSION));
+        if ($originalExtension !== '' && preg_match('/^[a-z0-9]+$/', $originalExtension) === 1) {
+            return $originalExtension;
+        }
+
+        $parts = explode('/', $mimeType, 2);
+        if (count($parts) === 2 && preg_match('/^[a-z0-9]+$/', $parts[1]) === 1) {
+            return $parts[1];
+        }
+
+        return 'bin';
+    }
+
+    protected function sanitizeFileName(string $fileName): string
+    {
+        $fileName = preg_replace('/[^a-zA-Z0-9-_\.]/', '_', $fileName) ?: '';
+        return trim($fileName, '._-');
+    }
+
+    protected function saveImageAsWebp(string $data, string $targetPath): bool
+    {
+        if (function_exists('imagecreatefromstring') && function_exists('imagewebp')) {
+            $image = @imagecreatefromstring($data);
+            if ($image !== false) {
+                $result = imagewebp($image, $targetPath, 85);
+                imagedestroy($image);
+                return $result !== false;
+            }
+        }
+
+        if (class_exists('\Imagick')) {
+            try {
+                $imagick = new \Imagick();
+                $imagick->readImageBlob($data);
+                $imagick->setImageFormat('webp');
+                $imagick->setOption('webp:lossless', 'false');
+                $imagick->setImageCompressionQuality(85);
+                $result = $imagick->writeImage($targetPath);
+                $imagick->clear();
+                $imagick->destroy();
+                return $result;
+            } catch (\ImagickException $exception) {
+                // Fallback to raw save below if conversion fails.
+            }
+        }
+
+        return false;
+    }
+
+    protected function isImageMimeType(string $mimeType): bool
+    {
+        return str_starts_with($mimeType, 'image/');
+    }
+
     protected function utcTimezone(): \DateTimeZone
     {
         static $timezone = null;
@@ -654,6 +812,18 @@ abstract class BaseService
             'phone' => (string) ($row['phone'] ?? ''),
             'role' => (string) ($row['role'] ?? ''),
             'image' => (string) ($row['image'] ?? ''),
+            'email' => $this->nullableString($row['email'] ?? null),
+            'address' => $this->nullableString($row['address'] ?? null),
+            'birthday' => $this->nullableString($row['birthday'] ?? null),
+            'nidPassportCopy' => $this->nullableString($row['nid_passport_copy'] ?? $row['nidPassportCopy'] ?? null),
+            'gender' => $this->nullableString($row['gender'] ?? null),
+            'bloodGroup' => $this->nullableString($row['blood_group'] ?? $row['bloodGroup'] ?? null),
+            'nationality' => $this->nullableString($row['nationality'] ?? null),
+            'cv' => $this->nullableString($row['cv'] ?? null),
+            'isCommissionBased' => !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? false),
+            'fixedSalary' => isset($row['fixed_salary']) || isset($row['fixedSalary'])
+                ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'] ?? 0)
+                : null,
             'createdAt' => $this->toIso($row['created_at'] ?? null),
             'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
             'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),

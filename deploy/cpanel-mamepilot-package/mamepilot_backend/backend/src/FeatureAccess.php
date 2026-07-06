@@ -119,6 +119,8 @@ final class FeatureAccess
         'syncPaperflyOrderStatuses' => 'courier_automation',
         'syncSteadfastDeliveryStatuses' => 'courier_automation',
         'updatePermissionsSettings' => 'custom_roles',
+        'fetchAgentSettings' => 'enterprise_ai_agent',
+        'updateAgentSettings' => 'enterprise_ai_agent',
     ];
 
     private Database $database;

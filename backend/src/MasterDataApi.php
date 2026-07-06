@@ -1870,6 +1870,7 @@ final class MasterDataApi extends BaseService
             'piprapayApiKey' => (string) ($row['piprapay_api_key'] ?? ''),
             'piprapayMerchantId' => (string) ($row['piprapay_merchant_id'] ?? ''),
             'piprapayIpnSecret' => (string) ($row['piprapay_ipn_secret'] ?? ''),
+            'piprapayWebhookUrl' => (string) ($row['piprapay_webhook_url'] ?? ''),
         ];
     }
 
@@ -1987,6 +1988,7 @@ final class MasterDataApi extends BaseService
             'piprapay_api_key' => $this->nullableString($params['piprapayApiKey'] ?? null),
             'piprapay_merchant_id' => $this->nullableString($params['piprapayMerchantId'] ?? null),
             'piprapay_ipn_secret' => $this->nullableString($params['piprapayIpnSecret'] ?? null),
+            'piprapay_webhook_url' => $this->nullableString($params['piprapayWebhookUrl'] ?? null),
         ];
 
         if ($row !== null) {
@@ -2039,10 +2041,24 @@ final class MasterDataApi extends BaseService
         }
 
         $gateway = $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1');
-        $baseUrl = preg_replace('#/api$#', '', rtrim(trim((string) ($gateway['piprapay_base_url'] ?? '')), '/'));
+        if (!is_array($gateway)) {
+            // Create a default entry if none exists
+            $defaultId = $this->uuid4();
+            $this->database->execute(
+                'INSERT INTO payment_gateway_settings (id) VALUES (:id)',
+                [':id' => $defaultId]
+            );
+            $gateway = $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1');
+            if (!is_array($gateway)) {
+                throw new RuntimeException('Failed to initialize PipraPay gateway settings.');
+            }
+        }
+        $gatewayBaseUrl = trim((string) ($gateway['piprapay_base_url'] ?? ''));
+        $gatewayBaseUrl = rtrim($gatewayBaseUrl, '/');
+        $baseUrl = $gatewayBaseUrl;
         $apiKey = trim((string) ($gateway['piprapay_api_key'] ?? ''));
         if ($baseUrl === '' || $apiKey === '') {
-            throw new RuntimeException('PipraPay gateway is not configured yet.');
+            throw new RuntimeException('PipraPay gateway is not configured yet. Please add the base URL and API key in Developer Settings > Payment Gateway.');
         }
 
         $interval = trim((string) ($params['interval'] ?? 'monthly')) === 'yearly' ? 'yearly' : 'monthly';
@@ -2079,26 +2095,42 @@ final class MasterDataApi extends BaseService
             'license_key' => (string) (($capabilitySettings['licenseKey'] ?? '') ?: ''),
             'tier_key' => (string) (($capabilitySettings['tierKey'] ?? '') ?: ''),
             'plan_name' => (string) (($capabilitySettings['planName'] ?? '') ?: ''),
+            'payment_datetime' => gmdate('c'),
+            'payment_period' => $interval,
             'domain' => $host,
         ];
+        $configuredWebhookUrl = trim((string) ($gateway['piprapay_webhook_url'] ?? ''));
+        if ($configuredWebhookUrl === '') {
+            $configuredWebhookUrl = $returnBase . '/api/?action=handlePipraPayIpn';
+        }
+        $configuredReturnUrl = trim((string) ($gateway['piprapay_return_url'] ?? ''));
+        if ($configuredReturnUrl === '') {
+            $configuredReturnUrl = $returnBase . '/subscriptions';
+        }
+
         $payload = [
             'full_name' => (string) ($user['name'] ?? 'Admin'),
             'email_address' => (string) (($user['email'] ?? null) ?: 'admin@example.com'),
             'mobile_number' => (string) (($user['phone'] ?? null) ?: '01700000000'),
-            'amount' => round($amount, 2),
+            'amount' => number_format(round($amount, 2), 2, '.', ''),
             'currency' => 'BDT',
-            'order_id' => $reference,
             'metadata' => json_encode($metadataArray),
-            'return_url' => $returnBase . '/api/?action=pipraPayReturn&reference=' . rawurlencode($reference),
-            'webhook_url' => $returnBase . '/api/?action=handlePipraPayIpn',
+            'return_url' => $configuredReturnUrl,
+            'webhook_url' => $configuredWebhookUrl,
         ];
 
-        $response = $this->httpJson('POST', $baseUrl . '/api/checkout/redirect', [
-            'mhs-piprapay-api-key' => $apiKey,
+        $response = $this->httpJson('POST', $baseUrl . '/checkout/redirect', [
+            'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
         ], $payload);
         if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
-            throw new RuntimeException('PipraPay checkout initialization failed: ' . $this->jsonEncode($response['json']));
+            $details = [
+                'status' => $response['status'] ?? 'unknown',
+                'baseUrl' => $baseUrl,
+                'apiKeySet' => !empty($apiKey),
+                'response' => $response['json'] ?? $response['body'] ?? 'no response body',
+            ];
+            throw new RuntimeException('PipraPay checkout initialization failed: ' . $this->jsonEncode($details));
         }
 
         $body = $response['json'];
@@ -2230,7 +2262,10 @@ final class MasterDataApi extends BaseService
             ? $this->database->fetchOne('SELECT * FROM payment_gateway_settings LIMIT 1')
             : null;
         $apiKey = trim((string) ($gateway['piprapay_api_key'] ?? ''));
-        $baseUrl = preg_replace('#/api$#', '', rtrim(trim((string) ($gateway['piprapay_base_url'] ?? '')), '/'));
+        $gatewayBaseUrl = trim((string) ($gateway['piprapay_base_url'] ?? ''));
+        $gatewayBaseUrl = preg_replace('#/api/?$#', '', $gatewayBaseUrl);
+        $gatewayBaseUrl = rtrim($gatewayBaseUrl, '/');
+        $baseUrl = $gatewayBaseUrl;
         $eventId = trim($eventId);
         $reference = trim($reference);
         if ($baseUrl === '' || $apiKey === '') {
@@ -2251,7 +2286,7 @@ final class MasterDataApi extends BaseService
             }
         }
 
-        $verify = $this->httpJson('POST', $baseUrl . '/api/verify-payment', [
+        $verify = $this->httpJson('POST', $baseUrl . '/verify-payment', [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
         ], ['pp_id' => $eventId]);

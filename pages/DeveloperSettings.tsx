@@ -15,6 +15,8 @@ const emptyGateway: PaymentGatewaySettings = {
   piprapayApiKey: '',
   piprapayMerchantId: '',
   piprapayIpnSecret: '',
+  piprapayWebhookUrl: '',
+  piprapayReturnUrl: '',
 };
 
 const emptyAgentSettings: AgentSettings = {
@@ -279,6 +281,28 @@ const DeveloperSettings: React.FC = () => {
                     />
                   </label>
                 ))}
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">PipraPay Webhook URL</span>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={String(gatewayForm.piprapayWebhookUrl || '')}
+                    onChange={(e) => setGatewayForm({ ...gatewayForm, piprapayWebhookUrl: e.target.value })}
+                    placeholder="https://your-deployment.com/api/?action=handlePipraPayIpn"
+                  />
+                  <p className="text-sm text-gray-500">Use your deployment base URL plus <span className="font-semibold text-gray-700">/api/?action=handlePipraPayIpn</span>.</p>
+                </label>
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">PipraPay Return URL</span>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={String(gatewayForm.piprapayReturnUrl || '')}
+                    onChange={(e) => setGatewayForm({ ...gatewayForm, piprapayReturnUrl: e.target.value })}
+                    placeholder="https://your-deployment.com/subscriptions"
+                  />
+                  <p className="text-sm text-gray-500">Use your deployment base URL plus <span className="font-semibold text-gray-700">/subscriptions</span>. This is where users return after payment.</p>
+                </label>
               </div>
             </section>
           )}

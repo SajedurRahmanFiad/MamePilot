@@ -21,15 +21,16 @@ const AdminSubscriptions: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1] || '');
+    const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
+    const params = new URLSearchParams(rawQuery);
     const paymentStatus = params.get('payment');
-    if (!paymentStatus) {
+    const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('reference');
+    if (!paymentStatus && !verificationRequested) {
       return () => {
         cancelled = true;
       };
     }
 
-    // Clean up URL query params so they don't trigger again on re-render
     const cleanHash = window.location.hash.split('?')[0];
     window.history.replaceState(null, '', window.location.pathname + cleanHash);
 

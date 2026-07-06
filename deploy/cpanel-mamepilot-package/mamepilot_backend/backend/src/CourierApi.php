@@ -488,43 +488,46 @@ final class CourierApi extends BaseService
         }
 
         $normalized = strtolower($rawStatus);
-        $status = null;
+        $isPickedOrBeyond = false;
+        $mappedStatus = null;
 
         if ($normalized !== '') {
             if (strpos($normalized, 'delivered') !== false) {
-                $status = 'Delivered';
+                $mappedStatus = 'Delivered';
             } elseif (strpos($normalized, 'return') !== false || strpos($normalized, 'paid return') !== false) {
-                $status = 'Returned';
+                $mappedStatus = 'Returned';
             } elseif (strpos($normalized, 'cancel') !== false) {
-                $status = 'Cancelled';
-            } else {
-                $pickedOrBeyond = [
-                    'at the sorting hub',
-                    'at central warehouse',
-                    'at the destination hub',
-                    'assigned for delivery',
-                    'out for delivery',
-                    'in transit',
-                    'on the way to central warehouse',
-                    'on the way to last mile hub',
-                    'received at last mile hub',
-                    'delivered',
-                    'exchange',
-                    'partial delivery',
-                    'return',
-                    'paid return',
-                ];
-                if (in_array($normalized, $pickedOrBeyond, true)) {
-                    $status = 'Picked';
-                }
+                $mappedStatus = 'Cancelled';
+            }
+
+            $pickedOrBeyond = [
+                'at the sorting hub',
+                'at central warehouse',
+                'at the destination hub',
+                'assigned for delivery',
+                'out for delivery',
+                'in transit',
+                'on the way to central warehouse',
+                'on the way to last mile hub',
+                'received at last mile hub',
+                'delivered',
+                'exchange',
+                'partial delivery',
+                'return',
+                'paid return',
+            ];
+            $isPickedOrBeyond = in_array($normalized, $pickedOrBeyond, true) || $mappedStatus !== null;
+
+            if ($mappedStatus === null && $isPickedOrBeyond) {
+                $mappedStatus = 'Picked';
             }
         }
 
         return [
             'rawStatus' => $rawStatus,
             'normalizedStatus' => $normalized,
-            'status' => $status,
-            'isPickedOrBeyond' => $status !== null && $status !== 'Cancelled',
+            'status' => $mappedStatus,
+            'isPickedOrBeyond' => $isPickedOrBeyond,
         ];
     }
 
@@ -587,7 +590,9 @@ final class CourierApi extends BaseService
                 }
 
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
-                $updates = ['history' => $history];
+                $updates = [
+                    'history' => $history,
+                ];
 
                 if ($statusInfo['status'] === 'Delivered') {
                     $updates['status'] = 'Completed';

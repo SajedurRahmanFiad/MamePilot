@@ -1322,6 +1322,121 @@ final class OperationsApi extends BaseService
             $bindings[':customer_phone_not'] = $customerPhoneNot;
         }
 
+        $company = trim((string) ($filters['company'] ?? ''));
+        if ($company !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) = :company';
+            $bindings[':company'] = $company;
+        }
+        $companyNot = trim((string) ($filters['companyNot'] ?? ''));
+        if ($companyNot !== '') {
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) <> :company_not';
+            $bindings[':company_not'] = $companyNot;
+        }
+
+        $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
+        if ($sourceAd !== '') {
+            $where .= ' AND sourceAd = :source_ad';
+            $bindings[':source_ad'] = $sourceAd;
+        }
+        $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
+        if ($sourceAdNot !== '') {
+            $where .= ' AND sourceAd <> :source_ad_not';
+            $bindings[':source_ad_not'] = $sourceAdNot;
+        }
+
+        $courier = trim((string) ($filters['courier'] ?? ''));
+        if ($courier !== '') {
+            $normalizedCourier = strtolower($courier);
+            switch ($normalizedCourier) {
+                case 'steadfast':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%steadfast%';
+                    break;
+                case 'carrybee':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%carrybee%';
+                    break;
+                case 'paperfly':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%paperfly%';
+                    break;
+                case 'manual':
+                case 'manual/other':
+                case 'manual-other':
+                    $where .= ' AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) <> ""'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_steadfast'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_carrybee'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_paperfly'
+                        . ' AND TRIM(COALESCE(steadfastConsignmentId, "")) = ""'
+                        . ' AND TRIM(COALESCE(carrybeeConsignmentId, "")) = ""'
+                        . ' AND TRIM(COALESCE(paperflyTrackingNumber, "")) = ""';
+                    $bindings[':manual_avoid_steadfast'] = '%steadfast%';
+                    $bindings[':manual_avoid_carrybee'] = '%carrybee%';
+                    $bindings[':manual_avoid_paperfly'] = '%paperfly%';
+                    break;
+                default:
+                    $where .= ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like';
+                    $bindings[':courier_like'] = '%' . strtolower($courier) . '%';
+                    break;
+            }
+        }
+        $courierNot = trim((string) ($filters['courierNot'] ?? ''));
+        if ($courierNot !== '') {
+            $normalizedCourierNot = strtolower($courierNot);
+            switch ($normalizedCourierNot) {
+                case 'steadfast':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%steadfast%';
+                    break;
+                case 'carrybee':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%carrybee%';
+                    break;
+                case 'paperfly':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%paperfly%';
+                    break;
+                case 'manual':
+                case 'manual/other':
+                case 'manual-other':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_steadfast
+                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_carrybee
+                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_paperfly
+                        OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) = ""
+                        OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
+                        OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
+                        OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                    )';
+                    $bindings[':manual_not_match_steadfast'] = '%steadfast%';
+                    $bindings[':manual_not_match_carrybee'] = '%carrybee%';
+                    $bindings[':manual_not_match_paperfly'] = '%paperfly%';
+                    break;
+                default:
+                    $where .= ' AND NOT LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like';
+                    $bindings[':courier_not_like'] = '%' . strtolower($courierNot) . '%';
+                    break;
+            }
+        }
+
         if (!empty($filters['from'])) {
             $where .= ' AND createdAt >= :from';
             $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
@@ -1347,14 +1462,24 @@ final class OperationsApi extends BaseService
 
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
+            $searchTerm = '%' . $search . '%';
             if (preg_match('/\d/', $search) === 1) {
-                $where .= ' AND (customerPhone LIKE :search_phone OR orderNumber LIKE :search_number)';
-                $bindings[':search_phone'] = '%' . $search . '%';
-                $bindings[':search_number'] = '%' . $search . '%';
+                $where .= ' AND (
+                    customerPhone LIKE :search_term
+                    OR orderNumber LIKE :search_term
+                    OR customerName LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
+                )';
+                $bindings[':search_term'] = $searchTerm;
             } else {
-                $where .= ' AND (customerName LIKE :search_name OR orderNumber LIKE :search_number)';
-                $bindings[':search_name'] = '%' . $search . '%';
-                $bindings[':search_number'] = '%' . $search . '%';
+                $where .= ' AND (
+                    customerName LIKE :search_term
+                    OR orderNumber LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
+                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
+                )';
+                $bindings[':search_term'] = $searchTerm;
             }
         }
 
@@ -3160,12 +3285,12 @@ final class OperationsApi extends BaseService
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
                     subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
-                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number,
+                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number, source_ad,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
                     :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
-                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number,
+                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number, :source_ad,
                     :created_at, :updated_at
                 )',
                 [
@@ -3189,6 +3314,7 @@ final class OperationsApi extends BaseService
                     ':carrybee_consignment_id' => $this->nullableString($params['carrybeeConsignmentId'] ?? $params['carrybee_consignment_id'] ?? null),
                     ':steadfast_consignment_id' => $this->nullableString($params['steadfastConsignmentId'] ?? $params['steadfast_consignment_id'] ?? null),
                     ':paperfly_tracking_number' => $this->nullableString($params['paperflyTrackingNumber'] ?? $params['paperfly_tracking_number'] ?? null),
+                    ':source_ad' => $this->nullableString($params['sourceAd'] ?? $params['source_ad'] ?? null),
                     ':created_at' => $now,
                     ':updated_at' => $now,
                 ]
@@ -3287,9 +3413,44 @@ final class OperationsApi extends BaseService
             if (array_key_exists('paidAmount', $updates)) {
                 $payload['paid_amount'] = $this->formatMoney($updates['paidAmount']);
             }
+            if (array_key_exists('paidAt', $updates)) {
+                $payload['paid_at'] = $this->normalizeDateTimeInput((string) $updates['paidAt']);
+            }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
+
+            $refundAmount = (float) ($updates['refundAmount'] ?? 0);
+            $refundAccountId = trim((string) ($updates['refundAccountId'] ?? ''));
+            $refundPaymentMethod = trim((string) ($updates['refundPaymentMethod'] ?? ''));
+            $refundCategoryId = trim((string) ($updates['refundCategoryId'] ?? ''));
+
+            if ($refundAmount > 0) {
+                if ($refundAccountId === '') {
+                    throw new RuntimeException('Refund account is required when recording a refund transaction.');
+                }
+
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT expense_category_id FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $defaultRefundCategoryId = trim((string) ($systemDefaults['expense_category_id'] ?? '')) ?: 'expense_other';
+                $refundCategory = $refundCategoryId !== '' ? $refundCategoryId : $defaultRefundCategoryId;
+
+                $refundDate = trim((string) ($updates['paidAt'] ?? '')) ?: $this->database->nowUtc();
+                $this->createTransactionRecord([
+                    'date' => $refundDate,
+                    'type' => 'Expense',
+                    'category' => $refundCategory,
+                    'accountId' => $refundAccountId,
+                    'amount' => $refundAmount,
+                    'description' => "Refund for Order #{$orderNumber}",
+                    'referenceId' => $id,
+                    'contactId' => $previousCustomerId,
+                    'paymentMethod' => $refundPaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
             if (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates)) {
                 $payload['carrybee_consignment_id'] = $this->nullableString($updates['carrybeeConsignmentId'] ?? $updates['carrybee_consignment_id'] ?? null);
             }
@@ -4020,7 +4181,7 @@ final class OperationsApi extends BaseService
                 ':contact_id' => $this->nullableString($params['contactId'] ?? null),
                 ':payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
                 ':attachment_name' => $this->nullableString($params['attachmentName'] ?? null),
-                ':attachment_url' => $this->nullableString($params['attachmentUrl'] ?? null),
+                ':attachment_url' => $this->normalizeUploadedFileValue($params['attachmentUrl'] ?? null, 'attachments', $params['attachmentName'] ?? null),
                 ':created_by' => $actorId,
                 ':history' => $this->jsonEncode($params['history'] ?? []),
                 ':approval_status' => (string) ($approvalState['approval_status'] ?? 'approved'),
@@ -4105,7 +4266,7 @@ final class OperationsApi extends BaseService
                 $payload['attachment_name'] = $this->nullableString($updates['attachmentName']);
             }
             if (array_key_exists('attachmentUrl', $updates)) {
-                $payload['attachment_url'] = $this->nullableString($updates['attachmentUrl']);
+                $payload['attachment_url'] = $this->normalizeUploadedFileValue($updates['attachmentUrl'] ?? null, 'attachments', $updates['attachmentName'] ?? null);
             }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);

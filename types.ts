@@ -695,6 +695,8 @@ export interface PaymentGatewaySettings {
   piprapayApiKey: string;
   piprapayMerchantId: string;
   piprapayIpnSecret: string;
+  piprapayWebhookUrl: string;
+  piprapayReturnUrl: string;
 }
 
 export type AiMainProvider = 'anthropic' | 'openai' | 'google';
