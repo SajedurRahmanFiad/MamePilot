@@ -417,6 +417,13 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
       } />
+      <Route path="/meta-ads/:id" element={
+        isAuthenticated
+          ? canViewDashboard
+            ? <Layout><MetaAds /></Layout>
+            : <Navigate to={defaultProtectedRoute} replace />
+          : <Navigate to="/login" replace />
+      } />
       <Route path="/payroll" element={
         isAuthenticated
           ? can('payroll.view')

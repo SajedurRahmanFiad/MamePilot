@@ -218,15 +218,64 @@ final class MasterDataApi extends BaseService
         }
 
         $id = $this->stringId($params['id'] ?? null);
+        $isCommissionBased = !empty($params['isCommissionBased'] ?? $params['is_commission_based'] ?? false);
+        $fixedSalary = $isCommissionBased ? null : ($params['fixedSalary'] ?? $params['fixed_salary'] ?? null);
         $this->database->execute(
-            'INSERT INTO users (id, name, phone, role, image, password_hash, created_at, updated_at)
-             VALUES (:id, :name, :phone, :role, :image, :password_hash, :created_at, :updated_at)',
+            'INSERT INTO users (
+                id,
+                name,
+                phone,
+                role,
+                image,
+                email,
+                address,
+                birthday,
+                nid_passport_copy,
+                gender,
+                blood_group,
+                nationality,
+                cv,
+                is_commission_based,
+                fixed_salary,
+                password_hash,
+                created_at,
+                updated_at
+             ) VALUES (
+                :id,
+                :name,
+                :phone,
+                :role,
+                :image,
+                :email,
+                :address,
+                :birthday,
+                :nid_passport_copy,
+                :gender,
+                :blood_group,
+                :nationality,
+                :cv,
+                :is_commission_based,
+                :fixed_salary,
+                :password_hash,
+                :created_at,
+                :updated_at
+             )',
             [
                 ':id' => $id,
                 ':name' => trim((string) ($params['name'] ?? '')),
                 ':phone' => trim((string) ($params['phone'] ?? '')),
                 ':role' => $requestedRole,
-                ':image' => $this->nullableString($params['image'] ?? null),
+                ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'profile-pictures', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
+                ':email' => $this->nullableString($params['email'] ?? null),
+                ':address' => $this->nullableString($params['address'] ?? null),
+                ':birthday' => $this->nullableString($this->normalizeDateOnly((string) ($params['birthday'] ?? ''))),
+                ':nid_passport_copy' => $this->normalizeUploadedFileValue($params['nidPassportCopy'] ?? $params['nid_passport_copy'] ?? null, 'documents', null),
+                ':gender' => $this->nullableString($params['gender'] ?? null),
+                ':blood_group' => $this->nullableString($params['bloodGroup'] ?? $params['blood_group'] ?? null),
+                ':nationality' => $this->nullableString($params['nationality'] ?? null),
+                ':cv' => $this->normalizeUploadedFileValue($params['cv'] ?? null, 'documents', null),
+                ':is_commission_based' => $isCommissionBased ? 1 : 0,
+                ':fixed_salary' => $fixedSalary === null || $fixedSalary === '' ? null : (float) $fixedSalary,
                 ':password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -273,7 +322,42 @@ final class MasterDataApi extends BaseService
             $payload['role'] = $requestedRole;
         }
         if (array_key_exists('image', $updates)) {
-            $payload['image'] = $this->nullableString($updates['image']);
+            $payload['image'] = $this->normalizeUploadedFileValue($updates['image'] ?? null, 'profile-pictures', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
+        }
+        if (array_key_exists('email', $updates)) {
+            $payload['email'] = $this->nullableString($updates['email']);
+        }
+        if (array_key_exists('address', $updates)) {
+            $payload['address'] = $this->nullableString($updates['address']);
+        }
+        if (array_key_exists('birthday', $updates)) {
+            $payload['birthday'] = $this->nullableString($this->normalizeDateOnly((string) $updates['birthday']));
+        }
+        if (array_key_exists('nidPassportCopy', $updates) || array_key_exists('nid_passport_copy', $updates)) {
+            $payload['nid_passport_copy'] = $this->normalizeUploadedFileValue($updates['nidPassportCopy'] ?? $updates['nid_passport_copy'] ?? null, 'documents', null);
+        }
+        if (array_key_exists('gender', $updates)) {
+            $payload['gender'] = $this->nullableString($updates['gender']);
+        }
+        if (array_key_exists('bloodGroup', $updates) || array_key_exists('blood_group', $updates)) {
+            $payload['blood_group'] = $this->nullableString($updates['bloodGroup'] ?? $updates['blood_group'] ?? null);
+        }
+        if (array_key_exists('nationality', $updates)) {
+            $payload['nationality'] = $this->nullableString($updates['nationality']);
+        }
+        if (array_key_exists('cv', $updates)) {
+            $payload['cv'] = $this->nullableString($updates['cv']);
+        }
+        if (array_key_exists('isCommissionBased', $updates) || array_key_exists('is_commission_based', $updates)) {
+            $isCommissionBased = !empty($updates['isCommissionBased'] ?? $updates['is_commission_based'] ?? false);
+            $payload['is_commission_based'] = $isCommissionBased ? 1 : 0;
+            if ($isCommissionBased) {
+                $payload['fixed_salary'] = null;
+            }
+        }
+        if (array_key_exists('fixedSalary', $updates) || array_key_exists('fixed_salary', $updates)) {
+            $fixedSalary = $updates['fixedSalary'] ?? $updates['fixed_salary'] ?? null;
+            $payload['fixed_salary'] = $fixedSalary === null || $fixedSalary === '' ? null : (float) $fixedSalary;
         }
         if (!empty($updates['password'])) {
             $payload['password_hash'] = password_hash((string) $updates['password'], PASSWORD_BCRYPT, ['cost' => 12]);
@@ -670,7 +754,7 @@ final class MasterDataApi extends BaseService
             [
                 ':id' => $id,
                 ':name' => trim((string) ($params['name'] ?? '')),
-                ':image' => $this->nullableString($params['image'] ?? null),
+                ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'product-images', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
                 ':category' => $this->nullableString($params['category'] ?? null),
                 ':sale_price' => $this->formatMoney($params['salePrice'] ?? 0),
                 ':purchase_price' => $this->formatMoney($params['purchasePrice'] ?? 0),
@@ -695,7 +779,7 @@ final class MasterDataApi extends BaseService
             $payload['name'] = trim((string) $updates['name']);
         }
         if (array_key_exists('image', $updates)) {
-            $payload['image'] = $this->nullableString($updates['image']);
+            $payload['image'] = $this->normalizeUploadedFileValue($updates['image'] ?? null, 'product-images', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
         }
         if (array_key_exists('category', $updates)) {
             $payload['category'] = $this->nullableString($updates['category']);
@@ -1789,6 +1873,106 @@ final class MasterDataApi extends BaseService
         ];
     }
 
+    public function fetchAgentSettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->tableExists('agent_settings')
+            ? $this->database->fetchOne('SELECT * FROM agent_settings LIMIT 1')
+            : null;
+
+        return [
+            'enabled' => !empty($row['enabled'] ?? 0),
+            'mainProvider' => (string) ($row['main_provider'] ?? 'anthropic'),
+            'anthropic' => [
+                'enabled' => !empty($row['anthropic_enabled'] ?? 0),
+                'baseUrl' => (string) ($row['anthropic_base_url'] ?? ''),
+                'apiKey' => (string) ($row['anthropic_api_key'] ?? ''),
+                'model' => (string) ($row['anthropic_model'] ?? ''),
+                'organization' => (string) ($row['anthropic_organization'] ?? ''),
+                'project' => (string) ($row['anthropic_project'] ?? ''),
+            ],
+            'openai' => [
+                'enabled' => !empty($row['openai_enabled'] ?? 0),
+                'baseUrl' => (string) ($row['openai_base_url'] ?? ''),
+                'apiKey' => (string) ($row['openai_api_key'] ?? ''),
+                'model' => (string) ($row['openai_model'] ?? ''),
+                'organization' => (string) ($row['openai_organization'] ?? ''),
+                'project' => (string) ($row['openai_project'] ?? ''),
+            ],
+            'google' => [
+                'enabled' => !empty($row['google_enabled'] ?? 0),
+                'baseUrl' => (string) ($row['google_base_url'] ?? ''),
+                'apiKey' => (string) ($row['google_api_key'] ?? ''),
+                'model' => (string) ($row['google_model'] ?? ''),
+                'organization' => (string) ($row['google_organization'] ?? ''),
+                'project' => (string) ($row['google_project'] ?? ''),
+            ],
+            'groq' => [
+                'enabled' => !empty($row['groq_enabled'] ?? 0),
+                'baseUrl' => (string) ($row['groq_base_url'] ?? ''),
+                'apiKey' => (string) ($row['groq_api_key'] ?? ''),
+                'model' => (string) ($row['groq_model'] ?? ''),
+                'organization' => '',
+                'project' => '',
+            ],
+            'showReasoningSummaries' => !empty($row['show_reasoning_summaries'] ?? 1),
+            'showToolActivity' => !empty($row['show_tool_activity'] ?? 1),
+            'maxReasoningSteps' => max(1, (int) ($row['max_reasoning_steps'] ?? 8)),
+            'maxToolCalls' => max(1, (int) ($row['max_tool_calls'] ?? 12)),
+            'queryRowLimit' => max(1, (int) ($row['query_row_limit'] ?? 100)),
+            'queryTimeoutMs' => max(1000, (int) ($row['query_timeout_ms'] ?? 15000)),
+        ];
+    }
+
+    public function updateAgentSettings(array $params): array
+    {
+        $this->requireDeveloperUser();
+        if (!$this->tableExists('agent_settings')) {
+            throw new RuntimeException('Agent settings table is missing. Run the latest migration first.');
+        }
+
+        $anthropic = is_array($params['anthropic'] ?? null) ? $params['anthropic'] : [];
+        $openai = is_array($params['openai'] ?? null) ? $params['openai'] : [];
+        $google = is_array($params['google'] ?? null) ? $params['google'] : [];
+        $groq = is_array($params['groq'] ?? null) ? $params['groq'] : [];
+
+        $payload = [
+            'enabled' => !empty($params['enabled'] ?? false) ? 1 : 0,
+            'main_provider' => trim((string) ($params['mainProvider'] ?? 'anthropic')) ?: 'anthropic',
+            'anthropic_enabled' => !empty($anthropic['enabled'] ?? false) ? 1 : 0,
+            'anthropic_base_url' => $this->nullableString($anthropic['baseUrl'] ?? null),
+            'anthropic_api_key' => $this->nullableString($anthropic['apiKey'] ?? null),
+            'anthropic_model' => $this->nullableString($anthropic['model'] ?? null),
+            'anthropic_organization' => $this->nullableString($anthropic['organization'] ?? null),
+            'anthropic_project' => $this->nullableString($anthropic['project'] ?? null),
+            'openai_enabled' => !empty($openai['enabled'] ?? false) ? 1 : 0,
+            'openai_base_url' => $this->nullableString($openai['baseUrl'] ?? null),
+            'openai_api_key' => $this->nullableString($openai['apiKey'] ?? null),
+            'openai_model' => $this->nullableString($openai['model'] ?? null),
+            'openai_organization' => $this->nullableString($openai['organization'] ?? null),
+            'openai_project' => $this->nullableString($openai['project'] ?? null),
+            'google_enabled' => !empty($google['enabled'] ?? false) ? 1 : 0,
+            'google_base_url' => $this->nullableString($google['baseUrl'] ?? null),
+            'google_api_key' => $this->nullableString($google['apiKey'] ?? null),
+            'google_model' => $this->nullableString($google['model'] ?? null),
+            'google_organization' => $this->nullableString($google['organization'] ?? null),
+            'google_project' => $this->nullableString($google['project'] ?? null),
+            'groq_enabled' => !empty($groq['enabled'] ?? false) ? 1 : 0,
+            'groq_base_url' => $this->nullableString($groq['baseUrl'] ?? null),
+            'groq_api_key' => $this->nullableString($groq['apiKey'] ?? null),
+            'groq_model' => $this->nullableString($groq['model'] ?? null),
+            'show_reasoning_summaries' => !empty($params['showReasoningSummaries'] ?? true) ? 1 : 0,
+            'show_tool_activity' => !empty($params['showToolActivity'] ?? true) ? 1 : 0,
+            'max_reasoning_steps' => max(1, (int) ($params['maxReasoningSteps'] ?? 8)),
+            'max_tool_calls' => max(1, (int) ($params['maxToolCalls'] ?? 12)),
+            'query_row_limit' => max(1, (int) ($params['queryRowLimit'] ?? 100)),
+            'query_timeout_ms' => max(1000, (int) ($params['queryTimeoutMs'] ?? 15000)),
+        ];
+
+        $this->saveSingleton('agent_settings', 'agent-settings-default', $payload, fn(): array => $this->fetchAgentSettings());
+        return $this->fetchAgentSettings();
+    }
+
     public function updatePaymentGatewaySettings(array $params): array
     {
         $this->requireDeveloperUser();
@@ -2150,6 +2334,48 @@ final class MasterDataApi extends BaseService
     }
 
     public function mameChat(array $params): array
+    {
+        $this->currentUser();
+
+        $message = trim((string) ($params['message'] ?? ''));
+        if ($message === '') {
+            throw new ApiException('Message cannot be empty.', 400);
+        }
+
+        $executor = new AgentExecutor($this->database, $this->auth, $this->config);
+        $run = $executor->startRun(['message' => $message, 'conversationId' => (string) ($params['conversationId'] ?? '')]);
+
+        return [
+            'answer' => (string) ($run['answer'] ?? ''),
+            'runId' => (string) ($run['runId'] ?? ''),
+            'conversationId' => (string) ($run['conversationId'] ?? ''),
+            'streamToken' => (string) ($run['streamToken'] ?? ''),
+            'status' => (string) ($run['status'] ?? 'completed'),
+        ];
+    }
+
+    public function agentRunStream(array $params): array
+    {
+        $this->currentUser();
+        $executor = new AgentExecutor($this->database, $this->auth, $this->config);
+        return $executor->fetchRunStream($params);
+    }
+
+    public function startAgentRun(array $params): array
+    {
+        $this->currentUser();
+        $executor = new AgentExecutor($this->database, $this->auth, $this->config);
+        return $executor->startRun($params);
+    }
+
+    public function fetchAgentRunStream(array $params): array
+    {
+        $this->currentUser();
+        $executor = new AgentExecutor($this->database, $this->auth, $this->config);
+        return $executor->fetchRunStream($params);
+    }
+
+    public function legacyMameChat(array $params): array
     {
         $this->currentUser();
 

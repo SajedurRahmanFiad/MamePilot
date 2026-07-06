@@ -7,6 +7,32 @@ type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: Array<{ id: string; label: string; status: 'pending' | 'active' | 'done'; kind: string }>;
+  followUps?: string[];
+};
+
+type AgentRunResponse = {
+  answer: string;
+  runId: string;
+  conversationId: string;
+  streamToken: string;
+  status: string;
+};
+
+type AgentRunEvent = {
+  type: string;
+  sequence: number;
+  payload: Record<string, any>;
+  createdAt?: string;
+};
+
+type AgentRunStreamResponse = {
+  runId: string;
+  conversationId: string;
+  status: string;
+  answer: string;
+  events: AgentRunEvent[];
+  messages: Array<{ role: string; content: string }>;
 };
 
 const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
@@ -216,31 +242,115 @@ const MameChat: React.FC = () => {
       content: trimmed,
     };
 
-    setMessages((current) => [...current, userMessage]);
+    const assistantMessageId = `assistant-${Date.now()}`;
+    const assistantPlaceholder: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: 'Working on your request…',
+      reasoning: [
+        { id: 'plan', label: 'Planning the request', status: 'active', kind: 'planning' },
+        { id: 'tool', label: 'Gathering business context', status: 'pending', kind: 'tool' },
+        { id: 'synth', label: 'Synthesizing the answer', status: 'pending', kind: 'synthesis' },
+      ],
+      followUps: [],
+    };
+
+    setMessages((current) => [...current, userMessage, assistantPlaceholder]);
     setDraft('');
     setIsSending(true);
 
     try {
-      const response = await apiAction<{ answer: string }>('mameChat', {
+      const response = await apiAction<AgentRunResponse>('mameChat', {
         message: trimmed,
       });
 
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.answer || 'I could not generate a response. Please try again.',
-      };
+      if (response?.runId) {
+        let finalAnswer = response.answer || 'I could not generate a response. Please try again.';
+        let latestSummary = 'Preparing your answer…';
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const stream = await apiAction<AgentRunStreamResponse>('fetchAgentRunStream', {
+            runId: response.runId,
+          });
 
-      setMessages((current) => [...current, assistantMessage]);
+          const nextAnswer = stream?.answer || response.answer || '';
+          if (nextAnswer) {
+            finalAnswer = nextAnswer;
+          }
+
+          const recentEvent = (stream?.events || []).slice().reverse().find((event) => event?.type && event.type !== 'started');
+          const summaryPayload = recentEvent?.payload as Record<string, any> | undefined;
+          if (summaryPayload?.summary) {
+            latestSummary = String(summaryPayload.summary);
+          } else if (summaryPayload?.answer) {
+            latestSummary = 'Finalizing your answer…';
+          }
+
+          const reasoningSteps = (stream?.events || []).filter((event) => event?.type === 'reasoning_plan' || event?.type === 'step_started' || event?.type === 'step_completed' || event?.type === 'critic' || event?.type === 'synthesis' || event?.type === 'follow_up_suggestions');
+          const nextReasoning = (reasoningSteps || []).reduce<Array<{ id: string; label: string; status: 'pending' | 'active' | 'done'; kind: string }>>((acc, event) => {
+            const payload = event?.payload as Record<string, any> | undefined;
+            if (event.type === 'reasoning_plan' && Array.isArray(payload?.steps)) {
+              return payload.steps.map((step: any, index: number) => ({
+                id: String(step?.id || `step-${index}`),
+                label: String(step?.name || 'Plan step'),
+                status: 'pending',
+                kind: String(step?.kind || 'step'),
+              }));
+            }
+            if (event.type === 'step_started' && payload?.stepId) {
+              return acc.map((step) => step.id === String(payload.stepId) ? { ...step, status: 'active' } : step);
+            }
+            if (event.type === 'step_completed' && payload?.stepId) {
+              return acc.map((step) => step.id === String(payload.stepId) ? { ...step, status: 'done' } : step);
+            }
+            if (event.type === 'critic' && payload?.summary) {
+              return acc.map((step, index) => index === acc.length - 1 ? step : step);
+            }
+            if (event.type === 'follow_up_suggestions' && Array.isArray(payload?.suggestions)) {
+              return acc;
+            }
+            return acc;
+          }, []);
+
+          const followUps = (stream?.events || []).filter((event) => event?.type === 'follow_up_suggestions').flatMap((event) => {
+            const payload = event?.payload as Record<string, any> | undefined;
+            return Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+          });
+
+          setMessages((current) => current.map((message) => message.id === assistantMessageId
+            ? {
+                ...message,
+                content: finalAnswer ? finalAnswer : latestSummary,
+                reasoning: nextReasoning.length > 0 ? nextReasoning : message.reasoning,
+                followUps: followUps.length > 0 ? followUps : message.followUps,
+              }
+            : message));
+
+          if ((stream?.status || '').toLowerCase() === 'completed' || (stream?.status || '').toLowerCase() === 'failed') {
+            break;
+          }
+
+          if (attempt < 19) {
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+          }
+        }
+
+        setMessages((current) => current.map((message) => message.id === assistantMessageId
+          ? { ...message, content: finalAnswer || latestSummary || 'I could not generate a response. Please try again.' }
+          : message));
+      } else {
+        setMessages((current) => current.map((message) => message.id === assistantMessageId
+          ? { ...message, content: response.answer || 'I could not generate a response. Please try again.' }
+          : message));
+      }
     } catch (error: any) {
       const assistantMessage: ChatMessage = {
-        id: `assistant-error-${Date.now()}`,
+        id: assistantMessageId,
         role: 'assistant',
         content:
           error?.message ||
           'Unable to connect to Mame right now. Please try again later.',
       };
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => current.map((message) => message.id === assistantMessageId ? assistantMessage : message));
     } finally {
       setIsSending(false);
     }
@@ -362,6 +472,32 @@ const MameChat: React.FC = () => {
                       }`}
                     >
                       {renderMessageContent(message.content)}
+                      {message.role === 'assistant' && message.reasoning && message.reasoning.length > 0 && (
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 p-3 text-xs text-slate-700">
+                          <div className="mb-2 font-semibold text-slate-900">Reasoning</div>
+                          <ul className="space-y-2">
+                            {message.reasoning.map((step) => (
+                              <li key={step.id} className="flex items-center gap-2">
+                                <span className={`h-2.5 w-2.5 rounded-full ${step.status === 'done' ? 'bg-emerald-500' : step.status === 'active' ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'}`} />
+                                <span>{step.label}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {message.role === 'assistant' && message.followUps && message.followUps.length > 0 && (
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                          <div className="mb-2 font-semibold text-slate-900">Follow-up ideas</div>
+                          <ul className="space-y-1">
+                            {message.followUps.map((suggestion, index) => (
+                              <li key={`${suggestion}-${index}`} className="flex items-start gap-2">
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                <span>{suggestion}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
 
                     {message.role === 'user' && (

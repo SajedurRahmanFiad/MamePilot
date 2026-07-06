@@ -685,6 +685,7 @@ abstract class BaseService
             'carrybeeConsignmentId' => $this->nullableString($row['carrybee_consignment_id'] ?? $row['carrybeeConsignmentId'] ?? null),
             'steadfastConsignmentId' => $this->nullableString($row['steadfast_consignment_id'] ?? $row['steadfastConsignmentId'] ?? null),
             'paperflyTrackingNumber' => $this->nullableString($row['paperfly_tracking_number'] ?? $row['paperflyTrackingNumber'] ?? null),
+            'sourceAd' => $this->nullableString($row['source_ad'] ?? $row['sourceAd'] ?? null),
             'history' => $this->jsonDecodeAssoc($row['history'] ?? []),
             'paidAmount' => (float) ($row['paid_amount'] ?? $row['paidAmount'] ?? 0),
             'customerName' => $this->nullableString($row['customer_name'] ?? $row['customerName'] ?? null),

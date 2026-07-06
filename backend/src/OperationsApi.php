@@ -1256,6 +1256,10 @@ final class OperationsApi extends BaseService
                 $where .= ' AND paidAmount > 0 AND paidAmount < total';
             } elseif ($paymentStatus === 'Unpaid') {
                 $where .= ' AND paidAmount = 0';
+            } elseif ($paymentStatus === 'Refunded') {
+                // Treat 'Refunded' as orders with refund text in history
+                $where .= ' AND LOWER(COALESCE(history, "")) LIKE :refund_like';
+                $bindings[':refund_like'] = '%refund%';
             }
         }
         $paymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
@@ -1266,18 +1270,34 @@ final class OperationsApi extends BaseService
                 $where .= ' AND NOT (paidAmount > 0 AND paidAmount < total)';
             } elseif ($paymentStatusNot === 'Unpaid') {
                 $where .= ' AND NOT (paidAmount = 0)';
+            } elseif ($paymentStatusNot === 'Refunded') {
+                $where .= ' AND NOT (LOWER(COALESCE(history, "")) LIKE :refund_like_not)';
+                $bindings[':refund_like_not'] = '%refund%';
             }
+        }
+
+        $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
+        if ($sourceAd !== '') {
+            $where .= ' AND sourceAd = :source_ad';
+            $bindings[':source_ad'] = $sourceAd;
+        }
+        $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
+        if ($sourceAdNot !== '') {
+            $where .= ' AND sourceAd <> :source_ad_not';
+            $bindings[':source_ad_not'] = $sourceAdNot;
         }
 
         $orderNumber = trim((string) ($filters['orderNumber'] ?? ''));
         if ($orderNumber !== '') {
-            $where .= ' AND orderNumber = :order_number';
-            $bindings[':order_number'] = $orderNumber;
+            // Allow partial/order-id fragment searches: match anywhere inside orderNumber
+            $where .= ' AND orderNumber LIKE :order_number';
+            $bindings[':order_number'] = (strpos($orderNumber, '%') !== false) ? $orderNumber : '%' . $orderNumber . '%';
         }
         $orderNumberNot = trim((string) ($filters['orderNumberNot'] ?? ''));
         if ($orderNumberNot !== '') {
-            $where .= ' AND orderNumber <> :order_number_not';
-            $bindings[':order_number_not'] = $orderNumberNot;
+            // Negation for partial matches
+            $where .= ' AND orderNumber NOT LIKE :order_number_not';
+            $bindings[':order_number_not'] = (strpos($orderNumberNot, '%') !== false) ? $orderNumberNot : '%' . $orderNumberNot . '%';
         }
 
         $customerName = trim((string) ($filters['customerName'] ?? ''));
@@ -1311,6 +1331,17 @@ final class OperationsApi extends BaseService
         if ($companyNot !== '') {
             $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) <> :company_not';
             $bindings[':company_not'] = $companyNot;
+        }
+
+        $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
+        if ($sourceAd !== '') {
+            $where .= ' AND sourceAd = :source_ad';
+            $bindings[':source_ad'] = $sourceAd;
+        }
+        $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
+        if ($sourceAdNot !== '') {
+            $where .= ' AND sourceAd <> :source_ad_not';
+            $bindings[':source_ad_not'] = $sourceAdNot;
         }
 
         $courier = trim((string) ($filters['courier'] ?? ''));
@@ -1454,27 +1485,7 @@ final class OperationsApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT
-                id,
-                orderNumber,
-                orderDate,
-                customerId,
-                customerName,
-                customerPhone,
-                customerAddress,
-                createdBy,
-                creatorName,
-                status,
-                total,
-                notes,
-                history,
-                paidAmount,
-                createdAt,
-                deletedAt,
-                deletedBy,
-                carrybeeConsignmentId,
-                steadfastConsignmentId,
-                paperflyTrackingNumber
+            "SELECT *
              FROM orders_with_customer_creator
              {$where}
              ORDER BY createdAt DESC
@@ -3274,12 +3285,12 @@ final class OperationsApi extends BaseService
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
                     subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
-                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number,
+                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number, source_ad,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
                     :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
-                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number,
+                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number, :source_ad,
                     :created_at, :updated_at
                 )',
                 [
@@ -3303,6 +3314,7 @@ final class OperationsApi extends BaseService
                     ':carrybee_consignment_id' => $this->nullableString($params['carrybeeConsignmentId'] ?? $params['carrybee_consignment_id'] ?? null),
                     ':steadfast_consignment_id' => $this->nullableString($params['steadfastConsignmentId'] ?? $params['steadfast_consignment_id'] ?? null),
                     ':paperfly_tracking_number' => $this->nullableString($params['paperflyTrackingNumber'] ?? $params['paperfly_tracking_number'] ?? null),
+                    ':source_ad' => $this->nullableString($params['sourceAd'] ?? $params['source_ad'] ?? null),
                     ':created_at' => $now,
                     ':updated_at' => $now,
                 ]
@@ -3401,9 +3413,44 @@ final class OperationsApi extends BaseService
             if (array_key_exists('paidAmount', $updates)) {
                 $payload['paid_amount'] = $this->formatMoney($updates['paidAmount']);
             }
+            if (array_key_exists('paidAt', $updates)) {
+                $payload['paid_at'] = $this->normalizeDateTimeInput((string) $updates['paidAt']);
+            }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
+
+            $refundAmount = (float) ($updates['refundAmount'] ?? 0);
+            $refundAccountId = trim((string) ($updates['refundAccountId'] ?? ''));
+            $refundPaymentMethod = trim((string) ($updates['refundPaymentMethod'] ?? ''));
+            $refundCategoryId = trim((string) ($updates['refundCategoryId'] ?? ''));
+
+            if ($refundAmount > 0) {
+                if ($refundAccountId === '') {
+                    throw new RuntimeException('Refund account is required when recording a refund transaction.');
+                }
+
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT expense_category_id FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $defaultRefundCategoryId = trim((string) ($systemDefaults['expense_category_id'] ?? '')) ?: 'expense_other';
+                $refundCategory = $refundCategoryId !== '' ? $refundCategoryId : $defaultRefundCategoryId;
+
+                $refundDate = trim((string) ($updates['paidAt'] ?? '')) ?: $this->database->nowUtc();
+                $this->createTransactionRecord([
+                    'date' => $refundDate,
+                    'type' => 'Expense',
+                    'category' => $refundCategory,
+                    'accountId' => $refundAccountId,
+                    'amount' => $refundAmount,
+                    'description' => "Refund for Order #{$orderNumber}",
+                    'referenceId' => $id,
+                    'contactId' => $previousCustomerId,
+                    'paymentMethod' => $refundPaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
             if (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates)) {
                 $payload['carrybee_consignment_id'] = $this->nullableString($updates['carrybeeConsignmentId'] ?? $updates['carrybee_consignment_id'] ?? null);
             }
@@ -4134,7 +4181,7 @@ final class OperationsApi extends BaseService
                 ':contact_id' => $this->nullableString($params['contactId'] ?? null),
                 ':payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
                 ':attachment_name' => $this->nullableString($params['attachmentName'] ?? null),
-                ':attachment_url' => $this->nullableString($params['attachmentUrl'] ?? null),
+                ':attachment_url' => $this->normalizeUploadedFileValue($params['attachmentUrl'] ?? null, 'attachments', $params['attachmentName'] ?? null),
                 ':created_by' => $actorId,
                 ':history' => $this->jsonEncode($params['history'] ?? []),
                 ':approval_status' => (string) ($approvalState['approval_status'] ?? 'approved'),
@@ -4219,7 +4266,7 @@ final class OperationsApi extends BaseService
                 $payload['attachment_name'] = $this->nullableString($updates['attachmentName']);
             }
             if (array_key_exists('attachmentUrl', $updates)) {
-                $payload['attachment_url'] = $this->nullableString($updates['attachmentUrl']);
+                $payload['attachment_url'] = $this->normalizeUploadedFileValue($updates['attachmentUrl'] ?? null, 'attachments', $updates['attachmentName'] ?? null);
             }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);

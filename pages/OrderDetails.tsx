@@ -6,8 +6,8 @@ import { OrderStatus, Order } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
 import { theme } from '../theme';
-import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder } from '../src/hooks/useMutations';
+import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -58,12 +58,38 @@ const OrderDetails: React.FC = () => {
   const { data: invoiceSettings } = useInvoiceSettings();
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
+  const { data: metaAdsData } = useMetaAds({}, true);
+  const { data: courierSettings } = useCourierSettings();
+  const sourceAdInfo = useMemo(() => {
+    if (!order?.sourceAd || !metaAdsData?.ads) return null;
+    const ads = Array.isArray(metaAdsData.ads) ? metaAdsData.ads : [];
+    return ads.find((ad: any) => ad?.id === order.sourceAd) || null;
+  }, [order?.sourceAd, metaAdsData?.ads]);
   
   // Mutations
   const updateMutation = useUpdateOrder();
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
+  const deleteOrderMutation = useDeleteOrder();
+  const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
   
+  const handleDeleteOrder = () => {
+    setShowDeleteOrderConfirmation(true);
+  };
+
+  const confirmDeleteOrder = async () => {
+    if (!order) return;
+
+    try {
+      await deleteOrderMutation.mutateAsync(order.id);
+      toast.success('Order moved to the recycle bin');
+      navigate('/orders', { state: { refreshOrders: true } });
+    } catch (err) {
+      console.error('Failed to delete order:', err);
+      toast.error('Failed to delete order: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
   // Modal and form state
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showSteadfast, setShowSteadfast] = useState(false);
@@ -73,8 +99,11 @@ const OrderDetails: React.FC = () => {
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
   const [showStatusTransitionModal, setShowStatusTransitionModal] = useState(false);
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
+  const [courierHistoryData, setCourierHistoryData] = useState<any>(null);
+  const courierHistoryMutation = useCheckFraudCourierHistory();
   const [showManualCourierModal, setShowManualCourierModal] = useState(false);
   const [manualCourierNote, setManualCourierNote] = useState('');
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
@@ -95,6 +124,13 @@ const OrderDetails: React.FC = () => {
   };
   const [pendingStatusTransition, setPendingStatusTransition] = useState<OrderStatusTransition | null>(null);
   const [paymentForm, setPaymentForm] = useState({
+    date: getTodayDate(),
+    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    accountId: db.settings.defaults.defaultAccountId || '',
+    amount: 0,
+    paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
+  });
+  const [refundForm, setRefundForm] = useState({
     date: getTodayDate(),
     time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
     accountId: db.settings.defaults.defaultAccountId || '',
@@ -130,22 +166,25 @@ const OrderDetails: React.FC = () => {
     const raw = String(value || '').trim();
     if (!raw) return null;
 
-    const onAtMatch = raw.match(/on\s+(.+?),\s*at\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i);
+    const candidates: string[] = [raw];
+
+    const onAtMatch = raw.match(/on\s+(.+?)(?:,\s*at\s*|\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i);
     if (onAtMatch) {
       const datePart = onAtMatch[1].trim();
       const timePart = onAtMatch[2].trim().replace(/\./g, '');
-      const parsed = new Date(`${datePart} ${timePart}`);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
+      candidates.push(`${datePart} ${timePart}`);
+      candidates.push(`${datePart}, ${timePart}`);
     }
 
-    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/);
     if (isoMatch) {
-      const parsed = new Date(raw);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
+      candidates.push(isoMatch[0]);
     }
 
-    const dateOnly = new Date(raw);
-    if (!Number.isNaN(dateOnly.getTime())) return dateOnly;
+    for (const candidate of candidates) {
+      const parsed = new Date(candidate);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
 
     return null;
   };
@@ -154,33 +193,40 @@ const OrderDetails: React.FC = () => {
     const raw = String(value || '').trim();
     if (!raw) return '';
 
-    const parsed = parseHistoryTimestamp(raw);
-    if (!parsed) return raw;
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const parsed = parseHistoryTimestamp(line);
+        if (!parsed) return line;
 
-    const formattedDate = parsed.toLocaleDateString('en-BD', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-    const formattedTime = parsed.toLocaleTimeString('en-BD', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+        const formattedDate = parsed.toLocaleDateString('en-BD', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+        const formattedTime = parsed.toLocaleTimeString('en-BD', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
 
-    const onAtRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
-    const match = raw.match(onAtRegex);
-    if (match && typeof match.index === 'number') {
-      const prefix = raw.slice(0, match.index);
-      const suffix = raw.slice(match.index + match[0].length);
-      return `${prefix}${match[1]}${formattedDate}${match[3]}${formattedTime}${suffix}`;
-    }
+        const onAtRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
+        const match = line.match(onAtRegex);
+        if (match && typeof match.index === 'number') {
+          const prefix = line.slice(0, match.index);
+          const suffix = line.slice(match.index + match[0].length);
+          return `${prefix}${match[1]}${formattedDate}${match[3]}${formattedTime}${suffix}`;
+        }
 
-    if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
-      return `${formattedDate}, at ${formattedTime}`;
-    }
+        if (/^\d{4}-\d{2}-\d{2}T/.test(line)) {
+          return `${formattedDate}, at ${formattedTime}`;
+        }
 
-    return raw;
+        return line;
+      })
+      .join('\n');
   };
 
   const formatStatusTimestamp = (date: Date) => {
@@ -349,7 +395,8 @@ const OrderDetails: React.FC = () => {
         })}`
       : '';
 
-    const entries = [
+    // Build timeline entries, expanding multi-line payment history into separate events
+    const baseEntries = [
       { key: 'created', label: 'Created', icon: ICONS.Plus, text: history.created || defaultCreated },
       { key: 'processing', label: 'Processing', icon: ICONS.ChevronRight, text: history.processing },
       { key: 'packed', label: 'Packed', icon: ICONS.ChevronRight, text: history.packed },
@@ -357,10 +404,18 @@ const OrderDetails: React.FC = () => {
       { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked },
       { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed },
       { key: 'returned', label: 'Returned', icon: ICONS.Close, text: history.returned },
-      { key: 'payment', label: 'Payment', icon: ICONS.Banking, text: history.payment },
       { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled },
-    ]
-      .filter((entry) => entry.text)
+    ].filter((entry) => entry.text);
+
+    const paymentLines = String(history.payment || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const paymentEntries = paymentLines.map((line, idx) => ({
+      key: `payment-${idx}`,
+      label: /refund/i.test(line) ? 'Refund' : 'Payment',
+      icon: ICONS.Banking,
+      text: line,
+    }));
+
+    const entries = [...baseEntries, ...paymentEntries]
       .map((entry) => ({
         ...entry,
         text: formatHistoryTextForTimeline(entry.text),
@@ -400,8 +455,26 @@ const OrderDetails: React.FC = () => {
       : preferredCourier === 'steadfast'
         ? 'Steadfast'
         : '';
+  
+  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly') => {
+    if (!courierSettings) return false;
+    if (courier === 'steadfast') {
+      return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
+    }
+    if (courier === 'carrybee') {
+      return !!(courierSettings.carryBee?.clientId && courierSettings.carryBee?.clientSecret);
+    }
+    if (courier === 'paperfly') {
+      return !!(courierSettings.paperfly?.username && courierSettings.paperfly?.password);
+    }
+    return false;
+  };
+  
   const canUseFraudChecker = can('fraudChecker.check') && hasCapability('fraud_checker');
+  const isFraudCheckerConfigured = Boolean(courierSettings?.fraudChecker?.apiKey?.trim());
   const canUseCourierAutomation = hasCapability('courier_automation');
+  const isValidFraudPhone = /^0\d{10}$/.test(normalizedOrderPhone);
+  const canRunFraudChecker = canUseFraudChecker && isFraudCheckerConfigured && isValidFraudPhone;
   const canMoveCurrentOrderToProcessing = order ? canAccessRecord(
     order.createdBy,
     'orders.moveOnHoldToProcessingOwn',
@@ -429,7 +502,7 @@ const OrderDetails: React.FC = () => {
   ) : false;
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const canCancelCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny') : false;
-  const canRunFraudChecker = canUseFraudChecker && /^0\d{10}$/.test(normalizedOrderPhone);
+  const canDeleteCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny') : false;
   const canSendCurrentOrderToCourier =
     canSendCurrentOrderToCourierPermission
     && canUseCourierAutomation
@@ -524,12 +597,7 @@ const OrderDetails: React.FC = () => {
   // Calculate payment status
   const getPaymentStatus = () => {
     if (!order) return 'Unpaid';
-    const dueAmount = order.total - order.paidAmount;
-    if (order.paidAmount === 0) return 'Unpaid';
-    if (dueAmount > 0) return 'Partially Paid';
-    if (dueAmount === 0) return 'Paid';
-    if (dueAmount < 0) return 'Overpaid';
-    return 'Unpaid';
+    return getPaymentStatusLabel(order.paidAmount, order.total, order.history);
   };
   
   const loading = orderLoading;
@@ -601,8 +669,25 @@ const OrderDetails: React.FC = () => {
     await updateStatus(OrderStatus.COURIER_ASSIGNED, 'courier', historyText);
   };
 
+  const loadCourierHistory = () => {
+    if (!isFraudCheckerConfigured) {
+      toast.warning('Fraud Checker API key is not configured. Enable it in Settings before checking courier history.');
+      return;
+    }
+
+    if (!isValidFraudPhone) {
+      toast.warning('Enter a valid 11-digit phone number starting with 0 to view courier history.');
+      return;
+    }
+
+    courierHistoryMutation.mutate({ phone: normalizedOrderPhone });
+  };
+
   const openCourierSelectionModal = () => {
     setShowCourierSelectionModal(true);
+    if (canRunFraudChecker) {
+      loadCourierHistory();
+    }
   };
 
   const closeCourierSelectionModal = () => {
@@ -815,6 +900,39 @@ const OrderDetails: React.FC = () => {
     setShowPaymentModal(true);
   };
 
+  const openRefund = () => {
+    if (!order) return;
+
+    setRefundForm({
+      date: getTodayDate(),
+      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      accountId: db.settings.defaults.defaultAccountId || '',
+      amount: Math.max(order.paidAmount, 0),
+      paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
+    });
+    setShowRefundModal(true);
+  };
+
+  const appendHistoryEntry = (history: Partial<Order['history']> | undefined, eventText: string): Order['history'] => {
+    const existingPaymentHistory = String(history?.payment || '').trim();
+    const base = {
+      created: String(history?.created || ''),
+      courier: history?.courier,
+      processing: history?.processing,
+      packed: history?.packed,
+      picked: history?.picked,
+      completed: history?.completed,
+      returned: history?.returned,
+      cancelled: history?.cancelled,
+    } as Order['history'];
+
+    if (!existingPaymentHistory) {
+      return { ...base, payment: eventText };
+    }
+
+    return { ...base, payment: `${existingPaymentHistory}\n${eventText}` };
+  };
+
   const handleAddPayment = async () => {
     if (!order) return;
 
@@ -836,7 +954,7 @@ const OrderDetails: React.FC = () => {
       const updates: Partial<Order> = {
         paidAmount: order.paidAmount + paymentForm.amount,
         paidAt: isoDatetime,
-        history: { ...order.history, payment: historyText },
+        history: appendHistoryEntry(order.history, historyText) as any,
       };
 
       await updateMutation.mutateAsync({ id: id!, updates });
@@ -845,6 +963,46 @@ const OrderDetails: React.FC = () => {
     } catch (err) {
       console.error('Failed to record payment:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to record payment');
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!order) return;
+
+    if (!refundForm.accountId) {
+      toast.error('Please select an account');
+      return;
+    }
+    if (refundForm.amount <= 0) {
+      toast.error('Please enter an amount to record refund');
+      return;
+    }
+    if (refundForm.amount > order.paidAmount) {
+      toast.error('Refund amount cannot be greater than the total amount received');
+      return;
+    }
+
+    try {
+      const fullDatetime = buildLocalDateTime(refundForm.date, refundForm.time) || new Date();
+      const isoDatetime = fullDatetime.toISOString();
+      const selectedAccount = accounts.find((account) => account.id === refundForm.accountId);
+      const paymentMethod = refundForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
+      const historyText = `Refund of ${formatCurrency(refundForm.amount)} issued by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const updates: any = {
+        paidAmount: Math.max(order.paidAmount - refundForm.amount, 0),
+        paidAt: isoDatetime,
+        history: appendHistoryEntry(order.history, historyText) as any,
+        refundAmount: refundForm.amount,
+        refundAccountId: refundForm.accountId,
+        refundPaymentMethod: paymentMethod,
+      };
+
+      await updateMutation.mutateAsync({ id: id!, updates });
+      setShowRefundModal(false);
+      toast.success('Refund recorded successfully');
+    } catch (err) {
+      console.error('Failed to record refund:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to record refund');
     }
   };
 
@@ -974,6 +1132,7 @@ const OrderDetails: React.FC = () => {
     || canFinalizeCurrentOrder
     || (sentToAnyCourier && canUseCourierAutomation)
     || canCancelCurrentOrder
+    || canDeleteCurrentOrder
     || canUseFraudChecker;
 
   return (
@@ -1065,7 +1224,15 @@ const OrderDetails: React.FC = () => {
                       <>
                         <div className="border-t my-1"></div>
                         <button onClick={() => updateStatus(OrderStatus.CANCELLED)} disabled={order.status === OrderStatus.COMPLETED} className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-50 disabled:hover:bg-gray-50 flex items-center gap-2 text-red-500 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">
-                          {ICONS.Delete} Cancel Order
+                          {ICONS.Close} Cancel Order
+                        </button>
+                      </>
+                    )}
+                    {canDeleteCurrentOrder && (
+                      <>
+                        <div className="border-t my-1"></div>
+                        <button onClick={() => { handleDeleteOrder(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-bold">
+                          {ICONS.Delete} Delete Order
                         </button>
                       </>
                     )}
@@ -1104,6 +1271,9 @@ const OrderDetails: React.FC = () => {
                 <div className="space-y-0.5 sm:space-y-1 lg:space-y-1.5 text-[9px] sm:text-sm">
                   <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Order No:&nbsp;&nbsp;</span> <span className="break-all">{order.orderNumber}</span></p>
                   <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span> {order.orderDate}</p>
+                  {sourceAdInfo && (
+                    <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Source Ad:&nbsp;&nbsp;</span> <span className="break-all">{sourceAdInfo.name || sourceAdInfo.id || order.sourceAd}</span></p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1166,21 +1336,17 @@ const OrderDetails: React.FC = () => {
                   <span className="text-gray-400 font-bold uppercase flex-shrink-0">Subtotal</span>
                   <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.subtotal)}</span>
                 </div>
-                {order.discount > 0 && (
-                  <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                    <span className="text-gray-400 font-bold uppercase flex-shrink-0">Discount</span>
-                    <span className="font-bold text-red-500 flex-shrink-0">-{formatCurrency(order.discount)}</span>
-                  </div>
-                )}
-                {order.shipping > 0 && (
-                  <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                    <span className="text-gray-400 font-bold uppercase flex-shrink-0">Shipping</span>
-                    <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.shipping)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
+                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Discount</span>
+                  <span className="font-bold text-emerald-600 flex-shrink-0">-{formatCurrency(order.discount)}</span>
+                </div>
+                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
+                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Shipping</span>
+                  <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.shipping)}</span>
+                </div>
                 <div className="flex justify-between items-center py-2 sm:py-3 lg:py-4 border-t-2 border-[#0f2f57] gap-2">
-                  <span className="font-black text-gray-900 uppercase tracking-tighter text-[11px] sm:text-xs lg:text-sm flex-shrink-0">Net Total</span>
-                  <span className="font-black text-sm sm:text-base lg:text-lg flex-shrink-0">{formatCurrency(order.total)}</span>
+                  <span className="font-black text-gray-900 uppercase tracking-tighter text-xs sm:text-base lg:text-base flex-shrink-0">Net Total</span>
+                  <span className="font-black text-gray-900 text-xs sm:text-base lg:text-base flex-shrink-0">{formatCurrency(order.total)}</span>
                 </div>
               </div>
             </div>
@@ -1254,12 +1420,16 @@ const OrderDetails: React.FC = () => {
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={openPayment}
-                    className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm`}
+                    disabled={getPaymentStatus() === 'Refunded'}
+                    className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     Add Payment
                   </button>
                   <button
-                    className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm"
+                    type="button"
+                    onClick={openRefund}
+                    disabled={order.paidAmount <= 0}
+                    className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Issue Refund
                   </button>
@@ -1344,6 +1514,91 @@ const OrderDetails: React.FC = () => {
             </div>
           ) : null}
 
+          {/* Metadata Section */}
+          {order ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+              <button
+                type="button"
+                className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+                onClick={() => toggleSection('metadata')}
+                aria-expanded={isSectionExpanded('metadata')}
+              >
+                <h3 className="text-sm font-black text-black uppercase tracking-widest">Metadata</h3>
+                <div className={`transition-transform duration-200 ${isSectionExpanded('metadata') ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
+                </div>
+              </button>
+              {isSectionExpanded('metadata') && (
+                <div className="p-4 space-y-4">
+                  {/* Ad Information */}
+                  {sourceAdInfo ? (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Source Ad</p>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-900">{sourceAdInfo.name}</p>
+                        <p className="text-xs text-gray-600">ID: {sourceAdInfo.id}</p>
+                        {sourceAdInfo.platformName && (
+                          <p className="text-xs text-gray-600">Platform: {sourceAdInfo.platformName}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Source Ad</p>
+                      <p className="text-sm text-gray-600">No source ad assigned</p>
+                    </div>
+                  )}
+                  
+                  {/* Courier History Button */}
+                  {canUseFraudChecker && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={loadCourierHistory}
+                        disabled={!canRunFraudChecker || courierHistoryMutation.isPending}
+                        className="w-full px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-lg text-sm font-semibold text-orange-700 hover:from-orange-100 hover:to-amber-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {courierHistoryMutation.isPending ? 'Loading Courier History...' : 'View Courier History'}
+                      </button>
+                      {!isFraudCheckerConfigured ? (
+                        <p className="text-xs text-amber-700 mt-2">Fraud Checker module is not available in your plan.</p>
+                      ) : !isValidFraudPhone ? (
+                        <p className="text-xs text-amber-700 mt-2">Enter a valid 11-digit phone number starting with 0 to view courier history.</p>
+                      ) : null}
+                    </>
+                  )}
+                  
+                  {courierHistoryMutation.error ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                      {courierHistoryMutation.error.message}
+                    </div>
+                  ) : null}
+
+                  {/* Courier History Display */}
+                  {courierHistoryMutation.data?.summary && (
+                    <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Courier Statistics</p>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                          <p className="text-lg font-black text-gray-900">{courierHistoryMutation.data.summary.totalParcel}</p>
+                          <p className="text-xs text-gray-600 mt-1">Total Orders</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-black text-emerald-600">{courierHistoryMutation.data.summary.successParcel}</p>
+                          <p className="text-xs text-gray-600 mt-1">Delivered</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-black text-red-600">{courierHistoryMutation.data.summary.cancelledParcel}</p>
+                          <p className="text-xs text-gray-600 mt-1">Cancelled</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : null}
+
 
 
         </div>
@@ -1400,6 +1655,20 @@ const OrderDetails: React.FC = () => {
         hideDateTime
       />
 
+      <CommonPaymentModal
+        isOpen={showRefundModal}
+        onClose={() => setShowRefundModal(false)}
+        onSubmit={handleRefund}
+        accounts={accounts}
+        paymentForm={refundForm}
+        setPaymentForm={setRefundForm}
+        paymentMethods={paymentMethods}
+        isLoading={updateMutation.isPending}
+        title="Issue Refund"
+        buttonText="Save Refund"
+        hideDateTime
+      />
+
       <Dialog
         isOpen={showStatusTransitionModal}
         onClose={handleCancelStatusTransition}
@@ -1411,42 +1680,84 @@ const OrderDetails: React.FC = () => {
         variant={transitionModalVariant}
       />
 
+      <Dialog
+        isOpen={showDeleteOrderConfirmation}
+        onClose={() => setShowDeleteOrderConfirmation(false)}
+        onConfirm={async () => {
+          await confirmDeleteOrder();
+          setShowDeleteOrderConfirmation(false);
+        }}
+        title="Delete Order"
+        message="Move this order to the recycle bin? You can restore it later."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
+
       {showCourierSelectionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40" onClick={closeCourierSelectionModal} />
-          <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300">
+          <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Assign Courier</h2>
                 <p className="text-sm text-gray-500">Choose a courier service or assign manually.</p>
               </div>
-              <button onClick={closeCourierSelectionModal} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
+              <button onClick={closeCourierSelectionModal} className="text-gray-400 hover:text-gray-600 text-3xl leading-none flex-shrink-0">×</button>
             </div>
+            
+            {/* Courier History Section */}
+            {courierHistoryMutation.data && (
+              <div className="border-b border-gray-100 p-6 bg-gray-50">
+                <h3 className="text-sm font-bold text-gray-700 uppercase tracking-widest mb-4">Customer Courier History</h3>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-2xl font-black text-gray-900">{courierHistoryMutation.data.summary?.totalParcel || 0}</p>
+                    <p className="text-xs text-gray-500 font-medium mt-1">Total Orders</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-emerald-600">{courierHistoryMutation.data.summary?.successParcel || 0}</p>
+                    <p className="text-xs text-gray-500 font-medium mt-1">Delivered</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-red-600">{courierHistoryMutation.data.summary?.cancelledParcel || 0}</p>
+                    <p className="text-xs text-gray-500 font-medium mt-1">Cancelled</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-4 p-6">
-              <button
-                type="button"
-                onClick={() => handleSelectCourierOption('steadfast')}
-                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
-              >
-                <img src="/uploads/steadfast.png" alt="Steadfast" className="h-6 w-6 rounded-full" />
-                <span>Steadfast</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectCourierOption('carrybee')}
-                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
-              >
-                <img src="/uploads/carrybee.png" alt="CarryBee" className="h-6 w-6 rounded-full" />
-                <span>CarryBee</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectCourierOption('paperfly')}
-                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
-              >
-                <img src="/uploads/paperfly.png" alt="Paperfly" className="h-6 w-6 rounded-full" />
-                <span>Paperfly</span>
-              </button>
+              {isCourierConfigured('steadfast') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierOption('steadfast')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/steadfast.png" alt="Steadfast" className="h-6 w-6 rounded-full" />
+                  <span>Steadfast</span>
+                </button>
+              )}
+              {isCourierConfigured('carrybee') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierOption('carrybee')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/carrybee.png" alt="CarryBee" className="h-6 w-6 rounded-full" />
+                  <span>CarryBee</span>
+                </button>
+              )}
+              {isCourierConfigured('paperfly') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierOption('paperfly')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/paperfly.png" alt="Paperfly" className="h-6 w-6 rounded-full" />
+                  <span>Paperfly</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleSelectCourierOption('manual')}

@@ -56,6 +56,7 @@ final class ServiceLifecycle
         'updateCourierSettings',
         'updateCustomer',
         'updateInvoiceSettings',
+        'updateMetaAdsSettings',
         'updateOrder',
         'updateOrderSettings',
         'updatePaymentMethod',

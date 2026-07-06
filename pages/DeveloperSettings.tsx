@@ -3,18 +3,33 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings } from '../src/hooks/useMutations';
-import { hasAdminAccess, type PaymentGatewaySettings } from '../types';
+import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings } from '../src/hooks/useMutations';
+import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings } from '../types';
 import { theme } from '../theme';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent';
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
   piprapayApiKey: '',
   piprapayMerchantId: '',
   piprapayIpnSecret: '',
+};
+
+const emptyAgentSettings: AgentSettings = {
+  enabled: false,
+  mainProvider: 'anthropic',
+  anthropic: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
+  openai: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
+  google: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
+  groq: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
+  showReasoningSummaries: true,
+  showToolActivity: true,
+  maxReasoningSteps: 5,
+  maxToolCalls: 10,
+  queryRowLimit: 1000,
+  queryTimeoutMs: 30000,
 };
 
 const DeveloperSettings: React.FC = () => {
@@ -25,15 +40,18 @@ const DeveloperSettings: React.FC = () => {
   const { data: courierSettings, isPending: loadingCourierSettings } = useCourierSettings();
   const { data: gatewaySettings, isPending: loadingGateway } = usePaymentGatewaySettings(user?.role === 'Developer');
   const { data: maintenanceStatus, isPending: loadingMaintenance } = useMaintenanceStatus(Boolean(user));
+  const { data: agentSettings, isPending: loadingAgent } = useAgentSettings(user?.role === 'Developer');
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
   const setMaintenanceStatus = useSetMaintenanceStatus();
+  const updateAgent = useUpdateAgentSettings();
 
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker'];
+  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -65,6 +83,12 @@ const DeveloperSettings: React.FC = () => {
       setMaintenanceEnabled(maintenanceStatus.maintenanceEnabled);
     }
   }, [maintenanceStatus]);
+
+  useEffect(() => {
+    if (agentSettings) {
+      setAgentForm(agentSettings);
+    }
+  }, [agentSettings]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -139,29 +163,37 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveAgentSettings = async () => {
+    const toastId = toast.loading('Saving AI agent settings...');
+    try {
+      await updateAgent.mutateAsync(agentForm);
+      toast.update(toastId, 'AI agent settings saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save AI agent settings.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
     { id: 'maintenance', label: 'Maintenance Mode' },
     { id: 'payment-gateway', label: 'Payment Gateway' },
     { id: 'fraud-checker', label: 'Fraud Checker' },
+    { id: 'agent', label: 'AI Agent' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay
-        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending}
+        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending}
         message="Loading developer settings..."
       />
 
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Developer Access Only</p>
-          <h2 className="mt-1 md:text-2xl text-xl font-bold text-gray-900">Developer Settings</h2>
-          <p className="mt-1 text-sm text-gray-500">Control central license sync, maintenance mode, and service configuration.</p>
-        </div>
+        <div />
         {activeTab === 'license' && <Button onClick={syncNow} variant="primary">Sync Now</Button>}
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
+        {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save AI Agent Settings</Button>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
@@ -267,6 +299,201 @@ const DeveloperSettings: React.FC = () => {
                     onChange={(e) => setFraudSettings({ apiKey: e.target.value })}
                     placeholder="Paste your fraud checker API key"
                   />
+                </label>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'agent' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">AI Agent Settings</h3>
+                <p className="mt-1 text-sm text-gray-500">Configure the enterprise AI agent runtime, providers, and tool behavior.</p>
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Main Provider</span>
+                  <select
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
+                    value={agentForm.mainProvider}
+                    onChange={(e) => setAgentForm({ ...agentForm, mainProvider: e.target.value as any })}
+                  >
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="google">Google</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={agentForm.enabled}
+                    onChange={(e) => setAgentForm({ ...agentForm, enabled: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <p className="text-sm font-black text-gray-900">Enable AI Agent Runtime</p>
+                    <p className="text-sm text-gray-500">Turn the enterprise agent on or off for this installation.</p>
+                  </div>
+                </label>
+
+                {(['anthropic', 'openai', 'google', 'groq'] as const).map((provider) => {
+                  const providerConfig = agentForm[provider];
+                  const label = provider === 'groq' ? 'Deterministic Groq' : `${provider.charAt(0).toUpperCase() + provider.slice(1)} Provider`;
+                  return (
+                    <div key={provider} className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-black text-gray-900">{label}</p>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <input
+                            id={`agent-${provider}-enabled`}
+                            type="checkbox"
+                            checked={providerConfig.enabled}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, enabled: e.target.checked },
+                            })}
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <label htmlFor={`agent-${provider}-enabled`}>Enabled</label>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Base URL</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.baseUrl}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, baseUrl: e.target.value },
+                            })}
+                            placeholder={provider === 'groq' ? 'https://api.groq.com' : 'https://api.your-provider.com'}
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Key</span>
+                          <input
+                            type="password"
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.apiKey}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, apiKey: e.target.value },
+                            })}
+                            placeholder="Paste API key"
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Model</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.model}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, model: e.target.value },
+                            })}
+                            placeholder="e.g. gpt-4o-mini"
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Organization</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.organization || ''}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, organization: e.target.value },
+                            })}
+                            placeholder="Optional organization id"
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Project</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.project || ''}
+                            onChange={(e) => setAgentForm({
+                              ...agentForm,
+                              [provider]: { ...providerConfig, project: e.target.value },
+                            })}
+                            placeholder="Optional project id"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4 md:grid md:grid-cols-2 md:gap-4">
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Max Reasoning Steps</span>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={agentForm.maxReasoningSteps}
+                    onChange={(e) => setAgentForm({ ...agentForm, maxReasoningSteps: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Max Tool Calls</span>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={agentForm.maxToolCalls}
+                    onChange={(e) => setAgentForm({ ...agentForm, maxToolCalls: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Query Row Limit</span>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={agentForm.queryRowLimit}
+                    onChange={(e) => setAgentForm({ ...agentForm, queryRowLimit: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Query Timeout (sec)</span>
+                  <input
+                    type="number"
+                    min={5}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={Math.round(agentForm.queryTimeoutMs / 1000)}
+                    onChange={(e) => setAgentForm({ ...agentForm, queryTimeoutMs: Number(e.target.value) * 1000 })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4">
+                  <input
+                    type="checkbox"
+                    checked={agentForm.showReasoningSummaries}
+                    onChange={(e) => setAgentForm({ ...agentForm, showReasoningSummaries: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <p className="text-sm font-black text-gray-900">Show reasoning summaries</p>
+                    <p className="text-sm text-gray-500">Display structured reasoning output in the agent chat widget.</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4">
+                  <input
+                    type="checkbox"
+                    checked={agentForm.showToolActivity}
+                    onChange={(e) => setAgentForm({ ...agentForm, showToolActivity: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div>
+                    <p className="text-sm font-black text-gray-900">Show tool activity</p>
+                    <p className="text-sm text-gray-500">Expose structured tool execution and query details in the UI.</p>
+                  </div>
                 </label>
               </div>
             </section>

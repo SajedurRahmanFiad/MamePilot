@@ -11,11 +11,15 @@ export { Badge } from './Badge';
 
 export { Card, StatCard } from './Card';
 
+export { AbbreviatedNumber } from './AbbreviatedNumber';
+
 export { Table, TableCell, TableHeader, TableBody, TableRow } from './Table';
 
 export { Input, Select, TextArea, NumericInput } from './Input';
 
 export { Modal, Dialog } from './Modal';
+
+export { DuplicateOrderModal } from './DuplicateOrderModal';
 
 export { default as Layout } from './Layout';
 

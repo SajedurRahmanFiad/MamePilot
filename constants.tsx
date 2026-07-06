@@ -108,7 +108,9 @@ export const getStatusColor = (status: string): string => {
   return statusMap[status] || 'bg-gray-100 text-gray-600';
 };
 
-export const getPaymentStatusLabel = (paidAmount: number, total: number): string => {
+export const getPaymentStatusLabel = (paidAmount: number, total: number, history?: Record<string, string | undefined> | null): string => {
+  const historyText = history ? Object.values(history).filter(Boolean).join(' ') : '';
+  if (historyText && /refund/i.test(historyText)) return 'Refunded';
   if (paidAmount === 0) return 'Unpaid';
   if (paidAmount >= total) return 'Paid';
   return 'Partially paid';
@@ -120,9 +122,50 @@ export const getPaymentStatusBadgeColor = (status: string): string => {
     'Paid': 'bg-green-100 text-green-600',
     'Partially paid': 'bg-amber-100 text-amber-700',
     'Partially Paid': 'bg-amber-100 text-amber-700',
+    'Refunded': 'bg-orange-100 text-orange-700',
     'Overpaid': 'bg-green-100 text-green-600',
   };
   return statusMap[status] || 'bg-gray-100 text-gray-600';
 };
 
 export const getStatusDisplayName = (status: string): string => status === 'Completed' ? 'Delivered' : status;
+
+export const formatNumberWithSuffix = (value: number): { abbreviated: string; full: string } => {
+  const absValue = Math.abs(value);
+  const numericValue = Number(value);
+  
+  if (!Number.isFinite(numericValue)) {
+    return { abbreviated: '0', full: '0' };
+  }
+
+  const fullFormatted = numericValue.toLocaleString('en-BD');
+  
+  if (absValue >= 1_000_000_000) {
+    const billions = (numericValue / 1_000_000_000).toFixed(1);
+    return {
+      abbreviated: `${billions}B`,
+      full: fullFormatted,
+    };
+  }
+  
+  if (absValue >= 1_000_000) {
+    const millions = (numericValue / 1_000_000).toFixed(1);
+    return {
+      abbreviated: `${millions}M`,
+      full: fullFormatted,
+    };
+  }
+  
+  if (absValue >= 1_000) {
+    const thousands = (numericValue / 1_000).toFixed(1);
+    return {
+      abbreviated: `${thousands}K`,
+      full: fullFormatted,
+    };
+  }
+  
+  return {
+    abbreviated: fullFormatted,
+    full: fullFormatted,
+  };
+};

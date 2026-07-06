@@ -1256,6 +1256,10 @@ final class OperationsApi extends BaseService
                 $where .= ' AND paidAmount > 0 AND paidAmount < total';
             } elseif ($paymentStatus === 'Unpaid') {
                 $where .= ' AND paidAmount = 0';
+            } elseif ($paymentStatus === 'Refunded') {
+                // Treat 'Refunded' as orders with refund text in history
+                $where .= ' AND LOWER(COALESCE(history, "")) LIKE :refund_like';
+                $bindings[':refund_like'] = '%refund%';
             }
         }
         $paymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
@@ -1266,18 +1270,34 @@ final class OperationsApi extends BaseService
                 $where .= ' AND NOT (paidAmount > 0 AND paidAmount < total)';
             } elseif ($paymentStatusNot === 'Unpaid') {
                 $where .= ' AND NOT (paidAmount = 0)';
+            } elseif ($paymentStatusNot === 'Refunded') {
+                $where .= ' AND NOT (LOWER(COALESCE(history, "")) LIKE :refund_like_not)';
+                $bindings[':refund_like_not'] = '%refund%';
             }
+        }
+
+        $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
+        if ($sourceAd !== '') {
+            $where .= ' AND sourceAd = :source_ad';
+            $bindings[':source_ad'] = $sourceAd;
+        }
+        $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
+        if ($sourceAdNot !== '') {
+            $where .= ' AND sourceAd <> :source_ad_not';
+            $bindings[':source_ad_not'] = $sourceAdNot;
         }
 
         $orderNumber = trim((string) ($filters['orderNumber'] ?? ''));
         if ($orderNumber !== '') {
-            $where .= ' AND orderNumber = :order_number';
-            $bindings[':order_number'] = $orderNumber;
+            // Allow partial/order-id fragment searches: match anywhere inside orderNumber
+            $where .= ' AND orderNumber LIKE :order_number';
+            $bindings[':order_number'] = (strpos($orderNumber, '%') !== false) ? $orderNumber : '%' . $orderNumber . '%';
         }
         $orderNumberNot = trim((string) ($filters['orderNumberNot'] ?? ''));
         if ($orderNumberNot !== '') {
-            $where .= ' AND orderNumber <> :order_number_not';
-            $bindings[':order_number_not'] = $orderNumberNot;
+            // Negation for partial matches
+            $where .= ' AND orderNumber NOT LIKE :order_number_not';
+            $bindings[':order_number_not'] = (strpos($orderNumberNot, '%') !== false) ? $orderNumberNot : '%' . $orderNumberNot . '%';
         }
 
         $customerName = trim((string) ($filters['customerName'] ?? ''));
@@ -1340,27 +1360,7 @@ final class OperationsApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT
-                id,
-                orderNumber,
-                orderDate,
-                customerId,
-                customerName,
-                customerPhone,
-                customerAddress,
-                createdBy,
-                creatorName,
-                status,
-                total,
-                notes,
-                history,
-                paidAmount,
-                createdAt,
-                deletedAt,
-                deletedBy,
-                carrybeeConsignmentId,
-                steadfastConsignmentId,
-                paperflyTrackingNumber
+            "SELECT *
              FROM orders_with_customer_creator
              {$where}
              ORDER BY createdAt DESC

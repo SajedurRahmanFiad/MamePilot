@@ -488,27 +488,46 @@ final class CourierApi extends BaseService
         }
 
         $normalized = strtolower($rawStatus);
-        $pickedOrBeyond = [
-            'at the sorting hub',
-            'at central warehouse',
-            'at the destination hub',
-            'assigned for delivery',
-            'out for delivery',
-            'in transit',
-            'on the way to central warehouse',
-            'on the way to last mile hub',
-            'received at last mile hub',
-            'delivered',
-            'exchange',
-            'partial delivery',
-            'return',
-            'paid return',
-        ];
+        $isPickedOrBeyond = false;
+        $mappedStatus = null;
+
+        if ($normalized !== '') {
+            if (strpos($normalized, 'delivered') !== false) {
+                $mappedStatus = 'Delivered';
+            } elseif (strpos($normalized, 'return') !== false || strpos($normalized, 'paid return') !== false) {
+                $mappedStatus = 'Returned';
+            } elseif (strpos($normalized, 'cancel') !== false) {
+                $mappedStatus = 'Cancelled';
+            }
+
+            $pickedOrBeyond = [
+                'at the sorting hub',
+                'at central warehouse',
+                'at the destination hub',
+                'assigned for delivery',
+                'out for delivery',
+                'in transit',
+                'on the way to central warehouse',
+                'on the way to last mile hub',
+                'received at last mile hub',
+                'delivered',
+                'exchange',
+                'partial delivery',
+                'return',
+                'paid return',
+            ];
+            $isPickedOrBeyond = in_array($normalized, $pickedOrBeyond, true) || $mappedStatus !== null;
+
+            if ($mappedStatus === null && $isPickedOrBeyond) {
+                $mappedStatus = 'Picked';
+            }
+        }
 
         return [
             'rawStatus' => $rawStatus,
             'normalizedStatus' => $normalized,
-            'isPickedOrBeyond' => in_array($normalized, $pickedOrBeyond, true),
+            'status' => $mappedStatus,
+            'isPickedOrBeyond' => $isPickedOrBeyond,
         ];
     }
 
@@ -530,7 +549,7 @@ final class CourierApi extends BaseService
                 WHERE deleted_at IS NULL
                   AND carrybee_consignment_id IS NOT NULL
                   AND carrybee_consignment_id <> ''
-                  AND status IN ('On Hold', 'Processing', 'Courier assigned')";
+                  AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')";
         $bindings = [];
         if (!empty($params['orderId'])) {
             $sql .= ' AND id = :id';
@@ -566,19 +585,32 @@ final class CourierApi extends BaseService
                 $statusKey = (string) ($statusInfo['normalizedStatus'] ?? 'unknown');
                 $statusCounts[$statusKey] = ($statusCounts[$statusKey] ?? 0) + 1;
 
-                if (empty($statusInfo['rawStatus']) || empty($statusInfo['isPickedOrBeyond'])) {
+                if (empty($statusInfo['rawStatus']) || $statusInfo['status'] === null) {
                     continue;
                 }
 
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
-                $history['picked'] = $history['picked'] ?? ('Marked picked automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
+                $updates = [
+                    'history' => $history,
+                ];
+
+                if ($statusInfo['status'] === 'Delivered') {
+                    $updates['status'] = 'Completed';
+                    $updates['history']['completed'] = 'Marked delivered automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                } elseif ($statusInfo['status'] === 'Returned') {
+                    $updates['status'] = 'Returned';
+                    $updates['history']['returned'] = 'Marked returned automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                } elseif ($statusInfo['status'] === 'Cancelled') {
+                    $updates['status'] = 'Cancelled';
+                    $updates['history']['cancelled'] = 'Marked cancelled automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                } else {
+                    $updates['status'] = 'Picked';
+                    $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
+                }
 
                 $this->updateOrderAsCourierSystem([
                     'id' => (string) $row['id'],
-                    'updates' => [
-                        'status' => 'Picked',
-                        'history' => $history,
-                    ],
+                    'updates' => $updates,
                 ]);
                 $updated += 1;
                 $updatedOrders[] = [
@@ -789,11 +821,8 @@ final class CourierApi extends BaseService
         foreach ($directPickupMarkers as $marker) {
             $normalizedMarker = strtolower($marker);
             if (!in_array($normalizedMarker, ['0', 'false', 'no', 'n/a', 'na', 'null', 'none', 'pending'], true)) {
-                return [
-                    'rawStatus' => $rawStatus !== '' ? $rawStatus : $marker,
-                    'normalizedStatus' => strtolower($rawStatus !== '' ? $rawStatus : $marker),
-                    'isPickedOrBeyond' => true,
-                ];
+                $rawStatus = $rawStatus !== '' ? $rawStatus : $marker;
+                break;
             }
         }
 
@@ -818,7 +847,18 @@ final class CourierApi extends BaseService
             }
         }
 
-        $combined = implode(' | ', $normalizedValues);
+        $normalized = strtolower($rawStatus);
+        $status = null;
+
+        if (strpos($normalized, 'delivered') !== false) {
+            $status = 'Delivered';
+        } elseif (strpos($normalized, 'returned') !== false || strpos($normalized, 'return') !== false) {
+            $status = 'Returned';
+        } elseif (strpos($normalized, 'cancel') !== false) {
+            $status = 'Cancelled';
+        }
+
+        $hasPositiveSignal = false;
         $positivePatterns = [
             '/\bpicked\b/',
             '/\bpickup\b/',
@@ -832,6 +872,14 @@ final class CourierApi extends BaseService
             '/\bdispatch(?:ed)?\b/',
             '/\breceived\b/',
         ];
+        foreach ($positivePatterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                $hasPositiveSignal = true;
+                break;
+            }
+        }
+
+        $hasNegativeSignal = false;
         $negativePatterns = [
             '/\bnot picked\b/',
             '/\bnot pickup\b/',
@@ -839,29 +887,23 @@ final class CourierApi extends BaseService
             '/\bbooked\b/',
             '/\border placed\b/',
             '/\bcreated\b/',
-            '/\bcancel(?:led)?\b/',
         ];
-
-        $hasPositiveSignal = false;
-        foreach ($positivePatterns as $pattern) {
-            if (preg_match($pattern, $combined) === 1) {
-                $hasPositiveSignal = true;
-                break;
-            }
-        }
-
-        $hasNegativeSignal = false;
         foreach ($negativePatterns as $pattern) {
-            if (preg_match($pattern, $combined) === 1) {
+            if (preg_match($pattern, $normalized) === 1) {
                 $hasNegativeSignal = true;
                 break;
             }
         }
 
+        if ($status === null && $hasPositiveSignal && !$hasNegativeSignal) {
+            $status = 'Picked';
+        }
+
         return [
             'rawStatus' => $rawStatus,
-            'normalizedStatus' => strtolower($rawStatus),
-            'isPickedOrBeyond' => $hasPositiveSignal && !$hasNegativeSignal,
+            'normalizedStatus' => $normalized,
+            'status' => $status,
+            'isPickedOrBeyond' => $status !== null && $status !== 'Cancelled',
         ];
     }
 
@@ -879,12 +921,25 @@ final class CourierApi extends BaseService
         }
 
         $normalized = strtolower($rawStatus);
-        $nonPickedStatuses = ['pending', 'in_review', 'cancelled'];
+        $status = null;
+
+        if ($normalized !== '') {
+            if (strpos($normalized, 'delivered') !== false) {
+                $status = 'Delivered';
+            } elseif (strpos($normalized, 'returned') !== false || strpos($normalized, 'cancelled_approval_pending') !== false) {
+                $status = 'Returned';
+            } elseif (strpos($normalized, 'cancel') !== false && strpos($normalized, 'cancelled_approval_pending') === false) {
+                $status = 'Cancelled';
+            } else {
+                $status = 'Picked';
+            }
+        }
 
         return [
             'rawStatus' => $rawStatus,
             'normalizedStatus' => $normalized,
-            'isPickedOrBeyond' => $rawStatus !== '' && !in_array($normalized, $nonPickedStatuses, true),
+            'status' => $status,
+            'isPickedOrBeyond' => $status !== null && $status !== 'Cancelled',
         ];
     }
 
@@ -905,7 +960,7 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND paperfly_tracking_number IS NOT NULL
                AND paperfly_tracking_number <> ''
-               AND status IN ('On Hold', 'Processing', 'Courier assigned')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
         );
 
         $checked = 0;
@@ -934,18 +989,30 @@ final class CourierApi extends BaseService
             }
 
             $statusInfo = $this->classifyPaperflyTrackingStatus($details['data']);
-            if (empty($statusInfo['isPickedOrBeyond'])) {
+            if (empty($statusInfo['status'])) {
                 continue;
             }
 
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
-            $history['picked'] = 'Marked picked automatically from Paperfly tracking status' . ($statusInfo['rawStatus'] !== '' ? ' "' . $statusInfo['rawStatus'] . '"' : '') . ' using reference "' . $referenceNumber . '" on ' . gmdate('c');
+            $updates = ['history' => $history];
+
+            if ($statusInfo['status'] === 'Delivered') {
+                $updates['status'] = 'Completed';
+                $updates['history']['completed'] = 'Marked delivered automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Returned') {
+                $updates['status'] = 'Returned';
+                $updates['history']['returned'] = 'Marked returned automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Cancelled') {
+                $updates['status'] = 'Cancelled';
+                $updates['history']['cancelled'] = 'Marked cancelled automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+            } else {
+                $updates['status'] = 'Picked';
+                $updates['history']['picked'] = 'Marked picked automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+            }
+
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
-                'updates' => [
-                    'status' => 'Picked',
-                    'history' => $history,
-                ],
+                'updates' => $updates,
             ]);
             $updated += 1;
         }
@@ -969,7 +1036,7 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND steadfast_consignment_id IS NOT NULL
                AND steadfast_consignment_id <> ''
-               AND status IN ('On Hold', 'Processing', 'Courier assigned')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
         );
 
         $checked = 0;
@@ -992,18 +1059,30 @@ final class CourierApi extends BaseService
             }
 
             $statusInfo = $this->classifySteadfastDeliveryStatus($details['data']);
-            if (empty($statusInfo['rawStatus']) || empty($statusInfo['isPickedOrBeyond'])) {
+            if (empty($statusInfo['rawStatus']) || empty($statusInfo['status'])) {
                 continue;
             }
 
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
-            $history['picked'] = 'Marked picked automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            $updates = ['history' => $history];
+
+            if ($statusInfo['status'] === 'Delivered') {
+                $updates['status'] = 'Completed';
+                $updates['history']['completed'] = 'Marked delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Returned') {
+                $updates['status'] = 'Returned';
+                $updates['history']['returned'] = 'Marked returned automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Cancelled') {
+                $updates['status'] = 'Cancelled';
+                $updates['history']['cancelled'] = 'Marked cancelled automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } else {
+                $updates['status'] = 'Picked';
+                $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
+            }
+
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
-                'updates' => [
-                    'status' => 'Picked',
-                    'history' => $history,
-                ],
+                'updates' => $updates,
             ]);
             $updated += 1;
         }

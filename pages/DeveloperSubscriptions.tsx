@@ -145,12 +145,6 @@ const DeveloperSubscriptions: React.FC = () => {
     <div className="max-w-7xl mx-auto space-y-6">
       <LoadingOverlay isLoading={busy} message="Loading developer subscription summary..." />
 
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Developer-only</p>
-        <h1 className="mt-1 text-2xl font-black text-gray-900">Subscription Operations</h1>
-        <p className="mt-1 text-sm text-gray-500">Create licenses, assign tiers, override capabilities, and review local usage.</p>
-      </div>
-
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Current State" value={(overview?.state || 'Unknown').replace(/_/g, ' ')} hint={overview?.subscriptionStatus || undefined} />
         <StatCard label="Valid Till" value={overview?.dueAt ? new Date(overview.dueAt).toLocaleDateString('en-BD') : 'Not set'} />

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
 import { RotateCcw } from 'lucide-react';
@@ -7,8 +7,7 @@ import { db } from '../db';
 import { hasAdminAccess } from '../types';
 import { resolveThemeColorPalette, theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useSearch } from '../src/contexts/SearchContext';
-import { useCompanySettings, useOrderSearchPreview, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCompanySettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -73,7 +72,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
         >
           <div className={`flex items-center ${expanded ? 'gap-3' : ''}`}>
             {iconNode}
-            <span className={`font-semibold text-sm ${expanded ? 'block' : 'hidden'} leading-none`}>{label}</span>
+            <span className={`font-semibold text-sm ${expanded ? 'block text-left' : 'hidden'} leading-none`}>{label}</span>
           </div>
           {expanded && (
             <div className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
@@ -123,13 +122,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
-  const { searchQuery, setSearchQuery, clearSearch } = useSearch();
   const { data: fetchedCompanySettings, isLoading: isCompanySettingsLoading } = useCompanySettings();
   const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability } = useCapabilities(Boolean(profile));
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
-  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
@@ -233,46 +230,135 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     try { window.scrollTo(0, 0); } catch (e) {}
   }, [location.pathname]);
 
-  // clear search text any time we change pages, also compute placeholder/visibility
-  const getSearchConfig = (pathname: string) => {
-    // note: ordering matters for prefix checks
-    if (pathname.startsWith('/dashboard') || pathname.startsWith('/orders')) {
-      return { visible: true, placeholder: 'Search Orders' };
+  const pageHeader = useMemo(() => {
+    const pathname = location.pathname;
+
+    if (pathname.startsWith('/orders/new')) {
+      return { title: 'New Order', subtitle: 'Create a new sales order and capture fulfillment details.' };
+    }
+    if (pathname.startsWith('/orders/edit/')) {
+      return { title: 'Edit Order', subtitle: 'Update the selected order and keep its details current.' };
+    }
+    if (pathname.startsWith('/orders')) {
+      return { title: 'Orders', subtitle: 'Track sales orders, fulfillment, and payment progress.' };
+    }
+    if (pathname.startsWith('/customers/new')) {
+      return { title: 'New Customer', subtitle: 'Add a new customer profile and contact details.' };
+    }
+    if (pathname.startsWith('/customers/edit/')) {
+      return { title: 'Edit Customer', subtitle: 'Update customer details and account information.' };
     }
     if (pathname.startsWith('/customers')) {
-      return { visible: true, placeholder: 'Search Customers' };
+      return { title: 'Customers', subtitle: 'Review customer records, activity, and outstanding balances.' };
+    }
+    if (pathname.startsWith('/vendors/new')) {
+      return { title: 'New Vendor', subtitle: 'Create a vendor record for purchase workflows.' };
+    }
+    if (pathname.startsWith('/vendors/edit/')) {
+      return { title: 'Edit Vendor', subtitle: 'Update vendor information and account details.' };
     }
     if (pathname.startsWith('/vendors')) {
-      return { visible: true, placeholder: 'Search Vendors' };
+      return { title: 'Vendors', subtitle: 'Manage supplier accounts and purchasing relationships.' };
+    }
+    if (pathname.startsWith('/bills/new')) {
+      return { title: 'New Bill', subtitle: 'Capture a new purchase bill and vendor details.' };
+    }
+    if (pathname.startsWith('/bills/edit/')) {
+      return { title: 'Edit Bill', subtitle: 'Adjust bill information and payment status.' };
     }
     if (pathname.startsWith('/bills')) {
-      return { visible: true, placeholder: 'Search Bills' };
+      return { title: 'Purchase Bills', subtitle: 'Track vendor bills, receipts, and payment progress.' };
+    }
+    if (pathname.startsWith('/transactions/new/')) {
+      return { title: 'New Transaction', subtitle: 'Record a new income or expense transaction.' };
+    }
+    if (pathname.startsWith('/transactions/edit/')) {
+      return { title: 'Edit Transaction', subtitle: 'Update the selected financial transaction.' };
+    }
+    if (pathname.startsWith('/transactions')) {
+      return { title: 'Financial Transactions', subtitle: 'Monitor income, expenses, transfers, and approvals.' };
     }
     if (pathname.startsWith('/banking/accounts')) {
-      return { visible: true, placeholder: 'Search Accounts' };
+      return { title: 'Bank Accounts', subtitle: 'Review balances, account types, and cash positions.' };
     }
     if (pathname.startsWith('/banking/transactions')) {
-      return { visible: true, placeholder: 'Search Transactions' };
+      return { title: 'Transaction Ledger', subtitle: 'Track income, expenses, transfers, and approvals.' };
+    }
+    if (pathname.startsWith('/banking/transfer')) {
+      return { title: 'Fund Transfer', subtitle: 'Move balances between your business accounts.' };
+    }
+    if (pathname.startsWith('/banking')) {
+      return { title: 'Banking & Accounts', subtitle: 'Manage balances, accounts, and cash-flow records.' };
+    }
+    if (pathname.startsWith('/products/new')) {
+      return { title: 'Add Product', subtitle: 'Create a product entry for inventory and sales.' };
+    }
+    if (pathname.startsWith('/products/edit/')) {
+      return { title: 'Edit Product', subtitle: 'Update product details and pricing.' };
     }
     if (pathname.startsWith('/products')) {
-      return { visible: true, placeholder: 'Search Products' };
+      return { title: 'Products Catalog', subtitle: 'Manage inventory, pricing, and product details.' };
+    }
+    if (pathname.startsWith('/users/new')) {
+      return { title: 'Add User', subtitle: 'Create a new app user and assign access.' };
+    }
+    if (pathname.startsWith('/users/edit/')) {
+      return { title: 'Edit User', subtitle: 'Adjust user access and company profile information.' };
     }
     if (pathname.startsWith('/users')) {
-      return { visible: true, placeholder: 'Search Users' };
+      return { title: 'Application Users', subtitle: 'Manage app users, roles, and permissions.' };
     }
-    // fallback: hide
-    return { visible: false, placeholder: '' };
-  };
+    if (pathname.startsWith('/reports')) {
+      return { title: 'Financial Reports', subtitle: 'Explore performance insights and business metrics.' };
+    }
+    if (pathname.startsWith('/settings')) {
+      return { title: 'Settings', subtitle: 'Configure company defaults, integrations, and workflows.' };
+    }
+    if (pathname.startsWith('/developer/notifications')) {
+      return { title: 'Developer Notifications', subtitle: 'Manage system notices and targeted rollout messages.' };
+    }
+    if (pathname.startsWith('/developer/subscriptions')) {
+      return { title: 'Developer Subscriptions', subtitle: 'Review license tiers, usage, and capability overrides.' };
+    }
+    if (pathname.startsWith('/developer/settings')) {
+      return { title: 'Developer Settings', subtitle: 'Control integrations, maintenance, and system behavior.' };
+    }
+    if (pathname.startsWith('/developer')) {
+      return { title: 'Developer Settings', subtitle: 'Control integrations, maintenance, and system behavior.' };
+    }
+    if (pathname.startsWith('/fraud-checker')) {
+      return { title: 'Fraud Checker', subtitle: 'Verify courier history and suspicious phone activity.' };
+    }
+    if (pathname.startsWith('/recycle-bin')) {
+      return { title: 'Recycle Bin', subtitle: 'Restore removed records and review deleted items.' };
+    }
+    if (pathname.startsWith('/wallet')) {
+      return { title: 'Wallet', subtitle: 'Track employee wallet balance and activity.' };
+    }
+    if (pathname.startsWith('/payroll')) {
+      return { title: 'Payroll', subtitle: 'Review payroll data and employee payouts.' };
+    }
+    if (pathname.startsWith('/human-resource-dashboard')) {
+      return { title: 'HR Dashboard', subtitle: 'Review staffing coverage and people-focused insights.' };
+    }
+    if (pathname.startsWith('/social-media-ads') || pathname.startsWith('/meta-ads')) {
+      return { title: 'Marketing', subtitle: 'Monitor campaign performance and ad activity.' };
+    }
+    if (pathname.startsWith('/leads')) {
+      return { title: 'Leads', subtitle: 'Track prospective customers and follow-up tasks.' };
+    }
+    if (pathname.startsWith('/subscriptions')) {
+      return { title: 'Subscriptions', subtitle: 'Manage central subscriptions, licensing, and renewals.' };
+    }
+    if (pathname.startsWith('/notifications')) {
+      return { title: 'Notifications', subtitle: 'Review and manage system notifications.' };
+    }
+    if (pathname.startsWith('/dashboard')) {
+      return { title: 'Dashboard', subtitle: 'Snapshot of your core operations and recent activity.' };
+    }
 
-  const { visible: showSearch, placeholder: searchPlaceholder } = getSearchConfig(location.pathname);
-
-  useEffect(() => {
-    clearSearch();
+    return { title: 'Overview', subtitle: 'Manage your business workspace.' };
   }, [location.pathname]);
-
-  const { data: dashboardResults = [] } = useOrderSearchPreview(deferredSearchQuery, 10, {
-    enabled: location.pathname.startsWith('/dashboard'),
-  });
 
   // Safety check: if user is somehow null (shouldn't happen with route guards), show loading
   if (!user) {
@@ -416,37 +502,29 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
             </button>
 
-            {showSearch && (
-              <div className="flex-1 max-w-xl mx-4 relative group hidden sm:block">
-                <div className={`absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-300 group-focus-within:${theme.colors.primary.text} ${theme.transitions.normal}`}>
-                  {ICONS.Search}
+            <div className="ml-4 min-w-0 flex-1 overflow-hidden">
+              <style>{`
+                @keyframes headerMarquee {
+                  0% { transform: translateX(0); }
+                  100% { transform: translateX(-50%); }
+                }
+              `}</style>
+              <div className="block sm:hidden overflow-hidden">
+                <div>
+                  <h1 className={`text-base font-black ${theme.colors.text.primary} tracking-tight truncate`}>
+                    {pageHeader.title}
+                  </h1>
                 </div>
-                <input 
-                  type="text" 
-                  placeholder={searchPlaceholder}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`block w-full pl-11 pr-4 py-2.5 ${theme.colors.bg.secondary} border-transparent focus:${theme.colors.bg.primary} focus:ring-2 focus:ring-[#3c5a82] focus:border-transparent ${theme.radius.md} text-sm ${theme.transitions.normal}`} 
-                />
-
-                {/* dropdown for dashboard search results */}
-                {dashboardResults.length > 0 && (
-                  <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-auto">
-                    {dashboardResults.map(o => (
-                      <Link
-                        key={o.id}
-                        to={`/orders/${o.id}`}
-                        state={buildHistoryBackState(location)}
-                        onClick={() => setSearchQuery('')}
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        {o.orderNumber} {o.customerName ? `- ${o.customerName}` : ''}
-                      </Link>
-                    ))}
-                  </div>
-                )}
               </div>
-            )}
+              <div className="hidden sm:block min-w-0">
+                <h1 className={`text-lg font-black ${theme.colors.text.primary} tracking-tight truncate`}>
+                  {pageHeader.title}
+                </h1>
+                <p className={`text-sm ${theme.colors.text.secondary} truncate`}>
+                  {pageHeader.subtitle}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-4 ml-auto">

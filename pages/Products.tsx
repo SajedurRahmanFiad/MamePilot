@@ -95,9 +95,7 @@ const Products: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="md:text-2xl text-xl font-bold text-gray-900">Products Catalog</h2>
-        </div>
+        <div />
         {canCreateProducts && (
           <Button
             onClick={() => navigate('/products/new')}

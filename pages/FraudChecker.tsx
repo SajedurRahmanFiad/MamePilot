@@ -25,9 +25,7 @@ const FraudCheckerPage: React.FC = () => {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold text-gray-900">Fraud Checker</h2>
-      </div>
+      <div className="flex flex-col gap-2" />
 
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">

@@ -123,6 +123,16 @@ export interface User {
   phone: string;
   role: string;
   image?: string;
+  email?: string | null;
+  address?: string | null;
+  birthday?: string | null;
+  nidPassportCopy?: string | null;
+  gender?: string | null;
+  bloodGroup?: string | null;
+  nationality?: string | null;
+  cv?: string | null;
+  isCommissionBased?: boolean;
+  fixedSalary?: number | null;
   password?: string;
   createdAt?: string;
   deletedAt?: string;
@@ -212,6 +222,15 @@ export interface CourierSettings {
   fraudChecker: FraudCheckerSettings;
 }
 
+export interface MetaAdsSettings {
+  appId: string;
+  appSecret: string;
+  redirectUri: string;
+  loginConfigId: string;
+  graphVersion: string;
+  oauthScopes: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -228,6 +247,7 @@ export interface Order {
   shipping: number;
   total: number;
   notes?: string;
+  sourceAd?: string;
   pageId?: string;
   pageSnapshot?: CompanyPage | null;
   carrybeeConsignmentId?: string;
@@ -278,6 +298,7 @@ export interface Bill {
     created?: string;
     processing?: string;
     received?: string;
+    returned?: string;
     cancelled?: string;
     paid?: string;
   };
@@ -633,7 +654,8 @@ export type AppCapabilityKey =
   | 'fraud_checker'
   | 'whitelabel'
   | 'custom_roles'
-  | 'courier_automation';
+  | 'courier_automation'
+  | 'enterprise_ai_agent';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
@@ -673,6 +695,68 @@ export interface PaymentGatewaySettings {
   piprapayApiKey: string;
   piprapayMerchantId: string;
   piprapayIpnSecret: string;
+}
+
+export type AiMainProvider = 'anthropic' | 'openai' | 'google';
+
+export interface AiProviderConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  organization?: string;
+  project?: string;
+}
+
+export interface AgentSettings {
+  enabled: boolean;
+  mainProvider: AiMainProvider;
+  anthropic: AiProviderConfig;
+  openai: AiProviderConfig;
+  google: AiProviderConfig;
+  groq: AiProviderConfig;
+  showReasoningSummaries: boolean;
+  showToolActivity: boolean;
+  maxReasoningSteps: number;
+  maxToolCalls: number;
+  queryRowLimit: number;
+  queryTimeoutMs: number;
+}
+
+export interface AgentConversation {
+  id: string;
+  title: string;
+  status: string;
+  userId: string;
+  lastMessageAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  conversationId: string;
+  runId?: string | null;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  reasoningSummary?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt?: string;
+}
+
+export interface AgentRunEvent {
+  id: string;
+  runId: string;
+  eventType: string;
+  sequenceNo: number;
+  payload: Record<string, any>;
+  createdAt?: string;
+}
+
+export interface AgentRunReceipt {
+  conversationId: string;
+  runId: string;
+  streamToken: string;
 }
 
 export interface LocalUsageSummary {

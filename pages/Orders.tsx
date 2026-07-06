@@ -7,12 +7,12 @@ import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
-import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
+import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, Dialog } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings } from '../src/hooks/useQueries';
+import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
-import { useCompletePickedOrder, useCreateOrder } from '../src/hooks/useMutations';
+import { useCompletePickedOrder, useCreateOrder, useDeleteOrder } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
@@ -100,6 +100,8 @@ const Orders: React.FC = () => {
   const urlCompanyNot = searchParams.get('companyNot') || '';
   const urlCourier = searchParams.get('courier') || '';
   const urlCourierNot = searchParams.get('courierNot') || '';
+  const urlSourceAd = searchParams.get('sourceAd') || '';
+  const urlSourceAdNot = searchParams.get('sourceAdNot') || '';
   const urlFilterRange = (searchParams.get('range') as FilterRange | null) || 'All Time';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
   const urlCreatedByNot = searchParams.get('createdByNot') || '';
@@ -129,6 +131,8 @@ const Orders: React.FC = () => {
   const [companyNot, setCompanyNot] = useState<string>(urlCompanyNot);
   const [courier, setCourier] = useState<string>(urlCourier);
   const [courierNot, setCourierNot] = useState<string>(urlCourierNot);
+  const [sourceAd, setSourceAd] = useState<string>(urlSourceAd);
+  const [sourceAdNot, setSourceAdNot] = useState<string>(urlSourceAdNot);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
   const [createdByNot, setCreatedByNot] = useState<string>(urlCreatedByNot);
   const [page, setPage] = useState<number>(urlPage);
@@ -141,10 +145,13 @@ const Orders: React.FC = () => {
   const [showSteadfast, setShowSteadfast] = useState<string | null>(null);
   const [showCarryBee, setShowCarryBee] = useState<string | null>(null);
   const [showPaperfly, setShowPaperfly] = useState<string | null>(null);
+  const [courierSelectionOrderId, setCourierSelectionOrderId] = useState<string | null>(null);
+  const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
 
   const { data: users = [] } = useUsers();
   const { data: accounts = [] } = useAccounts();
+  const { data: courierSettings } = useCourierSettings();
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;
@@ -164,6 +171,8 @@ const Orders: React.FC = () => {
     setCompanyNot(urlCompanyNot);
     setCourier(urlCourier);
     setCourierNot(urlCourierNot);
+    setSourceAd(urlSourceAd);
+    setSourceAdNot(urlSourceAdNot);
     setCreatedByFilter(urlCreatedByFilter);
     setCreatedByNot(urlCreatedByNot);
     setFilterRange(urlFilterRange);
@@ -183,6 +192,8 @@ const Orders: React.FC = () => {
     urlCustomerNameNot,
     urlCustomerPhone,
     urlCustomerPhoneNot,
+    urlSourceAd,
+    urlSourceAdNot,
     urlCreatedByFilter,
     urlCreatedByNot,
     urlFilterRange,
@@ -227,6 +238,8 @@ const Orders: React.FC = () => {
   const effectiveCompanyNot = shouldHydrateFromUrl ? urlCompanyNot : companyNot;
   const effectiveCourier = shouldHydrateFromUrl ? urlCourier : courier;
   const effectiveCourierNot = shouldHydrateFromUrl ? urlCourierNot : courierNot;
+  const effectiveSourceAd = shouldHydrateFromUrl ? urlSourceAd : sourceAd;
+  const effectiveSourceAdNot = shouldHydrateFromUrl ? urlSourceAdNot : sourceAdNot;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
   const effectiveCreatedByNot = shouldHydrateFromUrl ? urlCreatedByNot : createdByNot;
   const effectiveFilterRange = shouldHydrateFromUrl ? urlFilterRange : filterRange;
@@ -271,6 +284,8 @@ const Orders: React.FC = () => {
     companyNot: effectiveCompanyNot || undefined,
     courier: normalizedEffectiveCourier || undefined,
     courierNot: normalizedEffectiveCourierNot || undefined,
+    sourceAd: effectiveSourceAd || undefined,
+    sourceAdNot: effectiveSourceAdNot || undefined,
     from: timeFilters.from,
     to: timeFilters.to,
     search: searchQuery,
@@ -282,6 +297,22 @@ const Orders: React.FC = () => {
   const orders = ordersPage?.data ?? [];
 
   const { data: companySettings } = useCompanySettings();
+  const { data: allMetaAds = [] } = useMetaAds({}, true);
+
+  const sourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => {
+    const ads = Array.isArray(allMetaAds?.ads) ? allMetaAds.ads : [];
+    return ads
+      .filter((ad: any) => !!ad?.id)
+      .map((ad: any) => ({
+        value: String(ad.id),
+        label: String(ad.name || ad.metaAdId || ad.platformName || ad.id),
+      }));
+  }, [allMetaAds]);
+
+  const getSourceAdLabel = useMemo(
+    () => (id: string) => sourceAdOptions.find((option) => option.value === id)?.label || id,
+    [sourceAdOptions]
+  );
 
   const freeTextMetadataValues = useMemo(() => {
     return Array.from(
@@ -305,6 +336,8 @@ const Orders: React.FC = () => {
     return Array.from(new Set([...fromSettings, globalName, ...fromOrders].filter(Boolean)));
   }, [orders, companySettings]);
 
+  const orderSourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => sourceAdOptions, [sourceAdOptions]);
+
   const orderNumberOptions = useMemo(() => {
     return Array.from(new Set(orders.map((order) => String(order.orderNumber || '').trim()).filter(Boolean)));
   }, [orders]);
@@ -327,6 +360,80 @@ const Orders: React.FC = () => {
     });
     return Array.from(names);
   }, [orders]);
+
+  const orderFilterDefinitions = useMemo(() => {
+    const customerNameValues = Array.from(new Set(orders.map((o) => String(o.customerName || '').trim()).filter(Boolean)));
+    const customerPhoneValues = Array.from(new Set(orders.map((o) => String(o.customerPhone || '').trim()).filter(Boolean)));
+    return [
+      {
+        type: 'Order Status',
+        operators: ['=', '≠'] as const,
+        values: Object.values(OrderStatus).map((status) => ({
+          value: status,
+          label: status === OrderStatus.COMPLETED ? 'Delivered' : status,
+        })),
+      },
+      {
+        type: 'Payment Status',
+        operators: ['=', '≠'] as const,
+        values: ['Paid', 'Partially Paid', 'Unpaid', 'Refunded'],
+      },
+      {
+        type: 'Source Ad',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const normalizedQuery = query.trim().toLowerCase();
+          return orderSourceAdOptions.filter((option) =>
+            !normalizedQuery || option.label.toLowerCase().includes(normalizedQuery) || option.value.toLowerCase().includes(normalizedQuery)
+          );
+        },
+      },
+      {
+        type: 'Created by',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const list = users
+            .slice()
+            .sort((a, b) => a.role.localeCompare(b.role))
+            .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` }));
+          return query
+            ? list.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+            : list;
+        },
+      },
+      {
+        type: 'Order ID',
+        operators: ['=', '≠'] as const,
+        values: orderNumberOptions,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Customer Name',
+        operators: ['=', '≠'] as const,
+        values: customerNameValues,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Customer Phone',
+        operators: ['=', '≠'] as const,
+        values: customerPhoneValues,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Company',
+        operators: ['=', '≠'] as const,
+        values: companyNames,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Assigned courier',
+        operators: ['=', '≠'] as const,
+        values: courierNames,
+        allowCustomValue: true,
+      },
+    ];
+  }, [companyNames, courierNames, freeTextMetadataValues, orderNumberOptions, orders, users, orderSourceAdOptions]);
+
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
   const totalOrdersCount = ordersPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalOrdersCount / pageSize));
@@ -356,6 +463,116 @@ const Orders: React.FC = () => {
     previousLocationRef.current = currentLocation;
   }, [location.pathname, location.search]);
 
+  const urlSearch = searchParams.get('search') || '';
+
+  const initialFilters = useMemo(() => {
+    const filters: Array<{ id: string; type: string; operator: '=' | '≠' | 'contains'; value: string; display?: string }> = [];
+
+    if (urlStatusTab && urlStatusTab !== 'All') {
+      filters.push({
+        id: `status-${urlStatusTab}`,
+        type: 'Order Status',
+        operator: '=',
+        value: urlStatusTab,
+        display: urlStatusTab,
+      });
+    }
+    if (urlStatusNot) {
+      filters.push({
+        id: `statusNot-${urlStatusNot}`,
+        type: 'Order Status',
+        operator: '≠',
+        value: urlStatusNot,
+        display: urlStatusNot,
+      });
+    }
+    if (urlPaymentStatus) {
+      filters.push({
+        id: `paymentStatus-${urlPaymentStatus}`,
+        type: 'Payment Status',
+        operator: '=',
+        value: urlPaymentStatus,
+        display: urlPaymentStatus,
+      });
+    }
+    if (urlPaymentStatusNot) {
+      filters.push({
+        id: `paymentStatusNot-${urlPaymentStatusNot}`,
+        type: 'Payment Status',
+        operator: '≠',
+        value: urlPaymentStatusNot,
+        display: urlPaymentStatusNot,
+      });
+    }
+    if (urlOrderNumber) {
+      filters.push({ id: `orderNumber-${urlOrderNumber}`, type: 'Order ID', operator: '=', value: urlOrderNumber });
+    }
+    if (urlOrderNumberNot) {
+      filters.push({ id: `orderNumberNot-${urlOrderNumberNot}`, type: 'Order ID', operator: '≠', value: urlOrderNumberNot });
+    }
+    if (urlCustomerName) {
+      filters.push({ id: `customerName-${urlCustomerName}`, type: 'Customer Name', operator: '=', value: urlCustomerName });
+    }
+    if (urlCustomerNameNot) {
+      filters.push({ id: `customerNameNot-${urlCustomerNameNot}`, type: 'Customer Name', operator: '≠', value: urlCustomerNameNot });
+    }
+    if (urlCustomerPhone) {
+      filters.push({ id: `customerPhone-${urlCustomerPhone}`, type: 'Customer Phone', operator: '=', value: urlCustomerPhone });
+    }
+    if (urlCustomerPhoneNot) {
+      filters.push({ id: `customerPhoneNot-${urlCustomerPhoneNot}`, type: 'Customer Phone', operator: '≠', value: urlCustomerPhoneNot });
+    }
+    if (urlCompany) {
+      filters.push({ id: `company-${urlCompany}`, type: 'Company', operator: '=', value: urlCompany });
+    }
+    if (urlCompanyNot) {
+      filters.push({ id: `companyNot-${urlCompanyNot}`, type: 'Company', operator: '≠', value: urlCompanyNot });
+    }
+    if (urlCourier) {
+      filters.push({ id: `courier-${urlCourier}`, type: 'Assigned courier', operator: '=', value: urlCourier, display: getCourierFilterLabel(urlCourier) });
+    }
+    if (urlCourierNot) {
+      filters.push({ id: `courierNot-${urlCourierNot}`, type: 'Assigned courier', operator: '≠', value: urlCourierNot, display: getCourierFilterLabel(urlCourierNot) });
+    }
+    if (urlSourceAd) {
+      filters.push({ id: `sourceAd-${urlSourceAd}`, type: 'Source Ad', operator: '=', value: urlSourceAd, display: getSourceAdLabel(urlSourceAd) });
+    }
+    if (urlSourceAdNot) {
+      filters.push({ id: `sourceAdNot-${urlSourceAdNot}`, type: 'Source Ad', operator: '≠', value: urlSourceAdNot, display: getSourceAdLabel(urlSourceAdNot) });
+    }
+    if (urlCreatedByFilter && urlCreatedByFilter !== 'all') {
+      filters.push({ id: `createdBy-${urlCreatedByFilter}`, type: 'Created by', operator: '=', value: urlCreatedByFilter });
+    }
+    if (urlCreatedByNot) {
+      filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot });
+    }
+    if (urlSearch) {
+      filters.push({ id: `search-${urlSearch}`, type: 'Orders', operator: 'contains', value: urlSearch, display: urlSearch });
+    }
+    return filters;
+  }, [
+    urlStatusTab,
+    urlStatusNot,
+    urlPaymentStatus,
+    urlPaymentStatusNot,
+    urlOrderNumber,
+    urlOrderNumberNot,
+    urlCustomerName,
+    urlCustomerNameNot,
+    urlCustomerPhone,
+    urlCustomerPhoneNot,
+    urlCompany,
+    urlCompanyNot,
+    urlCourier,
+    urlCourierNot,
+    urlSourceAd,
+    urlSourceAdNot,
+    urlCreatedByFilter,
+    urlCreatedByNot,
+    urlSearch,
+    getSourceAdLabel,
+  ]);
+
   useEffect(() => {
     if (shouldHydrateFromUrl || isNavigatingViaHistory) return;
 
@@ -375,6 +592,8 @@ const Orders: React.FC = () => {
     if (effectiveCompanyNot) params.companyNot = effectiveCompanyNot;
     if (effectiveCourier) params.courier = effectiveCourier;
     if (effectiveCourierNot) params.courierNot = effectiveCourierNot;
+    if (effectiveSourceAd) params.sourceAd = effectiveSourceAd;
+    if (effectiveSourceAdNot) params.sourceAdNot = effectiveSourceAdNot;
     if (effectiveFilterRange && effectiveFilterRange !== 'All Time') params.range = effectiveFilterRange;
     if (effectiveCustomDates.from) params.from = effectiveCustomDates.from;
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
@@ -405,6 +624,8 @@ const Orders: React.FC = () => {
     effectiveCompanyNot,
     effectiveCourier,
     effectiveCourierNot,
+    effectiveSourceAd,
+    effectiveSourceAdNot,
     effectiveFilterRange,
     effectiveCustomDates.from,
     effectiveCustomDates.to,
@@ -447,6 +668,8 @@ const Orders: React.FC = () => {
 
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
+  const deleteOrderMutation = useDeleteOrder();
+  const [deleteOrderTarget, setDeleteOrderTarget] = useState<Order | null>(null);
 
   // Create a Map for O(1) user lookups instead of O(n) array searching
   const userMap = useMemo(() => {
@@ -680,13 +903,67 @@ const Orders: React.FC = () => {
       && !sentToAnyCourier
   );
 
+  const canDeleteSelectedOrder = (order: Order) =>
+    canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny');
+
+  const openDeleteOrderConfirmation = (order: Order) => {
+    setDeleteOrderTarget(order);
+  };
+
+  const closeDeleteOrderConfirmation = () => {
+    setDeleteOrderTarget(null);
+  };
+
+  const confirmDeleteOrder = async () => {
+    if (!deleteOrderTarget) return;
+
+    try {
+      await deleteOrderMutation.mutateAsync(deleteOrderTarget.id);
+      toast.success('Order moved to the recycle bin');
+      setDeleteOrderTarget(null);
+    } catch (error) {
+      console.error('Failed to delete order:', error);
+      toast.error('Failed to delete order: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const openCourierSelection = (order: Order) => {
+    setCourierSelectionOrderId(order.id);
+    setShowCourierSelectionModal(true);
+  };
+
+  const closeCourierSelection = () => {
+    setShowCourierSelectionModal(false);
+    setCourierSelectionOrderId(null);
+  };
+
+  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly') => {
+    if (!courierSettings) return false;
+    if (courier === 'steadfast') return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
+    if (courier === 'carrybee') return !!(courierSettings.carryBee?.clientId && courierSettings.carryBee?.clientSecret);
+    if (courier === 'paperfly') return !!(courierSettings.paperfly?.username && courierSettings.paperfly?.password);
+    return false;
+  };
+
+  const handleSelectCourierService = (service: 'steadfast' | 'carrybee' | 'paperfly') => {
+    if (!courierSelectionOrderId) return;
+
+    if (service === 'steadfast') {
+      setShowSteadfast(courierSelectionOrderId);
+    } else if (service === 'carrybee') {
+      setShowCarryBee(courierSelectionOrderId);
+    } else if (service === 'paperfly') {
+      setShowPaperfly(courierSelectionOrderId);
+    }
+
+    setCourierSelectionOrderId(null);
+    setShowCourierSelectionModal(false);
+  };
+
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-2 sm:space-y-6 pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div>
-            <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Orders</h2>
-          </div>
           <div className="hidden sm:block">
             <FilterBar 
               title="Orders"
@@ -726,8 +1003,10 @@ const Orders: React.FC = () => {
 
       {/* Created By row removed per request */}
 
-      <div className="mt-4">
+      <div className="mt-0.5 sm:mt-4">
         <DynamicFilterBar
+          filterDefinitions={orderFilterDefinitions}
+          initialFilters={initialFilters}
           users={users}
           customers={Array.from(new Map(orders.map(o => [o.customerId || o.id, { id: o.customerId || o.id, name: o.customerName || '', phone: o.customerPhone || '' }])).values())}
           orderNumberOptions={orderNumberOptions}
@@ -794,11 +1073,16 @@ const Orders: React.FC = () => {
             if (orderIdFilter) {
               setOrderNumber(orderIdFilter.value);
               setOrderNumberNot('');
-              params.orderNumber = orderIdFilter.value;
+              // Send as a LIKE pattern so small fragments match order numbers with prefixes/suffixes.
+              params.orderNumber = orderIdFilter.value.includes('%') ? orderIdFilter.value : `%${orderIdFilter.value}%`;
+              // If user provided a numeric fragment, also put it in `search` as a fallback
+              if (/^\d+$/.test(orderIdFilter.value)) {
+                params.search = (params.search ? params.search + ' ' : '') + orderIdFilter.value;
+              }
             } else if (orderIdNotFilter) {
               setOrderNumber('');
               setOrderNumberNot(orderIdNotFilter.value);
-              params.orderNumberNot = orderIdNotFilter.value;
+              params.orderNumberNot = orderIdNotFilter.value.includes('%') ? orderIdNotFilter.value : `%${orderIdNotFilter.value}%`;
             } else {
               setOrderNumber('');
               setOrderNumberNot('');
@@ -866,9 +1150,24 @@ const Orders: React.FC = () => {
               setCourierNot('');
             }
 
+            const sourceAdFilter = appliedFilters.find(f => f.type === 'Source Ad' && f.operator === '=');
+            const sourceAdNotFilter = appliedFilters.find(f => f.type === 'Source Ad' && f.operator === '≠');
+            if (sourceAdFilter) {
+              setSourceAd(sourceAdFilter.value);
+              setSourceAdNot('');
+              params.sourceAd = sourceAdFilter.value;
+            } else if (sourceAdNotFilter) {
+              setSourceAd('');
+              setSourceAdNot(sourceAdNotFilter.value);
+              params.sourceAdNot = sourceAdNotFilter.value;
+            } else {
+              setSourceAd('');
+              setSourceAdNot('');
+            }
+
             // other filters => search string
             const searchTerms = appliedFilters
-              .filter(f => f.type === 'Free Text' || !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone', 'Company', 'Assigned courier'].includes(f.type))
+              .filter(f => !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone', 'Company', 'Assigned courier', 'Source Ad'].includes(f.type))
               .map(f => f.value);
             if (searchTerms.length > 0) params.search = searchTerms.join(' ');
 
@@ -917,9 +1216,14 @@ const Orders: React.FC = () => {
                   canEditSelectedOrder
                   || canFinalizeSelectedOrder
                   || canSendSelectedOrderToCourier
-                  || canTrackSelectedOrder;
-                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.total);
-                const paymentStatusBadge = getPaymentStatusBadgeColor(paymentStatusLabel);
+                  || canTrackSelectedOrder
+                  || canDeleteSelectedOrder(order);
+                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.total, order.history);
+                const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
+                const isUnpaid = paymentStatusLabel === 'Unpaid';
+                const isRefunded = paymentStatusLabel === 'Refunded';
+                const isFullyPaid = !isPartiallyPaid && !isUnpaid && !isRefunded && order.paidAmount >= order.total;
+                const paidAmountTextColor = isPartiallyPaid ? 'text-amber-500' : isRefunded ? 'text-orange-500' : isUnpaid ? 'text-red-500' : 'text-green-500';
                 return (
                 <tr 
                   key={order.id} 
@@ -947,9 +1251,6 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-5">
                       <div className="flex flex-col gap-2">
                         <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{getStatusDisplayName(order.status)}</span>
-                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${paymentStatusBadge}`}>
-                          {paymentStatusLabel}
-                        </span>
                       </div>
                       {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
                         <img src="/uploads/steadfast.png" alt="Steadfast" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
@@ -963,11 +1264,23 @@ const Orders: React.FC = () => {
                     </td>
                     <td className="px-6 py-5 text-right">
                       <span className="font-black text-gray-900 text-base">{formatCurrency(order.total)}</span>
-                      {order.paidAmount > 0 && (
-                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 text-green-500`}>
+                      {isRefunded ? (
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
+                          Refunded
+                        </p>
+                      ) : isUnpaid ? (
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
+                          Unpaid
+                        </p>
+                      ) : isFullyPaid ? (
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
+                          Paid
+                        </p>
+                      ) : order.paidAmount > 0 ? (
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
                           {`Paid: ${formatCurrency(order.paidAmount)}`}
                         </p>
-                      )}
+                      ) : null}
                     </td>
 
                     {/* Mobile Actions Dropdown */}
@@ -995,7 +1308,7 @@ const Orders: React.FC = () => {
                                 <button onClick={() => { navigate(`/orders/edit/${order.id}`); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Edit} Edit</button>
                               )}
                               {canFinalizeSelectedOrder && (
-                                <button onClick={() => { openCompletionModal(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Check} Finalize Order</button>
+                                <button onClick={() => { openCompletionModal(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Check} Complete Order</button>
                               )}
                               {(canEditSelectedOrder || canFinalizeSelectedOrder) && (canTrackSelectedOrder || canSendSelectedOrderToCourier) && (
                                 <div className="border-t my-1"></div>
@@ -1011,9 +1324,20 @@ const Orders: React.FC = () => {
                               {canSendSelectedOrderToCourier && (
                                 <>
                                   {canTrackSelectedOrder && <div className="border-t my-1"></div>}
-                                  <button onClick={() => { setShowSteadfast(order.id); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-[#0f2f57]"><img src="../uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full"/> <span>Add to Steadfast</span></button>
-                                  <button onClick={() => { setShowCarryBee(order.id); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-[#0f2f57]"><img src="../uploads/carrybee.png" alt="CarryBee" className="w-5 h-5 rounded-full"/> <span>Add to CarryBee</span></button>
-                                  <button onClick={() => { setShowPaperfly(order.id); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-[#0f2f57]"><img src="/uploads/paperfly.png" alt="Paperfly" className="w-5 h-5 rounded-full"/> <span>Add to Paperfly</span></button>
+                                  <button
+                                    onClick={() => { openCourierSelection(order); setOpenActionsMenu(null); setAnchorEl(null); }}
+                                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-[#0f2f57]"
+                                  >
+                                    {ICONS.Courier} Assign courier
+                                  </button>
+                                </>
+                              )}
+                              {canDeleteSelectedOrder(order) && (
+                                <>
+                                  <div className="border-t my-1"></div>
+                                  <button onClick={() => { openDeleteOrderConfirmation(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-red-50 flex items-center gap-2 font-bold text-red-600">
+                                    {ICONS.Delete} Delete Order
+                                  </button>
                                 </>
                               )}
                             </>
@@ -1038,9 +1362,15 @@ const Orders: React.FC = () => {
                           {canSendSelectedOrderToCourier && (
                             <>
                               <div className="h-5 w-px bg-gray-100 mx-1"></div>
-                              <button onClick={() => setShowSteadfast(order.id)} className="px-1 py-1 text-[9px] font-black hover:bg-[#ebf4ff] rounded-lg" title="Send to Steadfast"><img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full"/></button>
-                              <button onClick={() => setShowCarryBee(order.id)} className="px-1 py-1 text-[9px] font-black hover:bg-orange-50 rounded-lg" title="Send to CarryBee"><img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full"/></button>
-                              <button onClick={() => setShowPaperfly(order.id)} className="px-1 py-1 text-[9px] font-black hover:bg-[#ebf4ff] rounded-lg" title="Send to Paperfly"><img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full"/></button>
+                              <button onClick={() => openCourierSelection(order)} className="p-2.5 text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Assign courier">
+                                {ICONS.Courier}
+                              </button>
+                            </>
+                          )}
+                          {canDeleteSelectedOrder(order) && (
+                            <>
+                              <div className="h-5 w-px bg-gray-100 mx-1"></div>
+                              <button onClick={() => openDeleteOrderConfirmation(order)} className="p-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Delete Order">{ICONS.Delete}</button>
                             </>
                           )}
                         </div>
@@ -1077,6 +1407,64 @@ const Orders: React.FC = () => {
         allowDeliveredOutcome={completionOrder ? canDeliverOrder(completionOrder) : false}
         allowReturnedOutcome={completionOrder ? canReturnOrder(completionOrder) : false}
       />
+
+      <Dialog
+        isOpen={!!deleteOrderTarget}
+        onClose={closeDeleteOrderConfirmation}
+        onConfirm={confirmDeleteOrder}
+        title="Delete Order"
+        message="Move this order to the recycle bin? You can restore it later."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
+
+      {showCourierSelectionModal && courierSelectionOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={closeCourierSelection} />
+          <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Assign Courier</h2>
+                <p className="text-sm text-gray-500">Choose a courier service for this order.</p>
+              </div>
+              <button onClick={closeCourierSelection} className="text-gray-400 hover:text-gray-600 text-3xl leading-none flex-shrink-0">×</button>
+            </div>
+            <div className="space-y-4 p-6">
+              {isCourierConfigured('steadfast') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierService('steadfast')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/steadfast.png" alt="Steadfast" className="h-6 w-6 rounded-full" />
+                  <span>Steadfast</span>
+                </button>
+              )}
+              {isCourierConfigured('carrybee') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierService('carrybee')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/carrybee.png" alt="CarryBee" className="h-6 w-6 rounded-full" />
+                  <span>CarryBee</span>
+                </button>
+              )}
+              {isCourierConfigured('paperfly') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierService('paperfly')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/paperfly.png" alt="Paperfly" className="h-6 w-6 rounded-full" />
+                  <span>Paperfly</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <SteadfastModal 
         isOpen={!!showSteadfast} 

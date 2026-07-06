@@ -69,7 +69,11 @@ import {
   updateCentralLicenseOverride,
   resetCentralLicenseOverride,
   updatePaymentGatewaySettings,
+  updateAgentSettings,
   initiatePipraPayCheckout,
+  beginMetaAdsOAuth,
+  syncMetaAds,
+  updateMetaAdsSettings,
   updateCourierSettings,
   checkFraudCourierHistory,
   updatePermissionsSettings,
@@ -108,6 +112,8 @@ import type {
   CapabilitySettings,
   PaymentGatewaySettings,
   AppCapabilityMap,
+  AgentSettings,
+  MetaAdsSettings,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -2433,6 +2439,32 @@ export function useUpdateCourierSettings(): UseMutationResult<any, Error, any, u
   });
 }
 
+export function useUpdateMetaAdsSettings(): UseMutationResult<MetaAdsSettings, Error, MetaAdsSettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateMetaAdsSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    },
+  });
+}
+
+export function useBeginMetaAdsOAuth(): UseMutationResult<{ authUrl: string; state: string }, Error, { redirectAfter?: string } | undefined, unknown> {
+  return useMutation({
+    mutationFn: beginMetaAdsOAuth,
+  });
+}
+
+export function useSyncMetaAds(): UseMutationResult<any, Error, void, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => syncMetaAds(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    },
+  });
+}
+
 export function useUpdatePermissionsSettings(): UseMutationResult<
   PermissionsSettings,
   Error,
@@ -2809,6 +2841,33 @@ export function useRevertOrderStatus(): UseMutationResult<Order, Error, { orderI
       queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
       invalidateRecycleBin(queryClient);
       invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useUpdateAgentSettings(): UseMutationResult<AgentSettings, Error, AgentSettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAgentSettings,
+    onMutate: async (newSettings) => {
+      // Cancel outgoing queries
+      await queryClient.cancelQueries({ queryKey: ['settings', 'agent'] });
+      
+      // Snapshot previous data
+      const previousSettings = queryClient.getQueryData<AgentSettings>(['settings', 'agent']);
+      
+      // Optimistically update
+      queryClient.setQueryData(['settings', 'agent'], newSettings);
+      
+      return { previousSettings };
+    },
+    onError: (err, newSettings, context) => {
+      if (context?.previousSettings) {
+        queryClient.setQueryData(['settings', 'agent'], context.previousSettings);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'agent'] });
     },
   });
 }

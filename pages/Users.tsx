@@ -133,9 +133,23 @@ const Users: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Application Users</h2>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {roleFilters.map((filter) => (
+              <button
+                key={filter}
+                onClick={() => handleRoleFilterChange(filter)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  roleFilter === filter
+                    ? `${theme.colors.primary[600]} text-white shadow-md`
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
         </div>
         {isAdmin && (
           <Button
@@ -147,24 +161,6 @@ const Users: React.FC = () => {
             Add User
           </Button>
         )}
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {roleFilters.map((filter) => (
-            <button
-              key={filter}
-              onClick={() => handleRoleFilterChange(filter)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                roleFilter === filter
-                  ? `${theme.colors.primary[600]} text-white shadow-md`
-                  : 'text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {filter}
-            </button>
-          ))}
-        </div>
       </div>
 
       <Table
@@ -227,7 +223,12 @@ const Users: React.FC = () => {
         emptyMessage="No users found"
         loading={!canLoadUsers || loading}
       />
-      <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(nextPage) => setPage(nextPage)} disabled={loading} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-500">
+          {total === 0 ? 'Showing 0 users' : `Showing ${(effectivePage - 1) * pageSize + 1} - ${Math.min(effectivePage * pageSize, total)} of ${total} users`}
+        </p>
+        <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(nextPage) => setPage(nextPage)} disabled={loading} />
+      </div>
     </div>
   );
 };

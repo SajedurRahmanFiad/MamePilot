@@ -611,6 +611,8 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
   CONSTRAINT fk_wallet_entries_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 DROP VIEW IF EXISTS orders_with_customer_creator;
+ALTER TABLE `orders`
+  ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL;
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,
@@ -638,7 +640,8 @@ SELECT
   o.deleted_by AS deletedBy,
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
-  o.paperfly_tracking_number AS paperflyTrackingNumber
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.source_ad AS sourceAd
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by

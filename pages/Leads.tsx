@@ -213,10 +213,7 @@ const Leads: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="md:text-2xl text-xl font-bold text-gray-900">Leads</h2>
-          <p className="text-sm text-gray-500 mt-1">Track prospective customers and follow-ups in a paginated list.</p>
-        </div>
+        <div />
       </div>
 
       <FilterBar

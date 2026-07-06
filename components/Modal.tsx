@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { theme } from '../theme';
 
 interface ModalProps {
@@ -33,6 +34,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
+  const portalTarget = document.getElementById('modal-root') || document.body;
   const sizeClasses = {
     sm: 'max-w-sm',
     md: 'max-w-md',
@@ -40,16 +42,16 @@ export const Modal: React.FC<ModalProps> = ({
     xl: 'max-w-5xl',
   };
 
-  return (
+  return ReactDOM.createPortal(
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40"
+        className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[9998]"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
         <div
           className={`${theme.card.elevated} w-full ${sizeClasses[size]} animate-in fade-in slide-in-from-bottom-4 duration-300 ${containerClassName}`}
           onClick={(e) => e.stopPropagation()}
@@ -70,7 +72,8 @@ export const Modal: React.FC<ModalProps> = ({
           )}
         </div>
       </div>
-    </>
+    </>,
+    portalTarget,
   );
 };
 

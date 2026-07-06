@@ -13,6 +13,7 @@ import { useCreateBill, useUpdateBill } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { getTodayDate, sanitizePhoneInput } from '../utils';
+import { getNextBillNumber } from '../src/services/supabaseQueries';
 
 const BillForm: React.FC = () => {
   const { id } = useParams();
@@ -86,7 +87,8 @@ const BillForm: React.FC = () => {
   // Form state
   const [vendorId, setVendorId] = useState('');
   const [billDate, setBillDate] = useState(getTodayDate());
-  const [billNumber, setBillNumber] = useState('');
+  const [billNumber, setBillNumber] = useState('Generating...');
+  const [billNumberLoading, setBillNumberLoading] = useState(false);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [discount, setDiscount] = useState(0);
   const [shipping, setShipping] = useState(0);
@@ -115,9 +117,11 @@ const BillForm: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const initializedRef = React.useRef(false);
+
   // Initialize form with existing bill data when loaded
   React.useEffect(() => {
-    if (existingBillData) {
+    if (existingBillData && !initializedRef.current) {
       if (isEdit && !canAccessRecord(existingBillData.createdBy, 'bills.editOwn', 'bills.editAny')) {
         toast.warning('You do not have permission to edit this bill.');
         navigate('/bills');
@@ -131,10 +135,31 @@ const BillForm: React.FC = () => {
       setDiscount(existingBillData.discount);
       setShipping(existingBillData.shipping);
       setNotes(existingBillData.notes || '');
-    } else if (!isEdit) {
-      setBillNumber(`PUR-${Math.floor(1000 + Math.random() * 9000)}`);
+      initializedRef.current = true;
+      return;
+    }
+
+    if (!isEdit && !initializedRef.current) {
+      setBillNumberLoading(true);
+      getNextBillNumber()
+        .then((nextNumber) => {
+          setBillNumber(nextNumber);
+          initializedRef.current = true;
+        })
+        .catch((err) => {
+          console.error('Failed to fetch next bill number:', err);
+          setBillNumber('ERROR');
+          toast.error('Failed to generate bill number. Please refresh the page.');
+        })
+        .finally(() => {
+          setBillNumberLoading(false);
+        });
     }
   }, [canAccessRecord, existingBillData, isEdit, navigate, toast]);
+
+  React.useEffect(() => {
+    initializedRef.current = false;
+  }, [id]);
 
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
   const total = subtotal - discount + shipping;
@@ -282,8 +307,8 @@ const BillForm: React.FC = () => {
       </div>
 
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-1 relative md:col-span-1">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+          <div className="space-y-1 relative md:col-span-2">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Vendor</label>
             <div className="relative">
               <button 
@@ -294,7 +319,7 @@ const BillForm: React.FC = () => {
                   <div className="flex-1 overflow-hidden">
                     <span className="font-bold block text-sm text-gray-900">{selectedVendor.name}</span>
                     <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedVendor.phone}</p>
-                    <p className="text-[10px] ${theme.colors.secondary[600]} italic truncate mt-1">{selectedVendor.address}</p>
+                    <p className="text-[10px] text-gray-500 italic truncate mt-1">{selectedVendor.address}</p>
                   </div>
                 ) : <span className="text-gray-400 text-sm">Select Vendor...</span>}
                 <div className={`transition-transform duration-200 ${showVendorSearch ? 'rotate-90' : ''}`}>
@@ -321,8 +346,8 @@ const BillForm: React.FC = () => {
                     ) : (
                       (visibleVendors || []).map((v: any) => (
                         <button key={v.id} onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="w-full px-4 py-2.5 text-left hover:bg-[#e6f0ff] rounded-lg group transition-colors">
-                          <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]}">{v.name}</p>
-                          <p className="text-[10px] text-gray-400 group-hover:${theme.colors.secondary[600]}/60">{v.phone}</p>
+                          <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700">{v.name}</p>
+                          <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60">{v.phone}</p>
                         </button>
                       ))
                     )}
@@ -337,7 +362,7 @@ const BillForm: React.FC = () => {
                         ...(preFilledPhone ? { preFill: { phone: preFilledPhone } } : {}),
                       },
                     });
-                  }} variant="secondary" size="sm" className="w-full mt-2 text-[10px]" icon={ICONS.Plus}>Add New Vendor</Button>
+                  }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
                 </div>
               )}
             </div>
@@ -350,7 +375,13 @@ const BillForm: React.FC = () => {
 
           <div className="space-y-1">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Number</label>
-            <input type="text" value={billNumber} onChange={e => setBillNumber(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-mono ${theme.colors.secondary[700]} text-sm font-bold" />
+            <input
+              type="text"
+              readOnly
+              value={billNumber}
+              placeholder="Generating..."
+              className={`w-full px-4 py-3 bg-gray-100 border border-gray-100 rounded-xl font-mono text-sm font-bold ${billNumber === 'ERROR' ? 'text-red-600' : ''}`}
+            />
           </div>
         </div>
 
@@ -416,8 +447,8 @@ const BillForm: React.FC = () => {
                                   <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
                                 )}
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.secondary[700]} truncate">{p.name}</p>
-                                  <p className="text-[10px] font-bold ${theme.colors.secondary[600]}/60 uppercase tracking-widest">Cost: {formatCurrency(p.purchasePrice)}</p>
+                                  <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{p.name}</p>
+                                  <p className="text-[10px] font-bold text-sky-600/60 uppercase tracking-widest">Cost: {formatCurrency(p.purchasePrice)}</p>
                                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Stock: {p.stock ?? 0}</p>
                                 </div>
                               </button>
@@ -438,11 +469,29 @@ const BillForm: React.FC = () => {
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Purchase Memo</label>
             <textarea placeholder="Bill details, vendor instructions, or delivery notes..." value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-lg h-32 focus:ring-2 focus:ring-[#3c5a82] focus:bg-white outline-none font-medium text-sm transition-all" />
           </div>
-          <div className="w-full md:w-96 space-y-4 bg-gray-50/50 p-8 rounded-[2rem] border border-gray-100">
-            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Subtotal</span><span className="text-gray-900 font-black">{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Discount</span><NumericInput value={discount} onChange={(value) => setDiscount(value)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} /></div>
-            <div className="flex justify-between items-center text-gray-500 text-sm font-bold uppercase tracking-widest"><span>Shipping</span><NumericInput value={shipping} onChange={(value) => setShipping(value)} className="w-24 text-right px-3 py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} /></div>
-            <div className="pt-6 border-t-4 border-[#c7e0f5] flex justify-between items-center"><span className="text-lg font-bold text-gray-900 uppercase tracking-tighter">Total Bill</span><span className="text-lg font-black">{formatCurrency(total)}</span></div>
+          <div className="w-full md:w-96 space-y-4 bg-gray-50/50 p-8 rounded-lg border border-gray-100">
+            <div className="flex justify-between items-center text-gray-500 text-[12px] font-bold uppercase tracking-widest">
+              <span>Subtotal</span>
+              <span className="text-gray-900 font-black">{formatCurrency(subtotal)}</span>
+            </div>
+            <div className="flex justify-between items-center text-gray-500 text-[12px] font-bold uppercase tracking-widest">
+              <span>Discount</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 font-black">৳</span>
+                <NumericInput value={discount} onChange={(value) => setDiscount(value)} className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} />
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-gray-500 text-[12px] font-bold uppercase tracking-widest">
+              <span>Shipping</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 font-black">৳</span>
+                <NumericInput value={shipping} onChange={(value) => setShipping(value)} className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} />
+              </div>
+            </div>
+            <div className="pt-6 border-t-4 border-[#c7dff5] flex justify-between items-center">
+              <span className="text-sm font-black text-gray-900 uppercase tracking-tighter">Total</span>
+              <span className="text-sm font-black text-[#3c5a82]">{formatCurrency(total)}</span>
+            </div>
             <Button 
               onClick={handleSave}
               variant="primary"
@@ -451,7 +500,7 @@ const BillForm: React.FC = () => {
               loading={saving}
               disabled={saving}
             >
-              Save Purchase Bill
+              {isEdit ? 'Update Purchase Bill' : 'Create Purchase Bill'}
             </Button>
           </div>
         </div>

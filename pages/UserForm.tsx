@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { User, UserRole, hasAdminAccess } from '../types';
-import { Button } from '../components';
+import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { usePermissionsSettings, useUser } from '../src/hooks/useQueries';
 import { useCreateUser, useUpdateUser, useDeleteUser } from '../src/hooks/useMutations';
@@ -12,22 +12,25 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
 import { getAssignableUserRoles } from '../src/utils/permissions';
 
+const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
+const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
 const UserForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
-  
+
   // Query user if editing
   const { data: existingUser, isPending: userLoading, error: userError } = useUser(isEdit ? id : undefined);
   const { data: permissionsSettings } = usePermissionsSettings();
-  
+
   // Mutations
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
   const toast = useToastNotifications();
   const { user: currentUser } = useAuth();
-  
+
   // Form state
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -37,35 +40,86 @@ const UserForm: React.FC = () => {
     phone: '',
     password: '',
     role: UserRole.EMPLOYEE,
-    image: ''
+    image: '',
+    email: '',
+    address: '',
+    birthday: '',
+    nidPassportCopy: '',
+    gender: '',
+    bloodGroup: '',
+    nationality: '',
+    cv: '',
+    isCommissionBased: false,
+    fixedSalary: null,
   });
 
   // Initialize form with existing user data when loaded
   React.useEffect(() => {
     if (existingUser) {
-      setForm(existingUser);
+      setForm({
+        ...existingUser,
+        password: '',
+        email: existingUser.email || '',
+        address: existingUser.address || '',
+        birthday: existingUser.birthday || '',
+        nidPassportCopy: existingUser.nidPassportCopy || '',
+        gender: existingUser.gender || '',
+        bloodGroup: existingUser.bloodGroup || '',
+        nationality: existingUser.nationality || '',
+        cv: existingUser.cv || '',
+        isCommissionBased: Boolean(existingUser.isCommissionBased),
+        fixedSalary: existingUser.fixedSalary ?? null,
+      });
     }
   }, [existingUser]);
 
   const isAdmin = hasAdminAccess(currentUser?.role);
-  const isSelf = currentUser?.id === id;
   const isDeveloperTarget = form.role === UserRole.DEVELOPER;
+  const showExtendedProfile = !isDeveloperTarget;
   const assignableRoles = getAssignableUserRoles(permissionsSettings || db.settings.permissions, {
     includeDeveloper: existingUser?.role === UserRole.DEVELOPER,
   });
 
   const loading = userLoading;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const setFormValue = <K extends keyof User>(key: K, value: User[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        setForm({...form, image: reader.result as string});
+        setForm((prev) => ({ ...prev, image: reader.result as string }));
       };
       reader.readAsDataURL(file);
     }
   };
+
+  const handleDocumentUpload = (field: 'nidPassportCopy' | 'cv') => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setForm((prev) => ({ ...prev, [field]: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const normalizeExtendedFields = () => ({
+    email: showExtendedProfile ? (form.email || '') : '',
+    address: showExtendedProfile ? (form.address || '') : '',
+    birthday: showExtendedProfile ? (form.birthday || '') : '',
+    nidPassportCopy: showExtendedProfile ? (form.nidPassportCopy || '') : '',
+    gender: showExtendedProfile ? (form.gender || '') : '',
+    bloodGroup: showExtendedProfile ? (form.bloodGroup || '') : '',
+    nationality: showExtendedProfile ? (form.nationality || '') : '',
+    cv: showExtendedProfile ? (form.cv || '') : '',
+    isCommissionBased: showExtendedProfile ? Boolean(form.isCommissionBased) : false,
+    fixedSalary: showExtendedProfile && !form.isCommissionBased ? form.fixedSalary ?? null : null,
+  });
 
   const handleSave = async () => {
     if (!form.name || !form.phone || (isAdmin && !isEdit && !form.password)) {
@@ -73,38 +127,41 @@ const UserForm: React.FC = () => {
       return;
     }
 
+    const extendedFields = normalizeExtendedFields();
+
     setSaving(true);
     try {
       if (isEdit && id) {
-        // Update existing user
         const updates: Partial<User> = {
           name: form.name,
           phone: form.phone,
           image: form.image,
+          ...extendedFields,
         };
-        
-        // Only allow password and role changes if admin
+
         if (isAdmin) {
           if (form.password) updates.password = form.password;
-          if (form.role) updates.role = form.role;
+          if (existingUser && form.role && form.role !== existingUser.role) {
+            updates.role = form.role;
+          }
         }
-        
+
         await updateMutation.mutateAsync({ id, updates });
-        
+
       } else {
-        // Create new user
         if (!isAdmin) {
           toast.error('Only admin-access users can add users');
           setSaving(false);
           return;
         }
-        
+
         await createMutation.mutateAsync({
           name: form.name || '',
           phone: form.phone || '',
           password: form.password || '',
           role: form.role || UserRole.EMPLOYEE,
-          image: form.image || ''
+          image: form.image || '',
+          ...extendedFields,
         } as any);
       }
 
@@ -121,7 +178,7 @@ const UserForm: React.FC = () => {
 
   const handleDelete = async () => {
     if (!id) return;
-    
+
     setSaving(true);
     try {
       await deleteMutation.mutateAsync(id);
@@ -165,30 +222,30 @@ const UserForm: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <p className="text-xs font-bold text-gray-400 uppercase mb-2">Profile Photo</p>
-                <input type="file" id="user-pfp" className="hidden" onChange={handleFileUpload} />
+                <input type="file" id="user-pfp" className="hidden" onChange={handleImageUpload} />
                 <label htmlFor="user-pfp" className={`cursor-pointer px-4 py-2 ${theme.colors.primary[600]} text-white text-xs font-bold rounded-lg hover:${theme.colors.primary[700]}`}>Upload Picture</label>
               </div>
             </div>
 
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Full Name</label>
-              <input type="text" className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+              <input type="text" className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.name || ''} onChange={e => setFormValue('name', e.target.value)} />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Phone Number</label>
-              <input type="text" className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+              <input type="text" className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.phone || ''} onChange={e => setFormValue('phone', e.target.value)} />
             </div>
 
             {isAdmin && (
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Password (Admin Only Access)</label>
                 <div className="relative">
-                  <input 
-                    type={showPassword ? 'text' : 'password'} 
-                    className="w-full px-4 py-3 pr-10 bg-purple-50 border border-purple-100 rounded-xl focus:ring-2 focus:ring-purple-500" 
-                    value={form.password} 
-                    onChange={e => setForm({...form, password: e.target.value})} 
-                    placeholder={isEdit ? "Leave blank to keep current password" : "Secure system password"} 
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="w-full px-4 py-3 pr-10 bg-purple-50 border border-purple-100 rounded-xl focus:ring-2 focus:ring-purple-500"
+                    value={form.password || ''}
+                    onChange={e => setFormValue('password', e.target.value)}
+                    placeholder={isEdit ? "Leave blank to keep current password" : "Secure system password"}
                   />
                   <button
                     type="button"
@@ -209,7 +266,7 @@ const UserForm: React.FC = () => {
             {isAdmin && (
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">System Role</label>
-                <select className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.role} onChange={e => setForm({...form, role: e.target.value})} disabled={existingUser?.role === UserRole.DEVELOPER}>
+                <select className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`} value={form.role || ''} onChange={e => setFormValue('role', e.target.value)} disabled={existingUser?.role === UserRole.DEVELOPER}>
                   {assignableRoles.map((roleName) => (
                     <option key={roleName} value={roleName}>
                       {roleName === UserRole.ADMIN ? 'Administrator' : roleName}
@@ -221,9 +278,100 @@ const UserForm: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {showExtendedProfile && (
+              <div className="space-y-6 border-t pt-6">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Additional Profile Information</h3>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Email</label>
+                  <input type="email" className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.email || ''} onChange={e => setFormValue('email', e.target.value)} />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Address</label>
+                  <textarea className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] min-h-[100px]" value={form.address || ''} onChange={e => setFormValue('address', e.target.value)} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Birthday</label>
+                    <input type="date" className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.birthday || ''} onChange={e => setFormValue('birthday', e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nationality</label>
+                    <input type="text" className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.nationality || ''} onChange={e => setFormValue('nationality', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Gender</label>
+                    <select className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.gender || ''} onChange={e => setFormValue('gender', e.target.value)}>
+                      <option value="">Select Gender</option>
+                      {GENDER_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Blood Group</label>
+                    <select className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.bloodGroup || ''} onChange={e => setFormValue('bloodGroup', e.target.value)}>
+                      <option value="">Select Blood Group</option>
+                      {BLOOD_GROUP_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Commission Based</label>
+                  <select className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.isCommissionBased ? 'yes' : 'no'} onChange={e => setFormValue('isCommissionBased', e.target.value === 'yes')}>
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </div>
+
+                {!form.isCommissionBased && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fixed Salary</label>
+                    <NumericInput
+                      value={form.fixedSalary ?? ''}
+                      onChange={(value) => setFormValue('fixedSalary', value)}
+                      placeholder="0.00"
+                      className="bg-gray-50 border rounded-xl"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">NID / Passport Copy</p>
+                      <p className="text-[11px] text-gray-500 mt-1">Optional identity document upload.</p>
+                    </div>
+                    <input type="file" id="user-nid-passport" className="hidden" onChange={handleDocumentUpload('nidPassportCopy')} />
+                    <label htmlFor="user-nid-passport" className={`inline-block cursor-pointer px-4 py-2 ${theme.colors.primary[600]} text-white text-xs font-bold rounded-lg hover:${theme.colors.primary[700]}`}>Upload Document</label>
+                    {form.nidPassportCopy && <p className="text-[11px] text-green-600 font-medium">Document attached</p>}
+                  </div>
+                  <div className="space-y-2 p-4 bg-gray-50 rounded-lg border">
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">CV</p>
+                      <p className="text-[11px] text-gray-500 mt-1">Optional CV upload.</p>
+                    </div>
+                    <input type="file" id="user-cv" className="hidden" onChange={handleDocumentUpload('cv')} />
+                    <label htmlFor="user-cv" className={`inline-block cursor-pointer px-4 py-2 ${theme.colors.primary[600]} text-white text-xs font-bold rounded-lg hover:${theme.colors.primary[700]}`}>Upload CV</label>
+                    {form.cv && <p className="text-[11px] text-green-600 font-medium">CV attached</p>}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="pt-6 space-y-3">
-            <Button 
+            <Button
               onClick={handleSave}
               variant="primary"
               size="lg"
@@ -232,9 +380,9 @@ const UserForm: React.FC = () => {
             >
               {saving ? 'Saving...' : 'Save Details'}
             </Button>
-            
+
             {isEdit && isAdmin && !isDeveloperTarget && (
-              <button 
+              <button
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={saving}
                 className="w-full px-4 py-3 bg-red-50 border border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -261,14 +409,14 @@ const UserForm: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={() => setShowDeleteConfirm(false)}
                 disabled={saving}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleDelete}
                 disabled={saving}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"

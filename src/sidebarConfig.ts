@@ -127,7 +127,7 @@ const rawSidebarConfig: SidebarConfigItem[] = [
   },
   {
     key: 'social_media_ads',
-    label: 'Social Media Ads',
+    label: 'Marketing',
     icon: ICONS.Bell,
     children: [
       {

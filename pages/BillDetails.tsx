@@ -3,12 +3,12 @@ import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
 import { BillStatus, Bill, Transaction } from '../types';
-import { formatCurrency, ICONS, getStatusColor } from '../constants';
+import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getStatusColor } from '../constants';
 import { theme } from '../theme';
 import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor } from '../src/hooks/useQueries';
 import { useUpdateBill, useCreateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { LoadingOverlay, CommonPaymentModal } from '../components';
+import { LoadingOverlay, CommonPaymentModal, Modal } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -51,6 +51,248 @@ const BillDetails: React.FC = () => {
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0
   });
+
+  const [expandedSection, setExpandedSection] = useState<Record<string, boolean>>({
+    progress: true,
+    payment: false,
+  });
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completionOutcome, setCompletionOutcome] = useState<'Received' | 'Returned'>('Received');
+  const [completionNote, setCompletionNote] = useState('');
+
+  const isSectionExpanded = (section: string) => !!expandedSection[section];
+
+  const toggleSection = (section: string) => {
+    setExpandedSection((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  };
+
+  const openCompleteModal = () => {
+    setCompletionOutcome('Received');
+    setCompletionNote('');
+    setShowCompleteModal(true);
+  };
+
+  const closeCompleteModal = () => {
+    setShowCompleteModal(false);
+  };
+
+  type BillTimelineLabel = 'Created' | 'Processing' | 'Received' | 'Returned' | 'Cancelled';
+  type BillTimelineItem = {
+    label: BillTimelineLabel;
+    historyKey: keyof Exclude<Bill['history'], undefined> | null;
+    description: string;
+  };
+
+  const billProgressSteps = useMemo<BillTimelineItem[]>(
+    () => [
+      { label: 'Created', historyKey: 'created', description: 'Bill created and waiting to be processed.' },
+      { label: 'Processing', historyKey: 'processing', description: 'Bill is currently under processing.' },
+      { label: 'Received', historyKey: 'received', description: 'Bill has been marked as received.' },
+      { label: 'Returned', historyKey: null, description: 'Bill has been returned.' },
+      { label: 'Cancelled', historyKey: 'cancelled', description: 'Bill has been cancelled.' },
+    ],
+    []
+  );
+
+  const getBillProgressIndex = (currentBill?: Bill | null) => {
+    if (!currentBill) return 0;
+    const returnedHistory = (currentBill.history as Record<string, string | undefined>)?.returned;
+    const cancelledHistory = (currentBill.history as Record<string, string | undefined>)?.cancelled;
+    if (returnedHistory) {
+      return billProgressSteps.findIndex((item) => item.label === 'Returned');
+    }
+    if (cancelledHistory) {
+      return billProgressSteps.findIndex((item) => item.label === 'Cancelled');
+    }
+    if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) {
+      return billProgressSteps.findIndex((item) => item.label === 'Received');
+    }
+    if (currentBill.status === BillStatus.PROCESSING) {
+      return billProgressSteps.findIndex((item) => item.label === 'Processing');
+    }
+    return billProgressSteps.findIndex((item) => item.label === 'Created');
+  };
+
+  const billProgressIndex = getBillProgressIndex(bill);
+
+  const getBillProgressPercent = (activeBill?: Bill | null) => {
+    if (!activeBill) return 0;
+    const returnedHistory = (activeBill.history as Record<string, string | undefined>)?.returned;
+    const cancelledHistory = (activeBill.history as Record<string, string | undefined>)?.cancelled;
+    if (returnedHistory || cancelledHistory) return 100;
+    if (activeBill.status === BillStatus.PAID || activeBill.status === BillStatus.RECEIVED) return 100;
+
+    const finalStepIndex = billProgressSteps.findIndex((item) => item.label === 'Received');
+    const stepIndex = getBillProgressIndex(activeBill);
+    return Math.round((stepIndex / Math.max(1, finalStepIndex)) * 100);
+  };
+
+  const billProgressPercent = getBillProgressPercent(bill);
+
+  const getFinalBranchStatus = (currentBill?: Bill | null) => {
+    if (!currentBill) return null;
+    const returnedHistory = (currentBill.history as Record<string, string | undefined>)?.returned;
+    const cancelledHistory = (currentBill.history as Record<string, string | undefined>)?.cancelled;
+    if (returnedHistory) return 'Returned' as BillTimelineLabel;
+    if (cancelledHistory) return 'Cancelled' as BillTimelineLabel;
+    if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) return 'Received' as BillTimelineLabel;
+    return null;
+  };
+
+  const parseHistoryTimestamp = (value?: string | null) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const candidates: string[] = [raw];
+    const onAtMatch = raw.match(/on\s+(.+?)(?:,\s*at\s*|\s+at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i);
+    if (onAtMatch) {
+      const datePart = onAtMatch[1].trim();
+      const timePart = onAtMatch[2].trim().replace(/\./g, '');
+      candidates.push(`${datePart} ${timePart}`);
+      candidates.push(`${datePart}, ${timePart}`);
+    }
+
+    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/);
+    if (isoMatch) {
+      candidates.push(isoMatch[0]);
+    }
+
+    for (const candidate of candidates) {
+      const parsed = new Date(candidate);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    return null;
+  };
+
+  const formatStatusTimestamp = (date: Date) => {
+    const now = new Date();
+    const local = new Date(date);
+    const isToday = local.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = local.toDateString() === yesterday.toDateString();
+
+    const time = local.toLocaleTimeString('en-BD', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    if (isToday) return time;
+    if (isYesterday) return `Yesterday, ${time}`;
+    return `${local.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}, ${time}`;
+  };
+
+  const getTimelineLabel = (item: BillTimelineItem, index: number) => {
+    if (index === billProgressIndex) {
+      switch (item.label) {
+        case 'Created':
+          return 'Created';
+        case 'Processing':
+          return 'Processing';
+        case 'Received':
+          return bill.status === BillStatus.RECEIVED || bill.status === BillStatus.PAID ? 'Received' : 'Receiving';
+        case 'Returned':
+          return getFinalBranchStatus(bill) === 'Returned' ? 'Returned' : 'Returning';
+        case 'Cancelled':
+          return getFinalBranchStatus(bill) === 'Cancelled' ? 'Cancelled' : 'Cancelling';
+        default:
+          return item.label;
+      }
+    }
+
+    if (index < billProgressIndex) {
+      return item.label;
+    }
+
+    if (index > billProgressIndex) {
+      switch (item.label) {
+        case 'Processing':
+          return 'Process';
+        case 'Received':
+          return 'Receive';
+        case 'Returned':
+          return 'Return';
+        case 'Cancelled':
+          return 'Cancel';
+        default:
+          return item.label;
+      }
+    }
+
+    return item.label;
+  };
+
+  const getStatusSuffix = (item: BillTimelineItem, index: number) => {
+    if (index > billProgressIndex) {
+      return '';
+    }
+
+    const rawValue = (() => {
+      switch (item.label) {
+        case 'Created':
+          return bill.createdAt || bill.history?.created;
+        case 'Processing':
+          return bill.processedAt || bill.history?.processing;
+        case 'Received':
+          return bill.receivedAt || bill.history?.received;
+        case 'Returned':
+          return (bill.history as Record<string, string | undefined>)?.returned;
+        case 'Cancelled':
+          return bill.history?.cancelled;
+        default:
+          return '';
+      }
+    })();
+
+    const parsed = parseHistoryTimestamp(rawValue);
+    if (parsed) {
+      return ` (${formatStatusTimestamp(parsed)})`;
+    }
+
+    return '';
+  };
+
+  const getNextStatusTransitionCTA = () => {
+    const isCancelled = Boolean((bill.history as Record<string, string | undefined>)?.cancelled);
+    if (isCancelled) return null;
+
+    if (bill.status === BillStatus.ON_HOLD && canMoveCurrentBillToProcessing) {
+      return (
+        <div className="pt-4">
+          <button
+            type="button"
+            disabled={!canMoveCurrentBillToProcessing}
+            onClick={markProcessing}
+            className={`w-full rounded-xl py-3 text-sm font-bold transition ${canMoveCurrentBillToProcessing ? `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}` : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+          >
+            Mark as Processing
+          </button>
+        </div>
+      );
+    }
+
+    if (bill.status === BillStatus.PROCESSING && canMarkCurrentBillReceived) {
+      return (
+        <div className="pt-4">
+          <button
+            type="button"
+            disabled={!canMarkCurrentBillReceived}
+            onClick={openCompleteModal}
+            className={`w-full rounded-xl py-3 text-sm font-bold transition ${canMarkCurrentBillReceived ? `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}` : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+          >
+            Complete
+          </button>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading bill...</div>;
   if (billError || !bill) return <div className="p-8 text-center text-gray-500">{billError?.message || 'Bill not found.'}</div>;
@@ -104,13 +346,18 @@ const BillDetails: React.FC = () => {
     await updateStatus(BillStatus.PROCESSING, 'processing', historyText);
   };
 
-  const markReceived = async () => {
+  const completeBill = async () => {
     if (!canMarkCurrentBillReceived) {
-      toast.error('You do not have permission to mark bills as received.');
+      toast.error('You do not have permission to complete bills.');
       return;
     }
-    const historyText = `Marked as received by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
-    await updateStatus(BillStatus.RECEIVED, 'received', historyText);
+
+    const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    const newStatus = completionOutcome === 'Returned' ? BillStatus.ON_HOLD : BillStatus.RECEIVED;
+    const historyKey = completionOutcome === 'Returned' ? 'returned' : 'received';
+
+    await updateStatus(newStatus, historyKey as keyof Exclude<Bill['history'], undefined>, historyText);
+    closeCompleteModal();
   };
 
   const cancelBill = async () => {
@@ -203,9 +450,6 @@ const BillDetails: React.FC = () => {
 
   const canShowActionsMenu =
     canEditCurrentBill
-    || canMoveCurrentBillToProcessing
-    || canMarkCurrentBillReceived
-    || canMarkCurrentBillPaid
     || canCancelCurrentBill;
 
   return (
@@ -252,11 +496,8 @@ const BillDetails: React.FC = () => {
                   <div className="absolute right-0 mt-2 w-48 bg-white border rounded-xl shadow-xl z-50 py-2">
                     <button onClick={() => { handlePrintBill(id!, navigate); setIsActionOpen(false); }} className="md:hidden w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Print Bill</button>
                     <div className="md:hidden border-t my-1"></div>
-                    {canMoveCurrentBillToProcessing && <button disabled={bill.status === BillStatus.PAID} onClick={() => { markProcessing(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed">Mark Processing</button>}
-                    {canMarkCurrentBillReceived && <button disabled={bill.status === BillStatus.ON_HOLD || bill.status === BillStatus.PAID} onClick={() => { markReceived(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed">Mark Received</button>}
-                    {canCancelCurrentBill && <button disabled={bill.status === BillStatus.PAID || bill.status === BillStatus.ON_HOLD} onClick={() => { cancelBill(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">Cancel Bill</button>}
-                    {canMarkCurrentBillPaid && <button onClick={() => { openPayment(); setIsActionOpen(false); }} disabled={bill.paidAmount >= bill.total} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">Record Payment</button>}
-                    {canEditCurrentBill && <button onClick={() => navigate(`/bills/edit/${bill.id}`)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Edit Bill</button>}
+                    {canCancelCurrentBill && <button disabled={bill.status === BillStatus.PAID || bill.status === BillStatus.ON_HOLD} onClick={() => { cancelBill(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 disabled:hover:bg-gray-50 flex items-center gap-2 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">{ICONS.Close} Cancel Bill</button>}
+                    {canEditCurrentBill && <button onClick={() => { navigate(`/bills/edit/${bill.id}`); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Edit} Edit Bill</button>}
                   </div>
                 </>
               )}
@@ -347,135 +588,164 @@ const BillDetails: React.FC = () => {
                   <span className="text-gray-400 font-bold uppercase flex-shrink-0">Subtotal</span>
                   <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(bill.subtotal)}</span>
                 </div>
-                {bill.discount > 0 && (
-                  <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                    <span className="text-gray-400 font-bold uppercase flex-shrink-0">Discount</span>
-                    <span className="font-bold text-red-500 flex-shrink-0">-{formatCurrency(bill.discount)}</span>
-                  </div>
-                )}
-                {bill.shipping > 0 && (
-                  <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                    <span className="text-gray-400 font-bold uppercase flex-shrink-0">Shipping</span>
-                    <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(bill.shipping)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
+                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Discount</span>
+                  <span className="font-bold text-emerald-600 flex-shrink-0">-{formatCurrency(bill.discount)}</span>
+                </div>
+                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
+                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Shipping</span>
+                  <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(bill.shipping)}</span>
+                </div>
                 <div className="flex justify-between items-center py-2 sm:py-3 lg:py-4 border-t-2 border-[#0f2f57] gap-2">
-                  <span className="font-black text-gray-900 uppercase tracking-tighter text-[11px] sm:text-xs lg:text-sm flex-shrink-0">Total Payable</span>
-                  <span className="font-black text-sm sm:text-base lg:text-lg flex-shrink-0">{formatCurrency(bill.total)}</span>
+                  <span className="font-black text-gray-900 uppercase tracking-tighter text-xs sm:text-base lg:text-base flex-shrink-0">Total Payable</span>
+                  <span className="font-black text-gray-900 text-xs sm:text-base lg:text-base flex-shrink-0">{formatCurrency(bill.total)}</span>
                 </div>
               </div>
             </div>
 
-            {(invoiceSettings?.footer || db.settings.invoice.footer) && (
-              <div className="bg-gray-50 p-4 rounded-[10px] border border-gray-100 print:bg-white print:p-3 print:rounded-lg print:border-gray-300">
-                <p className="text-sm text-gray-500 font-medium leading-relaxed whitespace-pre-line print:text-gray-700">
-                  {invoiceSettings?.footer || db.settings.invoice.footer}
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Sidebar Payment & Lifecycle Sections */}
         <div className="space-y-6">
           {/* Payment Section */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                Payment
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-wider">
-                  {getPaymentStatus()}
-                </span>
-              </h3>
-              <div className="p-1 bg-[var(--primary-soft,#ebf4ff)] text-white rounded-full">{ICONS.Banking}</div>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-xs text-gray-500 font-medium">Total Amount</span>
-                  <span className="font-bold text-gray-900">{formatCurrency(bill.total)}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span className="text-xs text-gray-500 font-medium">Received</span>
-                  <span className="font-bold text-emerald-600">{formatCurrency(bill.paidAmount)}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span className="text-xs text-gray-500 font-medium">Refunded</span>
-                  <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span className="text-xs text-gray-500 font-medium">Due Amount</span>
-                  <span className={`font-bold ${bill.total - bill.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {formatCurrency(Math.max(bill.total - bill.paidAmount, 0))}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+            <button
+              type="button"
+              className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+              onClick={() => toggleSection('payment')}
+              aria-expanded={isSectionExpanded('payment')}
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                  Payment
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${getPaymentStatusBadgeColor(getPaymentStatus())}`}>
+                    {getPaymentStatus()}
                   </span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded-full ${theme.colors.primary[50]} ${theme.colors.primary.text}`}>{ICONS.Banking}</div>
+                <div className={`transition-transform duration-200 ${isSectionExpanded('payment') ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
                 </div>
               </div>
+            </button>
+            {isSectionExpanded('payment') && (
+              <div className="p-5 space-y-4">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-xs text-gray-500 font-medium">Total Amount</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(bill.total)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Received</span>
+                    <span className="font-bold text-emerald-600">{formatCurrency(bill.paidAmount)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Due Amount</span>
+                    <span className={`font-bold ${bill.total - bill.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(Math.max(bill.total - bill.paidAmount, 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-xs text-gray-500 font-medium">Refunded</span>
+                    <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
+                  </div>
+                </div>
 
-              <div className="space-y-2 pt-2">
-                <button
-                  onClick={openPayment}
-                  disabled={!canMarkCurrentBillPaid || bill.paidAmount >= bill.total}
-                  className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm`}
-                >
-                  Add Payment
-                </button>
-                <button
-                  className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm"
-                >
-                  Issue Refund
-                </button>
+                <div className="space-y-2 pt-2">
+                  <button
+                    onClick={openPayment}
+                    disabled={!canMarkCurrentBillPaid || bill.paidAmount >= bill.total}
+                    className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    Add Payment
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Issue Refund
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Processing Section */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Processing</h3>
-              <div className={`p-1 rounded-full ${bill.status === BillStatus.PROCESSING ? 'bg-[var(--primary-soft,#ebf4ff)] text-white' : 'bg-gray-200 text-gray-400'}`}>
-                {ICONS.ChevronRight}
+          {/* Progress Section */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+            <button
+              type="button"
+              className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+              onClick={() => toggleSection('progress')}
+              aria-expanded={isSectionExpanded('progress')}
+            >
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+                Progress ({billProgressPercent}%)
+              </h3>
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded-full ${bill.status !== BillStatus.ON_HOLD ? 'bg-white text-black' : 'bg-gray-200 text-gray-400'}`}>
+                  {ICONS.Check}
+                </div>
+                <div className={`transition-transform duration-200 ${isSectionExpanded('progress') ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
+                </div>
               </div>
-            </div>
-            <div className="p-5">
-              {bill.history?.processing ? (
-                <p className="text-xs text-[var(--primary-color,#0f2f57)] leading-relaxed font-bold bg-[var(--primary-soft,#ebf4ff)] p-3 rounded-xl">
-                  {bill.history.processing}
-                </p>
-              ) : (
-                <button 
-                  disabled={!canMoveCurrentBillToProcessing || bill.status === BillStatus.PAID}
-                  onClick={markProcessing}
-                  className={`w-full py-3 ${theme.colors.secondary[600]} hover:${theme.colors.secondary[700]} disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                >
-                  Mark as Processing
-                </button>
-              )}
-            </div>
-          </div>
+            </button>
+            {isSectionExpanded('progress') && (
+              <div className="p-4 space-y-3">
+                <div>
+                  <div className="mb-3 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                    <span>Progress</span>
+                    <span>{billProgressPercent}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                      style={{ width: `${billProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
 
-          {/* Received Section */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 bg-gray-50 border-b flex justify-between items-center">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Received</h3>
-              <div className={`p-1 rounded-full ${bill.status === BillStatus.RECEIVED ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'}`}>
-                {ICONS.ChevronRight}
+                <div className="space-y-0.5">
+                  {billProgressSteps.map((item, index) => {
+                    const branchStatus = getFinalBranchStatus(bill);
+                    const isBranchItem = item.label === 'Received' || item.label === 'Returned' || item.label === 'Cancelled';
+                    const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus);
+                    const isActive = index === billProgressIndex;
+                    const isPast = !isBranchItem && index < billProgressIndex;
+                    const isCompleted = isPast || (isActive && isBranchItem);
+
+                    return (
+                      <div
+                        key={item.label}
+                        className={`flex w-full items-center gap-2 rounded-lg px-3 py-1 text-left ${isActive ? 'bg-emerald-50' : ''}`}
+                      >
+                        <div className="flex h-5 w-5 items-center justify-center">
+                          {isCompleted ? (
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-200 text-emerald-800">
+                              {ICONS.Check}
+                            </span>
+                          ) : isActive ? (
+                            <span className="flex h-3.5 w-3.5 rounded-full bg-emerald-600 shadow-emerald-600/30 animate-pulse" />
+                          ) : (
+                            <span className="mx-auto h-2.5 w-2.5 rounded-full bg-gray-300" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-sm font-semibold ${isUnavailableBranch ? 'text-gray-400 line-through' : isCompleted ? 'text-emerald-700' : isActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                            {getTimelineLabel(item, index)}
+                            <span className={`text-xs font-medium ${isUnavailableBranch ? 'text-gray-400' : 'text-gray-500'}`}>{getStatusSuffix(item, index)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {getNextStatusTransitionCTA()}
               </div>
-            </div>
-            <div className="p-5">
-              {bill.history?.received ? (
-                <p className="text-xs text-green-600 leading-relaxed font-bold bg-green-50 p-3 rounded-xl">
-                  {bill.history.received}
-                </p>
-              ) : (
-                <button 
-                  disabled={!canMarkCurrentBillReceived || bill.status === BillStatus.ON_HOLD || bill.status === BillStatus.PAID}
-                  onClick={markReceived}
-                  className={`w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold rounded-xl shadow-md transition-all active:scale-95`}
-                >
-                  Mark as Received
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -525,6 +795,19 @@ const BillDetails: React.FC = () => {
             </div>
           )}
 
+          {bill.history?.returned && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-orange-100">
+                  {ICONS.Close}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-orange-700 leading-relaxed font-bold">{bill.history.returned}</p>
+              </div>
+            </div>
+          )}
+
           {bill.history?.paid && (
             <div className="flex gap-3 pb-4 border-b border-gray-100">
               <div className="flex-shrink-0">
@@ -569,6 +852,58 @@ const BillDetails: React.FC = () => {
         title="Record Payment"
         buttonText="Add Payment"
       />
+
+      <Modal
+        isOpen={showCompleteModal}
+        onClose={closeCompleteModal}
+        title={`Complete bill #${bill.billNumber}`}
+        size="md"
+      >
+        <div className="space-y-6">
+          <p className="text-sm text-gray-600">Choose how to finalize this bill.</p>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Outcome</label>
+            <select
+              value={completionOutcome}
+              onChange={(event) => setCompletionOutcome(event.target.value as 'Received' | 'Returned')}
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#3c5a82]"
+            >
+              <option value="Received">Received</option>
+              <option value="Returned">Returned</option>
+            </select>
+          </div>
+
+          {completionOutcome === 'Returned' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Return note</label>
+              <textarea
+                value={completionNote}
+                onChange={(event) => setCompletionNote(event.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#3c5a82]"
+                placeholder="Enter a note for the returned bill"
+              />
+            </div>
+          )}
+
+          <div className="flex gap-3 justify-end pt-4">
+            <button
+              type="button"
+              onClick={closeCompleteModal}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={completeBill}
+              className="rounded-lg bg-[#0f2f57] px-4 py-2 text-sm font-bold text-white hover:bg-[#112f60]"
+            >
+              {completionOutcome === 'Returned' ? 'Mark Returned' : 'Mark Received'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

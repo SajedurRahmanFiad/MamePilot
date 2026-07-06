@@ -10,6 +10,7 @@ use App\Database;
 use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
+use App\MetaAdsApi;
 use App\OperationsApi;
 
 require_once dirname(__DIR__) . '/bootstrap.php';
@@ -44,6 +45,7 @@ try {
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
+    $metaAds = new MetaAdsApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok([
@@ -51,6 +53,11 @@ try {
             'time' => gmdate('c'),
             'db' => $database->fetchOne('SELECT 1 AS ok'),
         ]);
+        exit;
+    }
+
+    if ($action === 'metaAdsOAuthCallback') {
+        $metaAds->redirectAfterOAuth($payload);
         exit;
     }
 
@@ -82,7 +89,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier];
+    $services = [$master, $operations, $courier, $metaAds];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

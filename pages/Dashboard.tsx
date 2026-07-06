@@ -232,11 +232,55 @@ const Dashboard: React.FC = () => {
 
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard title="Total Sales" value={adminSnapshot ? formatCurrency(adminSnapshot.totalSales) : inlinePlaceholder} icon={ICONS.Sales} bgColor="bg-blue-600" textColor="text-white" iconBgColor="bg-blue-700" />
-            <StatCard title="Total Purchases" value={adminSnapshot ? formatCurrency(adminSnapshot.totalPurchases) : inlinePlaceholder} icon={ICONS.Briefcase} bgColor="bg-purple-600" textColor="text-white" iconBgColor="bg-purple-700" />
-            <StatCard title="Other Expenses" value={adminSnapshot ? formatCurrency(adminSnapshot.otherExpenses) : inlinePlaceholder} icon={ICONS.Delete} bgColor="bg-amber-500" textColor="text-white" iconBgColor="bg-amber-600" />
-            <StatCard title="Total Profit" value={adminSnapshot ? formatCurrency(adminSnapshot.totalProfit) : inlinePlaceholder} icon={ICONS.Reports} isProfitCard={true} profitValue={adminSnapshot?.totalProfit} />
-            <StatCard title="Total Orders" value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder} icon={ICONS.Dashboard} bgColor="bg-indigo-700" textColor="text-white" iconBgColor="bg-indigo-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.total) : undefined} />
+            <StatCard 
+              title="Total Sales" 
+              value={adminSnapshot ? formatCurrency(adminSnapshot.totalSales) : inlinePlaceholder}
+              numericValue={adminSnapshot?.totalSales}
+              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalSales !== undefined}
+              icon={ICONS.Sales} 
+              bgColor="bg-blue-600" 
+              textColor="text-white" 
+              iconBgColor="bg-blue-700" 
+            />
+            <StatCard 
+              title="Total Purchases" 
+              value={adminSnapshot ? formatCurrency(adminSnapshot.totalPurchases) : inlinePlaceholder}
+              numericValue={adminSnapshot?.totalPurchases}
+              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalPurchases !== undefined}
+              icon={ICONS.Briefcase} 
+              bgColor="bg-purple-600" 
+              textColor="text-white" 
+              iconBgColor="bg-purple-700" 
+            />
+            <StatCard 
+              title="Other Expenses" 
+              value={adminSnapshot ? formatCurrency(adminSnapshot.otherExpenses) : inlinePlaceholder}
+              numericValue={adminSnapshot?.otherExpenses}
+              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.otherExpenses !== undefined}
+              icon={ICONS.Delete} 
+              bgColor="bg-amber-500" 
+              textColor="text-white" 
+              iconBgColor="bg-amber-600" 
+            />
+            <StatCard 
+              title="Total Profit" 
+              value={adminSnapshot ? formatCurrency(adminSnapshot.totalProfit) : inlinePlaceholder}
+              numericValue={adminSnapshot?.totalProfit}
+              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalProfit !== undefined}
+              icon={ICONS.Reports} 
+              isProfitCard={true} 
+              profitValue={adminSnapshot?.totalProfit} 
+            />
+            <StatCard 
+              title="Total Orders" 
+              value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder} 
+              icon={ICONS.Dashboard} 
+              bgColor="bg-indigo-700" 
+              textColor="text-white" 
+              iconBgColor="bg-indigo-800" 
+              subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.total) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.total : undefined}
+            />
 
             <StatCard
               title="On Hold Orders"
@@ -246,6 +290,7 @@ const Dashboard: React.FC = () => {
               textColor="text-white"
               iconBgColor="bg-orange-600"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.onHold) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.onHold : undefined}
               onClick={() => handleOpenOrdersByStatus(OrderStatus.ON_HOLD)}
             />
             <StatCard
@@ -256,6 +301,7 @@ const Dashboard: React.FC = () => {
               textColor="text-white"
               iconBgColor="bg-sky-600"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.processing) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.processing : undefined}
               onClick={() => handleOpenOrdersByStatus(OrderStatus.PROCESSING)}
             />
             <StatCard
@@ -266,6 +312,7 @@ const Dashboard: React.FC = () => {
               textColor="text-white"
               iconBgColor="bg-cyan-600"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.picked) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.picked : undefined}
               onClick={() => handleOpenOrdersByStatus(OrderStatus.PICKED)}
             />
             <StatCard
@@ -276,6 +323,7 @@ const Dashboard: React.FC = () => {
               textColor="text-white"
               iconBgColor="bg-teal-700"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.completed) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.completed : undefined}
               onClick={() => handleOpenOrdersByStatus(OrderStatus.COMPLETED)}
             />
             <StatCard
@@ -286,6 +334,7 @@ const Dashboard: React.FC = () => {
               textColor="text-white"
               iconBgColor="bg-red-600"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.cancelled) : undefined}
+              subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.cancelled : undefined}
               onClick={() => handleOpenOrdersByStatus(OrderStatus.CANCELLED)}
             />
           </div>

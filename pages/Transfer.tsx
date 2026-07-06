@@ -88,10 +88,7 @@ const Transfer: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
       <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Fund Transfer</h2>
-          <p className="text-gray-500 font-medium">Move balances between your business accounts</p>
-        </div>
+        <div />
       </div>
 
       <div className="bg-white p-8 lg:p-12 rounded-lg border border-gray-100 shadow-xl space-y-8">

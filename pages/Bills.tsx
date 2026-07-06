@@ -5,8 +5,9 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { Bill, BillStatus, hasAdminAccess, isEmployeeRole } from '../types';
-import { formatCurrency, ICONS, getStatusColor } from '../constants';
+import { formatCurrency, ICONS, getPaymentStatusLabel, getStatusColor } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
 import { theme } from '../theme';
 import { useBillsPage, useUsers, useSystemDefaults } from '../src/hooks/useQueries';
@@ -18,6 +19,8 @@ import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { formatDate, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
+
+const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid'];
 
 const Bills: React.FC = () => {
   const navigate = useNavigate();
@@ -44,7 +47,17 @@ const Bills: React.FC = () => {
   };
   const urlStatusTab = (searchParams.get('status') as BillStatus | null) || 'All';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
-  const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
+  const urlBillStatusFilter = searchParams.get('billStatus') || 'all';
+  const urlBillStatusNotFilter = searchParams.get('billStatusNot') || '';
+  const urlPaymentStatusFilter = searchParams.get('paymentStatus') || 'all';
+  const urlPaymentStatusNotFilter = searchParams.get('paymentStatusNot') || '';
+  const urlBillIdFilter = searchParams.get('billId') || '';
+  const urlBillIdNotFilter = searchParams.get('billIdNot') || '';
+  const urlVendorNameFilter = searchParams.get('vendorName') || '';
+  const urlVendorNameNotFilter = searchParams.get('vendorNameNot') || '';
+  const urlVendorPhoneFilter = searchParams.get('vendorPhone') || '';
+  const urlVendorPhoneNotFilter = searchParams.get('vendorPhoneNot') || '';
+  const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = useState<number>(urlPage);
@@ -52,6 +65,16 @@ const Bills: React.FC = () => {
   const [customDates, setCustomDates] = useState(urlCustomDates);
   const [statusTab, setStatusTab] = useState<BillStatus | 'All'>(urlStatusTab);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
+  const [billIdFilter, setBillIdFilter] = useState('');
+  const [billIdNotFilter, setBillIdNotFilter] = useState('');
+  const [vendorNameFilter, setVendorNameFilter] = useState('');
+  const [vendorNameNotFilter, setVendorNameNotFilter] = useState('');
+  const [vendorPhoneFilter, setVendorPhoneFilter] = useState('');
+  const [vendorPhoneNotFilter, setVendorPhoneNotFilter] = useState('');
+  const [billStatusFilter, setBillStatusFilter] = useState('all');
+  const [billStatusNotFilter, setBillStatusNotFilter] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
+  const [paymentStatusNotFilter, setPaymentStatusNotFilter] = useState('');
   const previousSearchQueryRef = React.useRef(searchQuery);
   
   const { data: users = [] } = useUsers();
@@ -64,6 +87,16 @@ const Bills: React.FC = () => {
     setCustomDates(urlCustomDates);
     setStatusTab(urlStatusTab);
     setCreatedByFilter(urlCreatedByFilter);
+    setBillIdFilter(urlBillIdFilter);
+    setBillIdNotFilter(urlBillIdNotFilter);
+    setVendorNameFilter(urlVendorNameFilter);
+    setVendorNameNotFilter(urlVendorNameNotFilter);
+    setVendorPhoneFilter(urlVendorPhoneFilter);
+    setVendorPhoneNotFilter(urlVendorPhoneNotFilter);
+    setBillStatusFilter(urlBillStatusFilter);
+    setBillStatusNotFilter(urlBillStatusNotFilter);
+    setPaymentStatusFilter(urlPaymentStatusFilter);
+    setPaymentStatusNotFilter(urlPaymentStatusNotFilter);
     setSyncedSearchParams(currentSearchParams);
   }, [
     shouldHydrateFromUrl,
@@ -72,6 +105,16 @@ const Bills: React.FC = () => {
     urlCustomDates,
     urlStatusTab,
     urlCreatedByFilter,
+    urlBillIdFilter,
+    urlBillIdNotFilter,
+    urlVendorNameFilter,
+    urlVendorNameNotFilter,
+    urlVendorPhoneFilter,
+    urlVendorPhoneNotFilter,
+    urlBillStatusFilter,
+    urlBillStatusNotFilter,
+    urlPaymentStatusFilter,
+    urlPaymentStatusNotFilter,
     currentSearchParams,
   ]);
 
@@ -92,12 +135,22 @@ const Bills: React.FC = () => {
   const effectiveCustomDates = shouldHydrateFromUrl ? urlCustomDates : customDates;
   const effectiveStatusTab = shouldHydrateFromUrl ? urlStatusTab : statusTab;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
+  const effectiveBillIdFilter = shouldHydrateFromUrl ? urlBillIdFilter : billIdFilter;
+  const effectiveBillIdNotFilter = shouldHydrateFromUrl ? urlBillIdNotFilter : billIdNotFilter;
+  const effectiveVendorNameFilter = shouldHydrateFromUrl ? urlVendorNameFilter : vendorNameFilter;
+  const effectiveVendorNameNotFilter = shouldHydrateFromUrl ? urlVendorNameNotFilter : vendorNameNotFilter;
+  const effectiveVendorPhoneFilter = shouldHydrateFromUrl ? urlVendorPhoneFilter : vendorPhoneFilter;
+  const effectiveVendorPhoneNotFilter = shouldHydrateFromUrl ? urlVendorPhoneNotFilter : vendorPhoneNotFilter;
+  const effectiveBillStatusFilter = shouldHydrateFromUrl ? urlBillStatusFilter : billStatusFilter;
+  const effectiveBillStatusNotFilter = shouldHydrateFromUrl ? urlBillStatusNotFilter : billStatusNotFilter;
+  const effectivePaymentStatusFilter = shouldHydrateFromUrl ? urlPaymentStatusFilter : paymentStatusFilter;
+  const effectivePaymentStatusNotFilter = shouldHydrateFromUrl ? urlPaymentStatusNotFilter : paymentStatusNotFilter;
+
   const timeFilters = useMemo(
     () => getDateTimeFilters(effectiveFilterRange, effectiveCustomDates),
     [effectiveFilterRange, effectiveCustomDates]
   );
 
-  // Compute createdByIds based on createdByFilter
   const createdByIds = useMemo(() => {
     if (effectiveCreatedByFilter === 'all') return undefined;
     if (effectiveCreatedByFilter === 'admins') {
@@ -107,9 +160,8 @@ const Bills: React.FC = () => {
       return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
     }
     if (effectiveCreatedByFilter === 'developers') {
-      return users.filter(u => u.role === 'Developer').map(u => u.id);
+      return users.filter((u) => u.role === 'Developer').map((u) => u.id);
     }
-    // Specific user ID
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
 
@@ -123,9 +175,141 @@ const Bills: React.FC = () => {
     enabled: canLoadBills,
   });
   const bills = billsPage?.data ?? [];
+  const billIdOptions = useMemo(
+    () => Array.from(new Set(bills.map((bill) => bill.billNumber).filter(Boolean))).sort(),
+    [bills]
+  );
+  const vendorNameOptions = useMemo(
+    () => Array.from(new Set(bills.map((bill) => bill.vendorName || '').filter(Boolean))).sort(),
+    [bills]
+  );
+  const vendorPhoneOptions = useMemo(
+    () => Array.from(new Set(bills.map((bill) => bill.vendorPhone || '').filter(Boolean))).sort(),
+    [bills]
+  );
+
+  const getFinalBillStatus = (bill: Bill) => {
+    const history = bill.history as Record<string, string | undefined> | undefined;
+    if (history?.returned) return 'Returned';
+    if (history?.cancelled) return 'Cancelled';
+    if (bill.status === BillStatus.PAID || bill.status === BillStatus.RECEIVED) return 'Received';
+    return bill.status;
+  };
+
+  const billStatusOptions = useMemo(() => {
+    return ['On Hold', 'Processing', 'Received', 'Returned', 'Cancelled'];
+  }, []);
+
+  const billFilterDefinitions = useMemo(() => {
+    const userOptions = [
+      { value: 'admins', label: 'Admins' },
+      { value: 'employees', label: 'Employees' },
+      { value: 'developers', label: 'Developers' },
+      ...users
+        .slice()
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
+    ];
+
+    return [
+      {
+        type: 'Created by',
+        operators: ['='] as const,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return normalized
+            ? userOptions.filter((option) => option.label.toLowerCase().includes(normalized))
+            : userOptions;
+        },
+      },
+      {
+        type: 'Bill ID',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return billIdOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Vendor Name',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return vendorNameOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Vendor Phone',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return vendorPhoneOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Bill Status',
+        operators: ['=', '≠'] as const,
+        values: billStatusOptions,
+      },
+      {
+        type: 'Payment Status',
+        operators: ['=', '≠'] as const,
+        values: PAYMENT_STATUS_OPTIONS,
+      },
+    ];
+  }, [users, billIdOptions, vendorNameOptions, vendorPhoneOptions]);
+
   const showBillsTableLoading = !canLoadBills || billsLoading;
   const total = billsPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    if (!shouldHydrateFromUrl) return;
+
+    setPage(urlPage);
+    setFilterRange(urlFilterRange);
+    setCustomDates(urlCustomDates);
+    setStatusTab(urlStatusTab);
+    setCreatedByFilter(urlCreatedByFilter);
+    setBillIdFilter(urlBillIdFilter);
+    setBillIdNotFilter(urlBillIdNotFilter);
+    setVendorNameFilter(urlVendorNameFilter);
+    setVendorNameNotFilter(urlVendorNameNotFilter);
+    setVendorPhoneFilter(urlVendorPhoneFilter);
+    setVendorPhoneNotFilter(urlVendorPhoneNotFilter);
+    setBillStatusFilter(urlBillStatusFilter);
+    setBillStatusNotFilter(urlBillStatusNotFilter);
+    setPaymentStatusFilter(urlPaymentStatusFilter);
+    setPaymentStatusNotFilter(urlPaymentStatusNotFilter);
+    setSyncedSearchParams(currentSearchParams);
+  }, [
+    shouldHydrateFromUrl,
+    urlPage,
+    urlFilterRange,
+    urlCustomDates,
+    urlStatusTab,
+    urlCreatedByFilter,
+    urlBillIdFilter,
+    urlBillIdNotFilter,
+    urlVendorNameFilter,
+    urlVendorNameNotFilter,
+    urlVendorPhoneFilter,
+    urlVendorPhoneNotFilter,
+    urlBillStatusFilter,
+    urlBillStatusNotFilter,
+    urlPaymentStatusFilter,
+    urlPaymentStatusNotFilter,
+    currentSearchParams,
+  ]);
 
   useEffect(() => {
     if (shouldHydrateFromUrl) return;
@@ -137,6 +321,16 @@ const Bills: React.FC = () => {
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
     if (effectiveStatusTab !== 'All') params.status = effectiveStatusTab;
     if (effectiveCreatedByFilter !== 'all') params.createdBy = effectiveCreatedByFilter;
+    if (effectiveBillStatusFilter !== 'all') params.billStatus = effectiveBillStatusFilter;
+    if (effectiveBillStatusNotFilter) params.billStatusNot = effectiveBillStatusNotFilter;
+    if (effectivePaymentStatusFilter !== 'all') params.paymentStatus = effectivePaymentStatusFilter;
+    if (effectivePaymentStatusNotFilter) params.paymentStatusNot = effectivePaymentStatusNotFilter;
+    if (effectiveBillIdFilter) params.billId = effectiveBillIdFilter;
+    if (effectiveBillIdNotFilter) params.billIdNot = effectiveBillIdNotFilter;
+    if (effectiveVendorNameFilter) params.vendorName = effectiveVendorNameFilter;
+    if (effectiveVendorNameNotFilter) params.vendorNameNot = effectiveVendorNameNotFilter;
+    if (effectiveVendorPhoneFilter) params.vendorPhone = effectiveVendorPhoneFilter;
+    if (effectiveVendorPhoneNotFilter) params.vendorPhoneNot = effectiveVendorPhoneNotFilter;
     if (searchQuery) params.search = searchQuery;
 
     if (new URLSearchParams(params).toString() !== currentSearchParams) {
@@ -150,6 +344,16 @@ const Bills: React.FC = () => {
     effectiveCustomDates.to,
     effectiveStatusTab,
     effectiveCreatedByFilter,
+    effectiveBillStatusFilter,
+    effectiveBillStatusNotFilter,
+    effectivePaymentStatusFilter,
+    effectivePaymentStatusNotFilter,
+    effectiveBillIdFilter,
+    effectiveBillIdNotFilter,
+    effectiveVendorNameFilter,
+    effectiveVendorNameNotFilter,
+    effectiveVendorPhoneFilter,
+    effectiveVendorPhoneNotFilter,
     searchQuery,
     currentSearchParams,
     setSearchParams,
@@ -210,8 +414,63 @@ const Bills: React.FC = () => {
     return null;
   };
 
-  // Server-side filtering applied; keep client-side logic minimal
-  const filteredBills = bills;
+  const filteredBills = useMemo(() => {
+    return bills.filter((bill) => {
+      const finalStatus = getFinalBillStatus(bill);
+      if (effectiveBillStatusFilter !== 'all' && finalStatus !== effectiveBillStatusFilter) {
+        return false;
+      }
+      if (effectiveBillStatusNotFilter && finalStatus === effectiveBillStatusNotFilter) {
+        return false;
+      }
+      const paymentStatus = getPaymentStatusLabel(bill.paidAmount, bill.total);
+      if (effectivePaymentStatusFilter !== 'all' && paymentStatus !== effectivePaymentStatusFilter) {
+        return false;
+      }
+      if (effectivePaymentStatusNotFilter && paymentStatus === effectivePaymentStatusNotFilter) {
+        return false;
+      }
+      if (effectiveBillIdFilter) {
+        const normalized = effectiveBillIdFilter.toLowerCase();
+        const matches = bill.billNumber.toLowerCase().includes(normalized);
+        if (!matches) return false;
+      }
+      if (effectiveBillIdNotFilter) {
+        const normalized = effectiveBillIdNotFilter.toLowerCase();
+        const matches = bill.billNumber.toLowerCase().includes(normalized);
+        if (matches) return false;
+      }
+      if (effectiveVendorNameFilter) {
+        const normalized = effectiveVendorNameFilter.toLowerCase();
+        if (!bill.vendorName?.toLowerCase().includes(normalized)) return false;
+      }
+      if (effectiveVendorNameNotFilter) {
+        const normalized = effectiveVendorNameNotFilter.toLowerCase();
+        if (bill.vendorName?.toLowerCase().includes(normalized)) return false;
+      }
+      if (effectiveVendorPhoneFilter) {
+        const normalized = effectiveVendorPhoneFilter.toLowerCase();
+        if (!bill.vendorPhone?.toLowerCase().includes(normalized)) return false;
+      }
+      if (effectiveVendorPhoneNotFilter) {
+        const normalized = effectiveVendorPhoneNotFilter.toLowerCase();
+        if (bill.vendorPhone?.toLowerCase().includes(normalized)) return false;
+      }
+      return true;
+    });
+  }, [
+    bills,
+    effectiveBillIdFilter,
+    effectiveBillIdNotFilter,
+    effectiveVendorNameFilter,
+    effectiveVendorNameNotFilter,
+    effectiveVendorPhoneFilter,
+    effectiveVendorPhoneNotFilter,
+    effectiveBillStatusFilter,
+    effectiveBillStatusNotFilter,
+    effectivePaymentStatusFilter,
+    effectivePaymentStatusNotFilter,
+  ]);
 
   const handleDuplicate = async (bill: Bill) => {
     try {
@@ -270,12 +529,9 @@ const Bills: React.FC = () => {
     canAccessRecord(bill.createdBy, 'bills.deleteOwn', 'bills.deleteAny');
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-2 sm:space-y-6 pb-12">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div>
-            <h2 className="md:text-2xl text-xl font-black text-gray-900 tracking-tight">Purchase Bills</h2>
-          </div>
           <div className="hidden sm:block">
             <FilterBar 
               title="Bills"
@@ -283,9 +539,6 @@ const Bills: React.FC = () => {
               setFilterRange={handleFilterRangeChange}
               customDates={effectiveCustomDates}
               setCustomDates={handleCustomDatesChange}
-              statusTab={effectiveStatusTab}
-              setStatusTab={handleStatusTabChange}
-              statusOptions={Object.values(BillStatus)}
               compact={true}
             />
           </div>
@@ -308,33 +561,41 @@ const Bills: React.FC = () => {
           setFilterRange={handleFilterRangeChange}
           customDates={effectiveCustomDates}
           setCustomDates={handleCustomDatesChange}
-          statusTab={effectiveStatusTab}
-          setStatusTab={handleStatusTabChange}
-          statusOptions={Object.values(BillStatus)}
         />
       </div>
 
-      {/* Created By Filter Dropdown */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <label className="text-sm font-bold text-gray-700">Created By:</label>
-          <select
-            value={effectiveCreatedByFilter}
-            onChange={(e) => handleCreatedByFilterChange(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Users</option>
-            {users.some((u) => u.role === 'Admin') && <option value="admins">Admins</option>}
-            {users.some((u) => isEmployeeRole(u.role)) && <option value="employees">Employees</option>}
-            {users.some((user) => user.role === 'Developer') && <option value="developers">Developers</option>}
-            <optgroup label="Specific Users">
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-              ))}
-            </optgroup>
-          </select>
-        </div>
-      </div>
+      <DynamicFilterBar
+        filterDefinitions={billFilterDefinitions}
+        users={users}
+        onApply={(appliedFilters) => {
+          setPage(1);
+
+          const createdByFilter = appliedFilters.find((f) => f.type === 'Created by');
+          setCreatedByFilter(createdByFilter?.value ?? 'all');
+
+          const billIdFilter = appliedFilters.find((f) => f.type === 'Bill ID' && f.operator === '=');
+          const billIdNotFilter = appliedFilters.find((f) => f.type === 'Bill ID' && f.operator === '≠');
+          const vendorNameFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && f.operator === '=');
+          const vendorNameNotFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && f.operator === '≠');
+          const vendorPhoneFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && f.operator === '=');
+          const vendorPhoneNotFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && f.operator === '≠');
+          const billStatusFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '=');
+          const billStatusNotFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '≠');
+          const paymentStatusFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '=');
+          const paymentStatusNotFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '≠');
+
+          setBillIdFilter(billIdFilter?.value ?? '');
+          setBillIdNotFilter(billIdNotFilter?.value ?? '');
+          setVendorNameFilter(vendorNameFilter?.value ?? '');
+          setVendorNameNotFilter(vendorNameNotFilter?.value ?? '');
+          setVendorPhoneFilter(vendorPhoneFilter?.value ?? '');
+          setVendorPhoneNotFilter(vendorPhoneNotFilter?.value ?? '');
+          setBillStatusFilter(billStatusFilter?.value ?? 'all');
+          setBillStatusNotFilter(billStatusNotFilter?.value ?? '');
+          setPaymentStatusFilter(paymentStatusFilter?.value ?? 'all');
+          setPaymentStatusNotFilter(paymentStatusNotFilter?.value ?? '');
+        }}
+      />
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
         <div className="overflow-x-auto overflow-y-visible">

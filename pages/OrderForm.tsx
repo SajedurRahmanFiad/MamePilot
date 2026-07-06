@@ -3,9 +3,9 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Customer, Order, OrderStatus, OrderItem } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, NumericInput } from '../components';
+import { Button, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
-import { useCompanySettings, useCustomer, useOrder, useOrderSettings } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
@@ -93,6 +93,7 @@ const OrderForm: React.FC = () => {
     ? fullProducts
     : (debouncedSearch ? productsSearch : (productsMini || []));
   const { data: existingOrderData, isPending: existingOrderLoading } = useOrder(isEdit ? id : undefined);
+  const { data: metaAdsData } = useMetaAds({ status: 'ACTIVE' }, true);
   const { data: orderSettings } = useOrderSettings();
   const { data: companySettings, isPending: companySettingsLoading } = useCompanySettings();
   
@@ -104,6 +105,7 @@ const OrderForm: React.FC = () => {
   // Form state
   const [customerId, setCustomerId] = useState('');
   const [pageId, setPageId] = useState('');
+  const [sourceAdId, setSourceAdId] = useState('');
   const [orderDate, setOrderDate] = useState(getTodayDate());
   const [orderNumber, setOrderNumber] = useState('Generating...');
   const [orderNumberLoading, setOrderNumberLoading] = useState(false);
@@ -117,13 +119,25 @@ const OrderForm: React.FC = () => {
   
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [custSearchTerm, setCustSearchTerm] = useState('');
+  const [showSourceAdSearch, setShowSourceAdSearch] = useState(false);
+  const [sourceAdSearchTerm, setSourceAdSearchTerm] = useState('');
   const [debouncedCustSearch, setDebouncedCustSearch] = React.useState('');
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedCustSearch(custSearchTerm.trim()), 300);
     return () => clearTimeout(t);
   }, [custSearchTerm]);
+  const [debouncedSourceAdSearch, setDebouncedSourceAdSearch] = React.useState('');
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSourceAdSearch(sourceAdSearchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [sourceAdSearchTerm]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Duplicate order modal state
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateOrder, setDuplicateOrder] = useState<Order | null>(null);
+  const [pendingOrderData, setPendingOrderData] = useState<any>(null);
 
   // Customers: fetch just the visible search window instead of the full list.
   const custPageSize = 20;
@@ -135,6 +149,7 @@ const OrderForm: React.FC = () => {
     refetchOnWindowFocus: false,
   });
   const { data: selectedCustomerRecord } = useCustomer(customerId || undefined);
+  const { data: customerOrders = [] } = useOrdersByCustomerId(customerId || undefined);
   const normalizedCompanySettings = React.useMemo(
     () => normalizeCompanySettings(companySettings),
     [companySettings],
@@ -156,6 +171,32 @@ const OrderForm: React.FC = () => {
     () => availablePages.find((page) => page.id === pageId) || null,
     [availablePages, pageId],
   );
+  const activeAds = React.useMemo(() => {
+    const ads = Array.isArray(metaAdsData?.ads) ? metaAdsData.ads : [];
+    return ads.filter((ad: any) => {
+      const status = String(ad?.status ?? '').toUpperCase();
+      return status === 'ACTIVE' || status === 'ENABLED' || status === 'LIVE' || status === 'RUNNING';
+    });
+  }, [metaAdsData?.ads]);
+  const sourceAdOptions = React.useMemo(() => {
+    const fixedOption = { id: '', label: 'Not from an ad', metaAdId: '', platformName: '', name: 'Not from an ad' };
+    const search = debouncedSourceAdSearch.toLowerCase();
+    const adOptions = activeAds
+      .filter((ad: any) => {
+        if (!search) return true;
+        const haystack = `${ad?.name ?? ''} ${ad?.metaAdId ?? ''} ${ad?.platformName ?? ''}`.toLowerCase();
+        return haystack.includes(search);
+      })
+      .map((ad: any) => ({
+        id: ad?.id ?? '',
+        label: ad?.name ?? 'Untitled ad',
+        metaAdId: ad?.metaAdId ?? '',
+        platformName: ad?.platformName ?? 'Meta',
+        name: ad?.name ?? 'Untitled ad',
+      }));
+    return [fixedOption, ...adOptions];
+  }, [activeAds, debouncedSourceAdSearch]);
+  const selectedSourceAd = React.useMemo(() => sourceAdOptions.find((option) => option.id === sourceAdId) || null, [sourceAdId, sourceAdOptions]);
 
   const seedCustomerCache = (customer: Pick<Customer, 'id'> & Partial<Customer>) => {
     if (!customer.id) return;
@@ -211,6 +252,7 @@ const OrderForm: React.FC = () => {
         address: existingOrderData.customerAddress,
       });
       setPageId(existingOrderData.pageId || existingOrderData.pageSnapshot?.id || '');
+      setSourceAdId(existingOrderData.sourceAd || '');
       setCustomerId(existingOrderData.customerId);
       setOrderDate(existingOrderData.orderDate);
       setOrderNumber(existingOrderData.orderNumber);
@@ -323,6 +365,34 @@ const OrderForm: React.FC = () => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const checkForDuplicateOrder = (orderItems: OrderItem[]): Order | null => {
+    if (!customerOrders || customerOrders.length === 0) return null;
+    
+    // Sort items by productId for comparison
+    const newItemsKey = orderItems
+      .map(item => `${item.productId}:${item.quantity}`)
+      .sort()
+      .join('|');
+
+    // Check existing orders for same product set
+    for (const existingOrder of customerOrders) {
+      if (!existingOrder.items || existingOrder.items.length !== orderItems.length) {
+        continue;
+      }
+
+      const existingItemsKey = existingOrder.items
+        .map(item => `${item.productId}:${item.quantity}`)
+        .sort()
+        .join('|');
+
+      if (newItemsKey === existingItemsKey) {
+        return existingOrder;
+      }
+    }
+
+    return null;
+  };
+
   const handleCustomerSelect = (customer: CustomerSearchOption) => {
     seedCustomerCache(customer);
     setCustomerId(customer.id);
@@ -348,6 +418,41 @@ const OrderForm: React.FC = () => {
       toast.error('User session expired. Please log in again.');
       setError('User session expired. Please log in again.');
       return;
+    }
+
+    // Check for duplicate orders (only if creating new order, not editing)
+    if (!isEdit) {
+      const duplicateOrderFound = checkForDuplicateOrder(items);
+      if (duplicateOrderFound) {
+        setDuplicateOrder(duplicateOrderFound);
+        setShowDuplicateModal(true);
+        
+        // Prepare order data for later use
+        const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
+        const parsedDiscount = parseFloat(discount) || 0;
+        const parsedShipping = parseFloat(shipping) || 0;
+        const total = subtotal - parsedDiscount + parsedShipping;
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
+        const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+        
+        setPendingOrderData({
+          orderNumber,
+          orderDate,
+          customerId,
+          pageId,
+          sourceAdId,
+          selectedPage,
+          items,
+          subtotal,
+          discount: parsedDiscount,
+          shipping: parsedShipping,
+          total,
+          dateStr,
+          timeStr,
+        });
+        return;
+      }
     }
 
     setSaving(true);
@@ -380,6 +485,7 @@ const OrderForm: React.FC = () => {
         orderDate,
         customerId: finalCustomerId,
         pageId,
+        sourceAd: sourceAdId || null,
         pageSnapshot: buildOrderPageSnapshot(selectedPage),
         createdBy: '', // Will be auto-set by server
         status: isEdit && existingOrderData ? existingOrderData.status : OrderStatus.ON_HOLD,
@@ -412,6 +518,73 @@ const OrderForm: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleConfirmDuplicateOrder = async () => {
+    if (!pendingOrderData || !user?.id) {
+      toast.error('Something went wrong. Please try again.');
+      setShowDuplicateModal(false);
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      // Resolve temporary customer id if needed
+      let finalCustomerId = pendingOrderData.customerId;
+      if (isTempId(finalCustomerId)) {
+        const realId = await waitForRealId(finalCustomerId, 7000);
+        if (!realId) {
+          const msg = 'Customer is still being saved. Please wait a moment and try again.';
+          setError(msg);
+          toast.error(msg);
+          setSaving(false);
+          return;
+        }
+        finalCustomerId = realId;
+      }
+
+      const orderData: any = {
+        orderNumber: pendingOrderData.orderNumber,
+        orderDate: pendingOrderData.orderDate,
+        customerId: finalCustomerId,
+        pageId: pendingOrderData.pageId,
+        sourceAd: pendingOrderData.sourceAdId || null,
+        pageSnapshot: buildOrderPageSnapshot(pendingOrderData.selectedPage),
+        createdBy: '', // Will be auto-set by server
+        status: OrderStatus.ON_HOLD,
+        items: pendingOrderData.items,
+        subtotal: pendingOrderData.subtotal,
+        discount: pendingOrderData.discount,
+        shipping: pendingOrderData.shipping,
+        total: pendingOrderData.total,
+        notes,
+        paidAmount: 0,
+        history: {
+          created: `${user.name} created this order on ${pendingOrderData.dateStr}, at ${pendingOrderData.timeStr}`
+        },
+      };
+
+      const createdOrder = await createMutation.mutateAsync(orderData as any);
+      toast.success('Order created successfully');
+      setShowDuplicateModal(false);
+      setPendingOrderData(null);
+      setDuplicateOrder(null);
+      navigate(`/orders/${createdOrder.id}`, { state: { from: '/orders', refreshOrdersOnBack: true } });
+    } catch (err) {
+      console.error('Failed to save order:', err);
+      const errorMsg = getErrorMessage(err);
+      setError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelDuplicate = () => {
+    setShowDuplicateModal(false);
+    setPendingOrderData(null);
+    setDuplicateOrder(null);
   };
 
   const baseVisibleCustomers = React.useMemo<CustomerSearchOption[]>(() => {
@@ -455,29 +628,7 @@ const OrderForm: React.FC = () => {
       </div>
 
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Page</label>
-            <select
-              value={pageId}
-              onChange={(event) => setPageId(event.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] focus:bg-white transition-all font-bold text-sm"
-            >
-              <option value="">Select Page...</option>
-              {availablePages.map((page) => (
-                <option key={page.id} value={page.id}>
-                  {page.name}
-                </option>
-              ))}
-            </select>
-            {selectedPage && (
-              <p className="ml-1 text-[10px] font-medium text-gray-500">
-                {selectedPage.phone}
-                {selectedPage.email ? ` • ${selectedPage.email}` : ''}
-              </p>
-            )}
-          </div>
-
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="space-y-1 relative md:col-span-1">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Customer</label>
             <div className="relative">
@@ -576,8 +727,91 @@ const OrderForm: React.FC = () => {
           </div>
         </div>
 
-        <div className="border border-gray-100 rounded-lg overflow-visible bg-white">
-          <table className="w-full text-left">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Page</label>
+            <select
+              value={pageId}
+              onChange={(event) => setPageId(event.target.value)}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] focus:bg-white transition-all font-bold text-sm"
+            >
+              <option value="">Select Page...</option>
+              {availablePages.map((page) => (
+                <option key={page.id} value={page.id}>
+                  {page.name}
+                </option>
+              ))}
+            </select>
+            {selectedPage && (
+              <p className="ml-1 text-[10px] font-medium text-gray-500">
+                {selectedPage.phone}
+                {selectedPage.email ? ` • ${selectedPage.email}` : ''}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1 relative">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Source Ad</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSourceAdSearch(!showSourceAdSearch)}
+                className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+              >
+                <div className="flex-1 overflow-hidden">
+                  <span className="font-bold block text-sm text-gray-900">{selectedSourceAd ? selectedSourceAd.label : 'Not from an ad'}</span>
+                  <p className="text-[10px] text-gray-500 leading-none mt-0.5">
+                    {selectedSourceAd && selectedSourceAd.id !== '' ? (selectedSourceAd.metaAdId ? `Ad ID: ${selectedSourceAd.metaAdId}` : `Platform: ${selectedSourceAd.platformName}`) : 'No ad attribution'}
+                  </p>
+                </div>
+                <div className={`transition-transform duration-200 ${showSourceAdSearch ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
+                </div>
+              </button>
+              {showSourceAdSearch && (
+                <div className="absolute top-full left-0 mt-2 w-full bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="relative mb-2">
+                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                      {ICONS.Search}
+                    </div>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search ad name or ID..."
+                      className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium"
+                      value={sourceAdSearchTerm}
+                      onChange={(e) => setSourceAdSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {sourceAdOptions.length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No active ads found</div>
+                    ) : (
+                      sourceAdOptions.map((option) => (
+                        <button
+                          key={option.id || 'not-from-ad'}
+                          type="button"
+                          onClick={() => { setSourceAdId(option.id || ''); setShowSourceAdSearch(false); setSourceAdSearchTerm(''); }}
+                          className="w-full px-4 py-2.5 text-left hover:bg-[#ebf4ff] rounded-lg group transition-colors"
+                        >
+                          <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]}">{option.label}</p>
+                          {option.id ? (
+                            <p className="text-[10px] text-gray-500 group-hover:${theme.colors.primary[600]}/60">{option.platformName ? `${option.platformName} • Ad ID: ${option.metaAdId}` : `Ad ID: ${option.metaAdId}`}</p>
+                          ) : (
+                            <p className="text-[10px] text-gray-500">Select this if the order was not created from an ad</p>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border border-gray-100 rounded-lg overflow-x-auto bg-white">
+          <table className="w-full min-w-max text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Product Item</th>
@@ -740,6 +974,14 @@ const OrderForm: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <DuplicateOrderModal
+        isOpen={showDuplicateModal}
+        duplicateOrder={duplicateOrder}
+        onConfirm={handleConfirmDuplicateOrder}
+        onCancel={handleCancelDuplicate}
+        isLoading={saving}
+      />
     </div>
   );
 };

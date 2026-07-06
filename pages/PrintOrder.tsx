@@ -148,23 +148,19 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
                 <span className="text-gray-400 font-bold uppercase print:text-gray-600">Subtotal</span>
                 <span className="font-bold text-gray-900 print:text-gray-800">{formatCurrency(order.subtotal)}</span>
               </div>
-              {order.discount > 0 && (
-                <div className="flex justify-between text-sm print:text-xs">
-                  <span className="text-gray-400 font-bold uppercase print:text-gray-600">Discount</span>
-                  <span className="font-bold text-red-500 print:text-red-600">-{formatCurrency(order.discount)}</span>
-                </div>
-              )}
-              {order.shipping > 0 && (
-                <div className="flex justify-between text-sm print:text-xs">
-                  <span className="text-gray-400 font-bold uppercase print:text-gray-600">Shipping</span>
-                  <span className="font-bold text-gray-900 print:text-gray-800">{formatCurrency(order.shipping)}</span>
-                </div>
-              )}
+              <div className="flex justify-between text-sm print:text-xs">
+                <span className="text-gray-400 font-bold uppercase print:text-gray-600">Discount</span>
+                <span className="font-bold text-emerald-600 print:text-emerald-600">-{formatCurrency(order.discount)}</span>
+              </div>
+              <div className="flex justify-between text-sm print:text-xs">
+                <span className="text-gray-400 font-bold uppercase print:text-gray-600">Shipping</span>
+                <span className="font-bold text-gray-900 print:text-gray-800">{formatCurrency(order.shipping)}</span>
+              </div>
               <div className="flex justify-between items-center py-6 border-t-2 border-[#0f2f57] print:py-3 print:border-t print:border-gray-400">
-                <span className="font-black text-gray-900 uppercase tracking-tighter print:text-gray-800">
+                <span className="font-black text-gray-900 uppercase tracking-tighter text-sm print:text-sm print:text-gray-800">
                   Net Total
                 </span>
-                <span className="font-black text-gray-900 print:text-gray-800">{formatCurrency(order.total)}</span>
+                <span className="font-black text-gray-900 text-sm print:text-sm print:text-gray-800">{formatCurrency(order.total)}</span>
               </div>
             </div>
           </div>

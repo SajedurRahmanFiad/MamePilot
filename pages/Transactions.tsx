@@ -386,9 +386,6 @@ const Transactions: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div>
-            <h2 className="md:text-2xl text-xl font-bold text-gray-900 tracking-tight">Financial Transactions</h2>
-          </div>
           <div className="hidden sm:block">
             <FilterBar
               title="Transactions"

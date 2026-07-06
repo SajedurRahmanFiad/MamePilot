@@ -47,6 +47,12 @@ import type {
   PaymentGatewaySettings,
   LicenseTier,
   AppCapabilityMap,
+  AgentSettings,
+  AgentConversation,
+  MetaAdsSettings,
+  AgentMessage,
+  AgentRunEvent,
+  AgentRunReceipt,
 } from '../../types';
 import { apiAction, type ApiActionOptions } from './apiClient';
 
@@ -104,7 +110,7 @@ export async function fetchProductQuantitySoldReport(params?: { filterRange?: st
 export async function fetchCustomerSalesReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<CustomerSalesReportData>('fetchCustomerSalesReport', params || {});
 }
-export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string }) {
+export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string }) {
   return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters });
 }
 export async function fetchOrderById(id: string) { return call<Order | null>('fetchOrderById', { id }); }
@@ -238,6 +244,8 @@ export async function updateCentralLicenseOverride(payload: { licenseApiUrl?: st
 export async function resetCentralLicenseOverride(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('resetCentralLicenseOverride', payload || {}, { timeoutMs: 30000 }); }
 export async function fetchPaymentGatewaySettings(): Promise<PaymentGatewaySettings> { return call<PaymentGatewaySettings>('fetchPaymentGatewaySettings'); }
 export async function updatePaymentGatewaySettings(updates: PaymentGatewaySettings): Promise<PaymentGatewaySettings> { return call<PaymentGatewaySettings>('updatePaymentGatewaySettings', updates); }
+export async function fetchAgentSettings(): Promise<AgentSettings> { return call<AgentSettings>('fetchAgentSettings'); }
+export async function updateAgentSettings(updates: AgentSettings): Promise<AgentSettings> { return call<AgentSettings>('updateAgentSettings', updates); }
 export async function fetchLocalUsageSummary(): Promise<LocalUsageSummary> { return call<LocalUsageSummary>('fetchLocalUsageSummary'); }
 export async function fetchCourierSettings(): Promise<CourierSettings> { return call<CourierSettings>('fetchCourierSettings'); }
 export async function updateCourierSettings(updates: {
@@ -246,6 +254,13 @@ export async function updateCourierSettings(updates: {
   paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number };
   fraudChecker?: { apiKey?: string };
 }): Promise<CourierSettings> { return call<CourierSettings>('updateCourierSettings', updates); }
+export async function fetchMetaAdsConnectionStatus(): Promise<any> { return call<any>('fetchMetaAdsConnectionStatus'); }
+export async function fetchMetaAdsSettings(): Promise<MetaAdsSettings> { return call<MetaAdsSettings>('fetchMetaAdsSettings'); }
+export async function updateMetaAdsSettings(updates: MetaAdsSettings): Promise<MetaAdsSettings> { return call<MetaAdsSettings>('updateMetaAdsSettings', updates); }
+export async function beginMetaAdsOAuth(payload?: { redirectAfter?: string }): Promise<{ authUrl: string; state: string }> { return call<{ authUrl: string; state: string }>('beginMetaAdsOAuth', payload || {}); }
+export async function syncMetaAds(): Promise<any> { return call<any>('syncMetaAds', {}, { timeoutMs: 120000 }); }
+export async function fetchMetaAds(filters?: { businessId?: string; adAccountId?: string; campaignId?: string; status?: string; from?: string; to?: string; search?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
+export async function fetchMetaAdById(id: string): Promise<any | null> { return call<any | null>('fetchMetaAdById', { id }); }
 export async function checkFraudCourierHistory(phone: string): Promise<FraudCheckResult> {
   return call<FraudCheckResult>('checkFraudCourierHistory', { phone }, { timeoutMs: 30000 });
 }

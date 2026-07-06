@@ -141,9 +141,7 @@ const Customers: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="md:text-2xl text-xl font-bold text-gray-900">Customers</h2>
-        </div>
+        <div />
         {canCreateCustomers && (
           <Button 
             onClick={() => navigate('/customers/new')}

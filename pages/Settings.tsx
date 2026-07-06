@@ -6,17 +6,20 @@ import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type PermissionsSettings, type Settings } from '../types';
+import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings } from '../types';
 import { 
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings, 
-  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings
+  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings
 } from '../src/hooks/useQueries';
 import { 
   useCreateCategory, useDeleteCategory, 
   useCreatePaymentMethod, useDeletePaymentMethod, 
   useCreateUnit, useDeleteUnit,
-  useBatchUpdateSettings
+  useBatchUpdateSettings,
+  useBeginMetaAdsOAuth,
+  useSyncMetaAds,
+  useUpdateMetaAdsSettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -46,6 +49,8 @@ const SettingsPage: React.FC = () => {
   const { data: courierSettingsData, isPending: courierLoading } = useCourierSettings();
   const { data: walletSettingsData, isPending: walletLoading } = useWalletSettings();
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
+  const { data: metaAdsStatus, isPending: metaAdsLoading } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
+  const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: categories = [], isPending: loadingCategories } = useCategories();
   const { data: paymentMethods = [], isPending: loadingPaymentMethods } = usePaymentMethods();
   const { data: units = [], isPending: loadingUnits } = useUnits();
@@ -59,6 +64,9 @@ const SettingsPage: React.FC = () => {
   const createUnitMutation = useCreateUnit();
   const deleteUnitMutation = useDeleteUnit();
   const batchUpdateMutation = useBatchUpdateSettings();
+  const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
+  const syncMetaAdsMutation = useSyncMetaAds();
+  const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const toast = useToastNotifications();
   const { hasCapability } = useCapabilities(Boolean(user));
 
@@ -103,6 +111,14 @@ const SettingsPage: React.FC = () => {
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
   );
+  const [metaAdsSettings, setMetaAdsSettings] = useState<MetaAdsSettings>({
+    appId: '',
+    appSecret: '',
+    redirectUri: '',
+    loginConfigId: '',
+    graphVersion: 'v25.0',
+    oauthScopes: 'email,public_profile,ads_read,business_management',
+  });
 
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as 'Income' | 'Expense' | 'Product' | 'Other', color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
@@ -163,6 +179,19 @@ const SettingsPage: React.FC = () => {
       setPermissionsSettings(clonePermissionsSettings(permissionsSettingsData));
     }
   }, [permissionsSettingsData]);
+
+  React.useEffect(() => {
+    if (metaAdsSettingsData) {
+      setMetaAdsSettings({
+        appId: metaAdsSettingsData.appId || '',
+        appSecret: metaAdsSettingsData.appSecret || '',
+        redirectUri: metaAdsSettingsData.redirectUri || '',
+        loginConfigId: metaAdsSettingsData.loginConfigId || '',
+        graphVersion: metaAdsSettingsData.graphVersion || 'v25.0',
+        oauthScopes: metaAdsSettingsData.oauthScopes || 'email,public_profile,ads_read,business_management',
+      });
+    }
+  }, [metaAdsSettingsData]);
 
   React.useEffect(() => {
     if (urlTab !== activeTab) {
@@ -240,7 +269,25 @@ const SettingsPage: React.FC = () => {
     };
   }, [courierSettings.carryBee.baseUrl, courierSettings.carryBee.clientId, courierSettings.carryBee.clientSecret, courierSettings.carryBee.clientContext]);
 
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits;
+  React.useEffect(() => {
+    const result = searchParams.get('meta_ads');
+    const message = searchParams.get('message') || '';
+    if (!result) return;
+
+    if (result === 'connected') {
+      toast.success('Meta Ads connected and synchronized.');
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    } else if (result === 'error') {
+      toast.error(message || 'Meta Ads connection failed.');
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('meta_ads');
+    nextParams.delete('message');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams, toast, queryClient]);
+
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading));
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
     setCompanySettings((current) => normalizeCompanySettings({
       ...current,
@@ -450,6 +497,37 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleSaveMetaAdsSettings = async () => {
+    const toastId = toast.loading('Saving Meta Ads settings...');
+    try {
+      await updateMetaAdsSettingsMutation.mutateAsync(metaAdsSettings);
+      toast.update(toastId, 'Meta Ads settings saved.', 'success');
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    } catch (err) {
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to save Meta Ads settings.', 'error');
+    }
+  };
+
+  const handleConnectMetaAds = async () => {
+    try {
+      const response = await beginMetaAdsOAuthMutation.mutateAsync({ redirectAfter: '/settings?tab=meta-ads' });
+      window.location.href = response.authUrl;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start Meta login.');
+    }
+  };
+
+  const handleSyncMetaAds = async () => {
+    const toastId = toast.loading('Synchronizing Meta Ads...');
+    try {
+      await syncMetaAdsMutation.mutateAsync();
+      toast.update(toastId, 'Meta Ads synchronized successfully.', 'success');
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    } catch (err) {
+      toast.update(toastId, err instanceof Error ? err.message : 'Meta Ads sync failed.', 'error');
+    }
+  };
+
   const handleDeleteCategory = async (id: string) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
     try {
@@ -591,6 +669,7 @@ const SettingsPage: React.FC = () => {
     { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales },
     { id: 'defaults', label: 'Defaults', icon: ICONS.Settings },
     { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll },
+    { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell },
     hasCapability('custom_roles') ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     { id: 'categories', label: 'Categories', icon: ICONS.More },
     { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking },
@@ -631,9 +710,7 @@ const SettingsPage: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay isLoading={loading} message="Loading settings..." />
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="md:text-2xl text-xl font-bold text-gray-900">Settings</h2>
-        </div>
+        <div />
         <Button
           onClick={handleSave}
           variant="primary"
@@ -1167,6 +1244,163 @@ const SettingsPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'meta-ads' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <section className="space-y-6">
+                <div className="flex flex-col gap-4 border-b border-gray-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-800">Meta Ads</h3>
+                    <p className="mt-2 max-w-3xl text-sm text-gray-500">
+                      Connect Meta to import Businesses, Ad Accounts, Campaigns, Ad Sets, Ads, creatives, and performance metrics.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" onClick={handleConnectMetaAds} loading={beginMetaAdsOAuthMutation.isPending} icon={ICONS.PlusCircle}>
+                      Connect Meta
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSyncMetaAds}
+                      loading={syncMetaAdsMutation.isPending}
+                      disabled={!metaAdsStatus?.connections?.length}
+                      icon={ICONS.Clock}
+                    >
+                      Sync Now
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Businesses</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">{metaAdsStatus?.summary?.totalBusinesses ?? 0}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Ad Accounts</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">{metaAdsStatus?.summary?.totalAdAccounts ?? 0}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Ads</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">{metaAdsStatus?.summary?.totalAds ?? 0}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h4 className="text-base font-black text-gray-900">Meta App Settings</h4>
+                      <p className="mt-1 text-sm text-gray-500">Store the Meta app credentials in the database so admins can manage them from Settings.</p>
+                    </div>
+                    <Button type="button" onClick={handleSaveMetaAdsSettings} loading={updateMetaAdsSettingsMutation.isPending} icon={ICONS.CheckCircle}>
+                      Save Meta App
+                    </Button>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>App ID</span>
+                      <input
+                        value={metaAdsSettings.appId}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, appId: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="Enter Meta App ID"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>App Secret</span>
+                      <input
+                        type="password"
+                        value={metaAdsSettings.appSecret}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, appSecret: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="Enter Meta App Secret"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Redirect URI</span>
+                      <input
+                        value={metaAdsSettings.redirectUri}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, redirectUri: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="https://your-domain/api/index.php?action=metaAdsOAuthCallback"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Login Config ID</span>
+                      <input
+                        value={metaAdsSettings.loginConfigId}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, loginConfigId: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="Optional"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Graph Version</span>
+                      <input
+                        value={metaAdsSettings.graphVersion}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, graphVersion: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="v25.0"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700 md:col-span-2">
+                      <span>OAuth Scopes</span>
+                      <input
+                        value={metaAdsSettings.oauthScopes}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, oauthScopes: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        placeholder="email,public_profile,ads_read,business_management"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className={`rounded-xl border p-4 ${metaAdsStatus?.configured ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50'}`}>
+                  <p className={`text-sm font-bold ${metaAdsStatus?.configured ? 'text-emerald-700' : 'text-amber-800'}`}>
+                    {metaAdsStatus?.configured ? 'Meta OAuth is configured.' : 'Meta OAuth needs a Meta App ID and App Secret.'}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold text-gray-600">
+                    {metaAdsStatus == null ? (
+                      'Loading...'
+                    ) : metaAdsStatus.redirectUri ? (
+                      <span className="break-all">Configured redirect URI: {metaAdsStatus.redirectUri}</span>
+                    ) : (
+                      'No redirect URI is configured. Save one above or leave blank to let the API infer the runtime callback URL.'
+                    )}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {(metaAdsStatus?.connections || []).length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-sm font-semibold text-gray-500">
+                      No Meta account is connected yet.
+                    </div>
+                  ) : (
+                    metaAdsStatus.connections.map((connection: any) => (
+                      <div key={connection.id} className="rounded-xl border border-gray-100 bg-white p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-black text-gray-900">{connection.metaUserName || connection.metaUserId || 'Meta Account'}</p>
+                            <p className="mt-1 text-xs font-semibold text-gray-500">
+                              Last synced: {connection.lastSyncedAt ? new Date(connection.lastSyncedAt).toLocaleString('en-BD') : 'Not synced yet'}
+                            </p>
+                          </div>
+                          <span className={`inline-flex max-w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${connection.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {connection.isActive ? 'Connected' : 'Inactive'}
+                          </span>
+                        </div>
+                        {connection.syncError && (
+                          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{connection.syncError}</p>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               </section>
             </div>

@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency, ICONS } from '../constants';
+import { StatCard } from '../components';
 import { useCustomer, useOrdersByCustomerId, useOrderSettings, useUsers } from '../src/hooks/useQueries';
 import { useCreateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -34,14 +35,21 @@ const CustomerDetails: React.FC = () => {
   const userMap = useMemo(() => new Map(users.map((entry) => [entry.id, entry.name])), [users]);
 
   // Calculate totals from orders - MOVED TO TOP BEFORE CONDITIONALS
-  const { totalRevenue, dueAmount } = useMemo(() => {
+  const { totalRevenue, dueAmount, completedOrdersCount, totalOrdersCount, averageOrderValue, paymentCompletionRate, fullyPaidOrdersCount } = useMemo(() => {
     const completedOrders = customerOrders.filter(o => o.status === OrderStatus.COMPLETED);
     const pendingOrders = customerOrders.filter(o => o.status === OrderStatus.PROCESSING || o.status === OrderStatus.PICKED);
+    const fullyPaid = customerOrders.filter(o => o.paidAmount >= o.total);
     
     const totalRevenue = completedOrders.reduce((sum, o) => sum + o.total, 0);
     const dueAmount = pendingOrders.reduce((sum, o) => sum + (o.total - o.paidAmount), 0);
+    const completedOrdersCount = completedOrders.length;
+    const totalOrdersCount = customerOrders.length;
+    const fullyPaidOrdersCount = fullyPaid.length;
     
-    return { totalRevenue, dueAmount };
+    const averageOrderValue = completedOrdersCount > 0 ? totalRevenue / completedOrdersCount : 0;
+    const paymentCompletionRate = totalOrdersCount > 0 ? (fullyPaidOrdersCount / totalOrdersCount) * 100 : 0;
+    
+    return { totalRevenue, dueAmount, completedOrdersCount, totalOrdersCount, averageOrderValue, paymentCompletionRate, fullyPaidOrdersCount };
   }, [customerOrders]);
 
   const getStatusColor = (status: OrderStatus) => {
@@ -135,6 +143,47 @@ const CustomerDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* KPI Cards - Analytical Metrics */}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard 
+          title="Average Order Value" 
+          value={formatCurrency(averageOrderValue)} 
+          numericValue={averageOrderValue}
+          showAbbreviated={averageOrderValue > 0}
+          icon={ICONS.Briefcase} 
+          bgColor="bg-indigo-600" 
+          textColor="text-white" 
+          iconBgColor="bg-indigo-700" 
+        />
+        <StatCard 
+          title="Payment Completion" 
+          value={`${paymentCompletionRate.toFixed(0)}%`} 
+          icon={ICONS.Check} 
+          bgColor="bg-emerald-600" 
+          textColor="text-white" 
+          iconBgColor="bg-emerald-700" 
+          subtotalAmount={`${fullyPaidOrdersCount} of ${totalOrdersCount}`}
+        />
+        <StatCard 
+          title="Repeat Purchase Rate" 
+          value={totalOrdersCount > 1 ? `${((completedOrdersCount / totalOrdersCount) * 100).toFixed(0)}%` : '—'} 
+          icon={ICONS.Transfer} 
+          bgColor="bg-purple-600" 
+          textColor="text-white" 
+          iconBgColor="bg-purple-700" 
+          subtotalAmount={`${completedOrdersCount} completed`}
+        />
+        <div className="p-4 flex items-start gap-3 text-left bg-gray-50 rounded-xl shadow-lg border border-gray-100">
+          <div className="bg-gray-200 p-3 rounded-lg flex items-center justify-center">
+            <div className="text-gray-400">{ICONS.AlertCircle}</div>
+          </div>
+          <div className="flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Customer Acquisition Cost</p>
+            <h3 className="text-sm font-semibold mt-1 text-gray-600">Please setup ads first</h3>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left Profile Info */}
         <div className="lg:col-span-1 space-y-6">
@@ -154,16 +203,32 @@ const CustomerDetails: React.FC = () => {
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Address</p>
                 <p className="text-sm text-gray-700 font-medium leading-relaxed">{customer.address}</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Revenue</p>
-                <p className="text-lg font-black text-gray-900">{formatCurrency(totalRevenue)}</p>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Orders</p>
+                  <p className="text-lg font-black text-gray-900">{totalOrdersCount}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Completed</p>
+                  <p className="text-lg font-black text-emerald-600">{completedOrdersCount}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
+                <div className="space-y-1 pt-4">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Revenue</p>
+                  <p className="text-lg font-black text-blue-600">{formatCurrency(totalRevenue)}</p>
+                </div>
+                <div className="space-y-1 pt-4">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Due Amount</p>
+                  <p className={`text-lg font-black ${dueAmount > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>{formatCurrency(dueAmount)}</p>
+                </div>
               </div>
             </div>
           </div>
 
           <div className="bg-[var(--primary-color,#0f2f57)] p-6 rounded-lg shadow-lg shadow-[var(--primary-color,#0f2f57)]/20 border border-[var(--primary-color,#0f2f57)] text-white">
-            <p className="text-[var(--primary-soft,#ebf4ff)] text-[10px] font-bold uppercase tracking-wider mb-1">Due Amount</p>
-            <h4 className="text-lg font-black">{formatCurrency(dueAmount)}</h4>
+            <p className="text-[var(--primary-soft,#ebf4ff)] text-[10px] font-bold uppercase tracking-wider mb-1">Customer Since</p>
+            <h4 className="text-lg font-black">{customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('en-BD', { month: 'short', year: 'numeric' }) : 'N/A'}</h4>
           </div>
         </div>
 

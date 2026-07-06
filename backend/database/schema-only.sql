@@ -13,6 +13,16 @@ CREATE TABLE IF NOT EXISTS users (
   phone VARCHAR(64) NOT NULL,
   role VARCHAR(32) NOT NULL,
   image LONGTEXT NULL,
+  email VARCHAR(255) NULL,
+  address TEXT NULL,
+  birthday DATE NULL,
+  nid_passport_copy LONGTEXT NULL,
+  gender VARCHAR(32) NULL,
+  blood_group VARCHAR(16) NULL,
+  nationality VARCHAR(128) NULL,
+  cv LONGTEXT NULL,
+  is_commission_based TINYINT(1) NOT NULL DEFAULT 0,
+  fixed_salary DECIMAL(12,2) NULL,
   password_hash VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -119,6 +129,12 @@ CREATE TABLE IF NOT EXISTS categories (
   KEY idx_categories_parent_id (parent_id),
   CONSTRAINT fk_categories_parent_id FOREIGN KEY (parent_id) REFERENCES categories (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Compatibility for fixed system categories
+ALTER TABLE `categories`
+  ADD COLUMN IF NOT EXISTS `is_system` BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE categories
+SET is_system = TRUE
+WHERE id IN ('income_sales', 'expense_purchases', 'expense_shipping');
 CREATE TABLE IF NOT EXISTS payment_methods (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -189,6 +205,17 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   CONSTRAINT fk_system_defaults_expense_category FOREIGN KEY (expense_category_id) REFERENCES categories (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Upgrade compatibility for existing databases
+ALTER TABLE `users`
+  ADD COLUMN IF NOT EXISTS `email` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `address` TEXT NULL,
+  ADD COLUMN IF NOT EXISTS `birthday` DATE NULL,
+  ADD COLUMN IF NOT EXISTS `nid_passport_copy` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `gender` VARCHAR(32) NULL,
+  ADD COLUMN IF NOT EXISTS `blood_group` VARCHAR(16) NULL,
+  ADD COLUMN IF NOT EXISTS `nationality` VARCHAR(128) NULL,
+  ADD COLUMN IF NOT EXISTS `cv` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `is_commission_based` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `fixed_salary` DECIMAL(12,2) NULL;
 ALTER TABLE `system_defaults`
   ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57';
@@ -263,6 +290,178 @@ CREATE TABLE IF NOT EXISTS payment_gateway_settings (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_settings (
+  id VARCHAR(64) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 0,
+  main_provider VARCHAR(32) NOT NULL DEFAULT 'anthropic',
+  anthropic_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  anthropic_base_url VARCHAR(500) NULL,
+  anthropic_api_key VARCHAR(500) NULL,
+  anthropic_model VARCHAR(255) NULL,
+  anthropic_organization VARCHAR(255) NULL,
+  anthropic_project VARCHAR(255) NULL,
+  openai_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  openai_base_url VARCHAR(500) NULL,
+  openai_api_key VARCHAR(500) NULL,
+  openai_model VARCHAR(255) NULL,
+  openai_organization VARCHAR(255) NULL,
+  openai_project VARCHAR(255) NULL,
+  google_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  google_base_url VARCHAR(500) NULL,
+  google_api_key VARCHAR(500) NULL,
+  google_model VARCHAR(255) NULL,
+  google_organization VARCHAR(255) NULL,
+  google_project VARCHAR(255) NULL,
+  groq_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  groq_base_url VARCHAR(500) NULL,
+  groq_api_key VARCHAR(500) NULL,
+  groq_model VARCHAR(255) NULL,
+  show_reasoning_summaries TINYINT(1) NOT NULL DEFAULT 1,
+  show_tool_activity TINYINT(1) NOT NULL DEFAULT 1,
+  max_reasoning_steps INT NOT NULL DEFAULT 8,
+  max_tool_calls INT NOT NULL DEFAULT 12,
+  query_row_limit INT NOT NULL DEFAULT 100,
+  query_timeout_ms INT NOT NULL DEFAULT 15000,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_conversations (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL DEFAULT 'New conversation',
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  last_message_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_conversations_user_id (user_id),
+  KEY idx_agent_conversations_last_message_at (last_message_at),
+  CONSTRAINT fk_agent_conversations_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'queued',
+  main_provider VARCHAR(32) NULL,
+  main_model VARCHAR(255) NULL,
+  deterministic_provider VARCHAR(32) NULL,
+  deterministic_model VARCHAR(255) NULL,
+  current_step INT NOT NULL DEFAULT 0,
+  max_steps INT NOT NULL DEFAULT 0,
+  stream_token VARCHAR(128) NULL,
+  error_message TEXT NULL,
+  started_at DATETIME NULL,
+  finished_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_runs_conversation_id (conversation_id),
+  KEY idx_agent_runs_user_id (user_id),
+  KEY idx_agent_runs_status (status),
+  KEY idx_agent_runs_stream_token (stream_token),
+  CONSTRAINT fk_agent_runs_conversation_id FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_runs_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NULL,
+  role VARCHAR(16) NOT NULL,
+  content LONGTEXT NULL,
+  reasoning_summary LONGTEXT NULL,
+  metadata_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_messages_conversation_id (conversation_id),
+  KEY idx_agent_messages_run_id (run_id),
+  KEY idx_agent_messages_created_at (created_at),
+  CONSTRAINT fk_agent_messages_conversation_id FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_messages_run_id FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_run_events (
+  id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  event_type VARCHAR(64) NOT NULL,
+  sequence_no INT NOT NULL,
+  payload_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_run_events_run_id (run_id),
+  KEY idx_agent_run_events_sequence_no (sequence_no),
+  CONSTRAINT fk_agent_run_events_run_id FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_tool_calls (
+  id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  step_no INT NOT NULL DEFAULT 0,
+  tool_name VARCHAR(64) NOT NULL,
+  tool_input_json LONGTEXT NULL,
+  tool_result_json LONGTEXT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  duration_ms INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_tool_calls_run_id (run_id),
+  KEY idx_agent_tool_calls_step_no (step_no),
+  CONSTRAINT fk_agent_tool_calls_run_id FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS agent_db_query_audit (
+  id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NULL,
+  tool_call_id VARCHAR(64) NULL,
+  user_id VARCHAR(64) NOT NULL,
+  sql_text LONGTEXT NOT NULL,
+  normalized_sql LONGTEXT NULL,
+  row_count INT NOT NULL DEFAULT 0,
+  duration_ms INT NOT NULL DEFAULT 0,
+  safety_flags_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_db_query_audit_run_id (run_id),
+  KEY idx_agent_db_query_audit_tool_call_id (tool_call_id),
+  KEY idx_agent_db_query_audit_user_id (user_id),
+  CONSTRAINT fk_agent_db_query_audit_run_id FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE SET NULL,
+  CONSTRAINT fk_agent_db_query_audit_tool_call_id FOREIGN KEY (tool_call_id) REFERENCES agent_tool_calls (id) ON DELETE SET NULL,
+  CONSTRAINT fk_agent_db_query_audit_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `payment_gateway_settings`
+  ADD COLUMN IF NOT EXISTS `piprapay_base_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `piprapay_api_key` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `piprapay_merchant_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `piprapay_ipn_secret` VARCHAR(500) NULL;
+ALTER TABLE `agent_settings`
+  ADD COLUMN IF NOT EXISTS `enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `main_provider` VARCHAR(32) NOT NULL DEFAULT 'anthropic',
+  ADD COLUMN IF NOT EXISTS `anthropic_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `anthropic_base_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `anthropic_api_key` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `anthropic_model` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `anthropic_organization` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `anthropic_project` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `openai_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `openai_base_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `openai_api_key` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `openai_model` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `openai_organization` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `openai_project` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `google_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `google_base_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `google_api_key` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `google_model` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `google_organization` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `google_project` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `groq_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `groq_base_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `groq_api_key` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `groq_model` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `show_reasoning_summaries` TINYINT(1) NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS `show_tool_activity` TINYINT(1) NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS `max_reasoning_steps` INT NOT NULL DEFAULT 8,
+  ADD COLUMN IF NOT EXISTS `max_tool_calls` INT NOT NULL DEFAULT 12,
+  ADD COLUMN IF NOT EXISTS `query_row_limit` INT NOT NULL DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS `query_timeout_ms` INT NOT NULL DEFAULT 15000;
 CREATE TABLE IF NOT EXISTS notifications (
   id VARCHAR(64) NOT NULL,
   system_key VARCHAR(191) NULL,
@@ -403,6 +602,190 @@ CREATE TABLE IF NOT EXISTS payment_webhook_logs (
   PRIMARY KEY (id),
   UNIQUE KEY uq_payment_webhook_logs_gateway_event (gateway, event_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_ads_oauth_states (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  redirect_after VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME DEFAULT NULL,
+  PRIMARY KEY (id),
+  KEY idx_meta_ads_oauth_states_user (user_id),
+  KEY idx_meta_ads_oauth_states_expires (expires_at),
+  CONSTRAINT fk_meta_ads_oauth_states_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_ads_connections (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  meta_user_id VARCHAR(64) DEFAULT NULL,
+  meta_user_name VARCHAR(255) DEFAULT NULL,
+  access_token TEXT NOT NULL,
+  token_type VARCHAR(64) DEFAULT NULL,
+  expires_at DATETIME DEFAULT NULL,
+  scopes TEXT DEFAULT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME DEFAULT NULL,
+  sync_error TEXT DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ads_connections_user_meta (user_id, meta_user_id),
+  KEY idx_meta_ads_connections_user (user_id),
+  CONSTRAINT fk_meta_ads_connections_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_businesses (
+  id VARCHAR(64) NOT NULL,
+  connection_id VARCHAR(64) NOT NULL,
+  meta_business_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  verification_status VARCHAR(64) DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_businesses_meta_id (meta_business_id),
+  KEY idx_meta_businesses_connection (connection_id),
+  CONSTRAINT fk_meta_businesses_connection FOREIGN KEY (connection_id) REFERENCES meta_ads_connections (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_ad_accounts (
+  id VARCHAR(64) NOT NULL,
+  connection_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_account_id VARCHAR(64) NOT NULL,
+  account_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  currency VARCHAR(16) DEFAULT NULL,
+  account_status VARCHAR(64) DEFAULT NULL,
+  timezone_name VARCHAR(128) DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ad_accounts_meta_id (meta_ad_account_id),
+  KEY idx_meta_ad_accounts_connection (connection_id),
+  KEY idx_meta_ad_accounts_business (business_id),
+  CONSTRAINT fk_meta_ad_accounts_connection FOREIGN KEY (connection_id) REFERENCES meta_ads_connections (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ad_accounts_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_campaigns (
+  id VARCHAR(64) NOT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_campaign_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  objective VARCHAR(128) DEFAULT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  buying_type VARCHAR(64) DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  stop_time DATETIME DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_campaigns_meta_id (meta_campaign_id),
+  KEY idx_meta_campaigns_account (ad_account_id),
+  KEY idx_meta_campaigns_business (business_id),
+  CONSTRAINT fk_meta_campaigns_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_campaigns_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_ad_sets (
+  id VARCHAR(64) NOT NULL,
+  campaign_id VARCHAR(64) DEFAULT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_set_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  daily_budget DECIMAL(14,2) DEFAULT NULL,
+  lifetime_budget DECIMAL(14,2) DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  end_time DATETIME DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ad_sets_meta_id (meta_ad_set_id),
+  KEY idx_meta_ad_sets_campaign (campaign_id),
+  KEY idx_meta_ad_sets_account (ad_account_id),
+  KEY idx_meta_ad_sets_business (business_id),
+  CONSTRAINT fk_meta_ad_sets_campaign FOREIGN KEY (campaign_id) REFERENCES meta_campaigns (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ad_sets_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ad_sets_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS meta_ads (
+  id VARCHAR(64) NOT NULL,
+  ad_set_id VARCHAR(64) DEFAULT NULL,
+  campaign_id VARCHAR(64) DEFAULT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  configured_status VARCHAR(64) DEFAULT NULL,
+  objective VARCHAR(128) DEFAULT NULL,
+  creative_id VARCHAR(64) DEFAULT NULL,
+  thumbnail_url TEXT DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  video_url TEXT DEFAULT NULL,
+  primary_text TEXT DEFAULT NULL,
+  headline TEXT DEFAULT NULL,
+  description TEXT DEFAULT NULL,
+  call_to_action VARCHAR(128) DEFAULT NULL,
+  placements_json JSON DEFAULT NULL,
+  spend DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  reach BIGINT NOT NULL DEFAULT 0,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  ctr DECIMAL(12,6) NOT NULL DEFAULT 0.000000,
+  cpc DECIMAL(14,6) NOT NULL DEFAULT 0.000000,
+  cpm DECIMAL(14,6) NOT NULL DEFAULT 0.000000,
+  conversions DECIMAL(14,2) DEFAULT NULL,
+  results DECIMAL(14,2) DEFAULT NULL,
+  roas DECIMAL(14,6) DEFAULT NULL,
+  metrics_json JSON DEFAULT NULL,
+  creative_json JSON DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  created_time DATETIME DEFAULT NULL,
+  updated_time DATETIME DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  end_time DATETIME DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ads_meta_id (meta_ad_id),
+  KEY idx_meta_ads_status (effective_status, status),
+  KEY idx_meta_ads_updated_time (updated_time),
+  KEY idx_meta_ads_ad_set (ad_set_id),
+  KEY idx_meta_ads_campaign (campaign_id),
+  KEY idx_meta_ads_account (ad_account_id),
+  KEY idx_meta_ads_business (business_id),
+  CONSTRAINT fk_meta_ads_ad_set FOREIGN KEY (ad_set_id) REFERENCES meta_ad_sets (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ads_campaign FOREIGN KEY (campaign_id) REFERENCES meta_campaigns (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ads_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ads_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_ads_settings (
+  id VARCHAR(64) NOT NULL,
+  app_id VARCHAR(255) DEFAULT NULL,
+  app_secret VARCHAR(500) DEFAULT NULL,
+  redirect_uri VARCHAR(500) DEFAULT NULL,
+  login_config_id VARCHAR(255) DEFAULT NULL,
+  graph_version VARCHAR(64) DEFAULT NULL,
+  oauth_scopes VARCHAR(500) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS payroll_settings (
   id VARCHAR(64) NOT NULL,
   singleton TINYINT(1) NOT NULL DEFAULT 1,
@@ -434,6 +817,7 @@ CREATE TABLE IF NOT EXISTS orders (
   carrybee_consignment_id VARCHAR(255) NULL,
   steadfast_consignment_id VARCHAR(255) NULL,
   paperfly_tracking_number VARCHAR(255) NULL,
+  source_ad VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
@@ -614,6 +998,8 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
   CONSTRAINT fk_wallet_entries_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 DROP VIEW IF EXISTS orders_with_customer_creator;
+ALTER TABLE `orders`
+  ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL;
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,
@@ -641,7 +1027,8 @@ SELECT
   o.deleted_by AS deletedBy,
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
-  o.paperfly_tracking_number AS paperflyTrackingNumber
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.source_ad AS sourceAd
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by
@@ -930,7 +1317,7 @@ ON DUPLICATE KEY UPDATE
   is_active = VALUES(is_active),
   display_order = VALUES(display_order);
 INSERT INTO users (id, name, phone, role, image, password_hash, created_at, updated_at)
-VALUES ('developer-1', 'Developer', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+VALUES ('developer-1', 'Fiad', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   phone = VALUES(phone),

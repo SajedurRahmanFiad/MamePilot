@@ -13,6 +13,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   whitelabel: 'Whitelabel',
   custom_roles: 'Custom Roles',
   courier_automation: 'Courier Automation',
+  enterprise_ai_agent: 'Enterprise AI Agent',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -28,6 +29,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   whitelabel: false,
   custom_roles: true,
   courier_automation: true,
+  enterprise_ai_agent: false,
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];

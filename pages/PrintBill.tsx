@@ -158,7 +158,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
           {bill.discount > 0 && (
             <div className="flex justify-between text-sm print:text-xs">
               <span className="text-gray-400 font-bold uppercase print:text-gray-600">Discount</span>
-              <span className="font-bold text-red-500 print:text-red-600">-{formatCurrency(bill.discount)}</span>
+              <span className="font-bold text-emerald-600 print:text-emerald-600">-{formatCurrency(bill.discount)}</span>
             </div>
           )}
           {bill.shipping > 0 && (
@@ -168,10 +168,10 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
             </div>
           )}
           <div className="flex justify-between items-center py-6 border-t-2 border-[#0f2f57] print:py-3 print:border-t print:border-gray-400">
-            <span className="font-black text-gray-900 uppercase tracking-tighter print:text-gray-800">
+            <span className="font-black text-gray-900 uppercase tracking-tighter text-sm print:text-sm print:text-gray-800">
               Total Payable
             </span>
-            <span className="font-black text-gray-900 print:text-gray-800">{formatCurrency(bill.total)}</span>
+            <span className="font-black text-gray-900 text-sm print:text-sm print:text-gray-800">{formatCurrency(bill.total)}</span>
           </div>
         </div>
       </div>
@@ -183,14 +183,6 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
           </p>
           <p className="text-xs text-gray-600 font-medium italic leading-relaxed print:text-gray-700">
             {bill.notes}
-          </p>
-        </div>
-      )}
-
-      {(invoiceSettings?.footer || db.settings.invoice.footer) && (
-        <div className="bg-gray-50 p-4 rounded-[10px] border border-gray-100 print:bg-white print:p-3 print:rounded-lg print:border-gray-300">
-          <p className="text-sm text-gray-500 font-medium leading-relaxed whitespace-pre-line print:text-gray-700">
-            {invoiceSettings?.footer || db.settings.invoice.footer}
           </p>
         </div>
       )}

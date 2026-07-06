@@ -59,7 +59,12 @@ import {
   fetchCentralLicenseTiers,
   fetchLocalUsageSummary,
   fetchPaymentGatewaySettings,
+  fetchAgentSettings,
   fetchCourierSettings,
+  fetchMetaAdById,
+  fetchMetaAds,
+  fetchMetaAdsSettings,
+  fetchMetaAdsConnectionStatus,
   fetchPermissionsSettings,
   fetchPayrollSettings,
   fetchPayrollEmployees,
@@ -110,6 +115,7 @@ import type {
   ServiceSubscriptionOverview,
   WalletActivityEntry,
   UserActivityPerformanceLogEntry,
+  MetaAdsSettings,
   UserActivityPerformanceReportPage,
   WalletEntryType,
   WalletBalanceCard,
@@ -118,6 +124,7 @@ import type {
   RecycleBinItem,
   LocalUsageSummary,
   PaymentGatewaySettings,
+  AgentSettings,
   LicenseTier,
 } from '../../types';
 import { db } from '../../db';
@@ -336,7 +343,7 @@ export function useOrderSearchPreview(
 export function useOrdersPage(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
-  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string },
+  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string },
   options?: { enabled?: boolean }
 ): UseQueryResult<{ data: Order[]; count: number }, Error> {
   return useQuery({
@@ -849,6 +856,15 @@ export function usePaymentGatewaySettings(enabled: boolean = true): UseQueryResu
   });
 }
 
+export function useAgentSettings(enabled: boolean = true): UseQueryResult<AgentSettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'agent'],
+    queryFn: fetchAgentSettings,
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
 export function useLocalUsageSummary(enabled: boolean = true): UseQueryResult<LocalUsageSummary, Error> {
   return useQuery({
     queryKey: ['local-usage-summary'],
@@ -990,6 +1006,57 @@ export function useCourierSettings(): UseQueryResult<CourierSettings, Error> {
     queryKey: ['settings', 'courier'],
     queryFn: fetchCourierSettings,
     staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useMetaAdsConnectionStatus(enabled: boolean = true): UseQueryResult<any, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'connection-status'],
+    queryFn: fetchMetaAdsConnectionStatus,
+    staleTime: 60 * 1000,
+    enabled,
+  });
+}
+
+export function useMetaAdsSettings(enabled: boolean = true): UseQueryResult<MetaAdsSettings, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'settings'],
+    queryFn: fetchMetaAdsSettings,
+    staleTime: 60 * 1000,
+    enabled,
+  });
+}
+
+export function useMetaAds(
+  filters?: { businessId?: string; adAccountId?: string; campaignId?: string; status?: string; from?: string; to?: string; search?: string },
+  enabled: boolean = true
+): UseQueryResult<any, Error> {
+  const normalizedFilters = {
+    businessId: String(filters?.businessId || ''),
+    adAccountId: String(filters?.adAccountId || ''),
+    campaignId: String(filters?.campaignId || ''),
+    status: String(filters?.status || ''),
+    from: String(filters?.from || ''),
+    to: String(filters?.to || ''),
+    search: String(filters?.search || '').trim(),
+  };
+
+  return useQuery({
+    queryKey: ['meta-ads', 'list', normalizedFilters],
+    queryFn: () => fetchMetaAds(normalizedFilters),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled,
+  });
+}
+
+export function useMetaAd(id: string | undefined, enabled: boolean = true): UseQueryResult<any | null, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'detail', id],
+    queryFn: () => fetchMetaAdById(id || ''),
+    enabled: enabled && !!id,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

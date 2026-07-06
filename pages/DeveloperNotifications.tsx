@@ -300,10 +300,6 @@ const DeveloperNotifications: React.FC = () => {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-black text-gray-900">Notification Management</h2>
-      </div>
-
       <section className="rounded-[1.75rem] border border-gray-100 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 border-b border-gray-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
