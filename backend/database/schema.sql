@@ -423,7 +423,9 @@ ALTER TABLE `payment_gateway_settings`
   ADD COLUMN IF NOT EXISTS `piprapay_base_url` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `piprapay_api_key` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `piprapay_merchant_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_ipn_secret` VARCHAR(500) NULL;
+  ADD COLUMN IF NOT EXISTS `piprapay_ipn_secret` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `piprapay_webhook_url` VARCHAR(1000) NULL,
+  ADD COLUMN IF NOT EXISTS `piprapay_return_url` VARCHAR(1000) NULL;
 ALTER TABLE `agent_settings`
   ADD COLUMN IF NOT EXISTS `enabled` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `main_provider` VARCHAR(32) NOT NULL DEFAULT 'anthropic',
