@@ -48,5 +48,12 @@ if ($data) {
 ## 5. Recommended implementation behavior
 - Save the local subscription reference and the gateway payment id in the local payment record.
 - On verification success, mark the payment as approved and extend the subscription.
-- On verification failure or cancellation, mark the payment as rejected or cancelled and keep the subscription in a non-renewed state.
+- On verification failure or cancellation, mark the payment as failed or canceled and keep the subscription in a non-renewed state.
 - Log webhook and verification responses for debugging and reconciliation.
+
+## 6. Handling payment outcomes explicitly
+- If the verification response returns `pending`, leave the payment record as `processing` and retry verification later.
+- If the verification response returns `completed` (or equivalent success values), update the local payment row to `approved`, mark it processed, and extend the subscription.
+- If the verification response returns `failed`, update the local payment row to `failed`, mark it processed, and stop the renewal flow.
+- If the verification response returns `canceled` (single `l`), update the local payment row to `canceled`, mark it processed, and show that the user cancelled the payment.
+- If the verification response returns anything else, update the local payment row to `error`, mark it processed, and show a fallback message telling the user to contact the Mame Studios team for assistance.

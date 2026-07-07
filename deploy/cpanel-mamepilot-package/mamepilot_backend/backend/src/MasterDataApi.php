@@ -2190,7 +2190,10 @@ final class MasterDataApi extends BaseService
         if ($eventId !== '') {
             try {
                 $result = $this->verifyAndApplyPipraPayPayment($eventId, $reference, $params);
-                $paymentState = !empty($result['paid']) ? 'success' : (in_array((string) ($result['status'] ?? ''), ['failed', 'cancelled', 'canceled', 'expired'], true) ? 'failed' : 'processing');
+                $paymentOutcome = (string) ($result['paymentOutcome'] ?? '');
+                $paymentState = $paymentOutcome === 'completed'
+                    ? 'success'
+                    : (in_array($paymentOutcome, ['canceled', 'cancelled'], true) ? 'cancelled' : (in_array($paymentOutcome, ['failed', 'unknown'], true) ? 'failed' : 'processing'));
                 $reference = trim((string) ($result['reference'] ?? $reference));
             } catch (\Throwable $exception) {
                 $paymentState = 'processing';
@@ -2305,8 +2308,30 @@ final class MasterDataApi extends BaseService
         if ($reference === '') {
             $reference = trim((string) ($verified['reference'] ?? ''));
         }
-        $isSuccess = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true);
-        $isFailure = in_array($status, ['failed', 'cancelled', 'canceled', 'expired'], true);
+
+        $paymentOutcome = 'pending';
+        $databaseStatus = 'processing';
+        $paymentMessage = 'Payment is still pending verification.';
+        if (in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true)) {
+            $paymentOutcome = 'completed';
+            $databaseStatus = 'approved';
+            $paymentMessage = 'Payment verified successfully. Your subscription has been renewed.';
+        } elseif (in_array($status, ['failed', 'failure', 'declined', 'expired'], true)) {
+            $paymentOutcome = 'failed';
+            $databaseStatus = 'failed';
+            $paymentMessage = 'Payment failed. Please try again or use a different payment method.';
+        } elseif (in_array($status, ['cancelled', 'canceled'], true)) {
+            $paymentOutcome = 'canceled';
+            $databaseStatus = 'canceled';
+            $paymentMessage = 'Payment was cancelled by the user. No charges were made.';
+        } elseif ($status !== '') {
+            $paymentOutcome = 'unknown';
+            $databaseStatus = 'error';
+            $paymentMessage = 'Something went wrong while verifying the payment. Please contact the Mame Studios team for assistance.';
+        }
+
+        $isSuccess = $paymentOutcome === 'completed';
+        $isFailure = in_array($paymentOutcome, ['failed', 'canceled', 'unknown'], true);
         $payment = $reference !== ''
             ? $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE local_reference = :reference LIMIT 1', [':reference' => $reference])
             : null;
@@ -2322,12 +2347,12 @@ final class MasterDataApi extends BaseService
                 error_log('[PipraPay DEBUG] matched payment row: ' . json_encode(['id' => $payment['id'] ?? null, 'gateway_payment_id' => $payment['gateway_payment_id'] ?? null, 'transaction_id' => $payment['transaction_id'] ?? null, 'status' => $payment['status'] ?? null]));
             } catch (\Throwable $_e) {
             }
-            $nextStatus = $isSuccess ? 'approved' : ($isFailure ? 'rejected' : (string) ($payment['status'] ?? 'processing'));
+            $nextStatus = $isSuccess ? 'approved' : ($isFailure ? $databaseStatus : (string) ($payment['status'] ?? 'processing'));
             $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
-                'gateway_payment_id' => ($isSuccess || $isFailure) ? null : ($eventId ?: ($payment['gateway_payment_id'] ?? null)),
-                'transaction_id' => ($isSuccess || $isFailure) ? null : ($eventId ?: ($payment['transaction_id'] ?? $reference)),
+                'gateway_payment_id' => $isSuccess || $isFailure ? null : ($eventId ?: ($payment['gateway_payment_id'] ?? null)),
+                'transaction_id' => $isSuccess || $isFailure ? null : ($eventId ?: ($payment['transaction_id'] ?? $reference)),
                 'status' => $nextStatus,
-                'processed_at' => $isSuccess ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
+                'processed_at' => $isSuccess || $isFailure ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
                 'raw_payload' => $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]),
             ]);
 
@@ -2360,6 +2385,9 @@ final class MasterDataApi extends BaseService
             'success' => true,
             'paid' => $isSuccess,
             'status' => $status,
+            'paymentOutcome' => $paymentOutcome,
+            'paymentStatus' => $databaseStatus,
+            'message' => $paymentMessage,
             'reference' => $reference,
             'paymentFound' => $payment !== null,
             'duplicateLog' => $hasDuplicateLog,

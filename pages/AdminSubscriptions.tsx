@@ -81,11 +81,13 @@ const AdminSubscriptions: React.FC = () => {
             const result = await verifyPipraPayPayment({ reference, ppId });
             queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
             const resultStatus = String(result?.status || '').toLowerCase();
+            const paymentOutcome = String(result?.paymentOutcome || resultStatus || '').toLowerCase();
+            const messageFromResult = typeof result?.message === 'string' && result.message.trim() ? result.message : '';
             // Log verification status for debugging
             // eslint-disable-next-line no-console
-            console.log('PipraPay verification response status:', resultStatus, result);
+            console.log('PipraPay verification response status:', resultStatus, paymentOutcome, result);
 
-            if (resultStatus === 'pending') {
+            if (resultStatus === 'pending' || paymentOutcome === 'pending') {
               // eslint-disable-next-line no-console
               console.log('PipraPay status pending — will retry in 5s', { reference, ppId });
               await new Promise((resolve) => window.setTimeout(resolve, 5000));
@@ -95,8 +97,8 @@ const AdminSubscriptions: React.FC = () => {
               return;
             }
 
-            if (['completed', 'complete', 'success', 'successful', 'paid'].includes(resultStatus)) {
-              const message = 'Payment verified successfully. Your subscription has been renewed.';
+            if (['completed', 'complete', 'success', 'successful', 'paid'].includes(paymentOutcome) || ['completed', 'complete', 'success', 'successful', 'paid'].includes(resultStatus)) {
+              const message = messageFromResult || 'Payment verified successfully. Your subscription has been renewed.';
               toast.success(message);
               if (!cancelled) {
                 setCheckoutMessage(null);
@@ -106,7 +108,25 @@ const AdminSubscriptions: React.FC = () => {
               return;
             }
 
-            const message = 'Payment failed or could not be verified. Please try again or use a different payment method.';
+            if (paymentOutcome === 'canceled' || paymentOutcome === 'cancelled') {
+              const message = messageFromResult || 'Payment was cancelled by the user. No charges were made.';
+              toast.warning(message);
+              if (!cancelled) {
+                setCheckoutMessage(null);
+              }
+              return;
+            }
+
+            if (paymentOutcome === 'failed') {
+              const message = messageFromResult || 'Payment failed. Please try again or use a different payment method.';
+              toast.error(message);
+              if (!cancelled) {
+                setCheckoutMessage(null);
+              }
+              return;
+            }
+
+            const message = messageFromResult || 'Something went wrong while verifying the payment. Please contact the Mame Studios team for assistance.';
             toast.error(message);
             if (!cancelled) {
               setCheckoutMessage(null);
