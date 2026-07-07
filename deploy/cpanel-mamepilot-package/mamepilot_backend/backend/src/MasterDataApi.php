@@ -2190,8 +2190,12 @@ final class MasterDataApi extends BaseService
 
         if ($eventId === '' && $reference !== '' && $this->tableExists('service_subscription_payments')) {
             $payment = $this->database->fetchOne(
-                'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
-                [':reference' => $reference]
+                'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                [
+                    ':reference' => $reference,
+                    ':transaction_reference' => $reference,
+                    ':gateway_reference' => $reference,
+                ]
             );
             $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
         }
@@ -2217,8 +2221,12 @@ final class MasterDataApi extends BaseService
                 : (in_array($status, ['cancelled', 'canceled'], true) ? 'canceled' : 'failed');
             if ($this->tableExists('service_subscription_payments')) {
                 $payment = $this->database->fetchOne(
-                    'SELECT id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
-                    [':reference' => $reference]
+                    'SELECT id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                    [
+                        ':reference' => $reference,
+                        ':transaction_reference' => $reference,
+                        ':gateway_reference' => $reference,
+                    ]
                 );
                 if (is_array($payment) && !empty($payment['id'])) {
                     $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
@@ -2365,8 +2373,12 @@ final class MasterDataApi extends BaseService
         $isFailure = in_array($paymentOutcome, ['failed', 'canceled', 'unknown'], true);
         $payment = $reference !== ''
                 ? $this->database->fetchOne(
-                    'SELECT * FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
-                    [':reference' => $reference]
+                    'SELECT * FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                    [
+                        ':reference' => $reference,
+                        ':transaction_reference' => $reference,
+                        ':gateway_reference' => $reference,
+                    ]
                 )
                 : null;
         if ($payment === null && $eventId !== '') {

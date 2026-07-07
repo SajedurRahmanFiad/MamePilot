@@ -53,6 +53,7 @@ import { useBackgroundSync } from './src/hooks/useBackgroundSync';
 import { useMaintenanceStatus } from './src/hooks/useQueries';
 import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
+import PipraPayReturnHandler from './components/PipraPayReturnHandler';
 
 const Login = lazyPage(() => import('./pages/Login'));
 const MaintenancePage = lazyPage(() => import('./pages/Maintenance'));
@@ -250,11 +251,13 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   }
 
   return (
-    <Suspense fallback={<RouteFallback />}>
-      <Routes>
-      <Route path="/maintenance" element={
-        maintenanceEnabled ? <MaintenancePage /> : (isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Navigate to="/login" replace />)
-      } />
+    <>
+      <PipraPayReturnHandler />
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+        <Route path="/maintenance" element={
+          maintenanceEnabled ? <MaintenancePage /> : (isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Navigate to="/login" replace />)
+        } />
       {/* Public login route - redirect to dashboard if logged in */}
       <Route path="/login" element={
         isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Login />
@@ -487,6 +490,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       <Route path="*" element={isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
+    </>
   );
 };
 
