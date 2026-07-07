@@ -656,6 +656,8 @@ export type AppCapabilityKey =
   | 'custom_roles'
   | 'courier_automation'
   | 'marketing'
+  | 'automatic_leads'
+  | 'mamecx'
   | 'enterprise_ai_agent';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;

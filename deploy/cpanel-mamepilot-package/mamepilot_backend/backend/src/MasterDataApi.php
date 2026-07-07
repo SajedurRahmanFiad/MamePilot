@@ -977,7 +977,7 @@ final class MasterDataApi extends BaseService
     public function fetchPaymentMethods(array $params = []): array
     {
         $activeOnly = !array_key_exists('activeOnly', $params) || (bool) $params['activeOnly'];
-            $sql = 'SELECT * FROM payment_methods WHERE is_active = 1';
+        $sql = 'SELECT * FROM payment_methods';
         if ($activeOnly) {
             $sql .= ' WHERE is_active = 1';
         }

@@ -67,6 +67,7 @@ export const ICONS = {
   Delete: <Trash2 size={18} />,
   Transfer: <ArrowRightLeft size={18} />,
   Check: <Check size={20} />,
+  CheckCircle: <Check size={20} />,
   AlertCircle: <AlertCircle size={20} />,
   Info: <Info size={20} />,
   FraudChecker: <ShieldAlert size={20} />,

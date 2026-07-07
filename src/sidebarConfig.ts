@@ -51,7 +51,7 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         label: 'Leads',
         to: '/leads',
         icon: ICONS.Customers,
-        visible: ({ can, hasCapability }) => can('customers.view') && hasCapability('sales'),
+        visible: ({ can, hasCapability }) => can('customers.view') && hasCapability('sales') && hasCapability('automatic_leads'),
       },
       {
         key: 'customers',

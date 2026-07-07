@@ -9,7 +9,7 @@ use RuntimeException;
 final class MetaAdsApi extends BaseService
 {
     private const DEFAULT_GRAPH_VERSION = 'v25.0';
-    private const DEFAULT_SCOPES = 'email,public_profile,ads_read,business_management';
+    private const DEFAULT_SCOPES = 'public_profile,ads_read,business_management';
 
     public function fetchMetaAdsConnectionStatus(array $params = []): array
     {
@@ -154,41 +154,74 @@ final class MetaAdsApi extends BaseService
     public function syncMetaAds(array $params = []): array
     {
         $this->requireAdmin();
-        return $this->syncAllConnections();
+        $result = $this->syncAllConnections();
+        $this->saveSyncResultsToCache($result);
+        return $result;
     }
 
     public function syncMetaAdsFromCli(): array
     {
-        return $this->syncAllConnections();
+        $result = $this->syncAllConnections();
+        $this->saveSyncResultsToCache($result);
+        return $result;
+    }
+
+    public function fetchMetaAdsSyncCache(array $params = []): array
+    {
+        $this->currentUser();
+        $cached = $this->getCachedSyncResults();
+        if ($cached === null) {
+            return [
+                'ok' => false,
+                'error' => 'No cached sync data available. Please run a sync first.',
+                'lastSyncedAt' => null,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'data' => $cached['data'],
+            'lastSyncedAt' => $cached['lastSyncedAt'],
+            'syncDurationMs' => $cached['syncDurationMs'] ?? null,
+        ];
     }
 
     public function fetchMetaAds(array $params = []): array
     {
         $this->currentUser();
         $businessId = trim((string) ($params['businessId'] ?? ''));
+        $businessOperator = trim((string) ($params['businessOperator'] ?? '='));
         $accountId = trim((string) ($params['adAccountId'] ?? ''));
+        $accountOperator = trim((string) ($params['adAccountOperator'] ?? '='));
         $campaignId = trim((string) ($params['campaignId'] ?? ''));
+        $campaignOperator = trim((string) ($params['campaignOperator'] ?? '='));
         $status = trim((string) ($params['status'] ?? ''));
+        $statusOperator = trim((string) ($params['statusOperator'] ?? '='));
         $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
         $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));
         $search = trim((string) ($params['search'] ?? ''));
+        $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
 
         $where = [];
         $bindings = [];
         if ($businessId !== '') {
-            $where[] = 'ma.business_id = :business_id';
+            $operator = $businessOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.business_id {$operator} :business_id";
             $bindings[':business_id'] = $businessId;
         }
         if ($accountId !== '') {
-            $where[] = 'ma.ad_account_id = :ad_account_id';
+            $operator = $accountOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.ad_account_id {$operator} :ad_account_id";
             $bindings[':ad_account_id'] = $accountId;
         }
         if ($campaignId !== '') {
-            $where[] = 'ma.campaign_id = :campaign_id';
+            $operator = $campaignOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.campaign_id {$operator} :campaign_id";
             $bindings[':campaign_id'] = $campaignId;
         }
         if ($status !== '') {
-            $where[] = 'COALESCE(ma.effective_status, ma.status, ma.configured_status, "") = :status';
+            $operator = $statusOperator === '≠' ? '!=' : '=';
+            $where[] = "COALESCE(ma.effective_status, ma.status, ma.configured_status, \"\") {$operator} :status";
             $bindings[':status'] = $status;
         }
         if ($from !== '') {
@@ -200,8 +233,14 @@ final class MetaAdsApi extends BaseService
             $bindings[':to_date'] = $to;
         }
         if ($search !== '') {
-            $where[] = 'ma.name LIKE :search';
-            $bindings[':search'] = '%' . $search . '%';
+            if ($searchOperator === '≠') {
+                $where[] = 'ma.name NOT LIKE :search';
+            } elseif ($searchOperator === '=') {
+                $where[] = 'ma.name = :search';
+            } else {
+                $where[] = 'ma.name LIKE :search';
+            }
+            $bindings[':search'] = $searchOperator === '=' ? $search : '%' . $search . '%';
         }
 
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
@@ -244,9 +283,9 @@ final class MetaAdsApi extends BaseService
              INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
              LEFT JOIN meta_ad_sets mas ON mas.id = ma.ad_set_id
-             WHERE ma.id = :id OR ma.meta_ad_id = :id
+             WHERE ma.id = :id_local OR ma.meta_ad_id = :id_meta
              LIMIT 1',
-            [':id' => $id]
+            [':id_local' => $id, ':id_meta' => $id]
         );
 
         return $row === null ? null : $this->mapAdDetails($row);
@@ -379,7 +418,6 @@ final class MetaAdsApi extends BaseService
                 'creative{id,name,thumbnail_url,image_url,object_story_spec,asset_feed_spec,call_to_action_type}',
                 'insights.date_preset(maximum){spend,reach,impressions,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas}',
             ]),
-            'effective_status' => '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
             'limit' => 100,
         ]);
         foreach ($ads as $ad) {
@@ -831,12 +869,21 @@ final class MetaAdsApi extends BaseService
             'metaAdId' => (string) $row['meta_ad_id'],
             'name' => (string) ($row['name'] ?? ''),
             'campaignName' => (string) ($row['campaign_name'] ?? ''),
+            'campaignId' => $this->nullableString($row['meta_campaign_id'] ?? null),
             'adAccountName' => (string) ($row['ad_account_name'] ?? ''),
             'businessName' => (string) ($row['business_name'] ?? 'Unassigned Business'),
             'status' => $this->displayStatus($row),
             'spend' => (float) ($row['spend'] ?? 0),
             'reach' => (int) ($row['reach'] ?? 0),
             'impressions' => (int) ($row['impressions'] ?? 0),
+            'clicks' => (int) ($row['clicks'] ?? 0),
+            'ctr' => (float) ($row['ctr'] ?? 0),
+            'cpc' => (float) ($row['cpc'] ?? 0),
+            'cpm' => (float) ($row['cpm'] ?? 0),
+            'conversions' => $row['conversions'] === null ? null : (float) $row['conversions'],
+            'results' => $row['results'] === null ? null : (float) $row['results'],
+            'roas' => $row['roas'] === null ? null : (float) $row['roas'],
+            'createdAt' => $this->toIso($row['created_time'] ?? null),
             'lastUpdatedAt' => $this->toIso($row['updated_time'] ?? $row['last_synced_at'] ?? $row['updated_at'] ?? null),
             'thumbnailUrl' => $this->nullableString($row['thumbnail_url'] ?? null),
         ];
@@ -984,5 +1031,65 @@ final class MetaAdsApi extends BaseService
             $result[] = $item;
         }
         return $result;
+    }
+
+    private function ensureMetaAdsSyncCacheTable(): void
+    {
+        if ($this->tableExists('meta_ads_sync_cache')) {
+            return;
+        }
+
+        $this->database->execute(
+            'CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
+                id VARCHAR(36) PRIMARY KEY,
+                sync_data LONGTEXT,
+                last_synced_at DATETIME,
+                sync_duration_ms INT,
+                error_message LONGTEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        $this->database->execute('CREATE INDEX IF NOT EXISTS idx_meta_ads_sync_cache_synced_at ON meta_ads_sync_cache(last_synced_at DESC)');
+    }
+
+    private function saveSyncResultsToCache(array $syncResult): void
+    {
+        $this->ensureMetaAdsSyncCacheTable();
+        
+        $id = 'meta-ads-sync-default';
+        $syncData = json_encode($syncResult);
+        $now = $this->database->nowUtc();
+        
+        $existing = $this->database->fetchOne('SELECT id FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => $id]);
+        
+        if ($existing !== null) {
+            $this->database->execute(
+                'UPDATE meta_ads_sync_cache SET sync_data = :data, last_synced_at = :now, error_message = NULL, updated_at = :now WHERE id = :id',
+                [':id' => $id, ':data' => $syncData, ':now' => $now]
+            );
+        } else {
+            $this->database->execute(
+                'INSERT INTO meta_ads_sync_cache (id, sync_data, last_synced_at, created_at, updated_at) VALUES (:id, :data, :now, :now, :now)',
+                [':id' => $id, ':data' => $syncData, ':now' => $now]
+            );
+        }
+    }
+
+    private function getCachedSyncResults(): ?array
+    {
+        $this->ensureMetaAdsSyncCacheTable();
+        
+        $row = $this->database->fetchOne('SELECT sync_data, last_synced_at, sync_duration_ms FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => 'meta-ads-sync-default']);
+        if ($row === null) {
+            return null;
+        }
+
+        $syncData = json_decode((string) ($row['sync_data'] ?? '{}'), true);
+        return [
+            'data' => is_array($syncData) ? $syncData : [],
+            'lastSyncedAt' => $row['last_synced_at'],
+            'syncDurationMs' => (int) ($row['sync_duration_ms'] ?? 0),
+        ];
     }
 }

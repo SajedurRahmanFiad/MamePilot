@@ -65,6 +65,7 @@ import {
   fetchMetaAds,
   fetchMetaAdsSettings,
   fetchMetaAdsConnectionStatus,
+  fetchMetaAdsSyncCache,
   fetchPermissionsSettings,
   fetchPayrollSettings,
   fetchPayrollEmployees,
@@ -1028,17 +1029,35 @@ export function useMetaAdsSettings(enabled: boolean = true): UseQueryResult<Meta
 }
 
 export function useMetaAds(
-  filters?: { businessId?: string; adAccountId?: string; campaignId?: string; status?: string; from?: string; to?: string; search?: string },
+  filters?: {
+    businessId?: string;
+    businessOperator?: string;
+    adAccountId?: string;
+    adAccountOperator?: string;
+    campaignId?: string;
+    campaignOperator?: string;
+    status?: string;
+    statusOperator?: string;
+    from?: string;
+    to?: string;
+    search?: string;
+    searchOperator?: string;
+  },
   enabled: boolean = true
 ): UseQueryResult<any, Error> {
   const normalizedFilters = {
     businessId: String(filters?.businessId || ''),
+    businessOperator: String(filters?.businessOperator || '='),
     adAccountId: String(filters?.adAccountId || ''),
+    adAccountOperator: String(filters?.adAccountOperator || '='),
     campaignId: String(filters?.campaignId || ''),
+    campaignOperator: String(filters?.campaignOperator || '='),
     status: String(filters?.status || ''),
+    statusOperator: String(filters?.statusOperator || '='),
     from: String(filters?.from || ''),
     to: String(filters?.to || ''),
     search: String(filters?.search || '').trim(),
+    searchOperator: String(filters?.searchOperator || 'contains'),
   };
 
   return useQuery({
@@ -1057,6 +1076,15 @@ export function useMetaAd(id: string | undefined, enabled: boolean = true): UseQ
     enabled: enabled && !!id,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
+  });
+}
+
+export function useMetaAdsSyncCache(enabled: boolean = true): UseQueryResult<any, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'sync-cache'],
+    queryFn: fetchMetaAdsSyncCache,
+    staleTime: 10 * 1000,
+    enabled,
   });
 }
 

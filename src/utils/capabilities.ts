@@ -3,18 +3,20 @@ import type { AppCapabilityKey, AppCapabilityMap } from '../../types';
 export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   dashboard: 'Dashboard',
   inventory: 'Inventory',
-  sales: 'Sales',
-  recycle_bin_undoer: 'Recycle Bin & Undoer',
-  purchases: 'Purchases',
-  banking: 'Banking',
-  human_resources: 'Human Resources',
-  advanced_reports: 'Advanced Reports',
-  fraud_checker: 'Fraud Checker',
-  whitelabel: 'Whitelabel',
-  custom_roles: 'Custom Roles',
+  sales: 'Sales & Customer Management',
+  recycle_bin_undoer: 'Recovery & Undo',
+  purchases: 'Purchases & Vendor Management',
+  banking: 'Banking & Cash Flow',
+  human_resources: 'Human Resources & Payroll',
+  advanced_reports: 'Advanced Reports & Insights',
+  fraud_checker: 'Fraud Protection',
+  whitelabel: 'White-label & Branding',
+  custom_roles: 'Custom Roles & Permissions',
   courier_automation: 'Courier Automation',
-  marketing: 'Marketing',
-  enterprise_ai_agent: 'Enterprise AI Agent',
+  marketing: 'Marketing & Ad Management',
+  automatic_leads: 'Automatic Lead & Customer Management',
+  mamecx: 'MameCX',
+  enterprise_ai_agent: 'AI Assistant Mame',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -31,6 +33,8 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   custom_roles: true,
   courier_automation: true,
   marketing: false,
+  automatic_leads: false,
+  mamecx: false,
   enterprise_ai_agent: false,
 };
 
@@ -51,6 +55,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/banking(?:\/|$)|^\/transactions(?:\/|$)/, capability: 'banking' },
   { pattern: /^\/users(?:\/|$)|^\/payroll(?:\/|$)|^\/wallet(?:\/|$)|^\/human-resource-dashboard(?:\/|$)/, capability: 'human_resources' },
   { pattern: /^\/social-media-ads(?:\/|$)|^\/meta-ads(?:\/|$)/, capability: 'marketing' },
+  { pattern: /^\/leads(?:\/|$)/, capability: 'automatic_leads' },
   { pattern: /^\/reports(?:\/|$)/, capability: 'advanced_reports' },
   { pattern: /^\/recycle-bin(?:\/|$)|^\/undoer(?:\/|$)/, capability: 'recycle_bin_undoer' },
   { pattern: /^\/fraud-checker(?:\/|$)/, capability: 'fraud_checker' },

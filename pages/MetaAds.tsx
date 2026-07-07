@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { BarChart3, Clock3, MousePointerClick, RefreshCw, Search } from 'lucide-react';
+import { BarChart3, MousePointerClick, RefreshCw } from 'lucide-react';
 import { Card, Button } from '../components';
+import DynamicFilterBar from '../components/DynamicFilterBar';
+import FilterBar, { type FilterRange } from '../components/FilterBar';
 import { formatCurrency, ICONS } from '../constants';
 import { formatDate, formatDateTimeParts } from '../utils';
-import { useMetaAd, useMetaAds } from '../src/hooks/useQueries';
-import { useSyncMetaAds } from '../src/hooks/useMutations';
+import { useMetaAd, useMetaAds, useMetaAdsSyncCache } from '../src/hooks/useQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 
 const statusBadgeClass = (status?: string | null): string => {
@@ -46,112 +47,178 @@ const Field: React.FC<{ label: string; value?: React.ReactNode }> = ({ label, va
   </div>
 );
 
+
 const MetaAdsList: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToastNotifications();
-  const [filters, setFilters] = useState({
+  const [queryFilters, setQueryFilters] = useState({
     businessId: '',
+    businessOperator: '=',
     adAccountId: '',
+    adAccountOperator: '=',
     campaignId: '',
+    campaignOperator: '=',
     status: '',
+    statusOperator: '=',
     from: '',
     to: '',
     search: '',
+    searchOperator: 'contains',
   });
-  const { data, isPending, error, refetch } = useMetaAds(filters);
-  const syncMutation = useSyncMetaAds();
+  const [dynamicFilters, setDynamicFilters] = useState<any[]>([]);
+  const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
+  const [customDates, setCustomDates] = useState({ from: '', to: '' });
+  const { data, isPending, error, refetch } = useMetaAds(queryFilters);
+  const { refetch: refetchSyncCache, isFetching: isFetchingSyncCache } = useMetaAdsSyncCache(false);
 
   const filterOptions = data?.filters || { businesses: [], adAccounts: [], campaigns: [], statuses: [] };
+  const ads = useMemo(() => data?.ads || [], [data?.ads]);
+  const selectedBusinessId = useMemo(() => dynamicFilters.find((filter) => filter.type === 'Business')?.value || '', [dynamicFilters]);
+  const selectedAdAccountId = useMemo(() => dynamicFilters.find((filter) => filter.type === 'Ad Account')?.value || '', [dynamicFilters]);
+
+  const adAccounts = useMemo(() => {
+    const rows = filterOptions.adAccounts || [];
+    return rows.filter((account: any) => !selectedBusinessId || account.businessId === selectedBusinessId);
+  }, [filterOptions.adAccounts, selectedBusinessId]);
+
   const campaigns = useMemo(() => {
     const rows = filterOptions.campaigns || [];
     return rows.filter((campaign: any) => {
-      if (filters.businessId && campaign.businessId !== filters.businessId) return false;
-      if (filters.adAccountId && campaign.adAccountId !== filters.adAccountId) return false;
+      if (selectedBusinessId && campaign.businessId !== selectedBusinessId) return false;
+      if (selectedAdAccountId && campaign.adAccountId !== selectedAdAccountId) return false;
       return true;
     });
-  }, [filterOptions.campaigns, filters.businessId, filters.adAccountId]);
-  const adAccounts = useMemo(() => {
-    const rows = filterOptions.adAccounts || [];
-    return rows.filter((account: any) => !filters.businessId || account.businessId === filters.businessId);
-  }, [filterOptions.adAccounts, filters.businessId]);
+  }, [filterOptions.campaigns, selectedBusinessId, selectedAdAccountId]);
 
-  const updateFilter = (key: keyof typeof filters, value: string) => {
-    setFilters((current) => ({
+  const filterDefinitions = useMemo(() => {
+    const businesses = (filterOptions.businesses || []).map((business: any) => ({ value: String(business.id), label: String(business.name) }));
+    const accounts = (adAccounts || []).map((account: any) => ({ value: String(account.id), label: String(account.name) }));
+    const campaignOptions = (campaigns || []).map((campaign: any) => ({ value: String(campaign.id), label: String(campaign.name) }));
+    const statuses = (filterOptions.statuses || []).map((status: string) => ({ value: String(status), label: prettyStatus(status) }));
+    const adNames = Array.from(new Set((ads || []).map((ad: any) => String(ad.name || '').trim()).filter(Boolean))).map((name) => ({ value: name, label: name }));
+
+    return [
+      { type: 'Business', operators: ['=', '≠'] as const, values: businesses, defaultOperator: '=' as const },
+      { type: 'Ad Account', operators: ['=', '≠'] as const, values: accounts, defaultOperator: '=' as const },
+      { type: 'Campaign', operators: ['=', '≠'] as const, values: campaignOptions, defaultOperator: '=' as const },
+      { type: 'Status', operators: ['=', '≠'] as const, values: statuses, defaultOperator: '=' as const },
+      { type: 'Ad Name', operators: ['=', '≠', 'contains'] as const, values: adNames, defaultOperator: 'contains' as const, allowCustomValue: true },
+    ];
+  }, [adAccounts, campaigns, filterOptions.businesses, filterOptions.statuses, ads]);
+
+  const applyDynamicFilters = (nextFilters: any[]) => {
+    const normalizedFilters = nextFilters.filter((filter) => ['Business', 'Ad Account', 'Campaign', 'Status', 'Ad Name'].includes(filter.type));
+    const businessFilter = normalizedFilters.find((filter) => filter.type === 'Business');
+    const adAccountFilter = normalizedFilters.find((filter) => filter.type === 'Ad Account');
+    const campaignFilter = normalizedFilters.find((filter) => filter.type === 'Campaign');
+    const statusFilter = normalizedFilters.find((filter) => filter.type === 'Status');
+    const adNameFilter = normalizedFilters.find((filter) => filter.type === 'Ad Name');
+
+    setDynamicFilters(normalizedFilters);
+    setQueryFilters((current) => ({
       ...current,
-      [key]: value,
-      ...(key === 'businessId' ? { adAccountId: '', campaignId: '' } : {}),
-      ...(key === 'adAccountId' ? { campaignId: '' } : {}),
+      businessId: businessFilter?.value || '',
+      businessOperator: businessFilter?.operator || '=',
+      adAccountId: adAccountFilter?.value || '',
+      adAccountOperator: adAccountFilter?.operator || '=',
+      campaignId: campaignFilter?.value || '',
+      campaignOperator: campaignFilter?.operator || '=',
+      status: statusFilter?.value || '',
+      statusOperator: statusFilter?.operator || '=',
+      search: adNameFilter?.value || '',
+      searchOperator: adNameFilter?.operator || 'contains',
     }));
   };
 
+  const applyDateRange = (nextRange: FilterRange, nextCustomDates: { from: string; to: string }) => {
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const yearStart = new Date(today.getFullYear(), 0, 1);
+
+    const buildBoundary = (date: Date) => date.toISOString().slice(0, 10);
+
+    let from = '';
+    let to = '';
+
+    if (nextRange === 'Today') {
+      from = todayIso;
+      to = todayIso;
+    } else if (nextRange === 'This Week') {
+      from = buildBoundary(weekStart);
+      to = todayIso;
+    } else if (nextRange === 'This Month') {
+      from = buildBoundary(monthStart);
+      to = todayIso;
+    } else if (nextRange === 'This Year') {
+      from = buildBoundary(yearStart);
+      to = todayIso;
+    } else if (nextRange === 'Custom') {
+      from = nextCustomDates.from;
+      to = nextCustomDates.to;
+    }
+
+    setQueryFilters((current) => ({ ...current, from, to }));
+  };
+
+  const handleFilterRangeChange = (nextRange: FilterRange) => {
+    setFilterRange(nextRange);
+    applyDateRange(nextRange, customDates);
+  };
+
+  const handleCustomDatesChange = (nextCustomDates: { from: string; to: string }) => {
+    setCustomDates(nextCustomDates);
+    applyDateRange(filterRange, nextCustomDates);
+  };
+
   const handleSync = async () => {
-    const toastId = toast.loading('Synchronizing Meta Ads...');
+    const toastId = toast.loading('Refreshing cached Meta Ads data...');
     try {
-      await syncMutation.mutateAsync();
-      toast.update(toastId, 'Meta Ads synchronized.', 'success');
+      await refetchSyncCache();
+      toast.update(toastId, 'Meta Ads data refreshed from cache.', 'success');
       refetch();
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Meta Ads sync failed.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to refresh Meta Ads data.', 'error');
     }
   };
 
   const summary = data?.summary || {};
-  const ads = data?.ads || [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Social Media Ads</p>
-          <h1 className="mt-2 text-2xl font-black text-gray-900">Meta Ads</h1>
+        <div className="flex-1">
+          <FilterBar
+            filterRange={filterRange}
+            setFilterRange={handleFilterRangeChange}
+            customDates={customDates}
+            setCustomDates={handleCustomDatesChange}
+            compact
+          />
         </div>
-        <Button type="button" variant="outline" onClick={handleSync} loading={syncMutation.isPending} icon={<RefreshCw size={18} />}>
+        <Button type="button" variant="outline" onClick={handleSync} loading={isFetchingSyncCache} icon={<RefreshCw size={18} />}>
           Sync Meta
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
-        <MetricCard label="Businesses" value={summary.totalBusinesses ?? 0} icon={ICONS.Briefcase} />
-        <MetricCard label="Ad Accounts" value={summary.totalAdAccounts ?? 0} icon={ICONS.Banking} />
-        <MetricCard label="Campaigns" value={summary.totalCampaigns ?? 0} icon={<BarChart3 size={18} />} />
-        <MetricCard label="Total Ads" value={summary.totalAds ?? 0} icon={ICONS.Bell} />
-        <MetricCard label="Active Ads" value={summary.activeAds ?? 0} icon={ICONS.Check} />
-        <MetricCard label="Inactive Ads" value={summary.inactiveAds ?? 0} icon={ICONS.Clock} />
-        <MetricCard label="Spend" value={formatCurrency(summary.totalSpend ?? 0)} icon={ICONS.Reports} />
+      <div className="min-w-0 flex-1">
+        <DynamicFilterBar
+          filterDefinitions={filterDefinitions}
+          initialFilters={dynamicFilters}
+          freeTextLabel="Ad Name"
+          onApply={applyDynamicFilters}
+          className="w-full"
+        />
       </div>
-
-      <Card elevated className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <select value={filters.businessId} onChange={(event) => updateFilter('businessId', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700">
-            <option value="">All Businesses</option>
-            {(filterOptions.businesses || []).map((business: any) => <option key={business.id} value={business.id}>{business.name}</option>)}
-          </select>
-          <select value={filters.adAccountId} onChange={(event) => updateFilter('adAccountId', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700">
-            <option value="">All Ad Accounts</option>
-            {adAccounts.map((account: any) => <option key={account.id} value={account.id}>{account.name}</option>)}
-          </select>
-          <select value={filters.campaignId} onChange={(event) => updateFilter('campaignId', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700">
-            <option value="">All Campaigns</option>
-            {campaigns.map((campaign: any) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
-          </select>
-          <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700">
-            <option value="">All Statuses</option>
-            {(filterOptions.statuses || []).map((status: string) => <option key={status} value={status}>{prettyStatus(status)}</option>)}
-          </select>
-          <input type="date" value={filters.from} onChange={(event) => updateFilter('from', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700" />
-          <input type="date" value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-700" />
-        </div>
-        <div className="mt-3 flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-          <Search size={18} className="text-gray-400" />
-          <input
-            type="search"
-            value={filters.search}
-            onChange={(event) => updateFilter('search', event.target.value)}
-            placeholder="Search ad name"
-            className="w-full bg-transparent py-2 text-sm font-semibold outline-none"
-          />
-        </div>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <MetricCard label="Active Campaigns" value={summary.activeCampaigns ?? 0} icon={<BarChart3 size={18} />} />
+        <MetricCard label="Active Ad Sets" value={summary.activeAdSets ?? 0} icon={ICONS.Banking} />
+        <MetricCard label="Active Ads" value={summary.activeAds ?? 0} icon={ICONS.Check} />
+        <MetricCard label="Today's Spend" value={formatCurrency(summary.todaySpend ?? 0)} icon={ICONS.Reports} />
+        <MetricCard label="Current ROAS" value={summary.currentRoas == null ? '-' : Number(summary.currentRoas).toFixed(2)} />
+      </div>
 
       {error && (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
@@ -162,7 +229,7 @@ const MetaAdsList: React.FC = () => {
       {isPending ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="h-72 animate-pulse rounded-xl border border-gray-100 bg-white" />
+            <div key={index} className="h-60 animate-pulse rounded-xl border border-gray-100 bg-white" />
           ))}
         </div>
       ) : ads.length === 0 ? (
@@ -170,38 +237,40 @@ const MetaAdsList: React.FC = () => {
           <p className="text-sm font-semibold text-gray-500">No Meta ads found for the selected filters.</p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {ads.map((ad: any) => (
             <button
               type="button"
               key={ad.id}
               onClick={() => navigate(`/meta-ads/${ad.id}`)}
-              className="overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              className="group overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
             >
-              <div className="aspect-[16/9] bg-gray-100">
+              <div className="relative aspect-[16/9] bg-gray-100">
                 {ad.thumbnailUrl ? (
                   <img src={ad.thumbnailUrl} alt={ad.name} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-gray-300">{ICONS.Bell}</div>
                 )}
+                <span className={`absolute top-2 right-2 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${statusBadgeClass(ad.status)}`}>
+                  {prettyStatus(ad.status)}
+                </span>
               </div>
-              <div className="space-y-4 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="line-clamp-2 text-base font-black text-gray-900">{ad.name}</h3>
-                    <p className="mt-1 truncate text-xs font-bold text-gray-500">{ad.campaignName || 'No campaign'}</p>
+              <div className="p-3">
+                <h3 className="line-clamp-1 text-sm font-bold text-gray-900">{ad.name}</h3>
+                <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">{ad.campaignName || 'No campaign'}</p>
+                <div className="mt-2.5 grid grid-cols-3 gap-2 border-t border-gray-100 pt-2.5 text-center">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Impressions</p>
+                    <p className="text-sm font-bold text-gray-900">{formatNumber(ad.metrics?.impressions ?? 0)}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${statusBadgeClass(ad.status)}`}>
-                    {prettyStatus(ad.status)}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Field label="Ad Account" value={ad.adAccountName} />
-                  <Field label="Business" value={ad.businessName} />
-                  <Field label="Spend" value={formatCurrency(ad.spend)} />
-                  <Field label="Reach" value={formatNumber(ad.reach)} />
-                  <Field label="Impressions" value={formatNumber(ad.impressions)} />
-                  <Field label="Updated" value={ad.lastUpdatedAt ? formatDate(ad.lastUpdatedAt) : '-'} />
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Clicks</p>
+                    <p className="text-sm font-bold text-gray-900">{formatNumber(ad.metrics?.clicks ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">CTR</p>
+                    <p className="text-sm font-bold text-gray-900">{Number(ad.metrics?.ctr ?? 0).toFixed(2)}%</p>
+                  </div>
                 </div>
               </div>
             </button>

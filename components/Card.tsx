@@ -34,6 +34,8 @@ interface StatCardProps {
   profitValue?: number;
   subtotalAmount?: string; // Optional: amount to show in brackets, e.g. "৳ 670"
   subtotalNumericValue?: number; // For abbreviated subtotal display
+  subtitle?: string;
+  subtitleTone?: 'positive' | 'negative' | 'neutral';
   onClick?: () => void;
   className?: string;
   numericValue?: number; // For abbreviated display with tooltip
@@ -83,7 +85,7 @@ const statCardVariants: Record<StatCardVariant, { bg: string; text: string; icon
   },
 };
 
-export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant = 'primary', bgColor, textColor: textColorProp, iconBgColor: iconBgColorProp, isProfitCard = false, profitValue, subtotalAmount, onClick, className = '', numericValue, showAbbreviated = false, subtotalNumericValue }) => {
+export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant = 'primary', bgColor, textColor: textColorProp, iconBgColor: iconBgColorProp, isProfitCard = false, profitValue, subtotalAmount, subtitle, subtitleTone = 'neutral', onClick, className = '', numericValue, showAbbreviated = false, subtotalNumericValue }) => {
   const style = statCardVariants[variant];
   
   // Use provided colors or determine from profit card logic
@@ -124,6 +126,14 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
     subtotalAmount && <span className="text-sm font-semibold">({subtotalAmount})</span>
   );
 
+  const subtitleClassName = textColor === 'text-white'
+    ? 'text-white/80'
+    : subtitleTone === 'positive'
+      ? 'text-emerald-600'
+      : subtitleTone === 'negative'
+        ? 'text-red-600'
+        : 'text-gray-500';
+
   return (
     <Container
       type={onClick ? 'button' : undefined}
@@ -140,6 +150,7 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
           {valueDisplay}
           {subtotalDisplay}
         </h3>
+        {subtitle && <p className={`mt-1 text-xs font-semibold ${subtitleClassName}`}>{subtitle}</p>}
       </div>
     </Container>
   );

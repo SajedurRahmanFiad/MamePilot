@@ -10,7 +10,7 @@ import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, ty
 import { 
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings, 
-  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings
+  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncCache
 } from '../src/hooks/useQueries';
 import { 
   useCreateCategory, useDeleteCategory, 
@@ -18,7 +18,6 @@ import {
   useCreateUnit, useDeleteUnit,
   useBatchUpdateSettings,
   useBeginMetaAdsOAuth,
-  useSyncMetaAds,
   useUpdateMetaAdsSettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -51,6 +50,7 @@ const SettingsPage: React.FC = () => {
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
   const { data: metaAdsStatus, isPending: metaAdsLoading } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
+  const { refetch: refetchMetaAdsSyncCache, isFetching: isFetchingMetaAdsSyncCache } = useMetaAdsSyncCache(false);
   const { data: categories = [], isPending: loadingCategories } = useCategories();
   const { data: paymentMethods = [], isPending: loadingPaymentMethods } = usePaymentMethods();
   const { data: units = [], isPending: loadingUnits } = useUnits();
@@ -65,7 +65,6 @@ const SettingsPage: React.FC = () => {
   const deleteUnitMutation = useDeleteUnit();
   const batchUpdateMutation = useBatchUpdateSettings();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
-  const syncMetaAdsMutation = useSyncMetaAds();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const toast = useToastNotifications();
   const { hasCapability } = useCapabilities(Boolean(user));
@@ -117,7 +116,7 @@ const SettingsPage: React.FC = () => {
     redirectUri: '',
     loginConfigId: '',
     graphVersion: 'v25.0',
-    oauthScopes: 'email,public_profile,ads_read,business_management',
+    oauthScopes: 'public_profile,ads_read,business_management',
   });
 
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as 'Income' | 'Expense' | 'Product' | 'Other', color: '#10B981', parentId: '' });
@@ -188,7 +187,7 @@ const SettingsPage: React.FC = () => {
         redirectUri: metaAdsSettingsData.redirectUri || '',
         loginConfigId: metaAdsSettingsData.loginConfigId || '',
         graphVersion: metaAdsSettingsData.graphVersion || 'v25.0',
-        oauthScopes: metaAdsSettingsData.oauthScopes || 'email,public_profile,ads_read,business_management',
+        oauthScopes: metaAdsSettingsData.oauthScopes || 'public_profile,ads_read,business_management',
       });
     }
   }, [metaAdsSettingsData]);
@@ -518,13 +517,13 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleSyncMetaAds = async () => {
-    const toastId = toast.loading('Synchronizing Meta Ads...');
+    const toastId = toast.loading('Refreshing cached Meta Ads data...');
     try {
-      await syncMetaAdsMutation.mutateAsync();
-      toast.update(toastId, 'Meta Ads synchronized successfully.', 'success');
+      await refetchMetaAdsSyncCache();
+      toast.update(toastId, 'Meta Ads data refreshed from cache.', 'success');
       queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Meta Ads sync failed.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to refresh Meta Ads data.', 'error');
     }
   };
 
@@ -1267,7 +1266,7 @@ const SettingsPage: React.FC = () => {
                       type="button"
                       variant="outline"
                       onClick={handleSyncMetaAds}
-                      loading={syncMetaAdsMutation.isPending}
+                      loading={isFetchingMetaAdsSyncCache}
                       disabled={!metaAdsStatus?.connections?.length}
                       icon={ICONS.Clock}
                     >
@@ -1297,7 +1296,7 @@ const SettingsPage: React.FC = () => {
                       <h4 className="text-base font-black text-gray-900">Meta App Settings</h4>
                       <p className="mt-1 text-sm text-gray-500">Store the Meta app credentials in the database so admins can manage them from Settings.</p>
                     </div>
-                    <Button type="button" onClick={handleSaveMetaAdsSettings} loading={updateMetaAdsSettingsMutation.isPending} icon={ICONS.CheckCircle}>
+                    <Button type="button" onClick={handleSaveMetaAdsSettings} loading={updateMetaAdsSettingsMutation.isPending} icon={ICONS.Check}>
                       Save Meta App
                     </Button>
                   </div>
@@ -1355,7 +1354,7 @@ const SettingsPage: React.FC = () => {
                         value={metaAdsSettings.oauthScopes}
                         onChange={(event) => setMetaAdsSettings((current) => ({ ...current, oauthScopes: event.target.value }))}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
-                        placeholder="email,public_profile,ads_read,business_management"
+                        placeholder="public_profile,ads_read,business_management"
                       />
                     </label>
                   </div>

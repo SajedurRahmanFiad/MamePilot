@@ -9,7 +9,7 @@ use RuntimeException;
 final class MetaAdsApi extends BaseService
 {
     private const DEFAULT_GRAPH_VERSION = 'v25.0';
-    private const DEFAULT_SCOPES = 'email,public_profile,ads_read,business_management';
+    private const DEFAULT_SCOPES = 'public_profile,ads_read,business_management';
 
     public function fetchMetaAdsConnectionStatus(array $params = []): array
     {
@@ -166,29 +166,38 @@ final class MetaAdsApi extends BaseService
     {
         $this->currentUser();
         $businessId = trim((string) ($params['businessId'] ?? ''));
+        $businessOperator = trim((string) ($params['businessOperator'] ?? '='));
         $accountId = trim((string) ($params['adAccountId'] ?? ''));
+        $accountOperator = trim((string) ($params['adAccountOperator'] ?? '='));
         $campaignId = trim((string) ($params['campaignId'] ?? ''));
+        $campaignOperator = trim((string) ($params['campaignOperator'] ?? '='));
         $status = trim((string) ($params['status'] ?? ''));
+        $statusOperator = trim((string) ($params['statusOperator'] ?? '='));
         $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
         $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));
         $search = trim((string) ($params['search'] ?? ''));
+        $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
 
         $where = [];
         $bindings = [];
         if ($businessId !== '') {
-            $where[] = 'ma.business_id = :business_id';
+            $operator = $businessOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.business_id {$operator} :business_id";
             $bindings[':business_id'] = $businessId;
         }
         if ($accountId !== '') {
-            $where[] = 'ma.ad_account_id = :ad_account_id';
+            $operator = $accountOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.ad_account_id {$operator} :ad_account_id";
             $bindings[':ad_account_id'] = $accountId;
         }
         if ($campaignId !== '') {
-            $where[] = 'ma.campaign_id = :campaign_id';
+            $operator = $campaignOperator === '≠' ? '!=' : '=';
+            $where[] = "ma.campaign_id {$operator} :campaign_id";
             $bindings[':campaign_id'] = $campaignId;
         }
         if ($status !== '') {
-            $where[] = 'COALESCE(ma.effective_status, ma.status, ma.configured_status, "") = :status';
+            $operator = $statusOperator === '≠' ? '!=' : '=';
+            $where[] = "COALESCE(ma.effective_status, ma.status, ma.configured_status, \"\") {$operator} :status";
             $bindings[':status'] = $status;
         }
         if ($from !== '') {
@@ -200,8 +209,14 @@ final class MetaAdsApi extends BaseService
             $bindings[':to_date'] = $to;
         }
         if ($search !== '') {
-            $where[] = 'ma.name LIKE :search';
-            $bindings[':search'] = '%' . $search . '%';
+            if ($searchOperator === '≠') {
+                $where[] = 'ma.name NOT LIKE :search';
+            } elseif ($searchOperator === '=') {
+                $where[] = 'ma.name = :search';
+            } else {
+                $where[] = 'ma.name LIKE :search';
+            }
+            $bindings[':search'] = $searchOperator === '=' ? $search : '%' . $search . '%';
         }
 
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
@@ -244,9 +259,9 @@ final class MetaAdsApi extends BaseService
              INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
              LEFT JOIN meta_ad_sets mas ON mas.id = ma.ad_set_id
-             WHERE ma.id = :id OR ma.meta_ad_id = :id
+             WHERE ma.id = :id_local OR ma.meta_ad_id = :id_meta
              LIMIT 1',
-            [':id' => $id]
+            [':id_local' => $id, ':id_meta' => $id]
         );
 
         return $row === null ? null : $this->mapAdDetails($row);
@@ -379,7 +394,6 @@ final class MetaAdsApi extends BaseService
                 'creative{id,name,thumbnail_url,image_url,object_story_spec,asset_feed_spec,call_to_action_type}',
                 'insights.date_preset(maximum){spend,reach,impressions,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas}',
             ]),
-            'effective_status' => '["ACTIVE","PAUSED","DELETED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]',
             'limit' => 100,
         ]);
         foreach ($ads as $ad) {

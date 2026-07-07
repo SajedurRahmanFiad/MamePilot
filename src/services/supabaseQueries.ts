@@ -259,6 +259,7 @@ export async function fetchMetaAdsSettings(): Promise<MetaAdsSettings> { return 
 export async function updateMetaAdsSettings(updates: MetaAdsSettings): Promise<MetaAdsSettings> { return call<MetaAdsSettings>('updateMetaAdsSettings', updates); }
 export async function beginMetaAdsOAuth(payload?: { redirectAfter?: string }): Promise<{ authUrl: string; state: string }> { return call<{ authUrl: string; state: string }>('beginMetaAdsOAuth', payload || {}); }
 export async function syncMetaAds(): Promise<any> { return call<any>('syncMetaAds', {}, { timeoutMs: 120000 }); }
+export async function fetchMetaAdsSyncCache(): Promise<any> { return call<any>('fetchMetaAdsSyncCache', {}, { timeoutMs: 30000 }); }
 export async function fetchMetaAds(filters?: { businessId?: string; adAccountId?: string; campaignId?: string; status?: string; from?: string; to?: string; search?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
 export async function fetchMetaAdById(id: string): Promise<any | null> { return call<any | null>('fetchMetaAdById', { id }); }
 export async function checkFraudCourierHistory(phone: string): Promise<FraudCheckResult> {

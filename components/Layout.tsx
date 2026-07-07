@@ -342,7 +342,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       return { title: 'HR Dashboard', subtitle: 'Review staffing coverage and people-focused insights.' };
     }
     if (pathname.startsWith('/social-media-ads') || pathname.startsWith('/meta-ads')) {
-      return { title: 'Marketing', subtitle: 'Monitor campaign performance and ad activity.' };
+      return {
+        title: 'Campaigns',
+        subtitle: 'Manage campaigns and analyze details.',
+      };
     }
     if (pathname.startsWith('/leads')) {
       return { title: 'Leads', subtitle: 'Track prospective customers and follow-up tasks.' };

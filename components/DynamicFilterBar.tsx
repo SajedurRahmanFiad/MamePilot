@@ -167,10 +167,13 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
 
   const handleSelectType = (type: string) => {
     const definition = findFilterDefinition(type);
-    const operator = definition?.defaultOperator ?? definition?.operators?.[0] ?? '=';
+    const operators = definition?.operators ?? ['='];
+    const operator = definition?.defaultOperator ?? operators[0] ?? '=';
+    const singleOperator = operators.length === 1;
+
     setCurrentType(type);
-    setCurrentOperator(definition?.operators && definition.operators.length === 1 ? operator : null);
-    setStage(definition?.operators && definition.operators.length > 1 ? 1 : 2);
+    setCurrentOperator(singleOperator ? operator : null);
+    setStage(singleOperator ? 2 : (operators.length > 1 ? 1 : 2));
     setInputValue('');
     setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -192,13 +195,16 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       value: val,
       display,
     };
-    const newFilters = [...filters, combined];
-    setFilters(newFilters);
+
+    const nextFilters = filters.filter((filter) => filter.type !== combined.type);
+    nextFilters.push(combined);
+    setFilters(nextFilters);
+    onApply?.(nextFilters);
+
     setCurrentType(null);
     setCurrentOperator(null);
     setStage(0);
     setInputValue('');
-    onApply?.(newFilters);
   };
 
   const handleRemoveFilter = (id: string) => {
@@ -363,13 +369,13 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
 
   return (
     <div className={"w-full " + (className || '')}>
-      <div className="w-full rounded-2xl border border-gray-100 bg-white shadow-sm overflow-visible">
-          <div className="w-full relative" ref={containerRef}>
-          <div className="flex items-center gap-2 w-full py-2 px-2">
-            <div className="flex items-center gap-2 flex-1">
-              <div ref={chipsRef} className="flex flex-wrap gap-2 items-center">
+      <div className="w-full overflow-visible">
+        <div className="relative w-full rounded-2xl border border-gray-200 bg-white shadow-sm" ref={containerRef}>
+          <div className="flex w-full items-center gap-2 px-3 py-2.5">
+            <div className="flex flex-1 items-center gap-2">
+              <div ref={chipsRef} className="flex flex-wrap items-center gap-2">
                 {filters.map(f => (
-                  <div key={f.id} className="inline-flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full text-sm font-bold">
+                  <div key={f.id} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-gray-200 text-sm font-bold">
                     <span className="opacity-80">{f.type}</span>
                     <span>{f.operator}</span>
                     <span className="font-normal">{f.display ?? f.value}</span>
@@ -385,7 +391,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
                   </div>
                 )}
 
-                {currentOperator && (
+                {currentOperator && currentDefinition?.operators && currentDefinition.operators.length > 1 && (
                   <div className="inline-flex items-center gap-2 bg-white border border-gray-200 px-3 py-1 rounded-full text-sm font-bold">
                     <span className="opacity-90">{currentOperator}</span>
                     <button onClick={() => { setCurrentOperator(null); setStage(1); setTimeout(() => inputRef.current?.focus(), 0); }} className="ml-2 text-gray-400">×</button>
@@ -403,7 +409,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
                 className="flex-1 outline-none bg-transparent text-sm px-2 py-2"
               />
             </div>
-            <div className="hidden sm:flex text-gray-400 pr-2">{ICONS.Search}</div>
+            <div className="hidden sm:flex rounded-lg bg-white p-2 text-gray-400 shadow-sm">{ICONS.Search}</div>
           </div>
 
           {isOpen && (

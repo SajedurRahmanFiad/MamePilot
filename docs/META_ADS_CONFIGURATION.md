@@ -60,7 +60,7 @@ Example:
    - `Redirect URI`
    - `Login Config ID` (optional)
    - `Graph Version` (default is `v25.0`)
-   - `OAuth Scopes` (default is `email,public_profile,ads_read,business_management`)
+   - `OAuth Scopes` (default is `public_profile,ads_read,business_management`)
 4. Click `Save Meta App`.
 5. After saving, click `Connect Meta`.
 6. Complete the Meta login and grant permissions.
@@ -91,7 +91,9 @@ If your backend runs at `https://app.example.com`, use:
 ## 7. Recommended values
 
 - `Graph Version`: `v25.0`
-- `OAuth Scopes`: `email,public_profile,ads_read,business_management`
+- `OAuth Scopes`: `public_profile,ads_read,business_management`
+
+> Note: `email` is not a valid Facebook Login scope. Use only valid permissions from the [Facebook Login permissions documentation](https://developers.facebook.com/docs/facebook-login/permissions).
 
 ## 8. Why this is now stored in the database
 
