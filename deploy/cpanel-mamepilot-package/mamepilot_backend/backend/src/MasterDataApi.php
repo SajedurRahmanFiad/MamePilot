@@ -2376,21 +2376,25 @@ final class MasterDataApi extends BaseService
 
         $isSuccess = $paymentOutcome === 'completed';
         $isFailure = in_array($paymentOutcome, ['failed', 'canceled', 'unknown'], true);
-        $payment = $reference !== ''
-                ? $this->database->fetchOne(
-                    'SELECT * FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
-                    [
-                        ':reference' => $reference,
-                        ':transaction_reference' => $reference,
-                        ':gateway_reference' => $reference,
-                    ]
-                )
-                : null;
-        if ($payment === null && $eventId !== '') {
-            $payment = $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE gateway_payment_id = :gateway_payment_id OR transaction_id = :transaction_id LIMIT 1', [
-                ':gateway_payment_id' => $eventId,
-                ':transaction_id' => $eventId,
-            ]);
+        $payment = null;
+        if ($reference !== '' || $eventId !== '') {
+            $whereClauses = [];
+            $bindings = [];
+
+            if ($reference !== '') {
+                $whereClauses[] = '(local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference)';
+                $bindings[':reference'] = $reference;
+            }
+
+            if ($eventId !== '') {
+                $whereClauses[] = '(local_reference = :event_id OR transaction_id = :event_id OR gateway_payment_id = :event_id)';
+                $bindings[':event_id'] = $eventId;
+            }
+
+            $payment = $this->database->fetchOne(
+                'SELECT * FROM service_subscription_payments WHERE ' . implode(' OR ', $whereClauses) . ' LIMIT 1',
+                $bindings
+            );
         }
 
         if ($payment !== null) {
