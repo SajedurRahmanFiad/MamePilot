@@ -3076,7 +3076,7 @@ final class OperationsApi extends BaseService
         $this->applyDashboardDateBounds('order_date', $filters, $conditions, $bindings, 'product_quantity');
 
         $rows = $this->database->fetchAll(
-            'SELECT items
+            'SELECT items, discount
              FROM orders
              WHERE ' . implode(' AND ', $conditions),
             $bindings
@@ -3084,7 +3084,21 @@ final class OperationsApi extends BaseService
 
         $productMap = [];
         foreach ($rows as $row) {
-            foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+            $orderDiscount = max(0.0, (float) ($row['discount'] ?? 0));
+            $decodedItems = $this->jsonDecodeList($row['items'] ?? null);
+            $subtotal = 0.0;
+
+            foreach ($decodedItems as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $subtotal += (float) ($item['amount'] ?? 0);
+            }
+
+            $discountRatio = $subtotal > 0 ? min(1.0, $orderDiscount / $subtotal) : 0.0;
+
+            foreach ($decodedItems as $item) {
                 if (!is_array($item)) {
                     continue;
                 }
@@ -3092,7 +3106,8 @@ final class OperationsApi extends BaseService
                 $productName = trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Product';
                 $key = trim((string) ($item['productId'] ?? '')) ?: $productName;
                 $quantity = (float) ($item['quantity'] ?? 0);
-                $revenue = (float) ($item['amount'] ?? 0);
+                $amount = (float) ($item['amount'] ?? 0);
+                $revenue = $amount * (1.0 - $discountRatio);
 
                 if (!isset($productMap[$key])) {
                     $productMap[$key] = [

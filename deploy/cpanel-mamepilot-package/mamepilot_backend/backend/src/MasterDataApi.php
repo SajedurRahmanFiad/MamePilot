@@ -2314,8 +2314,8 @@ final class MasterDataApi extends BaseService
         if ($payment !== null) {
             $nextStatus = $isSuccess ? 'approved' : ($isFailure ? 'rejected' : (string) ($payment['status'] ?? 'processing'));
             $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
-                'gateway_payment_id' => $eventId ?: ($payment['gateway_payment_id'] ?? null),
-                'transaction_id' => $eventId ?: ($payment['transaction_id'] ?? $reference),
+                'gateway_payment_id' => ($isSuccess || $isFailure) ? null : ($eventId ?: ($payment['gateway_payment_id'] ?? null)),
+                'transaction_id' => ($isSuccess || $isFailure) ? null : ($eventId ?: ($payment['transaction_id'] ?? $reference)),
                 'status' => $nextStatus,
                 'processed_at' => $isSuccess ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
                 'raw_payload' => $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]),

@@ -61,27 +61,66 @@ const AdminSubscriptions: React.FC = () => {
 
       if (ppId || reference) {
         const verifyingMessage = 'Payment received by gateway. Verifying payment status...';
-        if (!cancelled) setCheckoutMessage(verifyingMessage);
-        try {
-          const result = await verifyPipraPayPayment({ reference, ppId });
-          queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
-          if (result.paid) {
-            const message = 'Payment verified successfully. Your subscription has been renewed.';
-            toast.success(message);
-            if (!cancelled) setCheckoutMessage(message);
+        const verifyOnce = async () => {
+          if (cancelled) {
             return;
           }
 
-          const message = 'Payment is still being verified. Your subscription will update after PipraPay confirms payment.';
-          toast.info(message);
-          if (!cancelled) setCheckoutMessage(message);
-          return;
-        } catch (error: any) {
-          const message = error?.message || 'Payment is being verified. Please refresh the subscription page shortly.';
-          toast.warning(message);
-          if (!cancelled) setCheckoutMessage(message);
-          return;
-        }
+          if (!cancelled) {
+            setCheckoutMessage(verifyingMessage);
+          }
+
+          try {
+            const result = await verifyPipraPayPayment({ reference, ppId });
+            queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+            const resultStatus = String(result?.status || '').toLowerCase();
+            // Log verification status for debugging
+            // eslint-disable-next-line no-console
+            console.log('PipraPay verification response status:', resultStatus, result);
+
+            if (resultStatus === 'pending') {
+              // eslint-disable-next-line no-console
+              console.log('PipraPay status pending — will retry in 5s', { reference, ppId });
+              await new Promise((resolve) => window.setTimeout(resolve, 5000));
+              if (!cancelled) {
+                await verifyOnce();
+              }
+              return;
+            }
+
+            if (['completed', 'complete', 'success', 'successful', 'paid'].includes(resultStatus)) {
+              const message = 'Payment verified successfully. Your subscription has been renewed.';
+              toast.success(message);
+              if (!cancelled) {
+                setCheckoutMessage(null);
+              }
+              // eslint-disable-next-line no-console
+              console.log('PipraPay verification terminal success:', { reference, ppId, result });
+              return;
+            }
+
+            const message = 'Payment failed or could not be verified. Please try again or use a different payment method.';
+            toast.error(message);
+            if (!cancelled) {
+              setCheckoutMessage(null);
+            }
+            // eslint-disable-next-line no-console
+            console.log('PipraPay verification terminal failure:', { reference, ppId, result });
+            return;
+          } catch (error: any) {
+            // eslint-disable-next-line no-console
+            console.log('PipraPay verification error:', error);
+            const message = error?.message || 'Payment is being verified. Please refresh the subscription page shortly.';
+            toast.warning(message);
+            if (!cancelled) {
+              setCheckoutMessage(null);
+            }
+            return;
+          }
+        };
+
+        void verifyOnce();
+        return;
       }
 
       const message = 'Payment has returned from gateway and is awaiting PipraPay verification.';
