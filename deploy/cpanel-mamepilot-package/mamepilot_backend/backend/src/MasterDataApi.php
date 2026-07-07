@@ -2295,6 +2295,12 @@ final class MasterDataApi extends BaseService
         }
 
         $verified = $this->normalizePipraPayVerificationPayload($verify['json']);
+        // Debug: log verification payload and identifiers to PHP error log to help diagnose missing DB updates
+        try {
+            error_log('[PipraPay DEBUG] verify response: ' . json_encode([ 'eventId' => $eventId, 'reference' => $reference, 'verified' => $verified, 'raw' => $verify['json'] ]));
+        } catch (\Throwable $_e) {
+            // ignore logging errors
+        }
         $status = strtolower(trim((string) ($verified['status'] ?? '')));
         if ($reference === '') {
             $reference = trim((string) ($verified['reference'] ?? ''));
@@ -2312,6 +2318,10 @@ final class MasterDataApi extends BaseService
         }
 
         if ($payment !== null) {
+            try {
+                error_log('[PipraPay DEBUG] matched payment row: ' . json_encode(['id' => $payment['id'] ?? null, 'gateway_payment_id' => $payment['gateway_payment_id'] ?? null, 'transaction_id' => $payment['transaction_id'] ?? null, 'status' => $payment['status'] ?? null]));
+            } catch (\Throwable $_e) {
+            }
             $nextStatus = $isSuccess ? 'approved' : ($isFailure ? 'rejected' : (string) ($payment['status'] ?? 'processing'));
             $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
                 'gateway_payment_id' => ($isSuccess || $isFailure) ? null : ($eventId ?: ($payment['gateway_payment_id'] ?? null)),
@@ -2345,6 +2355,7 @@ final class MasterDataApi extends BaseService
             );
         }
 
+        // Include verification data in the response for debugging (admin-only endpoint)
         return [
             'success' => true,
             'paid' => $isSuccess,
@@ -2352,6 +2363,8 @@ final class MasterDataApi extends BaseService
             'reference' => $reference,
             'paymentFound' => $payment !== null,
             'duplicateLog' => $hasDuplicateLog,
+            'verified' => $verified,
+            'payment' => $payment,
         ];
     }
 
