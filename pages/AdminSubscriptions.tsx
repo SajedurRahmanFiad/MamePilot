@@ -26,8 +26,8 @@ const AdminSubscriptions: React.FC = () => {
     // Debug: log incoming return query/hash so we can see why verification may not run
     // eslint-disable-next-line no-console
     console.log('AdminSubscriptions useEffect invoked', { rawQuery, params: Object.fromEntries(params.entries()) });
-    const paymentStatus = params.get('payment');
-    const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('reference');
+    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
+    const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('payment') || params.get('reference') || params.get('transaction_ref');
     if (!paymentStatus && !verificationRequested) {
       return () => {
         cancelled = true;
@@ -37,7 +37,7 @@ const AdminSubscriptions: React.FC = () => {
     const cleanHash = window.location.hash.split('?')[0];
     window.history.replaceState(null, '', window.location.pathname + cleanHash);
 
-    const reference = params.get('reference') || '';
+    const reference = params.get('reference') || params.get('transaction_ref') || '';
     const ppId = params.get('pp_id') || params.get('payment_id') || '';
     const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
       ? 'cancelled'
@@ -51,7 +51,11 @@ const AdminSubscriptions: React.FC = () => {
       if (normalizedStatus === 'cancelled') {
         const message = 'Payment was cancelled. No charges were made.';
         toast.warning(message);
-        if (!cancelled) setCheckoutMessage(message);
+        // Clear the processing banner and refresh subscription overview so UI reflects no active processing payment
+        if (!cancelled) {
+          setCheckoutMessage(null);
+          queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
+        }
         return;
       }
 
