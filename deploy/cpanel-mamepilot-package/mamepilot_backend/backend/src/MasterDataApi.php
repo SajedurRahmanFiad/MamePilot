@@ -977,7 +977,7 @@ final class MasterDataApi extends BaseService
     public function fetchPaymentMethods(array $params = []): array
     {
         $activeOnly = !array_key_exists('activeOnly', $params) || (bool) $params['activeOnly'];
-        $sql = 'SELECT * FROM payment_methods';
+            $sql = 'SELECT * FROM payment_methods WHERE is_active = 1';
         if ($activeOnly) {
             $sql .= ' WHERE is_active = 1';
         }
@@ -1000,17 +1000,18 @@ final class MasterDataApi extends BaseService
     {
         $this->requireAdmin();
         $id = $this->stringId($params['id'] ?? null);
-        $this->database->execute(
-            'INSERT INTO payment_methods (id, name, description, is_active, created_at, updated_at)
-             VALUES (:id, :name, :description, 1, :created_at, :updated_at)',
-            [
-                ':id' => $id,
-                ':name' => trim((string) ($params['name'] ?? '')),
-                ':description' => $this->nullableString($params['description'] ?? null),
-                ':created_at' => $this->database->nowUtc(),
-                ':updated_at' => $this->database->nowUtc(),
-            ]
-        );
+            $this->database->execute(
+                'INSERT INTO payment_methods (id, name, description, is_active, created_at, updated_at)
+                 VALUES (:id, :name, :description, :is_active, :created_at, :updated_at)',
+                [
+                    ':id' => $id,
+                    ':name' => trim((string) ($params['name'] ?? '')),
+                    ':description' => $this->nullableString($params['description'] ?? null),
+                    ':is_active' => 1,
+                    ':created_at' => $this->database->nowUtc(),
+                    ':updated_at' => $this->database->nowUtc(),
+                ]
+            );
 
         return $this->fetchPaymentMethodById(['id' => $id]) ?? throw new RuntimeException('Failed to create payment method.');
     }
@@ -2271,8 +2272,12 @@ final class MasterDataApi extends BaseService
         if ($eventId === '' && $reference !== '') {
             $payment = $this->tableExists('service_subscription_payments')
                 ? $this->database->fetchOne(
-                    'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
-                    [':reference' => $reference]
+                    'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                    [
+                        ':reference' => $reference,
+                        ':transaction_reference' => $reference,
+                        ':gateway_reference' => $reference,
+                    ]
                 )
                 : null;
             $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
