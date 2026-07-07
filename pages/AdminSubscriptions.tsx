@@ -27,7 +27,7 @@ const AdminSubscriptions: React.FC = () => {
     // eslint-disable-next-line no-console
     console.log('AdminSubscriptions useEffect invoked', { rawQuery, params: Object.fromEntries(params.entries()) });
     const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
-    const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('payment') || params.get('reference') || params.get('transaction_ref');
+    const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || params.get('payment') || params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference');
     if (!paymentStatus && !verificationRequested) {
       return () => {
         cancelled = true;
@@ -37,8 +37,8 @@ const AdminSubscriptions: React.FC = () => {
     const cleanHash = window.location.hash.split('?')[0];
     window.history.replaceState(null, '', window.location.pathname + cleanHash);
 
-    const reference = params.get('reference') || params.get('transaction_ref') || '';
-    const ppId = params.get('pp_id') || params.get('payment_id') || '';
+    const reference = params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference') || params.get('order_id') || '';
+    const ppId = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || '';
     const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
       ? 'cancelled'
       : paymentStatus === 'failed'
@@ -46,23 +46,19 @@ const AdminSubscriptions: React.FC = () => {
         : paymentStatus === 'success'
           ? 'success'
           : 'processing';
+    const shouldVerify = Boolean(ppId || reference);
 
     const verifyReturn = async () => {
-      if (normalizedStatus === 'cancelled') {
-        const message = 'Payment was cancelled. No charges were made.';
-        toast.warning(message);
-        // Clear the processing banner and refresh subscription overview so UI reflects no active processing payment
+      if (!shouldVerify && (normalizedStatus === 'cancelled' || normalizedStatus === 'failed')) {
+        const message = normalizedStatus === 'cancelled'
+          ? 'Payment was cancelled. No charges were made.'
+          : 'Payment failed. Please try again or use a different payment method.';
+        const toastFn = normalizedStatus === 'cancelled' ? toast.warning : toast.error;
+        toastFn(message);
         if (!cancelled) {
           setCheckoutMessage(null);
           queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
         }
-        return;
-      }
-
-      if (normalizedStatus === 'failed') {
-        const message = 'Payment failed. Please try again or use a different payment method.';
-        toast.error(message);
-        if (!cancelled) setCheckoutMessage(message);
         return;
       }
 

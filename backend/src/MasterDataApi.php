@@ -2186,7 +2186,7 @@ final class MasterDataApi extends BaseService
     {
         $reference = trim((string) ($params['reference'] ?? $params['transaction_ref'] ?? $params['transaction_reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
         $eventId = trim((string) ($params['pp_id'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
-        $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? '')));
+        $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? $params['pp_status'] ?? '')));
 
         if ($eventId === '' && $reference !== '' && $this->tableExists('service_subscription_payments')) {
             $payment = $this->database->fetchOne(
@@ -2208,8 +2208,26 @@ final class MasterDataApi extends BaseService
             } catch (\Throwable $exception) {
                 $paymentState = 'processing';
             }
-        } elseif (in_array($status, ['cancelled', 'canceled', 'failed', 'expired'], true)) {
-            $paymentState = in_array($status, ['cancelled', 'canceled'], true) ? 'cancelled' : 'failed';
+        } elseif ($reference !== '' && in_array($status, ['completed', 'complete', 'success', 'successful', 'paid', 'cancelled', 'canceled', 'failed', 'expired'], true)) {
+            $paymentState = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true)
+                ? 'success'
+                : (in_array($status, ['cancelled', 'canceled'], true) ? 'cancelled' : 'failed');
+            $databaseStatus = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true)
+                ? 'approved'
+                : (in_array($status, ['cancelled', 'canceled'], true) ? 'canceled' : 'failed');
+            if ($this->tableExists('service_subscription_payments')) {
+                $payment = $this->database->fetchOne(
+                    'SELECT id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
+                    [':reference' => $reference]
+                );
+                if (is_array($payment) && !empty($payment['id'])) {
+                    $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
+                        'status' => $databaseStatus,
+                        'processed_at' => $this->database->nowUtc(),
+                        'raw_payload' => $this->jsonEncode(['return' => $params]),
+                    ]);
+                }
+            }
         }
 
         $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '');
@@ -2365,8 +2383,8 @@ final class MasterDataApi extends BaseService
             }
             $nextStatus = $isSuccess ? 'approved' : ($isFailure ? $databaseStatus : (string) ($payment['status'] ?? 'processing'));
             $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
-                'gateway_payment_id' => $isSuccess || $isFailure ? null : ($eventId ?: ($payment['gateway_payment_id'] ?? null)),
-                'transaction_id' => $isSuccess || $isFailure ? null : ($eventId ?: ($payment['transaction_id'] ?? $reference)),
+                'gateway_payment_id' => $eventId !== '' ? $eventId : ($payment['gateway_payment_id'] ?? null),
+                'transaction_id' => $eventId !== '' ? $eventId : ($payment['transaction_id'] ?? $reference),
                 'status' => $nextStatus,
                 'processed_at' => $isSuccess || $isFailure ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
                 'raw_payload' => $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]),
@@ -2418,9 +2436,23 @@ final class MasterDataApi extends BaseService
         $metadataRaw = $data['metadata'] ?? $payload['metadata'] ?? null;
         $metadata = is_array($metadataRaw) ? $metadataRaw : (is_string($metadataRaw) ? (json_decode($metadataRaw, true) ?: []) : []);
 
+        $status = strtolower(trim((string) ($data['status'] ?? $data['payment_status'] ?? $payload['status'] ?? $payload['payment_status'] ?? $data['pp_status'] ?? $payload['pp_status'] ?? '')));
+        $reference = trim((string) (
+            $data['order_id'] ??
+            $data['transaction_ref'] ??
+            $data['transaction_reference'] ??
+            $payload['order_id'] ??
+            $payload['transaction_ref'] ??
+            $payload['transaction_reference'] ??
+            $metadata['local_reference'] ??
+            $metadata['transaction_ref'] ??
+            $metadata['transaction_reference'] ??
+            ''
+        ));
+
         return [
-            'status' => strtolower(trim((string) ($data['status'] ?? $data['payment_status'] ?? $payload['status'] ?? $payload['payment_status'] ?? ''))),
-            'reference' => trim((string) ($data['order_id'] ?? $payload['order_id'] ?? $metadata['local_reference'] ?? '')),
+            'status' => $status,
+            'reference' => $reference,
             'metadata' => $metadata,
         ];
     }
