@@ -23,6 +23,9 @@ const AdminSubscriptions: React.FC = () => {
 
     const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
     const params = new URLSearchParams(rawQuery);
+    // Debug: log incoming return query/hash so we can see why verification may not run
+    // eslint-disable-next-line no-console
+    console.log('AdminSubscriptions useEffect invoked', { rawQuery, params: Object.fromEntries(params.entries()) });
     const paymentStatus = params.get('payment');
     const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('reference');
     if (!paymentStatus && !verificationRequested) {
