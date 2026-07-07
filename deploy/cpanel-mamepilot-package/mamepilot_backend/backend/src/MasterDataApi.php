@@ -2105,7 +2105,9 @@ final class MasterDataApi extends BaseService
         }
         $configuredReturnUrl = trim((string) ($gateway['piprapay_return_url'] ?? ''));
         if ($configuredReturnUrl === '') {
-            $configuredReturnUrl = $returnBase . '/subscriptions';
+            $configuredReturnUrl = $returnBase . '/#/subscriptions';
+        } elseif (strpos($configuredReturnUrl, '#') === false) {
+            $configuredReturnUrl = preg_replace('#(/subscriptions/?)(\?.*)?$#', '/#\1$2', $configuredReturnUrl);
         }
 
         $payload = [
@@ -2182,9 +2184,17 @@ final class MasterDataApi extends BaseService
 
     public function pipraPayReturn(array $params = []): array
     {
-        $reference = trim((string) ($params['reference'] ?? ''));
-        $eventId = trim((string) ($params['pp_id'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? ''));
+        $reference = trim((string) ($params['reference'] ?? $params['transaction_ref'] ?? $params['transaction_reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
+        $eventId = trim((string) ($params['pp_id'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
         $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? '')));
+
+        if ($eventId === '' && $reference !== '' && $this->tableExists('service_subscription_payments')) {
+            $payment = $this->database->fetchOne(
+                'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
+                [':reference' => $reference]
+            );
+            $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
+        }
 
         $paymentState = 'processing';
         if ($eventId !== '') {
@@ -2230,11 +2240,14 @@ final class MasterDataApi extends BaseService
             throw new ApiException('Admin access required.', 403, 'ADMIN_ACCESS_REQUIRED');
         }
 
-        $eventId = trim((string) ($params['ppId'] ?? $params['pp_id'] ?? $params['paymentId'] ?? $params['payment_id'] ?? ''));
-        $reference = trim((string) ($params['reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
+        $eventId = trim((string) ($params['ppId'] ?? $params['pp_id'] ?? $params['paymentId'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
+        $reference = trim((string) ($params['reference'] ?? $params['transaction_ref'] ?? $params['transaction_reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
         if ($eventId === '' && $reference !== '') {
             $payment = $this->tableExists('service_subscription_payments')
-                ? $this->database->fetchOne('SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference LIMIT 1', [':reference' => $reference])
+                ? $this->database->fetchOne(
+                    'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
+                    [':reference' => $reference]
+                )
                 : null;
             $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
         }
@@ -2333,8 +2346,11 @@ final class MasterDataApi extends BaseService
         $isSuccess = $paymentOutcome === 'completed';
         $isFailure = in_array($paymentOutcome, ['failed', 'canceled', 'unknown'], true);
         $payment = $reference !== ''
-            ? $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE local_reference = :reference LIMIT 1', [':reference' => $reference])
-            : null;
+                ? $this->database->fetchOne(
+                    'SELECT * FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference LIMIT 1',
+                    [':reference' => $reference]
+                )
+                : null;
         if ($payment === null && $eventId !== '') {
             $payment = $this->database->fetchOne('SELECT * FROM service_subscription_payments WHERE gateway_payment_id = :gateway_payment_id OR transaction_id = :transaction_id LIMIT 1', [
                 ':gateway_payment_id' => $eventId,

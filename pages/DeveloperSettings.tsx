@@ -301,7 +301,7 @@ const DeveloperSettings: React.FC = () => {
                     onChange={(e) => setGatewayForm({ ...gatewayForm, piprapayReturnUrl: e.target.value })}
                     placeholder="https://your-deployment.com/subscriptions"
                   />
-                  <p className="text-sm text-gray-500">Use your deployment base URL plus <span className="font-semibold text-gray-700">/subscriptions</span>. This is where users return after payment.</p>
+                  <p className="text-sm text-gray-500">Use your deployment base URL plus <span className="font-semibold text-gray-700">/#/subscriptions</span>. This is where users return after payment.</p>
                 </label>
               </div>
             </section>

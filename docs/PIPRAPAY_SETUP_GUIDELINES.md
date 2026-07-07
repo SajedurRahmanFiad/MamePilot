@@ -15,7 +15,7 @@
   - `amount`
   - `currency` with value `BDT`
   - `metadata` as a JSON string containing the plan name, payment datetime, and payment period (monthly or yearly)
-  - `return_url` set to `/subscriptions`
+  - `return_url` set to `/#/subscriptions` for HashRouter-based deployments
   - `webhook_url` pointing to the webhook endpoint for payment updates
 - The gateway returns a `pp_id` and `pp_url`.
 - The app should redirect the user to `pp_url` and temporarily keep `pp_id` for later verification.
