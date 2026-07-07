@@ -4639,12 +4639,25 @@ TXT;
         $monthlyAmount = max(0.0, (float) ($pricingMetadata['monthly'] ?? $settingsRow['total_amount'] ?? 0));
         $yearlyAmount = max(0.0, (float) ($pricingMetadata['yearly'] ?? ($monthlyAmount > 0 ? $monthlyAmount * 12 : 0)));
         $currentPayment = null;
+        $terminalPayment = null;
+        $processingPayment = null;
         foreach ($payments as $payment) {
-            if ((int) ($payment['billingVersion'] ?? 0) === $billingVersion) {
-                $currentPayment = $payment;
+            if ((int) ($payment['billingVersion'] ?? 0) !== $billingVersion) {
+                continue;
+            }
+
+            $status = strtolower(trim((string) ($payment['status'] ?? 'processing')));
+            if (in_array($status, ['approved', 'failed', 'canceled', 'cancelled'], true)) {
+                $terminalPayment = $payment;
                 break;
             }
+
+            if ($processingPayment === null && $status === 'processing') {
+                $processingPayment = $payment;
+            }
         }
+
+        $currentPayment = $terminalPayment ?? $processingPayment;
 
         return [
             'state' => (string) ($state['state'] ?? 'unconfigured'),

@@ -43,7 +43,14 @@ if ($parts.Count -ne 3) {
 switch ($Part) {
   'major' { $parts[0]++; $parts[1] = 0; $parts[2] = 0 }
   'minor' { $parts[1]++; $parts[2] = 0 }
-  'patch' { $parts[2]++ }
+  'patch' { 
+    if ($parts[2] -ge 99) {
+      $parts[1]++
+      $parts[2] = 0
+    } else {
+      $parts[2]++
+    }
+  }
 }
 
 $newVersion = '{0}.{1}.{2}' -f $parts[0], $parts[1], $parts[2]
