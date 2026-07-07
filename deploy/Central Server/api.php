@@ -146,6 +146,28 @@ function capabilitiesFrom($value): array
     return array_values(array_filter(array_map(static fn($item): string => trim((string) $item), $decoded)));
 }
 
+function pricingMetadataFrom($value): array
+{
+    $decoded = is_array($value) ? $value : json_decode((string) $value, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $normalized = [];
+    foreach (['monthly', 'yearly'] as $key) {
+        if (!array_key_exists($key, $decoded)) {
+            continue;
+        }
+        $number = (float) $decoded[$key];
+        if ($number < 0) {
+            $number = 0.0;
+        }
+        $normalized[$key] = $number;
+    }
+
+    return $normalized;
+}
+
 function tierPayload(array $row): array
 {
     return [
@@ -581,6 +603,8 @@ try {
             $clientName = $domain !== '' ? $domain : 'MamePilot Client';
         }
 
+        $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
+
         $existing = $pdo->prepare('SELECT license_key FROM licenses WHERE license_key = :license_key LIMIT 1');
         $existing->execute([':license_key' => $licenseKey]);
         if ($existing->fetch()) {
@@ -605,7 +629,11 @@ try {
             ':renewal_date' => trim((string) ($body['renewal_date'] ?? '')) ?: null,
         ]);
 
-        respond(200, resolveLicense($pdo, $licenseKey));
+        $responsePayload = resolveLicense($pdo, $licenseKey);
+        if ($pricingMetadata !== []) {
+            $responsePayload['pricing_metadata'] = $pricingMetadata;
+        }
+        respond(200, $responsePayload);
     }
 
     if ($action === 'update_license_override') {
@@ -615,6 +643,7 @@ try {
         }
 
         $capabilities = capabilitiesFrom($body['capabilities'] ?? []);
+        $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
         $statement = $pdo->prepare(
             'UPDATE licenses
              SET capability_overrides = :capability_overrides, override_enabled = 1, updated_at = CURRENT_TIMESTAMP
@@ -625,7 +654,11 @@ try {
             ':capability_overrides' => json_encode($capabilities, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
 
-        respond(200, resolveLicense($pdo, $licenseKey));
+        $responsePayload = resolveLicense($pdo, $licenseKey);
+        if ($pricingMetadata !== []) {
+            $responsePayload['pricing_metadata'] = $pricingMetadata;
+        }
+        respond(200, $responsePayload);
     }
 
     if ($action === 'reset_license_override') {
@@ -641,7 +674,9 @@ try {
         );
         $statement->execute([':license_key' => $licenseKey]);
 
-        respond(200, resolveLicense($pdo, $licenseKey));
+        $responsePayload = resolveLicense($pdo, $licenseKey);
+        $responsePayload['pricing_metadata'] = [];
+        respond(200, $responsePayload);
     }
 
     respond(400, ['error' => 'Unknown action.']);

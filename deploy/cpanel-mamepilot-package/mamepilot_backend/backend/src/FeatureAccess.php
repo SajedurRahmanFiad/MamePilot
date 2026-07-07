@@ -19,6 +19,8 @@ final class FeatureAccess
         'whitelabel' => false,
         'custom_roles' => true,
         'courier_automation' => true,
+        'marketing' => false,
+        'enterprise_ai_agent' => false,
     ];
 
     private const ACTION_CAPABILITIES = [

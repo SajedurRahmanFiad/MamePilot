@@ -2,6 +2,8 @@ import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquare, Send, X } from 'lucide-react';
 import { apiAction } from '../src/services/apiClient';
 import { theme } from '../theme';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { useAuth } from '../src/contexts/AuthProvider';
 
 type ChatMessage = {
   id: string;
@@ -149,6 +151,8 @@ const INITIAL_MESSAGE: ChatMessage = {
 };
 
 const MameChat: React.FC = () => {
+  const { user } = useAuth();
+  const { hasCapability, isDeveloper } = useCapabilities(Boolean(user));
   const [isOpen, setIsOpen] = useState(false);
   const [hasOpenedOnce, setHasOpenedOnce] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -160,6 +164,10 @@ const MameChat: React.FC = () => {
   const [inputRadius, setInputRadius] = useState(24);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  if (!isDeveloper && !hasCapability('enterprise_ai_agent')) {
+    return null;
+  }
 
   const chatHeight = useMemo(() => {
     if (isMobile) {

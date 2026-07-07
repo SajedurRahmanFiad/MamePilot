@@ -1432,6 +1432,31 @@ final class MasterDataApi extends BaseService
         return ['tiers' => $tiers];
     }
 
+    private function normalizePricingMetadata($pricingMetadata): array
+    {
+        if (!is_array($pricingMetadata)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach (['monthly', 'yearly'] as $key) {
+            if (!array_key_exists($key, $pricingMetadata)) {
+                continue;
+            }
+            $value = trim((string) ($pricingMetadata[$key] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            $number = (float) $value;
+            if ($number < 0) {
+                $number = 0.0;
+            }
+            $normalized[$key] = $number;
+        }
+
+        return $normalized;
+    }
+
     public function createOrUpdateCentralLicense(array $params): array
     {
         $this->requireDeveloperUser();
@@ -1445,6 +1470,7 @@ final class MasterDataApi extends BaseService
 
         $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $pricingMetadata = $this->normalizePricingMetadata($params['pricingMetadata'] ?? null);
         $payload = [
             'license_key' => $licenseKey ?: null,
             'client_name' => trim((string) ($params['clientName'] ?? $host ?: 'MamePilot Client')),
@@ -1452,10 +1478,19 @@ final class MasterDataApi extends BaseService
             'tier_key' => $tierKey,
             'status' => trim((string) ($params['status'] ?? 'active')),
             'renewal_date' => $params['renewalDate'] ?? $settingsRow['renewal_date'] ?? null,
+            'pricing_metadata' => $pricingMetadata,
         ];
 
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'create_or_update_license', $payload);
-        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central license saved successfully.');
+        $result = $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central license saved successfully.');
+        if ($pricingMetadata !== []) {
+            $this->updateCapabilitySettings([
+                '__skipDeveloperCheck' => true,
+                'pricingMetadata' => $pricingMetadata,
+            ]);
+            $result = $this->fetchCapabilitySettings();
+        }
+        return $result;
     }
 
     public function updateCentralLicenseOverride(array $params): array
@@ -1470,12 +1505,22 @@ final class MasterDataApi extends BaseService
         }
 
         $capabilities = array_keys(array_filter($this->normalizeCapabilities($params['capabilities'] ?? [])));
+        $pricingMetadata = $this->normalizePricingMetadata($params['pricingMetadata'] ?? null);
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'update_license_override', [
             'license_key' => $licenseKey,
             'capabilities' => $capabilities,
+            'pricing_metadata' => $pricingMetadata,
         ]);
 
-        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
+        $result = $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
+        if ($pricingMetadata !== []) {
+            $this->updateCapabilitySettings([
+                '__skipDeveloperCheck' => true,
+                'pricingMetadata' => $pricingMetadata,
+            ]);
+            $result = $this->fetchCapabilitySettings();
+        }
+        return $result;
     }
 
     public function resetCentralLicenseOverride(array $params = []): array
@@ -1746,6 +1791,11 @@ final class MasterDataApi extends BaseService
         $pricingMetadata = is_array($payload['pricing_metadata'] ?? null)
             ? $payload['pricing_metadata']
             : (is_array($payload['pricingMetadata'] ?? null) ? $payload['pricingMetadata'] : []);
+        $existingRow = $this->capabilityRow();
+        $existingPricingMetadata = $this->normalizePricingMetadata($this->jsonDecodeAssoc($existingRow['pricing_metadata'] ?? null));
+        if ($pricingMetadata === [] && $existingPricingMetadata !== []) {
+            $pricingMetadata = $existingPricingMetadata;
+        }
 
         $this->updateCapabilitySettings([
             '__skipDeveloperCheck' => true,

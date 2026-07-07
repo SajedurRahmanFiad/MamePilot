@@ -669,7 +669,7 @@ const SettingsPage: React.FC = () => {
     { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales },
     { id: 'defaults', label: 'Defaults', icon: ICONS.Settings },
     { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll },
-    { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell },
+    hasCapability('marketing') ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
     hasCapability('custom_roles') ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     { id: 'categories', label: 'Categories', icon: ICONS.More },
     { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking },

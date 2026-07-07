@@ -618,7 +618,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
           </footer>
         </main>
-        <MameChat />
+        {hasCapability('enterprise_ai_agent') && <MameChat />}
       </div>
     </div>
   );

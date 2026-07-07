@@ -35,6 +35,8 @@ const DeveloperSubscriptions: React.FC = () => {
   const [renewalDate, setRenewalDate] = useState('');
   const [selectedTierKey, setSelectedTierKey] = useState('');
   const [overrideCapabilities, setOverrideCapabilities] = useState<AppCapabilityMap>(() => normalizeCapabilities(null));
+  const [monthlyPriceOverride, setMonthlyPriceOverride] = useState('');
+  const [yearlyPriceOverride, setYearlyPriceOverride] = useState('');
 
   const tiersQuery = useCentralLicenseTiers({ licenseApiUrl, licenseOwnerToken: ownerToken }, false);
   const syncMutation = useSyncLicenseCapabilities();
@@ -58,6 +60,8 @@ const DeveloperSubscriptions: React.FC = () => {
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
     setSelectedTierKey(capabilitySettings.tierKey || capabilitySettings.availableTiers?.[0]?.tierKey || '');
     setOverrideCapabilities(normalizeCapabilities(capabilitySettings.capabilities));
+    setMonthlyPriceOverride(typeof capabilitySettings.pricingMetadata?.monthly === 'number' ? String(capabilitySettings.pricingMetadata.monthly) : '');
+    setYearlyPriceOverride(typeof capabilitySettings.pricingMetadata?.yearly === 'number' ? String(capabilitySettings.pricingMetadata.yearly) : '');
     if (capabilitySettings.renewalDate) {
       setRenewalDate(capabilitySettings.renewalDate.slice(0, 10));
     }
@@ -97,6 +101,10 @@ const DeveloperSubscriptions: React.FC = () => {
         clientName: clientName || window.location.hostname,
         domain: window.location.hostname,
         renewalDate: renewalDate || null,
+        pricingMetadata: {
+          monthly: Number(monthlyPriceOverride || 0),
+          yearly: Number(yearlyPriceOverride || 0),
+        },
       });
       toast.update(toastId, 'License saved and synced.', 'success');
     } catch (error) {
@@ -122,6 +130,10 @@ const DeveloperSubscriptions: React.FC = () => {
         licenseOwnerToken: ownerToken,
         licenseKey: capabilitySettings?.licenseKey,
         capabilities: overrideCapabilities,
+        pricingMetadata: {
+          monthly: Number(monthlyPriceOverride || 0),
+          yearly: Number(yearlyPriceOverride || 0),
+        },
       });
       toast.update(toastId, 'Override saved and synced.', 'success');
     } catch (error) {
@@ -133,6 +145,8 @@ const DeveloperSubscriptions: React.FC = () => {
     const toastId = toast.loading('Resetting override...');
     try {
       await resetOverrideMutation.mutateAsync({ licenseApiUrl, licenseOwnerToken: ownerToken, licenseKey: capabilitySettings?.licenseKey });
+      setMonthlyPriceOverride('');
+      setYearlyPriceOverride('');
       toast.update(toastId, 'Reset to tier defaults.', 'success');
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'Failed to reset override.', 'error');
@@ -148,7 +162,7 @@ const DeveloperSubscriptions: React.FC = () => {
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Current State" value={(overview?.state || 'Unknown').replace(/_/g, ' ')} hint={overview?.subscriptionStatus || undefined} />
         <StatCard label="Valid Till" value={overview?.dueAt ? new Date(overview.dueAt).toLocaleDateString('en-BD') : 'Not set'} />
-        <StatCard label="Monthly Price" value={formatCurrency(capabilitySettings?.pricingMetadata?.monthly || overview?.totalAmount || 0)} hint={capabilitySettings?.planName || overview?.planName || 'No tier'} />
+        <StatCard label="Monthly Price" value={formatCurrency(capabilitySettings?.pricingMetadata?.monthly ?? overview?.totalAmount ?? 0)} hint={capabilitySettings?.planName || overview?.planName || 'No tier'} />
       </div>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -191,6 +205,25 @@ const DeveloperSubscriptions: React.FC = () => {
           <p><span className="font-black text-gray-900">Status:</span> {capabilitySettings?.licenseStatus || 'local'}</p>
           <p><span className="font-black text-gray-900">Override:</span> {capabilitySettings?.overrideEnabled ? 'Enabled' : 'Using tier defaults'}</p>
           <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? new Date(capabilitySettings.lastSyncedAt).toLocaleString() : 'Never'}</p>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-black text-gray-900">Per-deployment Price Override</h3>
+              <p className="mt-1 text-sm text-gray-500">Set a monthly or yearly override for this deployment. Leave them empty to keep the tier price.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-xs font-black uppercase tracking-widest text-gray-400">Monthly Price Override</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" value={monthlyPriceOverride} onChange={(event) => setMonthlyPriceOverride(event.target.value)} placeholder="0" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-black uppercase tracking-widest text-gray-400">Yearly Price Override</span>
+              <input type="number" min="0" step="0.01" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" value={yearlyPriceOverride} onChange={(event) => setYearlyPriceOverride(event.target.value)} placeholder="0" />
+            </label>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">

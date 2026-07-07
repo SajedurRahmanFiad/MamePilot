@@ -38,9 +38,10 @@ INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
   ON DUPLICATE KEY UPDATE enabled = VALUES(enabled);
 
 INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
-('starter', 'Starter', 1990, 19900, '["dashboard","inventory","sales"]', 1),
-('growth', 'Growth', 2990, 29900, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
-('advanced', 'Advanced', 4990, 49900, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3)
+('copilot', 'Co-Pilot', 299, 3200, '["dashboard","inventory","sales"]', 1),
+('pilot', 'Pilot', 599, 6800, '["dashboard","inventory","sales","purchases","banking","fraud_checker","courier_automation","recycle_bin_undoer"]', 2),
+('captain', 'Captain', 999, 11500, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation"]', 3),
+('autopilot', 'Autopilot', 1799, 20800, '["dashboard","inventory","sales","recycle_bin_undoer","purchases","banking","human_resources","advanced_reports","fraud_checker","whitelabel","custom_roles","courier_automation","marketing","enterprise_ai_agent"]', 4)
 ON DUPLICATE KEY UPDATE tier_name = VALUES(tier_name), monthly_price = VALUES(monthly_price), yearly_price = VALUES(yearly_price), capabilities = VALUES(capabilities), sort_order = VALUES(sort_order);
 
 CREATE TABLE IF NOT EXISTS notifications (

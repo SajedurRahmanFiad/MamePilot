@@ -655,6 +655,7 @@ export type AppCapabilityKey =
   | 'whitelabel'
   | 'custom_roles'
   | 'courier_automation'
+  | 'marketing'
   | 'enterprise_ai_agent';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;

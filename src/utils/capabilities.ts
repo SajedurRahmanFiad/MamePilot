@@ -13,6 +13,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   whitelabel: 'Whitelabel',
   custom_roles: 'Custom Roles',
   courier_automation: 'Courier Automation',
+  marketing: 'Marketing',
   enterprise_ai_agent: 'Enterprise AI Agent',
 };
 
@@ -29,6 +30,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   whitelabel: false,
   custom_roles: true,
   courier_automation: true,
+  marketing: false,
   enterprise_ai_agent: false,
 };
 
@@ -48,7 +50,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/bills(?:\/|$)|^\/vendors(?:\/|$)|^\/print-bill(?:\/|$)/, capability: 'purchases' },
   { pattern: /^\/banking(?:\/|$)|^\/transactions(?:\/|$)/, capability: 'banking' },
   { pattern: /^\/users(?:\/|$)|^\/payroll(?:\/|$)|^\/wallet(?:\/|$)|^\/human-resource-dashboard(?:\/|$)/, capability: 'human_resources' },
-  { pattern: /^\/social-media-ads(?:\/|$)|^\/meta-ads(?:\/|$)/, capability: 'dashboard' },
+  { pattern: /^\/social-media-ads(?:\/|$)|^\/meta-ads(?:\/|$)/, capability: 'marketing' },
   { pattern: /^\/reports(?:\/|$)/, capability: 'advanced_reports' },
   { pattern: /^\/recycle-bin(?:\/|$)|^\/undoer(?:\/|$)/, capability: 'recycle_bin_undoer' },
   { pattern: /^\/fraud-checker(?:\/|$)/, capability: 'fraud_checker' },
