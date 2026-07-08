@@ -1331,6 +1331,7 @@ final class MasterDataApi extends BaseService
             'licenseKey' => $isDeveloper ? (string) ($row['license_key'] ?? '') : '',
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
+            'webhookUrl' => $isDeveloper ? (string) ($row['webhook_url'] ?? '') : '',
         ];
     }
 
@@ -1371,9 +1372,11 @@ final class MasterDataApi extends BaseService
             'pricing_metadata' => array_key_exists('pricingMetadata', $params) ? $this->jsonEncode(is_array($params['pricingMetadata']) ? $params['pricingMetadata'] : []) : ($row['pricing_metadata'] ?? null),
             'last_sync_status' => array_key_exists('lastSyncStatus', $params) ? trim((string) $params['lastSyncStatus']) : 'manual',
             'last_sync_message' => array_key_exists('lastSyncMessage', $params) ? $this->nullableString($params['lastSyncMessage']) : 'Saved manually by developer.',
+            'webhook_url' => array_key_exists('webhookUrl', $params) ? $this->nullableString($params['webhookUrl']) : ($row['webhook_url'] ?? null),
+            'webhook_secret' => array_key_exists('webhookSecret', $params) ? $this->nullableString($params['webhookSecret']) : ($row['webhook_secret'] ?? null),
         ];
 
-        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata'] as $column) {
+        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -4829,6 +4832,225 @@ TXT;
         }
 
         $this->deactivateSystemNotificationsByPrefix($prefix, $activeKey !== null ? [$activeKey] : []);
+    }
+
+    /**
+     * Webhook endpoint: receives notifications pushed from the central server.
+     * No authentication required - signature verification is used instead.
+     */
+    public function receiveCentralNotification(array $params = []): array
+    {
+        // Get raw body for signature verification
+        $rawBody = file_get_contents('php://input') ?: '';
+        $body = json_decode($rawBody, true);
+        if (!is_array($body)) {
+            $body = $params;
+        }
+
+        // Verify webhook signature if configured
+        $signature = trim((string) ($_SERVER['HTTP_X_MAMEPILOT_SIGNATURE'] ?? ''));
+        $settingsRow = $this->capabilityRow();
+        $webhookSecret = trim((string) ($settingsRow['webhook_secret'] ?? ''));
+
+        if ($webhookSecret !== '' && $signature !== '') {
+            $expectedSignature = hash_hmac('sha256', $rawBody, $webhookSecret);
+            if (!hash_equals($expectedSignature, $signature)) {
+                throw new RuntimeException('Invalid webhook signature.');
+            }
+        }
+
+        $event = trim((string) ($body['event'] ?? ''));
+        if ($event !== 'notification.created') {
+            return ['success' => true, 'message' => 'Event ignored.'];
+        }
+
+        $notification = $body['notification'] ?? null;
+        if (!is_array($notification)) {
+            throw new RuntimeException('Missing notification payload.');
+        }
+
+        $this->upsertCentralNotificationLocally($notification);
+
+        // Broadcast to connected SSE clients
+        $this->broadcastNotificationEvent($notification);
+
+        return ['success' => true, 'message' => 'Notification received and saved.'];
+    }
+
+    /**
+     * Register this deployment's webhook URL with the central server.
+     */
+    public function registerWebhookWithCentral(array $params = []): array
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        $licenseKey = trim((string) ($settingsRow['license_key'] ?? ''));
+
+        if ($apiUrl === '' || $licenseKey === '') {
+            return ['success' => false, 'message' => 'Central server not configured.'];
+        }
+
+        // Build the webhook URL for this deployment
+        $webhookUrl = trim((string) ($params['webhookUrl'] ?? ''));
+        if ($webhookUrl === '') {
+            // Auto-detect from current request
+            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+            $scriptPath = dirname($_SERVER['SCRIPT_NAME'] ?? '');
+            if ($host !== '') {
+                $webhookUrl = $scheme . '://' . $host . rtrim($scriptPath, '/') . '/api.php?action=receiveCentralNotification';
+            }
+        }
+
+        if ($webhookUrl === '') {
+            return ['success' => false, 'message' => 'Could not determine webhook URL.'];
+        }
+
+        // Generate and store webhook secret
+        $webhookSecret = trim((string) ($params['webhookSecret'] ?? ''));
+        if ($webhookSecret === '') {
+            $webhookSecret = bin2hex(random_bytes(32));
+        }
+
+        try {
+            $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'register_webhook', [
+                'license_key' => $licenseKey,
+                'webhook_url' => $webhookUrl,
+                'webhook_secret' => $webhookSecret,
+            ]);
+
+            // Store the webhook secret locally for signature verification
+            $this->updateCapabilitySettings([
+                '__skipDeveloperCheck' => true,
+                'webhookSecret' => $webhookSecret,
+                'webhookUrl' => $webhookUrl,
+            ]);
+
+            return ['success' => true, 'message' => 'Webhook registered with central server.', 'webhookUrl' => $webhookUrl];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to register webhook: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Unregister this deployment's webhook from the central server.
+     */
+    public function unregisterWebhookFromCentral(array $params = []): array
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        $licenseKey = trim((string) ($settingsRow['license_key'] ?? ''));
+
+        if ($apiUrl === '' || $licenseKey === '') {
+            return ['success' => false, 'message' => 'Central server not configured.'];
+        }
+
+        $webhookUrl = trim((string) ($settingsRow['webhook_url'] ?? ''));
+
+        try {
+            $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'unregister_webhook', [
+                'license_key' => $licenseKey,
+                'webhook_url' => $webhookUrl,
+            ]);
+
+            return ['success' => true, 'message' => 'Webhook unregistered from central server.'];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Failed to unregister webhook: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Broadcast notification event to connected SSE clients.
+     */
+    private function broadcastNotificationEvent(array $notification): void
+    {
+        $broadcastFile = sys_get_temp_dir() . '/mamepilot_notification_broadcast.json';
+        $payload = json_encode([
+            'event' => 'notification.created',
+            'notification' => $notification,
+            'timestamp' => time(),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        @file_put_contents($broadcastFile, $payload);
+    }
+
+    /**
+     * SSE endpoint: streams real-time notification events to the frontend.
+     */
+    public function streamNotifications(array $params = []): void
+    {
+        // For SSE, we need to authenticate via query param since EventSource doesn't support headers
+        $token = trim((string) ($_GET['token'] ?? $params['token'] ?? ''));
+        if ($token !== '') {
+            // Validate token and get user
+            $user = $this->auth->validateToken($token);
+            if ($user === null) {
+                http_response_code(401);
+                echo "event: error\ndata: {\"error\": \"Invalid token\"}\n\n";
+                flush();
+                return;
+            }
+        } else {
+            $user = $this->currentUser();
+        }
+
+        // Set SSE headers
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no');
+
+        $broadcastFile = sys_get_temp_dir() . '/mamepilot_notification_broadcast.json';
+        $lastEventTime = 0;
+        $heartbeatInterval = 30; // seconds
+        $lastHeartbeat = time();
+
+        // Disable output buffering
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+
+        echo "event: connected\ndata: " . json_encode(['userId' => (string) ($user['id'] ?? ''), 'role' => (string) ($user['role'] ?? '')]) . "\n\n";
+        flush();
+
+        while (true) {
+            // Check for broadcast file
+            if (file_exists($broadcastFile)) {
+                $content = @file_get_contents($broadcastFile);
+                if ($content !== false) {
+                    $data = json_decode($content, true);
+                    if (is_array($data) && ($data['timestamp'] ?? 0) > $lastEventTime) {
+                        $lastEventTime = (int) ($data['timestamp'] ?? 0);
+
+                        // Check if this notification targets the user's role
+                        $notification = $data['notification'] ?? [];
+                        $targetRoles = $notification['targetRoles'] ?? [];
+                        $userRole = (string) ($user['role'] ?? '');
+
+                        if (empty($targetRoles) || in_array($userRole, $targetRoles, true)) {
+                            echo "event: notification\ndata: " . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+                            flush();
+                        }
+                    }
+                }
+            }
+
+            // Send heartbeat
+            if (time() - $lastHeartbeat >= $heartbeatInterval) {
+                echo ": heartbeat\n\n";
+                flush();
+                $lastHeartbeat = time();
+            }
+
+            // Check if client disconnected
+            if (connection_aborted()) {
+                break;
+            }
+
+            usleep(500000); // 500ms polling
+        }
     }
 
     public function fetchMyNotifications(array $params = []): array

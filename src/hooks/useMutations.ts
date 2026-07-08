@@ -69,6 +69,8 @@ import {
   updateCentralLicenseOverride,
   resetCentralLicenseOverride,
   updatePaymentGatewaySettings,
+  registerWebhookWithCentral,
+  unregisterWebhookFromCentral,
   updateAgentSettings,
   initiatePipraPayCheckout,
   beginMetaAdsOAuth,
@@ -2387,6 +2389,29 @@ export function useResetCentralLicenseOverride(): UseMutationResult<
       queryClient.invalidateQueries({ queryKey: ['settings', 'defaults'] });
       queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
     },
+  });
+}
+
+
+export function useRegisterWebhookWithCentral(): UseMutationResult<
+  { success: boolean; message: string; webhookUrl?: string },
+  Error,
+  { webhookUrl?: string } | undefined,
+  unknown
+> {
+  return useMutation({
+    mutationFn: registerWebhookWithCentral,
+  });
+}
+
+export function useUnregisterWebhookFromCentral(): UseMutationResult<
+  { success: boolean; message: string },
+  Error,
+  void,
+  unknown
+> {
+  return useMutation({
+    mutationFn: () => unregisterWebhookFromCentral(),
   });
 }
 

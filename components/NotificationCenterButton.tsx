@@ -7,6 +7,7 @@ import { useMyNotifications, useMyNotificationsPaginated } from '../src/hooks/us
 import { useMarkNotificationRead, useRespondToNotification } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
+import { useNotificationStream } from '../src/hooks/useNotificationStream';
 
 const formatNotificationTime = (value?: string | null): string => {
   if (!value) return 'Just now';

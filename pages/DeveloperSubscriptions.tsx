@@ -3,7 +3,7 @@ import { formatCurrency } from '../constants';
 import { Button, LoadingOverlay } from '../components';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCentralLicenseTiers, useLocalUsageSummary, useServiceSubscriptionOverview } from '../src/hooks/useQueries';
-import { useCreateOrUpdateCentralLicense, useResetCentralLicenseOverride, useSyncLicenseCapabilities, useUpdateCentralLicenseOverride } from '../src/hooks/useMutations';
+import { useCreateOrUpdateCentralLicense, useRegisterWebhookWithCentral, useResetCentralLicenseOverride, useSyncLicenseCapabilities, useUpdateCentralLicenseOverride } from '../src/hooks/useMutations';
 import { CAPABILITY_KEYS, CAPABILITY_LABELS, normalizeCapabilities } from '../src/utils/capabilities';
 import type { AppCapabilityKey, AppCapabilityMap, LicenseTier } from '../types';
 
@@ -40,6 +40,7 @@ const DeveloperSubscriptions: React.FC = () => {
 
   const tiersQuery = useCentralLicenseTiers({ licenseApiUrl, licenseOwnerToken: ownerToken }, false);
   const syncMutation = useSyncLicenseCapabilities();
+  const registerWebhookMutation = useRegisterWebhookWithCentral();
   const saveLicenseMutation = useCreateOrUpdateCentralLicense();
   const overrideMutation = useUpdateCentralLicenseOverride();
   const resetOverrideMutation = useResetCentralLicenseOverride();
@@ -116,7 +117,15 @@ const DeveloperSubscriptions: React.FC = () => {
     const toastId = toast.loading('Syncing license...');
     try {
       await syncMutation.mutateAsync({ licenseKey: capabilitySettings?.licenseKey, licenseApiUrl });
-      toast.update(toastId, 'License synced.', 'success');
+      toast.update(toastId, 'License synced. Registering webhook...', 'success');
+      try {
+        const webhookResult = await registerWebhookMutation.mutateAsync({});
+        if (webhookResult.success) {
+          toast.success('Webhook registered with central server.');
+        }
+      } catch {
+        // Webhook registration is best-effort; license sync already succeeded
+      }
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'License sync failed.', 'error');
     }
@@ -174,6 +183,7 @@ const DeveloperSubscriptions: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={loadTiers} disabled={!licenseApiUrl}>Load Tiers</Button>
             <Button variant="secondary" onClick={syncNow} disabled={!capabilitySettings?.licenseKey || !licenseApiUrl}>Sync Now</Button>
+                      <Button variant="secondary" onClick={async () => { const t = toast.loading('Registering webhook...'); try { const r = await registerWebhookMutation.mutateAsync({}); toast.update(t, r.message || 'Webhook registered.', 'success'); } catch (e) { toast.update(t, e instanceof Error ? e.message : 'Webhook registration failed.', 'error'); } }} disabled={!capabilitySettings?.licenseKey || !licenseApiUrl || registerWebhookMutation.isPending}>Register Webhook</Button>
             <Button variant="primary" onClick={saveLicense} disabled={!licenseApiUrl || !ownerToken || !selectedTierKey}>
               {capabilitySettings?.licenseKey ? 'Update Tier' : 'Create License'}
             </Button>

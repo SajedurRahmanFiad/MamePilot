@@ -85,3 +85,18 @@ ALTER TABLE notification_receipts
   ENGINE = InnoDB,
   DEFAULT CHARSET = utf8mb4,
   COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  license_key VARCHAR(255) NOT NULL,
+  webhook_url VARCHAR(1024) NOT NULL,
+  webhook_secret VARCHAR(255) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_delivery_at DATETIME NULL,
+  last_delivery_status INT NULL,
+  failure_count INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_webhook_subscriptions_license (license_key),
+  KEY idx_webhook_subscriptions_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

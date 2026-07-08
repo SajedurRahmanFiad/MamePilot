@@ -263,6 +263,8 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   last_sync_status VARCHAR(64) NULL,
   last_sync_message TEXT NULL,
   sync_grace_until DATETIME NULL,
+  webhook_url VARCHAR(1000) NULL,
+  webhook_secret VARCHAR(500) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
@@ -273,7 +275,9 @@ ALTER TABLE `app_capability_settings`
   ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `maintenance_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `available_tiers` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL;
+  ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `webhook_url` VARCHAR(1000) NULL,
+  ADD COLUMN IF NOT EXISTS `webhook_secret` VARCHAR(500) NULL;
 CREATE TABLE IF NOT EXISTS payment_gateway_settings (
   id VARCHAR(64) NOT NULL,
   piprapay_base_url VARCHAR(500) NULL,
@@ -1138,55 +1142,3 @@ ON DUPLICATE KEY UPDATE
   role = VALUES(role),
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
-
-
--- ============================================================
--- Meta Ads sync: auto-sync support with cooldown tracking
--- Migration: 2026-07-08_meta_ads_sync_cache
--- ============================================================
-CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
-  id VARCHAR(36) PRIMARY KEY,
-  sync_data LONGTEXT,
-  last_synced_at DATETIME,
-  last_manual_sync_at DATETIME DEFAULT NULL,
-  sync_duration_ms INT,
-  error_message LONGTEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE INDEX IF NOT EXISTS idx_meta_ads_sync_cache_synced_at ON meta_ads_sync_cache(last_synced_at DESC);
-
--- ============================================================
--- Meta Ads settings: currency display configuration
--- Migration: 2026-07-08_meta_ads_currency_settings
--- ============================================================
-CREATE TABLE IF NOT EXISTS meta_ads_settings (
-  id VARCHAR(64) NOT NULL,
-  app_id VARCHAR(255) DEFAULT NULL,
-  app_secret VARCHAR(500) DEFAULT NULL,
-  redirect_uri VARCHAR(500) DEFAULT NULL,
-  login_config_id VARCHAR(255) DEFAULT NULL,
-  graph_version VARCHAR(64) DEFAULT NULL,
-  oauth_scopes VARCHAR(500) DEFAULT NULL,
-  display_currency_code VARCHAR(8) DEFAULT 'BDT',
-  display_currency_rate_to_bdt DECIMAL(14,4) DEFAULT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- Meta Ads insights cache: breakdown & daily data
--- Migration: 2026-07-08_meta_ads_insights_cache
--- ============================================================
-CREATE TABLE IF NOT EXISTS meta_ads_insights_cache (
-  id VARCHAR(36) PRIMARY KEY,
-  ad_id VARCHAR(64) NOT NULL,
-  category VARCHAR(32) NOT NULL,
-  data_json LONGTEXT,
-  last_synced_at DATETIME,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_insights_ad_category (ad_id, category)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE INDEX IF NOT EXISTS idx_meta_ads_insights_cache_ad ON meta_ads_insights_cache(ad_id);

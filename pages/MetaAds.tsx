@@ -81,6 +81,8 @@ const MetaAdsList: React.FC = () => {
   const [dynamicFilters, setDynamicFilters] = useState<any[]>([]);
   const [filterRange, setFilterRange] = useState<FilterRange>('Today');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
+  const { data: metaAdsSettings } = useMetaAdsSettings();
+  const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
   const { data, isPending, error, refetch } = useMetaAds(queryFilters);
   const { data: syncStatus, refetch: refetchSyncStatus } = useMetaAdsSyncStatus(true);
   const syncMutation = useSyncMetaAds();
@@ -268,6 +270,23 @@ const MetaAdsList: React.FC = () => {
   }, [cooldownRemaining, syncMutation, toast, refetch, refetchSyncStatus, applyCooldown, queryClient]);
 
   const summary = data?.summary || {};
+
+  if (!isMetaAdsConfigured) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
+            <svg className="h-7 w-7 text-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8.25h3.75M3 12h3.75m-3.75 3.75h3.75m4.5-10.5h5.25m-5.25 3.75h5.25m-5.25 3.75h5.25M3.75 6H20.25M3.75 18H20.25" /></svg>
+          </div>
+          <h2 className="text-lg font-black text-gray-900">Meta Ads Not Configured</h2>
+          <p className="mt-2 text-sm text-gray-500">Set up your Meta App ID and credentials in Settings before using Meta Ads.</p>
+          <button onClick={() => navigate('/settings?tab=meta-ads')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0f2f57] px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-[#143b6d] transition-colors">
+            Go to Settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

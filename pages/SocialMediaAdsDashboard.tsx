@@ -3,9 +3,10 @@ import { AlertTriangle, BarChart3, MousePointerClick, TrendingDown, TrendingUp, 
 import { Card, FilterBar, StatCard, MetaAdsMoney } from '../components';
 import { formatCurrency } from '../constants';
 import { formatMetaAdsCurrency } from '../src/utils/metaAdsCurrency';
-import { useMetaAds, useOrders } from '../src/hooks/useQueries';
+import { useMetaAds, useMetaAdsSettings, useOrders } from '../src/hooks/useQueries';
 import type { FilterRange } from '../components/FilterBar';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { theme } from '../theme';
 
 type TrendPreset = '7d' | '30d' | 'custom';

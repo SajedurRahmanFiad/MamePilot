@@ -302,6 +302,70 @@ function generateNotificationId(): string
     return 'NT-' . strtoupper(bin2hex(random_bytes(8)));
 }
 
+function dispatchWebhooks(PDO $pdo, array $notificationRow): void
+{
+    $subscriptions = $pdo->query(
+        'SELECT id, webhook_url, webhook_secret FROM webhook_subscriptions WHERE is_active = 1'
+    )->fetchAll();
+
+    if ($subscriptions === []) {
+        return;
+    }
+
+    $payload = json_encode([
+        'event' => 'notification.created',
+        'notification' => $notificationRow,
+        'timestamp' => time(),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    $updateStatement = $pdo->prepare(
+        'UPDATE webhook_subscriptions SET last_delivery_at = CURRENT_TIMESTAMP, last_delivery_status = :status, failure_count = :failures, updated_at = CURRENT_TIMESTAMP WHERE id = :id'
+    );
+
+    foreach ($subscriptions as $sub) {
+        $webhookUrl = (string) ($sub['webhook_url'] ?? '');
+        $webhookSecret = (string) ($sub['webhook_secret'] ?? '');
+        if ($webhookUrl === '') {
+            continue;
+        }
+
+        $signature = $webhookSecret !== '' ? hash_hmac('sha256', $payload, $webhookSecret) : '';
+
+        $ch = curl_init($webhookUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_HTTPHEADER => array_filter([
+                'Content-Type: application/json',
+                'X-MamePilot-Event: notification.created',
+                $signature !== '' ? 'X-MamePilot-Signature: ' . $signature : null,
+            ]),
+        ]);
+
+        $statusCode = 0;
+        try {
+            curl_exec($ch);
+            $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if (curl_errno($ch)) {
+                $statusCode = 0;
+            }
+        } catch (\Throwable $e) {
+            $statusCode = 0;
+        }
+        curl_close($ch);
+
+        $failures = (int) ($sub['failure_count'] ?? 0);
+        $updateStatement->execute([
+            ':id' => $sub['id'],
+            ':status' => $statusCode,
+            ':failures' => ($statusCode >= 200 && $statusCode < 300) ? 0 : $failures + 1,
+        ]);
+    }
+}
+
 $body = requestBody();
 $action = trim((string) ($body['action'] ?? 'resolve_license'));
 
@@ -426,6 +490,11 @@ try {
         $created = $pdo->prepare('SELECT * FROM notifications WHERE id = :id LIMIT 1');
         $created->execute([':id' => $notificationId]);
         $row = $created->fetch();
+
+        if ($row) {
+            dispatchWebhooks($pdo, notificationPayload($row));
+        }
+
         respond(200, ['notification' => notificationPayload($row ?: [])]);
     }
 
@@ -434,6 +503,65 @@ try {
     }
 
     requireOwnerToken();
+
+    if ($action === 'register_webhook') {
+        $licenseKey = trim((string) ($body['license_key'] ?? ''));
+        $webhookUrl = trim((string) ($body['webhook_url'] ?? ''));
+        $webhookSecret = trim((string) ($body['webhook_secret'] ?? ''));
+
+        if ($licenseKey === '' || $webhookUrl === '') {
+            respond(400, ['error' => 'license_key and webhook_url are required.']);
+        }
+
+        $existing = $pdo->prepare('SELECT id FROM webhook_subscriptions WHERE license_key = :license_key AND webhook_url = :webhook_url LIMIT 1');
+        $existing->execute([':license_key' => $licenseKey, ':webhook_url' => $webhookUrl]);
+        if ($existing->fetch()) {
+            $statement = $pdo->prepare(
+                'UPDATE webhook_subscriptions SET webhook_secret = :webhook_secret, is_active = 1, failure_count = 0, updated_at = CURRENT_TIMESTAMP WHERE license_key = :license_key AND webhook_url = :webhook_url'
+            );
+        } else {
+            $statement = $pdo->prepare(
+                'INSERT INTO webhook_subscriptions (license_key, webhook_url, webhook_secret) VALUES (:license_key, :webhook_url, :webhook_secret)'
+            );
+        }
+        $statement->execute([
+            ':license_key' => $licenseKey,
+            ':webhook_url' => $webhookUrl,
+            ':webhook_secret' => $webhookSecret !== '' ? $webhookSecret : null,
+        ]);
+
+        respond(200, ['success' => true, 'message' => 'Webhook registered.']);
+    }
+
+    if ($action === 'unregister_webhook') {
+        $licenseKey = trim((string) ($body['license_key'] ?? ''));
+        $webhookUrl = trim((string) ($body['webhook_url'] ?? ''));
+
+        if ($licenseKey === '' || $webhookUrl === '') {
+            respond(400, ['error' => 'license_key and webhook_url are required.']);
+        }
+
+        $statement = $pdo->prepare('UPDATE webhook_subscriptions SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE license_key = :license_key AND webhook_url = :webhook_url');
+        $statement->execute([':license_key' => $licenseKey, ':webhook_url' => $webhookUrl]);
+
+        respond(200, ['success' => true, 'message' => 'Webhook unregistered.']);
+    }
+
+    if ($action === 'list_webhooks') {
+        $licenseKey = trim((string) ($body['license_key'] ?? ''));
+        if ($licenseKey !== '') {
+            $statement = $pdo->prepare(
+                'SELECT id, license_key, webhook_url, is_active, last_delivery_at, last_delivery_status, failure_count, created_at FROM webhook_subscriptions WHERE license_key = :license_key ORDER BY created_at DESC'
+            );
+            $statement->execute([':license_key' => $licenseKey]);
+        } else {
+            $statement = $pdo->query(
+                'SELECT id, license_key, webhook_url, is_active, last_delivery_at, last_delivery_status, failure_count, created_at FROM webhook_subscriptions ORDER BY created_at DESC'
+            );
+        }
+        respond(200, ['webhooks' => $statement->fetchAll()]);
+    }
+
 
     if ($action === 'list_notifications_all') {
         $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
