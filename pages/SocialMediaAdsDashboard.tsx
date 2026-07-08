@@ -249,15 +249,19 @@ const SocialMediaAdsDashboard: React.FC = () => {
     });
   }, [orders, from, to]);
 
+  // Marketing Revenue: attributed order value within the selected date range (used for ROAS, CPA, ad performance)
   const attributedOrders = useMemo(() => filteredOrders.filter((order) => Boolean(order.sourceAd)), [filteredOrders]);
+  // Realized Revenue: all attributed orders across all time (for trend charts and campaign tables)
   const allAttributedOrders = useMemo(() => (orders as Array<any>).filter((order) => Boolean(order.sourceAd)), [orders]);
   const spend = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.spend || 0), 0), [ads]);
   const nativeCurrency = (ads[0] as any)?.adAccountCurrency || undefined;
   const spendBdt = nativeCurrency && nativeCurrency !== 'BDT' && rateToBdt
     ? spend * rateToBdt
     : spend;
-  const revenue = useMemo(() => allAttributedOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0), [allAttributedOrders]);
-  const purchases = allAttributedOrders.length;
+  // Marketing Revenue: attributed order value within the selected date range
+  const revenue = useMemo(() => attributedOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0), [attributedOrders]);
+  // Purchases: ad-attributed orders within the selected date range
+  const purchases = attributedOrders.length;
   const leads = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.conversions || ad.results || 0), 0), [ads]);
   const linkClicks = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.clicks || 0), 0), [ads]);
   const impressions = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.impressions || 0), 0), [ads]);
@@ -360,15 +364,17 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const roas = spendBdt > 0 ? revenue / spendBdt : 0;
   const cpa = purchases > 0 ? spendBdt / purchases : 0;
   const cpc = linkClicks > 0 ? spendBdt / linkClicks : 0;
+  // Delivered: ad-attributed orders within the selected date range that have been delivered
   const deliveredOrders = useMemo(() => {
-    return allAttributedOrders.filter((order: any) => String(order.status) === 'Completed');
-  }, [allAttributedOrders]);
+    return attributedOrders.filter((order: any) => String(order.status) === 'Completed');
+  }, [attributedOrders]);
   const deliveredCount = deliveredOrders.length;
   const deliveredAmountBdt = deliveredOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0);
   const revenueSubtitle = `ROAS: ${formatMetric(roas, 2)}x`;
   const purchasesSubtitle = `CPA: ${formatMetaAdsCurrency(cpa, "BDT")}`;
   const deliveredSubtitle = `Worth ${formatMetaAdsCurrency(deliveredAmountBdt, "BDT")}`;
-  const spendSubtitle = previousSpend > 0 ? `${spendChange >= 0 ? "+" : ""}${formatMetric(spendChange, 1)}% vs Yesterday` : "No previous data";
+  const comparisonLabel = filterRange === 'Today' ? 'Yesterday' : filterRange === 'This Week' ? 'Last Week' : filterRange === 'This Month' ? 'Last Month' : filterRange === 'This Year' ? 'Last Year' : 'Previous Period';
+  const spendSubtitle = previousSpend > 0 ? `${spendChange >= 0 ? "+" : ""}${formatMetric(spendChange, 1)}% vs ${comparisonLabel}` : "No previous data";
 
 
   return (
@@ -391,11 +397,6 @@ const SocialMediaAdsDashboard: React.FC = () => {
         <StatCard title="Cost Per Order" value={<BdtMoney bdtAmount={cpa} />} icon={<BarChart3 size={18} />} variant="neutral"/>
         <StatCard title="CTR" value={`${formatMetric(ctr)}%`} icon={<BarChart3 size={18} />} variant="neutral" />
       </div>
-      {displayCurrencyCode !== 'BDT' && rateToBdt && rateToBdt > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700">
-          <span>Exchange rate: 1 {displayCurrencyCode} = {' '}{new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rateToBdt)} ৳</span>
-        </div>
-      )}
 
       <div className="space-y-4">
         <div className="space-y-3">

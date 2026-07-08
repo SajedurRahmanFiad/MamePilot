@@ -105,7 +105,7 @@ final class MasterDataApi extends BaseService
     public function fetchUsers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, role, image, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, role, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL
              ORDER BY created_at DESC, name ASC'
@@ -139,7 +139,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM users {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, role, image, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, role, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              {$where}
              ORDER BY created_at DESC, name ASC
@@ -2543,6 +2543,29 @@ final class MasterDataApi extends BaseService
         $executor = new AgentExecutor($this->database, $this->auth, $this->config);
         $run = $executor->startRun(['message' => $message, 'conversationId' => (string) ($params['conversationId'] ?? '')]);
 
+        // Process synchronously
+        if (!empty($run['runId']) && ($run['status'] ?? '') === 'queued') {
+            try {
+                $result = $executor->processQueuedRun(['runId' => $run['runId']]);
+                return [
+                    'answer' => (string) ($result['answer'] ?? ''),
+                    'runId' => (string) ($run['runId'] ?? ''),
+                    'conversationId' => (string) ($run['conversationId'] ?? ''),
+                    'streamToken' => (string) ($run['streamToken'] ?? ''),
+                    'status' => (string) ($result['status'] ?? 'completed'),
+                ];
+            } catch (\Throwable $ex) {
+                return [
+                    'answer' => 'I could not complete the analysis. Please try again.',
+                    'runId' => (string) ($run['runId'] ?? ''),
+                    'conversationId' => (string) ($run['conversationId'] ?? ''),
+                    'streamToken' => (string) ($run['streamToken'] ?? ''),
+                    'status' => 'failed',
+                ];
+            }
+        }
+
+        // Agent disabled or already completed
         return [
             'answer' => (string) ($run['answer'] ?? ''),
             'runId' => (string) ($run['runId'] ?? ''),

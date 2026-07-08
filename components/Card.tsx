@@ -24,7 +24,7 @@ type StatCardVariant = 'primary' | 'secondary' | 'danger' | 'warning' | 'success
 
 interface StatCardProps {
   title: string;
-  value: string | number;
+  value: React.ReactNode;
   icon: React.ReactNode;
   variant?: StatCardVariant;
   bgColor?: string;
