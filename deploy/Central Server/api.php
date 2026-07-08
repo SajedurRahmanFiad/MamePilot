@@ -181,6 +181,14 @@ function tierPayload(array $row): array
     ];
 }
 
+function utcTimestamp($value): ?string {
+    if ($value === null) return null;
+    $s = trim((string) $value);
+    if ($s === '' || $s === '0000-00-00 00:00:00') return null;
+    if (str_contains($s, 'Z') || str_contains($s, '+') || str_contains($s, '-') && strlen($s) > 19) return $s;
+    return $s . 'Z';
+}
+
 function notificationPayload(array $row): array
 {
     $isRead = (int) ($row['is_read'] ?? $row['isRead'] ?? 0) === 1;
@@ -189,19 +197,19 @@ function notificationPayload(array $row): array
         'subject' => (string) ($row['subject'] ?? ''),
         'contentHtml' => (string) ($row['content_html'] ?? $row['contentHtml'] ?? ''),
         'targetRoles' => capabilitiesFrom($row['target_roles'] ?? $row['targetRoles'] ?? '[]'),
-        'startsAt' => $row['starts_at'] ?? $row['startsAt'] ?? null,
-        'endsAt' => $row['ends_at'] ?? $row['endsAt'] ?? null,
-        'createdAt' => $row['created_at'] ?? $row['createdAt'] ?? null,
-        'updatedAt' => $row['updated_at'] ?? $row['updatedAt'] ?? null,
+        'startsAt' => utcTimestamp($row['starts_at'] ?? $row['startsAt'] ?? null),
+        'endsAt' => utcTimestamp($row['ends_at'] ?? $row['endsAt'] ?? null),
+        'createdAt' => utcTimestamp($row['created_at'] ?? $row['createdAt'] ?? null),
+        'updatedAt' => utcTimestamp($row['updated_at'] ?? $row['updatedAt'] ?? null),
         'createdBy' => $row['created_by'] ?? $row['createdBy'] ?? null,
         'createdByName' => $row['created_by'] ?? $row['createdByName'] ?? null,
         'isActive' => (int) ($row['is_active'] ?? $row['isActive'] ?? 1) === 1,
         'isSystemGenerated' => (int) ($row['is_system_generated'] ?? $row['isSystemGenerated'] ?? 0) === 1,
         'systemKey' => $row['system_key'] ?? $row['systemKey'] ?? null,
         'isRead' => $isRead,
-        'readAt' => $row['read_at'] ?? $row['readAt'] ?? null,
+        'readAt' => utcTimestamp($row['read_at'] ?? $row['readAt'] ?? null),
         'actionResult' => $row['action_result'] ?? $row['actionResult'] ?? null,
-        'actedAt' => $row['acted_at'] ?? $row['actedAt'] ?? null,
+        'actedAt' => utcTimestamp($row['acted_at'] ?? $row['actedAt'] ?? null),
         'actionConfig' => is_array($row['action_config'] ?? $row['actionConfig'] ?? null) ? ($row['action_config'] ?? $row['actionConfig'] ?? []) : json_decode((string) ($row['action_config'] ?? $row['actionConfig'] ?? '[]'), true),
         'metadata' => is_array($row['metadata'] ?? null) ? $row['metadata'] : json_decode((string) ($row['metadata'] ?? '[]'), true),
     ];

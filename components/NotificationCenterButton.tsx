@@ -8,6 +8,7 @@ import { useMarkNotificationRead, useRespondToNotification } from '../src/hooks/
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { useNotificationStream } from '../src/hooks/useNotificationStream';
+import { cacheReadReceipt, applyCachedReadState } from '../src/utils/readReceiptCache';
 
 const formatNotificationTime = (value?: string | null): string => {
   if (!value) return 'Just now';
@@ -141,7 +142,7 @@ const NotificationCenterButton: React.FC = () => {
         return prev;
       }
 
-      return firstPageData.items;
+      return applyCachedReadState(firstPageData.items);
     });
 
     hasMoreRef.current = firstPageData.page < firstPageData.totalPages;
@@ -200,7 +201,7 @@ const NotificationCenterButton: React.FC = () => {
         return prev;
       }
 
-      return [...prev, ...onlyNew];
+      return applyCachedReadState([...prev, ...onlyNew]);
     });
 
     hasMoreRef.current = nextPageData.page < nextPageData.totalPages;
@@ -226,7 +227,7 @@ const NotificationCenterButton: React.FC = () => {
     if (!isOpen) {
       setPage(1);
       setAllNotifications((prev) => {
-        const next = firstPageData?.items ?? [];
+        const next = applyCachedReadState(firstPageData?.items ?? []);
         return haveSameNotificationSnapshot(prev, next) ? prev : next;
       });
       seenNotificationIdsRef.current.clear();
@@ -326,6 +327,7 @@ const NotificationCenterButton: React.FC = () => {
     if (notification.isRead || seenNotificationIdsRef.current.has(notification.id)) return;
 
     seenNotificationIdsRef.current.add(notification.id);
+    cacheReadReceipt(notification.id);
     const readAt = new Date().toISOString();
     setAllNotifications((current) =>
       current.map((item) =>

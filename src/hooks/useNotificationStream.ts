@@ -71,7 +71,7 @@ export function useNotificationStream(enabled: boolean = true) {
       }
     });
 
-    eventSource.onerror = () {
+    eventSource.onerror = () => {
       eventSource.close();
       eventSourceRef.current = null;
 
