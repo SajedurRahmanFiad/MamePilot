@@ -514,11 +514,14 @@ const BillDetails: React.FC = () => {
                 {(companySettings?.logo || db.settings.company.logo) && (
                   <img 
                     src={companySettings?.logo || db.settings.company.logo} 
-                    className="rounded-lg object-cover mb-2 sm:mb-3 lg:mb-4 w-auto h-auto"
-                    style={{ 
-                      maxWidth: 'min(100px, 20%)',
-                      maxHeight: 'auto'
+                    className="rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
+                    width={invoiceSettings?.logoWidth || db.settings.invoice.logoWidth}
+                    height={invoiceSettings?.logoHeight || db.settings.invoice.logoHeight}
+                    style={{
+                      width: invoiceSettings?.logoWidth || db.settings.invoice.logoWidth,
+                      height: invoiceSettings?.logoHeight || db.settings.invoice.logoHeight,
                     }}
+                    alt="Company Logo"
                   />
                 )}
                 <h1 className="text-sm sm:text-base lg:text-xl font-black text-blue-600 uppercase tracking-tighter break-words">{companySettings?.name || db.settings.company.name}</h1>

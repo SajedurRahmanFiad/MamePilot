@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Button, NumericInput } from './index';
 import { theme } from '../theme';
-import { NumericInput } from './index';
 import { fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder } from '../src/services/supabaseQueries';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
@@ -241,13 +241,14 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
             </div>
           </div>
           <div className="flex gap-3 px-6 py-4 border-t border-gray-100 shrink-0">
-            <button
+            <Button
               onClick={onClose}
-              className="flex-1 py-2 px-4 rounded-lg border border-gray-200 text-gray-700 font-bold hover:bg-gray-50"
+              variant="ghost"
+              className="flex-1"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={async () => {
                 if (!selectedCity || !selectedZone) {
                   alert('Please select both City and Zone');
@@ -357,11 +358,13 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                   setSubmitting(false);
                 }
               }}
+              variant="primary"
+              className="flex-1"
+              loading={submitting}
               disabled={!selectedCity || !selectedZone || submitting}
-              className="flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Adding...' : 'Add'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
@@ -10,7 +9,7 @@ import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, ty
 import { 
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings, 
-  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncCache
+  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus
 } from '../src/hooks/useQueries';
 import { 
   useCreateCategory, useDeleteCategory, 
@@ -18,6 +17,7 @@ import {
   useCreateUnit, useDeleteUnit,
   useBatchUpdateSettings,
   useBeginMetaAdsOAuth,
+  useSyncMetaAds,
   useUpdateMetaAdsSettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -48,9 +48,25 @@ const SettingsPage: React.FC = () => {
   const { data: courierSettingsData, isPending: courierLoading } = useCourierSettings();
   const { data: walletSettingsData, isPending: walletLoading } = useWalletSettings();
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
-  const { data: metaAdsStatus, isPending: metaAdsLoading } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
+  const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
-  const { refetch: refetchMetaAdsSyncCache, isFetching: isFetchingMetaAdsSyncCache } = useMetaAdsSyncCache(false);
+  const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
+  const syncMetaAdsMutation = useSyncMetaAds();
+  const META_COOLDOWN_KEY = 'metaAdsCooldownEndAt';
+  const [metaAdsCooldown, setMetaAdsCooldown] = useState(() => {
+    const saved = localStorage.getItem(META_COOLDOWN_KEY);
+    if (saved) {
+      const remaining = Math.ceil((Number(saved) - Date.now()) / 1000);
+      return remaining > 0 ? remaining : 0;
+    }
+    return 0;
+  });
+  const metaAdsCooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const applyMetaCooldown = useCallback((seconds: number) => {
+    setMetaAdsCooldown(seconds);
+    localStorage.setItem(META_COOLDOWN_KEY, String(Date.now() + seconds * 1000));
+  }, []);
   const { data: categories = [], isPending: loadingCategories } = useCategories();
   const { data: paymentMethods = [], isPending: loadingPaymentMethods } = usePaymentMethods();
   const { data: units = [], isPending: loadingUnits } = useUnits();
@@ -67,6 +83,41 @@ const SettingsPage: React.FC = () => {
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const toast = useToastNotifications();
+
+  // Meta Ads sync cooldown timer
+  useEffect(() => {
+    const serverCooldown = metaAdsSyncStatus?.cooldownRemainingSeconds ?? 0;
+    if (serverCooldown > 0 && metaAdsCooldown === 0) {
+      applyMetaCooldown(serverCooldown);
+    }
+  }, [metaAdsSyncStatus?.cooldownRemainingSeconds]);
+
+  useEffect(() => {
+    if (metaAdsCooldown <= 0) {
+      if (metaAdsCooldownRef.current) {
+        clearInterval(metaAdsCooldownRef.current);
+        metaAdsCooldownRef.current = null;
+      }
+      return;
+    }
+    metaAdsCooldownRef.current = setInterval(() => {
+      setMetaAdsCooldown((prev) => {
+        if (prev <= 1) {
+          if (metaAdsCooldownRef.current) clearInterval(metaAdsCooldownRef.current);
+          metaAdsCooldownRef.current = null;
+          localStorage.removeItem(META_COOLDOWN_KEY);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (metaAdsCooldownRef.current) {
+        clearInterval(metaAdsCooldownRef.current);
+        metaAdsCooldownRef.current = null;
+      }
+    };
+  }, [metaAdsCooldown]);
   const { hasCapability } = useCapabilities(Boolean(user));
 
   // Local state for forms (these need to be maintained locally until save)
@@ -117,9 +168,9 @@ const SettingsPage: React.FC = () => {
     loginConfigId: '',
     graphVersion: 'v25.0',
     oauthScopes: 'public_profile,ads_read,business_management',
+    displayCurrencyCode: 'BDT',
+    displayCurrencyRateToBdt: null,
   });
-
-  const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as 'Income' | 'Expense' | 'Product' | 'Other', color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
   const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '' });
 
@@ -188,6 +239,8 @@ const SettingsPage: React.FC = () => {
         loginConfigId: metaAdsSettingsData.loginConfigId || '',
         graphVersion: metaAdsSettingsData.graphVersion || 'v25.0',
         oauthScopes: metaAdsSettingsData.oauthScopes || 'public_profile,ads_read,business_management',
+        displayCurrencyCode: metaAdsSettingsData.displayCurrencyCode || 'BDT',
+        displayCurrencyRateToBdt: metaAdsSettingsData.displayCurrencyRateToBdt ?? null,
       });
     }
   }, [metaAdsSettingsData]);
@@ -516,16 +569,25 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleSyncMetaAds = async () => {
-    const toastId = toast.loading('Refreshing cached Meta Ads data...');
+  const handleSyncMetaAds = useCallback(async () => {
+    if (metaAdsCooldown > 0 || syncMetaAdsMutation.isPending) return;
+    const toastId = toast.loading('Syncing Meta Ads from API...');
     try {
-      await refetchMetaAdsSyncCache();
-      toast.update(toastId, 'Meta Ads data refreshed from cache.', 'success');
-      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+      const result = await syncMetaAdsMutation.mutateAsync();
+      if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
+        applyMetaCooldown(result.cooldownRemainingSeconds);
+        toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+      } else {
+        applyMetaCooldown(120);
+        toast.update(toastId, 'Meta Ads synced successfully.', 'success');
+        await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+        await refetchMetaAdsSyncStatus();
+        await refetchMetaAdsConnectionStatus();
+      }
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to refresh Meta Ads data.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to sync Meta Ads.', 'error');
     }
-  };
+  }, [metaAdsCooldown, syncMetaAdsMutation, toast, queryClient, refetchMetaAdsSyncStatus, applyMetaCooldown]);
 
   const handleDeleteCategory = async (id: string) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
@@ -1121,7 +1183,7 @@ const SettingsPage: React.FC = () => {
                               : 'border-gray-300 bg-white text-transparent'
                           }`}
                         >
-                          ✓
+                          âœ“
                         </div>
                         <div className="flex-1">
                           <p className="text-sm font-black text-gray-900">{status}</p>
@@ -1266,11 +1328,11 @@ const SettingsPage: React.FC = () => {
                       type="button"
                       variant="outline"
                       onClick={handleSyncMetaAds}
-                      loading={isFetchingMetaAdsSyncCache}
-                      disabled={!metaAdsStatus?.connections?.length}
+                      loading={syncMetaAdsMutation.isPending}
+                      disabled={!metaAdsStatus?.connections?.length || metaAdsCooldown > 0}
                       icon={ICONS.Clock}
                     >
-                      Sync Now
+                      {metaAdsCooldown > 0 ? `Cooldown ${Math.floor(metaAdsCooldown / 60)}:${String(metaAdsCooldown % 60).padStart(2, '0')} ` : 'Sync Now'}
                     </Button>
                   </div>
                 </div>
@@ -1356,6 +1418,36 @@ const SettingsPage: React.FC = () => {
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
                         placeholder="public_profile,ads_read,business_management"
                       />
+                    </label>
+                  </div>
+                </div>
+
+
+                <div className="rounded-xl border border-gray-100 bg-white p-4">
+                  <h4 className="text-base font-black text-gray-900">Ad Currency</h4>
+                  <p className="mt-1 text-sm text-gray-500">Currency used by your Meta Ad Account. Amounts will be displayed in this currency across the dashboard.</p>
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Ad Currency</span>
+                      <select
+                        value={metaAdsSettings.displayCurrencyCode}
+                        onChange={(event) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyCode: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      >
+                        {['BDT','USD','EUR','GBP','INR','SAR','AED','MYR','SGD','AUD','CAD'].map((code) => (
+                          <option key={code} value={code}>{code}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Exchange Rate � 1 {metaAdsSettings.displayCurrencyCode} = ? BDT</span>
+                      <NumericInput
+                        value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
+                        onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val === '' ? null : Number(val) }))}
+                        placeholder={metaAdsSettings.displayCurrencyCode === 'BDT' ? 'Not needed for BDT' : 'e.g. 120'}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                      <span className="text-xs text-gray-400">Used to show BDT equivalents in tooltips</span>
                     </label>
                   </div>
                 </div>

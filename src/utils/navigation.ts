@@ -5,6 +5,7 @@ export type BackNavigationMode = 'history' | 'route';
 export interface PreservedRouteState {
   from?: string;
   backMode?: BackNavigationMode;
+  backLabel?: string;
   refreshOrdersOnBack?: boolean;
   refreshOrders?: boolean;
 }

@@ -4899,10 +4899,7 @@ TXT;
                 $queryBindings
             );
         } catch (\Throwable $e) {
-            return [
-                'items' => [],
-                'unreadCount' => 0,
-            ];
+            $rows = [];
         }
 
         $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
@@ -4924,6 +4921,8 @@ TXT;
                 if ($notificationId === '') {
                     continue;
                 }
+                // Cache central notification locally so it persists even if central fetch fails later.
+                $this->upsertCentralNotificationLocally($notification);
 
                 $isRead = (bool) ($notification['isRead'] ?? false);
                 if (array_key_exists($notificationId, $indexedItems)) {
@@ -5046,6 +5045,8 @@ TXT;
                 if (!is_array($notification)) {
                     continue;
                 }
+                // Cache central notification locally so it persists even if central fetch fails later.
+                $this->upsertCentralNotificationLocally($notification);
                 $remoteItems[] = $notification;
             }
         } catch (Throwable) {

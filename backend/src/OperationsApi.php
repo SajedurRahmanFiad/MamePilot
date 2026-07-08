@@ -3475,6 +3475,9 @@ final class OperationsApi extends BaseService
             if (array_key_exists('paperflyTrackingNumber', $updates) || array_key_exists('paperfly_tracking_number', $updates)) {
                 $payload['paperfly_tracking_number'] = $this->nullableString($updates['paperflyTrackingNumber'] ?? $updates['paperfly_tracking_number'] ?? null);
             }
+            if (array_key_exists('sourceAd', $updates) || array_key_exists('source_ad', $updates)) {
+                $payload['source_ad'] = $this->nullableString($updates['sourceAd'] ?? $updates['source_ad'] ?? null);
+            }
 
             $affectsCustomerSummary =
                 array_key_exists('customerId', $updates) ||

@@ -12,7 +12,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
 import { handlePrintOrder } from '../src/utils/printUtils';
-import { getPreservedRouteState } from '../src/utils/navigation';
+import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
@@ -1253,11 +1253,14 @@ const OrderDetails: React.FC = () => {
                 {(orderBranding?.logo || db.settings.company.logo) && (
                   <img 
                     src={orderBranding?.logo || db.settings.company.logo} 
-                    className="rounded-lg object-cover mb-2 sm:mb-3 lg:mb-4 w-auto h-auto"
-                    style={{ 
-                      maxWidth: 'min(100px, 20%)',
-                      maxHeight: 'auto'
+                    className="rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
+                    width={invoiceSettings?.logoWidth || db.settings.invoice.logoWidth}
+                    height={invoiceSettings?.logoHeight || db.settings.invoice.logoHeight}
+                    style={{
+                      width: invoiceSettings?.logoWidth || db.settings.invoice.logoWidth,
+                      height: invoiceSettings?.logoHeight || db.settings.invoice.logoHeight,
                     }}
+                    alt="Company Logo"
                   />
                 )}
                 <h1 className="text-sm sm:text-base lg:text-xl font-black text-blue-600 uppercase tracking-tighter break-words">{orderBranding?.name || db.settings.company.name}</h1>
@@ -1271,9 +1274,6 @@ const OrderDetails: React.FC = () => {
                 <div className="space-y-0.5 sm:space-y-1 lg:space-y-1.5 text-[9px] sm:text-sm">
                   <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Order No:&nbsp;&nbsp;</span> <span className="break-all">{order.orderNumber}</span></p>
                   <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span> {order.orderDate}</p>
-                  {sourceAdInfo && (
-                    <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Source Ad:&nbsp;&nbsp;</span> <span className="break-all">{sourceAdInfo.name || sourceAdInfo.id || order.sourceAd}</span></p>
-                  )}
                 </div>
               </div>
             </div>
@@ -1532,7 +1532,11 @@ const OrderDetails: React.FC = () => {
                 <div className="p-4 space-y-4">
                   {/* Ad Information */}
                   {sourceAdInfo ? (
-                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/meta-ads/${sourceAdInfo.id}`, { state: buildHistoryBackState(location, { backLabel: order?.orderNumber || order?.id }) })}
+                      className="w-full text-left bg-blue-50 border border-blue-100 rounded-lg p-3 transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
                       <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Source Ad</p>
                       <div className="space-y-1">
                         <p className="text-sm font-semibold text-gray-900">{sourceAdInfo.name}</p>
@@ -1541,7 +1545,7 @@ const OrderDetails: React.FC = () => {
                           <p className="text-xs text-gray-600">Platform: {sourceAdInfo.platformName}</p>
                         )}
                       </div>
-                    </div>
+                    </button>
                   ) : (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                       <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Source Ad</p>
@@ -1552,14 +1556,16 @@ const OrderDetails: React.FC = () => {
                   {/* Courier History Button */}
                   {canUseFraudChecker && (
                     <>
-                      <button
+                      <Button
                         type="button"
                         onClick={loadCourierHistory}
                         disabled={!canRunFraudChecker || courierHistoryMutation.isPending}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-lg text-sm font-semibold text-orange-700 hover:from-orange-100 hover:to-amber-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        variant="ghost"
+                        className="w-full justify-center rounded-lg border border-orange-100 bg-orange-50 text-orange-700 hover:bg-orange-100"
+                        loading={courierHistoryMutation.isPending}
                       >
                         {courierHistoryMutation.isPending ? 'Loading Courier History...' : 'View Courier History'}
-                      </button>
+                      </Button>
                       {!isFraudCheckerConfigured ? (
                         <p className="text-xs text-amber-700 mt-2">Fraud Checker module is not available in your plan.</p>
                       ) : !isValidFraudPhone ? (
@@ -1729,43 +1735,51 @@ const OrderDetails: React.FC = () => {
             
             <div className="space-y-4 p-6">
               {isCourierConfigured('steadfast') && (
-                <button
+                <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('steadfast')}
-                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                  variant="ghost"
+                  size="md"
+                  className="w-full justify-start gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
                 >
                   <img src="/uploads/steadfast.png" alt="Steadfast" className="h-6 w-6 rounded-full" />
                   <span>Steadfast</span>
-                </button>
+                </Button>
               )}
               {isCourierConfigured('carrybee') && (
-                <button
+                <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('carrybee')}
-                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                  variant="ghost"
+                  size="md"
+                  className="w-full justify-start gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
                 >
                   <img src="/uploads/carrybee.png" alt="CarryBee" className="h-6 w-6 rounded-full" />
                   <span>CarryBee</span>
-                </button>
+                </Button>
               )}
               {isCourierConfigured('paperfly') && (
-                <button
+                <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('paperfly')}
-                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                  variant="ghost"
+                  size="md"
+                  className="w-full justify-start gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
                 >
                   <img src="/uploads/paperfly.png" alt="Paperfly" className="h-6 w-6 rounded-full" />
                   <span>Paperfly</span>
-                </button>
+                </Button>
               )}
-              <button
+              <Button
                 type="button"
                 onClick={() => handleSelectCourierOption('manual')}
-                className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-gray-50"
+                variant="ghost"
+                size="md"
+                className="w-full justify-start gap-3 rounded-2xl border border-gray-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-gray-50"
               >
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-600">+</span>
                 <span>Other / Manual courier assignment</span>
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1792,21 +1806,24 @@ const OrderDetails: React.FC = () => {
                 placeholder="Enter courier name, pickup instructions, or booking reference"
               />
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowManualCourierModal(false)}
-                  className="w-full sm:w-auto rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-gray-50"
+                  variant="ghost"
+                  className="w-full sm:w-auto"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={handleAssignManualCourier}
+                  variant="primary"
+                  className="w-full sm:w-auto"
+                  loading={isAssigningManualCourier}
                   disabled={isAssigningManualCourier}
-                  className="w-full sm:w-auto rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isAssigningManualCourier ? 'Assigning...' : 'Assign Courier'}
-                </button>
+                </Button>
               </div>
             </div>
           </div>

@@ -1,7 +1,8 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, MousePointerClick, TrendingDown, TrendingUp, Trophy } from 'lucide-react';
-import { Card, FilterBar, StatCard } from '../components';
+import { Card, FilterBar, StatCard, MetaAdsMoney } from '../components';
 import { formatCurrency } from '../constants';
+import { formatMetaAdsCurrency } from '../src/utils/metaAdsCurrency';
 import { useMetaAds, useOrders } from '../src/hooks/useQueries';
 import type { FilterRange } from '../components/FilterBar';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -322,8 +323,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const deliveredAmount = deliveredOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0);
   const spendSubtitle = previousSpend > 0 ? `${spendChange >= 0 ? '+' : ''}${formatMetric(spendChange, 1)}% vs Yesterday` : 'No previous data';
   const revenueSubtitle = `ROAS: ${formatMetric(roas, 2)}x`;
-  const purchasesSubtitle = `CPA: ${formatCurrency(cpa)}`;
-  const deliveredSubtitle = `Worth ${formatCurrency(deliveredAmount)}`;
+  const purchasesSubtitle = `CPA: ${formatMetaAdsCurrency(cpa, "BDT")}`;
+  const deliveredSubtitle = `Worth ${formatMetaAdsCurrency(deliveredAmount, "BDT")}`;
 
 
   return (
@@ -337,13 +338,13 @@ const SocialMediaAdsDashboard: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Spend" value={formatCurrency(spend)} icon={<BarChart3 size={18} />} variant="primary" subtitle={spendSubtitle} subtitleTone={spendChange >= 0 ? 'positive' : 'negative'} />
-        <StatCard title="Revenue" value={formatCurrency(revenue)} icon={<TrendingUp size={18} />} variant="success" subtitle={revenueSubtitle} />
+        <StatCard title="Spend" value={<MetaAdsMoney amount={spend} />} icon={<BarChart3 size={18} />} variant="primary" subtitle={spendSubtitle} subtitleTone={spendChange >= 0 ? 'positive' : 'negative'} />
+        <StatCard title="Revenue" value={<MetaAdsMoney amount={revenue} />} icon={<TrendingUp size={18} />} variant="success" subtitle={revenueSubtitle} />
         <StatCard title="Purchases" value={formatNumber(purchases)} icon={<Trophy size={18} />} variant="info" subtitle={purchasesSubtitle} />
         <StatCard title="Delivered" value={formatNumber(deliveredCount)} icon={<Trophy size={18} />} variant="success" subtitle={deliveredSubtitle} />
         <StatCard title="Leads" value={formatNumber(leads)} icon={<MousePointerClick size={18} />} variant="warning" />
         <StatCard title="Link Clicks" value={formatNumber(linkClicks)} icon={<MousePointerClick size={18} />} variant="secondary"/>
-        <StatCard title="Cost Per Order" value={formatCurrency(cpa)} icon={<BarChart3 size={18} />} variant="neutral"/>
+        <StatCard title="Cost Per Order" value={<MetaAdsMoney amount={cpa} />} icon={<BarChart3 size={18} />} variant="neutral"/>
         <StatCard title="CTR" value={`${formatMetric(ctr)}%`} icon={<BarChart3 size={18} />} variant="neutral" />
       </div>
 
@@ -572,8 +573,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         {campaign.campaign}
                       </button>
                     </td>
-                    <td className="px-3 py-3 text-gray-700">{formatCurrency(campaign.spend)}</td>
-                    <td className="px-3 py-3 text-gray-700">{formatCurrency(campaign.revenue)}</td>
+                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.spend} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.revenue} />}</td>
                     <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.roas, 2)}x</td>
                   </tr>
                 ))}
@@ -602,8 +603,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
                 {worstCampaigns.map((campaign) => (
                   <tr key={campaign.campaign}>
                     <td className="px-3 py-3 font-bold text-gray-900">{campaign.campaign}</td>
-                    <td className="px-3 py-3 text-gray-700">{formatCurrency(campaign.spend)}</td>
-                    <td className="px-3 py-3 text-gray-700">{formatCurrency(campaign.revenue)}</td>
+                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.spend} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.revenue} />}</td>
                     <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.roas, 2)}x</td>
                   </tr>
                 ))}

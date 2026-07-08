@@ -86,6 +86,8 @@ const LICENSE_DB_PASS = 'admin@crossintbd';
 const CENTRAL_OWNER_TOKEN = 'fthderthynersgjsyrhgrdryhrtfjutfjdshnrxethmezrejt';
 const RESPONSE_SIGNING_SECRET = 'syghbaweoiwnfouvyzsnruvygebrgyhusbdrgvhjsdnrzubgjhyrdngb';
 
+date_default_timezone_set('UTC');
+
 function respond(int $status, array $payload): void
 {
     http_response_code($status);

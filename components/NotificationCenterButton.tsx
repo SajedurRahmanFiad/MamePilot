@@ -15,7 +15,11 @@ const formatNotificationTime = (value?: string | null): string => {
   if (Number.isNaN(date.getTime())) return 'Just now';
 
   const diffMs = Date.now() - date.getTime();
-  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  // If the timestamp is in the future (clock skew between servers), show "Just now".
+  if (diffMs < 0) return 'Just now';
+
+  const diffMinutes = Math.round(diffMs / 60000);
   if (diffMinutes < 1) return 'Just now';
   if (diffMinutes < 60) return `${diffMinutes}m ago`;
   if (diffMinutes < 1440) return `${Math.round(diffMinutes / 60)}h ago`;

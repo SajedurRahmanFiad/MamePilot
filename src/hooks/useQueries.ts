@@ -66,6 +66,11 @@ import {
   fetchMetaAdsSettings,
   fetchMetaAdsConnectionStatus,
   fetchMetaAdsSyncCache,
+  fetchMetaAdsSyncStatus,
+  fetchMetaAdInsightsDaily,
+  fetchMetaAdInsightsDemographics,
+  fetchMetaAdInsightsPlacements,
+  fetchMetaAdInsightsDevices,
   fetchPermissionsSettings,
   fetchPayrollSettings,
   fetchPayrollEmployees,
@@ -1063,8 +1068,8 @@ export function useMetaAds(
   return useQuery({
     queryKey: ['meta-ads', 'list', normalizedFilters],
     queryFn: () => fetchMetaAds(normalizedFilters),
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
     enabled,
   });
 }
@@ -1074,8 +1079,8 @@ export function useMetaAd(id: string | undefined, enabled: boolean = true): UseQ
     queryKey: ['meta-ads', 'detail', id],
     queryFn: () => fetchMetaAdById(id || ''),
     enabled: enabled && !!id,
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -1084,6 +1089,16 @@ export function useMetaAdsSyncCache(enabled: boolean = true): UseQueryResult<any
     queryKey: ['meta-ads', 'sync-cache'],
     queryFn: fetchMetaAdsSyncCache,
     staleTime: 10 * 1000,
+    enabled,
+  });
+}
+
+export function useMetaAdsSyncStatus(enabled: boolean = true): UseQueryResult<{ lastSyncedAt: string | null; lastManualSyncAt: string | null; syncDurationMs: number | null; cooldownRemainingSeconds: number }, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'sync-status'],
+    queryFn: fetchMetaAdsSyncStatus,
+    staleTime: 5 * 1000,
+    refetchInterval: 10 * 1000,
     enabled,
   });
 }
@@ -1278,5 +1293,43 @@ export function useWalletActivityPage(
     placeholderData: (previousData) => previousData,
     staleTime: 60 * 1000,
     refetchOnMount: false,
+  });
+}
+
+// ========== META ADS INSIGHTS ==========
+
+export function useMetaAdInsightsDaily(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['meta-ads', 'insights', 'daily', id],
+    queryFn: () => fetchMetaAdInsightsDaily(id || ''),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useMetaAdInsightsDemographics(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['meta-ads', 'insights', 'demographics', id],
+    queryFn: () => fetchMetaAdInsightsDemographics(id || ''),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useMetaAdInsightsPlacements(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['meta-ads', 'insights', 'placements', id],
+    queryFn: () => fetchMetaAdInsightsPlacements(id || ''),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useMetaAdInsightsDevices(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['meta-ads', 'insights', 'devices', id],
+    queryFn: () => fetchMetaAdInsightsDevices(id || ''),
+    enabled: !!id && enabled,
+    staleTime: 5 * 60 * 1000,
   });
 }

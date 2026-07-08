@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { theme } from '../theme';
-import { NumericInput } from './index';
+import { Button, NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { fetchPaperflyOrderTracking, submitPaperflyOrder } from '../src/services/supabaseQueries';
@@ -293,20 +293,23 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
           </div>
 
           <div className="flex gap-3 px-6 py-4 border-t border-gray-100 shrink-0">
-            <button
+            <Button
               onClick={onClose}
+              variant="ghost"
+              className="flex-1"
               disabled={submitting}
-              className="flex-1 py-2 px-4 rounded-lg border border-gray-200 text-gray-700 font-bold hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSubmit}
+              variant="primary"
+              className="flex-1"
+              loading={submitting}
               disabled={submitting || !order || !customer}
-              className="flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Adding...' : 'Add'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
