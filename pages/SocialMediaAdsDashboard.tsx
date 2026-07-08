@@ -1,8 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, MousePointerClick, TrendingDown, TrendingUp, Trophy } from 'lucide-react';
-import { Card, FilterBar, StatCard, MetaAdsMoney } from '../components';
-import { formatCurrency } from '../constants';
-import { formatMetaAdsCurrency } from '../src/utils/metaAdsCurrency';
+import { Card, FilterBar, StatCard } from '../components';
+import { formatMetaAdsCurrency, CURRENCY_SYMBOLS } from '../src/utils/metaAdsCurrency';
 import { useMetaAds, useMetaAdsSettings, useOrders } from '../src/hooks/useQueries';
 import type { FilterRange } from '../components/FilterBar';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -90,7 +89,7 @@ const getPreviousWindow = (from: string, to: string) => {
   };
 };
 
-const buildTrendSeries = (start: string, end: string, ads: Array<any>, orders: Array<any>) => {
+const buildTrendSeries = (start: string, end: string, ads: Array<any>, orders: Array<any>, rateToBdt: number | null = null) => {
   if (!start || !end) return [];
   const startDate = new Date(`${start}T00:00:00`);
   const endDate = new Date(`${end}T23:59:59`);
@@ -101,7 +100,8 @@ const buildTrendSeries = (start: string, end: string, ads: Array<any>, orders: A
     const key = cursor.toISOString().slice(0, 10);
     const spend = ads.reduce((total, ad) => {
       const adDate = toDateOnly(ad.createdAt || ad.lastUpdatedAt || ad.updatedAt || '');
-      return adDate === key ? total + Number(ad.spend || 0) : total;
+      const raw = adDate === key ? Number(ad.spend || 0) : 0;
+      return total + (rateToBdt ? raw * rateToBdt : raw);
     }, 0);
     const dayOrders = orders.filter((order) => {
       const orderDate = toDateOnly(order.orderDate || order.createdAt || order.history?.created || '');
@@ -180,6 +180,41 @@ const RangePickerPopover: React.FC<RangePickerPopoverProps> = ({ open, anchorRef
   );
 };
 
+/** Displays a BDT amount. If the display currency differs, shows the equivalent on hover. */
+const BdtMoney: React.FC<{ bdtAmount: number; nativeAmount?: number; nativeCode?: string; className?: string }> = ({ bdtAmount, nativeAmount, nativeCode, className = '' }) => {
+  const [hovered, setHovered] = useState(false);
+  const { data: settings } = useMetaAdsSettings();
+  const displayCode = settings?.displayCurrencyCode || 'BDT';
+  const rateToBdt = settings?.displayCurrencyRateToBdt ?? null;
+
+  const bdtText = formatMetaAdsCurrency(bdtAmount, 'BDT');
+  const showEquiv = displayCode !== 'BDT' && rateToBdt && rateToBdt > 0;
+  const equivText = showEquiv ? formatMetaAdsCurrency(bdtAmount / rateToBdt, displayCode) : null;
+  const nativeText = nativeCode && nativeCode !== 'BDT' && nativeAmount != null
+    ? formatMetaAdsCurrency(nativeAmount, nativeCode)
+    : null;
+
+  if (!equivText && !nativeText) {
+    return <span className={className}>{bdtText}</span>;
+  }
+
+  return (
+    <span
+      className={`relative inline-block ${className}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <span className="cursor-help border-b border-dotted border-gray-300">{bdtText}</span>
+      {hovered && (
+        <span className="absolute bottom-full left-1/2 z-[9999] mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xl">
+          {equivText && <span className="block font-semibold text-gray-900">{equivText}</span>}
+          {equivText && <span className="mt-0.5 block text-[10px] text-gray-400">Rate: 1 {displayCode} = {rateToBdt} ৳</span>}
+        </span>
+      )}
+    </span>
+  );
+};
+
 const SocialMediaAdsDashboard: React.FC = () => {
   const [filterRange, setFilterRange] = useState<FilterRange>('Today');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
@@ -196,6 +231,9 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const { from, to } = useMemo(() => toRangeWindow(filterRange, customDates), [filterRange, customDates]);
   const { data: metaAdsData, isPending: metaAdsPending } = useMetaAds({ from, to });
   const { data: orders = [], isPending: ordersPending } = useOrders();
+  const { data: metaAdsSettings } = useMetaAdsSettings();
+  const displayCurrencyCode = metaAdsSettings?.displayCurrencyCode || 'BDT';
+  const rateToBdt = metaAdsSettings?.displayCurrencyRateToBdt ?? null;
 
   const ads = metaAdsData?.ads || [];
   const summary = metaAdsData?.summary || {};
@@ -212,9 +250,14 @@ const SocialMediaAdsDashboard: React.FC = () => {
   }, [orders, from, to]);
 
   const attributedOrders = useMemo(() => filteredOrders.filter((order) => Boolean(order.sourceAd)), [filteredOrders]);
+  const allAttributedOrders = useMemo(() => (orders as Array<any>).filter((order) => Boolean(order.sourceAd)), [orders]);
   const spend = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.spend || 0), 0), [ads]);
-  const revenue = useMemo(() => attributedOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0), [attributedOrders]);
-  const purchases = attributedOrders.length;
+  const nativeCurrency = (ads[0] as any)?.adAccountCurrency || undefined;
+  const spendBdt = nativeCurrency && nativeCurrency !== 'BDT' && rateToBdt
+    ? spend * rateToBdt
+    : spend;
+  const revenue = useMemo(() => allAttributedOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0), [allAttributedOrders]);
+  const purchases = allAttributedOrders.length;
   const leads = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.conversions || ad.results || 0), 0), [ads]);
   const linkClicks = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.clicks || 0), 0), [ads]);
   const impressions = useMemo(() => ads.reduce((total: number, ad: any) => total + Number(ad.impressions || 0), 0), [ads]);
@@ -227,7 +270,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
       const adDate = toDateOnly(ad.createdAt || ad.lastUpdatedAt || ad.updatedAt || '');
       return adDate >= comparisonWindow.previousFrom && adDate <= comparisonWindow.previousTo;
     });
-    return previousAds.reduce((total: number, ad: any) => total + Number(ad.spend || 0), 0);
+    return previousAds.reduce((total: number, ad: any) => total + Number(ad.spend || 0) * (nativeCurrency && nativeCurrency !== 'BDT' && rateToBdt ? rateToBdt : 1), 0);
   }, [comparisonWindow.previousFrom, comparisonWindow.previousTo, metaAdsData?.ads]);
 
   const previousRevenue = useMemo(() => {
@@ -265,11 +308,11 @@ const SocialMediaAdsDashboard: React.FC = () => {
     return { start: start.toISOString().slice(0, 10), end };
   }, [roasPreset, roasCustomDates]);
 
-  const trendData = useMemo(() => buildTrendSeries(trendWindow.start, trendWindow.end, ads, attributedOrders), [trendWindow.start, trendWindow.end, ads, attributedOrders]);
+  const trendData = useMemo(() => buildTrendSeries(trendWindow.start, trendWindow.end, ads, allAttributedOrders, rateToBdt), [trendWindow.start, trendWindow.end, ads, allAttributedOrders, rateToBdt]);
   const roasTrendData = useMemo(() => {
-    const series = buildTrendSeries(roasWindow.start, roasWindow.end, ads, attributedOrders);
+    const series = buildTrendSeries(roasWindow.start, roasWindow.end, ads, allAttributedOrders, rateToBdt);
     return series.map((point) => ({ ...point, roas: point.spend > 0 ? point.revenue / point.spend : 0 }));
-  }, [roasWindow.start, roasWindow.end, ads, attributedOrders]);
+  }, [roasWindow.start, roasWindow.end, ads, allAttributedOrders, rateToBdt]);
 
   const adLookup = useMemo(() => {
     const lookup = new Map<string, any>();
@@ -286,13 +329,13 @@ const SocialMediaAdsDashboard: React.FC = () => {
     ads.forEach((ad: any) => {
       const campaign = String(ad.campaignName || 'Unassigned Campaign').trim() || 'Unassigned Campaign';
       const entry = map.get(campaign) || { campaign, spend: 0, revenue: 0, purchases: 0, clicks: 0, conversions: 0 };
-      entry.spend += Number(ad.spend || 0);
+      entry.spend += Number(ad.spend || 0) * (nativeCurrency && nativeCurrency !== 'BDT' && rateToBdt ? rateToBdt : 1);
       entry.clicks += Number(ad.clicks || 0);
       entry.conversions += Number(ad.conversions || ad.results || 0);
       map.set(campaign, entry);
     });
 
-    attributedOrders.forEach((order: any) => {
+    allAttributedOrders.forEach((order: any) => {
       const ad = adLookup.get(order.sourceAd);
       const campaign = ad?.campaignName || 'Unassigned Campaign';
       const entry = map.get(campaign) || { campaign, spend: 0, revenue: 0, purchases: 0, clicks: 0, conversions: 0 };
@@ -304,7 +347,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
     return Array.from(map.values())
       .map((row) => ({ ...row, roas: row.spend > 0 ? row.revenue / row.spend : 0 }))
       .sort((left, right) => right.revenue - left.revenue);
-  }, [ads, attributedOrders, adLookup]);
+  }, [ads, allAttributedOrders, adLookup]);
 
   const bestCampaigns = useMemo(() => campaignRows.slice(0, 5), [campaignRows]);
   const worstCampaigns = useMemo(() => [...campaignRows].sort((left, right) => {
@@ -314,18 +357,18 @@ const SocialMediaAdsDashboard: React.FC = () => {
 
   const spendChange = previousSpend > 0 ? ((spend - previousSpend) / previousSpend) * 100 : 0;
   const revenueChange = previousRevenue > 0 ? ((revenue - previousRevenue) / previousRevenue) * 100 : 0;
-  const roas = spend > 0 ? revenue / spend : 0;
-  const cpa = purchases > 0 ? spend / purchases : 0;
-  const cpc = linkClicks > 0 ? spend / linkClicks : 0;
+  const roas = spendBdt > 0 ? revenue / spendBdt : 0;
+  const cpa = purchases > 0 ? spendBdt / purchases : 0;
+  const cpc = linkClicks > 0 ? spendBdt / linkClicks : 0;
   const deliveredOrders = useMemo(() => {
-    return attributedOrders.filter((order: any) => String(order.status) === 'Completed');
-  }, [attributedOrders]);
+    return allAttributedOrders.filter((order: any) => String(order.status) === 'Completed');
+  }, [allAttributedOrders]);
   const deliveredCount = deliveredOrders.length;
-  const deliveredAmount = deliveredOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0);
-  const spendSubtitle = previousSpend > 0 ? `${spendChange >= 0 ? '+' : ''}${formatMetric(spendChange, 1)}% vs Yesterday` : 'No previous data';
+  const deliveredAmountBdt = deliveredOrders.reduce((total: number, order: any) => total + Number(order.total || 0), 0);
   const revenueSubtitle = `ROAS: ${formatMetric(roas, 2)}x`;
   const purchasesSubtitle = `CPA: ${formatMetaAdsCurrency(cpa, "BDT")}`;
-  const deliveredSubtitle = `Worth ${formatMetaAdsCurrency(deliveredAmount, "BDT")}`;
+  const deliveredSubtitle = `Worth ${formatMetaAdsCurrency(deliveredAmountBdt, "BDT")}`;
+  const spendSubtitle = previousSpend > 0 ? `${spendChange >= 0 ? "+" : ""}${formatMetric(spendChange, 1)}% vs Yesterday` : "No previous data";
 
 
   return (
@@ -339,15 +382,20 @@ const SocialMediaAdsDashboard: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Spend" value={<MetaAdsMoney amount={spend} />} icon={<BarChart3 size={18} />} variant="primary" subtitle={spendSubtitle} subtitleTone={spendChange >= 0 ? 'positive' : 'negative'} />
-        <StatCard title="Revenue" value={<MetaAdsMoney amount={revenue} />} icon={<TrendingUp size={18} />} variant="success" subtitle={revenueSubtitle} />
+        <StatCard title="Spend" value={<BdtMoney bdtAmount={spendBdt} nativeAmount={spend} nativeCode={nativeCurrency} />} icon={<BarChart3 size={18} />} variant="primary" subtitle={spendSubtitle} subtitleTone={spendChange >= 0 ? "positive" : "negative"} />
+        <StatCard title="Revenue" value={<BdtMoney bdtAmount={revenue} />} icon={<TrendingUp size={18} />} variant="success" subtitle={revenueSubtitle} />
         <StatCard title="Purchases" value={formatNumber(purchases)} icon={<Trophy size={18} />} variant="info" subtitle={purchasesSubtitle} />
         <StatCard title="Delivered" value={formatNumber(deliveredCount)} icon={<Trophy size={18} />} variant="success" subtitle={deliveredSubtitle} />
         <StatCard title="Leads" value={formatNumber(leads)} icon={<MousePointerClick size={18} />} variant="warning" />
         <StatCard title="Link Clicks" value={formatNumber(linkClicks)} icon={<MousePointerClick size={18} />} variant="secondary"/>
-        <StatCard title="Cost Per Order" value={<MetaAdsMoney amount={cpa} />} icon={<BarChart3 size={18} />} variant="neutral"/>
+        <StatCard title="Cost Per Order" value={<BdtMoney bdtAmount={cpa} />} icon={<BarChart3 size={18} />} variant="neutral"/>
         <StatCard title="CTR" value={`${formatMetric(ctr)}%`} icon={<BarChart3 size={18} />} variant="neutral" />
       </div>
+      {displayCurrencyCode !== 'BDT' && rateToBdt && rateToBdt > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700">
+          <span>Exchange rate: 1 {displayCurrencyCode} = {' '}{new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rateToBdt)} ৳</span>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="space-y-3">
@@ -432,11 +480,11 @@ const SocialMediaAdsDashboard: React.FC = () => {
                       return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
                     }}
                   />
-                  <YAxis yAxisId="left" tickLine={false} axisLine={false} tickFormatter={(value) => `৳${Number(value / 1000).toFixed(0)}k`} />
+                  <YAxis yAxisId="left" tickLine={false} axisLine={false} tickFormatter={(value) => `${CURRENCY_SYMBOLS["BDT"]}${Number(value / 1000).toFixed(0)}k`} />
                   <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} />
                   <Tooltip
                     labelFormatter={(label) => formatTooltipDate(String(label))}
-                    formatter={(value: any, name?: string) => [name === 'purchases' ? formatNumber(value) : formatCurrency(Number(value)), name ?? '']}
+                    formatter={(value: any, name?: string) => [name === "purchases" ? formatNumber(value) : formatMetaAdsCurrency(Number(value), "BDT"), name ?? ""]}
                   />
                   <Legend wrapperStyle={{ marginBottom: 0, padding: 0 }} />
                   <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#2563eb" strokeWidth={2} dot={false} />
@@ -574,8 +622,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         {campaign.campaign}
                       </button>
                     </td>
-                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.spend} />}</td>
-                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.revenue} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<BdtMoney bdtAmount={campaign.spend * (nativeCurrency && nativeCurrency !== "BDT" && rateToBdt ? rateToBdt : 1)} nativeAmount={campaign.spend} nativeCode={nativeCurrency} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<BdtMoney bdtAmount={campaign.revenue} />}</td>
                     <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.roas, 2)}x</td>
                   </tr>
                 ))}
@@ -604,8 +652,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
                 {worstCampaigns.map((campaign) => (
                   <tr key={campaign.campaign}>
                     <td className="px-3 py-3 font-bold text-gray-900">{campaign.campaign}</td>
-                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.spend} />}</td>
-                    <td className="px-3 py-3 text-gray-700">{<MetaAdsMoney amount={campaign.revenue} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<BdtMoney bdtAmount={campaign.spend * (nativeCurrency && nativeCurrency !== "BDT" && rateToBdt ? rateToBdt : 1)} nativeAmount={campaign.spend} nativeCode={nativeCurrency} />}</td>
+                    <td className="px-3 py-3 text-gray-700">{<BdtMoney bdtAmount={campaign.revenue} />}</td>
                     <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.roas, 2)}x</td>
                   </tr>
                 ))}

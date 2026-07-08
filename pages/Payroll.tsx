@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button, LoadingOverlay, Modal, Table, NumericInput } from '../components';
 import type { TableColumn } from '../components/Table';
 import { ICONS, formatCurrency } from '../constants';
+import DynamicFilterBar from '../components/DynamicFilterBar';
+import type { CombinedFilter } from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { hasAdminAccess, type WalletActivityEntry, type WalletBalanceCard } from '../types';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -58,14 +60,20 @@ const WalletCard: React.FC<{
   card: WalletBalanceCard;
   onPay: (card: WalletBalanceCard) => void;
 }> = ({ card, onPay }) => (
-  <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-black text-gray-900">{card.employeeName}</h3>
-          <span className="rounded-full bg-[#dfeaf7] px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-[#0f2f57]">
-            {card.employeeRole}
-          </span>
+  <div className="group relative rounded-xl border border-gray-100 bg-white p-3 shadow-sm transition-all hover:border-[#d6e3f0] hover:shadow-md">
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-xs font-black text-gray-900 truncate">{card.employeeName}</h3>
+          {!card.isCommissionBased && card.fixedSalary ? (
+            <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-violet-700">
+              Fixed
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full bg-[#dfeaf7] px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-[#0f2f57]">
+              {card.employeeRole}
+            </span>
+          )}
         </div>
       </div>
 
@@ -76,19 +84,24 @@ const WalletCard: React.FC<{
         icon={ICONS.Payroll}
         disabled={card.currentBalance <= 0}
         onClick={() => onPay(card)}
+        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity !px-2 !py-1 !text-[10px]"
       >
         Pay
       </Button>
     </div>
 
-    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-2">
-      <div className="rounded-xl border border-[#d6e3f0] bg-[#f8fbff] px-4 py-4">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Wallet Balance</p>
-        <p className="mt-2 text-lg font-black text-gray-900">{formatCurrency(card.currentBalance)}</p>
+    <div className="mt-2 flex items-center gap-3">
+      <div className="flex-1">
+        <p className="text-[9px] font-black uppercase tracking-[0.15em] text-gray-400">Due</p>
+        <p className="mt-0.5 text-sm font-black text-gray-900">{formatCurrency(card.currentBalance)}</p>
       </div>
-      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Credited Orders</p>
-        <p className="mt-2 text-lg font-black text-gray-900">{card.creditedOrders}</p>
+      <div className="flex-1">
+        <p className="text-[9px] font-black uppercase tracking-[0.15em] text-gray-400">
+          {card.isCommissionBased ? 'Orders' : 'Paid'}
+        </p>
+        <p className="mt-0.5 text-sm font-black text-gray-900">
+          {card.isCommissionBased ? card.creditedOrders : formatCurrency(card.totalPaid)}
+        </p>
       </div>
     </div>
   </div>
@@ -111,7 +124,7 @@ const Payroll: React.FC = () => {
   const [deletingPayoutId, setDeletingPayoutId] = useState<string | null>(null);
   const [cardsPage, setCardsPage] = useState<number>(1);
   const [historyPage, setHistoryPage] = useState<number>(1);
-  const [cardSearch, setCardSearch] = useState<string>('');
+  const [appliedFilters, setAppliedFilters] = useState<CombinedFilter[]>([]);
   const [payoutForm, setPayoutForm] = useState<PayoutFormState>({
     amount: '',
     accountId: '',
@@ -122,16 +135,14 @@ const Payroll: React.FC = () => {
 
   const isAdmin = hasAdminAccess(user?.role);
   const isPayoutModalOpen = !!selectedCard;
-  const deferredCardSearch = React.useDeferredValue(cardSearch);
   const { data: walletSettings = { unitAmount: 0, countedStatuses: [] }, isPending: walletSettingsLoading } = useWalletSettings();
   const { data: systemDefaults, isPending: defaultsLoading } = useSystemDefaults();
   const pageSize = systemDefaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
-  const { data: walletCardsPage = { data: [], count: 0, summary: { totalBalance: 0, totalEarned: 0, totalPaid: 0, employeesDue: 0 } }, isPending: walletCardsLoading } = useEmployeeWalletCardsPage(
+  const { data: walletCardsPage = { data: [], count: 0, summary: { totalBalance: 0, totalEarned: 0, totalPaid: 0, employeesDue: 0, fixedSalaryEmployees: 0, totalFixedSalaryDue: 0 } }, isPending: walletCardsLoading } = useEmployeeWalletCardsPage(
     cardsPage,
     pageSize,
     {
       enabled: isAdmin,
-      search: deferredCardSearch,
     }
   );
   const walletCards = walletCardsPage.data;
@@ -162,6 +173,77 @@ const Payroll: React.FC = () => {
     [expenseCategories]
   );
 
+  // Filter definitions for DynamicFilterBar
+  const filterDefinitions = useMemo(() => {
+    const employeeNames = Array.from(new Set(walletCards.map((c) => c.employeeName).filter(Boolean)));
+    const roles = Array.from(new Set(walletCards.map((c) => c.employeeRole).filter(Boolean)));
+
+    return [
+      {
+        type: 'Employee Name',
+        operators: ['=', '≠'] as const,
+        values: employeeNames,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Salary Type',
+        operators: ['=', '≠'] as const,
+        values: ['Commission Based', 'Fixed Salary'],
+      },
+      {
+        type: 'Role',
+        operators: ['=', '≠'] as const,
+        values: roles,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Balance',
+        operators: ['>', '<', '='] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+    ];
+  }, [walletCards]);
+
+  // Apply client-side filters to wallet cards
+  const filteredWalletCards = useMemo(() => {
+    if (appliedFilters.length === 0) return walletCards;
+
+    return walletCards.filter((card) => {
+      return appliedFilters.every((filter) => {
+        const value = filter.value;
+        const operator = filter.operator;
+
+        switch (filter.type) {
+          case 'Employee Name': {
+            const matches = card.employeeName === value;
+            return operator === '≠' ? !matches : matches;
+          }
+          case 'Salary Type': {
+            const isFixed = !card.isCommissionBased && card.fixedSalary;
+            const matches = value === 'Fixed Salary' ? !!isFixed : !isFixed;
+            return operator === '≠' ? !matches : matches;
+          }
+          case 'Role': {
+            const matches = card.employeeRole === value;
+            return operator === '≠' ? !matches : matches;
+          }
+          case 'Balance': {
+            const numValue = Number.parseFloat(value) || 0;
+            switch (operator) {
+              case '>': return card.currentBalance > numValue;
+              case '<': return card.currentBalance < numValue;
+              case '=': return card.currentBalance === numValue;
+              default: return true;
+            }
+          }
+          default:
+            return true;
+        }
+      });
+    });
+  }, [walletCards, appliedFilters]);
+
   useEffect(() => {
     if (!selectedCard) return;
 
@@ -173,10 +255,6 @@ const Payroll: React.FC = () => {
       note: '',
     });
   }, [selectedCard, systemDefaults, accounts, paymentMethods]);
-
-  useEffect(() => {
-    setCardsPage(1);
-  }, [deferredCardSearch]);
 
   useEffect(() => {
     if (cardsPage > walletCardsTotalPages) {
@@ -399,9 +477,10 @@ const Payroll: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-2 sm:space-y-6 pb-12">
       <LoadingOverlay isLoading={loading || payEmployeeWalletMutation.isPending} message="Loading wallet data..." />
 
+      {/* Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Payroll</h2>
@@ -411,46 +490,72 @@ const Payroll: React.FC = () => {
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
+      {/* KPI Cards */}
+      <section className="grid gap-4 grid-cols-2 lg:grid-cols-3">
         <MetricCard
-          label="Outstanding Wallets"
+          label="Total Payroll This Month"
           value={formatCurrency(summary.totalBalance)}
-          hint="Combined wallet balance across all employees."
+          hint="Total amount payable (fixed salaries + commissions)."
           tone="border-[#d6e3f0] bg-[#f8fbff]"
         />
         <MetricCard
-          label="Employees Due"
+          label="Total Paid"
+          value={formatCurrency(summary.totalPaid)}
+          hint="Amount already paid this month."
+        />
+        <MetricCard
+          label="Remaining Payable"
+          value={formatCurrency(summary.totalBalance)}
+          hint="Amount still unpaid."
+          tone="border-amber-200 bg-amber-50"
+        />
+        <MetricCard
+          label="Fixed Salary Employees"
+          value={`${summary.fixedSalaryEmployees}`}
+          hint="Total count of fixed-salary employees."
+          tone="border-violet-200 bg-violet-50"
+        />
+        <MetricCard
+          label="Commission Employees"
+          value={`${walletCardsTotal - summary.fixedSalaryEmployees}`}
+          hint="Total count of commission-based employees."
+        />
+        <MetricCard
+          label="Employees Awaiting Payment"
           value={`${summary.employeesDue}`}
-          hint="Employees with a wallet balance greater than zero."
+          hint="Number of employees with pending or partial payments."
         />
       </section>
 
+      {/* Dynamic Filter Bar */}
+      <div className="mt-0.5 sm:mt-4">
+        <DynamicFilterBar
+          filterDefinitions={filterDefinitions}
+          onApply={setAppliedFilters}
+        />
+      </div>
+
+      {/* Employee Wallets Section */}
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h3 className="text-xl font-black text-gray-900">Employee Wallets</h3>
             <p className="mt-1 text-sm font-medium text-gray-500">
-              Each new employee-created order adds the current unit amount directly to that employee wallet. Balances start counting from Apr 1, 2026.
+              Commission employees earn per order. Fixed salary employees receive their salary monthly.
             </p>
-          </div>
-          <div className="w-full max-w-sm">
-            <input
-              value={cardSearch}
-              onChange={(event) => setCardSearch(event.target.value)}
-              placeholder="Search employees"
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 outline-none transition focus:border-[#0f2f57] focus:ring-2 focus:ring-[#dfeaf7]"
-            />
           </div>
         </div>
 
-        {walletCards.length === 0 ? (
+        {filteredWalletCards.length === 0 ? (
           <div className="mt-6 rounded-[22px] border border-dashed border-gray-200 bg-gray-50 px-6 py-14 text-center text-sm font-medium text-gray-400">
-            {cardSearch.trim() ? 'No employee wallets match the current search.' : 'No employee wallets are available yet.'}
+            {appliedFilters.length > 0
+              ? 'No employee wallets match the current filters.'
+              : 'No employee wallets are available yet.'}
           </div>
         ) : (
           <>
-            <div className="mt-6 grid gap-4 xl:grid-cols-2">
-              {walletCards.map((card) => (
+            <div className="mt-6 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredWalletCards.map((card) => (
                 <WalletCard key={card.employeeId} card={card} onPay={handleOpenPayout} />
               ))}
             </div>
@@ -472,6 +577,7 @@ const Payroll: React.FC = () => {
         )}
       </section>
 
+      {/* Payment History Section */}
       <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -501,6 +607,7 @@ const Payroll: React.FC = () => {
         />
       </section>
 
+      {/* Payout Modal */}
       <Modal
         isOpen={!!selectedCard}
         onClose={handleClosePayout}
@@ -528,9 +635,16 @@ const Payroll: React.FC = () => {
             <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] px-5 py-5">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Employee</p>
               <p className="mt-2 text-lg font-black text-gray-900">{selectedCard.employeeName}</p>
-              <p className="mt-1 text-sm font-medium text-gray-500">
-                Wallet balance {formatCurrency(selectedCard.currentBalance)}
-              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-500">
+                  Wallet balance {formatCurrency(selectedCard.currentBalance)}
+                </span>
+                {!selectedCard.isCommissionBased && selectedCard.fixedSalary && (
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-violet-700">
+                    Fixed Salary: {formatCurrency(selectedCard.fixedSalary)}/month
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -606,6 +720,7 @@ const Payroll: React.FC = () => {
         )}
       </Modal>
 
+      {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!deletingPayoutId}
         onClose={() => setDeletingPayoutId(null)}

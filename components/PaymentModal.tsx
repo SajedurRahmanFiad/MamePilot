@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Button, NumericInput } from './index';
 import { formatCurrency } from '../constants';
 import { theme } from '../theme';
@@ -63,7 +63,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Amount (BDT)</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Amount (৳)</label>
               <NumericInput 
                 value={paymentForm.amount} 
                 onChange={amount => setPaymentForm({...paymentForm, amount})} 

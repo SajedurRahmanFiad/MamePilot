@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { theme } from '../theme';
 import { Button, NumericInput } from './index';
@@ -288,7 +288,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">COD to Collect</label>
-              <p className="text-lg font-bold text-gray-900">BDT {order?.total?.toFixed(2) || '0.00'}</p>
+              <p className="text-lg font-bold text-gray-900">৳ {order?.total?.toFixed(2) || '0.00'}</p>
             </div>
           </div>
 

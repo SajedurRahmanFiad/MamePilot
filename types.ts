@@ -229,6 +229,8 @@ export interface MetaAdsSettings {
   loginConfigId: string;
   graphVersion: string;
   oauthScopes: string;
+  displayCurrencyCode: string;
+  displayCurrencyRateToBdt: number | null;
 }
 
 export interface Order {
@@ -856,6 +858,8 @@ export interface WalletBalanceCard {
   employeeId: string;
   employeeName: string;
   employeeRole: string;
+  isCommissionBased: boolean;
+  fixedSalary: number | null;
   currentBalance: number;
   totalEarned: number;
   totalPaid: number;
@@ -868,6 +872,8 @@ export interface WalletBalanceSummary {
   totalEarned: number;
   totalPaid: number;
   employeesDue: number;
+  fixedSalaryEmployees: number;
+  totalFixedSalaryDue: number;
 }
 
 export interface WalletBalanceCardPage {

@@ -1302,35 +1302,35 @@ final class OperationsApi extends BaseService
 
         $customerName = trim((string) ($filters['customerName'] ?? ''));
         if ($customerName !== '') {
-            $where .= ' AND customerName = :customer_name';
-            $bindings[':customer_name'] = $customerName;
+            $where .= ' AND customerName LIKE :customer_name';
+            $bindings[':customer_name'] = (strpos($customerName, '%') !== false) ? $customerName : '%' . $customerName . '%';
         }
         $customerNameNot = trim((string) ($filters['customerNameNot'] ?? ''));
         if ($customerNameNot !== '') {
-            $where .= ' AND customerName <> :customer_name_not';
-            $bindings[':customer_name_not'] = $customerNameNot;
+            $where .= ' AND customerName NOT LIKE :customer_name_not';
+            $bindings[':customer_name_not'] = (strpos($customerNameNot, '%') !== false) ? $customerNameNot : '%' . $customerNameNot . '%';
         }
 
         $customerPhone = trim((string) ($filters['customerPhone'] ?? ''));
         if ($customerPhone !== '') {
-            $where .= ' AND customerPhone = :customer_phone';
-            $bindings[':customer_phone'] = $customerPhone;
+            $where .= ' AND customerPhone LIKE :customer_phone';
+            $bindings[':customer_phone'] = (strpos($customerPhone, '%') !== false) ? $customerPhone : '%' . $customerPhone . '%';
         }
         $customerPhoneNot = trim((string) ($filters['customerPhoneNot'] ?? ''));
         if ($customerPhoneNot !== '') {
-            $where .= ' AND customerPhone <> :customer_phone_not';
-            $bindings[':customer_phone_not'] = $customerPhoneNot;
+            $where .= ' AND customerPhone NOT LIKE :customer_phone_not';
+            $bindings[':customer_phone_not'] = (strpos($customerPhoneNot, '%') !== false) ? $customerPhoneNot : '%' . $customerPhoneNot . '%';
         }
 
         $company = trim((string) ($filters['company'] ?? ''));
         if ($company !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) = :company';
-            $bindings[':company'] = $company;
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :company';
+            $bindings[':company'] = (strpos($company, '%') !== false) ? $company : '%' . $company . '%';
         }
         $companyNot = trim((string) ($filters['companyNot'] ?? ''));
         if ($companyNot !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) <> :company_not';
-            $bindings[':company_not'] = $companyNot;
+            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) NOT LIKE :company_not';
+            $bindings[':company_not'] = (strpos($companyNot, '%') !== false) ? $companyNot : '%' . $companyNot . '%';
         }
 
         $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
@@ -3428,9 +3428,6 @@ final class OperationsApi extends BaseService
             if (array_key_exists('paidAmount', $updates)) {
                 $payload['paid_amount'] = $this->formatMoney($updates['paidAmount']);
             }
-            if (array_key_exists('paidAt', $updates)) {
-                $payload['paid_at'] = $this->normalizeDateTimeInput((string) $updates['paidAt']);
-            }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
@@ -4606,10 +4603,17 @@ final class OperationsApi extends BaseService
         }
 
         $creator = $this->database->fetchOne(
-            'SELECT id, role FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            'SELECT id, role, is_commission_based, fixed_salary FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
             [':id' => $createdBy]
         );
         if ($creator === null || !$this->isEmployeeRole((string) ($creator['role'] ?? ''))) {
+            return;
+        }
+
+        // Skip wallet credits for fixed salary employees - they get paid via fixed salary, not per order
+        $isCommissionBased = !empty($creator['is_commission_based'] ?? false);
+        $fixedSalary = isset($creator['fixed_salary']) ? (float) $creator['fixed_salary'] : null;
+        if (!$isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
             return;
         }
 
@@ -4924,6 +4928,13 @@ final class OperationsApi extends BaseService
         $orderCounts = $this->fetchEligibleOrderCountsByEmployeeIds($employeeIds, $countedStatuses);
         $walletAmounts = $this->fetchLiveWalletAmountsByEmployeeIds($employeeIds);
 
+        // Fetch current month payouts for fixed salary employees
+        $fixedSalaryEmployeeIds = array_values(array_filter($employeeIds, function (string $id) use ($employees): bool {
+            $employee = $this->findEmployeeById($employees, $id);
+            return !empty($employee['isCommissionBased'] ?? false) === false && ($employee['fixedSalary'] ?? null) !== null;
+        }));
+        $monthlyPayouts = $fixedSalaryEmployeeIds !== [] ? $this->fetchCurrentMonthPayoutsByEmployeeIds($fixedSalaryEmployeeIds) : [];
+
         $cards = [];
         foreach ($employees as $employee) {
             $employeeId = (string) ($employee['id'] ?? '');
@@ -4931,15 +4942,35 @@ final class OperationsApi extends BaseService
                 continue;
             }
 
+            $isCommissionBased = !empty($employee['isCommissionBased'] ?? false);
+            $fixedSalary = isset($employee['fixedSalary']) ? (float) $employee['fixedSalary'] : null;
             $walletAmount = $walletAmounts[$employeeId] ?? [];
+
+            if (!$isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+                // Fixed salary employee: balance = fixed salary - payouts this month
+                $paidThisMonth = (float) ($monthlyPayouts[$employeeId] ?? 0);
+                $currentBalance = max(0, $fixedSalary - $paidThisMonth);
+                $totalEarned = $fixedSalary;
+                $totalPaid = $paidThisMonth;
+                $creditedOrders = 0; // Fixed salary employees don't earn per order
+            } else {
+                // Commission-based employee: use existing wallet balance
+                $currentBalance = (float) ($walletAmount['currentBalance'] ?? 0);
+                $totalEarned = (float) ($walletAmount['totalEarned'] ?? 0);
+                $totalPaid = (float) ($walletAmount['totalPaid'] ?? 0);
+                $creditedOrders = (int) ($orderCounts[$employeeId] ?? 0);
+            }
+
             $cards[] = [
                 'employeeId' => $employeeId,
                 'employeeName' => (string) ($employee['name'] ?? 'Unknown Employee'),
                 'employeeRole' => (string) ($employee['role'] ?? 'Employee'),
-                'currentBalance' => (float) ($walletAmount['currentBalance'] ?? 0),
-                'totalEarned' => (float) ($walletAmount['totalEarned'] ?? 0),
-                'totalPaid' => (float) ($walletAmount['totalPaid'] ?? 0),
-                'creditedOrders' => (int) ($orderCounts[$employeeId] ?? 0),
+                'isCommissionBased' => $isCommissionBased,
+                'fixedSalary' => $fixedSalary,
+                'currentBalance' => round($currentBalance, 2),
+                'totalEarned' => round($totalEarned, 2),
+                'totalPaid' => round($totalPaid, 2),
+                'creditedOrders' => $creditedOrders,
                 'lastActivityAt' => $walletAmount['lastActivityAt'] ?? null,
             ];
         }
@@ -4953,6 +4984,50 @@ final class OperationsApi extends BaseService
         });
 
         return $cards;
+    }
+
+    /**
+     * Find an employee by ID from an array of employees.
+     */
+    private function findEmployeeById(array $employees, string $id): ?array
+    {
+        foreach ($employees as $employee) {
+            if ((string) ($employee['id'] ?? '') === $id) {
+                return $employee;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fetch total payouts for the current month grouped by employee ID.
+     * @return array<string, float> employeeId => totalPaidThisMonth
+     */
+    private function fetchCurrentMonthPayoutsByEmployeeIds(array $employeeIds): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+
+        $monthStart = date('Y-m-01');
+        $monthEnd = date('Y-m-t');
+
+        [$placeholders, $bindings] = $this->inClause($employeeIds, 'payout_employee');
+        $bindings[':month_start'] = $monthStart;
+        $bindings[':month_end'] = $monthEnd;
+
+        $sql = "SELECT employee_id, SUM(amount) as total_paid
+                FROM wallet_payouts
+                WHERE employee_id IN (" . implode(', ', $placeholders) . ")
+                AND paid_at >= :month_start AND paid_at <= :month_end
+                GROUP BY employee_id";
+
+        $rows = $this->database->fetchAll($sql, $bindings);
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(string) $row['employee_id']] = (float) ($row['total_paid'] ?? 0);
+        }
+        return $result;
     }
 
     /**
@@ -4970,6 +5045,10 @@ final class OperationsApi extends BaseService
                 if ((float) ($card['currentBalance'] ?? 0) > 0) {
                     $summary['employeesDue'] += 1;
                 }
+                if (!empty($card['isCommissionBased'] ?? false) === false && ($card['fixedSalary'] ?? null) !== null) {
+                    $summary['fixedSalaryEmployees'] += 1;
+                    $summary['totalFixedSalaryDue'] += (float) ($card['currentBalance'] ?? 0);
+                }
 
                 return $summary;
             },
@@ -4978,6 +5057,8 @@ final class OperationsApi extends BaseService
                 'totalEarned' => 0.0,
                 'totalPaid' => 0.0,
                 'employeesDue' => 0,
+                'fixedSalaryEmployees' => 0,
+                'totalFixedSalaryDue' => 0.0,
             ]
         );
     }
@@ -5313,6 +5394,8 @@ final class OperationsApi extends BaseService
                 'employeeId' => (string) $currentUser['id'],
                 'employeeName' => (string) ($currentUser['name'] ?? 'Unknown Employee'),
                 'employeeRole' => (string) ($currentUser['role'] ?? 'Employee'),
+                'isCommissionBased' => true,
+                'fixedSalary' => null,
                 'currentBalance' => 0,
                 'totalEarned' => 0,
                 'totalPaid' => 0,
@@ -5321,17 +5404,33 @@ final class OperationsApi extends BaseService
         }
 
         $walletSettings = $this->fetchWalletSettings();
-        $employee = [
-            'id' => (string) $currentUser['id'],
-            'name' => (string) ($currentUser['name'] ?? 'Unknown Employee'),
-            'role' => (string) ($currentUser['role'] ?? 'Employee'),
-        ];
-        $cards = $this->buildWalletCardsForEmployees([$employee], $walletSettings);
+        $employee = $this->database->fetchOne(
+            'SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => (string) $currentUser['id']]
+        );
+        if ($employee === null) {
+            return [
+                'employeeId' => (string) $currentUser['id'],
+                'employeeName' => (string) ($currentUser['name'] ?? 'Unknown Employee'),
+                'employeeRole' => (string) ($currentUser['role'] ?? 'Employee'),
+                'isCommissionBased' => true,
+                'fixedSalary' => null,
+                'currentBalance' => 0,
+                'totalEarned' => 0,
+                'totalPaid' => 0,
+                'creditedOrders' => 0,
+            ];
+        }
+
+        $mappedEmployee = $this->mapUser($employee);
+        $cards = $this->buildWalletCardsForEmployees([$mappedEmployee], $walletSettings);
 
         return $cards[0] ?? [
             'employeeId' => (string) $currentUser['id'],
             'employeeName' => (string) ($currentUser['name'] ?? 'Unknown Employee'),
             'employeeRole' => (string) ($currentUser['role'] ?? 'Employee'),
+            'isCommissionBased' => $mappedEmployee['isCommissionBased'] ?? true,
+            'fixedSalary' => $mappedEmployee['fixedSalary'] ?? null,
             'currentBalance' => 0,
             'totalEarned' => 0,
             'totalPaid' => 0,
@@ -5422,13 +5521,8 @@ final class OperationsApi extends BaseService
 
             $walletSettings = $this->fetchWalletSettings();
             $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
-            $walletCards = $this->buildWalletCardsForEmployees([
-                [
-                    'id' => $employeeId,
-                    'name' => (string) ($employee['name'] ?? 'Unknown Employee'),
-                    'role' => (string) ($employee['role'] ?? 'Employee'),
-                ]
-            ], $walletSettings);
+            $mappedEmployee = $this->mapUser($employee);
+            $walletCards = $this->buildWalletCardsForEmployees([$mappedEmployee], $walletSettings);
             $walletBalance = (float) (($walletCards[0]['currentBalance'] ?? 0));
             if ($amount > $walletBalance) {
                 throw new RuntimeException('Payout amount exceeds the current wallet balance.');

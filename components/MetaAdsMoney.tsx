@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useMetaAdsSettings } from '../src/hooks/useQueries';
 import {
   formatMetaAdsCurrency,
@@ -62,7 +62,7 @@ const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({ amount, nativeCode, classNa
           {tooltip && <span className="block font-semibold text-gray-900">{tooltip}</span>}
           {displayCode !== 'BDT' && (
             <span className="mt-0.5 block text-[10px] text-gray-400">
-              Rate: 1 {displayCode} = {rateToBdt ?? '?'} BDT
+              Rate: 1 {displayCode} = {rateToBdt ?? '?'} ৳
             </span>
           )}
         </span>

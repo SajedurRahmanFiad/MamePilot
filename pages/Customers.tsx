@@ -5,10 +5,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Customer, hasAdminAccess } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, Table, TableCell, IconButton, TableLoadingSkeleton } from '../components';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useCustomersPage, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCustomersPage, useSystemDefaults, useUsers } from '../src/hooks/useQueries';
 import { useDeleteCustomer } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -41,6 +42,7 @@ const Customers: React.FC = () => {
   const [page, setPage] = React.useState<number>(urlPage);
   const previousSearchQueryRef = React.useRef(searchQuery);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
+  const { data: users = [] } = useUsers();
   const { data: customersPage, isFetching, error } = useCustomersPage(effectivePage, pageSize, searchQuery, {
     enabled: canLoadCustomers,
   });
@@ -53,6 +55,137 @@ const Customers: React.FC = () => {
   const canCreateCustomers = can('customers.create');
   const canEditCustomers = can('customers.edit');
   const canDeleteCustomers = can('customers.delete');
+
+  const [createdByFilter, setCreatedByFilter] = React.useState<string>('all');
+  const [createdByNotFilter, setCreatedByNotFilter] = React.useState<string>('');
+  const [nameFilter, setNameFilter] = React.useState<string>('');
+  const [nameNotFilter, setNameNotFilter] = React.useState<string>('');
+  const [phoneFilter, setPhoneFilter] = React.useState<string>('');
+  const [phoneNotFilter, setPhoneNotFilter] = React.useState<string>('');
+  const [addressFilter, setAddressFilter] = React.useState<string>('');
+  const [addressNotFilter, setAddressNotFilter] = React.useState<string>('');
+  const [totalOrdersFilter, setTotalOrdersFilter] = React.useState<{ operator: string; value: string } | null>(null);
+  const [dueAmountFilter, setDueAmountFilter] = React.useState<{ operator: string; value: string } | null>(null);
+
+  const nameOptions = useMemo(() => {
+    return Array.from(new Set(customers.map((c) => c.name).filter(Boolean))) as string[];
+  }, [customers]);
+
+  const phoneOptions = useMemo(() => {
+    return Array.from(new Set(customers.map((c) => c.phone).filter(Boolean))) as string[];
+  }, [customers]);
+
+  const addressOptions = useMemo(() => {
+    return Array.from(new Set(customers.map((c) => c.address).filter(Boolean))) as string[];
+  }, [customers]);
+
+  const customerFilterDefinitions = useMemo(() => {
+    const userOptions = [
+      { value: 'admins', label: 'Admins' },
+      { value: 'employees', label: 'Employees' },
+      ...users
+        .slice()
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
+    ];
+
+    return [
+      {
+        type: 'Created by',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return normalized
+            ? userOptions.filter((option) => option.label.toLowerCase().includes(normalized))
+            : userOptions;
+        },
+      },
+      {
+        type: 'Name',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return nameOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Phone',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return phoneOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Address',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return addressOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Total Orders',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Due Amount',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+    ];
+  }, [users, nameOptions, phoneOptions, addressOptions]);
+
+  const initialFilters = useMemo(() => {
+    const filters = [];
+    if (createdByFilter !== 'all') {
+      const user = users.find((u) => u.id === createdByFilter);
+      const display = createdByFilter === 'admins' ? 'Admins'
+        : createdByFilter === 'employees' ? 'Employees'
+        : user ? `${user.role}: ${user.name}` : createdByFilter;
+      filters.push({ id: 'created-by', type: 'Created by', operator: '=' as const, value: createdByFilter, display });
+    }
+    if (createdByNotFilter) {
+      filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠' as const, value: createdByNotFilter });
+    }
+    if (nameFilter) {
+      filters.push({ id: 'name', type: 'Name', operator: '=' as const, value: nameFilter });
+    }
+    if (nameNotFilter) {
+      filters.push({ id: 'name-not', type: 'Name', operator: '≠' as const, value: nameNotFilter });
+    }
+    if (phoneFilter) {
+      filters.push({ id: 'phone', type: 'Phone', operator: '=' as const, value: phoneFilter });
+    }
+    if (phoneNotFilter) {
+      filters.push({ id: 'phone-not', type: 'Phone', operator: '≠' as const, value: phoneNotFilter });
+    }
+    if (addressFilter) {
+      filters.push({ id: 'address', type: 'Address', operator: '=' as const, value: addressFilter });
+    }
+    if (addressNotFilter) {
+      filters.push({ id: 'address-not', type: 'Address', operator: '≠' as const, value: addressNotFilter });
+    }
+    if (totalOrdersFilter) {
+      filters.push({ id: 'total-orders', type: 'Total Orders', operator: totalOrdersFilter.operator as any, value: totalOrdersFilter.value });
+    }
+    if (dueAmountFilter) {
+      filters.push({ id: 'due-amount', type: 'Due Amount', operator: dueAmountFilter.operator as any, value: dueAmountFilter.value });
+    }
+    return filters;
+  }, [createdByFilter, createdByNotFilter, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, totalOrdersFilter, dueAmountFilter, users]);
 
   // Track location to detect browser back navigation
   const previousLocationRef = useRef<string>(location.pathname + location.search);
@@ -108,8 +241,77 @@ const Customers: React.FC = () => {
     }
   }, [shouldHydrateFromUrl, isNavigatingViaHistory, effectivePage, searchQuery, currentSearchParams, setSearchParams]);
 
-  // Server-side search is applied via the paginated hook. Keep client-side memo only for derived formatting.
-  const filteredCustomers = customers;
+  // Server-side search is applied via the paginated hook. Client-side filters for additional fields.
+  const filteredCustomers = useMemo(() => {
+    let filtered = customers;
+
+    if (createdByFilter !== 'all') {
+      const createdByIds = createdByFilter === 'admins'
+        ? users.filter((u) => u.role === 'Admin').map((u) => u.id)
+        : createdByFilter === 'employees'
+          ? users.filter((u) => u.role === 'Employee').map((u) => u.id)
+          : [createdByFilter];
+      filtered = filtered.filter((c) => c.createdBy && createdByIds.includes(c.createdBy));
+    }
+    if (createdByNotFilter) {
+      const notIds = createdByNotFilter === 'admins'
+        ? users.filter((u) => u.role === 'Admin').map((u) => u.id)
+        : createdByNotFilter === 'employees'
+          ? users.filter((u) => u.role === 'Employee').map((u) => u.id)
+          : [createdByNotFilter];
+      filtered = filtered.filter((c) => !c.createdBy || !notIds.includes(c.createdBy));
+    }
+    if (nameFilter) {
+      filtered = filtered.filter((c) => c.name?.toLowerCase().includes(nameFilter.toLowerCase()));
+    }
+    if (nameNotFilter) {
+      filtered = filtered.filter((c) => !c.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
+    }
+    if (phoneFilter) {
+      filtered = filtered.filter((c) => c.phone?.toLowerCase().includes(phoneFilter.toLowerCase()));
+    }
+    if (phoneNotFilter) {
+      filtered = filtered.filter((c) => !c.phone?.toLowerCase().includes(phoneNotFilter.toLowerCase()));
+    }
+    if (addressFilter) {
+      filtered = filtered.filter((c) => c.address?.toLowerCase().includes(addressFilter.toLowerCase()));
+    }
+    if (addressNotFilter) {
+      filtered = filtered.filter((c) => !c.address?.toLowerCase().includes(addressNotFilter.toLowerCase()));
+    }
+
+    // Numeric filters
+    if (totalOrdersFilter) {
+      const val = Number(totalOrdersFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((c) => {
+          switch (totalOrdersFilter.operator) {
+            case '=': return c.totalOrders === val;
+            case '≠': return c.totalOrders !== val;
+            case '<': return c.totalOrders < val;
+            case '>': return c.totalOrders > val;
+            default: return true;
+          }
+        });
+      }
+    }
+    if (dueAmountFilter) {
+      const val = Number(dueAmountFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((c) => {
+          switch (dueAmountFilter.operator) {
+            case '=': return c.dueAmount === val;
+            case '≠': return c.dueAmount !== val;
+            case '<': return c.dueAmount < val;
+            case '>': return c.dueAmount > val;
+            default: return true;
+          }
+        });
+      }
+    }
+
+    return filtered;
+  }, [customers, createdByFilter, createdByNotFilter, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, totalOrdersFilter, dueAmountFilter, users]);
 
   const handleDelete = async (customerId: string) => {
     if (!confirm('Move this customer to the recycle bin? You can restore it later.')) return;
@@ -140,10 +342,45 @@ const Customers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <DynamicFilterBar
+          filterDefinitions={customerFilterDefinitions}
+          initialFilters={initialFilters}
+          users={users}
+          onApply={(appliedFilters) => {
+          setPage(1);
+          
+          const createdByFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '=');
+          const createdByNotFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '≠');
+          setCreatedByFilter(createdByFilter?.value ?? 'all');
+          setCreatedByNotFilter(createdByNotFilter?.value ?? '');
+          
+          const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
+          const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
+          setNameFilter(nameFilter?.value ?? '');
+          setNameNotFilter(nameNotFilter?.value ?? '');
+          
+          const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '=');
+          const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '≠');
+          setPhoneFilter(phoneFilter?.value ?? '');
+          setPhoneNotFilter(phoneNotFilter?.value ?? '');
+          
+          const addressFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '=');
+          const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '≠');
+          setAddressFilter(addressFilter?.value ?? '');
+          setAddressNotFilter(addressNotFilter?.value ?? '');
+          
+          const totalOrdersFilter = appliedFilters.find((f) => f.type === 'Total Orders');
+          setTotalOrdersFilter(totalOrdersFilter ? { operator: totalOrdersFilter.operator, value: totalOrdersFilter.value } : null);
+          
+          const dueAmountFilter = appliedFilters.find((f) => f.type === 'Due Amount');
+          setDueAmountFilter(dueAmountFilter ? { operator: dueAmountFilter.operator, value: dueAmountFilter.value } : null);
+          }}
+          />
+        </div>
         {canCreateCustomers && (
-          <Button 
+          <Button
             onClick={() => navigate('/customers/new')}
             variant="primary"
             size="md"
@@ -153,8 +390,6 @@ const Customers: React.FC = () => {
           </Button>
         )}
       </div>
-
-      {/* (No Created By filter for customers) */}
       {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-800"><strong>Error loading customers:</strong> {error instanceof Error ? error.message : String(error)}</p>

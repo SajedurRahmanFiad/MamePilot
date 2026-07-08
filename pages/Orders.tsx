@@ -7,12 +7,13 @@ import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
-import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, Dialog } from '../components';
+import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, Dialog, CommonPaymentModal } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
+import { db } from '../db';
+import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings, usePaymentMethods } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
-import { useCompletePickedOrder, useCreateOrder, useDeleteOrder } from '../src/hooks/useMutations';
+import { useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
@@ -148,10 +149,22 @@ const Orders: React.FC = () => {
   const [courierSelectionOrderId, setCourierSelectionOrderId] = useState<string | null>(null);
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: getTodayDate(),
+    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    accountId: db.settings.defaults.defaultAccountId || '',
+    amount: 0,
+    paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
+  });
 
   const { data: users = [] } = useUsers();
   const { data: accounts = [] } = useAccounts();
   const { data: courierSettings } = useCourierSettings();
+  const { data: paymentMethods = [] } = usePaymentMethods();
+  const updateMutation = useUpdateOrder();
+  const createTransactionMutation = useCreateTransaction();
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;
@@ -937,6 +950,82 @@ const Orders: React.FC = () => {
     setCourierSelectionOrderId(null);
   };
 
+  const canAddPayment = (order: Order) => {
+    const status = getPaymentStatusLabel(order.paidAmount, order.total, order.history);
+    return status === 'Unpaid' || status === 'Partially paid' || status === 'Partially Paid';
+  };
+
+  const openPayment = (order: Order) => {
+    setPaymentOrder(order);
+    setPaymentForm({
+      date: getTodayDate(),
+      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      accountId: db.settings.defaults.defaultAccountId || '',
+      amount: Math.max(order.total - order.paidAmount, 0),
+      paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handleAddPayment = async () => {
+    if (!paymentOrder) return;
+
+    if (!paymentForm.accountId) {
+      toast.error('Please select an account');
+      return;
+    }
+    if (paymentForm.amount <= 0) {
+      toast.error('Please enter an amount to record payment');
+      return;
+    }
+
+    try {
+      const fullDatetime = buildLocalDateTime(paymentForm.date, paymentForm.time) || new Date();
+      const isoDatetime = fullDatetime.toISOString();
+      const selectedAccount = accounts.find((account) => account.id === paymentForm.accountId);
+      const method = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
+      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user?.name || 'Unknown'} via ${method} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const existingPaymentHistory = String(paymentOrder.history?.payment || '').trim();
+      const updatedHistory = {
+        ...paymentOrder.history,
+        payment: existingPaymentHistory ? `${existingPaymentHistory}\n${historyText}` : historyText,
+      };
+
+      // Create income transaction for this payment
+      const incomeTxn = {
+        date: isoDatetime,
+        type: 'Income' as const,
+        category: db.settings.defaults.incomeCategoryId || 'income_sales',
+        accountId: paymentForm.accountId,
+        amount: paymentForm.amount,
+        description: `Payment for Order #${paymentOrder.orderNumber}`,
+        referenceId: paymentOrder.id,
+        contactId: paymentOrder.customerId,
+        paymentMethod: method,
+        createdBy: user?.id,
+      };
+      const createdTransaction = await createTransactionMutation.mutateAsync(incomeTxn as any);
+
+      await updateMutation.mutateAsync({
+        id: paymentOrder.id,
+        updates: {
+          paidAmount: paymentOrder.paidAmount + paymentForm.amount,
+          history: updatedHistory as any,
+        },
+      });
+      setShowPaymentModal(false);
+      setPaymentOrder(null);
+      if (createdTransaction?.approvalStatus === 'pending') {
+        toast.info('Payment recorded, and the income transaction is waiting for admin approval.');
+      } else {
+        toast.success('Payment recorded successfully');
+      }
+    } catch (err) {
+      console.error('Failed to record payment:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to record payment');
+    }
+  };
+
   const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly') => {
     if (!courierSettings) return false;
     if (courier === 'steadfast') return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
@@ -1093,11 +1182,11 @@ const Orders: React.FC = () => {
             if (customerNameFilter) {
               setCustomerName(customerNameFilter.value);
               setCustomerNameNot('');
-              params.customerName = customerNameFilter.value;
+              params.customerName = customerNameFilter.value.includes('%') ? customerNameFilter.value : `%${customerNameFilter.value}%`;
             } else if (customerNameNotFilter) {
               setCustomerName('');
               setCustomerNameNot(customerNameNotFilter.value);
-              params.customerNameNot = customerNameNotFilter.value;
+              params.customerNameNot = customerNameNotFilter.value.includes('%') ? customerNameNotFilter.value : `%${customerNameNotFilter.value}%`;
             } else {
               setCustomerName('');
               setCustomerNameNot('');
@@ -1108,11 +1197,11 @@ const Orders: React.FC = () => {
             if (customerPhoneFilter) {
               setCustomerPhone(customerPhoneFilter.value);
               setCustomerPhoneNot('');
-              params.customerPhone = customerPhoneFilter.value;
+              params.customerPhone = customerPhoneFilter.value.includes('%') ? customerPhoneFilter.value : `%${customerPhoneFilter.value}%`;
             } else if (customerPhoneNotFilter) {
               setCustomerPhone('');
               setCustomerPhoneNot(customerPhoneNotFilter.value);
-              params.customerPhoneNot = customerPhoneNotFilter.value;
+              params.customerPhoneNot = customerPhoneNotFilter.value.includes('%') ? customerPhoneNotFilter.value : `%${customerPhoneNotFilter.value}%`;
             } else {
               setCustomerPhone('');
               setCustomerPhoneNot('');
@@ -1123,11 +1212,11 @@ const Orders: React.FC = () => {
             if (companyFilter) {
               setCompany(companyFilter.value);
               setCompanyNot('');
-              params.company = companyFilter.value;
+              params.company = companyFilter.value.includes('%') ? companyFilter.value : `%${companyFilter.value}%`;
             } else if (companyNotFilter) {
               setCompany('');
               setCompanyNot(companyNotFilter.value);
-              params.companyNot = companyNotFilter.value;
+              params.companyNot = companyNotFilter.value.includes('%') ? companyNotFilter.value : `%${companyNotFilter.value}%`;
             } else {
               setCompany('');
               setCompanyNot('');
@@ -1212,11 +1301,13 @@ const Orders: React.FC = () => {
                   order.status === OrderStatus.PICKED && (canDeliverOrder(order) || canReturnOrder(order));
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
                 const canTrackSelectedOrder = sentToAnyCourier;
+                const canAddPaymentSelectedOrder = canAddPayment(order);
                 const hasRowActions =
                   canEditSelectedOrder
                   || canFinalizeSelectedOrder
                   || canSendSelectedOrderToCourier
                   || canTrackSelectedOrder
+                  || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
                 const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.total, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
@@ -1310,7 +1401,10 @@ const Orders: React.FC = () => {
                               {canFinalizeSelectedOrder && (
                                 <button onClick={() => { openCompletionModal(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Check} Complete Order</button>
                               )}
-                              {(canEditSelectedOrder || canFinalizeSelectedOrder) && (canTrackSelectedOrder || canSendSelectedOrderToCourier) && (
+                              {canAddPaymentSelectedOrder && (
+                                <button onClick={() => { openPayment(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-green-600">{ICONS.Banking} Add Payment</button>
+                              )}
+                              {(canEditSelectedOrder || canFinalizeSelectedOrder || canAddPaymentSelectedOrder) && (canTrackSelectedOrder || canSendSelectedOrderToCourier) && (
                                 <div className="border-t my-1"></div>
                               )}
                               {canTrackSelectedOrder && (
@@ -1355,6 +1449,9 @@ const Orders: React.FC = () => {
                           )}
                           {canFinalizeSelectedOrder && (
                             <button onClick={() => openCompletionModal(order)} className="p-2.5 text-gray-400 hover:text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Finalize">{ICONS.Check}</button>
+                          )}
+                          {canAddPaymentSelectedOrder && (
+                            <button onClick={() => openPayment(order)} className="p-2.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-xl transition-all" title="Add Payment">{ICONS.Banking}</button>
                           )}
                           {canTrackSelectedOrder && (
                             <button onClick={() => handleOpenTracking(order)} className="p-2.5 text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Tracking">{ICONS.Courier}</button>
@@ -1510,6 +1607,19 @@ const Orders: React.FC = () => {
               })()
             : null
         }
+      />
+      <CommonPaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => { setShowPaymentModal(false); setPaymentOrder(null); }}
+        onSubmit={handleAddPayment}
+        accounts={accounts}
+        paymentForm={paymentForm}
+        setPaymentForm={setPaymentForm}
+        paymentMethods={paymentMethods}
+        isLoading={updateMutation.isPending}
+        title="Add Payment"
+        buttonText="Save Payment"
+        hideDateTime
       />
     </div>
   );

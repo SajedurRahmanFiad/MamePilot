@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Account } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput } from '../components';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
 import { useCreateAccount, useDeleteAccount } from '../src/hooks/useMutations';
@@ -31,11 +32,16 @@ const Banking: React.FC = () => {
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [openDeleteMenu, setOpenDeleteMenu] = useState<string | null>(null);
-  const [newAcc, setNewAcc] = useState<{ name: string; type: 'Bank' | 'Cash'; openingBalance: number }>({ 
-    name: '', 
-    type: 'Bank', 
-    openingBalance: 0 
+  const [newAcc, setNewAcc] = useState<{ name: string; type: 'Bank' | 'Cash'; openingBalance: number }>({
+    name: '',
+    type: 'Bank',
+    openingBalance: 0
   });
+  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [typeNotFilter, setTypeNotFilter] = useState<string>('');
+  const [nameFilter, setNameFilter] = useState<string>('');
+  const [nameNotFilter, setNameNotFilter] = useState<string>('');
+  const [balanceFilter, setBalanceFilter] = useState<{ operator: string; value: string } | null>(null);
 
   const handleAddAccount = async () => {
     if (!newAcc.name) return;
@@ -78,11 +84,53 @@ const Banking: React.FC = () => {
 
   const totalBalance = filteredAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
+  const accountFilterDefinitions = useMemo(() => {
+    return [
+      {
+        type: 'Type',
+        operators: ['=', '≠'] as const,
+        values: ['Bank', 'Cash'],
+      },
+      {
+        type: 'Name',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Balance',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+    ];
+  }, []);
+
+  const initialFilters = useMemo(() => [], []);
+
   return (
     <div className="space-y-6">
       <LoadingOverlay isLoading={isLoading} message="Loading accounts..." />
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <DynamicFilterBar
+            filterDefinitions={accountFilterDefinitions}
+            initialFilters={initialFilters}
+            onApply={(appliedFilters) => {
+              const typeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');
+              const typeNotFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '≠');
+              setTypeFilter(typeFilter?.value ?? '');
+              setTypeNotFilter(typeNotFilter?.value ?? '');
+
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
+              setNameFilter(nameFilter?.value ?? '');
+              setNameNotFilter(nameNotFilter?.value ?? '');
+
+              const balanceFilter = appliedFilters.find((f) => f.type === 'Balance');
+              setBalanceFilter(balanceFilter ? { operator: balanceFilter.operator, value: balanceFilter.value } : null);
+            }}
+          />
+        </div>
         <Button
           onClick={() => setShowAddModal(true)}
           variant="primary"
@@ -93,7 +141,6 @@ const Banking: React.FC = () => {
           Add Account
         </Button>
       </div>
-
       {/* Summary Card */}
       <div className={`${theme.colors.primary[600]} rounded-xl p-8 text-white shadow-xl shadow-[#0f2f57]/20 relative overflow-hidden`}>
         <div className="relative z-10">

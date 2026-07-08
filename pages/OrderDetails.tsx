@@ -7,7 +7,7 @@ import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabe
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -71,6 +71,7 @@ const OrderDetails: React.FC = () => {
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
   const deleteOrderMutation = useDeleteOrder();
+  const createTransactionMutation = useCreateTransaction();
   const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
   
   const handleDeleteOrder = () => {
@@ -951,15 +952,34 @@ const OrderDetails: React.FC = () => {
       const selectedAccount = accounts.find((account) => account.id === paymentForm.accountId);
       const paymentMethod = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
       const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+
+      // Create income transaction for this payment
+      const incomeTxn = {
+        date: isoDatetime,
+        type: 'Income' as const,
+        category: db.settings.defaults.incomeCategoryId || 'income_sales',
+        accountId: paymentForm.accountId,
+        amount: paymentForm.amount,
+        description: `Payment for Order #${order.orderNumber}`,
+        referenceId: order.id,
+        contactId: order.customerId,
+        paymentMethod,
+        createdBy: user.id,
+      };
+      const createdTransaction = await createTransactionMutation.mutateAsync(incomeTxn as any);
+
       const updates: Partial<Order> = {
         paidAmount: order.paidAmount + paymentForm.amount,
-        paidAt: isoDatetime,
         history: appendHistoryEntry(order.history, historyText) as any,
       };
 
       await updateMutation.mutateAsync({ id: id!, updates });
       setShowPaymentModal(false);
-      toast.success('Payment recorded successfully');
+      if (createdTransaction?.approvalStatus === 'pending') {
+        toast.info('Payment recorded, and the income transaction is waiting for admin approval.');
+      } else {
+        toast.success('Payment recorded successfully');
+      }
     } catch (err) {
       console.error('Failed to record payment:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to record payment');

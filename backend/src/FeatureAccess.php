@@ -123,6 +123,10 @@ final class FeatureAccess
         'updatePermissionsSettings' => 'custom_roles',
         'fetchAgentSettings' => 'enterprise_ai_agent',
         'updateAgentSettings' => 'enterprise_ai_agent',
+        'mameChat' => 'enterprise_ai_agent',
+        'fetchAgentRunStream' => 'enterprise_ai_agent',
+        'startAgentRun' => 'enterprise_ai_agent',
+        'agentRunStream' => 'enterprise_ai_agent',
     ];
 
     private Database $database;

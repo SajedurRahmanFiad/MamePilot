@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Product, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, Table, TableCell, IconButton } from '../components';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
 import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers } from '../src/hooks/useQueries';
@@ -64,21 +65,188 @@ const Products: React.FC = () => {
   const canDeleteProducts = can('products.delete');
   
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
+  const [nameFilter, setNameFilter] = useState<string>('');
+  const [nameNotFilter, setNameNotFilter] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [categoryNotFilter, setCategoryNotFilter] = useState<string>('');
+  const [stockFilter, setStockFilter] = useState<{ operator: string; value: string } | null>(null);
+  const [salePriceFilter, setSalePriceFilter] = useState<{ operator: string; value: string } | null>(null);
+  const [purchasePriceFilter, setPurchasePriceFilter] = useState<{ operator: string; value: string } | null>(null);
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
+
+  const categoryOptions = useMemo(() => {
+    return Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
+  }, [products]);
+
+  const nameOptions = useMemo(() => {
+    return Array.from(new Set(products.map((p) => p.name).filter(Boolean))) as string[];
+  }, [products]);
+
+  const productFilterDefinitions = useMemo(() => {
+    const userOptions = [
+      { value: 'admins', label: 'Admins' },
+      { value: 'employees', label: 'Employees' },
+      ...users
+        .slice()
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
+    ];
+
+    return [
+      {
+        type: 'Created by',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return normalized
+            ? userOptions.filter((option) => option.label.toLowerCase().includes(normalized))
+            : userOptions;
+        },
+      },
+      {
+        type: 'Category',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return categoryOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Name',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return nameOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Stock',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Sale Price',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Purchase Price',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+    ];
+  }, [users, categoryOptions, nameOptions]);
+
+  const initialFilters = useMemo(() => {
+    const filters = [];
+    if (createdByFilter !== 'all') {
+      const user = users.find((u) => u.id === createdByFilter);
+      const display = createdByFilter === 'admins' ? 'Admins'
+        : createdByFilter === 'employees' ? 'Employees'
+        : user ? `${user.role}: ${user.name}` : createdByFilter;
+      filters.push({ id: 'created-by', type: 'Created by', operator: '=' as const, value: createdByFilter, display });
+    }
+    if (categoryFilter) {
+      filters.push({ id: 'category', type: 'Category', operator: '=' as const, value: categoryFilter });
+    }
+    if (categoryNotFilter) {
+      filters.push({ id: 'category-not', type: 'Category', operator: '≠' as const, value: categoryNotFilter });
+    }
+    if (nameFilter) {
+      filters.push({ id: 'name', type: 'Name', operator: '=' as const, value: nameFilter });
+    }
+    if (nameNotFilter) {
+      filters.push({ id: 'name-not', type: 'Name', operator: '≠' as const, value: nameNotFilter });
+    }
+    if (stockFilter) {
+      filters.push({ id: 'stock', type: 'Stock', operator: stockFilter.operator as any, value: stockFilter.value });
+    }
+    if (salePriceFilter) {
+      filters.push({ id: 'sale-price', type: 'Sale Price', operator: salePriceFilter.operator as any, value: salePriceFilter.value });
+    }
+    if (purchasePriceFilter) {
+      filters.push({ id: 'purchase-price', type: 'Purchase Price', operator: purchasePriceFilter.operator as any, value: purchasePriceFilter.value });
+    }
+    return filters;
+  }, [createdByFilter, categoryFilter, categoryNotFilter, nameFilter, nameNotFilter, stockFilter, salePriceFilter, purchasePriceFilter, users]);
 
   // Reset page to 1 when any filter changes to avoid 416 Range Not Satisfiable errors
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, createdByFilter]);
+  }, [searchQuery, createdByFilter, categoryFilter, categoryNotFilter, nameFilter, nameNotFilter, stockFilter, salePriceFilter, purchasePriceFilter]);
 
-  // Wrapper function that resets page AND applies filter (atomic operation)
-  const handleCreatedByFilterChange = (filter: string) => {
-    setPage(1);
-    setCreatedByFilter(filter);
-  };
+  // Server-side search via paginated hook + client-side filters
+  const filteredProducts = useMemo(() => {
+    let filtered = products;
 
-  // Server-side search via paginated hook
-  const filteredProducts = products;
+    if (categoryFilter) {
+      filtered = filtered.filter((p) => p.category?.toLowerCase().includes(categoryFilter.toLowerCase()));
+    }
+    if (categoryNotFilter) {
+      filtered = filtered.filter((p) => !p.category?.toLowerCase().includes(categoryNotFilter.toLowerCase()));
+    }
+    if (nameFilter) {
+      filtered = filtered.filter((p) => p.name?.toLowerCase().includes(nameFilter.toLowerCase()));
+    }
+    if (nameNotFilter) {
+      filtered = filtered.filter((p) => !p.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
+    }
+
+    // Numeric filters
+    if (stockFilter) {
+      const val = Number(stockFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((p) => {
+          switch (stockFilter.operator) {
+            case '=': return p.stock === val;
+            case '≠': return p.stock !== val;
+            case '<': return p.stock < val;
+            case '>': return p.stock > val;
+            default: return true;
+          }
+        });
+      }
+    }
+    if (salePriceFilter) {
+      const val = Number(salePriceFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((p) => {
+          switch (salePriceFilter.operator) {
+            case '=': return p.salePrice === val;
+            case '≠': return p.salePrice !== val;
+            case '<': return p.salePrice < val;
+            case '>': return p.salePrice > val;
+            default: return true;
+          }
+        });
+      }
+    }
+    if (purchasePriceFilter) {
+      const val = Number(purchasePriceFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((p) => {
+          switch (purchasePriceFilter.operator) {
+            case '=': return p.purchasePrice === val;
+            case '≠': return p.purchasePrice !== val;
+            case '<': return p.purchasePrice < val;
+            case '>': return p.purchasePrice > val;
+            default: return true;
+          }
+        });
+      }
+    }
+
+    return filtered;
+  }, [products, categoryFilter, categoryNotFilter, nameFilter, nameNotFilter, stockFilter, salePriceFilter, purchasePriceFilter]);
 
   const handleDelete = async (productId: string) => {
     if (!confirm('Move this product to the recycle bin? You can restore it later.')) return;
@@ -94,8 +262,40 @@ const Products: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <DynamicFilterBar
+            filterDefinitions={productFilterDefinitions}
+            initialFilters={initialFilters}
+            users={users}
+            onApply={(appliedFilters) => {
+              setPage(1);
+
+              const createdByFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '=');
+              const createdByNotFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '≠');
+              setCreatedByFilter(createdByFilter?.value ?? 'all');
+
+              const categoryFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '=');
+              const categoryNotFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '≠');
+              setCategoryFilter(categoryFilter?.value ?? '');
+              setCategoryNotFilter(categoryNotFilter?.value ?? '');
+
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
+              setNameFilter(nameFilter?.value ?? '');
+              setNameNotFilter(nameNotFilter?.value ?? '');
+
+              const stockFilter = appliedFilters.find((f) => f.type === 'Stock');
+              setStockFilter(stockFilter ? { operator: stockFilter.operator, value: stockFilter.value } : null);
+
+              const salePriceFilter = appliedFilters.find((f) => f.type === 'Sale Price');
+              setSalePriceFilter(salePriceFilter ? { operator: salePriceFilter.operator, value: salePriceFilter.value } : null);
+
+              const purchasePriceFilter = appliedFilters.find((f) => f.type === 'Purchase Price');
+              setPurchasePriceFilter(purchasePriceFilter ? { operator: purchasePriceFilter.operator, value: purchasePriceFilter.value } : null);
+            }}
+          />
+        </div>
         {canCreateProducts && (
           <Button
             onClick={() => navigate('/products/new')}
@@ -107,7 +307,6 @@ const Products: React.FC = () => {
           </Button>
         )}
       </div>
-
       <Table
         columns={[
           {

@@ -7,13 +7,21 @@ import { useCreateOrUpdateCentralLicense, useRegisterWebhookWithCentral, useRese
 import { CAPABILITY_KEYS, CAPABILITY_LABELS, normalizeCapabilities } from '../src/utils/capabilities';
 import type { AppCapabilityKey, AppCapabilityMap, LicenseTier } from '../types';
 
-const StatCard: React.FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => (
+const StatCard: React.FC<{ label: string; value: string; hint?: string; valueColor?: string }> = ({ label, value, hint, valueColor }) => (
   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
     <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">{label}</p>
-    <p className="mt-2 text-2xl font-black text-gray-900">{value}</p>
+    <p className={`mt-2 text-2xl font-black ${valueColor || 'text-gray-900'}`}>{value}</p>
     {hint && <p className="mt-1 text-xs font-medium text-gray-500">{hint}</p>}
   </div>
 );
+
+const formatState = (state: string): { label: string; color: string } => {
+  const normalized = state.replace(/_/g, ' ').toLowerCase();
+  const capitalized = normalized.replace(/\b\w/g, (c) => c.toUpperCase());
+  const activeStates = ['active', 'trialing', 'paid', 'current'];
+  const color = activeStates.some((s) => normalized.includes(s)) ? 'text-emerald-600' : 'text-red-600';
+  return { label: capitalized, color };
+};
 
 const tierCapabilitiesToMap = (tier?: LicenseTier | null): AppCapabilityMap => {
   const defaults = normalizeCapabilities({});
@@ -21,6 +29,14 @@ const tierCapabilitiesToMap = (tier?: LicenseTier | null): AppCapabilityMap => {
     defaults[key] = Boolean(tier?.capabilities?.includes(key));
   });
   return defaults;
+};
+
+const formatDateWithOrdinal = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  const day = d.getDate();
+  const suffix = (day % 100 >= 11 && day % 100 <= 13) ? 'th' : ['th', 'st', 'nd', 'rd'][day % 10] || 'th';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${day}${suffix} ${months[d.getMonth()]}, ${d.getFullYear()}`;
 };
 
 const DeveloperSubscriptions: React.FC = () => {
@@ -169,8 +185,8 @@ const DeveloperSubscriptions: React.FC = () => {
       <LoadingOverlay isLoading={busy} message="Loading developer subscription summary..." />
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Current State" value={(overview?.state || 'Unknown').replace(/_/g, ' ')} hint={overview?.subscriptionStatus || undefined} />
-        <StatCard label="Valid Till" value={overview?.dueAt ? new Date(overview.dueAt).toLocaleDateString('en-BD') : 'Not set'} />
+        <StatCard label="Current State" value={formatState(overview?.state || 'Unknown').label} valueColor={formatState(overview?.state || 'Unknown').color} hint={overview?.subscriptionStatus && overview.subscriptionStatus !== overview?.state ? overview.subscriptionStatus : undefined} />
+        <StatCard label="Valid Till" value={overview?.dueAt ? formatDateWithOrdinal(overview.dueAt) : 'Not set'} />
         <StatCard label="Monthly Price" value={formatCurrency(capabilitySettings?.pricingMetadata?.monthly ?? overview?.totalAmount ?? 0)} hint={capabilitySettings?.planName || overview?.planName || 'No tier'} />
       </div>
 

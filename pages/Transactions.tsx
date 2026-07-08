@@ -5,6 +5,7 @@ import PortalMenu from '../components/PortalMenu';
 import { Transaction, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
 import { useTransactionsPage, useUsers, useCategories, useSystemDefaults } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
@@ -44,6 +45,14 @@ const Transactions: React.FC = () => {
   const urlTypeTab = (searchParams.get('type') as 'All' | 'Income' | 'Expense' | 'Transfer' | null) || 'All';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
   const urlCategoryFilter = searchParams.get('category') || 'all';
+  const urlAccountFilter = searchParams.get('account') || '';
+  const urlAccountNotFilter = searchParams.get('accountNot') || '';
+  const urlContactFilter = searchParams.get('contact') || '';
+  const urlContactNotFilter = searchParams.get('contactNot') || '';
+  const urlPaymentMethodFilter = searchParams.get('paymentMethod') || '';
+  const urlPaymentMethodNotFilter = searchParams.get('paymentMethodNot') || '';
+  const urlApprovalStatusFilter = searchParams.get('approvalStatus') || '';
+  const urlApprovalStatusNotFilter = searchParams.get('approvalStatusNot') || '';
   const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
@@ -52,6 +61,16 @@ const Transactions: React.FC = () => {
   const [typeTab, setTypeTab] = useState<'All' | 'Income' | 'Expense' | 'Transfer'>(urlTypeTab);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
   const [categoryFilter, setCategoryFilter] = useState<string>(urlCategoryFilter);
+  const [accountFilter, setAccountFilter] = useState<string>(urlAccountFilter);
+  const [accountNotFilter, setAccountNotFilter] = useState<string>(urlAccountNotFilter);
+  const [contactFilter, setContactFilter] = useState<string>(urlContactFilter);
+  const [contactNotFilter, setContactNotFilter] = useState<string>(urlContactNotFilter);
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>(urlPaymentMethodFilter);
+  const [paymentMethodNotFilter, setPaymentMethodNotFilter] = useState<string>(urlPaymentMethodNotFilter);
+  const [approvalStatusFilter, setApprovalStatusFilter] = useState<string>(urlApprovalStatusFilter);
+  const [approvalStatusNotFilter, setApprovalStatusNotFilter] = useState<string>(urlApprovalStatusNotFilter);
+  const [typeNotFilter, setTypeNotFilter] = useState<string>('');
+  const [categoryNotFilter, setCategoryNotFilter] = useState<string>('');
   const [page, setPage] = useState<number>(urlPage);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [openActionsMenu, setOpenActionsMenu] = useState<string | null>(null);
@@ -71,6 +90,14 @@ const Transactions: React.FC = () => {
     setTypeTab(urlTypeTab);
     setCreatedByFilter(urlCreatedByFilter);
     setCategoryFilter(urlCategoryFilter);
+    setAccountFilter(urlAccountFilter);
+    setAccountNotFilter(urlAccountNotFilter);
+    setContactFilter(urlContactFilter);
+    setContactNotFilter(urlContactNotFilter);
+    setPaymentMethodFilter(urlPaymentMethodFilter);
+    setPaymentMethodNotFilter(urlPaymentMethodNotFilter);
+    setApprovalStatusFilter(urlApprovalStatusFilter);
+    setApprovalStatusNotFilter(urlApprovalStatusNotFilter);
     setSyncedSearchParams(currentSearchParams);
   }, [
     shouldHydrateFromUrl,
@@ -80,6 +107,14 @@ const Transactions: React.FC = () => {
     urlTypeTab,
     urlCreatedByFilter,
     urlCategoryFilter,
+    urlAccountFilter,
+    urlAccountNotFilter,
+    urlContactFilter,
+    urlContactNotFilter,
+    urlPaymentMethodFilter,
+    urlPaymentMethodNotFilter,
+    urlApprovalStatusFilter,
+    urlApprovalStatusNotFilter,
     currentSearchParams,
   ]);
 
@@ -101,6 +136,16 @@ const Transactions: React.FC = () => {
   const effectiveTypeTab = shouldHydrateFromUrl ? urlTypeTab : typeTab;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
   const effectiveCategoryFilter = shouldHydrateFromUrl ? urlCategoryFilter : categoryFilter;
+  const effectiveAccountFilter = shouldHydrateFromUrl ? urlAccountFilter : accountFilter;
+  const effectiveAccountNotFilter = shouldHydrateFromUrl ? urlAccountNotFilter : accountNotFilter;
+  const effectiveContactFilter = shouldHydrateFromUrl ? urlContactFilter : contactFilter;
+  const effectiveContactNotFilter = shouldHydrateFromUrl ? urlContactNotFilter : contactNotFilter;
+  const effectivePaymentMethodFilter = shouldHydrateFromUrl ? urlPaymentMethodFilter : paymentMethodFilter;
+  const effectivePaymentMethodNotFilter = shouldHydrateFromUrl ? urlPaymentMethodNotFilter : paymentMethodNotFilter;
+  const effectiveApprovalStatusFilter = shouldHydrateFromUrl ? urlApprovalStatusFilter : approvalStatusFilter;
+  const effectiveApprovalStatusNotFilter = shouldHydrateFromUrl ? urlApprovalStatusNotFilter : approvalStatusNotFilter;
+  const effectiveTypeNotFilter = typeNotFilter;
+  const effectiveCategoryNotFilter = categoryNotFilter;
   const timeFilters = useMemo(
     () => getDateTimeFilters(effectiveFilterRange, effectiveCustomDates),
     [effectiveFilterRange, effectiveCustomDates]
@@ -150,6 +195,18 @@ const Transactions: React.FC = () => {
       .sort((left, right) => left.label.localeCompare(right.label));
   }, [allCategories, effectiveTypeTab]);
 
+  const allCategoryOptions = useMemo(() => {
+    const optionMap = new Map<string, string>();
+    allCategories.forEach((category) => {
+      optionMap.set(category.id, category.name || category.id);
+    });
+    optionMap.set('Transfer', 'Transfer');
+    optionMap.set('expense_purchases', optionMap.get('expense_purchases') || 'Purchases');
+    return Array.from(optionMap.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [allCategories]);
+
   const { data: transactionsPage, isFetching: transactionsLoading } = useTransactionsPage(effectivePage, pageSize, {
     type: effectiveTypeTab === 'All' ? undefined : effectiveTypeTab,
     category: effectiveCategoryFilter === 'all' ? undefined : effectiveCategoryFilter,
@@ -166,6 +223,162 @@ const Transactions: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(totalTransactions / pageSize));
   const deleteTransactionMutation = useDeleteTransaction();
   const reviewTransactionApprovalMutation = useReviewTransactionApproval();
+
+  const accountOptions = useMemo(() => {
+    return Array.from(new Set(transactions.map((t) => t.accountName).filter(Boolean))) as string[];
+  }, [transactions]);
+
+  const contactOptions = useMemo(() => {
+    return Array.from(new Set(transactions.map((t) => t.contactName).filter(Boolean))) as string[];
+  }, [transactions]);
+
+  const paymentMethodOptions = useMemo(() => {
+    return Array.from(new Set(transactions.map((t) => t.paymentMethod).filter(Boolean))) as string[];
+  }, [transactions]);
+
+  const transactionFilterDefinitions = useMemo(() => {
+    const userOptions = [
+      { value: 'admins', label: 'Admins' },
+      { value: 'employees', label: 'Employees' },
+      { value: 'developers', label: 'Developers' },
+      ...users
+        .slice()
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
+    ];
+
+    return [
+      {
+        type: 'Created by',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return normalized
+            ? userOptions.filter((option) => option.label.toLowerCase().includes(normalized))
+            : userOptions;
+        },
+      },
+      {
+        type: 'Category',
+        operators: ['=', '≠'] as const,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return normalized
+            ? allCategoryOptions.filter((option) => option.label.toLowerCase().includes(normalized))
+            : allCategoryOptions;
+        },
+      },
+      {
+        type: 'Type',
+        operators: ['=', '≠'] as const,
+        values: ['Income', 'Expense', 'Transfer'],
+      },
+      {
+        type: 'Account',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return accountOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Contact',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return contactOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Payment Method',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return paymentMethodOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Approval Status',
+        operators: ['=', '≠'] as const,
+        values: ['approved', 'pending', 'declined'],
+      },
+    ];
+  }, [users, allCategoryOptions, accountOptions, contactOptions, paymentMethodOptions]);
+
+  const initialFilters = useMemo(() => {
+    const filters = [];
+    if (effectiveCreatedByFilter !== 'all') {
+      const user = users.find((u) => u.id === effectiveCreatedByFilter);
+      const display = effectiveCreatedByFilter === 'admins' ? 'Admins'
+        : effectiveCreatedByFilter === 'employees' ? 'Employees'
+        : effectiveCreatedByFilter === 'developers' ? 'Developers'
+        : user ? `${user.role}: ${user.name}` : effectiveCreatedByFilter;
+      filters.push({ id: 'created-by', type: 'Created by', operator: '=' as const, value: effectiveCreatedByFilter, display });
+    }
+    if (effectiveCategoryFilter !== 'all') {
+      const category = allCategoryOptions.find((c) => c.value === effectiveCategoryFilter);
+      filters.push({ id: 'category', type: 'Category', operator: '=' as const, value: effectiveCategoryFilter, display: category?.label || effectiveCategoryFilter });
+    }
+    if (effectiveCategoryNotFilter) {
+      filters.push({ id: 'category-not', type: 'Category', operator: '≠' as const, value: effectiveCategoryNotFilter });
+    }
+    if (effectiveTypeTab !== 'All') {
+      filters.push({ id: 'type', type: 'Type', operator: '=' as const, value: effectiveTypeTab });
+    }
+    if (effectiveTypeNotFilter) {
+      filters.push({ id: 'type-not', type: 'Type', operator: '≠' as const, value: effectiveTypeNotFilter });
+    }
+    if (effectiveAccountFilter) {
+      filters.push({ id: 'account', type: 'Account', operator: '=' as const, value: effectiveAccountFilter });
+    }
+    if (effectiveAccountNotFilter) {
+      filters.push({ id: 'account-not', type: 'Account', operator: '≠' as const, value: effectiveAccountNotFilter });
+    }
+    if (effectiveContactFilter) {
+      filters.push({ id: 'contact', type: 'Contact', operator: '=' as const, value: effectiveContactFilter });
+    }
+    if (effectiveContactNotFilter) {
+      filters.push({ id: 'contact-not', type: 'Contact', operator: '≠' as const, value: effectiveContactNotFilter });
+    }
+    if (effectivePaymentMethodFilter) {
+      filters.push({ id: 'payment-method', type: 'Payment Method', operator: '=' as const, value: effectivePaymentMethodFilter });
+    }
+    if (effectivePaymentMethodNotFilter) {
+      filters.push({ id: 'payment-method-not', type: 'Payment Method', operator: '≠' as const, value: effectivePaymentMethodNotFilter });
+    }
+    if (effectiveApprovalStatusFilter) {
+      filters.push({ id: 'approval-status', type: 'Approval Status', operator: '=' as const, value: effectiveApprovalStatusFilter });
+    }
+    if (effectiveApprovalStatusNotFilter) {
+      filters.push({ id: 'approval-status-not', type: 'Approval Status', operator: '≠' as const, value: effectiveApprovalStatusNotFilter });
+    }
+    return filters;
+  }, [
+    effectiveCreatedByFilter,
+    effectiveCategoryFilter,
+    effectiveCategoryNotFilter,
+    effectiveTypeTab,
+    effectiveTypeNotFilter,
+    effectiveAccountFilter,
+    effectiveAccountNotFilter,
+    effectiveContactFilter,
+    effectiveContactNotFilter,
+    effectivePaymentMethodFilter,
+    effectivePaymentMethodNotFilter,
+    effectiveApprovalStatusFilter,
+    effectiveApprovalStatusNotFilter,
+    users,
+    allCategoryOptions,
+  ]);
 
   useEffect(() => {
     if (shouldHydrateFromUrl || categoryFilter === 'all') return;
@@ -186,6 +399,14 @@ const Transactions: React.FC = () => {
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
     if (effectiveCreatedByFilter !== 'all') params.createdBy = effectiveCreatedByFilter;
     if (effectiveCategoryFilter !== 'all') params.category = effectiveCategoryFilter;
+    if (effectiveAccountFilter) params.account = effectiveAccountFilter;
+    if (effectiveAccountNotFilter) params.accountNot = effectiveAccountNotFilter;
+    if (effectiveContactFilter) params.contact = effectiveContactFilter;
+    if (effectiveContactNotFilter) params.contactNot = effectiveContactNotFilter;
+    if (effectivePaymentMethodFilter) params.paymentMethod = effectivePaymentMethodFilter;
+    if (effectivePaymentMethodNotFilter) params.paymentMethodNot = effectivePaymentMethodNotFilter;
+    if (effectiveApprovalStatusFilter) params.approvalStatus = effectiveApprovalStatusFilter;
+    if (effectiveApprovalStatusNotFilter) params.approvalStatusNot = effectiveApprovalStatusNotFilter;
     if (searchQuery) params.search = searchQuery;
 
     if (new URLSearchParams(params).toString() !== currentSearchParams) {
@@ -200,6 +421,14 @@ const Transactions: React.FC = () => {
     effectiveCustomDates.to,
     effectiveCreatedByFilter,
     effectiveCategoryFilter,
+    effectiveAccountFilter,
+    effectiveAccountNotFilter,
+    effectiveContactFilter,
+    effectiveContactNotFilter,
+    effectivePaymentMethodFilter,
+    effectivePaymentMethodNotFilter,
+    effectiveApprovalStatusFilter,
+    effectiveApprovalStatusNotFilter,
     searchQuery,
     currentSearchParams,
     setSearchParams,
@@ -239,15 +468,6 @@ const Transactions: React.FC = () => {
     setCustomDates(dates);
   };
 
-  const handleCreatedByFilterChange = (filter: string) => {
-    setPage(1);
-    setCreatedByFilter(filter);
-  };
-  const handleCategoryFilterChange = (filter: string) => {
-    setPage(1);
-    setCategoryFilter(filter);
-  };
-
   const userMap = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
 
   const getCreatorName = (transaction: Transaction) => {
@@ -282,7 +502,59 @@ const Transactions: React.FC = () => {
   };
 
   // Active filters are applied server-side so counts stay consistent across pages.
-  const displayedTransactions = transactions;
+  // Client-side filters for fields not supported server-side.
+  const displayedTransactions = useMemo(() => {
+    let filtered = transactions;
+
+    if (effectiveTypeNotFilter) {
+      filtered = filtered.filter((t) => t.type !== effectiveTypeNotFilter);
+    }
+    if (effectiveCategoryNotFilter) {
+      filtered = filtered.filter((t) => {
+        const categoryName = categoryNameMap.get(t.category) || t.category;
+        return categoryName !== effectiveCategoryNotFilter && t.category !== effectiveCategoryNotFilter;
+      });
+    }
+    if (effectiveAccountFilter) {
+      filtered = filtered.filter((t) => t.accountName?.toLowerCase().includes(effectiveAccountFilter.toLowerCase()));
+    }
+    if (effectiveAccountNotFilter) {
+      filtered = filtered.filter((t) => !t.accountName?.toLowerCase().includes(effectiveAccountNotFilter.toLowerCase()));
+    }
+    if (effectiveContactFilter) {
+      filtered = filtered.filter((t) => t.contactName?.toLowerCase().includes(effectiveContactFilter.toLowerCase()));
+    }
+    if (effectiveContactNotFilter) {
+      filtered = filtered.filter((t) => !t.contactName?.toLowerCase().includes(effectiveContactNotFilter.toLowerCase()));
+    }
+    if (effectivePaymentMethodFilter) {
+      filtered = filtered.filter((t) => t.paymentMethod?.toLowerCase().includes(effectivePaymentMethodFilter.toLowerCase()));
+    }
+    if (effectivePaymentMethodNotFilter) {
+      filtered = filtered.filter((t) => !t.paymentMethod?.toLowerCase().includes(effectivePaymentMethodNotFilter.toLowerCase()));
+    }
+    if (effectiveApprovalStatusFilter) {
+      filtered = filtered.filter((t) => t.approvalStatus === effectiveApprovalStatusFilter);
+    }
+    if (effectiveApprovalStatusNotFilter) {
+      filtered = filtered.filter((t) => t.approvalStatus !== effectiveApprovalStatusNotFilter);
+    }
+
+    return filtered;
+  }, [
+    transactions,
+    effectiveTypeNotFilter,
+    effectiveCategoryNotFilter,
+    categoryNameMap,
+    effectiveAccountFilter,
+    effectiveAccountNotFilter,
+    effectiveContactFilter,
+    effectiveContactNotFilter,
+    effectivePaymentMethodFilter,
+    effectivePaymentMethodNotFilter,
+    effectiveApprovalStatusFilter,
+    effectiveApprovalStatusNotFilter,
+  ]);
 
   const transactionSummary = useMemo(() => {
     const summary = displayedTransactions.reduce(
@@ -393,9 +665,6 @@ const Transactions: React.FC = () => {
               setFilterRange={handleFilterRangeChange}
               customDates={effectiveCustomDates}
               setCustomDates={handleCustomDatesChange}
-              statusTab={effectiveTypeTab}
-              setStatusTab={handleTypeTabChange}
-              statusOptions={['Income', 'Expense', 'Transfer']}
               compact={true}
             />
           </div>
@@ -414,48 +683,58 @@ const Transactions: React.FC = () => {
           setFilterRange={handleFilterRangeChange}
           customDates={effectiveCustomDates}
           setCustomDates={handleCustomDatesChange}
-          statusTab={effectiveTypeTab}
-          setStatusTab={handleTypeTabChange}
-          statusOptions={['Income', 'Expense', 'Transfer']}
         />
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-sm font-bold text-gray-700">Created By:</label>
-            <select
-              value={effectiveCreatedByFilter}
-              onChange={(event) => handleCreatedByFilterChange(event.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Users</option>
-            {users.some((user) => user.role === 'Admin') && <option value="admins">Admins</option>}
-            {users.some((user) => isEmployeeRole(user.role)) && <option value="employees">Employees</option>}
-            {users.some((user) => user.role === 'Developer') && <option value="developers">Developers</option>}
-              <optgroup label="Specific Users">
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>{user.name} ({user.role})</option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
+      <DynamicFilterBar
+        filterDefinitions={transactionFilterDefinitions}
+        initialFilters={initialFilters}
+        users={users}
+        onApply={(appliedFilters) => {
+          setPage(1);
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-sm font-bold text-gray-700">Category:</label>
-            <select
-              value={effectiveCategoryFilter}
-              onChange={(event) => handleCategoryFilterChange(event.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Categories</option>
-              {categoryOptions.map((category) => (
-                <option key={category.value} value={category.value}>{category.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+          const createdByFilter = appliedFilters.find((f) => f.type === 'Created by');
+          setCreatedByFilter(createdByFilter?.value ?? 'all');
+
+          const categoryEqFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '=');
+          const categoryNeFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '≠');
+          setCategoryFilter(categoryEqFilter?.value ?? 'all');
+          setCategoryNotFilter(categoryNeFilter?.value ?? '');
+
+          const typeEqFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');
+          const typeNeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '≠');
+          if (typeEqFilter) {
+            setTypeTab(typeEqFilter.value as 'All' | 'Income' | 'Expense' | 'Transfer');
+            setTypeNotFilter('');
+          } else if (typeNeFilter) {
+            setTypeTab('All');
+            setTypeNotFilter(typeNeFilter.value);
+          } else {
+            setTypeTab('All');
+            setTypeNotFilter('');
+          }
+
+          const accountFilter = appliedFilters.find((f) => f.type === 'Account' && f.operator === '=');
+          const accountNotFilter = appliedFilters.find((f) => f.type === 'Account' && f.operator === '≠');
+          setAccountFilter(accountFilter?.value ?? '');
+          setAccountNotFilter(accountNotFilter?.value ?? '');
+
+          const contactFilter = appliedFilters.find((f) => f.type === 'Contact' && f.operator === '=');
+          const contactNotFilter = appliedFilters.find((f) => f.type === 'Contact' && f.operator === '≠');
+          setContactFilter(contactFilter?.value ?? '');
+          setContactNotFilter(contactNotFilter?.value ?? '');
+
+          const paymentMethodFilter = appliedFilters.find((f) => f.type === 'Payment Method' && f.operator === '=');
+          const paymentMethodNotFilter = appliedFilters.find((f) => f.type === 'Payment Method' && f.operator === '≠');
+          setPaymentMethodFilter(paymentMethodFilter?.value ?? '');
+          setPaymentMethodNotFilter(paymentMethodNotFilter?.value ?? '');
+
+          const approvalStatusFilter = appliedFilters.find((f) => f.type === 'Approval Status' && f.operator === '=');
+          const approvalStatusNotFilter = appliedFilters.find((f) => f.type === 'Approval Status' && f.operator === '≠');
+          setApprovalStatusFilter(approvalStatusFilter?.value ?? '');
+          setApprovalStatusNotFilter(approvalStatusNotFilter?.value ?? '');
+        }}
+      />
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
         <div className="overflow-x-auto">
@@ -466,7 +745,7 @@ const Transactions: React.FC = () => {
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Contact</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest"><>Category <br></br> Notes</></th>
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
+                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Amount</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest sm:hidden">Actions</th>
               </tr>
             </thead>
@@ -557,7 +836,7 @@ const Transactions: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-right">
+                      <td className="px-6 py-5 text-center">
                         <span className={`font-black text-base ${transaction.type === 'Income' ? 'text-emerald-600' : transaction.type === 'Expense' ? 'text-red-600' : 'text-black'}`}>
                           {transaction.type === 'Income' ? '+' : transaction.type === 'Expense' ? '-' : ''}
                           {formatCurrency(transaction.amount)}

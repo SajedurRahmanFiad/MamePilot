@@ -499,7 +499,7 @@ export function useUsers(): UseQueryResult<User[], Error> {
     queryKey: ['users'],
     queryFn: fetchUsers,
     staleTime: 5 * 60 * 1000, // 5 minutes - matches bills/orders cache, creator names stay fresh without refetch on every mutation
-    refetchOnMount: false,
+    refetchOnMount: 'always', // Always refetch to get latest user fields
   });
 }
 

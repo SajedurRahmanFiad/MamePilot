@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
@@ -1127,7 +1127,7 @@ const SettingsPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (BDT)</label>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (৳)</label>
                     <NumericInput
                       value={walletSettings.unitAmount}
                       onChange={(value) =>
@@ -1222,7 +1222,7 @@ const SettingsPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (BDT)</label>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (৳)</label>
                     <NumericInput
                       value={walletSettings.unitAmount}
                       onChange={(value) =>
@@ -1440,14 +1440,14 @@ const SettingsPage: React.FC = () => {
                       </select>
                     </label>
                     <label className="space-y-2 text-sm font-semibold text-gray-700">
-                      <span>Exchange Rate � 1 {metaAdsSettings.displayCurrencyCode} = ? BDT</span>
+                      <span>Exchange Rate � 1 {metaAdsSettings.displayCurrencyCode} = ? ৳</span>
                       <NumericInput
                         value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
                         onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val === '' ? null : Number(val) }))}
-                        placeholder={metaAdsSettings.displayCurrencyCode === 'BDT' ? 'Not needed for BDT' : 'e.g. 120'}
+                        placeholder={metaAdsSettings.displayCurrencyCode === 'BDT' ? 'Not needed for ৳' : 'e.g. 120'}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
                       />
-                      <span className="text-xs text-gray-400">Used to show BDT equivalents in tooltips</span>
+                      <span className="text-xs text-gray-400">Used to show ৳ equivalents in tooltips</span>
                     </label>
                   </div>
                 </div>

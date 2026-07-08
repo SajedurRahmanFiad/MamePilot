@@ -1,11 +1,12 @@
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { Vendor } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, Table, TableCell, IconButton } from '../components';
+import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
 import { useVendorsPage, useSystemDefaults } from '../src/hooks/useQueries';
@@ -34,6 +35,14 @@ const Vendors: React.FC = () => {
   const [syncedSearchParams, setSyncedSearchParams] = React.useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = React.useState<number>(urlPage);
+  const [nameFilter, setNameFilter] = useState<string>('');
+  const [nameNotFilter, setNameNotFilter] = useState<string>('');
+  const [phoneFilter, setPhoneFilter] = useState<string>('');
+  const [phoneNotFilter, setPhoneNotFilter] = useState<string>('');
+  const [addressFilter, setAddressFilter] = useState<string>('');
+  const [addressNotFilter, setAddressNotFilter] = useState<string>('');
+  const [purchasesFilter, setPurchasesFilter] = useState<{ operator: string; value: string } | null>(null);
+  const [payableFilter, setPayableFilter] = useState<{ operator: string; value: string } | null>(null);
   const previousSearchQueryRef = React.useRef(searchQuery);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
   const { data: vendorsPage = { data: [], count: 0 }, isFetching } = useVendorsPage(effectivePage, pageSize, searchQuery, {
@@ -75,7 +84,60 @@ const Vendors: React.FC = () => {
     }
   }, [shouldHydrateFromUrl, effectivePage, searchQuery, currentSearchParams, setSearchParams]);
 
-  const filteredVendors = vendors;
+  const filteredVendors = useMemo(() => {
+    let filtered = vendors;
+
+    if (nameFilter) {
+      filtered = filtered.filter((v) => v.name?.toLowerCase().includes(nameFilter.toLowerCase()));
+    }
+    if (nameNotFilter) {
+      filtered = filtered.filter((v) => !v.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
+    }
+    if (phoneFilter) {
+      filtered = filtered.filter((v) => v.phone?.toLowerCase().includes(phoneFilter.toLowerCase()));
+    }
+    if (phoneNotFilter) {
+      filtered = filtered.filter((v) => !v.phone?.toLowerCase().includes(phoneNotFilter.toLowerCase()));
+    }
+    if (addressFilter) {
+      filtered = filtered.filter((v) => v.address?.toLowerCase().includes(addressFilter.toLowerCase()));
+    }
+    if (addressNotFilter) {
+      filtered = filtered.filter((v) => !v.address?.toLowerCase().includes(addressNotFilter.toLowerCase()));
+    }
+
+    // Numeric filters
+    if (purchasesFilter) {
+      const val = Number(purchasesFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((v) => {
+          switch (purchasesFilter.operator) {
+            case '=': return v.totalPurchases === val;
+            case '≠': return v.totalPurchases !== val;
+            case '<': return v.totalPurchases < val;
+            case '>': return v.totalPurchases > val;
+            default: return true;
+          }
+        });
+      }
+    }
+    if (payableFilter) {
+      const val = Number(payableFilter.value);
+      if (!isNaN(val)) {
+        filtered = filtered.filter((v) => {
+          switch (payableFilter.operator) {
+            case '=': return v.dueAmount === val;
+            case '≠': return v.dueAmount !== val;
+            case '<': return v.dueAmount < val;
+            case '>': return v.dueAmount > val;
+            default: return true;
+          }
+        });
+      }
+    }
+
+    return filtered;
+  }, [vendors, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, purchasesFilter, payableFilter]);
 
   const handleDelete = async (vendorId: string) => {
     if (!confirm('Move this vendor to the recycle bin? You can restore it later.')) return;
@@ -94,10 +156,73 @@ const Vendors: React.FC = () => {
     }
   };
 
+  const vendorFilterDefinitions = useMemo(() => {
+    return [
+      {
+        type: 'Name',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Phone',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Address',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Purchases',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+      {
+        type: 'Payable',
+        operators: ['=', '≠', '<', '>'] as const,
+        valueType: 'number' as const,
+        allowCustomValue: true,
+      },
+    ];
+  }, []);
+
+  const initialFilters = useMemo(() => [], []);
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div />
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <DynamicFilterBar
+            filterDefinitions={vendorFilterDefinitions}
+            initialFilters={initialFilters}
+            onApply={(appliedFilters) => {
+              setPage(1);
+
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
+              setNameFilter(nameFilter?.value ?? '');
+              setNameNotFilter(nameNotFilter?.value ?? '');
+
+              const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '=');
+              const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '≠');
+              setPhoneFilter(phoneFilter?.value ?? '');
+              setPhoneNotFilter(phoneNotFilter?.value ?? '');
+
+              const addressFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '=');
+              const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '≠');
+              setAddressFilter(addressFilter?.value ?? '');
+              setAddressNotFilter(addressNotFilter?.value ?? '');
+
+              const purchasesFilter = appliedFilters.find((f) => f.type === 'Purchases');
+              setPurchasesFilter(purchasesFilter ? { operator: purchasesFilter.operator, value: purchasesFilter.value } : null);
+
+              const payableFilter = appliedFilters.find((f) => f.type === 'Payable');
+              setPayableFilter(payableFilter ? { operator: payableFilter.operator, value: payableFilter.value } : null);
+            }}
+          />
+        </div>
         <Button
           onClick={() => navigate('/vendors/new')}
           variant="primary"
@@ -107,7 +232,6 @@ const Vendors: React.FC = () => {
           New Vendor
         </Button>
       </div>
-
       <Table
         columns={[
           {

@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ICONS } from '../constants';
 
-type FilterOperator = '=' | '≠' | 'contains';
+type FilterOperator = '=' | '≠' | 'contains' | '<' | '>' | 'on' | 'before' | 'after';
+
+type FilterValueType = 'text' | 'number' | 'date';
 
 interface FilterValueOption {
   value: string;
@@ -19,15 +21,27 @@ interface FilterDefinition {
   customValuePlaceholder?: string;
   defaultOperator?: FilterOperator;
   valueLabelFormatter?: (value: string) => string;
+  valueType?: FilterValueType;
 }
 
-interface CombinedFilter {
+export interface CombinedFilter {
   id: string;
   type: string;
   operator: FilterOperator;
   value: string;
   display?: string;
 }
+
+export const formatDateDisplay = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr + 'T00:00:00');
+  if (isNaN(date.getTime())) return dateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  return `${day} ${month}, ${year}`;
+};
 
 interface DynamicFilterBarProps {
   filterDefinitions?: FilterDefinition[];
@@ -240,10 +254,60 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
 
   const renderValueOptions = (definition: FilterDefinition | null) => {
     const query = inputValue.trim();
+    const valueType = definition?.valueType || 'text';
     const options = getValueOptions(definition, query);
     const exactMatch = query && options.some((item) => item.value.toLowerCase() === query.toLowerCase());
     const allowCustom = definition?.allowCustomValue ?? true;
     const labelFormatter = definition?.valueLabelFormatter ?? ((value: string) => value);
+
+    // Date picker for date filters
+    if (valueType === 'date') {
+      return (
+        <div className="p-3">
+          <input
+            type="date"
+            value={query}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {query && (
+            <button
+              onMouseDown={() => {
+                handleSelectValue(query, formatDateDisplay(query));
+                setIsOpen(false);
+              }}
+              className="mt-2 w-full px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-bold hover:bg-blue-600 transition-colors"
+            >
+              Select {formatDateDisplay(query)}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // Number input for numeric filters
+    if (valueType === 'number') {
+      return (
+        <div className="p-3">
+          <input
+            type="number"
+            value={query}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && inputValue.trim()) {
+                handleSelectValue(inputValue.trim(), inputValue.trim());
+                setIsOpen(false);
+              }
+            }}
+            placeholder="Enter a number"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <div className="mt-2 text-xs text-gray-400">Press Enter to apply</div>
+        </div>
+      );
+    }
 
     if (options.length > 0) {
       return (

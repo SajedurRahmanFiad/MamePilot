@@ -1,5 +1,5 @@
 import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquare, Send, X } from 'lucide-react';
+import { MessageSquare, Send, X, RotateCcw } from 'lucide-react';
 import { apiAction } from '../src/services/apiClient';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -162,6 +162,7 @@ const MameChat: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [inputRadius, setInputRadius] = useState(24);
+  const [conversationId, setConversationId] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -251,114 +252,65 @@ const MameChat: React.FC = () => {
     };
 
     const assistantMessageId = `assistant-${Date.now()}`;
+    const thinkingTexts = [
+      'Thinking...',
+      'Analyzing your question...',
+      'Querying the database...',
+      'Looking at your business data...',
+      'Preparing your answer...',
+    ];
+
     const assistantPlaceholder: ChatMessage = {
       id: assistantMessageId,
       role: 'assistant',
-      content: 'Working on your request…',
-      reasoning: [
-        { id: 'plan', label: 'Planning the request', status: 'active', kind: 'planning' },
-        { id: 'tool', label: 'Gathering business context', status: 'pending', kind: 'tool' },
-        { id: 'synth', label: 'Synthesizing the answer', status: 'pending', kind: 'synthesis' },
-      ],
-      followUps: [],
+      content: thinkingTexts[0],
     };
 
     setMessages((current) => [...current, userMessage, assistantPlaceholder]);
     setDraft('');
     setIsSending(true);
 
+    let thinkingIndex = 0;
+    const thinkingInterval = window.setInterval(() => {
+      thinkingIndex = (thinkingIndex + 1) % thinkingTexts.length;
+      setMessages((current) => current.map((message) =>
+        message.id === assistantMessageId
+          ? { ...message, content: thinkingTexts[thinkingIndex] }
+          : message
+      ));
+    }, 2500);
+
     try {
       const response = await apiAction<AgentRunResponse>('mameChat', {
         message: trimmed,
-      });
+        conversationId: conversationId || undefined,
+      }, { timeoutMs: 120000 });
 
-      if (response?.runId) {
-        let finalAnswer = response.answer || 'I could not generate a response. Please try again.';
-        let latestSummary = 'Preparing your answer…';
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const stream = await apiAction<AgentRunStreamResponse>('fetchAgentRunStream', {
-            runId: response.runId,
-          });
+      window.clearInterval(thinkingInterval);
 
-          const nextAnswer = stream?.answer || response.answer || '';
-          if (nextAnswer) {
-            finalAnswer = nextAnswer;
-          }
-
-          const recentEvent = (stream?.events || []).slice().reverse().find((event) => event?.type && event.type !== 'started');
-          const summaryPayload = recentEvent?.payload as Record<string, any> | undefined;
-          if (summaryPayload?.summary) {
-            latestSummary = String(summaryPayload.summary);
-          } else if (summaryPayload?.answer) {
-            latestSummary = 'Finalizing your answer…';
-          }
-
-          const reasoningSteps = (stream?.events || []).filter((event) => event?.type === 'reasoning_plan' || event?.type === 'step_started' || event?.type === 'step_completed' || event?.type === 'critic' || event?.type === 'synthesis' || event?.type === 'follow_up_suggestions');
-          const nextReasoning = (reasoningSteps || []).reduce<Array<{ id: string; label: string; status: 'pending' | 'active' | 'done'; kind: string }>>((acc, event) => {
-            const payload = event?.payload as Record<string, any> | undefined;
-            if (event.type === 'reasoning_plan' && Array.isArray(payload?.steps)) {
-              return payload.steps.map((step: any, index: number) => ({
-                id: String(step?.id || `step-${index}`),
-                label: String(step?.name || 'Plan step'),
-                status: 'pending',
-                kind: String(step?.kind || 'step'),
-              }));
-            }
-            if (event.type === 'step_started' && payload?.stepId) {
-              return acc.map((step) => step.id === String(payload.stepId) ? { ...step, status: 'active' } : step);
-            }
-            if (event.type === 'step_completed' && payload?.stepId) {
-              return acc.map((step) => step.id === String(payload.stepId) ? { ...step, status: 'done' } : step);
-            }
-            if (event.type === 'critic' && payload?.summary) {
-              return acc.map((step, index) => index === acc.length - 1 ? step : step);
-            }
-            if (event.type === 'follow_up_suggestions' && Array.isArray(payload?.suggestions)) {
-              return acc;
-            }
-            return acc;
-          }, []);
-
-          const followUps = (stream?.events || []).filter((event) => event?.type === 'follow_up_suggestions').flatMap((event) => {
-            const payload = event?.payload as Record<string, any> | undefined;
-            return Array.isArray(payload?.suggestions) ? payload.suggestions : [];
-          });
-
-          setMessages((current) => current.map((message) => message.id === assistantMessageId
-            ? {
-                ...message,
-                content: finalAnswer ? finalAnswer : latestSummary,
-                reasoning: nextReasoning.length > 0 ? nextReasoning : message.reasoning,
-                followUps: followUps.length > 0 ? followUps : message.followUps,
-              }
-            : message));
-
-          if ((stream?.status || '').toLowerCase() === 'completed' || (stream?.status || '').toLowerCase() === 'failed') {
-            break;
-          }
-
-          if (attempt < 19) {
-            await new Promise((resolve) => window.setTimeout(resolve, 500));
-          }
-        }
-
-        setMessages((current) => current.map((message) => message.id === assistantMessageId
-          ? { ...message, content: finalAnswer || latestSummary || 'I could not generate a response. Please try again.' }
-          : message));
-      } else {
-        setMessages((current) => current.map((message) => message.id === assistantMessageId
-          ? { ...message, content: response.answer || 'I could not generate a response. Please try again.' }
-          : message));
+      const answer = response?.answer || 'I could not generate a response. Please try again.';
+      if (response?.conversationId) {
+        setConversationId(response.conversationId);
       }
+      setMessages((current) => current.map((message) =>
+        message.id === assistantMessageId
+          ? { ...message, content: answer }
+          : message
+      ));
     } catch (error: any) {
-      const assistantMessage: ChatMessage = {
-        id: assistantMessageId,
-        role: 'assistant',
-        content:
-          error?.message ||
-          'Unable to connect to Mame right now. Please try again later.',
-      };
-      setMessages((current) => current.map((message) => message.id === assistantMessageId ? assistantMessage : message));
+      window.clearInterval(thinkingInterval);
+
+      const errorContent = error?.code === 'TIMEOUT'
+        ? 'The request took too long. Please try a simpler question or try again later.'
+        : error?.code === 'NETWORK'
+          ? 'Unable to connect to Mame. Please check your internet connection and try again.'
+          : error?.message || 'Unable to connect to Mame right now. Please try again later.';
+
+      setMessages((current) => current.map((message) =>
+        message.id === assistantMessageId
+          ? { ...message, content: errorContent }
+          : message
+      ));
     } finally {
       setIsSending(false);
     }
@@ -449,14 +401,28 @@ const MameChat: React.FC = () => {
                   <p className="text-xs text-gray-500">Ask anything.</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={closePanel}
-                className="inline-flex items-center justify-center rounded-full p-2 text-gray-500 hover:bg-gray-100"
-                aria-label="Close chat"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConversationId('');
+                    setMessages([INITIAL_MESSAGE]);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                  aria-label="New chat"
+                  title="New chat"
+                >
+                  <RotateCcw size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={closePanel}
+                  className="inline-flex items-center justify-center rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                  aria-label="Close chat"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-hidden px-4 py-0" style={{ minHeight: 0 }}>
@@ -480,32 +446,6 @@ const MameChat: React.FC = () => {
                       }`}
                     >
                       {renderMessageContent(message.content)}
-                      {message.role === 'assistant' && message.reasoning && message.reasoning.length > 0 && (
-                        <div className="mt-3 rounded-2xl border border-slate-200 bg-white/80 p-3 text-xs text-slate-700">
-                          <div className="mb-2 font-semibold text-slate-900">Reasoning</div>
-                          <ul className="space-y-2">
-                            {message.reasoning.map((step) => (
-                              <li key={step.id} className="flex items-center gap-2">
-                                <span className={`h-2.5 w-2.5 rounded-full ${step.status === 'done' ? 'bg-emerald-500' : step.status === 'active' ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'}`} />
-                                <span>{step.label}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {message.role === 'assistant' && message.followUps && message.followUps.length > 0 && (
-                        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                          <div className="mb-2 font-semibold text-slate-900">Follow-up ideas</div>
-                          <ul className="space-y-1">
-                            {message.followUps.map((suggestion, index) => (
-                              <li key={`${suggestion}-${index}`} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-500" />
-                                <span>{suggestion}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                     </div>
 
                     {message.role === 'user' && (

@@ -1,16 +1,16 @@
-﻿export interface CurrencyOption {
+export interface CurrencyOption {
   code: string;
   label: string;
   symbol: string;
 }
 
 export const META_ADS_CURRENCY_OPTIONS: CurrencyOption[] = [
-  { code: 'BDT', label: 'BDT - Bangladeshi Taka', symbol: '?' },
+  { code: 'BDT', label: '৳ - Bangladeshi Taka', symbol: '৳' },
   { code: 'USD', label: 'USD - US Dollar', symbol: '$' },
-  { code: 'EUR', label: 'EUR - Euro', symbol: '€' },
-  { code: 'GBP', label: 'GBP - British Pound', symbol: '£' },
-  { code: 'INR', label: 'INR - Indian Rupee', symbol: '?' },
-  { code: 'SAR', label: 'SAR - Saudi Riyal', symbol: '?' },
+  { code: 'EUR', label: 'EUR - Euro', symbol: '৳' },
+  { code: 'GBP', label: 'GBP - British Pound', symbol: '৳' },
+  { code: 'INR', label: 'INR - Indian Rupee', symbol: '৳' },
+  { code: 'SAR', label: 'SAR - Saudi Riyal', symbol: '৳' },
   { code: 'AED', label: 'AED - UAE Dirham', symbol: '?.?' },
   { code: 'MYR', label: 'MYR - Malaysian Ringgit', symbol: 'RM' },
   { code: 'SGD', label: 'SGD - Singapore Dollar', symbol: 'S$' },
@@ -28,12 +28,22 @@ export const CURRENCY_SYMBOLS: Record<string, string> = Object.fromEntries(
  */
 export function formatMetaAdsCurrency(amount: number, currencyCode: string): string {
   try {
-    return new Intl.NumberFormat('en', {
+    const formatted = new Intl.NumberFormat('en', {
       style: 'currency',
       currency: currencyCode,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
+    const symbol = CURRENCY_SYMBOLS[currencyCode];
+    if (symbol) {
+      if (formatted.startsWith(currencyCode)) {
+        return symbol + formatted.slice(currencyCode.length).trim();
+      }
+      if (formatted.endsWith(symbol)) {
+        return symbol + formatted.slice(0, -symbol.length).trim();
+      }
+    }
+    return formatted;
   } catch {
     const symbol = CURRENCY_SYMBOLS[currencyCode] || currencyCode;
     return `${symbol}${amount.toFixed(2)}`;

@@ -164,11 +164,22 @@ const Wallet: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Wallet</h2>
           <p className="text-sm text-gray-500">
-            Review your live wallet balance and your payment history. Wallet balances start from Apr 1, 2026.
+            {myWallet?.isCommissionBased === false && myWallet?.fixedSalary
+              ? 'You are on a fixed monthly salary. Your balance resets each month.'
+              : 'Review your live wallet balance and your payment history. Wallet balances start from Apr 1, 2026.'}
           </p>
         </div>
-        <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-gray-600">
-          Current Unit Amount: <span className="font-black text-gray-900">{formatCurrency(walletSettings.unitAmount)}</span>
+        <div className="flex items-center gap-3">
+          {myWallet?.isCommissionBased === false && myWallet?.fixedSalary && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm font-medium text-violet-700">
+              Fixed Salary: <span className="font-black">{formatCurrency(myWallet.fixedSalary)}/month</span>
+            </div>
+          )}
+          {myWallet?.isCommissionBased !== false && (
+            <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-gray-600">
+              Current Unit Amount: <span className="font-black text-gray-900">{formatCurrency(walletSettings.unitAmount)}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -176,13 +187,17 @@ const Wallet: React.FC = () => {
         <SummaryCard
           label="Wallet Balance"
           value={formatCurrency(myWallet?.currentBalance ?? 0)}
-          hint="Your live cumulative wallet balance."
+          hint={myWallet?.isCommissionBased === false && myWallet?.fixedSalary
+            ? "Your current month's remaining salary."
+            : "Your live cumulative wallet balance."}
           tone="border-[#d6e3f0] bg-[#f8fbff]"
         />
         <SummaryCard
-          label="Total Earned"
+          label={myWallet?.isCommissionBased === false && myWallet?.fixedSalary ? "Monthly Salary" : "Total Earned"}
           value={formatCurrency(myWallet?.totalEarned ?? 0)}
-          hint="Credits added from orders you created."
+          hint={myWallet?.isCommissionBased === false && myWallet?.fixedSalary
+            ? "Your fixed monthly salary amount."
+            : "Credits added from orders you created."}
         />
         <SummaryCard
           label="Total Paid"
@@ -190,9 +205,11 @@ const Wallet: React.FC = () => {
           hint="Wallet payouts already settled to you."
         />
         <SummaryCard
-          label="Credited Orders"
-          value={`${myWallet?.creditedOrders ?? 0}`}
-          hint="Orders that have credited your wallet."
+          label={myWallet?.isCommissionBased === false && myWallet?.fixedSalary ? "Salary Type" : "Credited Orders"}
+          value={myWallet?.isCommissionBased === false && myWallet?.fixedSalary ? "Fixed" : `${myWallet?.creditedOrders ?? 0}`}
+          hint={myWallet?.isCommissionBased === false && myWallet?.fixedSalary
+            ? "You receive a fixed monthly salary."
+            : "Orders that have credited your wallet."}
         />
       </section>
 

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Button, Table } from '../components';
+import DynamicFilterBar, { formatDateDisplay } from '../components/DynamicFilterBar';
 import { ICONS } from '../constants';
 import Pagination from '../src/components/Pagination';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -51,6 +52,12 @@ const RecycleBin: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'all' | RecycleBinEntityType>('all');
+  const [typeNotFilter, setTypeNotFilter] = useState<string>('');
+  const [deletedByFilter, setDeletedByFilter] = useState<string>('');
+  const [deletedByNotFilter, setDeletedByNotFilter] = useState<string>('');
+  const [titleFilter, setTitleFilter] = useState<string>('');
+  const [titleNotFilter, setTitleNotFilter] = useState<string>('');
+  const [deletedDateFilter, setDeletedDateFilter] = useState<{ operator: string; value: string } | null>(null);
   const deferredSearchQuery = React.useDeferredValue(searchQuery);
 
   const isAdmin = hasAdminAccess(user?.role);
@@ -68,9 +75,135 @@ const RecycleBin: React.FC = () => {
   const totalItems = recycleBinPage.count;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
+  const deletedByOptions = useMemo(() => {
+    return Array.from(new Set(visibleItems.map((item) => item.deletedByName || item.deletedBy).filter(Boolean))) as string[];
+  }, [visibleItems]);
+
+  const titleOptions = useMemo(() => {
+    return Array.from(new Set(visibleItems.map((item) => item.title).filter(Boolean))) as string[];
+  }, [visibleItems]);
+
+  const recycleBinFilterDefinitions = useMemo(() => {
+    const entityTypeOptions = Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }));
+
+    return [
+      {
+        type: 'Entity Type',
+        operators: ['=', '≠'] as const,
+        values: entityTypeOptions,
+      },
+      {
+        type: 'Deleted by',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return deletedByOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Title',
+        operators: ['=', '≠'] as const,
+        allowCustomValue: true,
+        renderOptions: (query: string) => {
+          const normalized = query.trim().toLowerCase();
+          return titleOptions
+            .filter((value) => value.toLowerCase().includes(normalized))
+            .map((value) => ({ value, label: value }));
+        },
+      },
+      {
+        type: 'Deleted',
+        operators: ['on', 'before', 'after'] as const,
+        valueType: 'date' as const,
+      },
+    ];
+  }, [deletedByOptions, titleOptions]);
+
+  const initialFilters = useMemo(() => {
+    const filters = [];
+    if (typeFilter !== 'all') {
+      const label = ENTITY_LABELS[typeFilter as RecycleBinEntityType];
+      filters.push({ id: 'entity-type', type: 'Entity Type', operator: '=' as const, value: typeFilter, display: label });
+    }
+    if (typeNotFilter) {
+      const label = ENTITY_LABELS[typeNotFilter as RecycleBinEntityType];
+      filters.push({ id: 'entity-type-not', type: 'Entity Type', operator: '≠' as const, value: typeNotFilter, display: label || typeNotFilter });
+    }
+    if (deletedByFilter) {
+      filters.push({ id: 'deleted-by', type: 'Deleted by', operator: '=' as const, value: deletedByFilter });
+    }
+    if (deletedByNotFilter) {
+      filters.push({ id: 'deleted-by-not', type: 'Deleted by', operator: '≠' as const, value: deletedByNotFilter });
+    }
+    if (titleFilter) {
+      filters.push({ id: 'title', type: 'Title', operator: '=' as const, value: titleFilter });
+    }
+    if (titleNotFilter) {
+      filters.push({ id: 'title-not', type: 'Title', operator: '≠' as const, value: titleNotFilter });
+    }
+    if (deletedDateFilter) {
+      filters.push({ id: 'deleted', type: 'Deleted', operator: deletedDateFilter.operator as any, value: deletedDateFilter.value, display: formatDateDisplay(deletedDateFilter.value) });
+    }
+    return filters;
+  }, [typeFilter, typeNotFilter, deletedByFilter, deletedByNotFilter, titleFilter, titleNotFilter, deletedDateFilter]);
+
+  // Client-side filters for additional fields
+  const filteredItems = useMemo(() => {
+    let filtered = visibleItems;
+
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter((item) => item.entityType === typeFilter);
+    }
+    if (typeNotFilter) {
+      filtered = filtered.filter((item) => item.entityType !== typeNotFilter);
+    }
+    if (deletedByFilter) {
+      filtered = filtered.filter((item) => {
+        const name = (item.deletedByName || item.deletedBy || '').toLowerCase();
+        return name.includes(deletedByFilter.toLowerCase());
+      });
+    }
+    if (deletedByNotFilter) {
+      filtered = filtered.filter((item) => {
+        const name = (item.deletedByName || item.deletedBy || '').toLowerCase();
+        return !name.includes(deletedByNotFilter.toLowerCase());
+      });
+    }
+    if (titleFilter) {
+      filtered = filtered.filter((item) => item.title?.toLowerCase().includes(titleFilter.toLowerCase()));
+    }
+    if (titleNotFilter) {
+      filtered = filtered.filter((item) => !item.title?.toLowerCase().includes(titleNotFilter.toLowerCase()));
+    }
+
+    // Date filter for Deleted
+    if (deletedDateFilter) {
+      const filterDate = new Date(deletedDateFilter.value);
+      if (!isNaN(filterDate.getTime())) {
+        filtered = filtered.filter((item) => {
+          if (!item.deletedAt) return false;
+          const itemDate = new Date(item.deletedAt);
+          const filterDateStr = deletedDateFilter.value;
+          const itemDateStr = itemDate.toISOString().split('T')[0];
+          switch (deletedDateFilter.operator) {
+            case 'on': return itemDateStr === filterDateStr;
+            case 'before': return itemDateStr < filterDateStr;
+            case 'after': return itemDateStr > filterDateStr;
+            default: return true;
+          }
+        });
+      }
+    }
+
+    return filtered;
+  }, [visibleItems, typeFilter, typeNotFilter, deletedByFilter, deletedByNotFilter, titleFilter, titleNotFilter, deletedDateFilter]);
+
   useEffect(() => {
     setPage(1);
-  }, [deferredSearchQuery, typeFilter]);
+  }, [deferredSearchQuery, typeFilter, typeNotFilter, deletedByFilter, deletedByNotFilter, titleFilter, titleNotFilter, deletedDateFilter]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -128,33 +261,31 @@ const RecycleBin: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Admin Archive</p>
-          <h2 className="mt-2 text-2xl font-black text-gray-900">Recycle Bin</h2>
-        </div>
+      <DynamicFilterBar
+        filterDefinitions={recycleBinFilterDefinitions}
+        initialFilters={initialFilters}
+        onApply={(appliedFilters) => {
+          setPage(1);
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search deleted items"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 outline-none transition focus:border-[#0f2f57] focus:ring-2 focus:ring-[#dfeaf7]"
-          />
-          <select
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value as 'all' | RecycleBinEntityType)}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 outline-none transition focus:border-[#0f2f57] focus:ring-2 focus:ring-[#dfeaf7]"
-          >
-            <option value="all">All Types</option>
-            {Object.entries(ENTITY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+          const entityTypeFilter = appliedFilters.find((f) => f.type === 'Entity Type' && f.operator === '=');
+          const entityTypeNotFilter = appliedFilters.find((f) => f.type === 'Entity Type' && f.operator === '≠');
+          setTypeFilter((entityTypeFilter?.value as 'all' | RecycleBinEntityType) ?? 'all');
+          setTypeNotFilter(entityTypeNotFilter?.value ?? '');
+
+          const deletedByFilter = appliedFilters.find((f) => f.type === 'Deleted by' && f.operator === '=');
+          const deletedByNotFilter = appliedFilters.find((f) => f.type === 'Deleted by' && f.operator === '≠');
+          setDeletedByFilter(deletedByFilter?.value ?? '');
+          setDeletedByNotFilter(deletedByNotFilter?.value ?? '');
+
+          const titleFilter = appliedFilters.find((f) => f.type === 'Title' && f.operator === '=');
+          const titleNotFilter = appliedFilters.find((f) => f.type === 'Title' && f.operator === '≠');
+          setTitleFilter(titleFilter?.value ?? '');
+          setTitleNotFilter(titleNotFilter?.value ?? '');
+
+          const deletedDateFilter = appliedFilters.find((f) => f.type === 'Deleted');
+          setDeletedDateFilter(deletedDateFilter ? { operator: deletedDateFilter.operator, value: deletedDateFilter.value } : null);
+        }}
+      />
 
       <Table
         columns={[
@@ -232,7 +363,7 @@ const RecycleBin: React.FC = () => {
             ),
           },
         ]}
-        data={visibleItems}
+        data={filteredItems}
         hover={false}
         loading={isPending || isFetching}
         emptyMessage={deferredSearchQuery || typeFilter !== 'all' ? 'No deleted items match the current filters.' : 'Recycle bin is empty.'}
