@@ -41,6 +41,8 @@ final class MetaAdsApi extends BaseService
             'loginConfigId' => (string) ($row['login_config_id'] ?? $config['loginConfigId']),
             'graphVersion' => (string) ($row['graph_version'] ?? $config['graphVersion']),
             'oauthScopes' => (string) ($row['oauth_scopes'] ?? $config['oauthScopes']),
+            'displayCurrencyCode' => (string) ($row['display_currency_code'] ?? 'BDT'),
+            'displayCurrencyRateToBdt' => $row['display_currency_rate_to_bdt'] !== null ? (float) $row['display_currency_rate_to_bdt'] : null,
         ];
     }
 
@@ -56,6 +58,8 @@ final class MetaAdsApi extends BaseService
             'login_config_id' => trim((string) ($params['loginConfigId'] ?? '')) !== '' ? trim((string) ($params['loginConfigId'] ?? '')) : null,
             'graph_version' => trim((string) ($params['graphVersion'] ?? '')) !== '' ? trim((string) ($params['graphVersion'] ?? '')) : null,
             'oauth_scopes' => trim((string) ($params['oauthScopes'] ?? '')) !== '' ? trim((string) ($params['oauthScopes'] ?? '')) : null,
+            'display_currency_code' => trim((string) ($params['displayCurrencyCode'] ?? '')) !== '' ? trim((string) ($params['displayCurrencyCode'] ?? '')) : 'BDT',
+            'display_currency_rate_to_bdt' => $params['displayCurrencyRateToBdt'] !== null && $params['displayCurrencyRateToBdt'] !== '' ? (float) $params['displayCurrencyRateToBdt'] : null,
         ];
 
         return $this->saveSingleton('meta_ads_settings', 'meta-ads-default', $updates, fn(): array => $this->fetchMetaAdsSettings());
@@ -154,12 +158,62 @@ final class MetaAdsApi extends BaseService
     public function syncMetaAds(array $params = []): array
     {
         $this->requireAdmin();
-        return $this->syncAllConnections();
+        $cooldown = $this->manualSyncCooldownRemaining();
+        if ($cooldown > 0) {
+            return [
+                'ok' => false,
+                'cooldownRemainingSeconds' => $cooldown,
+                'error' => 'Please wait ' . $cooldown . ' seconds before syncing again.',
+            ];
+        }
+        $startMs = (int) (microtime(true) * 1000);
+        $result = $this->syncAllConnections();
+        $durationMs = (int) (microtime(true) * 1000) - $startMs;
+        $result['syncDurationMs'] = $durationMs;
+        $this->saveSyncResultsToCache($result, true);
+        return $result;
     }
 
     public function syncMetaAdsFromCli(): array
     {
-        return $this->syncAllConnections();
+        $result = $this->syncAllConnections();
+        $this->saveSyncResultsToCache($result);
+        return $result;
+    }
+
+    public function fetchMetaAdsSyncCache(array $params = []): array
+    {
+        $this->currentUser();
+        $cached = $this->getCachedSyncResults();
+        if ($cached === null) {
+            return [
+                'ok' => false,
+                'error' => 'No cached sync data available. Please run a sync first.',
+                'lastSyncedAt' => null,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'data' => $cached['data'],
+            'lastSyncedAt' => $cached['lastSyncedAt'],
+            'lastManualSyncAt' => $cached['lastManualSyncAt'] ?? null,
+            'syncDurationMs' => $cached['syncDurationMs'] ?? null,
+            'cooldownRemainingSeconds' => $this->manualSyncCooldownRemaining(),
+        ];
+    }
+
+    public function fetchMetaAdsSyncStatus(array $params = []): array
+    {
+        $this->currentUser();
+        $cached = $this->getCachedSyncResults();
+        $cooldown = $this->manualSyncCooldownRemaining();
+        return [
+            'lastSyncedAt' => $cached['lastSyncedAt'] ?? null,
+            'lastManualSyncAt' => $cached['lastManualSyncAt'] ?? null,
+            'syncDurationMs' => $cached['syncDurationMs'] ?? null,
+            'cooldownRemainingSeconds' => $cooldown,
+        ];
     }
 
     public function fetchMetaAds(array $params = []): array
@@ -222,7 +276,7 @@ final class MetaAdsApi extends BaseService
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
         $rows = $this->database->fetchAll(
             "SELECT ma.*, mb.name AS business_name, mb.meta_business_id,
-                    maa.name AS ad_account_name, maa.meta_ad_account_id,
+                    maa.name AS ad_account_name, maa.meta_ad_account_id, maa.currency,
                     mc.name AS campaign_name, mc.meta_campaign_id
              FROM meta_ads ma
              LEFT JOIN meta_businesses mb ON mb.id = ma.business_id
@@ -761,24 +815,30 @@ final class MetaAdsApi extends BaseService
 
     private function ensureMetaAdsSettingsTable(): void
     {
-        if ($this->tableExists('meta_ads_settings')) {
-            return;
+        if (!$this->tableExists('meta_ads_settings')) {
+            $this->database->execute(
+                'CREATE TABLE IF NOT EXISTS meta_ads_settings (
+                    id VARCHAR(64) NOT NULL,
+                    app_id VARCHAR(255) DEFAULT NULL,
+                    app_secret VARCHAR(500) DEFAULT NULL,
+                    redirect_uri VARCHAR(500) DEFAULT NULL,
+                    login_config_id VARCHAR(255) DEFAULT NULL,
+                    graph_version VARCHAR(64) DEFAULT NULL,
+                    oauth_scopes VARCHAR(500) DEFAULT NULL,
+                    display_currency_code VARCHAR(8) DEFAULT NULL,
+                    display_currency_rate_to_bdt DECIMAL(14,4) DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+            );
         }
-
-        $this->database->execute(
-            'CREATE TABLE IF NOT EXISTS meta_ads_settings (
-                id VARCHAR(64) NOT NULL,
-                app_id VARCHAR(255) DEFAULT NULL,
-                app_secret VARCHAR(500) DEFAULT NULL,
-                redirect_uri VARCHAR(500) DEFAULT NULL,
-                login_config_id VARCHAR(255) DEFAULT NULL,
-                graph_version VARCHAR(64) DEFAULT NULL,
-                oauth_scopes VARCHAR(500) DEFAULT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-        );
+        if (!$this->columnExists('meta_ads_settings', 'display_currency_code')) {
+            $this->database->execute("ALTER TABLE meta_ads_settings ADD COLUMN display_currency_code VARCHAR(8) DEFAULT 'BDT'");
+        }
+        if (!$this->columnExists('meta_ads_settings', 'display_currency_rate_to_bdt')) {
+            $this->database->execute('ALTER TABLE meta_ads_settings ADD COLUMN display_currency_rate_to_bdt DECIMAL(14,4) DEFAULT NULL');
+        }
     }
 
     private function fetchMetaAdsSettingsRow(): array
@@ -808,7 +868,9 @@ final class MetaAdsApi extends BaseService
             "SELECT COUNT(*) AS total_ads,
                     COALESCE(SUM(CASE WHEN COALESCE(effective_status, status) = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active_ads,
                     COALESCE(SUM(CASE WHEN COALESCE(effective_status, status) <> 'ACTIVE' THEN 1 ELSE 0 END), 0) AS inactive_ads,
-                    COALESCE(SUM(spend), 0) AS total_spend
+                    COALESCE(SUM(spend), 0) AS total_spend,
+                    COALESCE(SUM(impressions), 0) AS total_impressions,
+                    COALESCE(SUM(clicks), 0) AS total_clicks
              FROM meta_ads ma {$adWhere}",
             $bindings
         ) ?? [];
@@ -820,6 +882,10 @@ final class MetaAdsApi extends BaseService
             'activeAds' => (int) ($adRow['active_ads'] ?? 0),
             'inactiveAds' => (int) ($adRow['inactive_ads'] ?? 0),
             'totalSpend' => (float) ($adRow['total_spend'] ?? 0),
+            'todaySpend' => (float) (($this->database->fetchOne("SELECT COALESCE(SUM(spend), 0) AS s FROM meta_ads ma $adWhere " . ($adWhere !== '' ? 'AND' : 'WHERE') . " DATE(COALESCE(updated_time, last_synced_at, updated_at)) = :today", array_merge($bindings, [':today' => gmdate('Y-m-d')]))['s'] ?? 0)),
+            'activeCampaigns' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
+            'activeAdSets' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_ad_sets WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
+            'currentRoas' => (float) ($adRow['total_spend'] ?? 0) > 0 ? round((float) ($adRow['total_clicks'] ?? 0) / (float) ($adRow['total_spend'] ?? 1), 2) : null,
         ];
     }
 
@@ -845,14 +911,24 @@ final class MetaAdsApi extends BaseService
             'metaAdId' => (string) $row['meta_ad_id'],
             'name' => (string) ($row['name'] ?? ''),
             'campaignName' => (string) ($row['campaign_name'] ?? ''),
+            'campaignId' => $this->nullableString($row['meta_campaign_id'] ?? null),
             'adAccountName' => (string) ($row['ad_account_name'] ?? ''),
             'businessName' => (string) ($row['business_name'] ?? 'Unassigned Business'),
             'status' => $this->displayStatus($row),
             'spend' => (float) ($row['spend'] ?? 0),
             'reach' => (int) ($row['reach'] ?? 0),
             'impressions' => (int) ($row['impressions'] ?? 0),
+            'clicks' => (int) ($row['clicks'] ?? 0),
+            'ctr' => (float) ($row['ctr'] ?? 0),
+            'cpc' => (float) ($row['cpc'] ?? 0),
+            'cpm' => (float) ($row['cpm'] ?? 0),
+            'conversions' => $row['conversions'] === null ? null : (float) $row['conversions'],
+            'results' => $row['results'] === null ? null : (float) $row['results'],
+            'roas' => $row['roas'] === null ? null : (float) $row['roas'],
+            'createdAt' => $this->toIso($row['created_time'] ?? null),
             'lastUpdatedAt' => $this->toIso($row['updated_time'] ?? $row['last_synced_at'] ?? $row['updated_at'] ?? null),
             'thumbnailUrl' => $this->nullableString($row['thumbnail_url'] ?? null),
+            'adAccountCurrency' => $this->nullableString($row['currency'] ?? null),
         ];
     }
 
@@ -998,5 +1074,317 @@ final class MetaAdsApi extends BaseService
             $result[] = $item;
         }
         return $result;
+    }
+
+    private function ensureMetaAdsSyncCacheTable(): void
+    {
+        $this->database->execute(
+            'CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
+                id VARCHAR(36) PRIMARY KEY,
+                sync_data LONGTEXT,
+                last_synced_at DATETIME,
+                last_manual_sync_at DATETIME DEFAULT NULL,
+                sync_duration_ms INT,
+                error_message LONGTEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        if (!$this->columnExists('meta_ads_sync_cache', 'last_manual_sync_at')) {
+            $this->database->execute('ALTER TABLE meta_ads_sync_cache ADD COLUMN last_manual_sync_at DATETIME DEFAULT NULL');
+        }
+    }
+
+    private function saveSyncResultsToCache(array $syncResult, bool $isManual = false): void
+    {
+        $this->ensureMetaAdsSyncCacheTable();
+        
+        $id = 'meta-ads-sync-default';
+        $syncData = json_encode($syncResult);
+        $now = $this->database->nowUtc();
+        $duration = isset($syncResult['syncDurationMs']) ? (int) $syncResult['syncDurationMs'] : null;
+        
+        $existing = $this->database->fetchOne('SELECT id FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => $id]);
+        
+        if ($existing !== null) {
+            $bindings = [
+                ':id' => $id,
+                ':data' => $syncData,
+                ':now_synced' => $now,
+                ':now_updated' => $now,
+                ':duration' => $duration,
+            ];
+            $sql = 'UPDATE meta_ads_sync_cache SET sync_data = :data, last_synced_at = :now_synced, sync_duration_ms = :duration, error_message = NULL, updated_at = :now_updated';
+            if ($isManual) {
+                $sql .= ', last_manual_sync_at = :manual_sync_at';
+                $bindings[':manual_sync_at'] = $now;
+            }
+            $sql .= ' WHERE id = :id';
+            $this->database->execute($sql, $bindings);
+        } else {
+            $this->database->execute(
+                'INSERT INTO meta_ads_sync_cache (id, sync_data, last_synced_at, last_manual_sync_at, sync_duration_ms, created_at, updated_at) VALUES (:id, :data, :now_synced, :manual_sync_at, :duration, :now_created, :now_updated)',
+                [
+                    ':id' => $id,
+                    ':data' => $syncData,
+                    ':now_synced' => $now,
+                    ':manual_sync_at' => $isManual ? $now : null,
+                    ':duration' => $duration,
+                    ':now_created' => $now,
+                    ':now_updated' => $now,
+                ]);
+        }
+    }
+
+    private function getCachedSyncResults(): ?array
+    {
+        $this->ensureMetaAdsSyncCacheTable();
+        
+        $row = $this->database->fetchOne('SELECT sync_data, last_synced_at, last_manual_sync_at, sync_duration_ms FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => 'meta-ads-sync-default']);
+        if ($row === null) {
+            return null;
+        }
+
+        $syncData = json_decode((string) ($row['sync_data'] ?? '{}'), true);
+        return [
+            'data' => is_array($syncData) ? $syncData : [],
+            'lastSyncedAt' => $row['last_synced_at'],
+            'lastManualSyncAt' => $row['last_manual_sync_at'] ?? null,
+            'syncDurationMs' => (int) ($row['sync_duration_ms'] ?? 0),
+        ];
+    }
+
+    private function manualSyncCooldownRemaining(): int
+    {
+        $this->ensureMetaAdsSyncCacheTable();
+        $row = $this->database->fetchOne(
+            'SELECT last_manual_sync_at FROM meta_ads_sync_cache WHERE id = :id LIMIT 1',
+            [':id' => 'meta-ads-sync-default']
+        );
+        $lastManual = trim((string) (($row['last_manual_sync_at'] ?? '')));
+        if ($lastManual === '') {
+            return 0;
+        }
+        $lastTs = strtotime($lastManual);
+        if ($lastTs === false) {
+            return 0;
+        }
+        $elapsed = time() - $lastTs;
+        $cooldownSeconds = 120;
+        return $elapsed < $cooldownSeconds ? $cooldownSeconds - $elapsed : 0;
+    }
+
+    private function ensureMetaAdsInsightsCacheTable(): void
+    {
+        $this->database->execute(
+            'CREATE TABLE IF NOT EXISTS meta_ads_insights_cache (
+                id VARCHAR(36) PRIMARY KEY,
+                ad_id VARCHAR(64) NOT NULL,
+                category VARCHAR(32) NOT NULL,
+                data_json LONGTEXT,
+                last_synced_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_insights_ad_category (ad_id, category)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    private function getActiveMetaAccessToken(): string
+    {
+        $row = $this->database->fetchOne('SELECT access_token FROM meta_ads_connections WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
+        if ($row === null || empty($row['access_token'])) {
+            throw new RuntimeException('No active Meta Ads connection found.');
+        }
+        return (string) $row['access_token'];
+    }
+
+    private function getCachedInsights(string $adId, string $category, int $ttlHours = 6): ?array
+    {
+        $this->ensureMetaAdsInsightsCacheTable();
+        $row = $this->database->fetchOne('SELECT data_json, last_synced_at FROM meta_ads_insights_cache WHERE ad_id = :ad_id AND category = :category LIMIT 1', [':ad_id' => $adId, ':category' => $category]);
+        if ($row === null) return null;
+        $lastSynced = $row['last_synced_at'] ? strtotime((string) $row['last_synced_at']) : 0;
+        if ($lastSynced > 0 && (time() - $lastSynced) < ($ttlHours * 3600)) {
+            $decoded = json_decode((string) ($row['data_json'] ?? '{}'), true);
+            return is_array($decoded) ? $decoded : null;
+        }
+        return null;
+    }
+
+    private function saveInsightsCache(string $adId, string $category, array $data): void
+    {
+        $this->ensureMetaAdsInsightsCacheTable();
+        $now = $this->database->nowUtc();
+        $dataJson = json_encode($data);
+        $existing = $this->database->fetchOne('SELECT id FROM meta_ads_insights_cache WHERE ad_id = :ad_id AND category = :category LIMIT 1', [':ad_id' => $adId, ':category' => $category]);
+        if ($existing !== null) {
+            $this->database->execute('UPDATE meta_ads_insights_cache SET data_json = :data, last_synced_at = :now, updated_at = :now WHERE ad_id = :ad_id AND category = :category', [':data' => $dataJson, ':now' => $now, ':ad_id' => $adId, ':category' => $category]);
+        } else {
+            $this->database->execute('INSERT INTO meta_ads_insights_cache (id, ad_id, category, data_json, last_synced_at, created_at, updated_at) VALUES (:id, :ad_id, :category, :data, :now, :now, :now)', [':id' => $this->uuid4(), ':ad_id' => $adId, ':category' => $category, ':data' => $dataJson, ':now' => $now]);
+        }
+    }
+
+    private function resolveAdMetaId(string $id): ?array
+    {
+        return $this->database->fetchOne('SELECT ma.meta_ad_id, maa.currency FROM meta_ads ma INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id WHERE ma.id = :id_local OR ma.meta_ad_id = :id_meta LIMIT 1', [':id_local' => $id, ':id_meta' => $id]);
+    }
+
+    public function fetchMetaAdInsightsDaily(array $params): array
+    {
+        $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') return ['data' => []];
+        $adRow = $this->resolveAdMetaId($id);
+        if ($adRow === null) return ['data' => []];
+        $metaAdId = (string) $adRow['meta_ad_id'];
+        $currency = $this->nullableString($adRow['currency'] ?? null);
+        $cached = $this->getCachedInsights($id, 'daily');
+        if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        try {
+            $accessToken = $this->getActiveMetaAccessToken();
+            $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
+                'fields' => 'spend,impressions,reach,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas',
+                'time_increment' => 1, 'date_preset' => 'last_90d', 'limit' => 100,
+            ]);
+            $data = array_map(function(array $r) {
+                return [
+                    'date' => $r['date_start'] ?? '', 'spend' => (float) ($r['spend'] ?? 0),
+                    'impressions' => (int) ($r['impressions'] ?? 0), 'reach' => (int) ($r['reach'] ?? 0),
+                    'clicks' => (int) ($r['clicks'] ?? 0), 'ctr' => (float) ($r['ctr'] ?? 0),
+                    'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
+                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase']),
+                    'roas' => !empty($r['purchase_roas']) ? (float) ($r['purchase_roas'][0]['value'] ?? 0) : null,
+                ];
+            }, $rows);
+            $this->saveInsightsCache($id, 'daily', $data);
+            return ['data' => $data, 'currency' => $currency];
+        } catch (\Throwable $e) {
+            return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
+        }
+    }
+
+    public function fetchMetaAdInsightsDemographics(array $params): array
+    {
+        $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') return ['data' => []];
+        $adRow = $this->resolveAdMetaId($id);
+        if ($adRow === null) return ['data' => []];
+        $metaAdId = (string) $adRow['meta_ad_id'];
+        $currency = $this->nullableString($adRow['currency'] ?? null);
+        $cached = $this->getCachedInsights($id, 'demographics');
+        if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        try {
+            $accessToken = $this->getActiveMetaAccessToken();
+            $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
+                'fields' => 'spend,impressions,reach,clicks,ctr,cpc,cpm,actions',
+                'breakdowns' => 'age,gender', 'date_preset' => 'maximum', 'limit' => 200,
+            ]);
+            $data = array_map(function(array $r) {
+                return [
+                    'age' => $r['age'] ?? '', 'gender' => $r['gender'] ?? '',
+                    'spend' => (float) ($r['spend'] ?? 0), 'impressions' => (int) ($r['impressions'] ?? 0),
+                    'reach' => (int) ($r['reach'] ?? 0), 'clicks' => (int) ($r['clicks'] ?? 0),
+                    'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
+                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase']),
+                ];
+            }, $rows);
+            $this->saveInsightsCache($id, 'demographics', $data);
+            return ['data' => $data, 'currency' => $currency];
+        } catch (\Throwable $e) {
+            return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
+        }
+    }
+
+    public function fetchMetaAdInsightsPlacements(array $params): array
+    {
+        $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') return ['data' => []];
+        $adRow = $this->resolveAdMetaId($id);
+        if ($adRow === null) return ['data' => []];
+        $metaAdId = (string) $adRow['meta_ad_id'];
+        $currency = $this->nullableString($adRow['currency'] ?? null);
+        $cached = $this->getCachedInsights($id, 'placements');
+        if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        try {
+            $accessToken = $this->getActiveMetaAccessToken();
+            $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
+                'fields' => 'spend,impressions,reach,clicks,ctr,cpc,cpm',
+                'breakdowns' => 'publisher_platform,platform_position', 'date_preset' => 'maximum', 'limit' => 200,
+            ]);
+            $data = array_map(function(array $r) {
+                return [
+                    'platform' => $r['publisher_platform'] ?? '', 'position' => $r['platform_position'] ?? '',
+                    'spend' => (float) ($r['spend'] ?? 0), 'impressions' => (int) ($r['impressions'] ?? 0),
+                    'reach' => (int) ($r['reach'] ?? 0), 'clicks' => (int) ($r['clicks'] ?? 0),
+                    'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
+                ];
+            }, $rows);
+            $this->saveInsightsCache($id, 'placements', $data);
+            return ['data' => $data, 'currency' => $currency];
+        } catch (\Throwable $e) {
+            return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
+        }
+    }
+
+    public function fetchMetaAdInsightsDevices(array $params): array
+    {
+        $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') return ['data' => []];
+        $adRow = $this->resolveAdMetaId($id);
+        if ($adRow === null) return ['data' => []];
+        $metaAdId = (string) $adRow['meta_ad_id'];
+        $currency = $this->nullableString($adRow['currency'] ?? null);
+        $cached = $this->getCachedInsights($id, 'devices');
+        if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        try {
+            $accessToken = $this->getActiveMetaAccessToken();
+            $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
+                'fields' => 'spend,impressions,reach,clicks,ctr,cpc,cpm',
+                'breakdowns' => 'device_platform', 'date_preset' => 'maximum', 'limit' => 200,
+            ]);
+            $data = array_map(function(array $r) {
+                return [
+                    'device' => $r['device_platform'] ?? '',
+                    'spend' => (float) ($r['spend'] ?? 0), 'impressions' => (int) ($r['impressions'] ?? 0),
+                    'reach' => (int) ($r['reach'] ?? 0), 'clicks' => (int) ($r['clicks'] ?? 0),
+                    'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
+                ];
+            }, $rows);
+            $this->saveInsightsCache($id, 'devices', $data);
+            return ['data' => $data, 'currency' => $currency];
+        } catch (\Throwable $e) {
+            return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
+        }
+    }
+
+    private function autoSyncIfNeeded(): void
+    {
+        // Auto-sync if data is older than 20 minutes (respects 120s cooldown)
+        $row = $this->database->fetchOne('SELECT last_synced_at FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => 'meta-ads-sync-default']);
+        $lastTime = $row !== null && !empty($row['last_synced_at']) ? strtotime((string) $row['last_synced_at']) : 0;
+        if ($lastTime > 0 && (time() - $lastTime) < 1200) {
+            return; // Synced within last 20 minutes
+        }
+        $cooldown = $this->manualSyncCooldownRemaining();
+        if ($cooldown > 0) {
+            return; // Still in cooldown
+        }
+        try {
+            $result = $this->syncAllConnections();
+            $result['syncDurationMs'] = 0;
+            $this->saveSyncResultsToCache($result, false);
+        } catch (\Throwable $e) {
+            // Silently fail - don't block the page load
+        }
+
+    }
+    private function detectAdAccountCurrency(): ?string
+    {
+        $row = $this->database->fetchOne('SELECT currency FROM meta_ad_accounts WHERE currency IS NOT NULL ORDER BY updated_at DESC LIMIT 1');
+        return $row !== null ? (string) $row['currency'] : null;
     }
 }

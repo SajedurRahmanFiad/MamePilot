@@ -115,5 +115,5 @@ try {
     } elseif ($message === 'Admin access required.') {
         $status = 403;
     }
-    Http::error($status, $message);
+    Http::error($status, $message . ' [' . $exception->getFile() . ':' . $exception->getLine() . ' | ' . substr($exception->getTraceAsString(), 0, 500) . ']');
 }
