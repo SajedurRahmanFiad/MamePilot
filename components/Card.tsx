@@ -121,7 +121,7 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
 
   // Render subtotal with abbreviation if numeric value provided
   const subtotalDisplay = subtotalNumericValue !== undefined ? (
-    <AbbreviatedNumber value={subtotalNumericValue} className="text-sm font-semibold" prefix="(" suffix=")" />
+    <AbbreviatedNumber value={subtotalNumericValue} className="text-sm font-semibold" prefix="(৳" suffix=")" />
   ) : (
     subtotalAmount && <span className="text-sm font-semibold">({subtotalAmount})</span>
   );

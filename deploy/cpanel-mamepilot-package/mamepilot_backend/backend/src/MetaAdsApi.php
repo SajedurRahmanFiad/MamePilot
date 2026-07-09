@@ -1413,7 +1413,6 @@ final class MetaAdsApi extends BaseService
             }
         }
     }
-
     /**
      * Spawn the CLI sync script as a background process.
      * Returns true if successfully spawned, false if exec is unavailable (caller should fall back to synchronous).
