@@ -166,6 +166,18 @@ final class MetaAdsApi extends BaseService
                 'error' => 'Please wait ' . $cooldown . ' seconds before syncing again.',
             ];
         }
+
+        // Try to spawn sync as a background process so the HTTP response returns immediately.
+        // This prevents the sync from blocking other API requests (orders, customers, etc.).
+        if ($this->spawnBackgroundSync(true)) {
+            return [
+                'ok' => true,
+                'started' => true,
+                'message' => 'Sync started in background. Data will refresh automatically.',
+            ];
+        }
+
+        // Fallback: synchronous sync (original behavior for environments without exec/popen)
         $startMs = (int) (microtime(true) * 1000);
         $result = $this->syncAllConnections();
         $durationMs = (int) (microtime(true) * 1000) - $startMs;
@@ -178,6 +190,20 @@ final class MetaAdsApi extends BaseService
     {
         $result = $this->syncAllConnections();
         $this->saveSyncResultsToCache($result);
+        return $result;
+    }
+
+    /**
+     * CLI entry point for manual syncs (called with --manual flag).
+     * Same as syncMetaAdsFromCli but also sets last_manual_sync_at and tracks duration.
+     */
+    public function syncMetaAdsFromCliManual(): array
+    {
+        $startMs = (int) (microtime(true) * 1000);
+        $result = $this->syncAllConnections();
+        $durationMs = (int) (microtime(true) * 1000) - $startMs;
+        $result['syncDurationMs'] = $durationMs;
+        $this->saveSyncResultsToCache($result, true);
         return $result;
     }
 
@@ -219,6 +245,8 @@ final class MetaAdsApi extends BaseService
     public function fetchMetaAds(array $params = []): array
     {
         $this->currentUser();
+        // Auto-sync stale data in background (non-blocking)
+        $this->autoSyncIfNeeded();
         $businessId = trim((string) ($params['businessId'] ?? ''));
         $businessOperator = trim((string) ($params['businessOperator'] ?? '='));
         $accountId = trim((string) ($params['adAccountId'] ?? ''));
@@ -1364,6 +1392,7 @@ final class MetaAdsApi extends BaseService
     private function autoSyncIfNeeded(): void
     {
         // Auto-sync if data is older than 20 minutes (respects 120s cooldown)
+        $this->ensureMetaAdsSyncCacheTable();
         $row = $this->database->fetchOne('SELECT last_synced_at FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => 'meta-ads-sync-default']);
         $lastTime = $row !== null && !empty($row['last_synced_at']) ? strtotime((string) $row['last_synced_at']) : 0;
         if ($lastTime > 0 && (time() - $lastTime) < 1200) {
@@ -1373,15 +1402,50 @@ final class MetaAdsApi extends BaseService
         if ($cooldown > 0) {
             return; // Still in cooldown
         }
-        try {
-            $result = $this->syncAllConnections();
-            $result['syncDurationMs'] = 0;
-            $this->saveSyncResultsToCache($result, false);
-        } catch (\Throwable $e) {
-            // Silently fail - don't block the page load
+        // Spawn background sync (non-blocking). Falls back to synchronous if exec unavailable.
+        if (!$this->spawnBackgroundSync(false)) {
+            try {
+                $result = $this->syncAllConnections();
+                $result['syncDurationMs'] = 0;
+                $this->saveSyncResultsToCache($result, false);
+            } catch (\Throwable $e) {
+                // Silently fail - don't block the page load
+            }
+        }
+    }
+    /**
+     * Spawn the CLI sync script as a background process.
+     * Returns true if successfully spawned, false if exec is unavailable (caller should fall back to synchronous).
+     */
+    private function spawnBackgroundSync(bool $manual = false): bool
+    {
+        $phpBin = PHP_BINARY ?: 'php';
+        $script = dirname(__DIR__) . '/bin/sync_meta_ads.php';
+        if (!file_exists($script)) {
+            return false;
         }
 
+        $manualFlag = $manual ? ' --manual' : '';
+        $escapedBin = escapeshellarg($phpBin);
+        $escapedScript = escapeshellarg($script);
+
+        try {
+            if (PHP_OS_FAMILY === 'Windows') {
+                // Windows: start /B runs in background without a new window
+                $cmd = 'start /B "" ' . $escapedBin . ' ' . $escapedScript . $manualFlag . ' > NUL 2>&1';
+                pclose(popen($cmd, 'r'));
+            } else {
+                // Linux/Mac: nohup + & runs in background, redirect all output to /dev/null
+                $cmd = 'nohup ' . $escapedBin . ' ' . $escapedScript . $manualFlag . ' > /dev/null 2>&1 &';
+                exec($cmd);
+            }
+            return true;
+        } catch (\Throwable $e) {
+            // exec may be disabled on shared hosting
+            return false;
+        }
     }
+
     private function detectAdAccountCurrency(): ?string
     {
         $row = $this->database->fetchOne('SELECT currency FROM meta_ad_accounts WHERE currency IS NOT NULL ORDER BY updated_at DESC LIMIT 1');

@@ -569,15 +569,33 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // Track last synced time so we can detect when a background sync completes
+  const lastSyncedAtRef = useRef<string | null>(metaAdsSyncStatus?.lastSyncedAt ?? null);
+
+  // When sync status changes (background sync completed), refresh connection status automatically
+  useEffect(() => {
+    const currentLastSynced = metaAdsSyncStatus?.lastSyncedAt ?? null;
+    if (currentLastSynced && currentLastSynced !== lastSyncedAtRef.current) {
+      lastSyncedAtRef.current = currentLastSynced;
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+      refetchMetaAdsConnectionStatus();
+    }
+  }, [metaAdsSyncStatus?.lastSyncedAt, queryClient, refetchMetaAdsConnectionStatus]);
+
   const handleSyncMetaAds = useCallback(async () => {
     if (metaAdsCooldown > 0 || syncMetaAdsMutation.isPending) return;
-    const toastId = toast.loading('Syncing Meta Ads from API...');
+    const toastId = toast.loading('Starting Meta Ads sync...');
     try {
       const result = await syncMetaAdsMutation.mutateAsync();
       if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
         applyMetaCooldown(result.cooldownRemainingSeconds);
         toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+      } else if (result?.started) {
+        // Background sync started — don't await completion
+        applyMetaCooldown(120);
+        toast.update(toastId, 'Sync started. Data will refresh automatically when ready.', 'success');
       } else {
+        // Synchronous fallback completed
         applyMetaCooldown(120);
         toast.update(toastId, 'Meta Ads synced successfully.', 'success');
         await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });

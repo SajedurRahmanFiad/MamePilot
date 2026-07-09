@@ -316,7 +316,7 @@ const Dashboard: React.FC = () => {
               onClick={() => handleOpenOrdersByStatus(OrderStatus.PICKED)}
             />
             <StatCard
-              title="Completed Orders"
+              title="Delivered Orders"
               value={adminSnapshot ? adminSnapshot.orderCounts.completed : inlinePlaceholder}
               icon={ICONS.PlusCircle}
               bgColor="bg-teal-600"
