@@ -4,6 +4,7 @@ import { db } from '../db';
 import { formatCurrency } from '../constants';
 import { triggerPrintDialog } from '../src/utils/printUtils';
 import { useBill, useVendor, useProductImagesByIds, useCompanySettings, useInvoiceSettings } from '../src/hooks/useQueries';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 interface BillInvoiceContentProps {
   bill: any;
@@ -192,6 +193,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
 
 const PrintBill: React.FC = () => {
   const { id } = useParams();
+  const { canPrintBills } = useRolePermissions();
   const { data: bill, isPending: billLoading } = useBill(id || '');
   const { data: vendor, isPending: vendorLoading } = useVendor(bill ? bill.vendorId : undefined);
   const billItemProductIds = useMemo(
@@ -210,6 +212,10 @@ const PrintBill: React.FC = () => {
       triggerPrintDialog();
     }
   }, [bill, invoiceLoading]);
+
+  if (!canPrintBills) {
+    return <div className="p-8 text-center text-gray-500">You don't have permission to print bills.</div>;
+  }
 
   if (invoiceLoading) {
     return <div className="p-8 text-center text-gray-500">Loading details...</div>;

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 declare(strict_types=1);
 
@@ -815,6 +815,97 @@ try {
         $responsePayload = resolveLicense($pdo, $licenseKey);
         $responsePayload['pricing_metadata'] = [];
         respond(200, $responsePayload);
+    }
+
+    if ($action === 'list_deployments') {
+        if (!tableExists($pdo, 'licenses')) {
+            respond(200, ['deployments' => []]);
+        }
+        $statement = $pdo->prepare(
+            'SELECT license_key, client_name, domain, tier_key, status
+             FROM licenses
+             WHERE status = :status
+             ORDER BY client_name ASC'
+        );
+        $statement->execute([':status' => 'active']);
+        $deployments = [];
+        while ($row = $statement->fetch()) {
+            $deployments[] = [
+                'licenseKey' => (string) $row['license_key'],
+                'clientName' => (string) $row['client_name'],
+                'domain' => $row['domain'] ?? null,
+                'tierKey' => (string) $row['tier_key'],
+            ];
+        }
+        respond(200, ['deployments' => $deployments]);
+    }
+
+    if ($action === 'fetch_notification_recipients') {
+        $notificationId = trim((string) ($body['id'] ?? $body['notificationId'] ?? ''));
+        if ($notificationId === '') {
+            respond(400, ['error' => 'Notification id is required.']);
+        }
+        if (!tableExists($pdo, 'notification_receipts')) {
+            respond(200, ['recipients' => [], 'deployments' => []]);
+        }
+
+        $hasLicenseKeyCol = false;
+        try {
+            $colCheck = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'notification_receipts' AND column_name = 'license_key' LIMIT 1");
+            $colCheck->execute();
+            $hasLicenseKeyCol = $colCheck->fetch() !== false;
+        } catch (Throwable $e) {}
+
+        if ($hasLicenseKeyCol) {
+            $statement = $pdo->prepare(
+                'SELECT nr.user_id, nr.is_read, nr.read_at, nr.action_result, nr.acted_at,
+                        nr.license_key, nr.user_name, nr.user_role,
+                        l.client_name AS deployment_name, l.domain AS deployment_domain
+                 FROM notification_receipts nr
+                 LEFT JOIN licenses l ON l.license_key = nr.license_key
+                 WHERE nr.notification_id = :notification_id
+                 ORDER BY COALESCE(l.client_name, nr.license_key, nr.user_id) ASC'
+            );
+        } else {
+            $statement = $pdo->prepare(
+                'SELECT nr.user_id, nr.is_read, nr.read_at, nr.action_result, nr.acted_at,
+                        NULL AS license_key, nr.user_name, nr.user_role,
+                        NULL AS deployment_name, NULL AS deployment_domain
+                 FROM notification_receipts nr
+                 WHERE nr.notification_id = :notification_id
+                 ORDER BY nr.user_id ASC'
+            );
+        }
+        $statement->execute([':notification_id' => $notificationId]);
+        $recipients = [];
+        $deploymentMap = [];
+        while ($row = $statement->fetch()) {
+            $key = trim((string) ($row['license_key'] ?? ''));
+            $name = trim((string) ($row['deployment_name'] ?? ''));
+            $recipients[] = [
+                'userId' => (string) $row['user_id'],
+                'userName' => $row['user_name'] ?? null,
+                'userRole' => $row['user_role'] ?? null,
+                'deploymentKey' => $key !== '' ? $key : null,
+                'deploymentName' => $name !== '' ? $name : ($key !== '' ? $key : null),
+                'isRead' => (int) ($row['is_read'] ?? 0) === 1,
+                'readAt' => utcTimestamp($row['read_at'] ?? null),
+                'actionResult' => $row['action_result'] ?? null,
+                'actedAt' => utcTimestamp($row['acted_at'] ?? null),
+            ];
+            if ($key !== '' && !array_key_exists($key, $deploymentMap)) {
+                $deploymentMap[$key] = [
+                    'licenseKey' => $key,
+                    'clientName' => $name !== '' ? $name : $key,
+                    'domain' => $row['deployment_domain'] ?? null,
+                ];
+            }
+        }
+
+        respond(200, [
+            'recipients' => $recipients,
+            'deployments' => array_values($deploymentMap),
+        ]);
     }
 
     respond(400, ['error' => 'Unknown action.']);

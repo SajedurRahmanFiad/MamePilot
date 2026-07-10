@@ -15,12 +15,14 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { DEFAULT_PAGE_SIZE, fetchVendorById, getErrorMessage } from '../src/services/supabaseQueries';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const Vendors: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { canCreateVendors, canEditVendors, canDeleteVendors } = useRolePermissions();
   const {
     data: systemDefaults,
     isPending: systemDefaultsLoading,
@@ -223,14 +225,16 @@ const Vendors: React.FC = () => {
             }}
           />
         </div>
-        <Button
-          onClick={() => navigate('/vendors/new')}
-          variant="primary"
-          size="md"
-          icon={ICONS.Plus}
-        >
-          New Vendor
-        </Button>
+        {canCreateVendors && (
+          <Button
+            onClick={() => navigate('/vendors/new')}
+            variant="primary"
+            size="md"
+            icon={ICONS.Plus}
+          >
+            New Vendor
+          </Button>
+        )}
       </div>
       <Table
         columns={[
@@ -280,24 +284,28 @@ const Vendors: React.FC = () => {
             align: 'right',
             render: (vendorId) => (
               <div className="justify-end flex items-center gap-2">
-                <IconButton
-                  icon={ICONS.Edit}
-                  variant="primary"
-                  title="Edit"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/vendors/edit/${vendorId}`);
-                  }}
-                />
-                <IconButton
-                  icon={ICONS.Delete}
-                  variant="danger"
-                  title="Delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(vendorId);
-                  }}
-                />
+                {canEditVendors && (
+                  <IconButton
+                    icon={ICONS.Edit}
+                    variant="primary"
+                    title="Edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/vendors/edit/${vendorId}`);
+                    }}
+                  />
+                )}
+                {canDeleteVendors && (
+                  <IconButton
+                    icon={ICONS.Delete}
+                    variant="danger"
+                    title="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(vendorId);
+                    }}
+                  />
+                )}
               </div>
             ),
           },

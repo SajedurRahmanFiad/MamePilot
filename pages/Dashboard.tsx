@@ -42,6 +42,11 @@ const CASH_FLOW_LABELS: Record<string, string> = {
 const EXPENSE_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
 
 const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass: string; trackClass: string }> = {
+  [OrderStatus.CREATED]: {
+    valueClass: 'text-gray-500',
+    barClass: 'bg-gray-500',
+    trackClass: 'bg-gray-100',
+  },
   [OrderStatus.ON_HOLD]: {
     valueClass: 'text-amber-500',
     barClass: 'bg-amber-500',

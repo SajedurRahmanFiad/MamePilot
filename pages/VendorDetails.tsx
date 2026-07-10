@@ -15,7 +15,7 @@ const VendorDetails: React.FC = () => {
   const { data: vendor, isPending: loading } = useVendor(id || '');
   const { data: vendorBills = [] } = useBillsByVendorId(vendor?.id);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
-  const { canAccessRecord } = useRolePermissions();
+  const { canAccessRecord, canEditVendors } = useRolePermissions();
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading vendor details...</div>;
   if (!vendor) return <div className="p-8 text-center text-gray-500">Vendor not found.</div>;
@@ -52,7 +52,9 @@ const VendorDetails: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-900">Vendor Profile</h2>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => navigate(`/vendors/edit/${id}`)} className="px-4 py-2 border rounded-xl font-bold bg-white text-gray-700 hover:bg-gray-50">Edit Profile</button>
+          {canEditVendors && (
+            <button onClick={() => navigate(`/vendors/edit/${id}`)} className="px-4 py-2 border rounded-xl font-bold bg-white text-gray-700 hover:bg-gray-50">Edit Profile</button>
+          )}
         </div>
       </div>
 

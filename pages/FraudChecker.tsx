@@ -4,12 +4,14 @@ import { ICONS } from '../constants';
 import { useCheckFraudCourierHistory } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { normalizePhoneSearchValue, sanitizePhoneInput } from '../utils';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const isValidBangladeshPhone = (value: string): boolean => /^0\d{10}$/.test(value);
 
 const FraudCheckerPage: React.FC = () => {
   const toast = useToastNotifications();
   const mutation = useCheckFraudCourierHistory();
+  const { canViewFraudHistory } = useRolePermissions();
   const [phone, setPhone] = React.useState('');
   const normalizedPhone = normalizePhoneSearchValue(phone);
   const isValidPhone = isValidBangladeshPhone(normalizedPhone);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Auth;
 use App\ApiException;
+use App\BusinessGrowthApi;
 use App\Config;
 use App\CourierApi;
 use App\Database;
@@ -46,6 +47,7 @@ try {
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
     $metaAds = new MetaAdsApi($database, $auth, $config);
+    $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok([
@@ -89,7 +91,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $metaAds];
+    $services = [$master, $operations, $courier, $metaAds, $businessGrowth];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

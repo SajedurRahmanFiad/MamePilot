@@ -9,6 +9,7 @@ import { usePermanentlyDeleteDeletedItem, useRestoreDeletedItem } from '../src/h
 import { useRecycleBinPage, useSystemDefaults } from '../src/hooks/useQueries';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { RecycleBinEntityType, RecycleBinItem, hasAdminAccess } from '../types';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const ENTITY_LABELS: Record<RecycleBinEntityType, string> = {
   customer: 'Customer',
@@ -60,6 +61,7 @@ const RecycleBin: React.FC = () => {
   const [deletedDateFilter, setDeletedDateFilter] = useState<{ operator: string; value: string } | null>(null);
   const deferredSearchQuery = React.useDeferredValue(searchQuery);
 
+  const { canRestoreRecords, canDeletePermanent } = useRolePermissions();
   const isAdmin = hasAdminAccess(user?.role);
   const isMutating = restoreMutation.isPending || permanentlyDeleteMutation.isPending;
   const { data: recycleBinPage = { data: [], count: 0 }, isPending, isFetching } = useRecycleBinPage(
@@ -340,25 +342,29 @@ const RecycleBin: React.FC = () => {
             align: 'right',
             render: (_value, item: RecycleBinItem) => (
               <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={isMutating}
-                  onClick={() => handleRestore(item)}
-                >
-                  Restore
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  disabled={isMutating}
-                  icon={ICONS.Delete}
-                  onClick={() => handleDeleteForever(item)}
-                >
-                  Delete Forever
-                </Button>
+                {canRestoreRecords && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={() => handleRestore(item)}
+                  >
+                    Restore
+                  </Button>
+                )}
+                {canDeletePermanent && (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={isMutating}
+                    icon={ICONS.Delete}
+                    onClick={() => handleDeleteForever(item)}
+                  >
+                    Delete Forever
+                  </Button>
+                )}
               </div>
             ),
           },

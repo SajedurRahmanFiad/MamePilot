@@ -27,6 +27,7 @@ import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -39,6 +40,17 @@ const SettingsPage: React.FC = () => {
   const [pageRemovalConfirmText, setPageRemovalConfirmText] = useState('');
   const [pageRemovalError, setPageRemovalError] = useState('');
   const queryClient = useQueryClient();
+  const {
+    canEditCompanySettings,
+    canEditOrderInvoiceSettings,
+    canEditDefaults,
+    canEditWalletSettings,
+    canEditCourierSettings,
+    canEditCategories,
+    canEditPaymentMethods,
+    canManagePermissions,
+    canSyncAds,
+  } = useRolePermissions();
 
   // Query data from React Query hooks
   const { data: companySettingsData, isPending: companyLoading } = useCompanySettings();
@@ -171,6 +183,7 @@ const SettingsPage: React.FC = () => {
     displayCurrencyCode: 'BDT',
     displayCurrencyRateToBdt: null,
   });
+  const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
   const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '' });
 
@@ -744,15 +757,15 @@ const SettingsPage: React.FC = () => {
   };
 
   const tabs = [
-    { id: 'company', label: 'Company', icon: ICONS.Dashboard },
-    { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales },
-    { id: 'defaults', label: 'Defaults', icon: ICONS.Settings },
-    { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll },
-    hasCapability('marketing') ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
-    hasCapability('custom_roles') ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
-    { id: 'categories', label: 'Categories', icon: ICONS.More },
-    { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking },
-    hasCapability('courier_automation') ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
+    canEditCompanySettings ? { id: 'company', label: 'Company', icon: ICONS.Dashboard } : null,
+    canEditOrderInvoiceSettings ? { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales } : null,
+    canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
+    canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
+    hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
+    hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
+    canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
+    canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
+    hasCapability('courier_automation') && canEditCourierSettings ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
   ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
 
@@ -771,14 +784,14 @@ const SettingsPage: React.FC = () => {
     return <div className="p-8 text-center text-gray-500">Loading settings access...</div>;
   }
 
-  if (!hasAdminAccess(user.role)) {
+  if (!hasAdminAccess(user.role) && tabs.length === 0) {
     return (
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Admin Access Only</p>
-          <h2 className="mt-3 text-2xl font-black text-gray-900">Settings are available to admin-access users only.</h2>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Access Restricted</p>
+          <h2 className="mt-3 text-2xl font-black text-gray-900">You don't have permission to access any settings.</h2>
           <p className="mt-2 text-sm font-medium text-gray-500">
-            Wallet configuration, fraud checker access, order defaults, and courier credentials can only be managed by admin-access users.
+            Contact your administrator to get the required permissions.
           </p>
         </div>
       </div>
@@ -1461,7 +1474,7 @@ const SettingsPage: React.FC = () => {
                       <span>Exchange Rate � 1 {metaAdsSettings.displayCurrencyCode} = ? ৳</span>
                       <NumericInput
                         value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
-                        onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val === '' ? null : Number(val) }))}
+                        onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val || null }))}
                         placeholder={metaAdsSettings.displayCurrencyCode === 'BDT' ? 'Not needed for ৳' : 'e.g. 120'}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
                       />

@@ -1,4 +1,4 @@
-SET NAMES utf8mb4;
+﻿SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
 CREATE TABLE IF NOT EXISTS license_tiers (
@@ -100,3 +100,15 @@ CREATE TABLE IF NOT EXISTS webhook_subscriptions (
   KEY idx_webhook_subscriptions_license (license_key),
   KEY idx_webhook_subscriptions_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: add deployment targeting to notifications
+ALTER TABLE notifications
+  ADD COLUMN target_deployments LONGTEXT NULL AFTER target_roles,
+  ADD COLUMN deployment_scope VARCHAR(32) NULL DEFAULT 'all' AFTER target_deployments;
+
+-- Migration: add deployment tracking to notification_receipts
+ALTER TABLE notification_receipts
+  ADD COLUMN license_key VARCHAR(255) NULL AFTER user_id,
+  ADD COLUMN user_name VARCHAR(255) NULL AFTER license_key,
+  ADD COLUMN user_role VARCHAR(64) NULL AFTER user_name,
+  ADD KEY idx_notification_receipts_license (license_key);

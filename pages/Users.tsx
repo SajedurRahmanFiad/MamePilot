@@ -13,6 +13,7 @@ import { useSystemDefaults, useUsers, useUsersPage } from '../src/hooks/useQueri
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { DEFAULT_PAGE_SIZE, fetchUserById } from '../src/services/supabaseQueries';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 type RoleFilter = 'All' | string;
 
@@ -29,6 +30,7 @@ const Users: React.FC = () => {
   const pageSize = systemDefaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
   const canLoadUsers = !systemDefaultsLoading || !!systemDefaults || systemDefaultsError;
   const { user } = useAuth();
+  const { canCreateUsers, canEditUsers } = useRolePermissions();
   const currentSearchParams = searchParams.toString();
   const urlPage = getPositivePageParam(searchParams.get('page'));
   const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
@@ -381,7 +383,7 @@ const Users: React.FC = () => {
             }}
           />
         </div>
-        {isAdmin && (
+        {canCreateUsers && (
           <Button
             onClick={() => navigate('/users/new')}
             variant="primary"
@@ -429,15 +431,17 @@ const Users: React.FC = () => {
             label: 'Actions',
             align: 'right',
             render: (userId) => (
-              <IconButton
-                icon={ICONS.Edit}
-                variant="primary"
-                title="Edit"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/users/edit/${userId}`);
-                }}
-              />
+              canEditUsers ? (
+                <IconButton
+                  icon={ICONS.Edit}
+                  variant="primary"
+                  title="Edit"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/users/edit/${userId}`);
+                  }}
+                />
+              ) : null
             ),
           },
         ]}

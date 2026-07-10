@@ -10,12 +10,14 @@ import { useCreateCustomer, useUpdateCustomer } from '../src/hooks/useMutations'
 import { useAuth } from '../src/contexts/AuthProvider';
 import { isTempId } from '../src/utils/optimisticIdMap';
 import { sanitizePhoneInput } from '../utils';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const CustomerForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isLoading: authLoading } = useAuth();
   const isEdit = Boolean(id);
+  const { canCreateCustomers, canEditCustomers } = useRolePermissions();
   
   const [form, setForm] = useState({ name: '', phone: '', address: '' });
   const [error, setError] = useState<string | null>(null);

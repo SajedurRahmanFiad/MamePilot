@@ -7,12 +7,14 @@ import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { useProduct, useCategories } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const ProductForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
   const user = db.currentUser;
+  const { canCreateProducts, canEditProducts } = useRolePermissions();
 
   // Safety check
   if (!user) {
@@ -26,11 +28,22 @@ const ProductForm: React.FC = () => {
   }
 
   // Restrict employees from editing products
-  if (isEdit && isEmployeeRole(user.role)) {
+  if (isEdit && !canEditProducts) {
     return (
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
-        <p className="text-gray-500 mb-6">Employees cannot edit products. Contact an administrator for assistance.</p>
+        <p className="text-gray-500 mb-6">You don't have permission to edit products. Contact an administrator for assistance.</p>
+        <Button onClick={() => navigate('/products')} variant="primary">Back to Products</Button>
+      </div>
+    );
+  }
+
+  // Restrict users from creating products
+  if (!isEdit && !canCreateProducts) {
+    return (
+      <div className="p-8 text-center">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
+        <p className="text-gray-500 mb-6">You don't have permission to create products. Contact an administrator for assistance.</p>
         <Button onClick={() => navigate('/products')} variant="primary">Back to Products</Button>
       </div>
     );

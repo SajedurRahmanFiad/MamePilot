@@ -1,4 +1,4 @@
-
+﻿
 export enum UserRole {
   ADMIN = 'Admin',
   DEVELOPER = 'Developer',
@@ -32,10 +32,15 @@ export type PermissionKey =
   | 'orders.markCompletedAny'
   | 'orders.markReturnedOwn'
   | 'orders.markReturnedAny'
+  | 'orders.print'
   | 'customers.view'
   | 'customers.create'
   | 'customers.edit'
   | 'customers.delete'
+  | 'leads.view'
+  | 'leads.create'
+  | 'leads.edit'
+  | 'leads.delete'
   | 'bills.view'
   | 'bills.create'
   | 'bills.editOwn'
@@ -50,6 +55,7 @@ export type PermissionKey =
   | 'bills.markReceivedAny'
   | 'bills.markPaidOwn'
   | 'bills.markPaidAny'
+  | 'bills.print'
   | 'transactions.view'
   | 'transactions.create'
   | 'transactions.edit'
@@ -58,6 +64,7 @@ export type PermissionKey =
   | 'vendors.create'
   | 'vendors.edit'
   | 'vendors.delete'
+  | 'vendors.viewBills'
   | 'products.view'
   | 'products.create'
   | 'products.edit'
@@ -66,14 +73,46 @@ export type PermissionKey =
   | 'accounts.create'
   | 'accounts.edit'
   | 'accounts.delete'
+  | 'accounts.viewBalance'
   | 'fraudChecker.check'
+  | 'fraudChecker.viewHistory'
   | 'transfers.create'
+  | 'transfers.view'
   | 'reports.view'
+  | 'reports.viewExpense'
+  | 'reports.viewIncome'
+  | 'reports.viewProfitLoss'
+  | 'reports.viewCustomerSales'
+  | 'reports.viewProductQuantity'
+  | 'reports.viewUserActivity'
+  | 'reports.export'
   | 'wallet.view'
+  | 'wallet.viewAny'
   | 'payroll.view'
+  | 'payroll.pay'
+  | 'payroll.deletePayments'
   | 'recycleBin.view'
+  | 'recycleBin.restore'
+  | 'recycleBin.deletePermanent'
   | 'users.view'
-  | 'undoer.view';
+  | 'users.create'
+  | 'users.edit'
+  | 'users.delete'
+  | 'undoer.view'
+  | 'undoer.execute'
+  | 'marketing.view'
+  | 'marketing.manageAds'
+  | 'marketing.syncAds'
+  | 'settings.view'
+  | 'settings.editCompany'
+  | 'settings.editOrderInvoice'
+  | 'settings.editDefaults'
+  | 'settings.editWallet'
+  | 'settings.editCourier'
+  | 'settings.editCategories'
+  | 'settings.editPaymentMethods'
+  | 'settings.managePermissions'
+  | 'subscriptions.view';
 
 export type RolePermissionMap = Record<PermissionKey, boolean>;
 
@@ -660,7 +699,8 @@ export type AppCapabilityKey =
   | 'marketing'
   | 'automatic_leads'
   | 'mamecx'
-  | 'enterprise_ai_agent';
+  | 'enterprise_ai_agent'
+  | 'grow_your_business';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
@@ -704,7 +744,7 @@ export interface PaymentGatewaySettings {
   piprapayReturnUrl: string;
 }
 
-export type AiMainProvider = 'anthropic' | 'openai' | 'google';
+export type AiMainProvider = 'anthropic' | 'openai' | 'google' | 'openrouter';
 
 export interface AiProviderConfig {
   enabled: boolean;
@@ -721,6 +761,7 @@ export interface AgentSettings {
   anthropic: AiProviderConfig;
   openai: AiProviderConfig;
   google: AiProviderConfig;
+  openrouter: AiProviderConfig;
   groq: AiProviderConfig;
   showReasoningSummaries: boolean;
   showToolActivity: boolean;
@@ -728,6 +769,31 @@ export interface AgentSettings {
   maxToolCalls: number;
   queryRowLimit: number;
   queryTimeoutMs: number;
+}
+
+export type BusinessGrowthProvider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'groq';
+
+export interface BusinessGrowthSettings {
+  provider: BusinessGrowthProvider;
+  openai: { baseUrl: string; apiKey: string; model: string };
+  anthropic: { baseUrl: string; apiKey: string; model: string };
+  google: { baseUrl: string; apiKey: string; model: string };
+  openrouter: { baseUrl: string; apiKey: string; model: string };
+  groq: { baseUrl: string; apiKey: string; model: string };
+  recommendationCacheHours: number;
+}
+
+export interface BusinessRecommendation {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  badgeColor: 'green' | 'yellow' | 'red';
+  priority: number;
+  productIds: string[];
+  metadata: Record<string, any> | null;
+  generatedAt: string;
+  expiresAt: string | null;
 }
 
 export interface AgentConversation {
@@ -937,6 +1003,7 @@ export type NotificationActionKind = 'none' | 'link' | 'decision' | 'link_and_de
 export type NotificationDecisionMode = 'record_only' | 'transaction_approval';
 export type NotificationDecision = 'accepted' | 'declined';
 export type NotificationDecisionScope = 'single_user' | 'all_users';
+export type NotificationDeploymentScope = 'all' | 'include' | 'exclude';
 
 export interface NotificationActionConfig {
   kind: NotificationActionKind;
@@ -956,6 +1023,8 @@ export interface AppNotification {
   subject: string;
   contentHtml: string;
   targetRoles: string[];
+  targetDeployments?: string[] | null;
+  deploymentScope?: NotificationDeploymentScope | null;
   startsAt?: string | null;
   endsAt?: string | null;
   createdAt?: string | null;
@@ -971,6 +1040,8 @@ export interface AppNotification {
   actedAt?: string | null;
   actionConfig: NotificationActionConfig;
   metadata?: Record<string, unknown> | null;
+  body?: string;
+  type?: string;
 }
 
 export interface NotificationListResponse {
@@ -996,9 +1067,21 @@ export interface NotificationRecipient {
   actedAt?: string | null;
 }
 
+export interface NotificationDeploymentRecipient extends NotificationRecipient {
+  deploymentKey?: string | null;
+  deploymentName?: string | null;
+}
+
+export interface NotificationDeployment {
+  licenseKey: string;
+  clientName: string;
+  domain?: string | null;
+}
+
 export interface NotificationDetailResponse {
   notification: AppNotification;
-  recipients: NotificationRecipient[];
+  recipients: NotificationDeploymentRecipient[];
+  deployments: NotificationDeployment[];
   summary: {
     recipientCount: number;
     readCount: number;

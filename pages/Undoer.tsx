@@ -6,6 +6,7 @@ import { formatCurrency, getStatusColor } from '../constants';
 import { theme } from '../theme';
 import type { Order } from '../types';
 import { RotateCcw, Search, AlertTriangle, CheckCircle2, Package, User, Calendar, Hash, ChevronDown, ShieldAlert, Loader2 } from 'lucide-react';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   'On Hold': <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />,
@@ -19,6 +20,7 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
 const Undoer: React.FC = () => {
   const { data: orderSettings } = useOrderSettings();
   const revertMutation = useRevertOrderStatus();
+  const { canExecuteUndo } = useRolePermissions();
 
   const prefix = orderSettings?.prefix ?? 'ORD-';
 
@@ -342,9 +344,9 @@ const Undoer: React.FC = () => {
             <button
               type="button"
               onClick={handleRevert}
-              disabled={!targetStatus || revertMutation.isPending}
+              disabled={!targetStatus || revertMutation.isPending || !canExecuteUndo}
               className={`w-full ${theme.buttons.base} gap-2 px-6 py-4 text-sm font-bold rounded-xl transition-all
-                ${targetStatus
+                ${targetStatus && canExecuteUndo
                   ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200/50 hover:shadow-xl hover:shadow-amber-200/60 hover:scale-[1.01] active:scale-[0.99]'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 }

@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App;
@@ -1962,6 +1961,14 @@ final class MasterDataApi extends BaseService
                 'organization' => (string) ($row['google_organization'] ?? ''),
                 'project' => (string) ($row['google_project'] ?? ''),
             ],
+            'openrouter' => [
+                'enabled' => !empty($row['openrouter_enabled'] ?? 0),
+                'baseUrl' => (string) ($row['openrouter_base_url'] ?? ''),
+                'apiKey' => (string) ($row['openrouter_api_key'] ?? ''),
+                'model' => (string) ($row['openrouter_model'] ?? ''),
+                'organization' => '',
+                'project' => '',
+            ],
             'groq' => [
                 'enabled' => !empty($row['groq_enabled'] ?? 0),
                 'baseUrl' => (string) ($row['groq_base_url'] ?? ''),
@@ -1989,6 +1996,7 @@ final class MasterDataApi extends BaseService
         $anthropic = is_array($params['anthropic'] ?? null) ? $params['anthropic'] : [];
         $openai = is_array($params['openai'] ?? null) ? $params['openai'] : [];
         $google = is_array($params['google'] ?? null) ? $params['google'] : [];
+        $openrouter = is_array($params['openrouter'] ?? null) ? $params['openrouter'] : [];
         $groq = is_array($params['groq'] ?? null) ? $params['groq'] : [];
 
         $payload = [
@@ -2012,6 +2020,10 @@ final class MasterDataApi extends BaseService
             'google_model' => $this->nullableString($google['model'] ?? null),
             'google_organization' => $this->nullableString($google['organization'] ?? null),
             'google_project' => $this->nullableString($google['project'] ?? null),
+            'openrouter_enabled' => !empty($openrouter['enabled'] ?? false) ? 1 : 0,
+            'openrouter_base_url' => $this->nullableString($openrouter['baseUrl'] ?? null),
+            'openrouter_api_key' => $this->nullableString($openrouter['apiKey'] ?? null),
+            'openrouter_model' => $this->nullableString($openrouter['model'] ?? null),
             'groq_enabled' => !empty($groq['enabled'] ?? false) ? 1 : 0,
             'groq_base_url' => $this->nullableString($groq['baseUrl'] ?? null),
             'groq_api_key' => $this->nullableString($groq['apiKey'] ?? null),
@@ -2026,6 +2038,81 @@ final class MasterDataApi extends BaseService
 
         $this->saveSingleton('agent_settings', 'agent-settings-default', $payload, fn(): array => $this->fetchAgentSettings());
         return $this->fetchAgentSettings();
+    }
+
+    public function fetchBusinessGrowthSettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->tableExists('business_growth_settings')
+            ? $this->database->fetchOne('SELECT * FROM business_growth_settings LIMIT 1')
+            : null;
+
+        return [
+            'provider' => (string) ($row['provider'] ?? 'openai'),
+            'openai' => [
+                'baseUrl' => (string) ($row['openai_base_url'] ?? ''),
+                'apiKey' => (string) ($row['openai_api_key'] ?? ''),
+                'model' => (string) ($row['openai_model'] ?? ''),
+            ],
+            'anthropic' => [
+                'baseUrl' => (string) ($row['anthropic_base_url'] ?? ''),
+                'apiKey' => (string) ($row['anthropic_api_key'] ?? ''),
+                'model' => (string) ($row['anthropic_model'] ?? ''),
+            ],
+            'google' => [
+                'baseUrl' => (string) ($row['google_base_url'] ?? ''),
+                'apiKey' => (string) ($row['google_api_key'] ?? ''),
+                'model' => (string) ($row['google_model'] ?? ''),
+            ],
+            'openrouter' => [
+                'baseUrl' => (string) ($row['openrouter_base_url'] ?? ''),
+                'apiKey' => (string) ($row['openrouter_api_key'] ?? ''),
+                'model' => (string) ($row['openrouter_model'] ?? ''),
+            ],
+            'groq' => [
+                'baseUrl' => (string) ($row['groq_base_url'] ?? ''),
+                'apiKey' => (string) ($row['groq_api_key'] ?? ''),
+                'model' => (string) ($row['groq_model'] ?? ''),
+            ],
+            'recommendationCacheHours' => max(1, (int) ($row['recommendation_cache_hours'] ?? 6)),
+        ];
+    }
+
+    public function updateBusinessGrowthSettings(array $params): array
+    {
+        $this->requireDeveloperUser();
+        if (!$this->tableExists('business_growth_settings')) {
+            throw new RuntimeException('Business growth settings table is missing. Run the latest migration first.');
+        }
+
+        $openai = is_array($params['openai'] ?? null) ? $params['openai'] : [];
+        $anthropic = is_array($params['anthropic'] ?? null) ? $params['anthropic'] : [];
+        $google = is_array($params['google'] ?? null) ? $params['google'] : [];
+        $openrouter = is_array($params['openrouter'] ?? null) ? $params['openrouter'] : [];
+        $groq = is_array($params['groq'] ?? null) ? $params['groq'] : [];
+
+        $payload = [
+            'provider' => trim((string) ($params['provider'] ?? 'openai')) ?: 'openai',
+            'openai_base_url' => $this->nullableString($openai['baseUrl'] ?? null),
+            'openai_api_key' => $this->nullableString($openai['apiKey'] ?? null),
+            'openai_model' => $this->nullableString($openai['model'] ?? null),
+            'anthropic_base_url' => $this->nullableString($anthropic['baseUrl'] ?? null),
+            'anthropic_api_key' => $this->nullableString($anthropic['apiKey'] ?? null),
+            'anthropic_model' => $this->nullableString($anthropic['model'] ?? null),
+            'google_base_url' => $this->nullableString($google['baseUrl'] ?? null),
+            'google_api_key' => $this->nullableString($google['apiKey'] ?? null),
+            'google_model' => $this->nullableString($google['model'] ?? null),
+            'openrouter_base_url' => $this->nullableString($openrouter['baseUrl'] ?? null),
+            'openrouter_api_key' => $this->nullableString($openrouter['apiKey'] ?? null),
+            'openrouter_model' => $this->nullableString($openrouter['model'] ?? null),
+            'groq_base_url' => $this->nullableString($groq['baseUrl'] ?? null),
+            'groq_api_key' => $this->nullableString($groq['apiKey'] ?? null),
+            'groq_model' => $this->nullableString($groq['model'] ?? null),
+            'recommendation_cache_hours' => max(1, (int) ($params['recommendationCacheHours'] ?? 6)),
+        ];
+
+        $this->saveSingleton('business_growth_settings', 'business-growth-default', $payload, fn(): array => $this->fetchBusinessGrowthSettings());
+        return $this->fetchBusinessGrowthSettings();
     }
 
     public function updatePaymentGatewaySettings(array $params): array
@@ -2762,7 +2849,7 @@ TXT;
                 $facts[] = 'Recent products:';
                 foreach ($recentProducts as $row) {
                     $facts[] = sprintf(
-                        '- %s (₹%s, stock %s)',
+                        '- %s (â‚¹%s, stock %s)',
                         (string) ($row['name'] ?? 'Unknown'),
                         (string) ($row['sale_price'] ?? '0'),
                         (string) ($row['stock'] ?? '0')
@@ -4303,6 +4390,8 @@ TXT;
             'userId' => (string) ($row['user_id'] ?? $row['id'] ?? ''),
             'userName' => $this->nullableString($row['user_name'] ?? $row['name'] ?? null),
             'userRole' => $this->nullableString($row['user_role'] ?? $row['role'] ?? null),
+            'deploymentKey' => $this->nullableString($row['deployment_key'] ?? $row['deploymentKey'] ?? $row['license_key'] ?? null),
+            'deploymentName' => $this->nullableString($row['deployment_name'] ?? $row['deploymentName'] ?? null),
             'isRead' => (int) ($row['is_read'] ?? 0) === 1,
             'readAt' => $this->toIso($row['read_at'] ?? null),
             'actionResult' => $this->nullableString($row['action_result'] ?? null),
@@ -4399,6 +4488,7 @@ TXT;
         return [
             'notification' => $mappedNotification,
             'recipients' => $recipients,
+            'deployments' => [],
             'summary' => [
                 'recipientCount' => count($recipients),
                 'readCount' => $readCount,
@@ -4415,17 +4505,91 @@ TXT;
         $isRead = (bool) ($mappedNotification['isRead'] ?? false);
         $actionResult = trim((string) ($mappedNotification['actionResult'] ?? ''));
 
+        $recipients = [];
+        $deployments = [];
+        try {
+            $centralDetail = $this->fetchCentralNotificationRecipients(trim((string) ($notification['id'] ?? '')));
+            $recipients = $centralDetail['recipients'] ?? [];
+            $deployments = $centralDetail['deployments'] ?? [];
+        } catch (\Throwable $e) {
+            // Fall back to basic detail if central fetch fails
+        }
+
+        if ($recipients === []) {
+            $recipients = [
+                [
+                    'userId' => (string) ($mappedNotification['createdBy'] ?? ''),
+                    'userName' => $this->nullableString($mappedNotification['createdByName'] ?? null),
+                    'userRole' => null,
+                    'deploymentKey' => null,
+                    'deploymentName' => null,
+                    'isRead' => $isRead,
+                    'readAt' => $mappedNotification['readAt'] ?? null,
+                    'actionResult' => $mappedNotification['actionResult'] ?? null,
+                    'actedAt' => $mappedNotification['actedAt'] ?? null,
+                ],
+            ];
+        }
+
+        $readCount = count(array_filter($recipients, static fn(array $r): bool => (bool) ($r['isRead'] ?? false)));
+        $actedCount = count(array_filter($recipients, static fn(array $r): bool => trim((string) ($r['actionResult'] ?? '')) !== ''));
+        $acceptedCount = count(array_filter($recipients, static fn(array $r): bool => (string) ($r['actionResult'] ?? '') === 'accepted'));
+        $declinedCount = count(array_filter($recipients, static fn(array $r): bool => (string) ($r['actionResult'] ?? '') === 'declined'));
+
         return [
             'notification' => $mappedNotification,
-            'recipients' => [],
+            'recipients' => $recipients,
+            'deployments' => $deployments,
             'summary' => [
-                'recipientCount' => 0,
-                'readCount' => $isRead ? 1 : 0,
-                'actedCount' => $actionResult !== '' ? 1 : 0,
-                'acceptedCount' => $actionResult === 'accepted' ? 1 : 0,
-                'declinedCount' => $actionResult === 'declined' ? 1 : 0,
+                'recipientCount' => count($recipients),
+                'readCount' => $readCount,
+                'actedCount' => $actedCount,
+                'acceptedCount' => $acceptedCount,
+                'declinedCount' => $declinedCount,
             ],
         ];
+    }
+
+    private function fetchCentralNotificationRecipients(string $notificationId): array
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        if ($apiUrl === '' || $notificationId === '') {
+            return ['recipients' => [], 'deployments' => []];
+        }
+
+        try {
+            $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'fetch_notification_recipients', [
+                'id' => $notificationId,
+            ]);
+            return [
+                'recipients' => is_array($response['recipients'] ?? null) ? $response['recipients'] : [],
+                'deployments' => is_array($response['deployments'] ?? null) ? $response['deployments'] : [],
+            ];
+        } catch (\Throwable $e) {
+            return ['recipients' => [], 'deployments' => []];
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchCentralDeployments(): array
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        if ($apiUrl === '') {
+            return [];
+        }
+
+        try {
+            $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'list_deployments');
+            return is_array($response['deployments'] ?? null) ? $response['deployments'] : [];
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 
     /**
@@ -5476,6 +5640,12 @@ TXT;
         return null;
     }
 
+    public function fetchDeployments(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        return $this->fetchCentralDeployments();
+    }
+
     public function createNotification(array $params): array
     {
         $developer = $this->requireDeveloperUser();
@@ -5514,10 +5684,18 @@ TXT;
         $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
         $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
 
+        $targetDeployments = $this->normalizeNotificationTargetRoles($params['targetDeployments'] ?? []);
+        $deploymentScope = trim((string) ($params['deploymentScope'] ?? 'all'));
+        if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+            $deploymentScope = 'all';
+        }
+
         $payload = [
             'subject' => $subject,
             'contentHtml' => $contentHtml,
             'targetRoles' => $targetRoles,
+            'targetDeployments' => $targetDeployments,
+            'deploymentScope' => $deploymentScope,
             'startsAt' => $startsAt,
             'endsAt' => $endsAt,
             'actionConfig' => $actionConfig,
@@ -5669,9 +5847,13 @@ TXT;
         $centralMarkSucceeded = false;
         if ($centralIds !== [] && $apiUrl !== '') {
             try {
+                $settingsRowForLicense = $this->capabilityRow();
                 $this->centralLicenseRequest($apiUrl, $ownerToken, 'mark_notification_read', [
                     'notificationIds' => $centralIds,
                     'userId' => (string) ($user['id'] ?? ''),
+                    'licenseKey' => trim((string) ($settingsRowForLicense['license_key'] ?? '')),
+                    'userName' => trim((string) ($user['name'] ?? '')),
+                    'userRole' => trim((string) ($user['role'] ?? '')),
                 ]);
                 $centralMarkSucceeded = true;
             } catch (Throwable) {
@@ -5816,6 +5998,9 @@ TXT;
                 'userId' => (string) ($user['id'] ?? ''),
                 'decision' => $decision,
                 'resolvedByName' => $this->nullableString($user['name'] ?? null),
+                'licenseKey' => trim((string) ($settingsRow['license_key'] ?? '')),
+                'userName' => trim((string) ($user['name'] ?? '')),
+                'userRole' => trim((string) ($user['role'] ?? '')),
             ]);
             return ['success' => true];
         }

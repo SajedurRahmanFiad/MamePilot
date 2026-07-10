@@ -8,12 +8,14 @@ import { useAccounts } from '../src/hooks/useQueries';
 import { useCreateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildLocalDateTime, getTodayDate } from '../utils';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const Transfer: React.FC = () => {
   const user = db.currentUser;
   const { data: accounts = [] } = useAccounts();
   const createTransactionMutation = useCreateTransaction();
   const toast = useToastNotifications();
+  const { canViewAccountBalances } = useRolePermissions();
   
   const [form, setForm] = useState({
     date: getTodayDate(),

@@ -5,6 +5,7 @@ import { formatCurrency } from '../constants';
 import { triggerPrintDialog } from '../src/utils/printUtils';
 import { useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings } from '../src/hooks/useQueries';
 import { getOrderCompanyPage } from '../src/utils/companyPages';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 interface InvoiceContentProps {
   order: any;
@@ -190,6 +191,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
 
 const PrintOrder: React.FC = () => {
   const { id } = useParams();
+  const { canPrintOrders } = useRolePermissions();
   const { data: order, isPending: orderLoading } = useOrder(id || '');
   const { data: customer } = useCustomer(order ? order.customerId : undefined);
   const orderItemProductIds = useMemo(
@@ -212,6 +214,10 @@ const PrintOrder: React.FC = () => {
       triggerPrintDialog();
     }
   }, [order, orderLoading]);
+
+  if (!canPrintOrders) {
+    return <div className="p-8 text-center text-gray-500">You don't have permission to print orders.</div>;
+  }
 
   if (orderLoading) {
     return <div className="p-8 text-center text-gray-500">Loading details...</div>;

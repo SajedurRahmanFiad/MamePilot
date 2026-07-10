@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
-import type { AppNotification, NotificationActionConfig, NotificationDecisionScope } from '../types';
-import { useNotificationHistoryPage, usePermissionsSettings } from '../src/hooks/useQueries';
+import type { AppNotification, NotificationActionConfig, NotificationDecisionScope, NotificationDeploymentScope } from '../types';
+import { useNotificationHistoryPage, usePermissionsSettings, useDeployments } from '../src/hooks/useQueries';
 import { useCreateNotification } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
@@ -94,10 +94,12 @@ const DeveloperNotifications: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: permissionsSettings } = usePermissionsSettings(true);
+  const { data: deployments, isLoading: isLoadingDeployments } = useDeployments(true);
   const createNotificationMutation = useCreateNotification();
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyItems, setHistoryItems] = useState<AppNotification[]>([]);
+  const [deploymentSearch, setDeploymentSearch] = useState('');
   const [form, setForm] = useState({
     subject: '',
     contentHtml: '<p></p>',
@@ -111,6 +113,8 @@ const DeveloperNotifications: React.FC = () => {
     declineLabel: 'Decline',
     decisionMode: 'record_only' as 'record_only' | 'transaction_approval',
     decisionScope: 'all_users' as NotificationDecisionScope,
+    targetDeployments: [] as string[],
+    deploymentScope: 'all' as NotificationDeploymentScope,
   });
 
   const roles = useMemo(() => {
@@ -232,6 +236,28 @@ const DeveloperNotifications: React.FC = () => {
     });
   };
 
+  const toggleDeployment = (licenseKey: string) => {
+    setForm((current) => {
+      const exists = current.targetDeployments.includes(licenseKey);
+      const targetDeployments = exists
+        ? current.targetDeployments.filter((key) => key !== licenseKey)
+        : [...current.targetDeployments, licenseKey];
+      return { ...current, targetDeployments };
+    });
+  };
+
+  const filteredDeployments = useMemo(() => {
+    if (!deployments) return [];
+    if (!deploymentSearch.trim()) return deployments;
+    const q = deploymentSearch.trim().toLowerCase();
+    return deployments.filter(
+      (d) =>
+        d.clientName.toLowerCase().includes(q) ||
+        d.licenseKey.toLowerCase().includes(q) ||
+        (d.domain && d.domain.toLowerCase().includes(q)),
+    );
+  }, [deployments, deploymentSearch]);
+
   const handleSubmit = async () => {
     if (!form.subject.trim()) {
       toast.error('Subject is required.');
@@ -243,6 +269,11 @@ const DeveloperNotifications: React.FC = () => {
     }
     if (form.targetRoles.length === 0) {
       toast.error('Select at least one viewer role.');
+      return;
+    }
+
+    if ((form.deploymentScope === 'include' || form.deploymentScope === 'exclude') && form.targetDeployments.length === 0) {
+      toast.error('Select at least one deployment.');
       return;
     }
 
@@ -263,6 +294,8 @@ const DeveloperNotifications: React.FC = () => {
         contentHtml: form.contentHtml,
         targetRoles: form.targetRoles,
         startsAt,
+        targetDeployments: form.deploymentScope !== 'all' ? form.targetDeployments : [],
+        deploymentScope: form.deploymentScope,
         actionConfig: {
           kind: form.actionKind,
           linkLabel: form.linkLabel.trim() || 'Open',
@@ -285,7 +318,10 @@ const DeveloperNotifications: React.FC = () => {
         linkUrl: '',
         startsAt: '',
         decisionScope: 'all_users',
+        targetDeployments: [],
+        deploymentScope: 'all',
       }));
+      setDeploymentSearch('');
     } catch (error) {
       console.error('Failed to create notification:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create notification.');
@@ -350,6 +386,92 @@ const DeveloperNotifications: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+
+          <div className="rounded-[1.35rem] border border-gray-100 bg-gray-50/80 p-4 space-y-3">
+            <label className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Target Deployments</label>
+            <p className="text-sm text-gray-500">Choose which deployments receive this notification.</p>
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'include', 'exclude'] as NotificationDeploymentScope[]).map((scope) => {
+                const selected = form.deploymentScope === scope;
+                const label = scope === 'all' ? 'All deployments' : scope === 'include' ? 'Specific deployments' : 'All except specific';
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        deploymentScope: scope,
+                        targetDeployments: scope === 'all' ? [] : current.targetDeployments,
+                      }))
+                    }
+                    className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition-all ${
+                      selected
+                        ? 'bg-[var(--primary-color,#0f2f57)] text-white'
+                        : 'border border-gray-200 bg-white text-gray-500 hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)] hover:text-[var(--primary-color,#0f2f57)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(form.deploymentScope === 'include' || form.deploymentScope === 'exclude') && (
+              <div className="space-y-3 pt-1">
+                <input
+                  type="text"
+                  value={deploymentSearch}
+                  onChange={(e) => setDeploymentSearch(e.target.value)}
+                  placeholder="Search deployments..."
+                  className="w-full rounded-xl border border-gray-100 bg-white px-4 py-2.5 text-sm font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                />
+                {isLoadingDeployments ? (
+                  <p className="py-3 text-center text-sm font-medium text-gray-400">Loading deployments...</p>
+                ) : filteredDeployments.length === 0 ? (
+                  <p className="py-3 text-center text-sm font-medium text-gray-400">No deployments found.</p>
+                ) : (
+                  <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                    {filteredDeployments.map((deployment) => {
+                      const selected = form.targetDeployments.includes(deployment.licenseKey);
+                      return (
+                        <button
+                          key={deployment.licenseKey}
+                          type="button"
+                          onClick={() => toggleDeployment(deployment.licenseKey)}
+                          className={`w-full rounded-xl px-4 py-3 text-left transition-all ${
+                            selected
+                              ? 'border-2 border-[var(--primary-color,#0f2f57)] bg-[var(--primary-soft,#ebf4ff)]'
+                              : 'border border-gray-200 bg-white hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-gray-900">{deployment.clientName}</p>
+                              <p className="mt-0.5 truncate text-[10px] font-medium tracking-wide text-gray-400">{deployment.licenseKey}</p>
+                            </div>
+                            <span
+                              className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                                selected
+                                  ? 'border-[var(--primary-color,#0f2f57)] bg-[var(--primary-color,#0f2f57)]'
+                                  : 'border-gray-300 bg-white'
+                              }`}
+                            >
+                              {selected && (
+                                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
@@ -499,6 +621,13 @@ const DeveloperNotifications: React.FC = () => {
                     decisionMode: form.decisionMode,
                     decisionScope: form.decisionScope,
                   })}
+                </span>
+                <span className="rounded-full bg-[#f0f4ff] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#4b6a94]">
+                  {form.deploymentScope === 'all'
+                    ? 'All deployments'
+                    : form.deploymentScope === 'include'
+                      ? `${form.targetDeployments.length} deployment(s) selected`
+                      : `All except ${form.targetDeployments.length} deployment(s)`}
                 </span>
               </div>
 

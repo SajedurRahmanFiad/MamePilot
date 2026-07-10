@@ -11,6 +11,7 @@ import { getErrorMessage } from '../src/services/supabaseQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
 import { getAssignableUserRoles } from '../src/utils/permissions';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
 const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -30,6 +31,7 @@ const UserForm: React.FC = () => {
   const deleteMutation = useDeleteUser();
   const toast = useToastNotifications();
   const { user: currentUser } = useAuth();
+  const { canCreateUsers, canEditUsers, canDeleteUsers } = useRolePermissions();
 
   // Form state
   const [saving, setSaving] = useState(false);
@@ -149,8 +151,8 @@ const UserForm: React.FC = () => {
         await updateMutation.mutateAsync({ id, updates });
 
       } else {
-        if (!isAdmin) {
-          toast.error('Only admin-access users can add users');
+        if (!canCreateUsers) {
+          toast.error('You do not have permission to create users');
           setSaving(false);
           return;
         }
@@ -378,7 +380,7 @@ const UserForm: React.FC = () => {
               {saving ? 'Saving...' : 'Save Details'}
             </Button>
 
-            {isEdit && isAdmin && !isDeveloperTarget && (
+            {isEdit && canDeleteUsers && !isDeveloperTarget && (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={saving}

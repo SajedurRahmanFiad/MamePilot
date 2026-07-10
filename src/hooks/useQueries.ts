@@ -1,6 +1,7 @@
-import { useQuery, UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
+﻿import { useQuery, UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
 import {
   fetchAllNotifications,
+  fetchDeployments,
   fetchNotificationById,
   fetchNotificationHistoryPage,
   fetchCustomers,
@@ -85,6 +86,8 @@ import {
   fetchServiceSubscriptionOverview,
   fetchRecycleBinItems,
   fetchRecycleBinPage,
+  fetchBusinessGrowthSettings,
+  fetchBusinessRecommendations,
 } from '../services/supabaseQueries';
 import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import { useNetwork } from '../contexts/NetworkProvider';
@@ -871,6 +874,24 @@ export function useAgentSettings(enabled: boolean = true): UseQueryResult<AgentS
   });
 }
 
+export function useBusinessGrowthSettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['settings', 'business-growth'],
+    queryFn: fetchBusinessGrowthSettings,
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useBusinessRecommendations(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['business-recommendations'],
+    queryFn: fetchBusinessRecommendations,
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
 export function useLocalUsageSummary(enabled: boolean = true): UseQueryResult<LocalUsageSummary, Error> {
   return useQuery({
     queryKey: ['local-usage-summary'],
@@ -982,6 +1003,19 @@ export function useNotificationById(id: string | undefined, enabled: boolean = t
     enabled: enabled && !!currentUser?.id && !!id,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+export function useDeployments(enabled: boolean = true): UseQueryResult<Array<{ licenseKey: string; clientName: string; domain?: string | null; tierKey?: string }>, Error> {
+  const currentUser = db.currentUser ?? null;
+
+  return useQuery({
+    queryKey: ['deployments', currentUser?.id],
+    queryFn: () => fetchDeployments(),
+    enabled: enabled && !!currentUser?.id,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
   });
 }

@@ -49,5 +49,73 @@ export function useRolePermissions() {
     canAccessRecord,
     canViewAdminDashboard: can('dashboard.viewAdmin'),
     canViewEmployeeDashboard: can('dashboard.viewEmployee'),
+    // Users
+    canCreateUsers: can('users.create'),
+    canEditUsers: can('users.edit'),
+    canDeleteUsers: can('users.delete'),
+    // Customers
+    canCreateCustomers: can('customers.create'),
+    canEditCustomers: can('customers.edit'),
+    canDeleteCustomers: can('customers.delete'),
+    // Products
+    canCreateProducts: can('products.create'),
+    canEditProducts: can('products.edit'),
+    canDeleteProducts: can('products.delete'),
+    // Payroll
+    canPayEmployees: can('payroll.pay'),
+    canDeletePayrollPayments: can('payroll.deletePayments'),
+    // Leads
+    canViewLeads: can('leads.view'),
+    canCreateLeads: can('leads.create'),
+    canEditLeads: can('leads.edit'),
+    canDeleteLeads: can('leads.delete'),
+    // Reports
+    canViewReports: can('reports.view'),
+    canViewExpenseReports: can('reports.viewExpense'),
+    canViewIncomeReports: can('reports.viewIncome'),
+    canViewProfitLossReports: can('reports.viewProfitLoss'),
+    canViewCustomerSalesReports: can('reports.viewCustomerSales'),
+    canViewProductQuantityReports: can('reports.viewProductQuantity'),
+    canViewUserActivityReports: can('reports.viewUserActivity'),
+    canExportReports: can('reports.export'),
+    // Marketing
+    canViewMarketing: can('marketing.view'),
+    canManageAds: can('marketing.manageAds'),
+    canSyncAds: can('marketing.syncAds'),
+    // Settings
+    canViewSettings: can('settings.view'),
+    canEditCompanySettings: can('settings.editCompany'),
+    canEditOrderInvoiceSettings: can('settings.editOrderInvoice'),
+    canEditDefaults: can('settings.editDefaults'),
+    canEditWalletSettings: can('settings.editWallet'),
+    canEditCourierSettings: can('settings.editCourier'),
+    canEditCategories: can('settings.editCategories'),
+    canEditPaymentMethods: can('settings.editPaymentMethods'),
+    canManagePermissions: can('settings.managePermissions'),
+    // Recycle Bin
+    canRestoreRecords: can('recycleBin.restore'),
+    canDeletePermanent: can('recycleBin.deletePermanent'),
+    // Undoer
+    canExecuteUndo: can('undoer.execute'),
+    // Printing
+    canPrintOrders: can('orders.print'),
+    canPrintBills: can('bills.print'),
+    // Wallet
+    canViewAnyWallet: can('wallet.viewAny'),
+    // Banking
+    canViewAccountBalances: can('accounts.viewBalance'),
+    canViewTransfers: can('transfers.view'),
+    canCreateAccounts: can('accounts.create'),
+    canEditAccounts: can('accounts.edit'),
+    canDeleteAccounts: can('accounts.delete'),
+    // Vendors
+    canViewVendorBills: can('vendors.viewBills'),
+    canCreateVendors: can('vendors.create'),
+    canEditVendors: can('vendors.edit'),
+    canDeleteVendors: can('vendors.delete'),
+    // Fraud Checker
+    canViewFraudHistory: can('fraudChecker.viewHistory'),
+    // Subscriptions
+    canViewSubscriptions: can('subscriptions.view'),
   };
 }

@@ -53,6 +53,8 @@ import type {
   AgentMessage,
   AgentRunEvent,
   AgentRunReceipt,
+  BusinessGrowthSettings,
+  BusinessRecommendation,
 } from '../../types';
 import { apiAction, type ApiActionOptions } from './apiClient';
 
@@ -248,6 +250,16 @@ export async function fetchPaymentGatewaySettings(): Promise<PaymentGatewaySetti
 export async function updatePaymentGatewaySettings(updates: PaymentGatewaySettings): Promise<PaymentGatewaySettings> { return call<PaymentGatewaySettings>('updatePaymentGatewaySettings', updates); }
 export async function fetchAgentSettings(): Promise<AgentSettings> { return call<AgentSettings>('fetchAgentSettings'); }
 export async function updateAgentSettings(updates: AgentSettings): Promise<AgentSettings> { return call<AgentSettings>('updateAgentSettings', updates); }
+
+export async function fetchBusinessGrowthSettings(): Promise<BusinessGrowthSettings> { return call<BusinessGrowthSettings>('fetchBusinessGrowthSettings'); }
+export async function updateBusinessGrowthSettings(updates: BusinessGrowthSettings): Promise<BusinessGrowthSettings> { return call<BusinessGrowthSettings>('updateBusinessGrowthSettings', updates); }
+
+export async function fetchBusinessRecommendations(): Promise<{ recommendations: BusinessRecommendation[]; generatedAt: string | null; expiresAt: string | null; cached?: boolean; error?: string }> {
+  return call('fetchBusinessRecommendations');
+}
+export async function refreshBusinessRecommendations(): Promise<{ recommendations: BusinessRecommendation[]; generatedAt: string | null; expiresAt: string | null; cached?: boolean; error?: string }> {
+  return call('refreshBusinessRecommendations');
+}
 export async function fetchLocalUsageSummary(): Promise<LocalUsageSummary> { return call<LocalUsageSummary>('fetchLocalUsageSummary'); }
 export async function fetchCourierSettings(): Promise<CourierSettings> { return call<CourierSettings>('fetchCourierSettings'); }
 export async function updateCourierSettings(updates: {
@@ -347,10 +359,17 @@ export async function fetchNotificationById(id: string): Promise<NotificationDet
   return call<NotificationDetailResponse | null>('fetchNotificationById', { id });
 }
 
+export async function fetchDeployments(): Promise<Array<{ licenseKey: string; clientName: string; domain?: string | null; tierKey?: string }>>
+{
+  return call<Array<{ licenseKey: string; clientName: string; domain?: string | null; tierKey?: string }>>('fetchDeployments');
+}
+
 export async function createNotification(payload: {
   subject: string;
   contentHtml: string;
   targetRoles: string[];
+  targetDeployments?: string[];
+  deploymentScope?: 'all' | 'include' | 'exclude';
   startsAt?: string | null;
   actionConfig?: {
     kind?: 'none' | 'link' | 'decision' | 'link_and_decision';

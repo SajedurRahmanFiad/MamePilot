@@ -72,6 +72,8 @@ import {
   registerWebhookWithCentral,
   unregisterWebhookFromCentral,
   updateAgentSettings,
+  updateBusinessGrowthSettings,
+  refreshBusinessRecommendations,
   initiatePipraPayCheckout,
   beginMetaAdsOAuth,
   syncMetaAds,
@@ -2893,6 +2895,26 @@ export function useUpdateAgentSettings(): UseMutationResult<AgentSettings, Error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'agent'] });
+    },
+  });
+}
+
+export function useUpdateBusinessGrowthSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateBusinessGrowthSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'business-growth'] });
+    },
+  });
+}
+
+export function useRefreshBusinessRecommendations() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: refreshBusinessRecommendations,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['business-recommendations'] });
     },
   });
 }

@@ -20,6 +20,7 @@ import {
   useWalletActivityPage,
   useWalletSettings,
 } from '../src/hooks/useQueries';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const getTodayValue = (): string => getTodayDate();
 
@@ -133,7 +134,8 @@ const Payroll: React.FC = () => {
     note: '',
   });
 
-  const isAdmin = hasAdminAccess(user?.role);
+  const { canPayEmployees, canDeletePayrollPayments } = useRolePermissions();
+  const isAdmin = hasAdminAccess(user?.role) || canPayEmployees;
   const isPayoutModalOpen = !!selectedCard;
   const { data: walletSettings = { unitAmount: 0, countedStatuses: [] }, isPending: walletSettingsLoading } = useWalletSettings();
   const { data: systemDefaults, isPending: defaultsLoading } = useSystemDefaults();
@@ -358,7 +360,7 @@ const Payroll: React.FC = () => {
         label: '',
         align: 'right',
         render: (_value, item: WalletActivityEntry) => {
-          if (item.entryType === 'payout' && item.payoutId) {
+          if (canDeletePayrollPayments && item.entryType === 'payout' && item.payoutId) {
             return (
               <button
                 onClick={() => setDeletingPayoutId(item.payoutId || null)}
@@ -373,7 +375,7 @@ const Payroll: React.FC = () => {
         },
       },
     ],
-    []
+    [canDeletePayrollPayments]
   );
 
   const handleOpenPayout = (card: WalletBalanceCard) => {

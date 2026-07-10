@@ -21,6 +21,7 @@ final class FeatureAccess
         'courier_automation' => true,
         'marketing' => false,
         'enterprise_ai_agent' => false,
+        'grow_your_business' => false,
     ];
 
     private const ACTION_CAPABILITIES = [
@@ -127,6 +128,10 @@ final class FeatureAccess
         'fetchAgentRunStream' => 'enterprise_ai_agent',
         'startAgentRun' => 'enterprise_ai_agent',
         'agentRunStream' => 'enterprise_ai_agent',
+        'fetchBusinessRecommendations' => 'grow_your_business',
+        'refreshBusinessRecommendations' => 'grow_your_business',
+        'fetchBusinessGrowthSettings' => 'grow_your_business',
+        'updateBusinessGrowthSettings' => 'grow_your_business',
     ];
 
     private Database $database;

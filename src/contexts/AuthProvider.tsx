@@ -189,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [queryClient]);
 
   const maybeSyncLicenseCapabilities = useCallback((session: BootstrapSessionData) => {
-    if (!hasAdminAccess(session.user.role)) {
+    if (!session?.user || !hasAdminAccess(session.user.role)) {
       return;
     }
 

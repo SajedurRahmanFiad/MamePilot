@@ -19,7 +19,7 @@ type PermissionsSettingsPanelProps = {
   onChange: (next: PermissionsSettings) => void;
 };
 
-const SECTION_ORDER = ['Overview', 'Orders', 'Customers', 'Bills', 'Transactions', 'Inventory & Banking', 'Other Modules'];
+const SECTION_ORDER = ['Overview', 'Orders', 'Customers', 'Bills', 'Transactions', 'Inventory & Banking', 'Other Modules', 'Marketing', 'Settings'];
 
 const checkboxClassName =
   'h-4 w-4 rounded border border-gray-300 text-[#0f2f57] focus:ring-[#0f2f57] focus:ring-offset-0';

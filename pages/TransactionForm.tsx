@@ -10,6 +10,7 @@ import { useCreateTransaction, useUpdateTransaction } from '../src/hooks/useMuta
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { buildLocalDateTime, formatDate, getTodayDate, normalizeUtcTimestamp, openAttachmentPreview } from '../utils';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 type TransactionFormState = {
   date: string;

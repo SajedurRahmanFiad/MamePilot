@@ -1,7 +1,7 @@
-import React from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ICONS } from '../constants';
-import type { NotificationActionConfig, NotificationDecisionScope, NotificationRecipient } from '../types';
+import type { NotificationActionConfig, NotificationDecisionScope, NotificationDeploymentRecipient, NotificationRecipient } from '../types';
 import { useNotificationById } from '../src/hooks/useQueries';
 import { getPreservedRouteState } from '../src/utils/navigation';
 
@@ -36,7 +36,7 @@ const getDecisionScopeLabel = (scope?: NotificationDecisionScope): string => {
   return 'Not applicable';
 };
 
-const getRecipientStatus = (recipient: NotificationRecipient): { label: string; className: string } => {
+const getRecipientStatus = (recipient: NotificationRecipient | NotificationDeploymentRecipient): { label: string; className: string } => {
   if (recipient.actionResult === 'accepted') {
     return { label: 'Accepted', className: 'bg-emerald-50 text-emerald-700' };
   }
@@ -108,9 +108,79 @@ const NotificationDetail: React.FC = () => {
     );
   }
 
-  const { notification, recipients, summary } = data;
+  const { notification, recipients, summary, deployments } = data;
   const actionConfig = notification.actionConfig || { kind: 'none' as const };
   const linkUrl = actionConfig.linkUrl?.trim();
+
+  // Filter state
+  const [filterDeployment, setFilterDeployment] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterAction, setFilterAction] = useState('');
+  const [filterReadDateMode, setFilterReadDateMode] = useState<'on' | 'before' | 'after'>('on');
+  const [filterReadDate, setFilterReadDate] = useState('');
+
+  const activeFilterCount = [
+    filterDeployment,
+    filterRole,
+    filterAction,
+    filterReadDate,
+  ].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setFilterDeployment('');
+    setFilterRole('');
+    setFilterAction('');
+    setFilterReadDateMode('on');
+    setFilterReadDate('');
+  };
+
+  // Dynamically build unique roles from recipients
+  const uniqueRoles = useMemo(() => {
+    const roles = new Set<string>();
+    (recipients ?? []).forEach((r) => {
+      if (r.userRole) roles.add(r.userRole);
+    });
+    return Array.from(roles).sort();
+  }, [recipients]);
+
+  // Filter recipients
+  const filteredRecipients = useMemo(() => {
+    let list = recipients ?? [];
+
+    if (filterDeployment) {
+      list = list.filter(
+        (r) => (r as NotificationDeploymentRecipient).deploymentKey === filterDeployment,
+      );
+    }
+
+    if (filterRole) {
+      list = list.filter((r) => r.userRole === filterRole);
+    }
+
+    if (filterAction) {
+      list = list.filter((r) => {
+        const status = getRecipientStatus(r);
+        return status.label.toLowerCase() === filterAction.toLowerCase();
+      });
+    }
+
+    if (filterReadDate) {
+      const target = new Date(filterReadDate);
+      if (!Number.isNaN(target.getTime())) {
+        const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+        list = list.filter((r) => {
+          if (!r.readAt) return false;
+          const readDate = new Date(r.readAt);
+          const readDay = new Date(readDate.getFullYear(), readDate.getMonth(), readDate.getDate());
+          if (filterReadDateMode === 'on') return readDay.getTime() === targetDay.getTime();
+          if (filterReadDateMode === 'before') return readDay.getTime() < targetDay.getTime();
+          return readDay.getTime() > targetDay.getTime();
+        });
+      }
+    }
+
+    return list;
+  }, [recipients, filterDeployment, filterRole, filterAction, filterReadDateMode, filterReadDate]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -128,60 +198,45 @@ const NotificationDetail: React.FC = () => {
           <div className="space-y-3">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Notification Detail</p>
             <h2 className="text-2xl font-black text-gray-900">{notification.subject}</h2>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-gray-600">{notification.body}</p>
+          </div>
+
+          <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-full bg-[#e6f0ff] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-[#0f2f57]">
-                {(notification.targetRoles || []).join(', ') || 'No roles'}
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">
+                {notification.type || 'general'}
               </span>
               <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">
                 {getActionLabel(actionConfig)}
               </span>
-              <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
-                notification.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
-              }`}>
-                {notification.isActive ? 'Active' : 'Closed'}
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">
+                {getDecisionScopeLabel(actionConfig.decisionScope)}
               </span>
             </div>
-            <div
-                className="prose prose-sm mt-4 max-w-none pt-5 text-sm text-gray-600 [&_a]:font-bold [&_a]:text-[#0f2f57] [&_a]:underline"
-                dangerouslySetInnerHTML={{ __html: notification.contentHtml || '<p>No content.</p>' }}
-              />
-          </div>
 
-          <div className="space-y-6">
-            <section className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
-              <div className="mt-4 space-y-3 text-sm font-medium text-gray-600">
-                <p><span className="font-black text-gray-900">Created by:</span> {notification.createdByName || 'System'}</p>
-                <p><span className="font-black text-gray-900">Created at:</span> {formatDateTime(notification.createdAt)}</p>
-                <p><span className="font-black text-gray-900">Decision scope:</span> {getDecisionScopeLabel(actionConfig.decisionScope)}</p>
-                <p><span className="font-black text-gray-900">System generated:</span> {notification.isSystemGenerated ? 'Yes' : 'No'}</p>
-                <p><span className="font-black text-gray-900">Link target:</span> {linkUrl || 'Not set'}</p>
+            <div className="space-y-2 text-xs font-medium text-gray-500">
+              <p>Created: {formatDateTime(notification.createdAt)}</p>
+              {notification.createdByName && <p>By: {notification.createdByName}</p>}
+              <p>Notification ID: {notification.id}</p>
+            </div>
+
+            {actionConfig.kind === 'decision' || actionConfig.kind === 'link_and_decision' ? (
+              <div className="rounded-[1.25rem] border border-gray-100 bg-gray-50/80 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Action Buttons</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {actionConfig.acceptLabel && (
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-600">
+                      {actionConfig.acceptLabel}
+                    </span>
+                  )}
+                  {actionConfig.declineLabel && (
+                    <span className="rounded-full bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-red-600">
+                      {actionConfig.declineLabel}
+                    </span>
+                  )}
+                </div>
               </div>
-            </section>
-
-            {notification.metadata && (
-              <section className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
-                <h3 className="text-lg font-black text-gray-900">Metadata</h3>
-                <pre className="mt-4 overflow-x-auto rounded-[1.25rem] bg-gray-950 px-4 py-4 text-xs leading-6 text-gray-100">
-                  {JSON.stringify(notification.metadata, null, 2)}
-                </pre>
-              </section>
-            )}
-
-            {linkUrl && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (/^https?:\/\//i.test(linkUrl)) {
-                    window.open(linkUrl, '_blank', 'noopener,noreferrer');
-                    return;
-                  }
-                  navigate(linkUrl);
-                }}
-                className="rounded-xl bg-[#0f2f57] px-4 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[#143b6d]"
-              >
-                {actionConfig.linkLabel || 'Open link'}
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -206,19 +261,126 @@ const NotificationDetail: React.FC = () => {
 
         <div className="mt-6">
           <section className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
-            <h3 className="text-lg font-black text-gray-900">Recipient Activity</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Every targeted user is listed below, including who read the notification and who clicked an action button.
-            </p>
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-black text-gray-900">Recipient Activity</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Every targeted user is listed below, including who read the notification and who clicked an action button.
+                </p>
+              </div>
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-600">
+                  {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-[1.25rem] border border-gray-100 bg-gray-50/80 px-4 py-4">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Filters</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {/* Deployment filter */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+                    Deployment
+                  </label>
+                  <select
+                    value={filterDeployment}
+                    onChange={(e) => setFilterDeployment(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">All deployments</option>
+                    {(deployments ?? []).map((d) => (
+                      <option key={d.licenseKey} value={d.licenseKey}>
+                        {d.clientName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Role filter */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+                    User Role
+                  </label>
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">All roles</option>
+                    {uniqueRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Action Status filter */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+                    Action Status
+                  </label>
+                  <select
+                    value={filterAction}
+                    onChange={(e) => setFilterAction(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">All</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="declined">Declined</option>
+                    <option value="read">Read</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+
+                {/* Read Date filter */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+                    Read Date
+                  </label>
+                  <div className="flex gap-1.5">
+                    <select
+                      value={filterReadDateMode}
+                      onChange={(e) => setFilterReadDateMode(e.target.value as 'on' | 'before' | 'after')}
+                      className="rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm"
+                    >
+                      <option value="on">On</option>
+                      <option value="before">Before</option>
+                      <option value="after">After</option>
+                    </select>
+                    <input
+                      type="date"
+                      value={filterReadDate}
+                      onChange={(e) => setFilterReadDate(e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="text-xs font-black uppercase tracking-[0.18em] text-gray-400 transition-colors hover:text-gray-600"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="mt-5 space-y-3">
-              {recipients.length === 0 ? (
+              {filteredRecipients.length === 0 ? (
                 <div className="rounded-[1.25rem] border border-dashed border-gray-200 px-4 py-6 text-center text-sm font-medium text-gray-400">
-                  No targeted users were found for this notification.
+                  {(recipients ?? []).length === 0
+                    ? 'No targeted users were found for this notification.'
+                    : 'No recipients match the current filters.'}
                 </div>
               ) : (
-                recipients.map((recipient) => {
+                filteredRecipients.map((recipient) => {
                   const status = getRecipientStatus(recipient);
+                  const deploymentRecipient = recipient as NotificationDeploymentRecipient;
                   return (
                     <div
                       key={recipient.userId}
@@ -227,9 +389,16 @@ const NotificationDetail: React.FC = () => {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <p className="text-sm font-black text-gray-900">{recipient.userName || 'Unknown user'}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                            {recipient.userRole || 'Unknown role'}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+                              {recipient.userRole || 'Unknown role'}
+                            </p>
+                            {deploymentRecipient.deploymentName != null && (
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-gray-500">
+                                {deploymentRecipient.deploymentName || 'Local'}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${status.className}`}>
                           {status.label}

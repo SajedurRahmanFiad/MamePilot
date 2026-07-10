@@ -104,6 +104,7 @@ const PrintOrder = lazyPage(() => import('./pages/PrintOrder'));
 const PrintBill = lazyPage(() => import('./pages/PrintBill'));
 const WalletPage = lazyPage(() => import('./pages/Wallet'));
 const Undoer = lazyPage(() => import('./pages/Undoer'));
+const GrowYourBusiness = lazyPage(() => import('./pages/GrowYourBusiness'));
 
 const RouteFallback: React.FC = () => (
   <div className="min-h-[40vh] flex items-center justify-center px-6 py-12 text-center text-sm font-medium text-gray-500">
@@ -119,7 +120,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   const activeUser = profile || user;
   const isAdmin = hasAdminAccess(activeUser?.role);
   const location = useLocation();
-  const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
+  const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard, canViewSettings, canViewSubscriptions, canViewMarketing } = useRolePermissions();
   const { hasCapability, isDeveloper } = useCapabilities(isAuthenticated);
   const writeFreezeEnabled = WRITE_FREEZE_ENABLED;
   const { isReadOnly } = useSubscriptionReadOnly();
@@ -196,6 +197,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (can('transactions.create') || can('transactions.edit')) preloaders.add(TransactionForm.preload);
     if (can('accounts.view')) preloaders.add(Banking.preload);
     if (can('fraudChecker.check')) preloaders.add(FraudCheckerPage.preload);
+    if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
     if (can('transfers.create')) preloaders.add(Transfer.preload);
     if (can('users.view')) {
       preloaders.add(Users.preload);
@@ -327,6 +329,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       <Route path="/fraud-checker" element={
         isAuthenticated ? (can('fraudChecker.check') ? <Layout><FraudCheckerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
+      <Route path="/grow-your-business" element={
+        isAuthenticated ? (hasCapability('grow_your_business') ? <Layout><GrowYourBusiness /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
       <Route path="/leads" element={
         isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -408,21 +413,21 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/social-media-ads" element={
         isAuthenticated
-          ? canViewDashboard
+          ? canViewMarketing && canViewDashboard
             ? <Layout><SocialMediaAdsDashboard /></Layout>
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
       } />
       <Route path="/meta-ads" element={
         isAuthenticated
-          ? canViewDashboard
+          ? canViewMarketing
             ? <Layout><MetaAds /></Layout>
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
       } />
       <Route path="/meta-ads/:id" element={
         isAuthenticated
-          ? canViewDashboard
+          ? canViewMarketing
             ? <Layout><MetaAds /></Layout>
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
@@ -475,11 +480,11 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
 
       <Route path="/settings" element={
-        isAuthenticated ? (isAdmin ? <Layout><SettingsPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (canViewSettings ? <Layout><SettingsPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/subscriptions" element={
-        isAuthenticated ? (isAdmin ? <Layout><AdminSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (canViewSubscriptions ? <Layout><AdminSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/undoer" element={

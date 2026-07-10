@@ -17,6 +17,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   automatic_leads: 'Automatic Lead & Customer Management',
   mamecx: 'MameCX',
   enterprise_ai_agent: 'AI Assistant Mame',
+  grow_your_business: 'Grow Your Business',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -36,6 +37,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   automatic_leads: false,
   mamecx: false,
   enterprise_ai_agent: false,
+  grow_your_business: false,
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];
@@ -59,6 +61,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/reports(?:\/|$)/, capability: 'advanced_reports' },
   { pattern: /^\/recycle-bin(?:\/|$)|^\/undoer(?:\/|$)/, capability: 'recycle_bin_undoer' },
   { pattern: /^\/fraud-checker(?:\/|$)/, capability: 'fraud_checker' },
+  { pattern: /^\/grow-your-business(?:\/|$)/, capability: 'grow_your_business' },
 ];
 
 export function capabilityForPath(pathname: string): AppCapabilityKey | null {

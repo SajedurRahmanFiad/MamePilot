@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings } from '../src/hooks/useMutations';
-import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings } from '../types';
+import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings } from '../src/hooks/useMutations';
+import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings } from '../types';
 import { theme } from '../theme';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth';
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
@@ -25,6 +25,7 @@ const emptyAgentSettings: AgentSettings = {
   anthropic: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
   openai: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
   google: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
+  openrouter: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
   groq: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
   showReasoningSummaries: true,
   showToolActivity: true,
@@ -32,6 +33,16 @@ const emptyAgentSettings: AgentSettings = {
   maxToolCalls: 10,
   queryRowLimit: 1000,
   queryTimeoutMs: 30000,
+};
+
+const emptyBusinessGrowthSettings: BusinessGrowthSettings = {
+  provider: 'openai',
+  openai: { baseUrl: '', apiKey: '', model: '' },
+  anthropic: { baseUrl: '', apiKey: '', model: '' },
+  google: { baseUrl: '', apiKey: '', model: '' },
+  openrouter: { baseUrl: '', apiKey: '', model: '' },
+  groq: { baseUrl: '', apiKey: '', model: '' },
+  recommendationCacheHours: 6,
 };
 
 const DeveloperSettings: React.FC = () => {
@@ -43,17 +54,20 @@ const DeveloperSettings: React.FC = () => {
   const { data: gatewaySettings, isPending: loadingGateway } = usePaymentGatewaySettings(user?.role === 'Developer');
   const { data: maintenanceStatus, isPending: loadingMaintenance } = useMaintenanceStatus(Boolean(user));
   const { data: agentSettings, isPending: loadingAgent } = useAgentSettings(user?.role === 'Developer');
+  const { data: businessGrowthSettings, isPending: loadingBusinessGrowth } = useBusinessGrowthSettings(user?.role === 'Developer');
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
   const setMaintenanceStatus = useSetMaintenanceStatus();
   const updateAgent = useUpdateAgentSettings();
+  const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
 
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
+  const [businessGrowthForm, setBusinessGrowthForm] = useState<BusinessGrowthSettings>(emptyBusinessGrowthSettings);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent'];
+  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent', 'business_growth'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -91,6 +105,12 @@ const DeveloperSettings: React.FC = () => {
       setAgentForm(agentSettings);
     }
   }, [agentSettings]);
+
+  useEffect(() => {
+    if (businessGrowthSettings) {
+      setBusinessGrowthForm(businessGrowthSettings);
+    }
+  }, [businessGrowthSettings]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -175,18 +195,29 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveBusinessGrowthSettings = async () => {
+    const toastId = toast.loading('Saving business growth settings...');
+    try {
+      await updateBusinessGrowth.mutateAsync(businessGrowthForm);
+      toast.update(toastId, 'Business growth settings saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save business growth settings.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
     { id: 'maintenance', label: 'Maintenance Mode' },
     { id: 'payment-gateway', label: 'Payment Gateway' },
     { id: 'fraud-checker', label: 'Fraud Checker' },
     { id: 'agent', label: 'AI Agent' },
+    { id: 'business_growth', label: 'Business Growth' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay
-        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending}
+        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || loadingBusinessGrowth || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending || updateBusinessGrowth.isPending}
         message="Loading developer settings..."
       />
 
@@ -196,6 +227,7 @@ const DeveloperSettings: React.FC = () => {
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
         {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save AI Agent Settings</Button>}
+        {activeTab === 'business_growth' && <Button onClick={saveBusinessGrowthSettings} variant="primary">Save Business Growth Settings</Button>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
@@ -362,9 +394,9 @@ const DeveloperSettings: React.FC = () => {
                   </div>
                 </label>
 
-                {(['anthropic', 'openai', 'google', 'groq'] as const).map((provider) => {
+                {(['anthropic', 'openai', 'google', 'openrouter', 'groq'] as const).map((provider) => {
                   const providerConfig = agentForm[provider];
-                  const label = provider === 'groq' ? 'Deterministic Groq' : `${provider.charAt(0).toUpperCase() + provider.slice(1)} Provider`;
+                  const label = provider === 'groq' ? 'Deterministic Groq' : provider === 'openrouter' ? 'OpenRouter Provider' : `${provider.charAt(0).toUpperCase() + provider.slice(1)} Provider`;
                   return (
                     <div key={provider} className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4 md:col-span-2">
                       <div className="flex items-center justify-between">
@@ -518,6 +550,99 @@ const DeveloperSettings: React.FC = () => {
                     <p className="text-sm font-black text-gray-900">Show tool activity</p>
                     <p className="text-sm text-gray-500">Expose structured tool execution and query details in the UI.</p>
                   </div>
+                </label>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'business_growth' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">Business Growth AI Settings</h3>
+                <p className="mt-1 text-sm text-gray-500">Configure the AI provider used to generate product recommendations and business insights.</p>
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Provider</span>
+                  <select
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
+                    value={businessGrowthForm.provider}
+                    onChange={(e) => setBusinessGrowthForm({ ...businessGrowthForm, provider: e.target.value as BusinessGrowthSettings['provider'] })}
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="google">Google</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="groq">Groq</option>
+                  </select>
+                </label>
+
+                {(['openai', 'anthropic', 'google', 'openrouter', 'groq'] as const).map((provider) => {
+                  const providerConfig = businessGrowthForm[provider];
+                  const isActive = businessGrowthForm.provider === provider;
+                  return (
+                    <div key={provider} className={`rounded-2xl border p-5 space-y-4 md:col-span-2 ${isActive ? 'border-primary-200 bg-primary-50/30' : 'border-gray-100 bg-gray-50'}`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-black text-gray-900">{provider.charAt(0).toUpperCase() + provider.slice(1)}</p>
+                        {isActive && <span className="text-xs font-bold text-primary-600 bg-primary-100 px-2 py-1 rounded-full">Active</span>}
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Base URL</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.baseUrl}
+                            onChange={(e) => setBusinessGrowthForm({
+                              ...businessGrowthForm,
+                              [provider]: { ...providerConfig, baseUrl: e.target.value },
+                            })}
+                            placeholder="https://api.your-provider.com"
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Key</span>
+                          <input
+                            type="password"
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.apiKey}
+                            onChange={(e) => setBusinessGrowthForm({
+                              ...businessGrowthForm,
+                              [provider]: { ...providerConfig, apiKey: e.target.value },
+                            })}
+                            placeholder="Paste API key"
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Model</span>
+                          <input
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                            value={providerConfig.model}
+                            onChange={(e) => setBusinessGrowthForm({
+                              ...businessGrowthForm,
+                              [provider]: { ...providerConfig, model: e.target.value },
+                            })}
+                            placeholder="e.g. gpt-4o-mini"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4">
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Recommendation Cache Duration (hours)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={72}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={businessGrowthForm.recommendationCacheHours}
+                    onChange={(e) => setBusinessGrowthForm({ ...businessGrowthForm, recommendationCacheHours: Number(e.target.value) })}
+                  />
+                  <p className="text-sm text-gray-500">How long to cache AI-generated recommendations before regenerating. Default: 6 hours.</p>
                 </label>
               </div>
             </section>

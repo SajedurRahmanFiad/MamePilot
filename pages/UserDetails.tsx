@@ -10,6 +10,7 @@ import { useDeleteUser } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { openAttachmentPreview } from '../utils';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const formatDateValue = (value?: string | null) => {
   if (!value) return 'Not provided';
@@ -57,12 +58,13 @@ const UserDetails: React.FC = () => {
   const deleteUserMutation = useDeleteUser();
   const toast = useToastNotifications();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { canEditUsers, canDeleteUsers } = useRolePermissions();
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading user...</div>;
   if (error || !user) return <div className="p-8 text-center text-gray-500">{error?.message || 'User not found.'}</div>;
   if (!currentUser) return <div className="p-8 text-center text-gray-500">Not authenticated.</div>;
 
-  const canEdit = hasAdminAccess(currentUser.role) || currentUser.id === id;
+  const canEdit = canEditUsers || currentUser.id === id;
   const isAdmin = hasAdminAccess(currentUser.role);
   const isDeveloperTarget = user.role === UserRole.DEVELOPER;
   const hasNidPassportCopy = Boolean(String(user.nidPassportCopy || '').trim());
@@ -121,7 +123,7 @@ const UserDetails: React.FC = () => {
               {ICONS.Edit} Edit Profile
             </button>
           )}
-          {isAdmin && !isDeveloperTarget && (
+          {canDeleteUsers && !isDeveloperTarget && (
             <button
               onClick={() => setShowDeleteConfirm(true)}
               disabled={deleteUserMutation.isPending}

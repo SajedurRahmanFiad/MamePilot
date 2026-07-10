@@ -10,6 +10,7 @@ import { useCreateAccount, useDeleteAccount } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
 import { useSearch } from '../src/contexts/SearchContext';
+import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const Banking: React.FC = () => {
   const { data: accounts = [], isLoading } = useAccounts();
@@ -17,6 +18,7 @@ const Banking: React.FC = () => {
   const createAccountMutation = useCreateAccount();
   const deleteAccountMutation = useDeleteAccount();
   const toast = useToastNotifications();
+  const { canCreateAccounts, canDeleteAccounts } = useRolePermissions();
 
   const filteredAccounts = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -131,15 +133,17 @@ const Banking: React.FC = () => {
             }}
           />
         </div>
-        <Button
-          onClick={() => setShowAddModal(true)}
-          variant="primary"
-          size="md"
-          icon={ICONS.Plus}
-          disabled={createAccountMutation.isPending}
-        >
-          Add Account
-        </Button>
+        {canCreateAccounts && (
+          <Button
+            onClick={() => setShowAddModal(true)}
+            variant="primary"
+            size="md"
+            icon={ICONS.Plus}
+            disabled={createAccountMutation.isPending}
+          >
+            Add Account
+          </Button>
+        )}
       </div>
       {/* Summary Card */}
       <div className={`${theme.colors.primary[600]} rounded-xl p-8 text-white shadow-xl shadow-[#0f2f57]/20 relative overflow-hidden`}>
@@ -171,27 +175,31 @@ const Banking: React.FC = () => {
                 {acc.type === 'Bank' ? ICONS.Banking : ICONS.Banking}
               </div>
               <div className="relative">
-                <button 
-                  onClick={() => setOpenDeleteMenu(openDeleteMenu === acc.id ? null : acc.id)}
-                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-all"
-                >
-                  {ICONS.More}
-                </button>
-                {openDeleteMenu === acc.id && (
-                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-100 rounded-lg shadow-lg z-50 py-1">
+                {canDeleteAccounts && (
+                  <>
                     <button
-                      onClick={() => handleDeleteAccount(acc.id)}
-                      disabled={acc.currentBalance !== 0 || deleteAccountMutation.isPending}
-                      className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 font-bold ${
-                        acc.currentBalance !== 0 || deleteAccountMutation.isPending
-                          ? 'text-gray-400 cursor-not-allowed'
-                          : 'text-red-600 hover:bg-red-50'
-                      }`}
-                      title={acc.currentBalance !== 0 ? 'Account must have zero balance to delete' : 'Delete account'}
+                      onClick={() => setOpenDeleteMenu(openDeleteMenu === acc.id ? null : acc.id)}
+                      className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-all"
                     >
-                      {ICONS.Delete} Delete
+                      {ICONS.More}
                     </button>
-                  </div>
+                    {openDeleteMenu === acc.id && (
+                      <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-100 rounded-lg shadow-lg z-50 py-1">
+                        <button
+                          onClick={() => handleDeleteAccount(acc.id)}
+                          disabled={acc.currentBalance !== 0 || deleteAccountMutation.isPending}
+                          className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 font-bold ${
+                            acc.currentBalance !== 0 || deleteAccountMutation.isPending
+                              ? 'text-gray-400 cursor-not-allowed'
+                              : 'text-red-600 hover:bg-red-50'
+                          }`}
+                          title={acc.currentBalance !== 0 ? 'Account must have zero balance to delete' : 'Delete account'}
+                        >
+                          {ICONS.Delete} Delete
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
