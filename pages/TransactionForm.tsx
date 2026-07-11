@@ -9,7 +9,7 @@ import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults, useTr
 import { useCreateTransaction, useUpdateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
-import { buildLocalDateTime, formatDate, getTodayDate, normalizeUtcTimestamp, openAttachmentPreview } from '../utils';
+import { buildLocalDateTime, compressImage, formatDate, getTodayDate, normalizeUtcTimestamp, openAttachmentPreview } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 type TransactionFormState = {
@@ -172,9 +172,21 @@ const TransactionForm: React.FC = () => {
     navigate('/transactions');
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+      try {
+        const compressed = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        setForm((current) => ({
+          ...current,
+          attachmentName: file.name,
+          attachmentUrl: compressed,
+        }));
+        return;
+      } catch { /* fallback below */ }
+    }
 
     const reader = new FileReader();
     reader.onload = () => {

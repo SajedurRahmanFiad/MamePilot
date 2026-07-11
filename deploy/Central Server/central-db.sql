@@ -103,12 +103,12 @@ CREATE TABLE IF NOT EXISTS webhook_subscriptions (
 
 -- Migration: add deployment targeting to notifications
 ALTER TABLE notifications
-  ADD COLUMN target_deployments LONGTEXT NULL AFTER target_roles,
-  ADD COLUMN deployment_scope VARCHAR(32) NULL DEFAULT 'all' AFTER target_deployments;
+  ADD COLUMN IF NOT EXISTS target_deployments LONGTEXT NULL AFTER target_roles,
+  ADD COLUMN IF NOT EXISTS deployment_scope VARCHAR(32) NULL DEFAULT 'all' AFTER target_deployments;
 
 -- Migration: add deployment tracking to notification_receipts
 ALTER TABLE notification_receipts
-  ADD COLUMN license_key VARCHAR(255) NULL AFTER user_id,
-  ADD COLUMN user_name VARCHAR(255) NULL AFTER license_key,
-  ADD COLUMN user_role VARCHAR(64) NULL AFTER user_name,
-  ADD KEY idx_notification_receipts_license (license_key);
+  ADD COLUMN IF NOT EXISTS license_key VARCHAR(255) NULL AFTER user_id,
+  ADD COLUMN IF NOT EXISTS user_name VARCHAR(255) NULL AFTER license_key,
+  ADD COLUMN IF NOT EXISTS user_role VARCHAR(64) NULL AFTER user_name,
+  ADD KEY IF NOT EXISTS idx_notification_receipts_license (license_key);

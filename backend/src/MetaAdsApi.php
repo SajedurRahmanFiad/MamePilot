@@ -34,6 +34,9 @@ final class MetaAdsApi extends BaseService
         $row = $this->fetchMetaAdsSettingsRow();
         $config = $this->metaAppConfig();
 
+        $adsCode = strtoupper(trim((string) ($row['display_currency_code'] ?? '')) ?: 'BDT');
+        $resolvedRate = $this->resolveExchangeRate($adsCode, $row);
+
         return [
             'appId' => (string) ($row['app_id'] ?? $config['appId']),
             'appSecret' => (string) ($row['app_secret'] ?? $config['appSecret']),
@@ -41,8 +44,13 @@ final class MetaAdsApi extends BaseService
             'loginConfigId' => (string) ($row['login_config_id'] ?? $config['loginConfigId']),
             'graphVersion' => (string) ($row['graph_version'] ?? $config['graphVersion']),
             'oauthScopes' => (string) ($row['oauth_scopes'] ?? $config['oauthScopes']),
-            'displayCurrencyCode' => (string) ($row['display_currency_code'] ?? 'BDT'),
+            'displayCurrencyCode' => $adsCode,
             'displayCurrencyRateToBdt' => $row['display_currency_rate_to_bdt'] !== null ? (float) $row['display_currency_rate_to_bdt'] : null,
+            'exchangeRateMode' => (string) ($row['exchange_rate_mode'] ?? 'fixed'),
+            'vatPercentage' => $row['vat_percentage'] !== null ? (float) $row['vat_percentage'] : null,
+            'realtimeRateCache' => $row['realtime_rate_cache'] !== null ? (float) $row['realtime_rate_cache'] : null,
+            'realtimeRateUpdatedAt' => $this->toIso($row['realtime_rate_updated_at'] ?? null),
+            'resolvedRateToBdt' => $resolvedRate,
         ];
     }
 
@@ -50,6 +58,15 @@ final class MetaAdsApi extends BaseService
     {
         $this->requireAdmin();
         $this->ensureMetaAdsSettingsTable();
+
+        $mode = (string) ($params['exchangeRateMode'] ?? 'fixed');
+        if (!in_array($mode, ['fixed', 'vat_based'], true)) {
+            $mode = 'fixed';
+        }
+
+        $vatPct = $mode === 'vat_based' && $params['vatPercentage'] !== null && $params['vatPercentage'] !== ''
+            ? (float) $params['vatPercentage']
+            : null;
 
         $updates = [
             'app_id' => trim((string) ($params['appId'] ?? '')) !== '' ? trim((string) ($params['appId'] ?? '')) : null,
@@ -60,9 +77,20 @@ final class MetaAdsApi extends BaseService
             'oauth_scopes' => trim((string) ($params['oauthScopes'] ?? '')) !== '' ? trim((string) ($params['oauthScopes'] ?? '')) : null,
             'display_currency_code' => trim((string) ($params['displayCurrencyCode'] ?? '')) !== '' ? trim((string) ($params['displayCurrencyCode'] ?? '')) : 'BDT',
             'display_currency_rate_to_bdt' => $params['displayCurrencyRateToBdt'] !== null && $params['displayCurrencyRateToBdt'] !== '' ? (float) $params['displayCurrencyRateToBdt'] : null,
+            'exchange_rate_mode' => $mode,
         ];
 
-        return $this->saveSingleton('meta_ads_settings', 'meta-ads-default', $updates, fn(): array => $this->fetchMetaAdsSettings());
+        $result = $this->saveSingleton('meta_ads_settings', 'meta-ads-default', $updates, fn(): array => $this->fetchMetaAdsSettings());
+
+        // Explicitly set nullable fields that saveSingleton skips (it filters nulls)
+        $row = $this->fetchMetaAdsSettingsRow();
+        $existingId = (string) ($row['id'] ?? 'meta-ads-default');
+        $this->database->execute(
+            'UPDATE meta_ads_settings SET vat_percentage = :vat, updated_at = :now WHERE id = :id',
+            [':vat' => $vatPct, ':now' => $this->database->nowUtc(), ':id' => $existingId]
+        );
+
+        return $this->fetchMetaAdsSettings();
     }
 
     public function beginMetaAdsOAuth(array $params = []): array
@@ -483,7 +511,92 @@ final class MetaAdsApi extends BaseService
             $counts['ads']++;
         }
 
+        try {
+            $counts['dailyInsights'] = $this->syncAccountDailyInsights($accessToken, $localAccountId, $metaAccountId);
+        } catch (\Throwable $e) {
+            // Daily insights are best-effort; lifetime ad metrics still succeed.
+            $counts['dailyInsights'] = 0;
+            $counts['dailyInsightsError'] = $e->getMessage();
+        }
+
         return $counts;
+    }
+
+    /**
+     * Pull last-90d daily insights at ad level for an ad account and upsert into meta_ads_insights_daily.
+     */
+    private function syncAccountDailyInsights(string $accessToken, string $localAccountId, string $metaAccountId): int
+    {
+        $this->ensureMetaAdsInsightsDailyTable();
+        $currencyRow = $this->database->fetchOne(
+            'SELECT currency FROM meta_ad_accounts WHERE id = :id LIMIT 1',
+            [':id' => $localAccountId]
+        );
+        $currency = $this->nullableString($currencyRow['currency'] ?? null);
+
+        $localByMeta = [];
+        $adRows = $this->database->fetchAll(
+            'SELECT id, meta_ad_id FROM meta_ads WHERE ad_account_id = :account_id',
+            [':account_id' => $localAccountId]
+        );
+        foreach ($adRows as $adRow) {
+            $localByMeta[(string) $adRow['meta_ad_id']] = (string) $adRow['id'];
+        }
+        if ($localByMeta === []) {
+            return 0;
+        }
+
+        $rows = $this->graphGetAll('/' . $metaAccountId . '/insights', $accessToken, [
+            'fields' => 'ad_id,spend,impressions,reach,clicks,ctr,cpc,cpm,actions',
+            'level' => 'ad',
+            'time_increment' => 1,
+            'date_preset' => 'last_90d',
+            'limit' => 500,
+        ]);
+
+        $upserted = 0;
+        $now = $this->database->nowUtc();
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $metaAdId = (string) ($row['ad_id'] ?? '');
+            $insightDate = $this->normalizeDateOnly((string) ($row['date_start'] ?? ''));
+            if ($metaAdId === '' || $insightDate === '' || !isset($localByMeta[$metaAdId])) {
+                continue;
+            }
+            $localAdId = $localByMeta[$metaAdId];
+            $actions = is_array($row['actions'] ?? null) ? $row['actions'] : [];
+            $payload = [
+                'ad_id' => $localAdId,
+                'meta_ad_id' => $metaAdId,
+                'insight_date' => $insightDate,
+                'spend' => $this->formatMoney($row['spend'] ?? 0),
+                'impressions' => (int) ($row['impressions'] ?? 0),
+                'reach' => (int) ($row['reach'] ?? 0),
+                'clicks' => (int) ($row['clicks'] ?? 0),
+                'ctr' => isset($row['ctr']) ? (float) $row['ctr'] : null,
+                'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
+                'cpm' => isset($row['cpm']) ? (float) $row['cpm'] : null,
+                'conversions' => $this->metricFromActions($actions, ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'lead']),
+                'currency' => $currency,
+                'synced_at' => $now,
+            ];
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM meta_ads_insights_daily WHERE ad_id = :ad_id AND insight_date = :insight_date LIMIT 1',
+                [':ad_id' => $localAdId, ':insight_date' => $insightDate]
+            );
+            if ($existing !== null) {
+                $this->touchUpdate('meta_ads_insights_daily', (string) $existing['id'], $payload);
+            } else {
+                $payload['id'] = $this->uuid4();
+                $payload['created_at'] = $now;
+                $payload['updated_at'] = $now;
+                $this->insertRow('meta_ads_insights_daily', $payload);
+            }
+            $upserted++;
+        }
+        return $upserted;
     }
 
     private function upsertConnection(string $userId, array $profile, array $token): string
@@ -867,6 +980,18 @@ final class MetaAdsApi extends BaseService
         if (!$this->columnExists('meta_ads_settings', 'display_currency_rate_to_bdt')) {
             $this->database->execute('ALTER TABLE meta_ads_settings ADD COLUMN display_currency_rate_to_bdt DECIMAL(14,4) DEFAULT NULL');
         }
+        if (!$this->columnExists('meta_ads_settings', 'exchange_rate_mode')) {
+            $this->database->execute("ALTER TABLE meta_ads_settings ADD COLUMN exchange_rate_mode VARCHAR(16) NOT NULL DEFAULT 'fixed'");
+        }
+        if (!$this->columnExists('meta_ads_settings', 'vat_percentage')) {
+            $this->database->execute('ALTER TABLE meta_ads_settings ADD COLUMN vat_percentage DECIMAL(5,2) DEFAULT NULL');
+        }
+        if (!$this->columnExists('meta_ads_settings', 'realtime_rate_cache')) {
+            $this->database->execute('ALTER TABLE meta_ads_settings ADD COLUMN realtime_rate_cache DECIMAL(14,4) DEFAULT NULL');
+        }
+        if (!$this->columnExists('meta_ads_settings', 'realtime_rate_updated_at')) {
+            $this->database->execute('ALTER TABLE meta_ads_settings ADD COLUMN realtime_rate_updated_at DATETIME DEFAULT NULL');
+        }
     }
 
     private function fetchMetaAdsSettingsRow(): array
@@ -874,6 +999,86 @@ final class MetaAdsApi extends BaseService
         $this->ensureMetaAdsSettingsTable();
         $row = $this->database->fetchOne('SELECT * FROM meta_ads_settings LIMIT 1');
         return is_array($row) ? $row : [];
+    }
+
+    /**
+     * Resolve the effective exchange rate based on the configured mode.
+     * - BDT: returns 1.0 (no conversion needed).
+     * - fixed: returns the manually entered rate.
+     * - vat_based: fetches real-time rate if cache is stale (>6h), applies VAT, returns result.
+     */
+    private function resolveExchangeRate(string $adsCode, array $settingsRow): ?float
+    {
+        if ($adsCode === 'BDT') {
+            return 1.0;
+        }
+
+        $mode = (string) ($settingsRow['exchange_rate_mode'] ?? 'fixed');
+
+        if ($mode === 'vat_based') {
+            $vatPct = $settingsRow['vat_percentage'] !== null ? (float) $settingsRow['vat_percentage'] : null;
+            if ($vatPct === null || $vatPct < 0) {
+                // No VAT set — fall back to fixed rate
+                return $settingsRow['display_currency_rate_to_bdt'] !== null
+                    ? (float) $settingsRow['display_currency_rate_to_bdt']
+                    : null;
+            }
+
+            $cachedRate = $settingsRow['realtime_rate_cache'] !== null ? (float) $settingsRow['realtime_rate_cache'] : null;
+            $updatedAt = (string) ($settingsRow['realtime_rate_updated_at'] ?? '');
+            $isFresh = false;
+            if ($updatedAt !== '') {
+                $cachedTime = strtotime($updatedAt);
+                $isFresh = $cachedTime > 0 && (time() - $cachedTime) < 21600; // 6 hours
+            }
+
+            if (!$isFresh) {
+                // Try to fetch a fresh real-time rate
+                $fetched = $this->fetchRealTimeRate($adsCode);
+                if ($fetched !== null) {
+                    $cachedRate = $fetched;
+                    $this->database->execute(
+                        'UPDATE meta_ads_settings SET realtime_rate_cache = :rate, realtime_rate_updated_at = :now WHERE id = :id',
+                        [':rate' => $cachedRate, ':now' => $this->database->nowUtc(), ':id' => ($settingsRow['id'] ?? 'meta-ads-default')]
+                    );
+                }
+                // If fetch fails, keep using stale cache
+            }
+
+            if ($cachedRate !== null && $cachedRate > 0) {
+                return round($cachedRate * (1 + $vatPct / 100), 4);
+            }
+
+            // No cache and API failed — fall back to fixed rate
+            return $settingsRow['display_currency_rate_to_bdt'] !== null
+                ? (float) $settingsRow['display_currency_rate_to_bdt']
+                : null;
+        }
+
+        // Fixed mode
+        return $settingsRow['display_currency_rate_to_bdt'] !== null
+            ? (float) $settingsRow['display_currency_rate_to_bdt']
+            : null;
+    }
+
+    /**
+     * Fetch the real-time market exchange rate from {fromCurrency} to BDT.
+     * Uses open.er-api.com (free, no key required).
+     * Returns null on failure.
+     */
+    private function fetchRealTimeRate(string $fromCurrency): ?float
+    {
+        try {
+            $url = 'https://open.er-api.com/v6/latest/' . urlencode($fromCurrency);
+            $response = $this->httpGetJson($url);
+            $rate = $response['rates']['BDT'] ?? null;
+            if ($rate !== null && is_numeric($rate) && (float) $rate > 0) {
+                return round((float) $rate, 4);
+            }
+        } catch (\Throwable) {
+            // Silently fail — caller handles null
+        }
+        return null;
     }
 
     private function metaAppConfig(): array
@@ -913,8 +1118,24 @@ final class MetaAdsApi extends BaseService
             'todaySpend' => (float) (($this->database->fetchOne("SELECT COALESCE(SUM(spend), 0) AS s FROM meta_ads ma $adWhere " . ($adWhere !== '' ? 'AND' : 'WHERE') . " DATE(COALESCE(updated_time, last_synced_at, updated_at)) = :today", array_merge($bindings, [':today' => gmdate('Y-m-d')]))['s'] ?? 0)),
             'activeCampaigns' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
             'activeAdSets' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_ad_sets WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
-            'currentRoas' => (float) ($adRow['total_spend'] ?? 0) > 0 ? round((float) ($adRow['total_clicks'] ?? 0) / (float) ($adRow['total_spend'] ?? 1), 2) : null,
+            // Prefer average Meta purchase_roas from ad rows; never use clicks/spend.
+            'currentRoas' => $this->averageStoredAdRoas($adWhere, $bindings),
         ];
+    }
+
+    private function averageStoredAdRoas(string $whereSql, array $bindings): ?float
+    {
+        $row = $this->database->fetchOne(
+            "SELECT AVG(roas) AS avg_roas, COUNT(*) AS cnt
+             FROM meta_ads ma
+             {$whereSql}
+             " . ($whereSql !== '' ? 'AND' : 'WHERE') . ' roas IS NOT NULL AND roas > 0',
+            $bindings
+        );
+        if ($row === null || (int) ($row['cnt'] ?? 0) === 0) {
+            return null;
+        }
+        return round((float) ($row['avg_roas'] ?? 0), 2);
     }
 
     private function mapConnection(array $row): array
@@ -1450,5 +1671,529 @@ final class MetaAdsApi extends BaseService
     {
         $row = $this->database->fetchOne('SELECT currency FROM meta_ad_accounts WHERE currency IS NOT NULL ORDER BY updated_at DESC LIMIT 1');
         return $row !== null ? (string) $row['currency'] : null;
+    }
+
+    private function ensureMetaAdsInsightsDailyTable(): void
+    {
+        $this->database->execute(
+            'CREATE TABLE IF NOT EXISTS meta_ads_insights_daily (
+                id VARCHAR(64) NOT NULL,
+                ad_id VARCHAR(64) NOT NULL,
+                meta_ad_id VARCHAR(64) NOT NULL,
+                insight_date DATE NOT NULL,
+                spend DECIMAL(14,4) NOT NULL DEFAULT 0,
+                impressions INT NOT NULL DEFAULT 0,
+                reach INT NOT NULL DEFAULT 0,
+                clicks INT NOT NULL DEFAULT 0,
+                ctr DECIMAL(12,6) DEFAULT NULL,
+                cpc DECIMAL(14,4) DEFAULT NULL,
+                cpm DECIMAL(14,4) DEFAULT NULL,
+                conversions DECIMAL(14,4) DEFAULT NULL,
+                currency VARCHAR(16) DEFAULT NULL,
+                synced_at DATETIME DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_meta_ads_insights_daily_ad_date (ad_id, insight_date),
+                KEY idx_meta_ads_insights_daily_date (insight_date),
+                KEY idx_meta_ads_insights_daily_meta_ad (meta_ad_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    /**
+     * Marketing portfolio dashboard: range-accurate spend from daily insights +
+     * app order attribution via source_ad (booked vs realized ROAS).
+     */
+    public function fetchMarketingDashboard(array $params = []): array
+    {
+        $this->currentUser();
+        $this->autoSyncIfNeeded();
+        $this->ensureMetaAdsInsightsDailyTable();
+
+        $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
+        $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));
+        if ($from === '' || $to === '') {
+            $to = gmdate('Y-m-d');
+            $from = gmdate('Y-m-d', strtotime($to . ' -6 days'));
+        }
+        if ($from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $prev = $this->previousDateWindow($from, $to);
+        $settingsRow = $this->fetchMetaAdsSettingsRow();
+        $adsCode = strtoupper(trim((string) ($settingsRow['display_currency_code'] ?? '')) ?: ($this->detectAdAccountCurrency() ?? 'BDT'));
+        $rateToBdt = $this->resolveExchangeRate($adsCode, $settingsRow);
+
+        $currentInsights = $this->aggregateDailyInsights($from, $to);
+        $previousInsights = $this->aggregateDailyInsights($prev['from'], $prev['to']);
+        $currentOrders = $this->aggregateAttributedOrders($from, $to);
+        $previousOrders = $this->aggregateAttributedOrders($prev['from'], $prev['to']);
+        $pipeline = $this->aggregateAttributedPipeline();
+        $series = $this->buildMarketingSeries($from, $to);
+        $campaigns = $this->buildCampaignPerformance($from, $to);
+        $recentOrders = $this->fetchRecentAttributedOrders(10);
+        $alerts = $this->buildMarketingAlerts($currentInsights, $currentOrders, $adsCode, $rateToBdt);
+
+        $kpis = $this->composeMarketingKpis($currentInsights, $currentOrders, $pipeline);
+        $previousKpis = $this->composeMarketingKpis($previousInsights, $previousOrders, ['count' => 0, 'value' => 0, 'byStatus' => []]);
+
+        $syncRow = $this->database->fetchOne(
+            'SELECT last_synced_at FROM meta_ads_sync_cache WHERE id = :id LIMIT 1',
+            [':id' => 'meta-ads-sync-default']
+        );
+        $lastSyncedAt = $this->toIso($syncRow['last_synced_at'] ?? null);
+        $lastTs = $syncRow !== null && !empty($syncRow['last_synced_at'])
+            ? strtotime((string) $syncRow['last_synced_at'])
+            : 0;
+        $stale = $lastTs <= 0 || (time() - $lastTs) > 1200;
+
+        $activeAds = (int) (($this->database->fetchOne(
+            "SELECT COUNT(*) AS c FROM meta_ads WHERE COALESCE(effective_status, status) = 'ACTIVE'"
+        )['c'] ?? 0));
+        $activeCampaigns = (int) (($this->database->fetchOne(
+            "SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'"
+        )['c'] ?? 0));
+        $dailyRowCount = (int) (($this->database->fetchOne(
+            'SELECT COUNT(*) AS c FROM meta_ads_insights_daily'
+        )['c'] ?? 0));
+
+        return [
+            'currency' => [
+                'adsCode' => $adsCode,
+                'rateToBdt' => $rateToBdt,
+                'exchangeRateMode' => (string) ($settingsRow['exchange_rate_mode'] ?? 'fixed'),
+                'vatPercentage' => $settingsRow['vat_percentage'] !== null ? (float) $settingsRow['vat_percentage'] : null,
+                'realtimeRateCache' => $settingsRow['realtime_rate_cache'] !== null ? (float) $settingsRow['realtime_rate_cache'] : null,
+                'realtimeRateUpdatedAt' => $this->toIso($settingsRow['realtime_rate_updated_at'] ?? null),
+            ],
+            'period' => [
+                'from' => $from,
+                'to' => $to,
+                'previousFrom' => $prev['from'],
+                'previousTo' => $prev['to'],
+            ],
+            'kpis' => $kpis,
+            'previousKpis' => $previousKpis,
+            'series' => $series,
+            'campaigns' => $campaigns,
+            'pipeline' => $pipeline['byStatus'],
+            'recentOrders' => $recentOrders,
+            'alerts' => $alerts,
+            'meta' => [
+                'lastSyncedAt' => $lastSyncedAt,
+                'stale' => $stale,
+                'activeAds' => $activeAds,
+                'activeCampaigns' => $activeCampaigns,
+                'hasDailyInsights' => $dailyRowCount > 0,
+                'definitions' => [
+                    'spend' => 'Sum of Meta daily insights spend in the range (ads currency).',
+                    'purchases' => 'App orders with sourceAd set and order_date in range.',
+                    'bookedRevenue' => 'Sum of those order totals (BDT) — orders placed, any status.',
+                    'realizedRevenue' => 'Sum of completed (delivered) attributed order totals with order_date in range (BDT).',
+                    'bookedRoas' => 'bookedRevenue (BDT) / spend converted to BDT.',
+                    'realizedRoas' => 'realizedRevenue (BDT) / spend converted to BDT.',
+                    'note' => 'Same-day ROAS is directional only; use multi-day windows. Delivery lag means realized ROAS matures over time.',
+                ],
+            ],
+        ];
+    }
+
+    private function previousDateWindow(string $from, string $to): array
+    {
+        $start = new \DateTimeImmutable($from . ' 00:00:00', $this->utcTimezone());
+        $end = new \DateTimeImmutable($to . ' 00:00:00', $this->utcTimezone());
+        $days = (int) $start->diff($end)->days + 1;
+        $prevEnd = $start->modify('-1 day');
+        $prevStart = $prevEnd->modify('-' . ($days - 1) . ' days');
+        return [
+            'from' => $prevStart->format('Y-m-d'),
+            'to' => $prevEnd->format('Y-m-d'),
+        ];
+    }
+
+    private function aggregateDailyInsights(string $from, string $to): array
+    {
+        $row = $this->database->fetchOne(
+            'SELECT
+                COALESCE(SUM(spend), 0) AS spend,
+                COALESCE(SUM(impressions), 0) AS impressions,
+                COALESCE(SUM(reach), 0) AS reach,
+                COALESCE(SUM(clicks), 0) AS clicks,
+                COALESCE(SUM(conversions), 0) AS conversions,
+                MAX(currency) AS currency
+             FROM meta_ads_insights_daily
+             WHERE insight_date >= :from_date AND insight_date <= :to_date',
+            [':from_date' => $from, ':to_date' => $to]
+        ) ?? [];
+
+        $spend = (float) ($row['spend'] ?? 0);
+        $impressions = (int) ($row['impressions'] ?? 0);
+        $clicks = (int) ($row['clicks'] ?? 0);
+
+        return [
+            'spend' => $spend,
+            'impressions' => $impressions,
+            'reach' => (int) ($row['reach'] ?? 0),
+            'clicks' => $clicks,
+            'conversions' => (float) ($row['conversions'] ?? 0),
+            'currency' => $this->nullableString($row['currency'] ?? null),
+            'ctr' => $impressions > 0 ? ($clicks / $impressions) * 100 : 0.0,
+            'cpc' => $clicks > 0 ? $spend / $clicks : 0.0,
+            'cpm' => $impressions > 0 ? ($spend / $impressions) * 1000 : 0.0,
+        ];
+    }
+
+    private function aggregateAttributedOrders(string $from, string $to): array
+    {
+        $row = $this->database->fetchOne(
+            "SELECT
+                COUNT(*) AS purchases,
+                COALESCE(SUM(total), 0) AS booked_revenue,
+                COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count,
+                COALESCE(SUM(CASE WHEN status = 'Completed' THEN total ELSE 0 END), 0) AS delivered_revenue,
+                COALESCE(SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count,
+                COALESCE(SUM(CASE WHEN status = 'Returned' THEN 1 ELSE 0 END), 0) AS returned_count,
+                COALESCE(SUM(CASE WHEN status = 'Returned' THEN total ELSE 0 END), 0) AS returned_revenue
+             FROM orders
+             WHERE deleted_at IS NULL
+               AND source_ad IS NOT NULL
+               AND TRIM(source_ad) <> ''
+               AND order_date >= :from_date
+               AND order_date <= :to_date",
+            [':from_date' => $from, ':to_date' => $to]
+        ) ?? [];
+
+        return [
+            'purchases' => (int) ($row['purchases'] ?? 0),
+            'bookedRevenue' => (float) ($row['booked_revenue'] ?? 0),
+            'deliveredCount' => (int) ($row['delivered_count'] ?? 0),
+            'deliveredRevenue' => (float) ($row['delivered_revenue'] ?? 0),
+            'cancelledCount' => (int) ($row['cancelled_count'] ?? 0),
+            'returnedCount' => (int) ($row['returned_count'] ?? 0),
+            'returnedRevenue' => (float) ($row['returned_revenue'] ?? 0),
+        ];
+    }
+
+    private function aggregateAttributedPipeline(): array
+    {
+        $openStatuses = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Exchange pending', 'Created'];
+        $placeholders = [];
+        $bindings = [];
+        foreach ($openStatuses as $i => $status) {
+            $key = ':st' . $i;
+            $placeholders[] = $key;
+            $bindings[$key] = $status;
+        }
+        $in = implode(', ', $placeholders);
+
+        $rows = $this->database->fetchAll(
+            "SELECT status, COUNT(*) AS cnt, COALESCE(SUM(total), 0) AS value
+             FROM orders
+             WHERE deleted_at IS NULL
+               AND source_ad IS NOT NULL
+               AND TRIM(source_ad) <> ''
+               AND status IN ({$in})
+             GROUP BY status
+             ORDER BY cnt DESC",
+            $bindings
+        );
+
+        $byStatus = [];
+        $count = 0;
+        $value = 0.0;
+        foreach ($rows as $row) {
+            $c = (int) ($row['cnt'] ?? 0);
+            $v = (float) ($row['value'] ?? 0);
+            $byStatus[] = [
+                'status' => (string) ($row['status'] ?? ''),
+                'count' => $c,
+                'value' => $v,
+            ];
+            $count += $c;
+            $value += $v;
+        }
+
+        return ['count' => $count, 'value' => $value, 'byStatus' => $byStatus];
+    }
+
+    private function composeMarketingKpis(array $insights, array $orders, array $pipeline): array
+    {
+        $spend = (float) ($insights['spend'] ?? 0);
+        $purchases = (int) ($orders['purchases'] ?? 0);
+        $bookedRevenue = (float) ($orders['bookedRevenue'] ?? 0);
+        $deliveredCount = (int) ($orders['deliveredCount'] ?? 0);
+        $deliveredRevenue = (float) ($orders['deliveredRevenue'] ?? 0);
+        $cancelledCount = (int) ($orders['cancelledCount'] ?? 0);
+        $returnedCount = (int) ($orders['returnedCount'] ?? 0);
+        $eligible = max(0, $purchases - $cancelledCount);
+
+        return [
+            'spend' => $spend,
+            'impressions' => (int) ($insights['impressions'] ?? 0),
+            'reach' => (int) ($insights['reach'] ?? 0),
+            'clicks' => (int) ($insights['clicks'] ?? 0),
+            'ctr' => (float) ($insights['ctr'] ?? 0),
+            'cpc' => (float) ($insights['cpc'] ?? 0),
+            'cpm' => (float) ($insights['cpm'] ?? 0),
+            'metaConversions' => (float) ($insights['conversions'] ?? 0),
+            'purchases' => $purchases,
+            'bookedRevenue' => $bookedRevenue,
+            'deliveredCount' => $deliveredCount,
+            'deliveredRevenue' => $deliveredRevenue,
+            'cancelledCount' => $cancelledCount,
+            'returnedCount' => $returnedCount,
+            'returnedRevenue' => (float) ($orders['returnedRevenue'] ?? 0),
+            'pipelineCount' => (int) ($pipeline['count'] ?? 0),
+            'pipelineValue' => (float) ($pipeline['value'] ?? 0),
+            // ROAS fields require BDT spend on the client (or when rate is known).
+            // We expose raw ratios only when spend is already BDT; FE recomputes with FX.
+            'cpa' => $purchases > 0 ? $spend / $purchases : 0.0,
+            'costPerDelivered' => $deliveredCount > 0 ? $spend / $deliveredCount : 0.0,
+            'deliveryRate' => $eligible > 0 ? ($deliveredCount / $eligible) * 100 : 0.0,
+            'returnRate' => $purchases > 0 ? ($returnedCount / $purchases) * 100 : 0.0,
+        ];
+    }
+
+    private function buildMarketingSeries(string $from, string $to): array
+    {
+        $insightRows = $this->database->fetchAll(
+            'SELECT insight_date AS d,
+                    COALESCE(SUM(spend), 0) AS spend,
+                    COALESCE(SUM(impressions), 0) AS impressions,
+                    COALESCE(SUM(clicks), 0) AS clicks
+             FROM meta_ads_insights_daily
+             WHERE insight_date >= :from_date AND insight_date <= :to_date
+             GROUP BY insight_date',
+            [':from_date' => $from, ':to_date' => $to]
+        );
+        $insightsByDate = [];
+        foreach ($insightRows as $row) {
+            $insightsByDate[(string) $row['d']] = $row;
+        }
+
+        $orderRows = $this->database->fetchAll(
+            "SELECT order_date AS d,
+                    COUNT(*) AS purchases,
+                    COALESCE(SUM(total), 0) AS booked_revenue,
+                    COALESCE(SUM(CASE WHEN status = 'Completed' THEN total ELSE 0 END), 0) AS delivered_revenue,
+                    COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count
+             FROM orders
+             WHERE deleted_at IS NULL
+               AND source_ad IS NOT NULL
+               AND TRIM(source_ad) <> ''
+               AND order_date >= :from_date
+               AND order_date <= :to_date
+             GROUP BY order_date",
+            [':from_date' => $from, ':to_date' => $to]
+        );
+        $ordersByDate = [];
+        foreach ($orderRows as $row) {
+            $ordersByDate[(string) $row['d']] = $row;
+        }
+
+        $series = [];
+        $cursor = new \DateTimeImmutable($from . ' 00:00:00', $this->utcTimezone());
+        $end = new \DateTimeImmutable($to . ' 00:00:00', $this->utcTimezone());
+        while ($cursor <= $end) {
+            $key = $cursor->format('Y-m-d');
+            $ins = $insightsByDate[$key] ?? null;
+            $ord = $ordersByDate[$key] ?? null;
+            $spend = (float) ($ins['spend'] ?? 0);
+            $booked = (float) ($ord['booked_revenue'] ?? 0);
+            $delivered = (float) ($ord['delivered_revenue'] ?? 0);
+            $series[] = [
+                'date' => $key,
+                'spend' => $spend,
+                'impressions' => (int) ($ins['impressions'] ?? 0),
+                'clicks' => (int) ($ins['clicks'] ?? 0),
+                'purchases' => (int) ($ord['purchases'] ?? 0),
+                'bookedRevenue' => $booked,
+                'deliveredRevenue' => $delivered,
+                'deliveredCount' => (int) ($ord['delivered_count'] ?? 0),
+            ];
+            $cursor = $cursor->modify('+1 day');
+        }
+        return $series;
+    }
+
+    private function buildCampaignPerformance(string $from, string $to): array
+    {
+        $spendRows = $this->database->fetchAll(
+            'SELECT
+                COALESCE(mc.id, "") AS campaign_id,
+                COALESCE(mc.name, "Unassigned Campaign") AS campaign_name,
+                COALESCE(SUM(d.spend), 0) AS spend,
+                COALESCE(SUM(d.impressions), 0) AS impressions,
+                COALESCE(SUM(d.clicks), 0) AS clicks,
+                COALESCE(SUM(d.conversions), 0) AS conversions
+             FROM meta_ads_insights_daily d
+             INNER JOIN meta_ads ma ON ma.id = d.ad_id
+             LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
+             WHERE d.insight_date >= :from_date AND d.insight_date <= :to_date
+             GROUP BY COALESCE(mc.id, ""), COALESCE(mc.name, "Unassigned Campaign")',
+            [':from_date' => $from, ':to_date' => $to]
+        );
+
+        $orderRows = $this->database->fetchAll(
+            "SELECT
+                o.source_ad AS source_ad,
+                COALESCE(mc.id, '') AS campaign_id,
+                COALESCE(mc.name, 'Unassigned Campaign') AS campaign_name,
+                COUNT(*) AS purchases,
+                COALESCE(SUM(o.total), 0) AS booked_revenue,
+                COALESCE(SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count,
+                COALESCE(SUM(CASE WHEN o.status = 'Completed' THEN o.total ELSE 0 END), 0) AS delivered_revenue,
+                COALESCE(SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count,
+                COALESCE(SUM(CASE WHEN o.status = 'Returned' THEN 1 ELSE 0 END), 0) AS returned_count
+             FROM orders o
+             LEFT JOIN meta_ads ma ON ma.id = o.source_ad OR ma.meta_ad_id = o.source_ad
+             LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
+             WHERE o.deleted_at IS NULL
+               AND o.source_ad IS NOT NULL
+               AND TRIM(o.source_ad) <> ''
+               AND o.order_date >= :from_date
+               AND o.order_date <= :to_date
+             GROUP BY o.source_ad, COALESCE(mc.id, ''), COALESCE(mc.name, 'Unassigned Campaign')",
+            [':from_date' => $from, ':to_date' => $to]
+        );
+
+        $map = [];
+        foreach ($spendRows as $row) {
+            $key = (string) ($row['campaign_id'] ?? '') . '|' . (string) ($row['campaign_name'] ?? '');
+            $map[$key] = [
+                'id' => (string) ($row['campaign_id'] ?? ''),
+                'name' => (string) ($row['campaign_name'] ?? 'Unassigned Campaign'),
+                'spend' => (float) ($row['spend'] ?? 0),
+                'impressions' => (int) ($row['impressions'] ?? 0),
+                'clicks' => (int) ($row['clicks'] ?? 0),
+                'conversions' => (float) ($row['conversions'] ?? 0),
+                'purchases' => 0,
+                'bookedRevenue' => 0.0,
+                'deliveredCount' => 0,
+                'deliveredRevenue' => 0.0,
+                'cancelledCount' => 0,
+                'returnedCount' => 0,
+            ];
+        }
+
+        foreach ($orderRows as $row) {
+            $name = (string) ($row['campaign_name'] ?? 'Unassigned Campaign');
+            $id = (string) ($row['campaign_id'] ?? '');
+            $key = $id . '|' . $name;
+            if (!isset($map[$key])) {
+                $map[$key] = [
+                    'id' => $id,
+                    'name' => $name,
+                    'spend' => 0.0,
+                    'impressions' => 0,
+                    'clicks' => 0,
+                    'conversions' => 0.0,
+                    'purchases' => 0,
+                    'bookedRevenue' => 0.0,
+                    'deliveredCount' => 0,
+                    'deliveredRevenue' => 0.0,
+                    'cancelledCount' => 0,
+                    'returnedCount' => 0,
+                ];
+            }
+            $map[$key]['purchases'] += (int) ($row['purchases'] ?? 0);
+            $map[$key]['bookedRevenue'] += (float) ($row['booked_revenue'] ?? 0);
+            $map[$key]['deliveredCount'] += (int) ($row['delivered_count'] ?? 0);
+            $map[$key]['deliveredRevenue'] += (float) ($row['delivered_revenue'] ?? 0);
+            $map[$key]['cancelledCount'] += (int) ($row['cancelled_count'] ?? 0);
+            $map[$key]['returnedCount'] += (int) ($row['returned_count'] ?? 0);
+        }
+
+        $list = array_values($map);
+        usort($list, static function (array $a, array $b): int {
+            return $b['bookedRevenue'] <=> $a['bookedRevenue'] ?: $b['spend'] <=> $a['spend'];
+        });
+        return $list;
+    }
+
+    private function fetchRecentAttributedOrders(int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+        $rows = $this->database->fetchAll(
+            "SELECT o.id, o.order_number, o.order_date, o.status, o.total, o.source_ad,
+                    ma.name AS ad_name, mc.name AS campaign_name
+             FROM orders o
+             LEFT JOIN meta_ads ma ON ma.id = o.source_ad OR ma.meta_ad_id = o.source_ad
+             LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
+             WHERE o.deleted_at IS NULL
+               AND o.source_ad IS NOT NULL
+               AND TRIM(o.source_ad) <> ''
+             ORDER BY o.order_date DESC, o.created_at DESC
+             LIMIT {$limit}"
+        );
+        return array_map(static function (array $row): array {
+            return [
+                'id' => (string) ($row['id'] ?? ''),
+                'orderNumber' => (string) ($row['order_number'] ?? ''),
+                'orderDate' => (string) ($row['order_date'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'total' => (float) ($row['total'] ?? 0),
+                'sourceAd' => (string) ($row['source_ad'] ?? ''),
+                'adName' => (string) ($row['ad_name'] ?? ''),
+                'campaignName' => (string) ($row['campaign_name'] ?? ''),
+            ];
+        }, $rows);
+    }
+
+    private function buildMarketingAlerts(array $insights, array $orders, string $adsCode, ?float $rateToBdt): array
+    {
+        $alerts = [];
+        $spend = (float) ($insights['spend'] ?? 0);
+        $purchases = (int) ($orders['purchases'] ?? 0);
+        $booked = (float) ($orders['bookedRevenue'] ?? 0);
+        $returned = (int) ($orders['returnedCount'] ?? 0);
+
+        if (strtoupper($adsCode) !== 'BDT' && ($rateToBdt === null || $rateToBdt <= 0)) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'code' => 'missing_exchange_rate',
+                'message' => 'Exchange rate is not set. Spend cannot be converted to ৳ until you set 1 ' . $adsCode . ' = ? ৳ in Settings → Meta Ads.',
+            ];
+        }
+
+        $dailyCount = (int) (($this->database->fetchOne('SELECT COUNT(*) AS c FROM meta_ads_insights_daily')['c'] ?? 0));
+        if ($dailyCount === 0) {
+            $alerts[] = [
+                'severity' => 'info',
+                'code' => 'no_daily_insights',
+                'message' => 'No daily ad insights yet. Run Sync Now on Meta Ads so spend and trends use real daily data.',
+            ];
+        }
+
+        if ($spend > 0 && $purchases === 0) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'code' => 'spend_no_orders',
+                'message' => 'Ads spent money in this range but no attributed orders (source ad) were found. Check order attribution.',
+            ];
+        }
+
+        $spendBdt = strtoupper($adsCode) === 'BDT' || ($rateToBdt !== null && $rateToBdt > 0)
+            ? (strtoupper($adsCode) === 'BDT' ? $spend : $spend * (float) $rateToBdt)
+            : null;
+        if ($spendBdt !== null && $spendBdt > 0 && $booked > 0 && ($booked / $spendBdt) < 1) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'code' => 'low_booked_roas',
+                'message' => 'Booked ROAS is below 1x for this range (order value vs ad spend).',
+            ];
+        }
+
+        if ($purchases >= 5 && $returned / max(1, $purchases) >= 0.2) {
+            $alerts[] = [
+                'severity' => 'danger',
+                'code' => 'high_return_rate',
+                'message' => 'Return rate on ad-attributed orders is high (≥20%). Review creatives and product fit.',
+            ];
+        }
+
+        return $alerts;
     }
 }

@@ -664,7 +664,7 @@ const OrderForm: React.FC = () => {
                     />
                   </div>
                   <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {customersFetching ? (
+                    {(allVisibleCustomers || []).length === 0 && customersFetching ? (
                       <div className="p-4 space-y-3">
                         <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                         <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
@@ -849,66 +849,63 @@ const OrderForm: React.FC = () => {
                   </td>
                 </tr>
               ))}
-              <tr>
-                <td colSpan={5} className="px-6 py-5 relative">
-                  <div className="relative">
-                    <button 
-                      onClick={() => setShowProductSearch(!showProductSearch)} 
-                      className="flex items-center gap-2 ${theme.colors.primary[600]} font-black text-[10px] uppercase tracking-widest hover:bg-[#ebf4ff] px-4 py-2.5 rounded-xl border-2 border-dashed border-[#c7dff5] transition-all"
-                    >
-                      {ICONS.Plus} Add an item
-                    </button>
-                    
-                    {showProductSearch && (
-                      <div className="absolute top-full left-0 mt-3 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-                        <div className="relative mb-2">
-                          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
-                            {ICONS.Search}
-                          </div>
-                          <input 
-                            autoFocus 
-                            type="text" 
-                            placeholder="Search catalog..." 
-                            className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" 
-                            value={searchTerm} 
-                            onChange={(e) => setSearchTerm(e.target.value)} 
-                          />
-                        </div>
-                        <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                          {productsMiniLoading || productsSearchLoading ? (
-                            <div className="p-4 space-y-3">
-                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                              <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                            </div>
-                          ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
-                            <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
-                          ) : (
-                            products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-                              <button 
-                                key={p.id} 
-                                onClick={() => addItem(p.id)} 
-                                className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#ebf4ff] rounded-xl group transition-all"
-                              >
-                                {p.image && (
-                                  <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{p.name}</p>
-                                  <p className="text-[10px] font-bold ${theme.colors.primary[600]}/60 uppercase tracking-widest">{formatCurrency(p.salePrice)}</p>
-                                  <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </td>
-              </tr>
             </tbody>
           </table>
+        </div>
+
+        <div className="relative mt-2">
+          <button 
+            onClick={() => setShowProductSearch(!showProductSearch)} 
+            className="flex items-center gap-2 ${theme.colors.primary[600]} font-black text-[10px] uppercase tracking-widest hover:bg-[#ebf4ff] px-4 py-2.5 rounded-xl border-2 border-dashed border-[#c7dff5] transition-all"
+          >
+            {ICONS.Plus} Add an item
+          </button>
+          
+          {showProductSearch && (
+            <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 animate-in slide-in-from-top-2 duration-200">
+              <div className="relative mb-2">
+                <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                  {ICONS.Search}
+                </div>
+                <input 
+                  autoFocus 
+                  type="text" 
+                  placeholder="Search catalog..." 
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" 
+                  value={searchTerm} 
+                  onChange={(e) => setSearchTerm(e.target.value)} 
+                />
+              </div>
+              <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                {products.length === 0 && (productsMiniLoading || productsSearchLoading) ? (
+                  <div className="p-4 space-y-3">
+                    <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                    <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                    <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                  </div>
+                ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                  <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                ) : (
+                  products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => addItem(p.id)}
+                      className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#ebf4ff] rounded-xl group transition-all"
+                    >
+                      {p.image && (
+                        <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{p.name}</p>
+                        <p className="text-[10px] font-bold ${theme.colors.primary[600]}/60 uppercase tracking-widest">{formatCurrency(p.salePrice)}</p>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col md:flex-row justify-between gap-12 pt-6">

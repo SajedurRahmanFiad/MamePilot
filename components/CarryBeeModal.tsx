@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Button, NumericInput } from './index';
 import { theme } from '../theme';
-import { fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder } from '../src/services/supabaseQueries';
+import { fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder, submitCarryBeeExchangeOrder } from '../src/services/supabaseQueries';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
-import { type Order, type Customer } from '../types';
+import { OrderStatus, type Order, type Customer } from '../types';
 
 interface CarryBeeModalProps {
   isOpen: boolean;
   onClose: () => void;
   order?: Order | null;
   customer?: Customer | null;
+  isExchangeConsignment?: boolean;
 }
 
 interface Location {
@@ -20,7 +21,7 @@ interface Location {
   name: string;
 }
 
-export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, order, customer }) => {
+export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
   const { data: courierSettings } = useCourierSettings();
   const toast = useToastNotifications();
   
@@ -147,7 +148,7 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
         <div className={`${theme.card.elevated} w-full max-w-2xl max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300`}>
           <div className="flex items-center justify-between p-6 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">Add to CarryBee</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{isExchangeConsignment ? 'Exchange — ' : ''}Add to CarryBee</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
           </div>
           <div className="p-6 space-y-4 overflow-y-auto">
@@ -277,35 +278,59 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
 
                 setSubmitting(true);
                 try {
-                  console.log('[CarryBeeModal] Submitting order:', {
-                    storeId,
-                    deliveryType: Number(deliveryType),
-                    recipientPhone: customer.phone,
-                    recipientName: customer.name,
-                    cityId: selectedCity,
-                    zoneId: selectedZone,
-                    areaId: selectedArea || undefined,
-                    itemWeight: weight,
-                    collectableAmount: order.total,
-                  });
+                  let result: any;
 
-                  const result = await submitCarryBeeOrder({
-                    baseUrl,
-                    clientId,
-                    clientSecret,
-                    clientContext,
-                    storeId,
-                    deliveryType: Number(deliveryType),
-                    productType: 1,
-                    recipientPhone: customer.phone,
-                    recipientName: customer.name,
-                    recipientAddress: customer.address || '',
-                    cityId: selectedCity,
-                    zoneId: selectedZone,
-                    areaId: selectedArea || undefined,
-                    itemWeight: weight,
-                    collectableAmount: order.total || 0,
-                  });
+                  if (isExchangeConsignment) {
+                    // Exchange consignment — use the exchange endpoint with the original consignment ID
+                    const originalConsignmentId = order.carrybeeConsignmentId;
+                    if (!originalConsignmentId) {
+                      toast.error('Cannot create exchange: no original CarryBee consignment found on this order.');
+                      setSubmitting(false);
+                      return;
+                    }
+                    console.log('[CarryBeeModal] Submitting exchange consignment:', {
+                      consignmentId: originalConsignmentId,
+                      collectableAmount: order.total,
+                    });
+                    result = await submitCarryBeeExchangeOrder({
+                      baseUrl,
+                      clientId,
+                      clientSecret,
+                      clientContext,
+                      consignmentId: originalConsignmentId,
+                      collectableAmount: order.total || 0,
+                      itemQuantity: 1,
+                    });
+                  } else {
+                    console.log('[CarryBeeModal] Submitting order:', {
+                      storeId,
+                      deliveryType: Number(deliveryType),
+                      recipientPhone: customer.phone,
+                      recipientName: customer.name,
+                      cityId: selectedCity,
+                      zoneId: selectedZone,
+                      areaId: selectedArea || undefined,
+                      itemWeight: weight,
+                      collectableAmount: order.total,
+                    });
+                    result = await submitCarryBeeOrder({
+                      baseUrl,
+                      clientId,
+                      clientSecret,
+                      clientContext,
+                      storeId,
+                      deliveryType: Number(deliveryType),
+                      productType: 1,
+                      recipientPhone: customer.phone,
+                      recipientName: customer.name,
+                      recipientAddress: customer.address || '',
+                      cityId: selectedCity,
+                      zoneId: selectedZone,
+                      areaId: selectedArea || undefined,
+                      itemWeight: weight,
+                      collectableAmount: order.total || 0,
+                    });
+                  }
 
                   if (result.error) {
                     toast.error(`Failed to send order: ${result.error}`);
@@ -330,16 +355,23 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                         null
                       );
 
-                      const historyText = `Sent to CarryBee by ${db.currentUser?.name || 'System'} on ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+                      const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to CarryBee by ${db.currentUser?.name || 'System'} on ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
                       const updates: any = {
-                        status: OrderStatus.COURIER_ASSIGNED,
                         history: {
                           ...order.history,
-                          courier: historyText,
                         },
                       };
-                      if (consignmentId) updates.carrybeeConsignmentId = consignmentId;
+
+                      if (isExchangeConsignment) {
+                        updates.exchangeCourier = 'carrybee';
+                        updates.history.exchangeCourier = historyText;
+                        if (consignmentId) updates.exchangeCarrybeeConsignmentId = consignmentId;
+                      } else {
+                        updates.status = OrderStatus.COURIER_ASSIGNED;
+                        updates.history.courier = historyText;
+                        if (consignmentId) updates.carrybeeConsignmentId = consignmentId;
+                      }
 
                       console.log('[CarryBeeModal] Updating order with courier history:', updates);
                       await updateOrder.mutateAsync({ id: order.id, updates });

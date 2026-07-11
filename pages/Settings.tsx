@@ -24,6 +24,7 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
 import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
+import { compressImage } from '../utils';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -182,6 +183,10 @@ const SettingsPage: React.FC = () => {
     oauthScopes: 'public_profile,ads_read,business_management',
     displayCurrencyCode: 'BDT',
     displayCurrencyRateToBdt: null,
+    exchangeRateMode: 'fixed',
+    vatPercentage: null,
+    realtimeRateCache: null,
+    realtimeRateUpdatedAt: null,
   });
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
@@ -254,6 +259,11 @@ const SettingsPage: React.FC = () => {
         oauthScopes: metaAdsSettingsData.oauthScopes || 'public_profile,ads_read,business_management',
         displayCurrencyCode: metaAdsSettingsData.displayCurrencyCode || 'BDT',
         displayCurrencyRateToBdt: metaAdsSettingsData.displayCurrencyRateToBdt ?? null,
+        exchangeRateMode: metaAdsSettingsData.exchangeRateMode || 'fixed',
+        vatPercentage: metaAdsSettingsData.vatPercentage ?? null,
+        realtimeRateCache: metaAdsSettingsData.realtimeRateCache ?? null,
+        realtimeRateUpdatedAt: metaAdsSettingsData.realtimeRateUpdatedAt ?? null,
+        resolvedRateToBdt: metaAdsSettingsData.resolvedRateToBdt ?? null,
       });
     }
   }, [metaAdsSettingsData]);
@@ -386,17 +396,22 @@ const SettingsPage: React.FC = () => {
     );
   };
 
-  const handleCompanyPageLogoUpload = (pageId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCompanyPageLogoUpload = async (pageId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      handleCompanyPageChange(pageId, 'logo', reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file, { maxWidth: 600, maxHeight: 600, quality: 0.85 });
+      handleCompanyPageChange(pageId, 'logo', compressed);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        handleCompanyPageChange(pageId, 'logo', reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSetGlobalCompanyPage = (pageId: string) => {
@@ -1455,11 +1470,13 @@ const SettingsPage: React.FC = () => {
 
 
                 <div className="rounded-xl border border-gray-100 bg-white p-4">
-                  <h4 className="text-base font-black text-gray-900">Ad Currency</h4>
-                  <p className="mt-1 text-sm text-gray-500">Currency used by your Meta Ad Account. Amounts will be displayed in this currency across the dashboard.</p>
+                  <h4 className="text-base font-black text-gray-900">Ad account currency</h4>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Currency used by your Meta ad account. Marketing amounts are always shown in ৳ (BDT); hovering shows the equivalent in this ads currency.
+                  </p>
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm font-semibold text-gray-700">
-                      <span>Ad Currency</span>
+                      <span>Ad account currency</span>
                       <select
                         value={metaAdsSettings.displayCurrencyCode}
                         onChange={(event) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyCode: event.target.value }))}
@@ -1470,17 +1487,107 @@ const SettingsPage: React.FC = () => {
                         ))}
                       </select>
                     </label>
-                    <label className="space-y-2 text-sm font-semibold text-gray-700">
-                      <span>Exchange Rate � 1 {metaAdsSettings.displayCurrencyCode} = ? ৳</span>
-                      <NumericInput
-                        value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
-                        onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val || null }))}
-                        placeholder={metaAdsSettings.displayCurrencyCode === 'BDT' ? 'Not needed for ৳' : 'e.g. 120'}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
-                      />
-                      <span className="text-xs text-gray-400">Used to show ৳ equivalents in tooltips</span>
-                    </label>
+                    <div className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Exchange rate mode</span>
+                      <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setMetaAdsSettings((current) => ({ ...current, exchangeRateMode: 'fixed' }))}
+                          className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                            metaAdsSettings.exchangeRateMode === 'fixed'
+                              ? 'bg-white text-gray-900 shadow-sm'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          Fixed rate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMetaAdsSettings((current) => ({ ...current, exchangeRateMode: 'vat_based' }))}
+                          className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                            metaAdsSettings.exchangeRateMode === 'vat_based'
+                              ? 'bg-white text-gray-900 shadow-sm'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          VAT-based rate
+                        </button>
+                      </div>
+                    </div>
                   </div>
+
+                  {metaAdsSettings.displayCurrencyCode === 'BDT' ? (
+                    <p className="mt-3 text-xs text-gray-400">No exchange rate needed — your ad account currency is already ৳.</p>
+                  ) : metaAdsSettings.exchangeRateMode === 'fixed' ? (
+                    <div className="mt-4">
+                      <label className="space-y-2 text-sm font-semibold text-gray-700">
+                        <span>Exchange rate — 1 {metaAdsSettings.displayCurrencyCode} = ? ৳</span>
+                        <NumericInput
+                          value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
+                          onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val || null }))}
+                          placeholder="e.g. 120"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        />
+                        <span className="text-xs text-gray-400">
+                          Converts Meta spend into ৳ for KPIs and charts. Hover any ৳ amount to see ads currency.
+                        </span>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      <label className="space-y-2 text-sm font-semibold text-gray-700">
+                        <span>VAT / Tax percentage</span>
+                        <div className="relative">
+                          <NumericInput
+                            value={metaAdsSettings.vatPercentage ?? ''}
+                            onChange={(val) => setMetaAdsSettings((current) => ({ ...current, vatPercentage: val || null }))}
+                            placeholder="e.g. 7.5"
+                            decimalPlaces={2}
+                            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pr-10 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">%</span>
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          Real-time market rate + your VAT = final exchange rate. Rate auto-refreshes every 6 hours.
+                        </span>
+                      </label>
+                      {metaAdsSettings.realtimeRateCache != null && metaAdsSettings.realtimeRateCache > 0 && (
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs">
+                          <p className="font-bold text-blue-800">
+                            Current rate: 1 {metaAdsSettings.displayCurrencyCode} = {((metaAdsSettings.realtimeRateCache ?? 0) * (1 + (metaAdsSettings.vatPercentage ?? 0) / 100)).toFixed(2)} ৳
+                          </p>
+                          <p className="mt-1 text-blue-600">
+                            Market: {(metaAdsSettings.realtimeRateCache ?? 0).toFixed(2)}
+                            {(metaAdsSettings.vatPercentage ?? 0) > 0 && (
+                              <> + {metaAdsSettings.vatPercentage}% VAT = {((metaAdsSettings.realtimeRateCache ?? 0) * (1 + (metaAdsSettings.vatPercentage ?? 0) / 100)).toFixed(2)}</>
+                            )}
+                          </p>
+                          {metaAdsSettings.realtimeRateUpdatedAt && (
+                            <p className="mt-1 text-blue-500">
+                              Last updated: {new Date(metaAdsSettings.realtimeRateUpdatedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {metaAdsSettings.realtimeRateCache == null && (
+                        <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">
+                          Real-time rate will be fetched after saving. If the currency API is unavailable, a fallback rate can be set below.
+                        </div>
+                      )}
+                      <label className="space-y-2 text-sm font-semibold text-gray-700">
+                        <span>Fallback rate — 1 {metaAdsSettings.displayCurrencyCode} = ? ৳</span>
+                        <NumericInput
+                          value={metaAdsSettings.displayCurrencyRateToBdt ?? ''}
+                          onChange={(val) => setMetaAdsSettings((current) => ({ ...current, displayCurrencyRateToBdt: val || null }))}
+                          placeholder="e.g. 120"
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        />
+                        <span className="text-xs text-gray-400">
+                          Used when the real-time rate cannot be fetched.
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className={`rounded-xl border p-4 ${metaAdsStatus?.configured ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50'}`}>

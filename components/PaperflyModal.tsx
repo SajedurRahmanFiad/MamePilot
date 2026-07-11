@@ -4,7 +4,7 @@ import { theme } from '../theme';
 import { Button, NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
-import { fetchPaperflyOrderTracking, submitPaperflyOrder } from '../src/services/supabaseQueries';
+import { fetchPaperflyOrderTracking, submitPaperflyOrder, submitPaperflyExchangeOrder } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
@@ -14,6 +14,7 @@ interface PaperflyModalProps {
   onClose: () => void;
   order?: Order | null;
   customer?: Customer | null;
+  isExchangeConsignment?: boolean;
 }
 
 function formatHistoryMoment(): string {
@@ -68,7 +69,7 @@ function getPaperflyPickupMarker(payload: any): string {
   return '';
 }
 
-export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, order, customer }) => {
+export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
   const queryClient = useQueryClient();
   const { data: courierSettings } = useCourierSettings();
   const toast = useToastNotifications();
@@ -129,20 +130,48 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
 
     setSubmitting(true);
     try {
-      const result = await submitPaperflyOrder({
-        baseUrl,
-        username,
-        password,
-        paperflyKey,
-        merchantOrderReference: order.orderNumber,
-        storeName: storeName.trim(),
-        productBrief: productBrief || '',
-        packagePrice: String(order.total || 0),
-        maxWeightKg: String(maxWeightKg),
-        customerName: customer.name || '',
-        customerAddress: normalizedCustomerAddress,
-        customerPhone: normalizedCustomerPhone,
-      });
+      let result: any;
+
+      if (isExchangeConsignment) {
+        // Exchange consignment — use the exchange endpoint
+        console.log('[PaperflyModal] Submitting exchange order:', {
+          merchantOrderReference: order.orderNumber,
+          storeName: storeName.trim(),
+          customerName: customer.name,
+        });
+        result = await submitPaperflyExchangeOrder({
+          baseUrl,
+          username,
+          password,
+          paperflyKey,
+          merchantOrderReference: order.orderNumber,
+          storeName: storeName.trim(),
+          productBrief: productBrief || 'Exchange product',
+          packagePrice: String(order.total || 0),
+          maxWeightKg: String(maxWeightKg),
+          customerName: customer.name || '',
+          customerAddress: normalizedCustomerAddress,
+          customerPhone: normalizedCustomerPhone,
+          exchangeDescription: 'Exchange product',
+          exchangePrice: String(order.total || 0),
+          exchangeWeightKg: String(maxWeightKg),
+        });
+      } else {
+        result = await submitPaperflyOrder({
+          baseUrl,
+          username,
+          password,
+          paperflyKey,
+          merchantOrderReference: order.orderNumber,
+          storeName: storeName.trim(),
+          productBrief: productBrief || '',
+          packagePrice: String(order.total || 0),
+          maxWeightKg: String(maxWeightKg),
+          customerName: customer.name || '',
+          customerAddress: normalizedCustomerAddress,
+          customerPhone: normalizedCustomerPhone,
+        });
+      }
 
       if (result.error) {
         setError(result.error);
@@ -157,7 +186,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
         null;
       const paperflyReferenceNumber = String(order.orderNumber || '').trim();
 
-      const historyParts = [`Sent to Paperfly by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}`];
+      const historyParts = [`${isExchangeConsignment ? 'Exchange s' : 'S'}ent to Paperfly by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}`];
       if (paperflyReferenceNumber) {
         historyParts.push(`Reference: ${paperflyReferenceNumber}`);
       }
@@ -167,40 +196,44 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
       const historyText = historyParts.map((part, index) => (index === 0 ? part : `(${part})`)).join(' ');
 
       const updates: any = {
-        status: OrderStatus.COURIER_ASSIGNED,
         history: {
           ...order.history,
-          courier: historyText,
         },
       };
 
-      if (paperflyReferenceNumber) {
-        updates.paperflyTrackingNumber = paperflyReferenceNumber;
-      }
+      if (isExchangeConsignment) {
+        updates.exchangeCourier = 'paperfly';
+        updates.history.exchangeCourier = historyText;
+        if (paperflyReferenceNumber) updates.exchangePaperflyTrackingNumber = paperflyReferenceNumber;
+      } else {
+        updates.status = OrderStatus.COURIER_ASSIGNED;
+        updates.history.courier = historyText;
+        if (paperflyReferenceNumber) updates.paperflyTrackingNumber = paperflyReferenceNumber;
 
-      if (paperflyReferenceNumber) {
-        try {
-          const pickupCheck = await fetchPaperflyOrderTracking({
-            baseUrl,
-            username,
-            password,
-            paperflyKey,
-            referenceNumber: paperflyReferenceNumber,
-          });
+        if (paperflyReferenceNumber) {
+          try {
+            const pickupCheck = await fetchPaperflyOrderTracking({
+              baseUrl,
+              username,
+              password,
+              paperflyKey,
+              referenceNumber: paperflyReferenceNumber,
+            });
 
-          if (!pickupCheck.error && pickupCheck.data) {
-            const pickupMarker = getPaperflyPickupMarker(pickupCheck.data);
-            if (pickupMarker !== '') {
-              updates.status = OrderStatus.PICKED;
-              updates.history.picked = `Marked as picked automatically after Paperfly confirmed pickup${pickupMarker ? ` (${pickupMarker})` : ''} on ${formatHistoryMoment()}`;
+            if (!pickupCheck.error && pickupCheck.data) {
+              const pickupMarker = getPaperflyPickupMarker(pickupCheck.data);
+              if (pickupMarker !== '') {
+                updates.status = OrderStatus.PICKED;
+                updates.history.picked = `Marked as picked automatically after Paperfly confirmed pickup${pickupMarker ? ` (${pickupMarker})` : ''} on ${formatHistoryMoment()}`;
+              } else {
+                console.log('[PaperflyModal] Immediate pickup check did not confirm pickup yet.');
+              }
             } else {
-              console.log('[PaperflyModal] Immediate pickup check did not confirm pickup yet.');
+              console.warn('[PaperflyModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
             }
-          } else {
-            console.warn('[PaperflyModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
+          } catch (pickupCheckError) {
+            console.warn('[PaperflyModal] Immediate pickup verification threw an error:', pickupCheckError);
           }
-        } catch (pickupCheckError) {
-          console.warn('[PaperflyModal] Immediate pickup verification threw an error:', pickupCheckError);
         }
       }
 
@@ -222,7 +255,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
         <div className={`${theme.card.elevated} w-full max-w-2xl max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300`}>
           <div className="flex items-center justify-between p-6 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">Add to Paperfly</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{isExchangeConsignment ? 'Exchange — ' : ''}Add to Paperfly</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
           </div>
           <div className="p-6 space-y-4 overflow-y-auto">

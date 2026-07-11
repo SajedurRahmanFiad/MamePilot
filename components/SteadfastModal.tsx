@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { Button } from './index';
 import { theme } from '../theme';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
@@ -13,6 +14,7 @@ interface SteadfastModalProps {
   onClose: () => void;
   order?: Order | null;
   customer?: Customer | null;
+  isExchangeConsignment?: boolean;
 }
 
 const STEADFAST_NON_PICKED_STATUSES = new Set(['pending', 'in_review', 'cancelled']);
@@ -38,7 +40,7 @@ function getSteadfastPickupStatus(payload: any): { rawStatus: string; isPickedOr
   };
 }
 
-export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose, order, customer }) => {
+export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
   const queryClient = useQueryClient();
   const { data: courierSettings } = useCourierSettings();
   const toast = useToastNotifications();
@@ -157,40 +159,49 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
           null
         );
 
-        const historyText = `Sent to Steadfast by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}${trackingOrConsignment ? ` (Tracking: ${trackingOrConsignment})` : ''}${courierStatus ? ` (Submit status: ${courierStatus})` : ''}`;
+        const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to Steadfast by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}${trackingOrConsignment ? ` (Tracking: ${trackingOrConsignment})` : ''}${courierStatus ? ` (Submit status: ${courierStatus})` : ''}`;
         console.log('[SteadfastModal] Setting courier history:', historyText);
+
         const updates: any = {
-          status: OrderStatus.COURIER_ASSIGNED,
           history: {
             ...order.history,
-            courier: historyText,
           },
         };
 
-        if (trackingOrConsignment) updates.steadfastConsignmentId = String(trackingOrConsignment);
+        if (isExchangeConsignment) {
+          // Exchange consignment — store in exchange fields, don't change status
+          updates.exchangeCourier = 'steadfast';
+          updates.history.exchangeCourier = historyText;
+          if (trackingOrConsignment) updates.exchangeSteadfastConsignmentId = String(trackingOrConsignment);
+        } else {
+          // Normal consignment
+          updates.status = OrderStatus.COURIER_ASSIGNED;
+          updates.history.courier = historyText;
+          if (trackingOrConsignment) updates.steadfastConsignmentId = String(trackingOrConsignment);
 
-        if (trackingOrConsignment) {
-          try {
-            const pickupCheck = await fetchSteadfastStatusByTrackingCode({
-              baseUrl,
-              apiKey,
-              secretKey,
-              trackingCode: String(trackingOrConsignment),
-            });
+          if (trackingOrConsignment) {
+            try {
+              const pickupCheck = await fetchSteadfastStatusByTrackingCode({
+                baseUrl,
+                apiKey,
+                secretKey,
+                trackingCode: String(trackingOrConsignment),
+              });
 
-            if (!pickupCheck.error && pickupCheck.data) {
-              const pickupStatus = getSteadfastPickupStatus(pickupCheck.data);
-              if (pickupStatus.isPickedOrBeyond) {
-                updates.status = OrderStatus.PICKED;
-                updates.history.picked = `Marked as picked automatically after Steadfast confirmed delivery status "${pickupStatus.rawStatus}" on ${formatHistoryMoment()}`;
+              if (!pickupCheck.error && pickupCheck.data) {
+                const pickupStatus = getSteadfastPickupStatus(pickupCheck.data);
+                if (pickupStatus.isPickedOrBeyond) {
+                  updates.status = OrderStatus.PICKED;
+                  updates.history.picked = `Marked as picked automatically after Steadfast confirmed delivery status "${pickupStatus.rawStatus}" on ${formatHistoryMoment()}`;
+                } else {
+                  console.log('[SteadfastModal] Immediate pickup check did not confirm pickup yet:', pickupStatus.rawStatus || 'UNKNOWN');
+                }
               } else {
-                console.log('[SteadfastModal] Immediate pickup check did not confirm pickup yet:', pickupStatus.rawStatus || 'UNKNOWN');
+                console.warn('[SteadfastModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
               }
-            } else {
-              console.warn('[SteadfastModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
+            } catch (pickupCheckError) {
+              console.warn('[SteadfastModal] Immediate pickup verification threw an error:', pickupCheckError);
             }
-          } catch (pickupCheckError) {
-            console.warn('[SteadfastModal] Immediate pickup verification threw an error:', pickupCheckError);
           }
         }
 
@@ -211,13 +222,44 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
     }
   };
 
+  if (isExchangeConsignment) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40" onClick={onClose} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`${theme.card.elevated} w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300`}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-xl font-bold text-gray-900">Steadfast Unavailable</h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 mx-auto">
+                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <p className="text-center text-gray-600">
+                Steadfast does not support exchange consignments. Please use <strong>CarryBee</strong> or <strong>Paperfly</strong> to ship exchange items.
+              </p>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+              <Button onClick={onClose} variant="ghost" className="flex-1">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
         <div className={`${theme.card.elevated} w-full max-w-2xl max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300`}>
           <div className="flex items-center justify-between p-6 border-b border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-900">Add to Steadfast</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{isExchangeConsignment ? 'Exchange — ' : ''}Add to Steadfast</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
           </div>
           <div className="p-6 space-y-4 overflow-y-auto">

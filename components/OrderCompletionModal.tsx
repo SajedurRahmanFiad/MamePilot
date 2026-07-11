@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Button, NumericInput } from './index';
-import { formatCurrency } from '../constants';
+import { formatCurrency, ICONS } from '../constants';
 import { Order, OrderCompletionOutcome } from '../types';
 import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
 
@@ -13,6 +13,9 @@ export type OrderCompletionFormState = {
   paymentMethod: string;
   categoryId: string;
   note: string;
+  refundAmount: number;
+  refundAccountId: string;
+  refundPaymentMethod: string;
 };
 
 interface OrderCompletionModalProps {
@@ -80,12 +83,14 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
       if (!next.accountId && fallbackAccountId) next.accountId = fallbackAccountId;
       if (!next.paymentMethod && fallbackPaymentMethod) next.paymentMethod = fallbackPaymentMethod;
       if (!next.categoryId && fallbackCategoryId) next.categoryId = fallbackCategoryId;
+      if (!next.refundAccountId && fallbackAccountId) next.refundAccountId = fallbackAccountId;
+      if (!next.refundPaymentMethod && fallbackPaymentMethod) next.refundPaymentMethod = fallbackPaymentMethod;
       if (!availableOutcomes.includes(next.outcome)) {
         next.outcome = availableOutcomes[0] || 'Delivered';
       }
 
-      // If Returned is selected, automatically set category to 'Shipping Costs'
-      if (next.outcome === 'Returned' && shippingCostsCategory) {
+      // If Returned is selected, default category to 'Shipping Costs' (but allow user to change it)
+      if (next.outcome === 'Returned' && shippingCostsCategory && !current.categoryId) {
         next.categoryId = shippingCostsCategory.id;
       }
 
@@ -93,7 +98,9 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         next.outcome === current.outcome &&
         next.accountId === current.accountId &&
         next.paymentMethod === current.paymentMethod &&
-        next.categoryId === current.categoryId
+        next.categoryId === current.categoryId &&
+        next.refundAccountId === current.refundAccountId &&
+        next.refundPaymentMethod === current.refundPaymentMethod
       ) {
         return current;
       }
@@ -102,14 +109,14 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
     });
   }, [isOpen, accounts, paymentMethods, categories, shippingCostsCategory, systemDefaults, setForm, availableOutcomes]);
 
-  // Handle outcome changes - automatically set category for Returned orders
+  // Handle outcome changes - default category to Shipping Costs when switching to Returned (if no category selected yet)
   useEffect(() => {
     if (!availableOutcomes.includes(form.outcome)) {
       setForm((current) => ({ ...current, outcome: availableOutcomes[0] || 'Delivered' }));
       return;
     }
 
-    if (form.outcome === 'Returned' && shippingCostsCategory && form.categoryId !== shippingCostsCategory.id) {
+    if (form.outcome === 'Returned' && shippingCostsCategory && !form.categoryId) {
       setForm((current) => ({ ...current, categoryId: shippingCostsCategory.id }));
     }
   }, [form.outcome, shippingCostsCategory, form.categoryId, setForm, availableOutcomes]);
@@ -154,25 +161,32 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         </div>
 
         <div className="space-y-6">
-          <div className="space-y-1">
-            <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Outcome</label>
-            <select
-              value={form.outcome}
-              onChange={(event) => {
-                const nextOutcome = event.target.value as OrderCompletionOutcome;
-                setForm((current) => ({
-                  ...current,
-                  outcome: nextOutcome,
-                  amount: nextOutcome === 'Returned' ? order.shipping : current.amount,
-                }));
-              }}
-              disabled={isLoading}
-              className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-            >
-              {availableOutcomes.includes('Delivered') && <option value="Delivered">Delivered</option>}
-              {availableOutcomes.includes('Returned') && <option value="Returned">Returned</option>}
-            </select>
-          </div>
+          {availableOutcomes.length > 1 && (
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+              {availableOutcomes.map((outcome) => (
+                <button
+                  key={outcome}
+                  type="button"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      outcome,
+                      amount: outcome === 'Returned' ? order.shipping : current.amount,
+                    }))
+                  }
+                  disabled={isLoading}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${
+                    form.outcome === outcome
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  } disabled:opacity-50`}
+                >
+                  {outcome === 'Delivered' ? ICONS.Check : ICONS.Return}
+                  <span className="hidden sm:inline">{outcome}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {isReturned && (
             <>
@@ -216,7 +230,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                   <select
                     value={form.categoryId}
                     onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
-                    disabled={isLoading || !!shippingCostsCategory}
+                    disabled={isLoading}
                     className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
                   >
                     <option value="">Select an expense category...</option>
@@ -236,9 +250,75 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                   onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
                   disabled={isLoading}
                   placeholder="Add any note about the return expense..."
-                  className="min-h-[120px] w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-4 font-medium outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
+                  className="min-h-[80px] w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-4 font-medium outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
                 />
               </div>
+
+              {/* Refund section for partially paid orders */}
+              {order.paidAmount > 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Refund to Customer</p>
+                    <span className="text-xs font-bold text-emerald-600">
+                      Already paid: {formatCurrency(order.paidAmount)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Refund Amount</label>
+                    <NumericInput
+                      value={form.refundAmount}
+                      onChange={(value) =>
+                        setForm((current) => ({
+                          ...current,
+                          refundAmount: Math.min(value, order.paidAmount),
+                        }))
+                      }
+                      disabled={isLoading}
+                      className="border-2 border-emerald-200 bg-white text-lg text-emerald-700"
+                      decimalPlaces={2}
+                      allowDecimals={true}
+                    />
+                    <p className="text-[10px] text-gray-500 ml-2">Max refundable: {formatCurrency(order.paidAmount)}</p>
+                  </div>
+
+                  {form.refundAmount > 0 && (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Refund Account</label>
+                        <select
+                          value={form.refundAccountId}
+                          onChange={(event) => setForm((current) => ({ ...current, refundAccountId: event.target.value }))}
+                          disabled={isLoading}
+                          className="w-full rounded-lg border border-gray-100 bg-white px-4 py-3 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                        >
+                          <option value="">Select account...</option>
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name} ({formatCurrency(account.currentBalance)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Refund Method</label>
+                        <select
+                          value={form.refundPaymentMethod}
+                          onChange={(event) => setForm((current) => ({ ...current, refundPaymentMethod: event.target.value }))}
+                          disabled={isLoading}
+                          className="w-full rounded-lg border border-gray-100 bg-white px-4 py-3 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                        >
+                          <option value="">Select method...</option>
+                          {paymentMethods.map((pm) => (
+                            <option key={pm.id} value={pm.name}>{pm.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 

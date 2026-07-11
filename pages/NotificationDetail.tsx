@@ -1,6 +1,7 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ICONS } from '../constants';
+import DynamicFilterBar, { type CombinedFilter } from '../components/DynamicFilterBar';
 import type { NotificationActionConfig, NotificationDecisionScope, NotificationDeploymentRecipient, NotificationRecipient } from '../types';
 import { useNotificationById } from '../src/hooks/useQueries';
 import { getPreservedRouteState } from '../src/utils/navigation';
@@ -64,6 +65,94 @@ const NotificationDetail: React.FC = () => {
     navigate(backState.from || '/developer/notifications');
   };
 
+  // Dynamic filter state
+  const [filters, setFilters] = useState<CombinedFilter[]>([]);
+
+  // Dynamically build unique roles from recipients
+  const uniqueRoles = useMemo(() => {
+    const roles = new Set<string>();
+    (data?.recipients ?? []).forEach((r) => {
+      if (r.userRole) roles.add(r.userRole);
+    });
+    return Array.from(roles).sort();
+  }, [data?.recipients]);
+
+  // Build filter definitions
+  const filterDefinitions = useMemo(() => [
+    {
+      type: 'Deployment',
+      operators: ['=', '≠'] as const,
+      values: (data?.deployments ?? []).map((d) => ({ value: d.licenseKey, label: d.clientName })),
+    },
+    {
+      type: 'User Role',
+      operators: ['=', '≠'] as const,
+      values: uniqueRoles,
+    },
+    {
+      type: 'Action Status',
+      operators: ['=', '≠'] as const,
+      values: [
+        { value: 'accepted', label: 'Accepted' },
+        { value: 'declined', label: 'Declined' },
+        { value: 'read', label: 'Read' },
+        { value: 'pending', label: 'Pending' },
+      ],
+    },
+    {
+      type: 'Read Date',
+      operators: ['on', 'before', 'after'] as const,
+      valueType: 'date' as const,
+    },
+  ], [data?.deployments, uniqueRoles]);
+
+  const handleApplyFilters = useCallback((newFilters: CombinedFilter[]) => {
+    setFilters(newFilters);
+  }, []);
+
+  // Filter recipients
+  const filteredRecipients = useMemo(() => {
+    let list = data?.recipients ?? [];
+
+    for (const filter of filters) {
+      const negate = filter.operator === '≠';
+
+      if (filter.type === 'Deployment') {
+        list = list.filter((r) => {
+          const match = (r as NotificationDeploymentRecipient).deploymentKey === filter.value;
+          return negate ? !match : match;
+        });
+      } else if (filter.type === 'User Role') {
+        list = list.filter((r) => {
+          const match = r.userRole === filter.value;
+          return negate ? !match : match;
+        });
+      } else if (filter.type === 'Action Status') {
+        list = list.filter((r) => {
+          const match = getRecipientStatus(r).label.toLowerCase() === filter.value.toLowerCase();
+          return negate ? !match : match;
+        });
+      } else if (filter.type === 'Read Date') {
+        const target = new Date(filter.value);
+        if (!Number.isNaN(target.getTime())) {
+          const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+          list = list.filter((r) => {
+            if (!r.readAt) return false;
+            const readDate = new Date(r.readAt);
+            const readDay = new Date(readDate.getFullYear(), readDate.getMonth(), readDate.getDate());
+            let match: boolean;
+            if (filter.operator === 'on') match = readDay.getTime() === targetDay.getTime();
+            else if (filter.operator === 'before') match = readDay.getTime() < targetDay.getTime();
+            else match = readDay.getTime() > targetDay.getTime();
+            return match;
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [data?.recipients, filters]);
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-6xl py-10 text-center text-sm font-medium text-gray-400">
@@ -108,80 +197,9 @@ const NotificationDetail: React.FC = () => {
     );
   }
 
-  const { notification, recipients, summary, deployments } = data;
+  const { notification, recipients, summary } = data;
   const actionConfig = notification.actionConfig || { kind: 'none' as const };
   const linkUrl = actionConfig.linkUrl?.trim();
-
-  // Filter state
-  const [filterDeployment, setFilterDeployment] = useState('');
-  const [filterRole, setFilterRole] = useState('');
-  const [filterAction, setFilterAction] = useState('');
-  const [filterReadDateMode, setFilterReadDateMode] = useState<'on' | 'before' | 'after'>('on');
-  const [filterReadDate, setFilterReadDate] = useState('');
-
-  const activeFilterCount = [
-    filterDeployment,
-    filterRole,
-    filterAction,
-    filterReadDate,
-  ].filter(Boolean).length;
-
-  const clearAllFilters = () => {
-    setFilterDeployment('');
-    setFilterRole('');
-    setFilterAction('');
-    setFilterReadDateMode('on');
-    setFilterReadDate('');
-  };
-
-  // Dynamically build unique roles from recipients
-  const uniqueRoles = useMemo(() => {
-    const roles = new Set<string>();
-    (recipients ?? []).forEach((r) => {
-      if (r.userRole) roles.add(r.userRole);
-    });
-    return Array.from(roles).sort();
-  }, [recipients]);
-
-  // Filter recipients
-  const filteredRecipients = useMemo(() => {
-    let list = recipients ?? [];
-
-    if (filterDeployment) {
-      list = list.filter(
-        (r) => (r as NotificationDeploymentRecipient).deploymentKey === filterDeployment,
-      );
-    }
-
-    if (filterRole) {
-      list = list.filter((r) => r.userRole === filterRole);
-    }
-
-    if (filterAction) {
-      list = list.filter((r) => {
-        const status = getRecipientStatus(r);
-        return status.label.toLowerCase() === filterAction.toLowerCase();
-      });
-    }
-
-    if (filterReadDate) {
-      const target = new Date(filterReadDate);
-      if (!Number.isNaN(target.getTime())) {
-        const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-        list = list.filter((r) => {
-          if (!r.readAt) return false;
-          const readDate = new Date(r.readAt);
-          const readDay = new Date(readDate.getFullYear(), readDate.getMonth(), readDate.getDate());
-          if (filterReadDateMode === 'on') return readDay.getTime() === targetDay.getTime();
-          if (filterReadDateMode === 'before') return readDay.getTime() < targetDay.getTime();
-          return readDay.getTime() > targetDay.getTime();
-        });
-      }
-    }
-
-    return list;
-  }, [recipients, filterDeployment, filterRole, filterAction, filterReadDateMode, filterReadDate]);
-
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <button
@@ -268,106 +286,18 @@ const NotificationDetail: React.FC = () => {
                   Every targeted user is listed below, including who read the notification and who clicked an action button.
                 </p>
               </div>
-              {activeFilterCount > 0 && (
+              {filters.length > 0 && (
                 <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-600">
-                  {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+                  {filters.length} filter{filters.length > 1 ? 's' : ''} active
                 </span>
               )}
             </div>
 
-            <div className="mt-4 rounded-[1.25rem] border border-gray-100 bg-gray-50/80 px-4 py-4">
-              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Filters</p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {/* Deployment filter */}
-                <div>
-                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                    Deployment
-                  </label>
-                  <select
-                    value={filterDeployment}
-                    onChange={(e) => setFilterDeployment(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="">All deployments</option>
-                    {(deployments ?? []).map((d) => (
-                      <option key={d.licenseKey} value={d.licenseKey}>
-                        {d.clientName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Role filter */}
-                <div>
-                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                    User Role
-                  </label>
-                  <select
-                    value={filterRole}
-                    onChange={(e) => setFilterRole(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="">All roles</option>
-                    {uniqueRoles.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Action Status filter */}
-                <div>
-                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                    Action Status
-                  </label>
-                  <select
-                    value={filterAction}
-                    onChange={(e) => setFilterAction(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="">All</option>
-                    <option value="accepted">Accepted</option>
-                    <option value="declined">Declined</option>
-                    <option value="read">Read</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                </div>
-
-                {/* Read Date filter */}
-                <div>
-                  <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                    Read Date
-                  </label>
-                  <div className="flex gap-1.5">
-                    <select
-                      value={filterReadDateMode}
-                      onChange={(e) => setFilterReadDateMode(e.target.value as 'on' | 'before' | 'after')}
-                      className="rounded-xl border border-gray-200 bg-white px-2 py-2 text-sm"
-                    >
-                      <option value="on">On</option>
-                      <option value="before">Before</option>
-                      <option value="after">After</option>
-                    </select>
-                    <input
-                      type="date"
-                      value={filterReadDate}
-                      onChange={(e) => setFilterReadDate(e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {activeFilterCount > 0 && (
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={clearAllFilters}
-                    className="text-xs font-black uppercase tracking-[0.18em] text-gray-400 transition-colors hover:text-gray-600"
-                  >
-                    Clear all
-                  </button>
-                </div>
-              )}
+            <div className="mt-4">
+              <DynamicFilterBar
+                filterDefinitions={filterDefinitions}
+                onApply={handleApplyFilters}
+              />
             </div>
 
             <div className="mt-5 space-y-3">

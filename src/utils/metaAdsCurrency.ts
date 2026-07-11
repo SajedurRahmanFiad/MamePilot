@@ -7,11 +7,11 @@ export interface CurrencyOption {
 export const META_ADS_CURRENCY_OPTIONS: CurrencyOption[] = [
   { code: 'BDT', label: '৳ - Bangladeshi Taka', symbol: '৳' },
   { code: 'USD', label: 'USD - US Dollar', symbol: '$' },
-  { code: 'EUR', label: 'EUR - Euro', symbol: '৳' },
-  { code: 'GBP', label: 'GBP - British Pound', symbol: '৳' },
-  { code: 'INR', label: 'INR - Indian Rupee', symbol: '৳' },
-  { code: 'SAR', label: 'SAR - Saudi Riyal', symbol: '৳' },
-  { code: 'AED', label: 'AED - UAE Dirham', symbol: '?.?' },
+  { code: 'EUR', label: 'EUR - Euro', symbol: '€' },
+  { code: 'GBP', label: 'GBP - British Pound', symbol: '£' },
+  { code: 'INR', label: 'INR - Indian Rupee', symbol: '₹' },
+  { code: 'SAR', label: 'SAR - Saudi Riyal', symbol: 'SAR ' },
+  { code: 'AED', label: 'AED - UAE Dirham', symbol: 'AED ' },
   { code: 'MYR', label: 'MYR - Malaysian Ringgit', symbol: 'RM' },
   { code: 'SGD', label: 'SGD - Singapore Dollar', symbol: 'S$' },
   { code: 'AUD', label: 'AUD - Australian Dollar', symbol: 'A$' },
@@ -24,73 +24,102 @@ export const CURRENCY_SYMBOLS: Record<string, string> = Object.fromEntries(
 
 /**
  * Format a monetary amount in a given currency code.
- * Uses Intl.NumberFormat for proper locale formatting.
  */
 export function formatMetaAdsCurrency(amount: number, currencyCode: string): string {
+  const code = (currencyCode || 'BDT').toUpperCase();
   try {
     const formatted = new Intl.NumberFormat('en', {
       style: 'currency',
-      currency: currencyCode,
+      currency: code,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
-    const symbol = CURRENCY_SYMBOLS[currencyCode];
+    const symbol = CURRENCY_SYMBOLS[code];
     if (symbol) {
-      if (formatted.startsWith(currencyCode)) {
-        return symbol + formatted.slice(currencyCode.length).trim();
+      if (formatted.startsWith(code)) {
+        return symbol + formatted.slice(code.length).trim();
       }
-      if (formatted.endsWith(symbol)) {
-        return symbol + formatted.slice(0, -symbol.length).trim();
+      // Prefer our symbol for BDT (৳) and multi-char prefixes
+      if (code === 'BDT') {
+        return `৳${Number(amount || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       }
     }
     return formatted;
   } catch {
-    const symbol = CURRENCY_SYMBOLS[currencyCode] || currencyCode;
-    return `${symbol}${amount.toFixed(2)}`;
+    const symbol = CURRENCY_SYMBOLS[code] || `${code} `;
+    return `${symbol}${Number(amount || 0).toFixed(2)}`;
   }
 }
 
 /**
- * Convert an amount from one currency to BDT using the exchange rate.
- * rateToBdt means "1 {displayCurrency} = X BDT".
- * If native is the display currency, BDT = native * rateToBdt.
- * If native is different (e.g., ad account is USD but display is BDT), 
- * we treat the amount as being in the ad account's currency and need conversion.
+ * Convert an amount in ads/native currency to BDT.
+ * rateToBdt means "1 adsCurrency = X BDT".
+ * Returns null when conversion is not possible (missing/invalid rate for non-BDT).
  */
+export function convertAdsAmountToBdt(
+  amount: number,
+  adsCurrencyCode: string | undefined | null,
+  rateToBdt: number | null | undefined,
+): number | null {
+  const code = (adsCurrencyCode || 'BDT').toUpperCase();
+  if (code === 'BDT') {
+    return Number(amount || 0);
+  }
+  if (rateToBdt == null || !Number.isFinite(rateToBdt) || rateToBdt <= 0) {
+    return null;
+  }
+  return Number(amount || 0) * rateToBdt;
+}
+
+/**
+ * Convert BDT to ads currency using inverse of rateToBdt.
+ */
+export function convertBdtToAds(
+  bdtAmount: number,
+  rateToBdt: number | null | undefined,
+): number | null {
+  if (rateToBdt == null || !Number.isFinite(rateToBdt) || rateToBdt <= 0) {
+    return null;
+  }
+  return Number(bdtAmount || 0) / rateToBdt;
+}
+
+/** @deprecated Use convertAdsAmountToBdt */
 export function convertToBdt(amount: number, nativeCode: string | undefined, rateToBdt: number | null): number | null {
-  if (rateToBdt == null || rateToBdt <= 0) return null;
-  if (!nativeCode || nativeCode === 'BDT') {
-    // Amount is already in BDT, no conversion needed
-    return amount;
-  }
-  // rateToBdt = 1 nativeCurrency = X BDT
-  return amount * rateToBdt;
+  return convertAdsAmountToBdt(amount, nativeCode, rateToBdt);
 }
 
-/**
- * Convert BDT to display currency using inverse of rateToBdt.
- * rateToBdt means "1 displayCurrency = X BDT", so displayAmount = bdtAmount / rateToBdt.
- */
+/** @deprecated Use convertBdtToAds */
 export function convertFromBdt(bdtAmount: number, rateToBdt: number | null): number | null {
-  if (rateToBdt == null || rateToBdt <= 0) return null;
-  return bdtAmount / rateToBdt;
+  return convertBdtToAds(bdtAmount, rateToBdt);
 }
 
 /**
- * Build tooltip text showing BDT equivalent for a money value.
+ * Build tooltip text showing ads-currency equivalent for a BDT amount.
+ */
+export function buildAdsCurrencyTooltip(
+  bdtAmount: number,
+  adsCurrencyCode: string | undefined | null,
+  rateToBdt: number | null | undefined,
+): string | null {
+  const code = (adsCurrencyCode || 'BDT').toUpperCase();
+  if (code === 'BDT') return null;
+  const ads = convertBdtToAds(bdtAmount, rateToBdt);
+  if (ads == null) return null;
+  return formatMetaAdsCurrency(ads, code);
+}
+
+/**
+ * @deprecated Prefer buildAdsCurrencyTooltip — primary display is BDT, tooltip is ads currency.
  */
 export function buildBdtTooltip(
   displayAmount: number,
   displayCode: string,
-  nativeCode: string | undefined,
+  _nativeCode: string | undefined,
   rateToBdt: number | null,
 ): string | null {
-  if (displayCode === 'BDT') return null;
+  // Legacy: amount was shown in displayCode; tooltip was BDT.
+  if ((displayCode || 'BDT').toUpperCase() === 'BDT') return null;
   if (rateToBdt == null || rateToBdt <= 0) return null;
-
-  // If native is BDT, display is foreign: BDT = display * rateToBdt
-  // If native is the same as display: BDT = display * rateToBdt
-  // If native is different: treat amount as display currency
-  const bdt = displayAmount * rateToBdt;
-  return `~ ${formatMetaAdsCurrency(bdt, 'BDT')}`;
+  return `~ ${formatMetaAdsCurrency(displayAmount * rateToBdt, 'BDT')}`;
 }

@@ -94,7 +94,7 @@ const DeveloperNotifications: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: permissionsSettings } = usePermissionsSettings(true);
-  const { data: deployments, isLoading: isLoadingDeployments } = useDeployments(true);
+  const { data: deployments, isLoading: isLoadingDeployments, isError: isDeploymentsError, error: deploymentsError } = useDeployments(true);
   const createNotificationMutation = useCreateNotification();
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
@@ -429,6 +429,8 @@ const DeveloperNotifications: React.FC = () => {
                 />
                 {isLoadingDeployments ? (
                   <p className="py-3 text-center text-sm font-medium text-gray-400">Loading deployments...</p>
+                ) : isDeploymentsError ? (
+                  <p className="py-3 text-center text-sm font-medium text-red-500">{deploymentsError?.message || 'Failed to load deployments. Check central server configuration.'}</p>
                 ) : filteredDeployments.length === 0 ? (
                   <p className="py-3 text-center text-sm font-medium text-gray-400">No deployments found.</p>
                 ) : (

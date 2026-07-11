@@ -2,13 +2,13 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
-import { BillStatus, Bill, Transaction } from '../types';
+import { BillStatus, Bill, Transaction, type ProcessBillReturnPayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getStatusColor } from '../constants';
 import { theme } from '../theme';
 import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor } from '../src/hooks/useQueries';
-import { useUpdateBill, useCreateTransaction } from '../src/hooks/useMutations';
+import { useUpdateBill, useCreateTransaction, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { LoadingOverlay, CommonPaymentModal, Modal } from '../components';
+import { LoadingOverlay, CommonPaymentModal, Modal, BillReturnModal } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -37,6 +37,7 @@ const BillDetails: React.FC = () => {
   // Mutations
   const updateMutation = useUpdateBill();
   const createTransactionMutation = useCreateTransaction();
+  const processBillReturnMutation = useProcessBillReturn();
   const toast = useToastNotifications();
   const isPaymentLoading = updateMutation.isPending || createTransactionMutation.isPending;
   
@@ -57,6 +58,7 @@ const BillDetails: React.FC = () => {
     payment: false,
   });
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
   const [completionOutcome, setCompletionOutcome] = useState<'Received' | 'Returned'>('Received');
   const [completionNote, setCompletionNote] = useState('');
 
@@ -79,7 +81,7 @@ const BillDetails: React.FC = () => {
     setShowCompleteModal(false);
   };
 
-  type BillTimelineLabel = 'Created' | 'Processing' | 'Received' | 'Returned' | 'Cancelled';
+  type BillTimelineLabel = 'Created' | 'Processing' | 'Received' | 'Exchanged' | 'Returned' | 'Cancelled';
   type BillTimelineItem = {
     label: BillTimelineLabel;
     historyKey: keyof Exclude<Bill['history'], undefined> | null;
@@ -91,11 +93,15 @@ const BillDetails: React.FC = () => {
       { label: 'Created', historyKey: 'created', description: 'Bill created and waiting to be processed.' },
       { label: 'Processing', historyKey: 'processing', description: 'Bill is currently under processing.' },
       { label: 'Received', historyKey: 'received', description: 'Bill has been marked as received.' },
+      { label: 'Exchanged', historyKey: 'received', description: 'Bill has been received with exchanged items.' },
       { label: 'Returned', historyKey: null, description: 'Bill has been returned.' },
       { label: 'Cancelled', historyKey: 'cancelled', description: 'Bill has been cancelled.' },
     ],
     []
   );
+
+  const hasExchangedItems = (b?: Bill | null) =>
+    Boolean(b?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
 
   const getBillProgressIndex = (currentBill?: Bill | null) => {
     if (!currentBill) return 0;
@@ -108,7 +114,7 @@ const BillDetails: React.FC = () => {
       return billProgressSteps.findIndex((item) => item.label === 'Cancelled');
     }
     if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) {
-      return billProgressSteps.findIndex((item) => item.label === 'Received');
+      return billProgressSteps.findIndex((item) => item.label === (hasExchangedItems(currentBill) ? 'Exchanged' : 'Received'));
     }
     if (currentBill.status === BillStatus.PROCESSING) {
       return billProgressSteps.findIndex((item) => item.label === 'Processing');
@@ -138,7 +144,9 @@ const BillDetails: React.FC = () => {
     const cancelledHistory = (currentBill.history as Record<string, string | undefined>)?.cancelled;
     if (returnedHistory) return 'Returned' as BillTimelineLabel;
     if (cancelledHistory) return 'Cancelled' as BillTimelineLabel;
-    if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) return 'Received' as BillTimelineLabel;
+    if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) {
+      return (hasExchangedItems(currentBill) ? 'Exchanged' : 'Received') as BillTimelineLabel;
+    }
     return null;
   };
 
@@ -196,6 +204,8 @@ const BillDetails: React.FC = () => {
           return 'Processing';
         case 'Received':
           return bill.status === BillStatus.RECEIVED || bill.status === BillStatus.PAID ? 'Received' : 'Receiving';
+        case 'Exchanged':
+          return 'Received, Exchanged';
         case 'Returned':
           return getFinalBranchStatus(bill) === 'Returned' ? 'Returned' : 'Returning';
         case 'Cancelled':
@@ -215,6 +225,8 @@ const BillDetails: React.FC = () => {
           return 'Process';
         case 'Received':
           return 'Receive';
+        case 'Exchanged':
+          return 'Receive, Exchange';
         case 'Returned':
           return 'Return';
         case 'Cancelled':
@@ -239,6 +251,8 @@ const BillDetails: React.FC = () => {
         case 'Processing':
           return bill.processedAt || bill.history?.processing;
         case 'Received':
+          return bill.receivedAt || bill.history?.received;
+        case 'Exchanged':
           return bill.receivedAt || bill.history?.received;
         case 'Returned':
           return (bill.history as Record<string, string | undefined>)?.returned;
@@ -310,6 +324,7 @@ const BillDetails: React.FC = () => {
   );
   const canMarkCurrentBillPaid = canAccessRecord(bill.createdBy, 'bills.markPaidOwn', 'bills.markPaidAny');
   const canCancelCurrentBill = canAccessRecord(bill.createdBy, 'bills.cancelOwn', 'bills.cancelAny');
+  const canProcessReturn = canAccessRecord(bill.createdBy, 'bills.processReturnOwn', 'bills.processReturnAny');
 
   // Calculate payment status
   const getPaymentStatus = () => {
@@ -448,9 +463,21 @@ const BillDetails: React.FC = () => {
     setShowPaymentModal(true);
   };
 
+  const handleProcessBillReturn = async (payload: ProcessBillReturnPayload) => {
+    try {
+      await processBillReturnMutation.mutateAsync(payload);
+      setShowReturnModal(false);
+      toast.success('Return processed successfully');
+    } catch (err) {
+      console.error('Failed to process return:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to process return');
+    }
+  };
+
   const canShowActionsMenu =
     canEditCurrentBill
-    || canCancelCurrentBill;
+    || canCancelCurrentBill
+    || canProcessReturn;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -496,6 +523,9 @@ const BillDetails: React.FC = () => {
                   <div className="absolute right-0 mt-2 w-48 bg-white border rounded-xl shadow-xl z-50 py-2">
                     <button onClick={() => { handlePrintBill(id!, navigate); setIsActionOpen(false); }} className="md:hidden w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Print Bill</button>
                     <div className="md:hidden border-t my-1"></div>
+                    {canProcessReturn && (bill.status === BillStatus.RECEIVED || bill.status === BillStatus.PAID || bill.status === BillStatus.PROCESSING) && (
+                      <button onClick={() => { setShowReturnModal(true); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700">{ICONS.Return} Return to Vendor</button>
+                    )}
                     {canCancelCurrentBill && <button disabled={bill.status === BillStatus.PAID || bill.status === BillStatus.ON_HOLD} onClick={() => { cancelBill(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 disabled:hover:bg-gray-50 flex items-center gap-2 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">{ICONS.Close} Cancel Bill</button>}
                     {canEditCurrentBill && <button onClick={() => { navigate(`/bills/edit/${bill.id}`); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Edit} Edit Bill</button>}
                   </div>
@@ -560,23 +590,43 @@ const BillDetails: React.FC = () => {
                   <tbody className="divide-y divide-gray-50">
                     {bill.items.map((item, idx) => {
                       const imageSrc = productImages[String(item.productId || '').trim()] || '';
+                      const returnedQty = item.returnedQty ?? 0;
+                      const activeQty = Math.max(0, item.quantity - returnedQty);
+                      const effectiveAmount = item.rate * activeQty;
+                      const isFullyReturned = activeQty === 0;
                       return (
-                        <tr key={idx} className="group">
+                        <tr key={idx} className={`group ${isFullyReturned ? 'opacity-50' : ''}`}>
                           <td className="py-3 sm:py-4 lg:py-6">
                             <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 min-w-0">
                               {imageSrc ? (
-                                <img src={imageSrc} className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0" alt={item.productName} />
+                                <img src={imageSrc} className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
                               ) : (
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 text-xs flex items-center justify-center flex-shrink-0">
+                                <div className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 text-xs flex items-center justify-center flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`}>
                                   {(item.productName || '?').slice(0, 1).toUpperCase()}
                                 </div>
                               )}
-                              <span className="font-bold text-gray-900 text-[10px] sm:text-xs lg:text-base break-words">{item.productName}</span>
+                              <div className="min-w-0">
+                                <span className={`font-bold text-[10px] sm:text-xs lg:text-base break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
+                                {returnedQty > 0 && (
+                                  <div className="mt-0.5">
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">
+                                      Returned ×{returnedQty}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="py-3 sm:py-4 lg:py-6 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{item.quantity}</td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-right font-black text-gray-900 px-1 whitespace-nowrap">{formatCurrency(item.amount)}</td>
+                          <td className="py-3 sm:py-4 lg:py-6 text-center px-1 whitespace-nowrap">
+                            <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
+                            {activeQty !== item.quantity && (
+                              <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>
+                            )}
+                          </td>
+                          <td className="py-3 sm:py-4 lg:py-6 text-right px-1 whitespace-nowrap">
+                            <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -714,8 +764,9 @@ const BillDetails: React.FC = () => {
                 <div className="space-y-0.5">
                   {billProgressSteps.map((item, index) => {
                     const branchStatus = getFinalBranchStatus(bill);
-                    const isBranchItem = item.label === 'Received' || item.label === 'Returned' || item.label === 'Cancelled';
+                    const isBranchItem = item.label === 'Received' || item.label === 'Exchanged' || item.label === 'Returned' || item.label === 'Cancelled';
                     const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus);
+                    if (isUnavailableBranch) return null;
                     const isActive = index === billProgressIndex;
                     const isPast = !isBranchItem && index < billProgressIndex;
                     const isCompleted = isPast || (isActive && isBranchItem);
@@ -807,6 +858,19 @@ const BillDetails: React.FC = () => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-orange-700 leading-relaxed font-bold">{bill.history.returned}</p>
+              </div>
+            </div>
+          )}
+
+          {(bill.history as Record<string, string | undefined>)?.return && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-orange-100">
+                  {ICONS.Return}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-orange-700 leading-relaxed font-bold">{(bill.history as Record<string, string | undefined>)?.return}</p>
               </div>
             </div>
           )}
@@ -907,6 +971,14 @@ const BillDetails: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <BillReturnModal
+        isOpen={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onSubmit={handleProcessBillReturn}
+        bill={bill}
+        isLoading={processBillReturnMutation.isPending}
+      />
     </div>
   );
 };

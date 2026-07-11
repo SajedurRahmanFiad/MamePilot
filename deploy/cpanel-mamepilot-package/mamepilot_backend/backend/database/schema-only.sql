@@ -422,47 +422,6 @@ CREATE TABLE IF NOT EXISTS agent_db_query_audit (
   CONSTRAINT fk_agent_db_query_audit_tool_call_id FOREIGN KEY (tool_call_id) REFERENCES agent_tool_calls (id) ON DELETE SET NULL,
   CONSTRAINT fk_agent_db_query_audit_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS business_recommendations (
-  id VARCHAR(64) NOT NULL,
-  recommendation_type VARCHAR(64) NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  description LONGTEXT NOT NULL,
-  badge_color VARCHAR(16) NOT NULL DEFAULT 'green',
-  priority INT NOT NULL DEFAULT 0,
-  product_ids_json LONGTEXT NULL,
-  metadata_json LONGTEXT NULL,
-  generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_business_recommendations_type (recommendation_type),
-  KEY idx_business_recommendations_priority (priority),
-  KEY idx_business_recommendations_generated (generated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS business_growth_settings (
-  id VARCHAR(64) NOT NULL,
-  provider VARCHAR(32) NOT NULL DEFAULT 'openai',
-  openai_base_url VARCHAR(500) NULL,
-  openai_api_key VARCHAR(500) NULL,
-  openai_model VARCHAR(255) NULL,
-  anthropic_base_url VARCHAR(500) NULL,
-  anthropic_api_key VARCHAR(500) NULL,
-  anthropic_model VARCHAR(255) NULL,
-  google_base_url VARCHAR(500) NULL,
-  google_api_key VARCHAR(500) NULL,
-  google_model VARCHAR(255) NULL,
-  openrouter_base_url VARCHAR(500) NULL,
-  openrouter_api_key VARCHAR(500) NULL,
-  openrouter_model VARCHAR(255) NULL,
-  groq_base_url VARCHAR(500) NULL,
-  groq_api_key VARCHAR(500) NULL,
-  groq_model VARCHAR(255) NULL,
-  recommendation_cache_hours INT NOT NULL DEFAULT 6,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `payment_gateway_settings`
   ADD COLUMN IF NOT EXISTS `piprapay_base_url` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `piprapay_api_key` VARCHAR(500) NULL,
@@ -500,11 +459,7 @@ ALTER TABLE `agent_settings`
   ADD COLUMN IF NOT EXISTS `max_reasoning_steps` INT NOT NULL DEFAULT 8,
   ADD COLUMN IF NOT EXISTS `max_tool_calls` INT NOT NULL DEFAULT 12,
   ADD COLUMN IF NOT EXISTS `query_row_limit` INT NOT NULL DEFAULT 100,
-  ADD COLUMN IF NOT EXISTS `query_timeout_ms` INT NOT NULL DEFAULT 15000,
-  ADD COLUMN IF NOT EXISTS `openrouter_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `openrouter_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openrouter_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openrouter_model` VARCHAR(255) NULL;
+  ADD COLUMN IF NOT EXISTS `query_timeout_ms` INT NOT NULL DEFAULT 15000;
 CREATE TABLE IF NOT EXISTS notifications (
   id VARCHAR(64) NOT NULL,
   system_key VARCHAR(191) NULL,
@@ -676,6 +631,11 @@ CREATE TABLE IF NOT EXISTS orders (
   carrybee_consignment_id VARCHAR(255) NULL,
   steadfast_consignment_id VARCHAR(255) NULL,
   paperfly_tracking_number VARCHAR(255) NULL,
+  exchange_courier VARCHAR(32) NULL,
+  exchange_steadfast_consignment_id VARCHAR(255) NULL,
+  exchange_carrybee_consignment_id VARCHAR(255) NULL,
+  exchange_paperfly_tracking_number VARCHAR(255) NULL,
+  exchange_courier_history TEXT NULL,
   source_ad VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -887,6 +847,11 @@ SELECT
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
   o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_courier_history AS exchangeCourierHistory,
   o.source_ad AS sourceAd
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
@@ -1057,6 +1022,13 @@ LEFT JOIN categories c ON c.id = wp.category_id
 LEFT JOIN users creator_user ON creator_user.id = we.created_by
 LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
 
+-- v0.0.42: Order/Bill Return & Exchange
+-- No schema changes. Return/exchange tracking uses existing items JSON column.
+-- New fields inside items JSON: returnedQty, exchangedQty, exchangedWith.
+-- New API endpoints: processOrderReturnExchange, processBillReturn.
+-- New permission keys: orders.processReturnExchangeOwn/Any, bills.processReturnOwn/Any.
+-- See migrations/2026-07-11_order_bill_return_exchange.sql for details.
+
 -- MamePilot seed data file.
 -- Use only for fresh installs or when intentionally refreshing defaults.
 
@@ -1183,8 +1155,368 @@ ON DUPLICATE KEY UPDATE
   role = VALUES(role),
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
+-- Appended migration definitions
 
--- From: migrations/2026-07-10_grow_your_business.sql
+-- Migration: 2026-06-21_capabilities_subscriptions.sql
+CREATE TABLE IF NOT EXISTS app_capability_settings (
+  id VARCHAR(64) NOT NULL,
+  capabilities LONGTEXT NULL,
+  license_key VARCHAR(255) NULL,
+  license_api_url VARCHAR(500) NULL,
+  license_owner_token VARCHAR(500) NULL,
+  tier_key VARCHAR(64) NULL,
+  plan_name VARCHAR(255) NULL,
+  license_status VARCHAR(64) NOT NULL DEFAULT 'local',
+  renewal_date DATETIME NULL,
+  override_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  available_tiers LONGTEXT NULL,
+  pricing_metadata LONGTEXT NULL,
+  last_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(64) NULL,
+  last_sync_message TEXT NULL,
+  sync_grace_until DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `app_capability_settings`
+  ADD COLUMN IF NOT EXISTS `license_owner_token` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `tier_key` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `available_tiers` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL;
+
+CREATE TABLE IF NOT EXISTS payment_gateway_settings (
+  id VARCHAR(64) NOT NULL,
+  piprapay_base_url VARCHAR(500) NULL,
+  piprapay_api_key VARCHAR(500) NULL,
+  piprapay_merchant_id VARCHAR(255) NULL,
+  piprapay_ipn_secret VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `service_subscription_settings`
+  ADD COLUMN IF NOT EXISTS `plan_name` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN IF NOT EXISTS `subscription_status` VARCHAR(64) NOT NULL DEFAULT 'unconfigured',
+  ADD COLUMN IF NOT EXISTS `current_period_end` DATETIME NULL;
+
+ALTER TABLE `service_subscription_payments`
+  ADD COLUMN IF NOT EXISTS `local_reference` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `gateway_payment_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `gateway_name` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN IF NOT EXISTS `invoice_url` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `raw_payload` LONGTEXT NULL;
+
+CREATE TABLE IF NOT EXISTS payment_webhook_logs (
+  id VARCHAR(64) NOT NULL,
+  gateway VARCHAR(64) NOT NULL,
+  event_id VARCHAR(255) NULL,
+  local_reference VARCHAR(255) NULL,
+  status VARCHAR(64) NULL,
+  verified TINYINT(1) NOT NULL DEFAULT 0,
+  raw_payload LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_payment_webhook_logs_gateway_event (gateway, event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-06-22_central_notifications.sql
+SET NAMES utf8mb4;
+
+SET time_zone = '+00:00';
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id VARCHAR(64) NOT NULL,
+  system_key VARCHAR(191) NULL,
+  subject VARCHAR(255) NOT NULL,
+  content_html LONGTEXT NOT NULL,
+  target_roles LONGTEXT NOT NULL,
+  starts_at DATETIME NULL,
+  ends_at DATETIME NULL,
+  action_config LONGTEXT NULL,
+  metadata LONGTEXT NULL,
+  created_by VARCHAR(64) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  is_system_generated TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_notifications_system_key (system_key),
+  KEY idx_notifications_active_window (is_active, starts_at, ends_at),
+  KEY idx_notifications_created_by (created_by),
+  KEY idx_notifications_created_at (created_at),
+  CONSTRAINT fk_notifications_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS notification_receipts (
+  notification_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  read_at DATETIME NULL,
+  action_result VARCHAR(32) NULL,
+  acted_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (notification_id, user_id),
+  KEY idx_notification_receipts_user_read (user_id, is_read, read_at),
+  KEY idx_notification_receipts_action_result (action_result),
+  CONSTRAINT fk_notification_receipts_notification FOREIGN KEY (notification_id) REFERENCES notifications (id) ON DELETE CASCADE,
+  CONSTRAINT fk_notification_receipts_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `notifications`
+  ADD COLUMN IF NOT EXISTS `system_key` VARCHAR(191) NULL,
+  ADD COLUMN IF NOT EXISTS `action_config` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `metadata` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `is_system_generated` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+ALTER TABLE `notification_receipts`
+  ADD COLUMN IF NOT EXISTS `action_result` VARCHAR(32) NULL,
+  ADD COLUMN IF NOT EXISTS `acted_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+-- Migration: 2026-06-26_system_categories.sql
+-- Add is_system column to categories table to mark fixed system categories
+ALTER TABLE categories ADD COLUMN is_system BOOLEAN DEFAULT FALSE NOT NULL;
+
+-- Mark the three fixed categories as system categories
+UPDATE categories SET is_system = TRUE WHERE id IN ('income_sales', 'expense_purchases', 'expense_shipping');
+
+-- Migration: 2026-07-02_meta_ads.sql
+CREATE TABLE IF NOT EXISTS meta_ads_oauth_states (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  redirect_after VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME DEFAULT NULL,
+  PRIMARY KEY (id),
+  KEY idx_meta_ads_oauth_states_user (user_id),
+  KEY idx_meta_ads_oauth_states_expires (expires_at),
+  CONSTRAINT fk_meta_ads_oauth_states_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_ads_connections (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  meta_user_id VARCHAR(64) DEFAULT NULL,
+  meta_user_name VARCHAR(255) DEFAULT NULL,
+  access_token TEXT NOT NULL,
+  token_type VARCHAR(64) DEFAULT NULL,
+  expires_at DATETIME DEFAULT NULL,
+  scopes TEXT DEFAULT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME DEFAULT NULL,
+  sync_error TEXT DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ads_connections_user_meta (user_id, meta_user_id),
+  KEY idx_meta_ads_connections_user (user_id),
+  CONSTRAINT fk_meta_ads_connections_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_businesses (
+  id VARCHAR(64) NOT NULL,
+  connection_id VARCHAR(64) NOT NULL,
+  meta_business_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  verification_status VARCHAR(64) DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_businesses_meta_id (meta_business_id),
+  KEY idx_meta_businesses_connection (connection_id),
+  CONSTRAINT fk_meta_businesses_connection FOREIGN KEY (connection_id) REFERENCES meta_ads_connections (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_ad_accounts (
+  id VARCHAR(64) NOT NULL,
+  connection_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_account_id VARCHAR(64) NOT NULL,
+  account_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  currency VARCHAR(16) DEFAULT NULL,
+  account_status VARCHAR(64) DEFAULT NULL,
+  timezone_name VARCHAR(128) DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ad_accounts_meta_id (meta_ad_account_id),
+  KEY idx_meta_ad_accounts_connection (connection_id),
+  KEY idx_meta_ad_accounts_business (business_id),
+  CONSTRAINT fk_meta_ad_accounts_connection FOREIGN KEY (connection_id) REFERENCES meta_ads_connections (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ad_accounts_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_campaigns (
+  id VARCHAR(64) NOT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_campaign_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  objective VARCHAR(128) DEFAULT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  buying_type VARCHAR(64) DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  stop_time DATETIME DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_campaigns_meta_id (meta_campaign_id),
+  KEY idx_meta_campaigns_account (ad_account_id),
+  KEY idx_meta_campaigns_business (business_id),
+  CONSTRAINT fk_meta_campaigns_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_campaigns_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_ad_sets (
+  id VARCHAR(64) NOT NULL,
+  campaign_id VARCHAR(64) DEFAULT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_set_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  daily_budget DECIMAL(14,2) DEFAULT NULL,
+  lifetime_budget DECIMAL(14,2) DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  end_time DATETIME DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ad_sets_meta_id (meta_ad_set_id),
+  KEY idx_meta_ad_sets_campaign (campaign_id),
+  KEY idx_meta_ad_sets_account (ad_account_id),
+  KEY idx_meta_ad_sets_business (business_id),
+  CONSTRAINT fk_meta_ad_sets_campaign FOREIGN KEY (campaign_id) REFERENCES meta_campaigns (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ad_sets_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ad_sets_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS meta_ads (
+  id VARCHAR(64) NOT NULL,
+  ad_set_id VARCHAR(64) DEFAULT NULL,
+  campaign_id VARCHAR(64) DEFAULT NULL,
+  ad_account_id VARCHAR(64) NOT NULL,
+  business_id VARCHAR(64) DEFAULT NULL,
+  meta_ad_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(64) DEFAULT NULL,
+  effective_status VARCHAR(64) DEFAULT NULL,
+  configured_status VARCHAR(64) DEFAULT NULL,
+  objective VARCHAR(128) DEFAULT NULL,
+  creative_id VARCHAR(64) DEFAULT NULL,
+  thumbnail_url TEXT DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  video_url TEXT DEFAULT NULL,
+  primary_text TEXT DEFAULT NULL,
+  headline TEXT DEFAULT NULL,
+  description TEXT DEFAULT NULL,
+  call_to_action VARCHAR(128) DEFAULT NULL,
+  placements_json JSON DEFAULT NULL,
+  spend DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  reach BIGINT NOT NULL DEFAULT 0,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  ctr DECIMAL(12,6) NOT NULL DEFAULT 0.000000,
+  cpc DECIMAL(14,6) NOT NULL DEFAULT 0.000000,
+  cpm DECIMAL(14,6) NOT NULL DEFAULT 0.000000,
+  conversions DECIMAL(14,2) DEFAULT NULL,
+  results DECIMAL(14,2) DEFAULT NULL,
+  roas DECIMAL(14,6) DEFAULT NULL,
+  metrics_json JSON DEFAULT NULL,
+  creative_json JSON DEFAULT NULL,
+  raw_json JSON DEFAULT NULL,
+  created_time DATETIME DEFAULT NULL,
+  updated_time DATETIME DEFAULT NULL,
+  start_time DATETIME DEFAULT NULL,
+  end_time DATETIME DEFAULT NULL,
+  last_synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ads_meta_id (meta_ad_id),
+  KEY idx_meta_ads_status (effective_status, status),
+  KEY idx_meta_ads_updated_time (updated_time),
+  KEY idx_meta_ads_ad_set (ad_set_id),
+  KEY idx_meta_ads_campaign (campaign_id),
+  KEY idx_meta_ads_account (ad_account_id),
+  KEY idx_meta_ads_business (business_id),
+  CONSTRAINT fk_meta_ads_ad_set FOREIGN KEY (ad_set_id) REFERENCES meta_ad_sets (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ads_campaign FOREIGN KEY (campaign_id) REFERENCES meta_campaigns (id) ON DELETE SET NULL,
+  CONSTRAINT fk_meta_ads_account FOREIGN KEY (ad_account_id) REFERENCES meta_ad_accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_meta_ads_business FOREIGN KEY (business_id) REFERENCES meta_businesses (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-08_meta_ads_currency_insights.sql
+-- Meta Ads: Display Currency Settings + Insights Cache
+-- Adds currency display configuration to meta_ads_settings
+-- Adds per-ad insights breakdown cache table
+
+-- Settings table with currency fields (created if missing, or columns added if table exists)
+CREATE TABLE IF NOT EXISTS meta_ads_settings (
+  id VARCHAR(64) NOT NULL,
+  app_id VARCHAR(255) DEFAULT NULL,
+  app_secret VARCHAR(500) DEFAULT NULL,
+  redirect_uri VARCHAR(500) DEFAULT NULL,
+  login_config_id VARCHAR(255) DEFAULT NULL,
+  graph_version VARCHAR(64) DEFAULT NULL,
+  oauth_scopes VARCHAR(500) DEFAULT NULL,
+  display_currency_code VARCHAR(8) DEFAULT 'BDT',
+  display_currency_rate_to_bdt DECIMAL(14,4) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Insights cache: stores daily, demographics, placements, devices breakdowns
+CREATE TABLE IF NOT EXISTS meta_ads_insights_cache (
+  id VARCHAR(36) PRIMARY KEY,
+  ad_id VARCHAR(64) NOT NULL,
+  category VARCHAR(32) NOT NULL,
+  data_json LONGTEXT,
+  last_synced_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_insights_ad_category (ad_id, category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX IF NOT EXISTS idx_meta_ads_insights_cache_ad ON meta_ads_insights_cache(ad_id);
+-- Migration: 2026-07-08_meta_ads_sync_cache.sql
+-- Meta Ads Sync Cache Table
+-- Stores the last sync results to avoid repeated API calls
+
+CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
+    id VARCHAR(36) PRIMARY KEY,
+    sync_data LONGTEXT,
+    last_synced_at DATETIME,
+    sync_duration_ms INT,
+    error_message LONGTEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_ads_sync_cache_synced_at ON meta_ads_sync_cache(last_synced_at DESC);
+
+-- Migration: 2026-07-10_grow_your_business.sql
 -- Grow Your Business: Recommendations cache + OpenRouter provider + Business Growth settings
 -- Adds business_recommendations table for AI-generated product insights
 -- Adds business_growth_settings table for dedicated AI config
@@ -1238,3 +1570,84 @@ ALTER TABLE `agent_settings`
   ADD COLUMN IF NOT EXISTS `openrouter_base_url` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `openrouter_api_key` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `openrouter_model` VARCHAR(255) NULL;
+
+-- Migration: 2026-07-11_exchange_consignment.sql
+-- Exchange consignment tracking
+-- Adds columns to store courier consignment details for exchange shipments.
+-- When items are exchanged, replacement items need a separate courier consignment
+-- to be shipped back to the customer.
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS exchange_courier TEXT,
+  ADD COLUMN IF NOT EXISTS exchange_steadfast_consignment_id TEXT,
+  ADD COLUMN IF NOT EXISTS exchange_carrybee_consignment_id TEXT,
+  ADD COLUMN IF NOT EXISTS exchange_paperfly_tracking_number TEXT,
+  ADD COLUMN IF NOT EXISTS exchange_courier_history TEXT;
+
+-- New status value: 'Exchange pending'
+-- Used when an exchange has been processed but the replacement items
+-- haven't been shipped via courier yet.
+-- This is a valid status in the OrderStatus enum and is handled by:
+--   - Timeline UI in OrderDetails
+--   - Courier sync (syncExchangeConsignmentStatuses)
+--   - processOrderReturnExchange backend method
+
+-- Migration: 2026-07-11_meta_ads_insights_daily.sql
+-- Daily Meta ads insights for range-accurate marketing dashboard metrics.
+CREATE TABLE IF NOT EXISTS meta_ads_insights_daily (
+  id VARCHAR(64) NOT NULL,
+  ad_id VARCHAR(64) NOT NULL,
+  meta_ad_id VARCHAR(64) NOT NULL,
+  insight_date DATE NOT NULL,
+  spend DECIMAL(14,4) NOT NULL DEFAULT 0,
+  impressions INT NOT NULL DEFAULT 0,
+  reach INT NOT NULL DEFAULT 0,
+  clicks INT NOT NULL DEFAULT 0,
+  ctr DECIMAL(12,6) DEFAULT NULL,
+  cpc DECIMAL(14,4) DEFAULT NULL,
+  cpm DECIMAL(14,4) DEFAULT NULL,
+  conversions DECIMAL(14,4) DEFAULT NULL,
+  currency VARCHAR(16) DEFAULT NULL,
+  synced_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_meta_ads_insights_daily_ad_date (ad_id, insight_date),
+  KEY idx_meta_ads_insights_daily_date (insight_date),
+  KEY idx_meta_ads_insights_daily_meta_ad (meta_ad_id),
+  KEY idx_meta_ads_insights_daily_ad_date (ad_id, insight_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-11_meta_ads_settings_exchange_rate_mode.sql
+-- Add exchange rate mode support to meta_ads_settings
+-- Allows fixed rate (manual) or VAT-based rate (real-time market rate + VAT percentage)
+
+ALTER TABLE meta_ads_settings
+  ADD COLUMN exchange_rate_mode VARCHAR(16) NOT NULL DEFAULT 'fixed',
+  ADD COLUMN vat_percentage DECIMAL(5,2) DEFAULT NULL,
+  ADD COLUMN realtime_rate_cache DECIMAL(14,4) DEFAULT NULL,
+  ADD COLUMN realtime_rate_updated_at DATETIME DEFAULT NULL;
+
+-- Migration: 2026-07-11_order_bill_return_exchange.sql
+-- Order/Bill Return & Exchange feature
+-- Adds partial return, exchange, and partial refund support for orders
+-- Adds partial return support for bills (vendor returns)
+--
+-- No schema changes required. Return/exchange tracking is stored in the
+-- existing `items` JSON blob on orders/bills tables using these fields:
+--   returnedQty   (number) â€” how many of this item were returned
+--   exchangedQty  (number) â€” how many of this item were exchanged
+--   exchangedWith (array)  â€” replacement items for exchanges
+--
+-- New API endpoints:
+--   processOrderReturnExchange â€” partial return, exchange, partial refund on orders
+--   processBillReturn          â€” partial return on bills (vendor returns)
+--
+-- New permission keys (added to permissions.ts, defaulting to off for Employee roles):
+--   orders.processReturnExchangeOwn / orders.processReturnExchangeAny
+--   bills.processReturnOwn / bills.processReturnAny
+--
+-- Admin and Developer roles always have access. Employee roles need these
+-- permissions enabled via Settings â†’ Permissions to use the feature.
+-- Existing role_permissions rows are unaffected â€” missing keys default to deny.
+

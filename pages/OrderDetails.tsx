@@ -2,12 +2,12 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
-import { OrderStatus, Order } from '../types';
+import { OrderStatus, Order, type ProcessOrderReturnExchangePayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
-import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, OrderReturnExchangeModal } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction, useProcessOrderReturnExchange } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -43,6 +43,9 @@ const OrderDetails: React.FC = () => {
     paymentMethod: '',
     categoryId: '',
     note: '',
+    refundAmount: 0,
+    refundAccountId: '',
+    refundPaymentMethod: '',
   });
   
   // Query data
@@ -72,7 +75,9 @@ const OrderDetails: React.FC = () => {
   const completePickedOrderMutation = useCompletePickedOrder();
   const deleteOrderMutation = useDeleteOrder();
   const createTransactionMutation = useCreateTransaction();
+  const processReturnExchangeMutation = useProcessOrderReturnExchange();
   const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
+  const [showReturnExchangeModal, setShowReturnExchangeModal] = useState(false);
   
   const handleDeleteOrder = () => {
     setShowDeleteOrderConfirmation(true);
@@ -103,6 +108,7 @@ const OrderDetails: React.FC = () => {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showStatusTransitionModal, setShowStatusTransitionModal] = useState(false);
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
+  const [isExchangeConsignment, setIsExchangeConsignment] = useState(false);
   const [courierHistoryData, setCourierHistoryData] = useState<any>(null);
   const courierHistoryMutation = useCheckFraudCourierHistory();
   const [showManualCourierModal, setShowManualCourierModal] = useState(false);
@@ -117,7 +123,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Exchanged' | 'Exchange pending' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -146,17 +152,25 @@ const OrderDetails: React.FC = () => {
       { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
       { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
       { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
+      { label: 'Exchanged', historyKey: 'completed', description: 'The order has been delivered with exchanged items.' },
+      { label: 'Exchange pending', historyKey: 'exchangeCourier', description: 'Exchange items are being shipped to the customer.' },
       { label: 'Returned', historyKey: 'returned', description: 'The order has been returned.' },
       { label: 'Cancelled', historyKey: 'cancelled', description: 'The order has been cancelled and will not be fulfilled.' },
     ],
     []
   );
 
+  const hasExchangedItems = (o?: Order | null) =>
+    Boolean(o?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
+
   const getTimelineIndex = (order?: Order) => {
     if (!order) return 0;
     if (order.status === OrderStatus.CANCELLED) return timelineItems.length - 1;
     if (order.status === OrderStatus.RETURNED) return timelineItems.findIndex((item) => item.label === 'Returned');
-    if (order.status === OrderStatus.COMPLETED) return timelineItems.findIndex((item) => item.label === 'Delivered');
+    if (order.status === OrderStatus.EXCHANGE_PENDING) return timelineItems.findIndex((item) => item.label === 'Exchange pending');
+    if (order.status === OrderStatus.COMPLETED) {
+      return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchanged' : 'Delivered'));
+    }
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
@@ -253,7 +267,8 @@ const OrderDetails: React.FC = () => {
   const getStatusDisplayName = (status: OrderStatus) => status === OrderStatus.COMPLETED ? 'Delivered' : status;
 
   const getFinalBranchStatus = (status: OrderStatus): OrderTimelineLabel | null => {
-    if (status === OrderStatus.COMPLETED) return 'Delivered';
+    if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchanged' : 'Delivered';
+    if (status === OrderStatus.EXCHANGE_PENDING) return 'Exchange pending';
     if (status === OrderStatus.RETURNED) return 'Returned';
     if (status === OrderStatus.CANCELLED) return 'Cancelled';
     return null;
@@ -271,6 +286,10 @@ const OrderDetails: React.FC = () => {
           return item.label;
         case 'Delivered':
           return order?.status === OrderStatus.COMPLETED ? 'Delivered' : 'Delivering';
+        case 'Exchanged':
+          return 'Delivered, Exchanged';
+        case 'Exchange pending':
+          return 'Exchange pending';
         case 'Returned':
           return order?.status === OrderStatus.RETURNED ? 'Returned' : 'Returning';
         case 'Cancelled':
@@ -299,6 +318,10 @@ const OrderDetails: React.FC = () => {
           return 'Pick up';
         case 'Delivered':
           return 'Deliver';
+        case 'Exchanged':
+          return 'Deliver, Exchange';
+        case 'Exchange pending':
+          return 'Ship exchange';
         case 'Returned':
           return 'Return';
         case 'Cancelled':
@@ -318,7 +341,7 @@ const OrderDetails: React.FC = () => {
 
     if (!order) return '';
 
-    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Returned', 'Cancelled'].includes(item.label);
+    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Exchanged', 'Exchange pending', 'Returned', 'Cancelled'].includes(item.label);
     if (index === timelineIndex && !isActiveBranchItem) {
       return '';
     }
@@ -335,6 +358,10 @@ const OrderDetails: React.FC = () => {
           return order.history?.picked;
         case 'Delivered':
           return order.completedAt || order.history?.completed;
+        case 'Exchanged':
+          return order.completedAt || order.history?.completed;
+        case 'Exchange pending':
+          return order.history?.exchangeCourier || '';
         case 'Returned':
           return order.history?.returned;
         case 'Cancelled':
@@ -359,7 +386,7 @@ const OrderDetails: React.FC = () => {
 
   const getOrderProgressPercent = (activeOrder?: Order | null) => {
     if (!activeOrder) return 0;
-    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED].includes(activeOrder.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.EXCHANGE_PENDING, OrderStatus.RETURNED, OrderStatus.CANCELLED].includes(activeOrder.status)) {
       return 100;
     }
     const finalStepIndex = timelineItems.findIndex((item) => item.label === 'Delivered');
@@ -405,6 +432,8 @@ const OrderDetails: React.FC = () => {
       { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked },
       { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed },
       { key: 'returned', label: 'Returned', icon: ICONS.Close, text: history.returned },
+      { key: 'returnExchange', label: 'Return/Exchange', icon: ICONS.Return, text: history.returnExchange },
+      { key: 'exchangeCourier', label: 'Exchange courier', icon: ICONS.Courier, text: history.exchangeCourier },
       { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled },
     ].filter((entry) => entry.text);
 
@@ -447,6 +476,15 @@ const OrderDetails: React.FC = () => {
   const sentToCarryBee = courierHistoryLower.includes('carrybee') || !!order?.carrybeeConsignmentId;
   const sentToPaperfly = courierHistoryLower.includes('paperfly') || !!order?.paperflyTrackingNumber;
   const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly;
+
+  // Exchange consignment tracking
+  const sentToExchangeCourier = Boolean(
+    order?.exchangeSteadfastConsignmentId ||
+    order?.exchangeCarrybeeConsignmentId ||
+    order?.exchangePaperflyTrackingNumber ||
+    order?.exchangeCourierHistory
+  );
+
   const preferredCourier = getPreferredCourierFromHistory(order?.history?.courier);
   const isManualCourier = !preferredCourier && Boolean(order?.history?.courier);
   const courierDisplayName = preferredCourier === 'paperfly'
@@ -504,20 +542,40 @@ const OrderDetails: React.FC = () => {
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const canCancelCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny') : false;
   const canDeleteCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny') : false;
+  const canProcessReturnExchange = order ? canAccessRecord(order.createdBy, 'orders.processReturnExchangeOwn', 'orders.processReturnExchangeAny') : false;
   const canSendCurrentOrderToCourier =
     canSendCurrentOrderToCourierPermission
     && canUseCourierAutomation
     && order?.status !== OrderStatus.PICKED
     && order?.status !== OrderStatus.COMPLETED
+    && order?.status !== OrderStatus.EXCHANGE_PENDING
     && order?.status !== OrderStatus.RETURNED
     && order?.status !== OrderStatus.CANCELLED
     && order?.status !== OrderStatus.ON_HOLD
     && !sentToAnyCourier;
 
+  const canAssignExchangeCourier =
+    canProcessReturnExchange
+    && canUseCourierAutomation
+    && order?.status === OrderStatus.EXCHANGE_PENDING
+    && !sentToExchangeCourier;
+
   const statusTransition = useMemo<OrderStatusTransition | null>(() => {
     if (!order) return null;
     if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED) {
       return null;
+    }
+
+    if (order.status === OrderStatus.EXCHANGE_PENDING) {
+      if (sentToExchangeCourier) return null; // already shipped
+      return {
+        action: 'assignCourier' as const,
+        label: 'Ship exchange items',
+        nextStatus: order.status,
+        historyKey: 'exchangeCourier',
+        description: 'Assign a courier to ship the replacement items to the customer.',
+        enabled: canAssignExchangeCourier,
+      };
     }
 
     const hasConfirmed = Boolean(order.paidAt || order.history?.payment);
@@ -661,6 +719,20 @@ const OrderDetails: React.FC = () => {
   };
 
   const assignCourier = async (details?: string) => {
+    if (isExchangeConsignment) {
+      // Exchange consignment — don't change status, write to exchangeCourier history
+      const noteText = details ? ` ${details.trim()}` : '';
+      const historyText = `Exchange courier assigned by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}.${noteText}`;
+      await updateMutation.mutateAsync({
+        id: order!.id,
+        updates: {
+          exchangeCourier: 'manual',
+          exchangeCourierHistory: noteText.trim() || 'No details',
+          history: { ...order!.history, exchangeCourier: historyText },
+        },
+      });
+      return;
+    }
     if (!canSendCurrentOrderToCourier) {
       toast.error('You do not have permission to assign a courier to this order.');
       return;
@@ -693,6 +765,7 @@ const OrderDetails: React.FC = () => {
 
   const closeCourierSelectionModal = () => {
     setShowCourierSelectionModal(false);
+    setIsExchangeConsignment(false);
   };
 
   const handleSelectCourierOption = (option: 'steadfast' | 'carrybee' | 'paperfly' | 'manual') => {
@@ -710,16 +783,13 @@ const OrderDetails: React.FC = () => {
 
   const handleAssignManualCourier = async () => {
     if (!order) return;
-    if (!manualCourierNote.trim()) {
-      toast.error('Please enter courier assignment details.');
-      return;
-    }
     setIsAssigningManualCourier(true);
     try {
-      await assignCourier(manualCourierNote);
+      await assignCourier(manualCourierNote.trim() || 'No details');
       setShowManualCourierModal(false);
       setManualCourierNote('');
-      toast.success('Courier assigned successfully.');
+      setIsExchangeConsignment(false);
+      toast.success(isExchangeConsignment ? 'Exchange courier assigned successfully.' : 'Courier assigned successfully.');
     } catch (err) {
       console.error('Failed to assign courier manually:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to assign courier');
@@ -770,6 +840,9 @@ const OrderDetails: React.FC = () => {
           disabled={!transition.enabled}
           onClick={() => {
             if (transition.action === 'assignCourier') {
+              if (order?.status === OrderStatus.EXCHANGE_PENDING) {
+                setIsExchangeConsignment(true);
+              }
               setShowCourierSelectionModal(true);
               return;
             }
@@ -846,6 +919,22 @@ const OrderDetails: React.FC = () => {
         );
         return;
       }
+
+      // Validate refund fields if a refund amount is entered
+      if (completionForm.refundAmount > 0) {
+        if (!completionForm.refundAccountId) {
+          toast.error('Please select a refund account');
+          return;
+        }
+        if (!completionForm.refundPaymentMethod) {
+          toast.error('Please select a refund payment method');
+          return;
+        }
+        if (completionForm.refundAmount > order.paidAmount) {
+          toast.error(`Refund amount cannot exceed the amount already paid (${formatCurrency(order.paidAmount)})`);
+          return;
+        }
+      }
     }
 
     const fullDatetime = buildLocalDateTime(completionForm.date, completionForm.time);
@@ -866,6 +955,11 @@ const OrderDetails: React.FC = () => {
         payload.paymentMethod = completionForm.paymentMethod;
         payload.categoryId = completionForm.categoryId;
         payload.note = completionForm.note;
+        if (completionForm.refundAmount > 0) {
+          payload.refundAmount = completionForm.refundAmount;
+          payload.refundAccountId = completionForm.refundAccountId;
+          payload.refundPaymentMethod = completionForm.refundPaymentMethod;
+        }
       }
       const updatedOrder = await completePickedOrderMutation.mutateAsync(payload);
 
@@ -1027,12 +1121,33 @@ const OrderDetails: React.FC = () => {
   };
 
   const openCompletion = () => {
+    const baseForm = createCompletionForm(order);
     setCompletionForm({
-      ...createCompletionForm(order),
+      ...baseForm,
       outcome: canMarkCurrentOrderCompleted ? 'Delivered' : 'Returned',
-      amount: !canMarkCurrentOrderCompleted && order ? order.shipping : createCompletionForm(order).amount,
+      amount: !canMarkCurrentOrderCompleted && order ? order.shipping : baseForm.amount,
+      refundAmount: order && order.paidAmount > 0 ? order.paidAmount : 0,
+      refundAccountId: baseForm.accountId,
+      refundPaymentMethod: baseForm.paymentMethod,
     });
     setShowCompletionModal(true);
+  };
+
+  const handleProcessReturnExchange = async (payload: ProcessOrderReturnExchangePayload) => {
+    try {
+      const updatedOrder = await processReturnExchangeMutation.mutateAsync(payload);
+      setShowReturnExchangeModal(false);
+      if ((updatedOrder.pendingTransactionCount || 0) > 0) {
+        toast.info(
+          `Return/exchange processed. ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} sent for admin approval.`
+        );
+      } else {
+        toast.success('Return/exchange processed successfully');
+      }
+    } catch (err) {
+      console.error('Failed to process return/exchange:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to process return/exchange');
+    }
   };
 
   const handleOpenTracking = () => {
@@ -1153,7 +1268,9 @@ const OrderDetails: React.FC = () => {
     || (sentToAnyCourier && canUseCourierAutomation)
     || canCancelCurrentOrder
     || canDeleteCurrentOrder
-    || canUseFraudChecker;
+    || canUseFraudChecker
+    || canProcessReturnExchange
+    || canAssignExchangeCourier;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -1221,6 +1338,16 @@ const OrderDetails: React.FC = () => {
                     {canFinalizeCurrentOrder && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Finalize Order
+                      </button>
+                    )}
+                    {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.PICKED) && (
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700" onClick={() => { setShowReturnExchangeModal(true); setIsActionOpen(false); }}>
+                        {ICONS.Return} Return / Exchange
+                      </button>
+                    )}
+                    {canAssignExchangeCourier && (
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { setIsExchangeConsignment(true); setShowCourierSelectionModal(true); setIsActionOpen(false); }}>
+                        {ICONS.Courier} Ship exchange items
                       </button>
                     )}
                     {canUseFraudChecker && (
@@ -1325,23 +1452,49 @@ const OrderDetails: React.FC = () => {
                             ? (item as any).image
                             : '';
                       const imageSrc = fallbackItemImage || productImages[String(item.productId || '').trim()] || '';
+                      const returnedQty = item.returnedQty ?? 0;
+                      const exchangedQty = item.exchangedQty ?? 0;
+                      const activeQty = Math.max(0, item.quantity - returnedQty - exchangedQty);
+                      const effectiveAmount = item.rate * activeQty;
+                      const isFullyReturned = activeQty === 0;
                       return (
-                        <tr key={idx} className="group">
+                        <tr key={idx} className={`group ${isFullyReturned ? 'opacity-50' : ''}`}>
                           <td className="py-3 sm:py-4 lg:py-6">
                             <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 min-w-0">
                               {imageSrc ? (
-                                <img src={imageSrc} className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0" alt={item.productName} />
+                                <img src={imageSrc} className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
                               ) : (
-                                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 text-xs flex items-center justify-center flex-shrink-0">
+                                <div className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 text-xs flex items-center justify-center flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`}>
                                   {(item.productName || '?').slice(0, 1).toUpperCase()}
                                 </div>
                               )}
-                              <span className="font-bold text-gray-900 text-[10px] sm:text-xs lg:text-base break-words">{item.productName}</span>
+                              <div className="min-w-0">
+                                <span className={`font-bold text-[10px] sm:text-xs lg:text-base break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {returnedQty > 0 && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">
+                                      Returned ×{returnedQty}
+                                    </span>
+                                  )}
+                                  {exchangedQty > 0 && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">
+                                      Exchanged ×{exchangedQty}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="py-3 sm:py-4 lg:py-6 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{item.quantity}</td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-right font-black text-gray-900 px-1 whitespace-nowrap">{formatCurrency(item.amount)}</td>
+                          <td className="py-3 sm:py-4 lg:py-6 text-center px-1 whitespace-nowrap">
+                            <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
+                            {activeQty !== item.quantity && (
+                              <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>
+                            )}
+                          </td>
+                          <td className="py-3 sm:py-4 lg:py-6 text-right px-1 whitespace-nowrap">
+                            <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1496,8 +1649,9 @@ const OrderDetails: React.FC = () => {
                   <div className="space-y-0.5">
                     {timelineItems.map((item, index) => {
                       const branchStatus = getFinalBranchStatus(order?.status ?? OrderStatus.CREATED);
-                      const isBranchItem = item.label === 'Delivered' || item.label === 'Returned' || item.label === 'Cancelled';
+                      const isBranchItem = item.label === 'Delivered' || item.label === 'Exchanged' || item.label === 'Exchange pending' || item.label === 'Returned' || item.label === 'Cancelled';
                       const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus);
+                      if (isUnavailableBranch) return null;
                       const isActive = index === timelineIndex;
                       const isPast = !isBranchItem && index < timelineIndex;
                       const isCompleted = isPast || (isActive && isBranchItem);
@@ -1817,7 +1971,7 @@ const OrderDetails: React.FC = () => {
               <button onClick={() => setShowManualCourierModal(false)} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
             </div>
             <div className="p-6 space-y-4">
-              <label className="block text-sm font-semibold text-gray-700">Courier assignment details</label>
+              <label className="block text-sm font-semibold text-gray-700">Courier assignment details <span className="text-gray-400 font-normal">(optional)</span></label>
               <textarea
                 value={manualCourierNote}
                 onChange={(e) => setManualCourierNote(e.target.value)}
@@ -1852,23 +2006,26 @@ const OrderDetails: React.FC = () => {
 
       {canUseCourierAutomation && (
         <>
-          <SteadfastModal 
-            isOpen={showSteadfast} 
-            onClose={() => setShowSteadfast(false)}
+          <SteadfastModal
+            isOpen={showSteadfast}
+            onClose={() => { setShowSteadfast(false); setIsExchangeConsignment(false); }}
             order={order}
             customer={customer}
+            isExchangeConsignment={isExchangeConsignment}
           />
-          <CarryBeeModal 
-            isOpen={showCarryBee} 
-            onClose={() => setShowCarryBee(false)}
+          <CarryBeeModal
+            isOpen={showCarryBee}
+            onClose={() => { setShowCarryBee(false); setIsExchangeConsignment(false); }}
             order={order}
             customer={customer}
+            isExchangeConsignment={isExchangeConsignment}
           />
           <PaperflyModal
             isOpen={showPaperfly}
-            onClose={() => setShowPaperfly(false)}
+            onClose={() => { setShowPaperfly(false); setIsExchangeConsignment(false); }}
             order={order}
             customer={customer}
+            isExchangeConsignment={isExchangeConsignment}
           />
         </>
       )}
@@ -1880,6 +2037,14 @@ const OrderDetails: React.FC = () => {
           customerName={customer?.name || order.customerName || ''}
         />
       )}
+
+      <OrderReturnExchangeModal
+        isOpen={showReturnExchangeModal}
+        onClose={() => setShowReturnExchangeModal(false)}
+        onSubmit={handleProcessReturnExchange}
+        order={order}
+        isLoading={processReturnExchangeMutation.isPending}
+      />
     </div>
   );
 };

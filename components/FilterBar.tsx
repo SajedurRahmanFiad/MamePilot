@@ -5,7 +5,15 @@ import { theme } from '../theme';
 import { useSearch } from '../src/contexts/SearchContext';
 import { toDateTimeLocalInputValue } from '../utils';
 
-export type FilterRange = 'All Time' | 'Today' | 'This Week' | 'This Month' | 'This Year' | 'Custom';
+export type FilterRange =
+  | 'All Time'
+  | 'Today'
+  | 'Last 7 days'
+  | 'Last 30 days'
+  | 'This Week'
+  | 'This Month'
+  | 'This Year'
+  | 'Custom';
 
 interface FilterBarProps {
   filterRange: FilterRange;
@@ -19,6 +27,8 @@ interface FilterBarProps {
   statusOptions?: string[];
   title?: string;
   compact?: boolean;
+  /** Override which range chips are shown. Defaults to the standard set. */
+  ranges?: FilterRange[];
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -33,10 +43,11 @@ const FilterBar: React.FC<FilterBarProps> = ({
   statusOptions = [],
   title
   , compact = false
+  , ranges: rangesProp
 }) => {
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const { searchQuery, setSearchQuery } = useSearch();
-  const ranges: FilterRange[] = ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom'];
+  const ranges: FilterRange[] = rangesProp ?? ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom'];
   const updateCustomDate = (field: 'from' | 'to', value: string) => {
     setCustomDates({ ...customDates, [field]: value });
   };

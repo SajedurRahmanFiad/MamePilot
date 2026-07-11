@@ -628,6 +628,11 @@ CREATE TABLE IF NOT EXISTS orders (
   carrybee_consignment_id VARCHAR(255) NULL,
   steadfast_consignment_id VARCHAR(255) NULL,
   paperfly_tracking_number VARCHAR(255) NULL,
+  exchange_courier VARCHAR(32) NULL,
+  exchange_steadfast_consignment_id VARCHAR(255) NULL,
+  exchange_carrybee_consignment_id VARCHAR(255) NULL,
+  exchange_paperfly_tracking_number VARCHAR(255) NULL,
+  exchange_courier_history TEXT NULL,
   source_ad VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -839,6 +844,11 @@ SELECT
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
   o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_courier_history AS exchangeCourierHistory,
   o.source_ad AS sourceAd
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
@@ -1008,4 +1018,11 @@ LEFT JOIN accounts a ON a.id = wp.account_id
 LEFT JOIN categories c ON c.id = wp.category_id
 LEFT JOIN users creator_user ON creator_user.id = we.created_by
 LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
+
+-- v0.0.42: Order/Bill Return & Exchange
+-- No schema changes. Return/exchange tracking uses existing items JSON column.
+-- New fields inside items JSON: returnedQty, exchangedQty, exchangedWith.
+-- New API endpoints: processOrderReturnExchange, processBillReturn.
+-- New permission keys: orders.processReturnExchangeOwn/Any, bills.processReturnOwn/Any.
+-- See migrations/2026-07-11_order_bill_return_exchange.sql for details.
 

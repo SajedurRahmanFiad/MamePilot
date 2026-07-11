@@ -5,7 +5,15 @@
 
 import type { Bill, Order, Transaction } from './types';
 
-export type FilterRange = 'All Time' | 'Today' | 'This Week' | 'This Month' | 'This Year' | 'Custom';
+export type FilterRange =
+  | 'All Time'
+  | 'Today'
+  | 'Last 7 days'
+  | 'Last 30 days'
+  | 'This Week'
+  | 'This Month'
+  | 'This Year'
+  | 'Custom';
 
 const APP_TIME_ZONE = 'Asia/Dhaka';
 const UTC_OFFSET_SUFFIX_PATTERN = /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/;
@@ -187,6 +195,20 @@ const buildDateRange = (
 
   if (filterRange === 'Today') {
     return { from: startOfToday(now), to: endOfDay(now) };
+  }
+
+  if (filterRange === 'Last 7 days') {
+    const from = new Date(now);
+    from.setDate(now.getDate() - 6);
+    from.setHours(0, 0, 0, 0);
+    return { from, to: endOfDay(now) };
+  }
+
+  if (filterRange === 'Last 30 days') {
+    const from = new Date(now);
+    from.setDate(now.getDate() - 29);
+    from.setHours(0, 0, 0, 0);
+    return { from, to: endOfDay(now) };
   }
 
   if (filterRange === 'This Week') {
@@ -455,4 +477,129 @@ export const matchesNamePhoneSearch = (
     candidatePhone.includes(query) ||
     (!!normalizedQueryPhone && normalizedCandidatePhone.includes(normalizedQueryPhone))
   );
+};
+
+/**
+ * Compress an image file using the Canvas API.
+ * Returns a base64 data URL of the compressed image (WebP for photos, PNG for transparency).
+ * Preserves quality while reducing file size significantly.
+ */
+export const compressImage = (
+  file: File,
+  options: {
+    maxWidth?: number;
+    maxHeight?: number;
+    quality?: number;
+  } = {},
+): Promise<string> => {
+  const {
+    maxWidth = 1920,
+    maxHeight = 1920,
+    quality = 0.82,
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    // Skip compression for non-images and small files (< 200KB)
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    if (file.size < 200 * 1024) {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      let { width, height } = img;
+
+      // Scale down if exceeding max dimensions (preserve aspect ratio)
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        // Fallback: return original
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Use WebP for photos (better compression), PNG for images with transparency
+      const outputType = file.type === 'image/png' ? 'image/png' : 'image/webp';
+      const compressed = canvas.toDataURL(outputType, quality);
+
+      // If compression didn't help, return original
+      if (compressed.length > file.size * 1.3) {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      resolve(compressed);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      // Fallback: return original file as data URL
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    };
+
+    img.src = objectUrl;
+  });
+};
+
+/**
+ * Resolve an upload path to a full, browser-accessible URL.
+ * Handles paths like /uploads/product-images/xxx.webp and ensures they work
+ * in both local dev (Vite) and production (cPanel) environments.
+ */
+export const resolveUploadUrl = (path?: string | null): string => {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+
+  // Already a full URL or data URL — return as-is
+  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')) {
+    return raw;
+  }
+
+  // Normalize: ensure it starts with /
+  const normalized = raw.startsWith('/') ? raw : `/${raw}`;
+
+  // Encode spaces and special characters in the filename portion
+  const lastSlash = normalized.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    const dir = normalized.substring(0, lastSlash);
+    const file = normalized.substring(lastSlash + 1);
+    return `${dir}/${encodeURIComponent(file).replace(/%20/g, ' ')}`;
+  }
+
+  return normalized;
 };

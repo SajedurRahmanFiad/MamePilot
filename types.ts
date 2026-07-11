@@ -91,6 +91,10 @@ export type PermissionKey =
   | 'payroll.view'
   | 'payroll.pay'
   | 'payroll.deletePayments'
+  | 'orders.processReturnExchangeOwn'
+  | 'orders.processReturnExchangeAny'
+  | 'bills.processReturnOwn'
+  | 'bills.processReturnAny'
   | 'recycleBin.view'
   | 'recycleBin.restore'
   | 'recycleBin.deletePermanent'
@@ -143,6 +147,7 @@ export enum OrderStatus {
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
+  EXCHANGE_PENDING = 'Exchange pending',
   RETURNED = 'Returned',
   CANCELLED = 'Cancelled'
 }
@@ -221,6 +226,59 @@ export interface OrderItem {
   rate: number;
   quantity: number;
   amount: number;
+  // Optional return/exchange tracking fields (populated after partial returns/exchanges)
+  returnedQty?: number;
+  exchangedQty?: number;
+  exchangedWith?: Array<{ productId: string; productName: string; quantity: number; rate: number; amount: number }>;
+}
+
+export type ReturnExchangeAction = 'partialReturn' | 'exchange';
+
+export interface ReturnExchangeItemSelection {
+  productId: string;
+  productName: string;
+  originalQty: number;
+  originalRate: number;
+  action: 'return' | 'exchange' | 'keep';
+  returnQty: number;
+  // For exchange: replacement items
+  replacementItems?: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    rate: number;
+    amount: number;
+  }>;
+}
+
+export interface ProcessOrderReturnExchangePayload {
+  orderId: string;
+  returnAction: ReturnExchangeAction;
+  items: ReturnExchangeItemSelection[];
+  refundAmount: number;
+  extraCollectionAmount: number;
+  accountId: string;
+  paymentMethod: string;
+  note?: string;
+  date: string;
+}
+
+export interface ProcessBillReturnPayload {
+  billId: string;
+  items: Array<{
+    productId: string;
+    productName: string;
+    originalQty: number;
+    returnQty: number;
+    rate: number;
+    amount: number;
+  }>;
+  refundAmount: number;
+  accountId: string;
+  paymentMethod: string;
+  categoryId?: string;
+  note?: string;
+  date: string;
 }
 
 export interface CompanyPage {
@@ -268,8 +326,112 @@ export interface MetaAdsSettings {
   loginConfigId: string;
   graphVersion: string;
   oauthScopes: string;
+  /** Meta ad account currency (not the UI display currency — UI is always BDT). */
   displayCurrencyCode: string;
+  /** 1 displayCurrencyCode = X BDT (used when exchangeRateMode is 'fixed') */
   displayCurrencyRateToBdt: number | null;
+  /** Exchange rate mode: 'fixed' (manual rate) or 'vat_based' (real-time rate + VAT). */
+  exchangeRateMode: 'fixed' | 'vat_based';
+  /** VAT / tax percentage to add on top of the real-time market rate (only used when mode is 'vat_based'). */
+  vatPercentage: number | null;
+  /** Cached real-time market rate (before VAT) fetched from currency API. */
+  realtimeRateCache: number | null;
+  /** When the real-time rate cache was last refreshed. */
+  realtimeRateUpdatedAt: string | null;
+  /** The final resolved exchange rate (may differ from displayCurrencyRateToBdt when mode is 'vat_based'). */
+  resolvedRateToBdt?: number | null;
+}
+
+export interface MarketingDashboardKpis {
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  metaConversions: number;
+  purchases: number;
+  bookedRevenue: number;
+  deliveredCount: number;
+  deliveredRevenue: number;
+  cancelledCount: number;
+  returnedCount: number;
+  returnedRevenue: number;
+  pipelineCount: number;
+  pipelineValue: number;
+  cpa: number;
+  costPerDelivered: number;
+  deliveryRate: number;
+  returnRate: number;
+}
+
+export interface MarketingDashboardSeriesPoint {
+  date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+  bookedRevenue: number;
+  deliveredRevenue: number;
+  deliveredCount: number;
+}
+
+export interface MarketingDashboardCampaign {
+  id: string;
+  name: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  purchases: number;
+  bookedRevenue: number;
+  deliveredCount: number;
+  deliveredRevenue: number;
+  cancelledCount: number;
+  returnedCount: number;
+}
+
+export interface MarketingDashboardAlert {
+  severity: 'info' | 'warning' | 'danger';
+  code: string;
+  message: string;
+}
+
+export interface MarketingDashboardResponse {
+  currency: {
+    adsCode: string;
+    rateToBdt: number | null;
+    exchangeRateMode?: string;
+    vatPercentage?: number | null;
+    realtimeRateCache?: number | null;
+    realtimeRateUpdatedAt?: string | null;
+  };
+  period: { from: string; to: string; previousFrom: string; previousTo: string };
+  kpis: MarketingDashboardKpis;
+  previousKpis: MarketingDashboardKpis;
+  series: MarketingDashboardSeriesPoint[];
+  campaigns: MarketingDashboardCampaign[];
+  pipeline: Array<{ status: string; count: number; value: number }>;
+  recentOrders: Array<{
+    id: string;
+    orderNumber: string;
+    orderDate: string;
+    status: string;
+    total: number;
+    sourceAd: string;
+    adName: string;
+    campaignName: string;
+  }>;
+  alerts: MarketingDashboardAlert[];
+  meta: {
+    lastSyncedAt: string | null;
+    stale: boolean;
+    activeAds: number;
+    activeCampaigns: number;
+    hasDailyInsights: boolean;
+    definitions?: Record<string, string>;
+  };
 }
 
 export interface Order {
@@ -294,6 +456,12 @@ export interface Order {
   carrybeeConsignmentId?: string;
   steadfastConsignmentId?: string;
   paperflyTrackingNumber?: string;
+  // Exchange consignment fields — for shipping replacement items after an exchange
+  exchangeCourier?: string; // 'steadfast' | 'carrybee' | 'paperfly' | 'manual'
+  exchangeSteadfastConsignmentId?: string;
+  exchangeCarrybeeConsignmentId?: string;
+  exchangePaperflyTrackingNumber?: string;
+  exchangeCourierHistory?: string; // manual courier note for exchange
   history: {
     created: string;
     courier?: string;
@@ -304,6 +472,8 @@ export interface Order {
     returned?: string;
     cancelled?: string;
     payment?: string;
+    returnExchange?: string;
+    exchangeCourier?: string; // history entry for exchange courier assignment
   };
   paidAmount: number;
   processedAt?: string; // ISO timestamp when marked processing
@@ -342,6 +512,7 @@ export interface Bill {
     returned?: string;
     cancelled?: string;
     paid?: string;
+    return?: string;
   };
   paidAmount: number;
   processedAt?: string; // ISO timestamp when marked processing

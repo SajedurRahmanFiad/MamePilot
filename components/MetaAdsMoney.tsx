@@ -1,50 +1,75 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useMetaAdsSettings } from '../src/hooks/useQueries';
 import {
   formatMetaAdsCurrency,
-  buildBdtTooltip,
-  CURRENCY_SYMBOLS,
+  convertAdsAmountToBdt,
+  convertBdtToAds,
 } from '../src/utils/metaAdsCurrency';
 
 interface MetaAdsMoneyProps {
+  /**
+   * Monetary amount. By default treated as ads/native currency (Meta spend etc.).
+   * Pass unit="bdt" when the amount is already in BDT (order revenue).
+   */
   amount: number;
+  /** Ads / Meta account currency code for this amount when unit is "ads". */
   nativeCode?: string;
   className?: string;
-  /** If true, show just the formatted number without currency symbol wrapper */
+  /** If true, show just the formatted number without emphasis */
   compact?: boolean;
+  /**
+   * unit="ads" (default): amount is in ads currency → display BDT, tooltip ads currency.
+   * unit="bdt": amount is already BDT → display BDT, tooltip ads currency via settings rate.
+   */
+  unit?: 'ads' | 'bdt';
 }
 
 /**
- * Displays a monetary value in the user's configured display currency.
- * On hover, shows a tooltip with the BDT equivalent based on the exchange rate.
+ * Displays money primarily in BDT. On hover, shows the ads-currency equivalent
+ * using the exchange rate from Meta Ads settings (1 ads currency = X BDT).
  */
-const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({ amount, nativeCode, className = '', compact = false }) => {
+const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({
+  amount,
+  nativeCode,
+  className = '',
+  compact = false,
+  unit = 'ads',
+}) => {
   const [hovered, setHovered] = useState(false);
   const { data: settings, isPending: settingsLoading } = useMetaAdsSettings(true);
 
-  // While settings are loading, avoid showing the fallback currency (e.g. 'BDT').
-  // Instead, show a numeric-only value without currency symbol or code.
   if (settingsLoading && !settings) {
     const numericOnly = new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-    return <span className={className}>{compact ? numericOnly : numericOnly}</span>;
+    return <span className={className}>{numericOnly}</span>;
   }
 
-  const displayCode = settings?.displayCurrencyCode || 'BDT';
-  const rateToBdt = settings?.displayCurrencyRateToBdt ?? null;
+  const adsCode = (nativeCode || settings?.displayCurrencyCode || 'BDT').toUpperCase();
+  // Prefer resolvedRateToBdt (computed from real-time rate + VAT when mode is vat_based)
+  const rateToBdt = settings?.resolvedRateToBdt ?? settings?.displayCurrencyRateToBdt ?? null;
 
-  // Format the display amount
-  const displayText = formatMetaAdsCurrency(amount, displayCode);
+  let bdtAmount: number | null;
+  let adsAmount: number | null;
 
-  // Build tooltip
-  const tooltip = buildBdtTooltip(amount, displayCode, nativeCode, rateToBdt);
+  if (unit === 'bdt') {
+    bdtAmount = Number(amount || 0);
+    adsAmount = adsCode === 'BDT' ? bdtAmount : convertBdtToAds(bdtAmount, rateToBdt);
+  } else {
+    adsAmount = Number(amount || 0);
+    bdtAmount = convertAdsAmountToBdt(adsAmount, adsCode, rateToBdt);
+  }
 
-  // If native currency is different from display, also show native amount
-  const nativeText = nativeCode && nativeCode !== displayCode
-    ? formatMetaAdsCurrency(amount, nativeCode)
-    : null;
+  const missingRate = adsCode !== 'BDT' && (rateToBdt == null || rateToBdt <= 0);
 
-  if (!tooltip && !nativeText) {
-    return <span className={className}>{displayText}</span>;
+  // Primary: BDT when convertible; otherwise ads currency with a missing-rate cue
+  const primaryText =
+    bdtAmount != null
+      ? formatMetaAdsCurrency(bdtAmount, 'BDT')
+      : formatMetaAdsCurrency(adsAmount ?? 0, adsCode);
+
+  const showTooltip = adsCode !== 'BDT' && (adsAmount != null || missingRate);
+
+  if (!showTooltip) {
+    return <span className={className}>{primaryText}</span>;
   }
 
   return (
@@ -53,17 +78,24 @@ const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({ amount, nativeCode, classNa
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span className="cursor-help border-b border-dotted border-gray-300">{displayText}</span>
-      {hovered && (tooltip || nativeText) && (
+      <span className={`cursor-help border-b border-dotted border-gray-300 ${missingRate && bdtAmount == null ? 'text-amber-700' : ''}`}>
+        {primaryText}
+      </span>
+      {hovered && (
         <span className="absolute bottom-full left-1/2 z-[9999] mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 shadow-xl">
-          {nativeText && nativeText !== displayText && (
-            <span className="block text-gray-400">Native: {nativeText}</span>
-          )}
-          {tooltip && <span className="block font-semibold text-gray-900">{tooltip}</span>}
-          {displayCode !== 'BDT' && (
-            <span className="mt-0.5 block text-[10px] text-gray-400">
-              Rate: 1 {displayCode} = {rateToBdt ?? '?'} ৳
-            </span>
+          {missingRate && bdtAmount == null ? (
+            <span className="block font-semibold text-amber-700">Set exchange rate in Settings to show ৳</span>
+          ) : (
+            <>
+              <span className="block font-semibold text-gray-900">
+                {formatMetaAdsCurrency(adsAmount ?? 0, adsCode)}
+              </span>
+              {rateToBdt != null && rateToBdt > 0 && (
+                <span className="mt-0.5 block text-[10px] text-gray-400">
+                  Rate: 1 {adsCode} = {rateToBdt} ৳
+                </span>
+              )}
+            </>
           )}
         </span>
       )}

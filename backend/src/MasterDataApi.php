@@ -345,7 +345,7 @@ final class MasterDataApi extends BaseService
             $payload['nationality'] = $this->nullableString($updates['nationality']);
         }
         if (array_key_exists('cv', $updates)) {
-            $payload['cv'] = $this->nullableString($updates['cv']);
+            $payload['cv'] = $this->normalizeUploadedFileValue($updates['cv'] ?? null, 'documents', null);
         }
         if (array_key_exists('isCommissionBased', $updates) || array_key_exists('is_commission_based', $updates)) {
             $isCommissionBased = !empty($updates['isCommissionBased'] ?? $updates['is_commission_based'] ?? false);
@@ -1613,11 +1613,25 @@ final class MasterDataApi extends BaseService
         }
 
         if ($response['status'] < 200 || $response['status'] >= 300 || !is_array($response['json'])) {
-            $message = is_array($response['json'] ?? null)
-                ? (string) (($response['json']['error'] ?? null) ?: 'Central license request failed.')
-                : 'Central license request failed.';
-            if ((int) $response['status'] === 404) {
+            $httpStatus = (int) $response['status'];
+            $remoteError = is_array($response['json'] ?? null)
+                ? (string) (($response['json']['error'] ?? null) ?: '')
+                : '';
+            $bodySnippet = is_string($response['body'] ?? null)
+                ? substr(trim((string) $response['body']), 0, 200)
+                : '';
+
+            if ($httpStatus === 404) {
                 $message = 'Central license API endpoint not found at ' . $apiUrl . '. Upload deploy/central-license-api-template.php as api.php on the license subdomain, then use the full /api.php URL.';
+            } elseif ($remoteError !== '') {
+                $message = 'Central server error (HTTP ' . $httpStatus . '): ' . $remoteError;
+            } elseif ($httpStatus === 0) {
+                $message = 'Could not connect to central server at ' . $apiUrl . '. Verify the URL is reachable from your PHP environment.';
+            } else {
+                $message = 'Central license request failed with HTTP ' . $httpStatus . ' at ' . $apiUrl . '.';
+                if ($bodySnippet !== '') {
+                    $message .= ' Response: ' . $bodySnippet;
+                }
             }
             if ($triedFallback) {
                 $message .= ' Tried fallback path /api.php automatically.';
@@ -4581,14 +4595,24 @@ TXT;
         $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
         $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
         if ($apiUrl === '') {
-            return [];
+            throw new ApiException(
+                'Central server is not configured. Set License API URL and Owner Token in Developer Settings > Capabilities.',
+                503,
+                'CENTRAL_NOT_CONFIGURED'
+            );
         }
 
         try {
             $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'list_deployments');
             return is_array($response['deployments'] ?? null) ? $response['deployments'] : [];
+        } catch (ApiException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            return [];
+            throw new ApiException(
+                'Failed to fetch deployments from central server: ' . $e->getMessage(),
+                502,
+                'CENTRAL_FETCH_FAILED'
+            );
         }
     }
 
@@ -4674,6 +4698,8 @@ TXT;
             'actedAt' => $this->toIso($row['acted_at'] ?? $row['actedAt'] ?? null),
             'actionConfig' => $this->normalizeNotificationActionConfig($row['action_config'] ?? $row['actionConfig'] ?? [], $targetRoles),
             'metadata' => $metadata !== [] ? $metadata : null,
+            'targetDeployments' => $this->normalizeNotificationTargetRoles($row['target_deployments'] ?? $row['targetDeployments'] ?? []),
+            'deploymentScope' => trim((string) ($row['deployment_scope'] ?? $row['deploymentScope'] ?? 'all')),
         ];
     }
 
@@ -5153,14 +5179,33 @@ TXT;
      */
     private function broadcastNotificationEvent(array $notification): void
     {
-        $broadcastFile = sys_get_temp_dir() . '/mamepilot_notification_broadcast.json';
+        $broadcastDir = sys_get_temp_dir() . '/mamepilot_notification_broadcasts';
+        if (!is_dir($broadcastDir)) {
+            @mkdir($broadcastDir, 0777, true);
+        }
+
+        // Use microtime for unique filenames to avoid overwrites
+        $microtime = microtime(true);
+        $filename = $broadcastDir . '/evt_' . str_replace('.', '_', sprintf('%.6f', $microtime)) . '_' . bin2hex(random_bytes(4)) . '.json';
+
         $payload = json_encode([
             'event' => 'notification.created',
             'notification' => $notification,
-            'timestamp' => time(),
+            'timestamp' => $microtime,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        @file_put_contents($broadcastFile, $payload);
+        @file_put_contents($filename, $payload);
+
+        // Clean up old broadcast files (older than 60 seconds)
+        $cutoff = $microtime - 60;
+        $files = glob($broadcastDir . '/evt_*.json');
+        if (is_array($files)) {
+            foreach ($files as $f) {
+                if (filemtime($f) < $cutoff) {
+                    @unlink($f);
+                }
+            }
+        }
     }
 
     /**
@@ -5189,8 +5234,8 @@ TXT;
         header('Connection: keep-alive');
         header('X-Accel-Buffering: no');
 
-        $broadcastFile = sys_get_temp_dir() . '/mamepilot_notification_broadcast.json';
-        $lastEventTime = 0;
+        $broadcastDir = sys_get_temp_dir() . '/mamepilot_notification_broadcasts';
+        $lastEventTime = 0.0;
         $heartbeatInterval = 30; // seconds
         $lastHeartbeat = time();
 
@@ -5203,13 +5248,26 @@ TXT;
         flush();
 
         while (true) {
-            // Check for broadcast file
-            if (file_exists($broadcastFile)) {
-                $content = @file_get_contents($broadcastFile);
-                if ($content !== false) {
-                    $data = json_decode($content, true);
-                    if (is_array($data) && ($data['timestamp'] ?? 0) > $lastEventTime) {
-                        $lastEventTime = (int) ($data['timestamp'] ?? 0);
+            // Check for broadcast files in the directory
+            if (is_dir($broadcastDir)) {
+                $files = glob($broadcastDir . '/evt_*.json');
+                if (is_array($files)) {
+                    // Sort by filename which encodes microtime
+                    sort($files);
+                    foreach ($files as $file) {
+                        $content = @file_get_contents($file);
+                        if ($content === false) {
+                            continue;
+                        }
+                        $data = json_decode($content, true);
+                        if (!is_array($data)) {
+                            continue;
+                        }
+                        $ts = (float) ($data['timestamp'] ?? 0);
+                        if ($ts <= $lastEventTime) {
+                            continue;
+                        }
+                        $lastEventTime = $ts;
 
                         // Check if this notification targets the user's role
                         $notification = $data['notification'] ?? [];
@@ -5236,7 +5294,7 @@ TXT;
                 break;
             }
 
-            usleep(500000); // 500ms polling
+            usleep(200000); // 200ms polling (reduced from 500ms)
         }
     }
 
@@ -5844,7 +5902,6 @@ TXT;
         }
 
         $centralIds = array_values(array_unique(array_filter($centralIds)));
-        $centralMarkSucceeded = false;
         if ($centralIds !== [] && $apiUrl !== '') {
             try {
                 $settingsRowForLicense = $this->capabilityRow();
@@ -5855,13 +5912,13 @@ TXT;
                     'userName' => trim((string) ($user['name'] ?? '')),
                     'userRole' => trim((string) ($user['role'] ?? '')),
                 ]);
-                $centralMarkSucceeded = true;
             } catch (Throwable) {
                 // Ignore remote mark failures so local notification state can still be updated.
             }
         }
 
-        if ($centralMarkSucceeded && $centralIds !== [] && $this->tableExists('notification_receipts')) {
+        // Always write local receipt for central IDs regardless of central API success
+        if ($centralIds !== [] && $this->tableExists('notification_receipts')) {
             $now = $this->database->nowUtc();
             [$placeholders, $bindings] = $this->inClause($centralIds, 'id');
             $localCentralRows = $this->database->fetchAll(

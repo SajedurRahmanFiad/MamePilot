@@ -12,6 +12,8 @@ import {
   createBill,
   updateBill,
   deleteBill,
+  processOrderReturnExchange,
+  processBillReturn,
   createAccount,
   updateAccount,
   deleteAccount,
@@ -118,6 +120,8 @@ import type {
   AppCapabilityMap,
   AgentSettings,
   MetaAdsSettings,
+  ProcessOrderReturnExchangePayload,
+  ProcessBillReturnPayload,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -738,6 +742,26 @@ export function useCompletePickedOrder(): UseMutationResult<Order, Error, Comple
   });
 }
 
+export function useProcessOrderReturnExchange(): UseMutationResult<Order, Error, ProcessOrderReturnExchangePayload, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: processOrderReturnExchange,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', data.id], data);
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['customers'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['ordersByCustomerId'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['products'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['employeeOrderCounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['payroll'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
 export function useDeleteOrder(): UseMutationResult<void, Error, string, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -1039,6 +1063,23 @@ export function useDeleteBill(): UseMutationResult<void, Error, string, unknown>
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateRecycleBin(queryClient);
+    },
+  });
+}
+
+export function useProcessBillReturn(): UseMutationResult<Bill, Error, ProcessBillReturnPayload, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: processBillReturn,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['bill', data.id], data);
+      queryClient.invalidateQueries({ queryKey: ['bills'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['vendors'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['billsByVendorId'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['products'], exact: false });
+      invalidateDashboardQueries(queryClient);
     },
   });
 }

@@ -35,6 +35,8 @@ abstract class BaseService
         'orders.markCompletedAny',
         'orders.markReturnedOwn',
         'orders.markReturnedAny',
+        'orders.processReturnExchangeOwn',
+        'orders.processReturnExchangeAny',
         'customers.view',
         'customers.create',
         'customers.edit',
@@ -53,6 +55,8 @@ abstract class BaseService
         'bills.markReceivedAny',
         'bills.markPaidOwn',
         'bills.markPaidAny',
+        'bills.processReturnOwn',
+        'bills.processReturnAny',
         'transactions.view',
         'transactions.create',
         'transactions.edit',
@@ -113,6 +117,16 @@ abstract class BaseService
         ],
         ['legacy' => 'bills.markReceived', 'own' => 'bills.markReceivedOwn', 'any' => 'bills.markReceivedAny'],
         ['legacy' => 'bills.markPaid', 'own' => 'bills.markPaidOwn', 'any' => 'bills.markPaidAny'],
+        [
+            'legacy' => 'orders.processReturnExchange',
+            'own' => 'orders.processReturnExchangeOwn',
+            'any' => 'orders.processReturnExchangeAny',
+        ],
+        [
+            'legacy' => 'bills.processReturn',
+            'own' => 'bills.processReturnOwn',
+            'any' => 'bills.processReturnAny',
+        ],
     ];
 
     protected Database $database;
@@ -288,7 +302,38 @@ abstract class BaseService
 
     protected function uploadPublicPath(string $category): string
     {
-        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . trim($category, '/');
+        // Save uploads to the web-accessible uploads directory.
+        // Resolution order:
+        //   1. {project_root}/public/uploads/{category}/  — local dev (Vite serves public/ at root)
+        //   2. {web_root}/public_html/uploads/{category}/ — cPanel deploy (Apache serves public_html/)
+        //   3. {backend}/public/uploads/{category}/        — last resort fallback
+        $projectRoot = dirname(dirname(__DIR__)); // backend/src → backend → project root
+        $categoryPath = 'uploads' . DIRECTORY_SEPARATOR . trim($category, '/');
+
+        // 1. Local dev: project_root/public/uploads/
+        $publicDir = $projectRoot . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . $categoryPath;
+        if (is_dir(dirname($publicDir)) || is_dir($projectRoot . DIRECTORY_SEPARATOR . 'public')) {
+            return $publicDir;
+        }
+
+        // 2. cPanel deploy: walk up from project root to find public_html/
+        //    Typical layout: /home/user/public_html/mamepilot_backend/backend/...
+        //    The web root is /home/user/public_html/
+        $checkDir = $projectRoot;
+        for ($i = 0; $i < 5; $i++) {
+            $candidate = $checkDir . DIRECTORY_SEPARATOR . 'public_html';
+            if (is_dir($candidate) && (is_file($candidate . DIRECTORY_SEPARATOR . '.htaccess') || is_file($candidate . DIRECTORY_SEPARATOR . 'index.html'))) {
+                return $candidate . DIRECTORY_SEPARATOR . $categoryPath;
+            }
+            $parent = dirname($checkDir);
+            if ($parent === $checkDir) {
+                break;
+            }
+            $checkDir = $parent;
+        }
+
+        // 3. Fallback: backend/public/uploads/
+        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . $categoryPath;
     }
 
     protected function uniqueUploadFilename(string $extension, ?string $originalFileName = null): string
@@ -650,7 +695,7 @@ abstract class BaseService
         return [
             'id' => $id,
             'name' => trim((string) ($page['name'] ?? $fallback['name'] ?? '')) ?: $fallbackName,
-            'logo' => (string) ($page['logo'] ?? $fallback['logo'] ?? ''),
+            'logo' => $this->normalizeUploadedFileValue($page['logo'] ?? $fallback['logo'] ?? null, 'logos', null) ?? '',
             'phone' => (string) ($page['phone'] ?? $fallback['phone'] ?? '+880'),
             'email' => (string) ($page['email'] ?? $fallback['email'] ?? 'info@company.com'),
             'address' => (string) ($page['address'] ?? $fallback['address'] ?? ''),
@@ -855,6 +900,11 @@ abstract class BaseService
             'carrybeeConsignmentId' => $this->nullableString($row['carrybee_consignment_id'] ?? $row['carrybeeConsignmentId'] ?? null),
             'steadfastConsignmentId' => $this->nullableString($row['steadfast_consignment_id'] ?? $row['steadfastConsignmentId'] ?? null),
             'paperflyTrackingNumber' => $this->nullableString($row['paperfly_tracking_number'] ?? $row['paperflyTrackingNumber'] ?? null),
+            'exchangeCourier' => $this->nullableString($row['exchange_courier'] ?? $row['exchangeCourier'] ?? null),
+            'exchangeSteadfastConsignmentId' => $this->nullableString($row['exchange_steadfast_consignment_id'] ?? $row['exchangeSteadfastConsignmentId'] ?? null),
+            'exchangeCarrybeeConsignmentId' => $this->nullableString($row['exchange_carrybee_consignment_id'] ?? $row['exchangeCarrybeeConsignmentId'] ?? null),
+            'exchangePaperflyTrackingNumber' => $this->nullableString($row['exchange_paperfly_tracking_number'] ?? $row['exchangePaperflyTrackingNumber'] ?? null),
+            'exchangeCourierHistory' => $this->nullableString($row['exchange_courier_history'] ?? $row['exchangeCourierHistory'] ?? null),
             'sourceAd' => $this->nullableString($row['source_ad'] ?? $row['sourceAd'] ?? null),
             'history' => $this->jsonDecodeAssoc($row['history'] ?? []),
             'paidAmount' => (float) ($row['paid_amount'] ?? $row['paidAmount'] ?? 0),

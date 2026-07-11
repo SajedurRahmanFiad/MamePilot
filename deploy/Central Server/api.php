@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 declare(strict_types=1);
 
@@ -211,6 +211,8 @@ function notificationPayload(array $row): array
         'actionResult' => $row['action_result'] ?? $row['actionResult'] ?? null,
         'actedAt' => utcTimestamp($row['acted_at'] ?? $row['actedAt'] ?? null),
         'actionConfig' => is_array($row['action_config'] ?? $row['actionConfig'] ?? null) ? ($row['action_config'] ?? $row['actionConfig'] ?? []) : json_decode((string) ($row['action_config'] ?? $row['actionConfig'] ?? '[]'), true),
+        'targetDeployments' => capabilitiesFrom($row['target_deployments'] ?? $row['targetDeployments'] ?? '[]'),
+        'deploymentScope' => trim((string) ($row['deployment_scope'] ?? $row['deploymentScope'] ?? 'all')),
         'metadata' => is_array($row['metadata'] ?? null) ? $row['metadata'] : json_decode((string) ($row['metadata'] ?? '[]'), true),
     ];
 }
@@ -312,9 +314,33 @@ function generateNotificationId(): string
 
 function dispatchWebhooks(PDO $pdo, array $notificationRow): void
 {
-    $subscriptions = $pdo->query(
-        'SELECT id, webhook_url, webhook_secret FROM webhook_subscriptions WHERE is_active = 1'
-    )->fetchAll();
+    $targetDeployments = $notificationRow['targetDeployments'] ?? [];
+    $deploymentScope = trim((string) ($notificationRow['deploymentScope'] ?? 'all'));
+
+    $sql = 'SELECT id, license_key, webhook_url, webhook_secret FROM webhook_subscriptions WHERE is_active = 1';
+    $bindings = [];
+
+    // Filter webhooks by deployment scope
+    if ($deploymentScope === 'include' && !empty($targetDeployments)) {
+        $placeholders = [];
+        foreach ($targetDeployments as $i => $key) {
+            $placeholders[] = ':ilk_' . $i;
+            $bindings[':ilk_' . $i] = $key;
+        }
+        $sql .= ' AND license_key IN (' . implode(', ', $placeholders) . ')';
+    } elseif ($deploymentScope === 'exclude' && !empty($targetDeployments)) {
+        $placeholders = [];
+        foreach ($targetDeployments as $i => $key) {
+            $placeholders[] = ':xlk_' . $i;
+            $bindings[':xlk_' . $i] = $key;
+        }
+        $sql .= ' AND license_key NOT IN (' . implode(', ', $placeholders) . ')';
+    }
+    // 'all' scope = no license_key filter, send to everyone
+
+    $statement = $pdo->prepare($sql);
+    $statement->execute($bindings);
+    $subscriptions = $statement->fetchAll();
 
     if ($subscriptions === []) {
         return;
@@ -473,13 +499,23 @@ try {
             $metadata = json_decode((string) $metadata, true) ?: [];
         }
 
+        $targetDeployments = $body['targetDeployments'] ?? $body['target_deployments'] ?? [];
+        if (!is_array($targetDeployments)) {
+            $targetDeployments = capabilitiesFrom($targetDeployments);
+        }
+        $deploymentScope = trim((string) ($body['deploymentScope'] ?? $body['deployment_scope'] ?? 'all'));
+        if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+            $deploymentScope = 'all';
+        }
+
+
         $notificationId = generateNotificationId();
         $statement = $pdo->prepare(
             'INSERT INTO notifications (
-                 id, subject, content_html, target_roles, starts_at, ends_at,
+                 id, subject, content_html, target_roles, target_deployments, deployment_scope, starts_at, ends_at,
                  action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
              ) VALUES (
-                 :id, :subject, :content_html, :target_roles, :starts_at, :ends_at,
+                 :id, :subject, :content_html, :target_roles, :target_deployments, :deployment_scope, :starts_at, :ends_at,
                  :action_config, :metadata, :created_by, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
              )'
         );
@@ -488,6 +524,8 @@ try {
             ':subject' => $subject,
             ':content_html' => $contentHtml,
             ':target_roles' => json_encode($targetRoles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':target_deployments' => json_encode($targetDeployments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':deployment_scope' => $deploymentScope,
             ':starts_at' => $startsAt !== '' ? $startsAt : null,
             ':ends_at' => $endsAt !== '' ? $endsAt : null,
             ':action_config' => json_encode($actionConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -596,7 +634,6 @@ try {
         }
         respond(200, ['notifications' => $items]);
     }
-
     if ($action === 'mark_notification_read') {
         $notificationIds = [];
         if (is_array($body['notificationIds'] ?? null)) {
@@ -613,6 +650,9 @@ try {
             }
         }
         $userId = trim((string) ($body['userId'] ?? $body['user_id'] ?? ''));
+        $licenseKey = trim((string) ($body['licenseKey'] ?? $body['license_key'] ?? ''));
+        $userName = trim((string) ($body['userName'] ?? $body['user_name'] ?? ''));
+        $userRole = trim((string) ($body['userRole'] ?? $body['user_role'] ?? ''));
         if ($notificationIds === [] || $userId === '') {
             respond(400, ['error' => 'notificationId(s) and userId are required.']);
         }
@@ -622,23 +662,30 @@ try {
 
         $statement = $pdo->prepare(
             'INSERT INTO notification_receipts (
-                 notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
+                 notification_id, user_id, license_key, user_name, user_role, is_read, read_at, action_result, acted_at, created_at, updated_at
              ) VALUES (
-                 :notification_id, :user_id, 1, CURRENT_TIMESTAMP, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                 :notification_id, :user_id, :license_key, :user_name, :user_role, 1, CURRENT_TIMESTAMP, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
              )
              ON DUPLICATE KEY UPDATE
                  is_read = 1,
                  read_at = COALESCE(notification_receipts.read_at, CURRENT_TIMESTAMP),
+                 license_key = COALESCE(notification_receipts.license_key, VALUES(license_key)),
+                 user_name = COALESCE(notification_receipts.user_name, VALUES(user_name)),
+                 user_role = COALESCE(notification_receipts.user_role, VALUES(user_role)),
                  updated_at = CURRENT_TIMESTAMP'
         );
-        foreach ($notificationIds as $notificationId) {
+        foreach ($notificationIds as $nid) {
             $statement->execute([
-                ':notification_id' => $notificationId,
+                ':notification_id' => $nid,
                 ':user_id' => $userId,
+                ':license_key' => $licenseKey !== '' ? $licenseKey : null,
+                ':user_name' => $userName !== '' ? $userName : null,
+                ':user_role' => $userRole !== '' ? $userRole : null,
             ]);
         }
         respond(200, ['success' => true]);
     }
+
 
     if ($action === 'respond_to_notification') {
         $notificationId = trim((string) ($body['notificationId'] ?? $body['id'] ?? ''));

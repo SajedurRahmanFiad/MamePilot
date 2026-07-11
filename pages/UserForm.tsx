@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { User, UserRole, hasAdminAccess } from '../types';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
+import { compressImage } from '../utils';
 import { usePermissionsSettings, useUser } from '../src/hooks/useQueries';
 import { useCreateUser, useUpdateUser, useDeleteUser } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -88,26 +89,33 @@ const UserForm: React.FC = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+    try {
+      const compressed = await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.82 });
+      setForm((prev) => ({ ...prev, image: compressed }));
+    } catch {
       const reader = new FileReader();
-      reader.onload = () => {
-        setForm((prev) => ({ ...prev, image: reader.result as string }));
-      };
+      reader.onload = () => setForm((prev) => ({ ...prev, image: reader.result as string }));
       reader.readAsDataURL(file);
     }
   };
 
-  const handleDocumentUpload = (field: 'nidPassportCopy' | 'cv') => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentUpload = (field: 'nidPassportCopy' | 'cv') => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setForm((prev) => ({ ...prev, [field]: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    // Compress images; pass non-images through as data URL
+    if (file.type.startsWith('image/')) {
+      try {
+        const compressed = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        setForm((prev) => ({ ...prev, [field]: compressed }));
+        return;
+      } catch { /* fallback below */ }
     }
+    const reader = new FileReader();
+    reader.onload = () => setForm((prev) => ({ ...prev, [field]: reader.result as string }));
+    reader.readAsDataURL(file);
   };
 
   const normalizeExtendedFields = () => ({

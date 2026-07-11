@@ -453,6 +453,51 @@ final class CourierApi extends BaseService
         return $payload;
     }
 
+    /**
+     * Create an exchange consignment under an existing CarryBee order.
+     * POST /api/v2/orders/{consignment_id}/exchange
+     */
+    public function submitCarryBeeExchangeOrder(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $consignmentId = trim((string) ($params['consignmentId'] ?? ''));
+        if (
+            $baseUrl === '' ||
+            trim((string) ($params['clientId'] ?? '')) === '' ||
+            trim((string) ($params['clientSecret'] ?? '')) === '' ||
+            trim((string) ($params['clientContext'] ?? '')) === '' ||
+            $consignmentId === ''
+        ) {
+            return ['error' => 'Missing required parameters'];
+        }
+
+        $payload = [];
+        if (isset($params['collectableAmount']) && (int) $params['collectableAmount'] > 0) {
+            $payload['collectable_amount'] = (int) $params['collectableAmount'];
+        }
+        if (isset($params['itemQuantity']) && (int) $params['itemQuantity'] > 0) {
+            $payload['item_quantity'] = (int) $params['itemQuantity'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/api/v2/orders/' . rawurlencode($consignmentId) . '/exchange',
+            $this->carryBeeHeaders($params),
+            $payload
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status']];
+        }
+
+        $result = is_array($response['json']) ? $response['json'] : [];
+        if (!empty($result['error'])) {
+            return ['error' => (string) $result['error']];
+        }
+
+        return $result;
+    }
+
     public function fetchCarryBeeOrderDetails(array $params): array
     {
         $consignmentId = trim((string) ($params['consignmentId'] ?? ''));
@@ -719,6 +764,50 @@ final class CourierApi extends BaseService
                 'customerName' => trim((string) ($params['customerName'] ?? '')),
                 'customerAddress' => trim((string) ($params['customerAddress'] ?? '')),
                 'customerPhone' => trim((string) ($params['customerPhone'] ?? '')),
+            ]
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status']];
+        }
+
+        return is_array($response['json']) ? $response['json'] : ['error' => 'Invalid response'];
+    }
+
+    /**
+     * Create an exchange order via Paperfly.
+     * POST /merchant/api/service/new_order_v2.php with orderType=Exchange
+     */
+    public function submitPaperflyExchangeOrder(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $username = trim((string) ($params['username'] ?? ''));
+        $password = trim((string) ($params['password'] ?? ''));
+        $paperflyKey = trim((string) ($params['paperflyKey'] ?? ''));
+        if ($baseUrl === '' || $username === '' || $password === '' || $paperflyKey === '') {
+            return ['error' => 'Missing required parameters'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/merchant/api/service/new_order_v2.php',
+            [
+                'Authorization' => 'Basic ' . base64_encode($username . ':' . $password),
+                'paperflykey' => $paperflyKey,
+            ],
+            [
+                'merchantOrderReference' => trim((string) ($params['merchantOrderReference'] ?? '')),
+                'storeName' => trim((string) ($params['storeName'] ?? '')),
+                'productBrief' => trim((string) ($params['productBrief'] ?? '')),
+                'packagePrice' => (string) ($params['packagePrice'] ?? ''),
+                'max_weight' => (string) ($params['maxWeightKg'] ?? ''),
+                'customerName' => trim((string) ($params['customerName'] ?? '')),
+                'customerAddress' => trim((string) ($params['customerAddress'] ?? '')),
+                'customerPhone' => trim((string) ($params['customerPhone'] ?? '')),
+                'orderType' => 'Exchange',
+                'exchangeDescription' => trim((string) ($params['exchangeDescription'] ?? 'Exchange product')),
+                'exchangePrice' => (string) ($params['exchangePrice'] ?? '0'),
+                'exchangeWeight' => (string) ($params['exchangeWeightKg'] ?? '0.5'),
             ]
         );
 
@@ -1085,6 +1174,183 @@ final class CourierApi extends BaseService
                 'updates' => $updates,
             ]);
             $updated += 1;
+        }
+
+        return ['checked' => $checked, 'updated' => $updated];
+    }
+
+    /**
+     * Sync exchange consignment statuses for all couriers.
+     * When an exchange consignment is delivered, move order from 'Exchange pending' to 'Completed'.
+     */
+    public function syncExchangeConsignmentStatuses(array $params = []): array
+    {
+        $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1');
+        $checked = 0;
+        $updated = 0;
+
+        // Steadfast exchange consignments
+        $steadfastBaseUrl = rtrim(trim((string) ($settings['steadfast_base_url'] ?? '')), '/');
+        $steadfastApiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
+        $steadfastSecretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
+        if ($steadfastBaseUrl !== '' && $steadfastApiKey !== '' && $steadfastSecretKey !== '') {
+            $rows = $this->database->fetchAll(
+                "SELECT id, status, history, exchange_steadfast_consignment_id
+                 FROM orders
+                 WHERE deleted_at IS NULL
+                   AND exchange_steadfast_consignment_id IS NOT NULL
+                   AND exchange_steadfast_consignment_id <> ''
+                   AND status = 'Exchange pending'"
+            );
+            foreach ($rows as $row) {
+                $trackingCode = trim((string) ($row['exchange_steadfast_consignment_id'] ?? ''));
+                if ($trackingCode === '') continue;
+                $checked += 1;
+
+                $details = $this->fetchSteadfastStatusByTrackingCode([
+                    'baseUrl' => $steadfastBaseUrl,
+                    'apiKey' => $steadfastApiKey,
+                    'secretKey' => $steadfastSecretKey,
+                    'trackingCode' => $trackingCode,
+                ]);
+                if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
+
+                $statusInfo = $this->classifySteadfastDeliveryStatus($details['data']);
+                if (empty($statusInfo['rawStatus']) || empty($statusInfo['status'])) continue;
+
+                $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+                $updates = ['history' => $history];
+
+                if ($statusInfo['status'] === 'Delivered') {
+                    $updates['status'] = 'Completed';
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
+                } elseif ($statusInfo['status'] === 'Returned' || $statusInfo['status'] === 'Cancelled') {
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
+                } else {
+                    continue;
+                }
+
+                $this->updateOrderAsCourierSystem(['id' => (string) $row['id'], 'updates' => $updates]);
+                $updated += 1;
+            }
+        }
+
+        // CarryBee exchange consignments
+        $carrybeeBaseUrl = rtrim(trim((string) ($settings['carrybee_base_url'] ?? '')), '/');
+        $carrybeeClientId = trim((string) ($settings['carrybee_client_id'] ?? ''));
+        $carrybeeClientSecret = trim((string) ($settings['carrybee_client_secret'] ?? ''));
+        $carrybeeClientContext = trim((string) ($settings['carrybee_client_context'] ?? ''));
+        if ($carrybeeBaseUrl !== '' && $carrybeeClientId !== '' && $carrybeeClientSecret !== '') {
+            $rows = $this->database->fetchAll(
+                "SELECT id, status, history, exchange_carrybee_consignment_id
+                 FROM orders
+                 WHERE deleted_at IS NULL
+                   AND exchange_carrybee_consignment_id IS NOT NULL
+                   AND exchange_carrybee_consignment_id <> ''
+                   AND status = 'Exchange pending'"
+            );
+            foreach ($rows as $row) {
+                $consignmentId = trim((string) ($row['exchange_carrybee_consignment_id'] ?? ''));
+                if ($consignmentId === '') continue;
+                $checked += 1;
+
+                $details = $this->fetchCarryBeeOrderDetails([
+                    'baseUrl' => $carrybeeBaseUrl,
+                    'clientId' => $carrybeeClientId,
+                    'clientSecret' => $carrybeeClientSecret,
+                    'clientContext' => $carrybeeClientContext,
+                    'consignmentId' => $consignmentId,
+                ]);
+                if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
+
+                $rawStatus = strtolower(trim((string) (
+                    $details['data']['order_status'] ??
+                    $details['data']['data']['order_status'] ??
+                    $details['data']['status'] ??
+                    ''
+                )));
+                if ($rawStatus === '') continue;
+
+                $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+                $updates = ['history' => $history];
+
+                if (strpos($rawStatus, 'delivered') !== false || strpos($rawStatus, 'complete') !== false) {
+                    $updates['status'] = 'Completed';
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
+                } elseif (strpos($rawStatus, 'return') !== false || strpos($rawStatus, 'cancel') !== false) {
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
+                } else {
+                    continue;
+                }
+
+                $this->updateOrderAsCourierSystem(['id' => (string) $row['id'], 'updates' => $updates]);
+                $updated += 1;
+            }
+        }
+
+        // Paperfly exchange consignments
+        $paperflyBaseUrl = rtrim(trim((string) ($settings['paperfly_base_url'] ?? '')), '/');
+        $paperflyUsername = trim((string) ($settings['paperfly_username'] ?? ''));
+        $paperflyPassword = trim((string) ($settings['paperfly_password'] ?? ''));
+        $paperflyKey = trim((string) ($settings['paperfly_key'] ?? ''));
+        if ($paperflyBaseUrl !== '' && $paperflyUsername !== '' && $paperflyPassword !== '') {
+            $rows = $this->database->fetchAll(
+                "SELECT id, status, history, exchange_paperfly_tracking_number
+                 FROM orders
+                 WHERE deleted_at IS NULL
+                   AND exchange_paperfly_tracking_number IS NOT NULL
+                   AND exchange_paperfly_tracking_number <> ''
+                   AND status = 'Exchange pending'"
+            );
+            foreach ($rows as $row) {
+                $referenceNumber = trim((string) ($row['exchange_paperfly_tracking_number'] ?? ''));
+                if ($referenceNumber === '') continue;
+                $checked += 1;
+
+                $details = $this->fetchPaperflyOrderTracking([
+                    'baseUrl' => $paperflyBaseUrl,
+                    'username' => $paperflyUsername,
+                    'password' => $paperflyPassword,
+                    'paperflyKey' => $paperflyKey,
+                    'referenceNumber' => $referenceNumber,
+                ]);
+                if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
+
+                $trackingData = $details['data'];
+                $entries = [];
+                if (isset($trackingData['data']) && is_array($trackingData['data'])) {
+                    $entries = $trackingData['data'];
+                } elseif (isset($trackingData['success']) && is_array($trackingData['success'])) {
+                    $entries = $trackingData['success'];
+                }
+
+                $isDelivered = false;
+                $isReturned = false;
+                foreach ($entries as $entry) {
+                    $status = strtolower(trim((string) ($entry['status'] ?? $entry['delivery_status'] ?? '')));
+                    if (strpos($status, 'delivered') !== false || strpos($status, 'complete') !== false) {
+                        $isDelivered = true;
+                    }
+                    if (strpos($status, 'return') !== false) {
+                        $isReturned = true;
+                    }
+                }
+
+                if (!$isDelivered && !$isReturned) continue;
+
+                $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+                $updates = ['history' => $history];
+
+                if ($isDelivered) {
+                    $updates['status'] = 'Completed';
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Paperfly on ' . gmdate('c');
+                } elseif ($isReturned) {
+                    $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned via Paperfly on ' . gmdate('c');
+                }
+
+                $this->updateOrderAsCourierSystem(['id' => (string) $row['id'], 'updates' => $updates]);
+                $updated += 1;
+            }
         }
 
         return ['checked' => $checked, 'updated' => $updated];

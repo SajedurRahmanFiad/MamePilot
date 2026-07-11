@@ -3544,7 +3544,11 @@ final class OperationsApi extends BaseService
             }
         }
 
-        return $this->database->transaction(function () use ($actor, $orderId, $outcome, $recordedAt, $accountId, $amount, $paymentMethod, $categoryId, $params): array {
+        $refundAmount = (float) ($params['refundAmount'] ?? 0);
+        $refundAccountId = trim((string) ($params['refundAccountId'] ?? ''));
+        $refundPaymentMethod = trim((string) ($params['refundPaymentMethod'] ?? ''));
+
+        return $this->database->transaction(function () use ($actor, $orderId, $outcome, $recordedAt, $accountId, $amount, $paymentMethod, $categoryId, $refundAmount, $refundAccountId, $refundPaymentMethod, $params): array {
             $orderRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
                 [':id' => $orderId]
@@ -3635,12 +3639,37 @@ final class OperationsApi extends BaseService
                     'history' => [],
                 ], (string) $actor['id'], $actor);
 
+                // Refund transaction for partially paid orders
+                if ($refundAmount > 0 && $refundAccountId !== '' && $paidAmount > 0) {
+                    $effectiveRefund = min($refundAmount, $paidAmount);
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => $categoryId,
+                        'accountId' => $refundAccountId,
+                        'amount' => $effectiveRefund,
+                        'description' => "Refund for Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $refundPaymentMethod ?: $paymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $payload['paid_amount'] = $this->formatMoney(max(0, $paidAmount - $effectiveRefund));
+                }
+
+                $refundNote = '';
+                if ($refundAmount > 0 && $refundAccountId !== '' && $paidAmount > 0) {
+                    $effectiveRefund = min($refundAmount, $paidAmount);
+                    $refundNote = sprintf(' Refund: %s.', $this->formatMoney($effectiveRefund));
+                }
+
                 $history['returned'] = sprintf(
-                    'Marked as returned by %s on %s at %s. Expense recorded: %s.%s',
+                    'Marked as returned by %s on %s at %s. Expense recorded: %s.%s%s',
                     trim((string) ($actor['name'] ?? 'System')),
                     $dateLabel,
                     $timeLabel,
                     $this->formatMoney($amount),
+                    $refundNote,
                     trim((string) ($params['note'] ?? '')) !== '' ? ' Note: ' . trim((string) $params['note']) : ''
                 );
                 $payload['history'] = $this->jsonEncode($history);
@@ -3671,6 +3700,375 @@ final class OperationsApi extends BaseService
                     $createdTransactions,
                     static fn(array $transaction): bool => (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending'
                 )
+            ));
+            $order['pendingTransactionCount'] = count($pendingTransactionIds);
+            $order['pendingTransactionIds'] = $pendingTransactionIds;
+
+            return $order;
+        });
+    }
+
+    /**
+     * Process partial return, exchange, or partial refund on a completed/picked order.
+     *
+     * Handles:
+     * - partialReturn: return some items, refund their value
+     * - exchange: return some items and replace with new ones (price difference settled)
+     *
+     */
+    public function processOrderReturnExchange(array $params): array
+    {
+        $actor = $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        $action = trim((string) ($params['returnAction'] ?? $params['action'] ?? ''));
+        $items = is_array($params['items'] ?? null) ? $params['items'] : [];
+
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        if (!in_array($action, ['partialReturn', 'exchange'], true)) {
+            throw new RuntimeException('Invalid action. Must be partialReturn or exchange.');
+        }
+        if ($items === []) {
+            throw new RuntimeException('At least one item must be selected.');
+        }
+
+        $refundAmount = (float) ($params['refundAmount'] ?? 0);
+        $extraCollectionAmount = (float) ($params['extraCollectionAmount'] ?? 0);
+        $accountId = trim((string) ($params['accountId'] ?? ''));
+        $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+        $categoryId = trim((string) ($params['categoryId'] ?? ''));
+        $note = trim((string) ($params['note'] ?? ''));
+        $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
+
+        return $this->database->transaction(function () use ($actor, $orderId, $action, $items, $refundAmount, $extraCollectionAmount, $accountId, $paymentMethod, $categoryId, $note, $recordedAt): array {
+            $orderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $orderId]
+            );
+
+            if ($orderRow === null) {
+                throw new RuntimeException('Order not found.');
+            }
+
+            $createdBy = (string) ($orderRow['created_by'] ?? '');
+            $actorRole = (string) ($actor['role'] ?? '');
+            $hasPermission = $this->hasAdminAccess($actorRole)
+                || $this->userHasScopedPermissionForRecord(
+                    $actor, $createdBy,
+                    'orders.processReturnExchangeOwn',
+                    'orders.processReturnExchangeAny'
+                );
+            if (!$hasPermission) {
+                throw new RuntimeException('You do not have permission to process returns/exchanges. Enable "Orders: Process Return/Exchange" in Settings → Permissions.');
+            }
+
+            $currentStatus = trim((string) ($orderRow['status'] ?? ''));
+            if (!in_array($currentStatus, ['Completed', 'Picked', 'Returned'], true)) {
+                throw new RuntimeException('Returns/exchanges can only be processed on Completed, Picked, or Returned orders.');
+            }
+
+            $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
+            $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
+            $previousPaidAmount = (float) ($orderRow['paid_amount'] ?? 0);
+            $previousTotal = (float) ($orderRow['total'] ?? 0);
+
+            // Refund is only possible if customer has paid something
+            if ($refundAmount > 0 && $previousPaidAmount <= 0) {
+                $refundAmount = 0;
+            }
+
+            // Account is required when money moves
+            if (($refundAmount > 0 || $extraCollectionAmount > 0) && $accountId === '') {
+                throw new RuntimeException('Account is required when a refund or collection is involved.');
+            }
+
+            $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
+                ->setTimezone(new \DateTimeZone($this->config->timezone()));
+            $dateLabel = $localRecordedAt->format('j M Y');
+            $timeLabel = $localRecordedAt->format('H:i');
+            $actorName = trim((string) ($actor['name'] ?? 'System'));
+
+            // Build updated items with return/exchange tracking
+            $updatedItems = $previousItems;
+            $returnedItemDescriptions = [];
+            $exchangedItemDescriptions = [];
+            $totalReturnValue = 0.0;
+
+            foreach ($items as $itemSelection) {
+                $productId = trim((string) ($itemSelection['productId'] ?? ''));
+                $itemAction = trim((string) ($itemSelection['action'] ?? 'keep'));
+                $returnQty = (int) ($itemSelection['returnQty'] ?? 0);
+                $replacementItems = is_array($itemSelection['replacementItems'] ?? null) ? $itemSelection['replacementItems'] : [];
+
+                if ($itemAction === 'keep' || $returnQty <= 0) {
+                    continue;
+                }
+
+                // Find the item in the order
+                $itemIndex = -1;
+                foreach ($updatedItems as $idx => $item) {
+                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
+                        $itemIndex = $idx;
+                        break;
+                    }
+                }
+                if ($itemIndex < 0) {
+                    continue;
+                }
+
+                $originalItem = $updatedItems[$itemIndex];
+                $originalQty = (int) ($originalItem['quantity'] ?? 0);
+                $rate = (float) ($originalItem['rate'] ?? 0);
+                $productName = trim((string) ($originalItem['productName'] ?? 'Unknown'));
+
+                $effectiveReturnQty = min($returnQty, $originalQty);
+                $returnValue = $rate * $effectiveReturnQty;
+                $totalReturnValue += $returnValue;
+
+                // Update the item with return/exchange tracking
+                if ($itemAction === 'return') {
+                    $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
+                    $updatedItems[$itemIndex]['returnedQty'] = $currentReturnedQty + $effectiveReturnQty;
+                    $returnedItemDescriptions[] = "{$productName} ×{$effectiveReturnQty}";
+                } elseif ($itemAction === 'exchange') {
+                    $currentExchangedQty = (int) ($originalItem['exchangedQty'] ?? 0);
+                    $updatedItems[$itemIndex]['exchangedQty'] = $currentExchangedQty + $effectiveReturnQty;
+
+                    $existingExchanges = is_array($originalItem['exchangedWith'] ?? null) ? $originalItem['exchangedWith'] : [];
+                    foreach ($replacementItems as $rep) {
+                        $existingExchanges[] = [
+                            'productId' => trim((string) ($rep['productId'] ?? '')),
+                            'productName' => trim((string) ($rep['productName'] ?? '')),
+                            'quantity' => (int) ($rep['quantity'] ?? 1),
+                            'rate' => (float) ($rep['rate'] ?? 0),
+                            'amount' => (float) ($rep['amount'] ?? 0),
+                        ];
+                    }
+                    $updatedItems[$itemIndex]['exchangedWith'] = $existingExchanges;
+
+                    $repNames = array_map(function ($r) {
+                        return trim((string) ($r['productName'] ?? '')) . ' ×' . (int) ($r['quantity'] ?? 1);
+                    }, $replacementItems);
+                    $exchangedItemDescriptions[] = "{$productName} ×{$effectiveReturnQty} → " . implode(', ', $repNames);
+                }
+            }
+
+            // Handle stock adjustments for returns (add back to stock)
+            $stockUpdates = [];
+            foreach ($items as $itemSelection) {
+                $itemAction = trim((string) ($itemSelection['action'] ?? 'keep'));
+                $returnQty = (int) ($itemSelection['returnQty'] ?? 0);
+                if ($itemAction === 'keep' || $returnQty <= 0) continue;
+
+                $productId = trim((string) ($itemSelection['productId'] ?? ''));
+                $stockUpdates[] = [
+                    'productId' => $productId,
+                    'delta' => $returnQty, // Add back to stock
+                ];
+            }
+            // Handle stock for exchange replacement items (deduct from stock)
+            if ($action === 'exchange') {
+                foreach ($items as $itemSelection) {
+                    $replacementItems = is_array($itemSelection['replacementItems'] ?? null) ? $itemSelection['replacementItems'] : [];
+                    foreach ($replacementItems as $rep) {
+                        $repProductId = trim((string) ($rep['productId'] ?? ''));
+                        $repQty = (int) ($rep['quantity'] ?? 1);
+                        if ($repProductId !== '' && $repQty > 0) {
+                            $stockUpdates[] = [
+                                'productId' => $repProductId,
+                                'delta' => -$repQty, // Deduct from stock
+                            ];
+                            // Also add replacement item to the order items
+                            $updatedItems[] = [
+                                'productId' => $repProductId,
+                                'productName' => trim((string) ($rep['productName'] ?? '')),
+                                'rate' => (float) ($rep['rate'] ?? 0),
+                                'quantity' => $repQty,
+                                'amount' => (float) ($rep['amount'] ?? 0),
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // Apply stock updates
+            foreach ($stockUpdates as $su) {
+                $pid = trim((string) ($su['productId'] ?? ''));
+                $delta = (int) ($su['delta'] ?? 0);
+                if ($pid === '' || $delta === 0) continue;
+
+                $productRow = $this->database->fetchOne(
+                    'SELECT id, stock FROM products WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $pid]
+                );
+                if ($productRow === null) continue;
+
+                $newStock = max(0, (int) ($productRow['stock'] ?? 0) + $delta);
+                $this->database->execute(
+                    'UPDATE products SET stock = :stock, updated_at = :updated_at WHERE id = :id',
+                    [':stock' => $newStock, ':updated_at' => $this->database->nowUtc(), ':id' => $pid]
+                );
+            }
+
+            // Recalculate order totals — only count active (non-returned) items + replacements
+            $newSubtotal = 0.0;
+            foreach ($updatedItems as $item) {
+                $itemQty = (int) ($item['quantity'] ?? 0);
+                $returnedQty = (int) ($item['returnedQty'] ?? 0);
+                $exchangedQty = (int) ($item['exchangedQty'] ?? 0);
+                $activeQty = max(0, $itemQty - $returnedQty - $exchangedQty);
+                $rate = (float) ($item['rate'] ?? 0);
+                $newSubtotal += $rate * $activeQty;
+            }
+            // Add replacement items (already in updatedItems from exchange)
+            foreach ($updatedItems as $item) {
+                // Replacement items don't have returnedQty/exchangedQty and their amount is already correct
+                if (!isset($item['_isReplacement'])) continue;
+            }
+
+            $originalSubtotal = (float) ($orderRow['subtotal'] ?? 0);
+            $originalDiscount = (float) ($orderRow['discount'] ?? 0);
+            $shipping = (float) ($orderRow['shipping'] ?? 0);
+
+            // Proportional discount: if returning X% of items, discount reduces by X%
+            $discountRatio = $originalSubtotal > 0 ? ($newSubtotal / $originalSubtotal) : 1;
+            $newDiscount = round($originalDiscount * $discountRatio, 2);
+            $newTotal = max(0, $newSubtotal - $newDiscount + $shipping);
+
+            // Calculate the actual return value (what the customer should get back)
+            $returnValueFromItems = $originalSubtotal - $newSubtotal;
+            $discountLost = $originalDiscount - $newDiscount;
+            $netReturnValue = max(0, $returnValueFromItems - $discountLost);
+
+            // Calculate new paid amount based on actual financial impact
+            $newPaidAmount = $previousPaidAmount;
+            if ($refundAmount > 0) {
+                // Cap refund at what was actually overpaid
+                $maxRefund = max(0, $previousPaidAmount - $newTotal);
+                $effectiveRefund = min($refundAmount, $maxRefund);
+                $newPaidAmount = max(0, $previousPaidAmount - $effectiveRefund);
+            }
+            if ($extraCollectionAmount > 0) {
+                $newPaidAmount += $extraCollectionAmount;
+            }
+            // Cap paid amount at the new total
+            $newPaidAmount = min($newPaidAmount, $newTotal);
+
+            // Create transactions
+            $systemDefaults = $this->database->fetchOne(
+                'SELECT default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
+            ) ?? [];
+            $defaultPaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? 'Cash')) ?: 'Cash';
+            $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
+            $defaultExpenseCategoryId = trim((string) ($systemDefaults['expense_category_id'] ?? 'expense_other')) ?: 'expense_other';
+            $effectivePaymentMethod = $paymentMethod ?: $defaultPaymentMethod;
+            $createdTransactions = [];
+
+            // Refund transaction (expense) — use capped amount
+            if ($refundAmount > 0 && $accountId !== '') {
+                $maxRefund = max(0, $previousPaidAmount - $newTotal);
+                $effectiveRefund = min($refundAmount, $maxRefund);
+                if ($effectiveRefund > 0) {
+                    $refundCategory = $categoryId !== '' ? $categoryId : $defaultExpenseCategoryId;
+                    $refundDescription = match ($action) {
+                        'partialReturn' => "Partial return refund for Order #{$orderNumber}",
+                        'exchange' => "Exchange refund for Order #{$orderNumber}",
+                        default => "Refund for Order #{$orderNumber}",
+                    };
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => $refundCategory,
+                        'accountId' => $accountId,
+                        'amount' => $effectiveRefund,
+                        'description' => $refundDescription,
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $effectivePaymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                }
+            }
+
+            // Extra collection transaction (income)
+            if ($extraCollectionAmount > 0 && $accountId !== '') {
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Income',
+                    'category' => $incomeCategoryId,
+                    'accountId' => $accountId,
+                    'amount' => $extraCollectionAmount,
+                    'description' => "Exchange difference collected for Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $effectivePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
+            // Build history entry
+            $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+            $historyLines = [];
+            if ($returnedItemDescriptions !== []) {
+                $historyLines[] = 'Returned: ' . implode(', ', $returnedItemDescriptions);
+            }
+            if ($exchangedItemDescriptions !== []) {
+                $historyLines[] = 'Exchanged: ' . implode(', ', $exchangedItemDescriptions);
+            }
+            if ($refundAmount > 0) {
+                $maxRefund = max(0, $previousPaidAmount - $newTotal);
+                $effectiveRefund = min($refundAmount, $maxRefund);
+                if ($effectiveRefund > 0) {
+                    $historyLines[] = 'Refunded: ' . $this->formatMoney($effectiveRefund);
+                }
+            }
+            if ($extraCollectionAmount > 0) {
+                $historyLines[] = 'Collected: ' . $this->formatMoney($extraCollectionAmount);
+            }
+            if ($note !== '') {
+                $historyLines[] = 'Note: ' . $note;
+            }
+
+            $actionLabel = match ($action) {
+                'partialReturn' => 'Partial return',
+                'exchange' => 'Exchange',
+                default => 'Return/Exchange',
+            };
+            $history['returnExchange'] = trim(
+                "{$actionLabel} processed by {$actorName} on {$dateLabel} at {$timeLabel}. "
+                . implode('. ', $historyLines)
+            );
+
+            // Update the order — set status to 'Exchange pending' for exchanges
+            $nextStatus = $action === 'exchange' ? 'Exchange pending' : null;
+            $payload = [
+                'items' => $this->jsonEncode($updatedItems),
+                'subtotal' => $this->formatMoney($newSubtotal),
+                'discount' => $this->formatMoney($newDiscount),
+                'total' => $this->formatMoney($newTotal),
+                'paid_amount' => $this->formatMoney($newPaidAmount),
+                'history' => $this->jsonEncode($history),
+            ];
+            if ($nextStatus !== null) {
+                $payload['status'] = $nextStatus;
+            }
+            $this->touchUpdate('orders', $orderId, $payload);
+
+            // Sync customer summary
+            $this->syncCustomerOrderSummaries([$customerId]);
+
+            // Reload and return
+            $row = $this->fetchOrderRowById($orderId);
+            if ($row === null) {
+                throw new RuntimeException('Updated order could not be loaded.');
+            }
+
+            $order = $this->mapOrder($row);
+            $pendingTransactionIds = array_values(array_map(
+                static fn(array $t): string => (string) ($t['id'] ?? ''),
+                array_filter($createdTransactions, static fn(array $t): bool => (string) ($t['approvalStatus'] ?? 'approved') === 'pending')
             ));
             $order['pendingTransactionCount'] = count($pendingTransactionIds);
             $order['pendingTransactionIds'] = $pendingTransactionIds;
@@ -4022,6 +4420,207 @@ final class OperationsApi extends BaseService
             $this->syncVendorPurchaseSummaries([(string) ($existingRow['vendor_id'] ?? '')]);
 
             return ['success' => true];
+        });
+    }
+
+    /**
+     * Process partial return on a bill (return goods to vendor).
+     */
+    public function processBillReturn(array $params): array
+    {
+        $actor = $this->currentUser();
+        $billId = trim((string) ($params['billId'] ?? ''));
+        $items = is_array($params['items'] ?? null) ? $params['items'] : [];
+
+        if ($billId === '') {
+            throw new RuntimeException('Bill id is required.');
+        }
+        if ($items === []) {
+            throw new RuntimeException('At least one item must be selected for return.');
+        }
+
+        $refundAmount = (float) ($params['refundAmount'] ?? 0);
+        $accountId = trim((string) ($params['accountId'] ?? ''));
+        $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+        $categoryId = trim((string) ($params['categoryId'] ?? ''));
+        $note = trim((string) ($params['note'] ?? ''));
+        $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
+
+        return $this->database->transaction(function () use ($actor, $billId, $items, $refundAmount, $accountId, $paymentMethod, $categoryId, $note, $recordedAt): array {
+            $billRow = $this->database->fetchOne(
+                'SELECT * FROM bills WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $billId]
+            );
+
+            if ($billRow === null) {
+                throw new RuntimeException('Bill not found.');
+            }
+
+            $createdBy = (string) ($billRow['created_by'] ?? '');
+            $actorRole = (string) ($actor['role'] ?? '');
+            $hasPermission = $this->hasAdminAccess($actorRole)
+                || $this->userHasScopedPermissionForRecord(
+                    $actor, $createdBy,
+                    'bills.processReturnOwn',
+                    'bills.processReturnAny'
+                );
+            if (!$hasPermission) {
+                throw new RuntimeException('You do not have permission to process bill returns. Enable "Bills: Process Return" in Settings → Permissions.');
+            }
+
+            $currentStatus = trim((string) ($billRow['status'] ?? ''));
+            if (!in_array($currentStatus, ['Received', 'Paid', 'Processing'], true)) {
+                throw new RuntimeException('Returns can only be processed on Received, Paid, or Processing bills.');
+            }
+
+            $billNumber = trim((string) ($billRow['bill_number'] ?? ''));
+            $vendorId = trim((string) ($billRow['vendor_id'] ?? ''));
+            $previousItems = $this->jsonDecodeList($billRow['items'] ?? []);
+            $previousPaidAmount = (float) ($billRow['paid_amount'] ?? 0);
+            $previousTotal = (float) ($billRow['total'] ?? 0);
+
+            $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
+                ->setTimezone(new \DateTimeZone($this->config->timezone()));
+            $dateLabel = $localRecordedAt->format('j M Y');
+            $timeLabel = $localRecordedAt->format('H:i');
+            $actorName = trim((string) ($actor['name'] ?? 'System'));
+
+            // Build updated items with return tracking
+            $updatedItems = $previousItems;
+            $returnedItemDescriptions = [];
+
+            foreach ($items as $itemSelection) {
+                $productId = trim((string) ($itemSelection['productId'] ?? ''));
+                $returnQty = (int) ($itemSelection['returnQty'] ?? 0);
+                if ($returnQty <= 0) continue;
+
+                $itemIndex = -1;
+                foreach ($updatedItems as $idx => $item) {
+                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
+                        $itemIndex = $idx;
+                        break;
+                    }
+                }
+                if ($itemIndex < 0) continue;
+
+                $originalItem = $updatedItems[$itemIndex];
+                $originalQty = (int) ($originalItem['quantity'] ?? 0);
+                $rate = (float) ($originalItem['rate'] ?? 0);
+                $productName = trim((string) ($originalItem['productName'] ?? 'Unknown'));
+
+                $effectiveReturnQty = min($returnQty, $originalQty);
+
+                // Update item with return tracking
+                $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
+                $updatedItems[$itemIndex]['returnedQty'] = $currentReturnedQty + $effectiveReturnQty;
+
+                $returnedItemDescriptions[] = "{$productName} ×{$effectiveReturnQty}";
+
+                // Reverse stock (deduct from stock since bill adds stock)
+                $productRow = $this->database->fetchOne(
+                    'SELECT id, stock FROM products WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $productId]
+                );
+                if ($productRow !== null) {
+                    $newStock = max(0, (int) ($productRow['stock'] ?? 0) - $effectiveReturnQty);
+                    $this->database->execute(
+                        'UPDATE products SET stock = :stock, updated_at = :updated_at WHERE id = :id',
+                        [':stock' => $newStock, ':updated_at' => $this->database->nowUtc(), ':id' => $productId]
+                    );
+                }
+            }
+
+            // Recalculate bill totals — only count active (non-returned) items
+            $newSubtotal = 0.0;
+            foreach ($updatedItems as $item) {
+                $itemQty = (int) ($item['quantity'] ?? 0);
+                $returnedQty = (int) ($item['returnedQty'] ?? 0);
+                $activeQty = max(0, $itemQty - $returnedQty);
+                $rate = (float) ($item['rate'] ?? 0);
+                $newSubtotal += $rate * $activeQty;
+            }
+            $originalSubtotal = (float) ($billRow['subtotal'] ?? 0);
+            $originalDiscount = (float) ($billRow['discount'] ?? 0);
+            $shipping = (float) ($billRow['shipping'] ?? 0);
+
+            // Proportional discount
+            $discountRatio = $originalSubtotal > 0 ? ($newSubtotal / $originalSubtotal) : 1;
+            $newDiscount = round($originalDiscount * $discountRatio, 2);
+            $newTotal = max(0, $newSubtotal - $newDiscount + $shipping);
+
+            // Adjust paid amount — cap refund at overpayment
+            $newPaidAmount = $previousPaidAmount;
+            if ($refundAmount > 0) {
+                $maxRefund = max(0, $previousPaidAmount - $newTotal);
+                $effectiveRefund = min($refundAmount, $maxRefund);
+                $newPaidAmount = max(0, $previousPaidAmount - $effectiveRefund);
+            }
+            $newPaidAmount = min($newPaidAmount, $newTotal);
+
+            // Create refund transaction (income - vendor refunding us)
+            $systemDefaults = $this->database->fetchOne(
+                'SELECT default_payment_method, income_category_id FROM system_defaults LIMIT 1'
+            ) ?? [];
+            $defaultPaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? 'Cash')) ?: 'Cash';
+            $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
+            $effectivePaymentMethod = $paymentMethod ?: $defaultPaymentMethod;
+
+            if ($refundAmount > 0 && $accountId !== '') {
+                $maxRefund = max(0, $previousPaidAmount - $newTotal);
+                $effectiveRefund = min($refundAmount, $maxRefund);
+                if ($effectiveRefund > 0) {
+                    $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Income',
+                        'category' => $incomeCategoryId,
+                        'accountId' => $accountId,
+                        'amount' => $effectiveRefund,
+                        'description' => "Vendor return refund for Bill #{$billNumber}",
+                        'referenceId' => $billId,
+                        'contactId' => $vendorId,
+                        'paymentMethod' => $effectivePaymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                }
+            }
+
+            // Build history
+            $history = $this->jsonDecodeAssoc($billRow['history'] ?? []);
+            $historyLines = [];
+            if ($returnedItemDescriptions !== []) {
+                $historyLines[] = 'Returned: ' . implode(', ', $returnedItemDescriptions);
+            }
+            if ($refundAmount > 0) {
+                $historyLines[] = 'Refunded: ' . $this->formatMoney($refundAmount);
+            }
+            if ($note !== '') {
+                $historyLines[] = 'Note: ' . $note;
+            }
+            $history['return'] = trim(
+                "Return processed by {$actorName} on {$dateLabel} at {$timeLabel}. "
+                . implode('. ', $historyLines)
+            );
+
+            // Update bill
+            $payload = [
+                'items' => $this->jsonEncode($updatedItems),
+                'subtotal' => $this->formatMoney($newSubtotal),
+                'discount' => $this->formatMoney($newDiscount),
+                'total' => $this->formatMoney($newTotal),
+                'paid_amount' => $this->formatMoney($newPaidAmount),
+                'history' => $this->jsonEncode($history),
+            ];
+            $this->touchUpdate('bills', $billId, $payload);
+
+            // Sync vendor summary
+            $this->syncVendorPurchaseSummaries([$vendorId]);
+
+            // Reload and return
+            $row = $this->fetchBillRowById($billId);
+            if ($row === null) {
+                throw new RuntimeException('Updated bill could not be loaded.');
+            }
+            return $this->mapBill($row);
         });
     }
 

@@ -5,6 +5,7 @@ import { db } from '../db';
 import { Product, UserRole, isEmployeeRole } from '../types';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
+import { compressImage } from '../utils';
 import { useProduct, useCategories } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -76,13 +77,15 @@ const ProductForm: React.FC = () => {
     }
   }, [existingProduct]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+    try {
+      const compressed = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.82 });
+      setForm((prev) => ({ ...prev, image: compressed }));
+    } catch {
       const reader = new FileReader();
-      reader.onload = () => {
-        setForm({...form, image: reader.result as string});
-      };
+      reader.onload = () => setForm((prev) => ({ ...prev, image: reader.result as string }));
       reader.readAsDataURL(file);
     }
   };

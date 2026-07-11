@@ -336,7 +336,7 @@ const BillForm: React.FC = () => {
                     <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
                   </div>
                   <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {vendorsFetching ? (
+                    {(visibleVendors || []).length === 0 && vendorsFetching ? (
                       <div className="p-4 space-y-3">
                         <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                         <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
@@ -432,7 +432,7 @@ const BillForm: React.FC = () => {
                           <input autoFocus type="text" placeholder="Search product..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                         <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                          {productsMiniLoading || productsSearchLoading ? (
+                          {products.length === 0 && (productsMiniLoading || productsSearchLoading) ? (
                             <div className="p-4 space-y-3">
                               <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                               <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>

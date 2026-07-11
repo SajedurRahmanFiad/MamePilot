@@ -64,6 +64,7 @@ import {
   fetchCourierSettings,
   fetchMetaAdById,
   fetchMetaAds,
+  fetchMarketingDashboard,
   fetchMetaAdsSettings,
   fetchMetaAdsConnectionStatus,
   fetchMetaAdsSyncCache,
@@ -125,6 +126,7 @@ import type {
   WalletActivityEntry,
   UserActivityPerformanceLogEntry,
   MetaAdsSettings,
+  MarketingDashboardResponse,
   UserActivityPerformanceReportPage,
   WalletEntryType,
   WalletBalanceCard,
@@ -1064,6 +1066,23 @@ export function useMetaAdsSettings(enabled: boolean = true): UseQueryResult<Meta
     queryFn: fetchMetaAdsSettings,
     staleTime: 60 * 1000,
     enabled,
+  });
+}
+
+export function useMarketingDashboard(
+  filters?: { from?: string; to?: string },
+  enabled: boolean = true
+): UseQueryResult<MarketingDashboardResponse, Error> {
+  const normalized = {
+    from: String(filters?.from || ''),
+    to: String(filters?.to || ''),
+  };
+  return useQuery({
+    queryKey: ['meta-ads', 'marketing-dashboard', normalized],
+    queryFn: () => fetchMarketingDashboard(normalized),
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    enabled: enabled && Boolean(normalized.from && normalized.to),
   });
 }
 

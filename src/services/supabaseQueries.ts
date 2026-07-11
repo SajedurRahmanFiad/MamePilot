@@ -50,11 +50,14 @@ import type {
   AgentSettings,
   AgentConversation,
   MetaAdsSettings,
+  MarketingDashboardResponse,
   AgentMessage,
   AgentRunEvent,
   AgentRunReceipt,
   BusinessGrowthSettings,
   BusinessRecommendation,
+  ProcessOrderReturnExchangePayload,
+  ProcessBillReturnPayload,
 } from '../../types';
 import { apiAction, type ApiActionOptions } from './apiClient';
 
@@ -127,6 +130,7 @@ export async function deleteOrder(id: string) { await remove('deleteOrder', id);
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
 export async function fetchOrderByNumber(orderNumber: string) { return call<Order | null>('fetchOrderByNumber', { orderNumber }); }
 export async function revertOrderStatus(payload: { orderId: string; targetStatus: string }) { return call<Order>('revertOrderStatus', payload); }
+export async function processOrderReturnExchange(payload: ProcessOrderReturnExchangePayload) { return call<Order>('processOrderReturnExchange', payload); }
 
 export async function fetchAccounts() { return call<Account[]>('fetchAccounts'); }
 export async function fetchAccountById(id: string) { return call<Account | null>('fetchAccountById', { id }); }
@@ -183,6 +187,7 @@ export async function getNextBillNumber(): Promise<string> { return call<string>
 export async function createBill(bill: Omit<Bill, 'id'>) { return call<Bill>('createBill', bill); }
 export async function updateBill(id: string, updates: Partial<Bill>) { return call<Bill>('updateBill', { id, updates }); }
 export async function deleteBill(id: string) { await remove('deleteBill', id); }
+export async function processBillReturn(payload: ProcessBillReturnPayload) { return call<Bill>('processBillReturn', payload); }
 
 export async function fetchVendors() { return call<Vendor[]>('fetchVendors'); }
 export async function fetchVendorById(id: string) { return call<Vendor | null>('fetchVendorById', { id }); }
@@ -282,6 +287,9 @@ export async function fetchMetaAdInsightsDevices(id: string): Promise<any> { ret
 
 export async function fetchMetaAds(filters?: { businessId?: string; adAccountId?: string; campaignId?: string; status?: string; from?: string; to?: string; search?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
 export async function fetchMetaAdById(id: string): Promise<any | null> { return call<any | null>('fetchMetaAdById', { id }); }
+export async function fetchMarketingDashboard(filters?: { from?: string; to?: string }): Promise<MarketingDashboardResponse> {
+  return call<MarketingDashboardResponse>('fetchMarketingDashboard', filters || {}, { timeoutMs: 60000 });
+}
 export async function checkFraudCourierHistory(phone: string): Promise<FraudCheckResult> {
   return call<FraudCheckResult>('checkFraudCourierHistory', { phone }, { timeoutMs: 30000 });
 }
@@ -328,6 +336,7 @@ export async function fetchCarryBeeCities(params: { baseUrl: string; clientId: s
 export async function fetchCarryBeeZones(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeZones', params); }
 export async function fetchCarryBeeAreas(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; zoneId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeAreas', params); }
 export async function submitCarryBeeOrder(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; deliveryType: number; productType: number; recipientPhone: string; recipientName: string; recipientAddress: string; cityId: string; zoneId: string; areaId?: string; itemWeight: number; collectableAmount: number; }): Promise<any> { return call<any>('submitCarryBeeOrder', params); }
+export async function submitCarryBeeExchangeOrder(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; consignmentId: string; collectableAmount?: number; itemQuantity?: number; }): Promise<any> { return call<any>('submitCarryBeeExchangeOrder', params); }
 export async function fetchCarryBeeOrderDetails(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; consignmentId: string; }): Promise<{ data?: any; error?: string }> { return call<{ data?: any; error?: string }>('fetchCarryBeeOrderDetails', params); }
 export async function syncCarryBeeTransferStatuses(params?: { mode?: 'incremental' | 'backfill'; limit?: number; orderId?: string; cursorCreatedAt?: string; }): Promise<{ checked: number; updated: number; hasMore?: boolean; nextCursorCreatedAt?: string | null; statusCounts?: Record<string, number>; errors?: Array<{ orderId?: string; orderNumber?: string; error?: string }>; updatedOrders?: Array<{ orderId?: string; orderNumber?: string; rawStatus?: string }>; }> {
   return call('syncCarryBeeTransferStatuses', params || {});
@@ -335,6 +344,7 @@ export async function syncCarryBeeTransferStatuses(params?: { mode?: 'incrementa
 export async function submitSteadfastOrder(params: { baseUrl: string; apiKey: string; secretKey: string; invoice: string; recipientName: string; recipientPhone: string; recipientAddress: string; codAmount: number; }): Promise<any> { return call<any>('submitSteadfastOrder', params); }
 export async function fetchSteadfastStatusByTrackingCode(params: { baseUrl: string; apiKey: string; secretKey: string; trackingCode: string; }): Promise<{ data?: any; error?: string }> { return call<{ data?: any; error?: string }>('fetchSteadfastStatusByTrackingCode', params); }
 export async function submitPaperflyOrder(params: { baseUrl: string; username: string; password: string; paperflyKey: string; merchantOrderReference: string; storeName: string; productBrief: string; packagePrice: number | string; maxWeightKg: number | string; customerName: string; customerAddress: string; customerPhone: string; }): Promise<any> { return call<any>('submitPaperflyOrder', params); }
+export async function submitPaperflyExchangeOrder(params: { baseUrl: string; username: string; password: string; paperflyKey: string; merchantOrderReference: string; storeName: string; productBrief: string; packagePrice: number | string; maxWeightKg: number | string; customerName: string; customerAddress: string; customerPhone: string; exchangeDescription?: string; exchangePrice?: number | string; exchangeWeightKg?: number | string; }): Promise<any> { return call<any>('submitPaperflyExchangeOrder', params); }
 export async function fetchPaperflyOrderTracking(params: { baseUrl: string; username: string; password: string; paperflyKey: string; referenceNumber: string; }): Promise<{ data?: any; error?: string }> { return call<{ data?: any; error?: string }>('fetchPaperflyOrderTracking', params); }
 export async function syncPaperflyOrderStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncPaperflyOrderStatuses'); }
 export async function syncSteadfastDeliveryStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncSteadfastDeliveryStatuses'); }

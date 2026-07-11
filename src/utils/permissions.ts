@@ -49,6 +49,16 @@ const LEGACY_SCOPED_PERMISSION_KEYS: Array<{
     anyKey: 'bills.markReceivedAny',
   },
   { legacyKey: 'bills.markPaid', ownKey: 'bills.markPaidOwn', anyKey: 'bills.markPaidAny' },
+  {
+    legacyKey: 'orders.processReturnExchange',
+    ownKey: 'orders.processReturnExchangeOwn',
+    anyKey: 'orders.processReturnExchangeAny',
+  },
+  {
+    legacyKey: 'bills.processReturn',
+    ownKey: 'bills.processReturnOwn',
+    anyKey: 'bills.processReturnAny',
+  },
 ];
 
 function legacyPermissionGrantsAnyAccess(roleName: string): boolean {
@@ -181,6 +191,18 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: 'orders.markReturnedAny',
     label: 'Orders: Mark Returned (Any)',
     description: 'Finalize returned orders created by any user.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.processReturnExchangeOwn',
+    label: 'Orders: Process Return/Exchange (Own)',
+    description: 'Process partial returns, exchanges, and partial refunds on orders created by the current user.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.processReturnExchangeAny',
+    label: 'Orders: Process Return/Exchange (Any)',
+    description: 'Process partial returns, exchanges, and partial refunds on orders created by any user.',
     section: 'Orders',
   },
   {
@@ -319,6 +341,18 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: 'bills.markPaidAny',
     label: 'Bills: Mark Paid (Any)',
     description: 'Record payments for bills created by any user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.processReturnOwn',
+    label: 'Bills: Process Return (Own)',
+    description: 'Process partial returns on bills created by the current user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.processReturnAny',
+    label: 'Bills: Process Return (Any)',
+    description: 'Process partial returns on bills created by any user.',
     section: 'Bills',
   },
   {
