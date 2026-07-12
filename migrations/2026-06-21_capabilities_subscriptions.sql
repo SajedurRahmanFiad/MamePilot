@@ -21,11 +21,11 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `app_capability_settings`
-  ADD COLUMN IF NOT EXISTS `license_owner_token` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `tier_key` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `available_tiers` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL;
+  ADD COLUMN `license_owner_token` VARCHAR(500) NULL,
+  ADD COLUMN `tier_key` VARCHAR(64) NULL,
+  ADD COLUMN `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `available_tiers` LONGTEXT NULL,
+  ADD COLUMN `pricing_metadata` LONGTEXT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_gateway_settings (
   id VARCHAR(64) NOT NULL,
@@ -39,18 +39,18 @@ CREATE TABLE IF NOT EXISTS payment_gateway_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `service_subscription_settings`
-  ADD COLUMN IF NOT EXISTS `plan_name` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `subscription_status` VARCHAR(64) NOT NULL DEFAULT 'unconfigured',
-  ADD COLUMN IF NOT EXISTS `current_period_end` DATETIME NULL;
+  ADD COLUMN `plan_name` VARCHAR(255) NULL,
+  ADD COLUMN `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN `subscription_status` VARCHAR(64) NOT NULL DEFAULT 'unconfigured',
+  ADD COLUMN `current_period_end` DATETIME NULL;
 
 ALTER TABLE `service_subscription_payments`
-  ADD COLUMN IF NOT EXISTS `local_reference` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `gateway_payment_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `gateway_name` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `invoice_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `raw_payload` LONGTEXT NULL;
+  ADD COLUMN `local_reference` VARCHAR(255) NULL,
+  ADD COLUMN `gateway_payment_id` VARCHAR(255) NULL,
+  ADD COLUMN `gateway_name` VARCHAR(64) NULL,
+  ADD COLUMN `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN `invoice_url` VARCHAR(500) NULL,
+  ADD COLUMN `raw_payload` LONGTEXT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_webhook_logs (
   id VARCHAR(64) NOT NULL,

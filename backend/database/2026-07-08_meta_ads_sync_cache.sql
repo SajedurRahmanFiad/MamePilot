@@ -17,4 +17,4 @@ CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
 CREATE INDEX IF NOT EXISTS idx_meta_ads_sync_cache_synced_at ON meta_ads_sync_cache(last_synced_at DESC);
 
 -- For existing tables that are missing the new column:
-ALTER TABLE meta_ads_sync_cache ADD COLUMN IF NOT EXISTS last_manual_sync_at DATETIME DEFAULT NULL;
+ALTER TABLE meta_ads_sync_cache ADD COLUMN last_manual_sync_at DATETIME DEFAULT NULL;

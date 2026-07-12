@@ -58,6 +58,7 @@ final class SchemaManager
         }
 
         $statements = preg_split('/;\s*(?:\r?\n|$)/', $sql) ?: [];
+        $errors = [];
         foreach ($statements as $statement) {
             $trimmed = trim($statement);
             if ($trimmed === '') {
@@ -66,7 +67,26 @@ final class SchemaManager
             if (!$includeSeedData && $this->shouldSkipSeedStatement($trimmed)) {
                 continue;
             }
-            $this->database->connect()->exec($trimmed);
+            try {
+                $this->database->connect()->exec($trimmed);
+            } catch (\PDOException $e) {
+                // 1060 = Duplicate column name, 1061 = Duplicate key name,
+                // 1050 = Table already exists, 1051 = Unknown table,
+                // 1062 = Duplicate entry, 1146 = Table/view not found (from DROP VIEW IF EXISTS on missing view)
+                // These are safe to ignore during idempotent schema re-runs.
+                $code = (int) $e->getCode();
+                $safeCodes = [1050, 1051, 1060, 1061, 1062, 1146];
+                if (in_array($code, $safeCodes, true)) {
+                    continue;
+                }
+                // MySQL < 8.0.29 does not support IF NOT EXISTS on ALTER TABLE ADD COLUMN.
+                // Treat the syntax error as non-fatal so subsequent statements (e.g. CREATE VIEW) still run.
+                if ($code === 1064 && stripos($trimmed, 'ALTER TABLE') === 0) {
+                    $errors[] = $e->getMessage();
+                    continue;
+                }
+                throw $e;
+            }
         }
     }
 

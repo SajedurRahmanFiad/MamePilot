@@ -198,21 +198,21 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   CONSTRAINT fk_system_defaults_income_category FOREIGN KEY (income_category_id) REFERENCES categories (id) ON DELETE SET NULL,
   CONSTRAINT fk_system_defaults_expense_category FOREIGN KEY (expense_category_id) REFERENCES categories (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- Upgrade compatibility for existing databases
+-- Upgrade compatibility for existing databases (no IF NOT EXISTS for MySQL <8.0.29 compat)
 ALTER TABLE `users`
-  ADD COLUMN IF NOT EXISTS `email` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `address` TEXT NULL,
-  ADD COLUMN IF NOT EXISTS `birthday` DATE NULL,
-  ADD COLUMN IF NOT EXISTS `nid_passport_copy` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `gender` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `blood_group` VARCHAR(16) NULL,
-  ADD COLUMN IF NOT EXISTS `nationality` VARCHAR(128) NULL,
-  ADD COLUMN IF NOT EXISTS `cv` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `is_commission_based` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `fixed_salary` DECIMAL(12,2) NULL;
+  ADD COLUMN `email` VARCHAR(255) NULL,
+  ADD COLUMN `address` TEXT NULL,
+  ADD COLUMN `birthday` DATE NULL,
+  ADD COLUMN `nid_passport_copy` LONGTEXT NULL,
+  ADD COLUMN `gender` VARCHAR(32) NULL,
+  ADD COLUMN `blood_group` VARCHAR(16) NULL,
+  ADD COLUMN `nationality` VARCHAR(128) NULL,
+  ADD COLUMN `cv` LONGTEXT NULL,
+  ADD COLUMN `is_commission_based` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `fixed_salary` DECIMAL(12,2) NULL;
 ALTER TABLE `system_defaults`
-  ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57';
+  ADD COLUMN `white_label` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57';
 CREATE TABLE IF NOT EXISTS courier_settings (
   id VARCHAR(64) NOT NULL,
   steadfast_enabled TINYINT(1) NOT NULL DEFAULT 0,
@@ -268,12 +268,12 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `app_capability_settings`
-  ADD COLUMN IF NOT EXISTS `license_owner_token` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `tier_key` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `maintenance_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `available_tiers` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL;
+  ADD COLUMN `license_owner_token` VARCHAR(500) NULL,
+  ADD COLUMN `tier_key` VARCHAR(64) NULL,
+  ADD COLUMN `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `maintenance_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `available_tiers` LONGTEXT NULL,
+  ADD COLUMN `pricing_metadata` LONGTEXT NULL;
 CREATE TABLE IF NOT EXISTS payment_gateway_settings (
   id VARCHAR(64) NOT NULL,
   piprapay_base_url VARCHAR(500) NULL,
@@ -423,43 +423,43 @@ CREATE TABLE IF NOT EXISTS agent_db_query_audit (
   CONSTRAINT fk_agent_db_query_audit_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `payment_gateway_settings`
-  ADD COLUMN IF NOT EXISTS `piprapay_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_merchant_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_ipn_secret` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_webhook_url` VARCHAR(1000) NULL,
-  ADD COLUMN IF NOT EXISTS `piprapay_return_url` VARCHAR(1000) NULL;
+  ADD COLUMN `piprapay_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `piprapay_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `piprapay_merchant_id` VARCHAR(255) NULL,
+  ADD COLUMN `piprapay_ipn_secret` VARCHAR(500) NULL,
+  ADD COLUMN `piprapay_webhook_url` VARCHAR(1000) NULL,
+  ADD COLUMN `piprapay_return_url` VARCHAR(1000) NULL;
 ALTER TABLE `agent_settings`
-  ADD COLUMN IF NOT EXISTS `enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `main_provider` VARCHAR(32) NOT NULL DEFAULT 'anthropic',
-  ADD COLUMN IF NOT EXISTS `anthropic_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `anthropic_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `anthropic_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `anthropic_model` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `anthropic_organization` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `anthropic_project` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `openai_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `openai_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openai_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openai_model` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `openai_organization` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `openai_project` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `google_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `google_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `google_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `google_model` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `google_organization` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `google_project` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `groq_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `groq_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `groq_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `groq_model` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `show_reasoning_summaries` TINYINT(1) NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS `show_tool_activity` TINYINT(1) NOT NULL DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS `max_reasoning_steps` INT NOT NULL DEFAULT 8,
-  ADD COLUMN IF NOT EXISTS `max_tool_calls` INT NOT NULL DEFAULT 12,
-  ADD COLUMN IF NOT EXISTS `query_row_limit` INT NOT NULL DEFAULT 100,
-  ADD COLUMN IF NOT EXISTS `query_timeout_ms` INT NOT NULL DEFAULT 15000;
+  ADD COLUMN `enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `main_provider` VARCHAR(32) NOT NULL DEFAULT 'anthropic',
+  ADD COLUMN `anthropic_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `anthropic_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `anthropic_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `anthropic_model` VARCHAR(255) NULL,
+  ADD COLUMN `anthropic_organization` VARCHAR(255) NULL,
+  ADD COLUMN `anthropic_project` VARCHAR(255) NULL,
+  ADD COLUMN `openai_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `openai_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `openai_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `openai_model` VARCHAR(255) NULL,
+  ADD COLUMN `openai_organization` VARCHAR(255) NULL,
+  ADD COLUMN `openai_project` VARCHAR(255) NULL,
+  ADD COLUMN `google_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `google_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `google_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `google_model` VARCHAR(255) NULL,
+  ADD COLUMN `google_organization` VARCHAR(255) NULL,
+  ADD COLUMN `google_project` VARCHAR(255) NULL,
+  ADD COLUMN `groq_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `groq_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `groq_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `groq_model` VARCHAR(255) NULL,
+  ADD COLUMN `show_reasoning_summaries` TINYINT(1) NOT NULL DEFAULT 1,
+  ADD COLUMN `show_tool_activity` TINYINT(1) NOT NULL DEFAULT 1,
+  ADD COLUMN `max_reasoning_steps` INT NOT NULL DEFAULT 8,
+  ADD COLUMN `max_tool_calls` INT NOT NULL DEFAULT 12,
+  ADD COLUMN `query_row_limit` INT NOT NULL DEFAULT 100,
+  ADD COLUMN `query_timeout_ms` INT NOT NULL DEFAULT 15000;
 CREATE TABLE IF NOT EXISTS notifications (
   id VARCHAR(64) NOT NULL,
   system_key VARCHAR(191) NULL,
@@ -520,10 +520,10 @@ CREATE TABLE IF NOT EXISTS service_subscription_settings (
   CONSTRAINT fk_service_subscription_settings_updated_by FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `service_subscription_settings`
-  ADD COLUMN IF NOT EXISTS `plan_name` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `subscription_status` VARCHAR(64) NOT NULL DEFAULT 'unconfigured',
-  ADD COLUMN IF NOT EXISTS `current_period_end` DATETIME NULL;
+  ADD COLUMN `plan_name` VARCHAR(255) NULL,
+  ADD COLUMN `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN `subscription_status` VARCHAR(64) NOT NULL DEFAULT 'unconfigured',
+  ADD COLUMN `current_period_end` DATETIME NULL;
 CREATE TABLE IF NOT EXISTS service_subscription_items (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -581,13 +581,13 @@ CREATE TABLE IF NOT EXISTS service_subscription_payments (
   CONSTRAINT fk_service_subscription_payments_submitted_by FOREIGN KEY (submitted_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `service_subscription_payments`
-  ADD COLUMN IF NOT EXISTS `local_reference` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `gateway_payment_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `gateway_name` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `billing_interval` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `invoice_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `raw_payload` LONGTEXT NULL,
-  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(255) NULL;
+  ADD COLUMN `local_reference` VARCHAR(255) NULL,
+  ADD COLUMN `gateway_payment_id` VARCHAR(255) NULL,
+  ADD COLUMN `gateway_name` VARCHAR(64) NULL,
+  ADD COLUMN `billing_interval` VARCHAR(32) NULL,
+  ADD COLUMN `invoice_url` VARCHAR(500) NULL,
+  ADD COLUMN `raw_payload` LONGTEXT NULL,
+  ADD COLUMN `transaction_id` VARCHAR(255) NULL;
 CREATE TABLE IF NOT EXISTS payment_webhook_logs (
   id VARCHAR(64) NOT NULL,
   gateway VARCHAR(64) NOT NULL,
@@ -744,8 +744,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   CONSTRAINT fk_transactions_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `transactions`
-  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `account_name` VARCHAR(255) NULL;
+  ADD COLUMN `transaction_id` VARCHAR(255) NULL,
+  ADD COLUMN `account_name` VARCHAR(255) NULL;
 CREATE TABLE IF NOT EXISTS payroll_payments (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
@@ -792,7 +792,7 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   CONSTRAINT fk_wallet_payouts_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `wallet_payouts`
-  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(64) NULL;
+  ADD COLUMN `transaction_id` VARCHAR(64) NULL;
 CREATE TABLE IF NOT EXISTS wallet_entries (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
@@ -818,12 +818,7 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 DROP VIEW IF EXISTS orders_with_customer_creator;
 ALTER TABLE `orders`
-  ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `exchange_courier` VARCHAR(32) NULL,
-  ADD COLUMN IF NOT EXISTS `exchange_steadfast_consignment_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `exchange_carrybee_consignment_id` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `exchange_paperfly_tracking_number` VARCHAR(255) NULL,
-  ADD COLUMN IF NOT EXISTS `exchange_courier_history` TEXT NULL;
+  ADD COLUMN `source_ad` VARCHAR(64) NULL;
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,
@@ -1160,74 +1155,4 @@ ON DUPLICATE KEY UPDATE
   role = VALUES(role),
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
-
--- 2026-07-12: Ensure orders_with_customer_creator view exists for filter options
-DROP VIEW IF EXISTS orders_with_customer_creator;
-CREATE VIEW orders_with_customer_creator AS
-SELECT
-  o.id,
-  o.order_number AS orderNumber,
-  o.order_date AS orderDate,
-  o.customer_id AS customerId,
-  o.page_id AS pageId,
-  c.name AS customerName,
-  c.phone AS customerPhone,
-  c.address AS customerAddress,
-  o.created_by AS createdBy,
-  u.name AS creatorName,
-  o.status,
-  o.items,
-  o.subtotal,
-  o.discount,
-  o.shipping,
-  o.total,
-  o.paid_amount AS paidAmount,
-  o.notes,
-  o.history,
-  o.page_snapshot AS pageSnapshot,
-  o.created_at AS createdAt,
-  o.deleted_at AS deletedAt,
-  o.deleted_by AS deletedBy,
-  o.carrybee_consignment_id AS carrybeeConsignmentId,
-  o.steadfast_consignment_id AS steadfastConsignmentId,
-  o.paperfly_tracking_number AS paperflyTrackingNumber,
-  o.exchange_courier AS exchangeCourier,
-  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
-  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
-  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
-  o.exchange_courier_history AS exchangeCourierHistory,
-  o.source_ad AS sourceAd
-FROM orders o
-LEFT JOIN customers c ON c.id = o.customer_id
-LEFT JOIN users u ON u.id = o.created_by
-WHERE o.deleted_at IS NULL;
-
--- 2026-07-12: Ensure bills_with_vendor_creator view exists for filter options
-DROP VIEW IF EXISTS bills_with_vendor_creator;
-CREATE VIEW bills_with_vendor_creator AS
-SELECT
-  b.id,
-  b.bill_number AS billNumber,
-  b.bill_date AS billDate,
-  b.vendor_id AS vendorId,
-  v.name AS vendorName,
-  v.phone AS vendorPhone,
-  b.created_by AS createdBy,
-  u.name AS creatorName,
-  b.status,
-  b.items,
-  b.subtotal,
-  b.discount,
-  b.shipping,
-  b.total,
-  b.paid_amount AS paidAmount,
-  b.notes,
-  b.history,
-  b.created_at AS createdAt,
-  b.deleted_at AS deletedAt,
-  b.deleted_by AS deletedBy
-FROM bills b
-LEFT JOIN vendors v ON v.id = b.vendor_id
-LEFT JOIN users u ON u.id = b.created_by
-WHERE b.deleted_at IS NULL;
 

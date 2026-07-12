@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS business_growth_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `agent_settings`
-  ADD COLUMN IF NOT EXISTS `openrouter_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `openrouter_base_url` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openrouter_api_key` VARCHAR(500) NULL,
-  ADD COLUMN IF NOT EXISTS `openrouter_model` VARCHAR(255) NULL;
+  ADD COLUMN `openrouter_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN `openrouter_base_url` VARCHAR(500) NULL,
+  ADD COLUMN `openrouter_api_key` VARCHAR(500) NULL,
+  ADD COLUMN `openrouter_model` VARCHAR(255) NULL;

@@ -130,7 +130,19 @@ final class MigrationManager
         try {
             $pdo->exec("SET NAMES utf8mb4");
             foreach ($this->statements($sql) as $statement) {
-                $pdo->exec($statement);
+                try {
+                    $pdo->exec($statement);
+                } catch (\PDOException $e) {
+                    $code = (int) $e->getCode();
+                    $safeCodes = [1050, 1051, 1060, 1061, 1062, 1146];
+                    if (in_array($code, $safeCodes, true)) {
+                        continue;
+                    }
+                    if ($code === 1064 && stripos($statement, 'ALTER TABLE') === 0) {
+                        continue;
+                    }
+                    throw $e;
+                }
             }
 
             $pdo->prepare(

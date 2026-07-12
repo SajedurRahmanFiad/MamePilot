@@ -4,11 +4,11 @@
 -- to be shipped back to the customer.
 
 ALTER TABLE orders
-  ADD COLUMN IF NOT EXISTS exchange_courier TEXT,
-  ADD COLUMN IF NOT EXISTS exchange_steadfast_consignment_id TEXT,
-  ADD COLUMN IF NOT EXISTS exchange_carrybee_consignment_id TEXT,
-  ADD COLUMN IF NOT EXISTS exchange_paperfly_tracking_number TEXT,
-  ADD COLUMN IF NOT EXISTS exchange_courier_history TEXT;
+  ADD COLUMN exchange_courier TEXT,
+  ADD COLUMN exchange_steadfast_consignment_id TEXT,
+  ADD COLUMN exchange_carrybee_consignment_id TEXT,
+  ADD COLUMN exchange_paperfly_tracking_number TEXT,
+  ADD COLUMN exchange_courier_history TEXT;
 
 -- New status value: 'Exchange pending'
 -- Used when an exchange has been processed but the replacement items
