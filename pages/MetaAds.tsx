@@ -79,7 +79,7 @@ const MetaAdsList: React.FC = () => {
     searchOperator: 'contains',
   });
   const [dynamicFilters, setDynamicFilters] = useState<any[]>([]);
-  const [filterRange, setFilterRange] = useState<FilterRange>('Today');
+  const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const { data: metaAdsSettings } = useMetaAdsSettings();
   const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
@@ -208,29 +208,45 @@ const MetaAdsList: React.FC = () => {
 
   const applyDateRange = (nextRange: FilterRange, nextCustomDates: { from: string; to: string }) => {
     const today = new Date();
-    const todayIso = today.toISOString().slice(0, 10);
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const yearStart = new Date(today.getFullYear(), 0, 1);
-
-    const buildBoundary = (date: Date) => date.toISOString().slice(0, 10);
+    const end = new Date(today);
+    const start = new Date(today);
+    // Use local date (not UTC) so "Today" matches the user's calendar,
+    // which aligns with the ad account's timezone for most users
+    const buildBoundary = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
 
     let from = '';
     let to = '';
 
     if (nextRange === 'Today') {
-      from = todayIso;
-      to = todayIso;
+      from = buildBoundary(start);
+      to = buildBoundary(end);
+    } else if (nextRange === 'Last 7 days') {
+      start.setDate(start.getDate() - 6);
+      from = buildBoundary(start);
+      to = buildBoundary(end);
+    } else if (nextRange === 'Last 30 days') {
+      start.setDate(start.getDate() - 29);
+      from = buildBoundary(start);
+      to = buildBoundary(end);
     } else if (nextRange === 'This Week') {
-      from = buildBoundary(weekStart);
-      to = todayIso;
+      const day = start.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      start.setDate(start.getDate() + diff);
+      from = buildBoundary(start);
+      to = buildBoundary(end);
     } else if (nextRange === 'This Month') {
-      from = buildBoundary(monthStart);
-      to = todayIso;
+      start.setDate(1);
+      from = buildBoundary(start);
+      to = buildBoundary(end);
     } else if (nextRange === 'This Year') {
-      from = buildBoundary(yearStart);
-      to = todayIso;
+      start.setMonth(0, 1);
+      from = buildBoundary(start);
+      to = buildBoundary(end);
     } else if (nextRange === 'Custom') {
       from = nextCustomDates.from;
       to = nextCustomDates.to;
@@ -316,6 +332,7 @@ const MetaAdsList: React.FC = () => {
             customDates={customDates}
             setCustomDates={handleCustomDatesChange}
             compact
+            ranges={['Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'Custom']}
           />
         </div>
         <Button
@@ -343,7 +360,7 @@ const MetaAdsList: React.FC = () => {
         <MetricCard label="Active Campaigns" value={summary.activeCampaigns ?? 0} icon={<BarChart3 size={18} />} hint="Campaigns currently delivering" />
         <MetricCard label="Active Ad Sets" value={summary.activeAdSets ?? 0} icon={ICONS.Banking} hint="Ad sets with active targeting" />
         <MetricCard label="Active Ads" value={summary.activeAds ?? 0} icon={ICONS.Check} hint="Individual ads currently live" />
-        <MetricCard label="Today's Spend" value={<MetaAdsMoney amount={summary.todaySpend ?? 0} />} icon={ICONS.Reports} hint="Budget used today across all ads" />
+        <MetricCard label="Total Spend" value={<MetaAdsMoney amount={summary.filteredSpend ?? 0} />} icon={ICONS.Reports} hint="Spend for the selected date range" />
         <MetricCard label="Current ROAS" value={summary.currentRoas == null ? '-' : Number(summary.currentRoas).toFixed(2)} hint="Return on Ad Spend" />
       </div>
 

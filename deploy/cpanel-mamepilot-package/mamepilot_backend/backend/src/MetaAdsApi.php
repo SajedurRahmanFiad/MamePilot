@@ -346,7 +346,7 @@ final class MetaAdsApi extends BaseService
 
         return [
             'ads' => array_map(fn(array $row): array => $this->mapAdCard($row), $rows),
-            'summary' => $this->buildSummary($whereSql, $bindings),
+            'summary' => $this->buildSummary($whereSql, $bindings, $from, $to),
             'filters' => $this->fetchMetaAdsFilters(),
         ];
     }
@@ -1094,7 +1094,7 @@ final class MetaAdsApi extends BaseService
         ];
     }
 
-    private function buildSummary(string $whereSql = '', array $bindings = []): array
+    private function buildSummary(string $whereSql = '', array $bindings = [], string $from = '', string $to = ''): array
     {
         $adWhere = $whereSql !== '' ? $whereSql : '';
         $adRow = $this->database->fetchOne(
@@ -1115,12 +1115,68 @@ final class MetaAdsApi extends BaseService
             'activeAds' => (int) ($adRow['active_ads'] ?? 0),
             'inactiveAds' => (int) ($adRow['inactive_ads'] ?? 0),
             'totalSpend' => (float) ($adRow['total_spend'] ?? 0),
-            'todaySpend' => (float) (($this->database->fetchOne("SELECT COALESCE(SUM(spend), 0) AS s FROM meta_ads ma $adWhere " . ($adWhere !== '' ? 'AND' : 'WHERE') . " DATE(COALESCE(updated_time, last_synced_at, updated_at)) = :today", array_merge($bindings, [':today' => gmdate('Y-m-d')]))['s'] ?? 0)),
+            'filteredSpend' => $this->spendFromDailyInsights($adWhere, $bindings, $from, $to),
             'activeCampaigns' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
             'activeAdSets' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_ad_sets WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
             // Prefer average Meta purchase_roas from ad rows; never use clicks/spend.
             'currentRoas' => $this->averageStoredAdRoas($adWhere, $bindings),
         ];
+    }
+
+    /**
+     * Get spend from daily insights table for the given date range.
+     * When from/to are empty, sums all daily insights (full range).
+     * Respects ad-level filters (business, account, campaign) via JOIN with meta_ads.
+     */
+    private function spendFromDailyInsights(string $adWhere, array $bindings, string $from = '', string $to = ''): float
+    {
+        // Convert UTC dates from frontend to ad account's local dates
+        // (insight_date is stored in the ad account's timezone from Meta's date_start)
+        if ($from !== '') {
+            $from = $this->toAdAccountDate($from);
+        }
+        if ($to !== '') {
+            $to = $this->toAdAccountDate($to);
+        }
+
+        // Use :ins_from/:ins_to to avoid collision with :from_date/:to_date in $bindings
+        // (fetchMetaAds already uses those names for the ad-level date filter)
+        $dateFilter = '';
+        $extraBindings = [];
+        if ($from !== '' && $to !== '') {
+            $dateFilter = 'AND d.insight_date >= :ins_from AND d.insight_date <= :ins_to';
+            $extraBindings = [':ins_from' => $from, ':ins_to' => $to];
+        } elseif ($from !== '') {
+            $dateFilter = 'AND d.insight_date >= :ins_from';
+            $extraBindings = [':ins_from' => $from];
+        } elseif ($to !== '') {
+            $dateFilter = 'AND d.insight_date <= :ins_to';
+            $extraBindings = [':ins_to' => $to];
+        }
+
+        // If there are ad-level filters, we need to JOIN with meta_ads to apply them
+        if ($adWhere !== '') {
+            // The adWhere clause uses "ma." prefix — rewrite to "ma2." for the JOIN
+            $joinWhere = str_replace('ma.', 'ma2.', $adWhere);
+            $row = $this->database->fetchOne(
+                "SELECT COALESCE(SUM(d.spend), 0) AS s
+                 FROM meta_ads_insights_daily d
+                 INNER JOIN meta_ads ma2 ON ma2.id = d.ad_id
+                 {$joinWhere}
+                 {$dateFilter}",
+                array_merge($bindings, $extraBindings)
+            );
+        } else {
+            $whereClause = $dateFilter !== '' ? 'WHERE ' . ltrim($dateFilter, 'AND ') : '';
+            $row = $this->database->fetchOne(
+                "SELECT COALESCE(SUM(spend), 0) AS s
+                 FROM meta_ads_insights_daily d
+                 {$whereClause}",
+                $extraBindings
+            );
+        }
+
+        return (float) ($row['s'] ?? 0);
     }
 
     private function averageStoredAdRoas(string $whereSql, array $bindings): ?float
@@ -1673,6 +1729,35 @@ final class MetaAdsApi extends BaseService
         return $row !== null ? (string) $row['currency'] : null;
     }
 
+    /**
+     * Detect the ad account timezone from the most recently synced account.
+     * Falls back to UTC if not available.
+     */
+    private function detectAdAccountTimezone(): string
+    {
+        $row = $this->database->fetchOne("SELECT timezone_name FROM meta_ad_accounts WHERE timezone_name IS NOT NULL AND timezone_name <> '' ORDER BY updated_at DESC LIMIT 1");
+        return $row !== null ? (string) $row['timezone_name'] : 'UTC';
+    }
+
+    /**
+     * Convert a UTC date string (Y-m-d) to the ad account's local date.
+     * Since insight_date from Meta is in the ad account's timezone, we need
+     * to compare using the same timezone to get accurate results.
+     */
+    private function toAdAccountDate(string $utcDate): string
+    {
+        try {
+            $tzName = $this->detectAdAccountTimezone();
+            $tz = new \DateTimeZone($tzName);
+            // Create a datetime at noon UTC to avoid edge cases around midnight
+            $dt = new \DateTimeImmutable($utcDate . ' 12:00:00', new \DateTimeZone('UTC'));
+            $local = $dt->setTimezone($tz);
+            return $local->format('Y-m-d');
+        } catch (\Throwable) {
+            return $utcDate;
+        }
+    }
+
     private function ensureMetaAdsInsightsDailyTable(): void
     {
         $this->database->execute(
@@ -1815,6 +1900,10 @@ final class MetaAdsApi extends BaseService
 
     private function aggregateDailyInsights(string $from, string $to): array
     {
+        // Convert UTC dates from frontend to ad account's local dates
+        $localFrom = $this->toAdAccountDate($from);
+        $localTo = $this->toAdAccountDate($to);
+
         $row = $this->database->fetchOne(
             'SELECT
                 COALESCE(SUM(spend), 0) AS spend,
@@ -1825,7 +1914,7 @@ final class MetaAdsApi extends BaseService
                 MAX(currency) AS currency
              FROM meta_ads_insights_daily
              WHERE insight_date >= :from_date AND insight_date <= :to_date',
-            [':from_date' => $from, ':to_date' => $to]
+            [':from_date' => $localFrom, ':to_date' => $localTo]
         ) ?? [];
 
         $spend = (float) ($row['spend'] ?? 0);
@@ -1958,6 +2047,10 @@ final class MetaAdsApi extends BaseService
 
     private function buildMarketingSeries(string $from, string $to): array
     {
+        // Convert UTC dates to ad account's local dates for daily insights
+        $localFrom = $this->toAdAccountDate($from);
+        $localTo = $this->toAdAccountDate($to);
+
         $insightRows = $this->database->fetchAll(
             'SELECT insight_date AS d,
                     COALESCE(SUM(spend), 0) AS spend,
@@ -1966,7 +2059,7 @@ final class MetaAdsApi extends BaseService
              FROM meta_ads_insights_daily
              WHERE insight_date >= :from_date AND insight_date <= :to_date
              GROUP BY insight_date',
-            [':from_date' => $from, ':to_date' => $to]
+            [':from_date' => $localFrom, ':to_date' => $localTo]
         );
         $insightsByDate = [];
         foreach ($insightRows as $row) {
@@ -1994,8 +2087,8 @@ final class MetaAdsApi extends BaseService
         }
 
         $series = [];
-        $cursor = new \DateTimeImmutable($from . ' 00:00:00', $this->utcTimezone());
-        $end = new \DateTimeImmutable($to . ' 00:00:00', $this->utcTimezone());
+        $cursor = new \DateTimeImmutable($localFrom . ' 00:00:00', $this->utcTimezone());
+        $end = new \DateTimeImmutable($localTo . ' 00:00:00', $this->utcTimezone());
         while ($cursor <= $end) {
             $key = $cursor->format('Y-m-d');
             $ins = $insightsByDate[$key] ?? null;
@@ -2020,6 +2113,10 @@ final class MetaAdsApi extends BaseService
 
     private function buildCampaignPerformance(string $from, string $to): array
     {
+        // Convert UTC dates to ad account's local dates for daily insights
+        $localFrom = $this->toAdAccountDate($from);
+        $localTo = $this->toAdAccountDate($to);
+
         $spendRows = $this->database->fetchAll(
             'SELECT
                 COALESCE(mc.id, "") AS campaign_id,
@@ -2033,7 +2130,7 @@ final class MetaAdsApi extends BaseService
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
              WHERE d.insight_date >= :from_date AND d.insight_date <= :to_date
              GROUP BY COALESCE(mc.id, ""), COALESCE(mc.name, "Unassigned Campaign")',
-            [':from_date' => $from, ':to_date' => $to]
+            [':from_date' => $localFrom, ':to_date' => $localTo]
         );
 
         $orderRows = $this->database->fetchAll(

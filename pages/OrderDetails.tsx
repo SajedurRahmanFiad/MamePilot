@@ -145,23 +145,35 @@ const OrderDetails: React.FC = () => {
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
   });
   const [expandedSection, setExpandedSection] = useState<Record<string, boolean>>({ status: true });
-  const timelineItems = React.useMemo<OrderTimelineItem[]>(
-    () => [
-      { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
-      { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
-      { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
-      { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
-      { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
-      { label: 'Exchanged', historyKey: 'completed', description: 'The order has been delivered with exchanged items.' },
-      { label: 'Exchange pending', historyKey: 'exchangeCourier', description: 'Exchange items are being shipped to the customer.' },
-      { label: 'Returned', historyKey: 'returned', description: 'The order has been returned.' },
-      { label: 'Cancelled', historyKey: 'cancelled', description: 'The order has been cancelled and will not be fulfilled.' },
-    ],
-    []
-  );
 
   const hasExchangedItems = (o?: Order | null) =>
     Boolean(o?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
+
+  const showExchangeTimeline = order?.status === OrderStatus.EXCHANGE_PENDING || hasExchangedItems(order);
+
+  const timelineItems = React.useMemo<OrderTimelineItem[]>(
+    () => {
+      const items: OrderTimelineItem[] = [
+        { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
+        { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
+        { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
+        { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
+        { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
+      ];
+      if (showExchangeTimeline) {
+        items.push(
+          { label: 'Exchanged', historyKey: 'completed', description: 'The order has been delivered with exchanged items.' },
+          { label: 'Exchange pending', historyKey: 'exchangeCourier', description: 'Exchange items are being shipped to the customer.' },
+        );
+      }
+      items.push(
+        { label: 'Returned', historyKey: 'returned', description: 'The order has been returned.' },
+        { label: 'Cancelled', historyKey: 'cancelled', description: 'The order has been cancelled and will not be fulfilled.' },
+      );
+      return items;
+    },
+    [showExchangeTimeline]
+  );
 
   const getTimelineIndex = (order?: Order) => {
     if (!order) return 0;
@@ -1337,10 +1349,10 @@ const OrderDetails: React.FC = () => {
                     )}
                     {canFinalizeCurrentOrder && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
-                        {ICONS.Check} Finalize Order
+                        {ICONS.Check} Complete Order
                       </button>
                     )}
-                    {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.PICKED) && (
+                    {canProcessReturnExchange && order.status === OrderStatus.COMPLETED && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700" onClick={() => { setShowReturnExchangeModal(true); setIsActionOpen(false); }}>
                         {ICONS.Return} Return / Exchange
                       </button>

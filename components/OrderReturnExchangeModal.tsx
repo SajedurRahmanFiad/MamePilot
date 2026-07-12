@@ -47,6 +47,22 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
   const [activeExchangeItemIdx, setActiveExchangeItemIdx] = useState<number | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Reset item selections when switching tabs so financial impact doesn't carry over
+  useEffect(() => {
+    if (!order || !isOpen) return;
+    setItemSelections((prev) =>
+      prev.map((sel) => ({
+        ...sel,
+        action: 'keep' as const,
+        returnQty: 0,
+        replacementItems: [],
+      }))
+    );
+    setActiveExchangeItemIdx(null);
+    setSearchQuery('');
+    setSearchResults([]);
+  }, [activeTab, isOpen]);
+
   // Initialize selections when order changes
   useEffect(() => {
     if (!isOpen || !order) return;

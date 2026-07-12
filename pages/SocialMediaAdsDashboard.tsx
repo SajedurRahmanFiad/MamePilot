@@ -75,51 +75,58 @@ const formatTooltipDate = (value?: string | null) => {
   return `${day}${getDaySuffix(day)} ${month}, ${year}`;
 };
 
+// Use local date (not UTC) so "Today" matches the user's calendar,
+// which aligns with the ad account's timezone for most users
+const toLocalDate = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 const toRangeWindow = (filterRange: FilterRange, customDates: { from: string; to: string }) => {
   const today = new Date();
   const end = new Date(today);
   const start = new Date(today);
 
   if (filterRange === 'Custom') {
-    const fromDate = customDates.from ? new Date(`${customDates.from}T00:00:00`) : new Date(today);
-    const toDate = customDates.to ? new Date(`${customDates.to}T23:59:59`) : new Date(today);
-    return { from: fromDate.toISOString().slice(0, 10), to: toDate.toISOString().slice(0, 10) };
+    return { from: customDates.from || toLocalDate(today), to: customDates.to || toLocalDate(today) };
   }
 
   if (filterRange === 'Today') {
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   if (filterRange === 'Last 7 days') {
     start.setDate(start.getDate() - 6);
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   if (filterRange === 'Last 30 days') {
     start.setDate(start.getDate() - 29);
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   if (filterRange === 'This Week') {
     const day = start.getDay();
     const diff = day === 0 ? -6 : 1 - day;
     start.setDate(start.getDate() + diff);
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   if (filterRange === 'This Month') {
     start.setDate(1);
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   if (filterRange === 'This Year') {
     start.setMonth(0, 1);
-    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+    return { from: toLocalDate(start), to: toLocalDate(end) };
   }
 
   // Fallback: last 7 days
   start.setDate(start.getDate() - 6);
-  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+  return { from: toLocalDate(start), to: toLocalDate(end) };
 };
 
 const pctChange = (current: number, previous: number) =>

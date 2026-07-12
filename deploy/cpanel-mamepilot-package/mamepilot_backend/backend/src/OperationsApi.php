@@ -3942,71 +3942,9 @@ final class OperationsApi extends BaseService
             $discountLost = $originalDiscount - $newDiscount;
             $netReturnValue = max(0, $returnValueFromItems - $discountLost);
 
-            // Calculate new paid amount based on actual financial impact
+            // Keep paid amount unchanged — financial flows (refunds/collections) are handled manually
             $newPaidAmount = $previousPaidAmount;
-            if ($refundAmount > 0) {
-                // Cap refund at what was actually overpaid
-                $maxRefund = max(0, $previousPaidAmount - $newTotal);
-                $effectiveRefund = min($refundAmount, $maxRefund);
-                $newPaidAmount = max(0, $previousPaidAmount - $effectiveRefund);
-            }
-            if ($extraCollectionAmount > 0) {
-                $newPaidAmount += $extraCollectionAmount;
-            }
-            // Cap paid amount at the new total
-            $newPaidAmount = min($newPaidAmount, $newTotal);
-
-            // Create transactions
-            $systemDefaults = $this->database->fetchOne(
-                'SELECT default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
-            ) ?? [];
-            $defaultPaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? 'Cash')) ?: 'Cash';
-            $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
-            $defaultExpenseCategoryId = trim((string) ($systemDefaults['expense_category_id'] ?? 'expense_other')) ?: 'expense_other';
-            $effectivePaymentMethod = $paymentMethod ?: $defaultPaymentMethod;
             $createdTransactions = [];
-
-            // Refund transaction (expense) — use capped amount
-            if ($refundAmount > 0 && $accountId !== '') {
-                $maxRefund = max(0, $previousPaidAmount - $newTotal);
-                $effectiveRefund = min($refundAmount, $maxRefund);
-                if ($effectiveRefund > 0) {
-                    $refundCategory = $categoryId !== '' ? $categoryId : $defaultExpenseCategoryId;
-                    $refundDescription = match ($action) {
-                        'partialReturn' => "Partial return refund for Order #{$orderNumber}",
-                        'exchange' => "Exchange refund for Order #{$orderNumber}",
-                        default => "Refund for Order #{$orderNumber}",
-                    };
-                    $createdTransactions[] = $this->createTransactionRecord([
-                        'date' => $recordedAt,
-                        'type' => 'Expense',
-                        'category' => $refundCategory,
-                        'accountId' => $accountId,
-                        'amount' => $effectiveRefund,
-                        'description' => $refundDescription,
-                        'referenceId' => $orderId,
-                        'contactId' => $customerId,
-                        'paymentMethod' => $effectivePaymentMethod,
-                        'history' => [],
-                    ], (string) $actor['id'], $actor);
-                }
-            }
-
-            // Extra collection transaction (income)
-            if ($extraCollectionAmount > 0 && $accountId !== '') {
-                $createdTransactions[] = $this->createTransactionRecord([
-                    'date' => $recordedAt,
-                    'type' => 'Income',
-                    'category' => $incomeCategoryId,
-                    'accountId' => $accountId,
-                    'amount' => $extraCollectionAmount,
-                    'description' => "Exchange difference collected for Order #{$orderNumber}",
-                    'referenceId' => $orderId,
-                    'contactId' => $customerId,
-                    'paymentMethod' => $effectivePaymentMethod,
-                    'history' => [],
-                ], (string) $actor['id'], $actor);
-            }
 
             // Build history entry
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
