@@ -2569,6 +2569,11 @@ final class OperationsApi extends BaseService
      */
     private function buildDashboardAdminSnapshot(array $filters): array
     {
+        $featureAccess = new FeatureAccess($this->database, $this->auth);
+        $capabilities = $featureAccess->fetchCapabilities();
+        $hasPurchases = !empty($capabilities['purchases']);
+        $hasBanking = !empty($capabilities['banking']);
+
         $statusKeyMap = [
             'On Hold' => 'onHold',
             'Processing' => 'processing',
@@ -2627,69 +2632,89 @@ final class OperationsApi extends BaseService
             $orderTotals['total'] += $total;
         }
 
-        $transactionSummary = $this->database->fetchOne(
-            'SELECT
-                COALESCE(SUM(CASE WHEN type = \'Income\' AND reference_id IS NOT NULL THEN amount ELSE 0 END), 0) AS salesFromTransactions,
-                COALESCE(SUM(CASE WHEN type = \'Expense\' AND category = \'expense_purchases\' THEN amount ELSE 0 END), 0) AS purchasesFromTransactions,
-                COALESCE(SUM(CASE WHEN type = \'Expense\' AND COALESCE(category, \'\') <> \'expense_purchases\' THEN amount ELSE 0 END), 0) AS otherExpenses
-             FROM transactions
-             WHERE ' . implode(' AND ', $transactionConditions),
-            $transactionBindings
-        ) ?? [];
+        $salesFromTransactions = 0.0;
+        $purchasesFromTransactions = 0.0;
+        $otherExpenses = 0.0;
 
-        $billSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(total), 0) AS totalPurchases
-             FROM bills
-             WHERE ' . implode(' AND ', $billConditions),
-            $billBindings
-        ) ?? [];
+        if ($hasBanking) {
+            $transactionSummary = $this->database->fetchOne(
+                'SELECT
+                    COALESCE(SUM(CASE WHEN type = \'Income\' AND reference_id IS NOT NULL THEN amount ELSE 0 END), 0) AS salesFromTransactions,
+                    COALESCE(SUM(CASE WHEN type = \'Expense\' AND category = \'expense_purchases\' THEN amount ELSE 0 END), 0) AS purchasesFromTransactions,
+                    COALESCE(SUM(CASE WHEN type = \'Expense\' AND COALESCE(category, \'\') <> \'expense_purchases\' THEN amount ELSE 0 END), 0) AS otherExpenses
+                 FROM transactions
+                 WHERE ' . implode(' AND ', $transactionConditions),
+                $transactionBindings
+            ) ?? [];
 
-        $salesFromTransactions = (float) ($transactionSummary['salesFromTransactions'] ?? 0);
-        $purchasesFromTransactions = (float) ($transactionSummary['purchasesFromTransactions'] ?? 0);
-        $otherExpenses = (float) ($transactionSummary['otherExpenses'] ?? 0);
+            $salesFromTransactions = (float) ($transactionSummary['salesFromTransactions'] ?? 0);
+            $purchasesFromTransactions = (float) ($transactionSummary['purchasesFromTransactions'] ?? 0);
+            $otherExpenses = (float) ($transactionSummary['otherExpenses'] ?? 0);
+        }
+
+        $billPurchases = 0.0;
+        if ($hasPurchases) {
+            $billSummary = $this->database->fetchOne(
+                'SELECT COALESCE(SUM(total), 0) AS totalPurchases
+                 FROM bills
+                 WHERE ' . implode(' AND ', $billConditions),
+                $billBindings
+            ) ?? [];
+
+            $billPurchases = (float) ($billSummary['totalPurchases'] ?? 0);
+        }
+
         $completedOrderSales = (float) ($orderTotals['completed'] ?? 0);
-        $billPurchases = (float) ($billSummary['totalPurchases'] ?? 0);
 
         $totalSales = $salesFromTransactions > 0 ? $salesFromTransactions : $completedOrderSales;
-        $totalPurchases = $purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases;
-        $totalProfit = $totalSales - $totalPurchases - $otherExpenses;
-
-        $expenseConditions = [
-            't.deleted_at IS NULL',
-            "t.type = 'Expense'",
-            "COALESCE(t.category, '') <> 'expense_purchases'",
-        ];
-        $expenseBindings = [];
-        $this->applyDashboardDateTimeBounds('t.created_at', $filters, $expenseConditions, $expenseBindings, 'dashboard_expense');
-
-        $expenseRows = $this->database->fetchAll(
-            'SELECT
-                COALESCE(NULLIF(c.name, \'\'), NULLIF(t.category, \'\'), \'Uncategorized\') AS name,
-                COALESCE(SUM(t.amount), 0) AS value
-             FROM transactions t
-             LEFT JOIN categories c ON c.id = t.category
-             WHERE ' . implode(' AND ', $expenseConditions) . '
-             GROUP BY name
-             ORDER BY value DESC',
-            $expenseBindings
-        );
+        $totalPurchases = $hasPurchases ? ($purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases) : 0;
+        $totalProfit = ($hasPurchases && $hasBanking) ? ($totalSales - $totalPurchases - $otherExpenses) : 0;
 
         $expenseByCategory = [];
-        if ($totalPurchases > 0) {
-            $expenseByCategory[] = [
-                'name' => 'Purchases',
-                'value' => $totalPurchases,
-            ];
-        }
+        $monthlyData = [];
 
-        foreach ($expenseRows as $row) {
-            $expenseByCategory[] = [
-                'name' => (string) ($row['name'] ?? 'Uncategorized'),
-                'value' => (float) ($row['value'] ?? 0),
+        if ($hasBanking) {
+            $expenseConditions = [
+                't.deleted_at IS NULL',
+                "t.type = 'Expense'",
+                "COALESCE(t.category, '') <> 'expense_purchases'",
             ];
-        }
+            $expenseBindings = [];
+            $this->applyDashboardDateTimeBounds('t.created_at', $filters, $expenseConditions, $expenseBindings, 'dashboard_expense');
 
-        if ($expenseByCategory === []) {
+            $expenseRows = $this->database->fetchAll(
+                'SELECT
+                    COALESCE(NULLIF(c.name, \'\'), NULLIF(t.category, \'\'), \'Uncategorized\') AS name,
+                    COALESCE(SUM(t.amount), 0) AS value
+                 FROM transactions t
+                 LEFT JOIN categories c ON c.id = t.category
+                 WHERE ' . implode(' AND ', $expenseConditions) . '
+                 GROUP BY name
+                 ORDER BY value DESC',
+                $expenseBindings
+            );
+
+            if ($totalPurchases > 0) {
+                $expenseByCategory[] = [
+                    'name' => 'Purchases',
+                    'value' => $totalPurchases,
+                ];
+            }
+
+            foreach ($expenseRows as $row) {
+                $expenseByCategory[] = [
+                    'name' => (string) ($row['name'] ?? 'Uncategorized'),
+                    'value' => (float) ($row['value'] ?? 0),
+                ];
+            }
+
+            if ($expenseByCategory === []) {
+                $expenseByCategory[] = [
+                    'name' => 'No Data',
+                    'value' => 1,
+                ];
+            }
+        } elseif ($expenseByCategory === []) {
             $expenseByCategory[] = [
                 'name' => 'No Data',
                 'value' => 1,
@@ -2697,50 +2722,51 @@ final class OperationsApi extends BaseService
         }
 
         $localTimezone = new \DateTimeZone($this->config->timezone());
-        $monthlyData = [];
         $monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        foreach ($monthLabels as $label) {
-            $monthlyData[$label] = [
-                'name' => $label,
-                'income' => 0,
-                'expense' => 0,
-                'profit' => 0,
-            ];
-        }
-
-        $monthlyRows = $this->database->fetchAll(
-            'SELECT date, type, amount
-             FROM transactions
-             WHERE deleted_at IS NULL
-               AND date >= :year_start
-               AND date < :next_year_start',
-            [
-                ':year_start' => $filters['currentYearStartUtc'],
-                ':next_year_start' => $filters['nextYearStartUtc'],
-            ]
-        );
-
-        foreach ($monthlyRows as $row) {
-            $date = $this->parseDateTimeValue((string) ($row['date'] ?? ''), $this->utcTimezone());
-            if (!$date instanceof \DateTimeImmutable) {
-                continue;
+        if ($hasBanking) {
+            foreach ($monthLabels as $label) {
+                $monthlyData[$label] = [
+                    'name' => $label,
+                    'income' => 0,
+                    'expense' => 0,
+                    'profit' => 0,
+                ];
             }
 
-            $monthIndex = (int) $date->setTimezone($localTimezone)->format('n') - 1;
-            if (!isset($monthLabels[$monthIndex])) {
-                continue;
-            }
+            $monthlyRows = $this->database->fetchAll(
+                'SELECT date, type, amount
+                 FROM transactions
+                 WHERE deleted_at IS NULL
+                   AND date >= :year_start
+                   AND date < :next_year_start',
+                [
+                    ':year_start' => $filters['currentYearStartUtc'],
+                    ':next_year_start' => $filters['nextYearStartUtc'],
+                ]
+            );
 
-            $label = $monthLabels[$monthIndex];
-            $amount = (float) ($row['amount'] ?? 0);
-            $type = (string) ($row['type'] ?? '');
+            foreach ($monthlyRows as $row) {
+                $date = $this->parseDateTimeValue((string) ($row['date'] ?? ''), $this->utcTimezone());
+                if (!$date instanceof \DateTimeImmutable) {
+                    continue;
+                }
 
-            if ($type === 'Income') {
-                $monthlyData[$label]['income'] += $amount;
-                $monthlyData[$label]['profit'] += $amount;
-            } elseif ($type === 'Expense') {
-                $monthlyData[$label]['expense'] -= $amount;
-                $monthlyData[$label]['profit'] -= $amount;
+                $monthIndex = (int) $date->setTimezone($localTimezone)->format('n') - 1;
+                if (!isset($monthLabels[$monthIndex])) {
+                    continue;
+                }
+
+                $label = $monthLabels[$monthIndex];
+                $amount = (float) ($row['amount'] ?? 0);
+                $type = (string) ($row['type'] ?? '');
+
+                if ($type === 'Income') {
+                    $monthlyData[$label]['income'] += $amount;
+                    $monthlyData[$label]['profit'] += $amount;
+                } elseif ($type === 'Expense') {
+                    $monthlyData[$label]['expense'] -= $amount;
+                    $monthlyData[$label]['profit'] -= $amount;
+                }
             }
         }
 
@@ -2953,13 +2979,20 @@ final class OperationsApi extends BaseService
             return strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
         });
 
-        $wallet = $this->fetchMyWallet();
+        $featureAccess = new FeatureAccess($this->database, $this->auth);
+        $capabilities = $featureAccess->fetchCapabilities();
+        $hasHR = !empty($capabilities['human_resources']);
+        $walletBalance = 0.0;
+        if ($hasHR) {
+            $wallet = $this->fetchMyWallet();
+            $walletBalance = (float) ($wallet['currentBalance'] ?? 0);
+        }
 
         return [
             'myTotalCreated' => (int) ($summary['totalCreated'] ?? 0),
             'myCreatedToday' => (int) ($summary['createdToday'] ?? 0),
             'myPendingOrders' => (int) ($summary['pendingOrders'] ?? 0),
-            'walletBalance' => (float) ($wallet['currentBalance'] ?? 0),
+            'walletBalance' => $walletBalance,
             'employeeStatusSnapshot' => [
                 ['status' => 'On Hold', 'label' => 'On Hold', 'value' => $statusCounts['On Hold']],
                 ['status' => 'Processing', 'label' => 'Processing', 'value' => $statusCounts['Processing']],

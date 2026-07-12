@@ -6,6 +6,7 @@ import { StatCard } from '../components/Card';
 import { FilterBar } from '../components';
 import type { FilterRange } from '../utils';
 import { useAuth } from '../src/contexts/AuthProvider';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useDashboardSnapshot } from '../src/hooks/useQueries';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import {
@@ -196,6 +197,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
   const { canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
+  const { hasCapability } = useCapabilities(Boolean(user));
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
@@ -262,52 +264,58 @@ const Dashboard: React.FC = () => {
 
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard 
-              title="Total Sales" 
+            <StatCard
+              title="Total Sales"
               value={adminSnapshot ? formatCurrency(adminSnapshot.totalSales) : inlinePlaceholder}
               numericValue={adminSnapshot?.totalSales}
               showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalSales !== undefined}
-              icon={ICONS.Sales} 
-              bgColor="bg-blue-600" 
-              textColor="text-white" 
-              iconBgColor="bg-blue-700" 
+              icon={ICONS.Sales}
+              bgColor="bg-blue-600"
+              textColor="text-white"
+              iconBgColor="bg-blue-700"
             />
-            <StatCard 
-              title="Total Purchases" 
-              value={adminSnapshot ? formatCurrency(adminSnapshot.totalPurchases) : inlinePlaceholder}
-              numericValue={adminSnapshot?.totalPurchases}
-              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalPurchases !== undefined}
-              icon={ICONS.Briefcase} 
-              bgColor="bg-purple-600" 
-              textColor="text-white" 
-              iconBgColor="bg-purple-700" 
-            />
-            <StatCard 
-              title="Other Expenses" 
-              value={adminSnapshot ? formatCurrency(adminSnapshot.otherExpenses) : inlinePlaceholder}
-              numericValue={adminSnapshot?.otherExpenses}
-              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.otherExpenses !== undefined}
-              icon={ICONS.Delete} 
-              bgColor="bg-amber-500" 
-              textColor="text-white" 
-              iconBgColor="bg-amber-600" 
-            />
-            <StatCard 
-              title="Total Profit" 
-              value={adminSnapshot ? formatCurrency(adminSnapshot.totalProfit) : inlinePlaceholder}
-              numericValue={adminSnapshot?.totalProfit}
-              showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalProfit !== undefined}
-              icon={ICONS.Reports} 
-              isProfitCard={true} 
-              profitValue={adminSnapshot?.totalProfit} 
-            />
-            <StatCard 
-              title="Total Orders" 
-              value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder} 
-              icon={ICONS.Dashboard} 
-              bgColor="bg-indigo-700" 
-              textColor="text-white" 
-              iconBgColor="bg-indigo-800" 
+            {hasCapability('purchases') && (
+              <StatCard
+                title="Total Purchases"
+                value={adminSnapshot ? formatCurrency(adminSnapshot.totalPurchases) : inlinePlaceholder}
+                numericValue={adminSnapshot?.totalPurchases}
+                showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalPurchases !== undefined}
+                icon={ICONS.Briefcase}
+                bgColor="bg-purple-600"
+                textColor="text-white"
+                iconBgColor="bg-purple-700"
+              />
+            )}
+            {hasCapability('banking') && (
+              <StatCard
+                title="Other Expenses"
+                value={adminSnapshot ? formatCurrency(adminSnapshot.otherExpenses) : inlinePlaceholder}
+                numericValue={adminSnapshot?.otherExpenses}
+                showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.otherExpenses !== undefined}
+                icon={ICONS.Delete}
+                bgColor="bg-amber-500"
+                textColor="text-white"
+                iconBgColor="bg-amber-600"
+              />
+            )}
+            {hasCapability('purchases') && hasCapability('banking') && (
+              <StatCard
+                title="Total Profit"
+                value={adminSnapshot ? formatCurrency(adminSnapshot.totalProfit) : inlinePlaceholder}
+                numericValue={adminSnapshot?.totalProfit}
+                showAbbreviated={!isMobile && adminSnapshot !== undefined && adminSnapshot.totalProfit !== undefined}
+                icon={ICONS.Reports}
+                isProfitCard={true}
+                profitValue={adminSnapshot?.totalProfit}
+              />
+            )}
+            <StatCard
+              title="Total Orders"
+              value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder}
+              icon={ICONS.Dashboard}
+              bgColor="bg-indigo-700"
+              textColor="text-white"
+              iconBgColor="bg-indigo-800"
               subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.total) : undefined}
               subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.total : undefined}
             />
@@ -370,6 +378,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {hasCapability('banking') && (
         <div className="rounded-xl border border-gray-100 bg-white p-8 shadow-sm">
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -430,6 +439,7 @@ const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -482,6 +492,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {hasCapability('purchases') && hasCapability('banking') && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-gray-100 bg-white p-8 shadow-sm">
             <div className="mb-8 flex items-center justify-between">
@@ -526,6 +537,7 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   }
@@ -570,6 +582,7 @@ const Dashboard: React.FC = () => {
             cardClassName="bg-gradient-to-r from-[#ff7a11] to-[#ff7a11]"
             iconClassName="bg-[#ef6800]"
           />
+          {hasCapability('human_resources') && (
           <EmployeeSummaryCard
             title="Wallet Balance"
             value={employeeSnapshot ? formatCurrency(employeeSnapshot.walletBalance) : inlinePlaceholder}
@@ -577,6 +590,7 @@ const Dashboard: React.FC = () => {
             cardClassName="bg-gradient-to-r from-[#119f57] to-[#43cf7f]"
             iconClassName="bg-[#0d7f46]"
           />
+          )}
         </div>
 
         <div className="mt-8 border-t border-gray-100 pt-8">
