@@ -9,7 +9,7 @@ import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useCustomersPage, useSystemDefaults, useUsers } from '../src/hooks/useQueries';
+import { useCustomersPage, useSystemDefaults, useUsers, useCustomerFilterOptions } from '../src/hooks/useQueries';
 import { useDeleteCustomer } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -50,6 +50,7 @@ const Customers: React.FC = () => {
   const total = customersPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const deleteCustomerMutation = useDeleteCustomer();
+  const { data: customerFilterOpts } = useCustomerFilterOptions();
   const isAdmin = hasAdminAccess(user?.role);
   const { can } = useRolePermissions();
   const canCreateCustomers = can('customers.create');
@@ -68,16 +69,16 @@ const Customers: React.FC = () => {
   const [dueAmountFilter, setDueAmountFilter] = React.useState<{ operator: string; value: string } | null>(null);
 
   const nameOptions = useMemo(() => {
-    return Array.from(new Set(customers.map((c) => c.name).filter(Boolean))) as string[];
-  }, [customers]);
+    return customerFilterOpts?.names || [];
+  }, [customerFilterOpts]);
 
   const phoneOptions = useMemo(() => {
-    return Array.from(new Set(customers.map((c) => c.phone).filter(Boolean))) as string[];
-  }, [customers]);
+    return customerFilterOpts?.phones || [];
+  }, [customerFilterOpts]);
 
   const addressOptions = useMemo(() => {
-    return Array.from(new Set(customers.map((c) => c.address).filter(Boolean))) as string[];
-  }, [customers]);
+    return customerFilterOpts?.addresses || [];
+  }, [customerFilterOpts]);
 
   const customerFilterDefinitions = useMemo(() => {
     const userOptions = [

@@ -285,6 +285,9 @@ final class MetaAdsApi extends BaseService
         $statusOperator = trim((string) ($params['statusOperator'] ?? '='));
         $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
         $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));
+        // Convert dates to ad account timezone for daily insights comparison
+        $insightsFrom = $from !== '' ? $this->toAdAccountDate($from) : '';
+        $insightsTo = $to !== '' ? $this->toAdAccountDate($to) : '';
         $search = trim((string) ($params['search'] ?? ''));
         $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
 
@@ -310,13 +313,17 @@ final class MetaAdsApi extends BaseService
             $where[] = "COALESCE(ma.effective_status, ma.status, ma.configured_status, \"\") {$operator} :status";
             $bindings[':status'] = $status;
         }
-        if ($from !== '') {
-            $where[] = 'DATE(COALESCE(ma.updated_time, ma.last_synced_at, ma.updated_at)) >= :from_date';
-            $bindings[':from_date'] = $from;
-        }
-        if ($to !== '') {
-            $where[] = 'DATE(COALESCE(ma.updated_time, ma.last_synced_at, ma.updated_at)) <= :to_date';
-            $bindings[':to_date'] = $to;
+        // Filter ads by daily insights activity (not by updated_time which reflects ad object changes)
+        if ($insightsFrom !== '' && $insightsTo !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date >= :from_date AND _d.insight_date <= :to_date)';
+            $bindings[':from_date'] = $insightsFrom;
+            $bindings[':to_date'] = $insightsTo;
+        } elseif ($insightsFrom !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date >= :from_date)';
+            $bindings[':from_date'] = $insightsFrom;
+        } elseif ($insightsTo !== '') {
+            $where[] = 'EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date <= :to_date)';
+            $bindings[':to_date'] = $insightsTo;
         }
         if ($search !== '') {
             if ($searchOperator === '≠') {
@@ -346,7 +353,7 @@ final class MetaAdsApi extends BaseService
 
         return [
             'ads' => array_map(fn(array $row): array => $this->mapAdCard($row), $rows),
-            'summary' => $this->buildSummary($whereSql, $bindings, $from, $to),
+            'summary' => $this->buildSummary($whereSql, $bindings, $from, $to, $insightsFrom, $insightsTo),
             'filters' => $this->fetchMetaAdsFilters(),
         ];
     }
@@ -1094,9 +1101,28 @@ final class MetaAdsApi extends BaseService
         ];
     }
 
-    private function buildSummary(string $whereSql = '', array $bindings = [], string $from = '', string $to = ''): array
+    private function buildSummary(string $whereSql = '', array $bindings = [], string $from = '', string $to = '', string $insightsFrom = '', string $insightsTo = ''): array
     {
-        $adWhere = $whereSql !== '' ? $whereSql : '';
+        // Build ad-level date filter using daily insights (not updated_time)
+        $dateFilter = '';
+        $dateBindings = [];
+        if ($insightsFrom !== '' && $insightsTo !== '') {
+            $dateFilter = ' AND EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date >= :from_date AND _d.insight_date <= :to_date)';
+            $dateBindings = [':from_date' => $insightsFrom, ':to_date' => $insightsTo];
+        } elseif ($insightsFrom !== '') {
+            $dateFilter = ' AND EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date >= :from_date)';
+            $dateBindings = [':from_date' => $insightsFrom];
+        } elseif ($insightsTo !== '') {
+            $dateFilter = ' AND EXISTS (SELECT 1 FROM meta_ads_insights_daily _d WHERE _d.ad_id = ma.id AND _d.insight_date <= :to_date)';
+            $dateBindings = [':to_date' => $insightsTo];
+        }
+
+        // Filter out date-specific filters from $whereSql (EXISTS subqueries with _d alias and old updated_time filters)
+        $adWhere = preg_replace('/\s*AND\s*EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+meta_ads_insights_daily\s+_d[^)]*\)/i', '', $whereSql);
+        $adWhere = preg_replace('/\s*AND\s*DATE\(COALESCE\(ma\.updated_time[^(]*\([^)]*\)[^)]*\)\)\s*[><=]+\s*:(from|to)_date/', '', $adWhere);
+        $adBindings = array_filter($bindings, static fn(string $key): bool => !in_array($key, [':from_date', ':to_date'], true), ARRAY_FILTER_USE_KEY);
+
+        $allBindings = array_merge($adBindings, $dateBindings);
         $adRow = $this->database->fetchOne(
             "SELECT COUNT(*) AS total_ads,
                     COALESCE(SUM(CASE WHEN COALESCE(effective_status, status) = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active_ads,
@@ -1104,8 +1130,8 @@ final class MetaAdsApi extends BaseService
                     COALESCE(SUM(spend), 0) AS total_spend,
                     COALESCE(SUM(impressions), 0) AS total_impressions,
                     COALESCE(SUM(clicks), 0) AS total_clicks
-             FROM meta_ads ma {$adWhere}",
-            $bindings
+             FROM meta_ads ma {$adWhere} {$dateFilter}",
+            $allBindings
         ) ?? [];
         return [
             'totalBusinesses' => (int) (($this->database->fetchOne('SELECT COUNT(*) AS count FROM meta_businesses')['count'] ?? 0)),
@@ -1115,11 +1141,11 @@ final class MetaAdsApi extends BaseService
             'activeAds' => (int) ($adRow['active_ads'] ?? 0),
             'inactiveAds' => (int) ($adRow['inactive_ads'] ?? 0),
             'totalSpend' => (float) ($adRow['total_spend'] ?? 0),
-            'filteredSpend' => $this->spendFromDailyInsights($adWhere, $bindings, $from, $to),
+            'filteredSpend' => $this->spendFromDailyInsights($adWhere, $adBindings, $from, $to),
             'activeCampaigns' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
             'activeAdSets' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_ad_sets WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
             // Prefer average Meta purchase_roas from ad rows; never use clicks/spend.
-            'currentRoas' => $this->averageStoredAdRoas($adWhere, $bindings),
+            'currentRoas' => $this->averageStoredAdRoas($adWhere, $adBindings),
         ];
     }
 
@@ -1967,7 +1993,7 @@ final class MetaAdsApi extends BaseService
 
     private function aggregateAttributedPipeline(): array
     {
-        $openStatuses = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Exchange pending', 'Created'];
+        $openStatuses = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Exchange pending', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Created'];
         $placeholders = [];
         $bindings = [];
         foreach ($openStatuses as $i => $status) {

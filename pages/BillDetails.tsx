@@ -177,6 +177,7 @@ const BillDetails: React.FC = () => {
   };
 
   const formatStatusTimestamp = (date: Date) => {
+    if (Number.isNaN(date.getTime())) return '';
     const now = new Date();
     const local = new Date(date);
     const isToday = local.toDateString() === now.toDateString();

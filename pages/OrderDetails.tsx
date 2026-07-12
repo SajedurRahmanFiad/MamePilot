@@ -114,7 +114,7 @@ const OrderDetails: React.FC = () => {
   const [showManualCourierModal, setShowManualCourierModal] = useState(false);
   const [manualCourierNote, setManualCourierNote] = useState('');
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
-  type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete';
+  type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick';
   type OrderStatusTransition = {
     action: OrderStatusTransitionAction;
     label: string;
@@ -123,7 +123,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Exchanged' | 'Exchange pending' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -149,7 +149,7 @@ const OrderDetails: React.FC = () => {
   const hasExchangedItems = (o?: Order | null) =>
     Boolean(o?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
 
-  const showExchangeTimeline = order?.status === OrderStatus.EXCHANGE_PENDING || hasExchangedItems(order);
+  const showExchangeTimeline = [OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.EXCHANGE_CANCELLED].includes(order?.status as OrderStatus) || hasExchangedItems(order);
 
   const timelineItems = React.useMemo<OrderTimelineItem[]>(
     () => {
@@ -162,8 +162,11 @@ const OrderDetails: React.FC = () => {
       ];
       if (showExchangeTimeline) {
         items.push(
-          { label: 'Exchanged', historyKey: 'completed', description: 'The order has been delivered with exchanged items.' },
-          { label: 'Exchange pending', historyKey: 'exchangeCourier', description: 'Exchange items are being shipped to the customer.' },
+          { label: 'Exchange processing', historyKey: 'exchangeProcessing', description: 'Exchange initiated and processing.' },
+          { label: 'Exchange picked', historyKey: 'exchangePicked', description: 'Exchange items picked up by courier.' },
+          { label: 'Exchange delivered', historyKey: 'exchangeDelivered', description: 'Exchange items delivered to the customer.' },
+          { label: 'Exchange returned', historyKey: 'exchangeReturned', description: 'The exchange order has been returned.' },
+          { label: 'Exchange cancelled', historyKey: 'exchangeCancelled', description: 'The exchange has been cancelled.' },
         );
       }
       items.push(
@@ -179,9 +182,13 @@ const OrderDetails: React.FC = () => {
     if (!order) return 0;
     if (order.status === OrderStatus.CANCELLED) return timelineItems.length - 1;
     if (order.status === OrderStatus.RETURNED) return timelineItems.findIndex((item) => item.label === 'Returned');
-    if (order.status === OrderStatus.EXCHANGE_PENDING) return timelineItems.findIndex((item) => item.label === 'Exchange pending');
+    if (order.status === OrderStatus.EXCHANGE_CANCELLED) return timelineItems.findIndex((item) => item.label === 'Exchange cancelled');
+    if (order.status === OrderStatus.EXCHANGE_PROCESSING) return timelineItems.findIndex((item) => item.label === 'Exchange processing');
+    if (order.status === OrderStatus.EXCHANGE_PICKED) return timelineItems.findIndex((item) => item.label === 'Exchange picked');
+    if (order.status === OrderStatus.EXCHANGE_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Exchange delivered');
+    if (order.status === OrderStatus.EXCHANGE_RETURNED) return timelineItems.findIndex((item) => item.label === 'Exchange returned');
     if (order.status === OrderStatus.COMPLETED) {
-      return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchanged' : 'Delivered'));
+      return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered'));
     }
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
@@ -257,6 +264,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const formatStatusTimestamp = (date: Date) => {
+    if (Number.isNaN(date.getTime())) return '';
     const now = new Date();
     const local = new Date(date);
     const isToday = local.toDateString() === now.toDateString();
@@ -276,11 +284,19 @@ const OrderDetails: React.FC = () => {
     return `${local.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}, ${time}`;
   };
 
-  const getStatusDisplayName = (status: OrderStatus) => status === OrderStatus.COMPLETED ? 'Delivered' : status;
+  const getStatusDisplayName = (status: OrderStatus) => {
+    if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange Delivered' : 'Delivered';
+    if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange Delivered';
+    return status;
+  };
 
   const getFinalBranchStatus = (status: OrderStatus): OrderTimelineLabel | null => {
-    if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchanged' : 'Delivered';
-    if (status === OrderStatus.EXCHANGE_PENDING) return 'Exchange pending';
+    if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered';
+    if (status === OrderStatus.EXCHANGE_PROCESSING) return 'Exchange processing';
+    if (status === OrderStatus.EXCHANGE_PICKED) return 'Exchange picked';
+    if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange delivered';
+    if (status === OrderStatus.EXCHANGE_RETURNED) return 'Exchange returned';
+    if (status === OrderStatus.EXCHANGE_CANCELLED) return 'Exchange cancelled';
     if (status === OrderStatus.RETURNED) return 'Returned';
     if (status === OrderStatus.CANCELLED) return 'Cancelled';
     return null;
@@ -300,8 +316,16 @@ const OrderDetails: React.FC = () => {
           return order?.status === OrderStatus.COMPLETED ? 'Delivered' : 'Delivering';
         case 'Exchanged':
           return 'Delivered, Exchanged';
-        case 'Exchange pending':
-          return 'Exchange pending';
+        case 'Exchange processing':
+          return 'Exchange processing';
+        case 'Exchange picked':
+          return 'Exchange picked';
+        case 'Exchange delivered':
+          return 'Exchange delivered';
+        case 'Exchange returned':
+          return order?.status === OrderStatus.EXCHANGE_RETURNED ? 'Exchange returned' : 'Returning exchange';
+        case 'Exchange cancelled':
+          return order?.status === OrderStatus.EXCHANGE_CANCELLED ? 'Exchange cancelled' : 'Cancelling exchange';
         case 'Returned':
           return order?.status === OrderStatus.RETURNED ? 'Returned' : 'Returning';
         case 'Cancelled':
@@ -332,8 +356,14 @@ const OrderDetails: React.FC = () => {
           return 'Deliver';
         case 'Exchanged':
           return 'Deliver, Exchange';
-        case 'Exchange pending':
-          return 'Ship exchange';
+        case 'Exchange processing':
+          return 'Assign courier for exchange';
+        case 'Exchange picked':
+          return 'Pick exchange';
+        case 'Exchange delivered':
+          return 'Deliver exchange';
+        case 'Exchange returned':
+          return 'Return exchange';
         case 'Returned':
           return 'Return';
         case 'Cancelled':
@@ -353,7 +383,7 @@ const OrderDetails: React.FC = () => {
 
     if (!order) return '';
 
-    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Exchanged', 'Exchange pending', 'Returned', 'Cancelled'].includes(item.label);
+    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Exchanged', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'Returned', 'Cancelled'].includes(item.label);
     if (index === timelineIndex && !isActiveBranchItem) {
       return '';
     }
@@ -372,8 +402,16 @@ const OrderDetails: React.FC = () => {
           return order.completedAt || order.history?.completed;
         case 'Exchanged':
           return order.completedAt || order.history?.completed;
-        case 'Exchange pending':
-          return order.history?.exchangeCourier || '';
+        case 'Exchange processing':
+          return order.history?.exchangeProcessing || order.history?.exchangeCourier || '';
+        case 'Exchange picked':
+          return order.history?.exchangePicked || '';
+        case 'Exchange delivered':
+          return order.history?.exchangeDelivered || order.completedAt || order.history?.completed || '';
+        case 'Exchange returned':
+          return order.history?.exchangeReturned || '';
+        case 'Exchange cancelled':
+          return order.history?.exchangeCancelled || '';
         case 'Returned':
           return order.history?.returned;
         case 'Cancelled':
@@ -398,12 +436,13 @@ const OrderDetails: React.FC = () => {
 
   const getOrderProgressPercent = (activeOrder?: Order | null) => {
     if (!activeOrder) return 0;
-    if ([OrderStatus.COMPLETED, OrderStatus.EXCHANGE_PENDING, OrderStatus.RETURNED, OrderStatus.CANCELLED].includes(activeOrder.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED].includes(activeOrder.status)) {
       return 100;
     }
-    const finalStepIndex = timelineItems.findIndex((item) => item.label === 'Delivered');
+    const finalStepLabel = showExchangeTimeline ? 'Exchange delivered' : 'Delivered';
+    const finalStepIndex = timelineItems.findIndex((item) => item.label === finalStepLabel);
     const stepIndex = getTimelineIndex(activeOrder);
-    return Math.round((stepIndex / Math.max(1, finalStepIndex)) * 100);
+    return Math.min(100, Math.round((stepIndex / Math.max(1, finalStepIndex)) * 100));
   };
 
   const orderProgressPercent = getOrderProgressPercent(order);
@@ -445,6 +484,10 @@ const OrderDetails: React.FC = () => {
       { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed },
       { key: 'returned', label: 'Returned', icon: ICONS.Close, text: history.returned },
       { key: 'returnExchange', label: 'Return/Exchange', icon: ICONS.Return, text: history.returnExchange },
+      { key: 'exchangeProcessing', label: 'Exchange processing', icon: ICONS.ChevronRight, text: history.exchangeProcessing },
+      { key: 'exchangePicked', label: 'Exchange picked', icon: ICONS.Check, text: history.exchangePicked },
+      { key: 'exchangeDelivered', label: 'Exchange delivered', icon: ICONS.Check, text: history.exchangeDelivered },
+      { key: 'exchangeReturned', label: 'Exchange returned', icon: ICONS.Close, text: history.exchangeReturned },
       { key: 'exchangeCourier', label: 'Exchange courier', icon: ICONS.Courier, text: history.exchangeCourier },
       { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled },
     ].filter((entry) => entry.text);
@@ -494,7 +537,8 @@ const OrderDetails: React.FC = () => {
     order?.exchangeSteadfastConsignmentId ||
     order?.exchangeCarrybeeConsignmentId ||
     order?.exchangePaperflyTrackingNumber ||
-    order?.exchangeCourierHistory
+    order?.exchangeCourierHistory ||
+    order?.history?.exchangeCourier
   );
 
   const preferredCourier = getPreferredCourierFromHistory(order?.history?.courier);
@@ -560,7 +604,11 @@ const OrderDetails: React.FC = () => {
     && canUseCourierAutomation
     && order?.status !== OrderStatus.PICKED
     && order?.status !== OrderStatus.COMPLETED
-    && order?.status !== OrderStatus.EXCHANGE_PENDING
+    && order?.status !== OrderStatus.EXCHANGE_PROCESSING
+    && order?.status !== OrderStatus.EXCHANGE_PICKED
+    && order?.status !== OrderStatus.EXCHANGE_DELIVERED
+    && order?.status !== OrderStatus.EXCHANGE_RETURNED
+    && order?.status !== OrderStatus.EXCHANGE_CANCELLED
     && order?.status !== OrderStatus.RETURNED
     && order?.status !== OrderStatus.CANCELLED
     && order?.status !== OrderStatus.ON_HOLD
@@ -569,24 +617,53 @@ const OrderDetails: React.FC = () => {
   const canAssignExchangeCourier =
     canProcessReturnExchange
     && canUseCourierAutomation
-    && order?.status === OrderStatus.EXCHANGE_PENDING
+    && order?.status === OrderStatus.EXCHANGE_PROCESSING
     && !sentToExchangeCourier;
 
   const statusTransition = useMemo<OrderStatusTransition | null>(() => {
     if (!order) return null;
-    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED) {
+    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_RETURNED || order.status === OrderStatus.EXCHANGE_CANCELLED) {
       return null;
     }
 
-    if (order.status === OrderStatus.EXCHANGE_PENDING) {
-      if (sentToExchangeCourier) return null; // already shipped
+    if (order.status === OrderStatus.EXCHANGE_PROCESSING) {
+      if (sentToExchangeCourier) {
+        return {
+          action: 'exchangePick' as const,
+          label: 'Mark exchange picked',
+          nextStatus: OrderStatus.EXCHANGE_PICKED,
+          historyKey: 'exchangePicked',
+          description: 'Mark that the exchange items have been picked up by the courier.',
+          enabled: canFinalizeOrders,
+        };
+      }
       return {
         action: 'assignCourier' as const,
-        label: 'Ship exchange items',
+        label: 'Assign courier for exchange',
         nextStatus: order.status,
         historyKey: 'exchangeCourier',
         description: 'Assign a courier to ship the replacement items to the customer.',
         enabled: canAssignExchangeCourier,
+      };
+    }
+
+    if (order.status === OrderStatus.EXCHANGE_PICKED) {
+      return {
+        action: 'complete' as const,
+        label: 'Complete order',
+        nextStatus: OrderStatus.COMPLETED,
+        description: 'Complete the order by marking the exchange as delivered.',
+        enabled: canFinalizeOrders,
+      };
+    }
+
+    if (order.status === OrderStatus.EXCHANGE_DELIVERED) {
+      return {
+        action: 'complete' as const,
+        label: 'Complete order',
+        nextStatus: OrderStatus.COMPLETED,
+        description: 'Finalize the order after exchange delivery.',
+        enabled: canFinalizeOrders,
       };
     }
 
@@ -663,7 +740,7 @@ const OrderDetails: React.FC = () => {
       description: 'Complete the order by marking it delivered or returned.',
       enabled: canFinalizeOrders,
     };
-  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders]);
+  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier]);
 
   // Calculate payment status
   const getPaymentStatus = () => {
@@ -832,6 +909,9 @@ const OrderDetails: React.FC = () => {
       setShowCourierSelectionModal(true);
     } else if (pendingStatusTransition.action === 'pick') {
       await markPicked();
+    } else if (pendingStatusTransition.action === 'exchangePick') {
+      const historyText = `Exchange picked up by courier, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      await updateStatus(OrderStatus.EXCHANGE_PICKED, 'exchangePicked', historyText);
     } else if (pendingStatusTransition.action === 'complete') {
       setShowCompletionModal(true);
     }
@@ -852,14 +932,19 @@ const OrderDetails: React.FC = () => {
           disabled={!transition.enabled}
           onClick={() => {
             if (transition.action === 'assignCourier') {
-              if (order?.status === OrderStatus.EXCHANGE_PENDING) {
+              if (order?.status === OrderStatus.EXCHANGE_PROCESSING) {
                 setIsExchangeConsignment(true);
               }
               setShowCourierSelectionModal(true);
               return;
             }
-            if (transition.action === 'complete' && order?.status === OrderStatus.PICKED) {
+            if (transition.action === 'complete' && (order?.status === OrderStatus.PICKED || order?.status === OrderStatus.EXCHANGE_PICKED || order?.status === OrderStatus.EXCHANGE_DELIVERED)) {
               openCompletion();
+              return;
+            }
+            if (transition.action === 'exchangePick') {
+              setPendingStatusTransition(transition);
+              setShowStatusTransitionModal(true);
               return;
             }
             setPendingStatusTransition(transition);
@@ -1273,7 +1358,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED);
-  const canFinalizeCurrentOrder = canFinalizeOrders && order.status === OrderStatus.PICKED;
+  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED);
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder
@@ -1311,13 +1396,13 @@ const OrderDetails: React.FC = () => {
           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
             {getStatusDisplayName(order.status)}
           </span>
-          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToSteadfast && (
+          {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
             <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
           )}
-          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToCarryBee && (
+          {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToCarryBee && (
             <img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full" />
           )}
-          {canUseCourierAutomation && (order.status === OrderStatus.COURIER_ASSIGNED || order.status === OrderStatus.PICKED) && sentToPaperfly && (
+          {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
             <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
           )}
         </div>
@@ -1352,14 +1437,14 @@ const OrderDetails: React.FC = () => {
                         {ICONS.Check} Complete Order
                       </button>
                     )}
-                    {canProcessReturnExchange && order.status === OrderStatus.COMPLETED && (
+                    {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED) && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700" onClick={() => { setShowReturnExchangeModal(true); setIsActionOpen(false); }}>
                         {ICONS.Return} Return / Exchange
                       </button>
                     )}
                     {canAssignExchangeCourier && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { setIsExchangeConsignment(true); setShowCourierSelectionModal(true); setIsActionOpen(false); }}>
-                        {ICONS.Courier} Ship exchange items
+                        {ICONS.Courier} Assign courier for exchange
                       </button>
                     )}
                     {canUseFraudChecker && (
@@ -1661,12 +1746,17 @@ const OrderDetails: React.FC = () => {
                   <div className="space-y-0.5">
                     {timelineItems.map((item, index) => {
                       const branchStatus = getFinalBranchStatus(order?.status ?? OrderStatus.CREATED);
-                      const isBranchItem = item.label === 'Delivered' || item.label === 'Exchanged' || item.label === 'Exchange pending' || item.label === 'Returned' || item.label === 'Cancelled';
-                      const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus);
+                      const isExchangeStep = ['Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned'].includes(item.label);
+                      const isInExchangeFlow = [OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED, OrderStatus.EXCHANGE_RETURNED].includes(order?.status as OrderStatus);
+                      const isBranchItem = (item.label === 'Exchange processing' || item.label === 'Exchange picked' || item.label === 'Exchange delivered' || item.label === 'Exchange returned' || item.label === 'Exchange cancelled' || item.label === 'Exchanged' || item.label === 'Returned' || item.label === 'Cancelled')
+                        || (item.label === 'Delivered' && !showExchangeTimeline);
+                      const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus)
+                        && !(isInExchangeFlow && isExchangeStep);
                       if (isUnavailableBranch) return null;
                       const isActive = index === timelineIndex;
-                      const isPast = !isBranchItem && index < timelineIndex;
-                      const isCompleted = isPast || (isActive && isBranchItem);
+                      const isPast = (!isBranchItem || (isExchangeStep && isInExchangeFlow && index < timelineIndex)) && index < timelineIndex;
+                      const isInProgressExchange = isActive && isBranchItem && (item.label === 'Exchange processing' || item.label === 'Exchange picked');
+                      const isCompleted = isPast || (isActive && isBranchItem && !isInProgressExchange);
 
                       return (
                         <div
@@ -1738,7 +1828,45 @@ const OrderDetails: React.FC = () => {
                       <p className="text-sm text-gray-600">No source ad assigned</p>
                     </div>
                   )}
-                  
+
+                  {/* Courier Info */}
+                  {sentToAnyCourier && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Courier Info</p>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-900">{courierDisplayName || 'Manual'}</p>
+                        {order.steadfastConsignmentId && (
+                          <p className="text-xs text-gray-600">Steadfast Consignment ID: <span className="font-bold text-gray-900">{order.steadfastConsignmentId}</span></p>
+                        )}
+                        {order.carrybeeConsignmentId && (
+                          <p className="text-xs text-gray-600">CarryBee Consignment ID: <span className="font-bold text-gray-900">{order.carrybeeConsignmentId}</span></p>
+                        )}
+                        {order.paperflyTrackingNumber && (
+                          <p className="text-xs text-gray-600">Paperfly Tracking: <span className="font-bold text-gray-900">{order.paperflyTrackingNumber}</span></p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Exchange Courier Info */}
+                  {sentToExchangeCourier && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                      <p className="text-xs font-bold text-amber-600 uppercase tracking-widest mb-2">Exchange Courier Info</p>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-900 capitalize">{order.exchangeCourier || 'Manual'}</p>
+                        {order.exchangeSteadfastConsignmentId && (
+                          <p className="text-xs text-gray-600">Steadfast Consignment ID: <span className="font-bold text-gray-900">{order.exchangeSteadfastConsignmentId}</span></p>
+                        )}
+                        {order.exchangeCarrybeeConsignmentId && (
+                          <p className="text-xs text-gray-600">CarryBee Consignment ID: <span className="font-bold text-gray-900">{order.exchangeCarrybeeConsignmentId}</span></p>
+                        )}
+                        {order.exchangePaperflyTrackingNumber && (
+                          <p className="text-xs text-gray-600">Paperfly Tracking: <span className="font-bold text-gray-900">{order.exchangePaperflyTrackingNumber}</span></p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Courier History Button */}
                   {canUseFraudChecker && (
                     <>

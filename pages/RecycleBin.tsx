@@ -6,7 +6,7 @@ import Pagination from '../src/components/Pagination';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { usePermanentlyDeleteDeletedItem, useRestoreDeletedItem } from '../src/hooks/useMutations';
-import { useRecycleBinPage, useSystemDefaults } from '../src/hooks/useQueries';
+import { useRecycleBinPage, useSystemDefaults, useRecycleBinFilterOptions } from '../src/hooks/useQueries';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { RecycleBinEntityType, RecycleBinItem, hasAdminAccess } from '../types';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -76,14 +76,15 @@ const RecycleBin: React.FC = () => {
   const visibleItems = recycleBinPage.data;
   const totalItems = recycleBinPage.count;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const { data: recycleBinFilterOpts } = useRecycleBinFilterOptions();
 
   const deletedByOptions = useMemo(() => {
-    return Array.from(new Set(visibleItems.map((item) => item.deletedByName || item.deletedBy).filter(Boolean))) as string[];
-  }, [visibleItems]);
+    return recycleBinFilterOpts?.deletedByNames || [];
+  }, [recycleBinFilterOpts]);
 
   const titleOptions = useMemo(() => {
-    return Array.from(new Set(visibleItems.map((item) => item.title).filter(Boolean))) as string[];
-  }, [visibleItems]);
+    return recycleBinFilterOpts?.titles || [];
+  }, [recycleBinFilterOpts]);
 
   const recycleBinFilterDefinitions = useMemo(() => {
     const entityTypeOptions = Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }));

@@ -34,7 +34,7 @@ interface StatCardProps {
   profitValue?: number;
   subtotalAmount?: string; // Optional: amount to show in brackets, e.g. "৳ 670"
   subtotalNumericValue?: number; // For abbreviated subtotal display
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   subtitleTone?: 'positive' | 'negative' | 'neutral';
   onClick?: () => void;
   className?: string;

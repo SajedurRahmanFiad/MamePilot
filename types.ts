@@ -147,7 +147,11 @@ export enum OrderStatus {
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
-  EXCHANGE_PENDING = 'Exchange pending',
+  EXCHANGE_PROCESSING = 'Exchange processing',
+  EXCHANGE_PICKED = 'Exchange picked',
+  EXCHANGE_DELIVERED = 'Exchange delivered',
+  EXCHANGE_RETURNED = 'Exchange returned',
+  EXCHANGE_CANCELLED = 'Exchange cancelled',
   RETURNED = 'Returned',
   CANCELLED = 'Cancelled'
 }
@@ -474,6 +478,11 @@ export interface Order {
     payment?: string;
     returnExchange?: string;
     exchangeCourier?: string; // history entry for exchange courier assignment
+    exchangeProcessing?: string; // history entry for exchange processing start
+    exchangePicked?: string; // history entry for exchange picked up by courier
+    exchangeDelivered?: string; // history entry for exchange delivered
+    exchangeReturned?: string; // history entry for exchange returned
+    exchangeCancelled?: string; // history entry for exchange cancelled
   };
   paidAmount: number;
   processedAt?: string; // ISO timestamp when marked processing

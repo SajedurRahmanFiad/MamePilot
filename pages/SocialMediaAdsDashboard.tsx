@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   BarChart3,
@@ -15,7 +16,9 @@ import {
 import { Card, FilterBar, MetaAdsMoney, StatCard } from '../components';
 import type { FilterRange } from '../components/FilterBar';
 import { getStatusDisplayName } from '../constants';
-import { useMarketingDashboard } from '../src/hooks/useQueries';
+import { useMarketingDashboard, useMetaAdsSyncStatus } from '../src/hooks/useQueries';
+import { useSyncMetaAds } from '../src/hooks/useMutations';
+import { useToastNotifications } from '../src/contexts/ToastContext';
 import {
   convertAdsAmountToBdt,
   CURRENCY_SYMBOLS,
@@ -134,11 +137,91 @@ const pctChange = (current: number, previous: number) =>
 
 const SocialMediaAdsDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toast = useToastNotifications();
   const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
 
   const { from, to } = useMemo(() => toRangeWindow(filterRange, customDates), [filterRange, customDates]);
   const { data, isPending, isFetching, error, refetch } = useMarketingDashboard({ from, to });
+
+  // Sync Meta Ads mutation and status polling
+  const syncMutation = useSyncMetaAds();
+  const { data: syncStatus, refetch: refetchSyncStatus } = useMetaAdsSyncStatus();
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Restore cooldown from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('meta-ads-sync-cooldown-until');
+    if (stored) {
+      const remaining = Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
+      if (remaining > 0) setCooldownRemaining(remaining);
+    }
+  }, []);
+
+  // Countdown timer for sync cooldown
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownRemaining((prev) => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          localStorage.removeItem('meta-ads-sync-cooldown-until');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    };
+  }, [cooldownRemaining]);
+
+  const applyCooldown = useCallback((seconds: number) => {
+    setCooldownRemaining(seconds);
+    localStorage.setItem('meta-ads-sync-cooldown-until', String(Date.now() + seconds * 1000));
+  }, []);
+
+  // Track last synced time so we can detect when a background sync completes
+  const lastSyncedAtRef = useRef<string | null>(syncStatus?.lastSyncedAt ?? null);
+
+  // When sync status changes (background sync completed), refetch dashboard data automatically
+  useEffect(() => {
+    const currentLastSynced = syncStatus?.lastSyncedAt ?? null;
+    if (currentLastSynced && currentLastSynced !== lastSyncedAtRef.current) {
+      lastSyncedAtRef.current = currentLastSynced;
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    }
+  }, [syncStatus?.lastSyncedAt, refetch, queryClient]);
+
+  const handleSync = useCallback(async () => {
+    if (cooldownRemaining > 0 || syncMutation.isPending) return;
+    const toastId = toast.loading('Starting Meta Ads sync...');
+    try {
+      const result = await syncMutation.mutateAsync();
+      if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
+        applyCooldown(result.cooldownRemainingSeconds);
+        toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+      } else if (result?.started) {
+        applyCooldown(120);
+        toast.update(toastId, 'Sync started. Data will refresh automatically when ready.', 'success');
+      } else {
+        applyCooldown(120);
+        toast.update(toastId, 'Meta Ads synced successfully.', 'success');
+        await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+        await refetch();
+        await refetchSyncStatus();
+      }
+    } catch (err) {
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to sync Meta Ads.', 'error');
+    }
+  }, [cooldownRemaining, syncMutation, toast, refetch, refetchSyncStatus, applyCooldown, queryClient]);
 
   const adsCode = data?.currency?.adsCode || 'BDT';
   const rateToBdt = data?.currency?.rateToBdt ?? null;
@@ -299,10 +382,20 @@ const SocialMediaAdsDashboard: React.FC = () => {
           </span>
           <button
             type="button"
-            onClick={() => refetch()}
-            className={`rounded-full px-3 py-2 text-xs font-bold ${theme.buttons.primary}`}
+            onClick={handleSync}
+            disabled={cooldownRemaining > 0 || syncMutation.isPending}
+            className={`rounded-full px-3 py-2 text-xs font-bold ${theme.buttons.primary} ${cooldownRemaining > 0 || syncMutation.isPending ? 'opacity-60 cursor-not-allowed' : ''}`}
           >
-            Refresh
+            {syncMutation.isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <RefreshCw size={12} className="animate-spin" />
+                Syncing…
+              </span>
+            ) : cooldownRemaining > 0 ? (
+              `Cooldown ${Math.floor(cooldownRemaining / 60)}:${String(cooldownRemaining % 60).padStart(2, '0')}`
+            ) : (
+              'Sync Meta'
+            )}
           </button>
         </div>
       </div>

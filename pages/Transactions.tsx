@@ -7,7 +7,7 @@ import { formatCurrency, ICONS } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
-import { useTransactionsPage, useUsers, useCategories, useSystemDefaults } from '../src/hooks/useQueries';
+import { useTransactionsPage, useUsers, useCategories, useSystemDefaults, useTransactionFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
@@ -223,18 +223,19 @@ const Transactions: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(totalTransactions / pageSize));
   const deleteTransactionMutation = useDeleteTransaction();
   const reviewTransactionApprovalMutation = useReviewTransactionApproval();
+  const { data: transactionFilterOpts } = useTransactionFilterOptions();
 
   const accountOptions = useMemo(() => {
-    return Array.from(new Set(transactions.map((t) => t.accountName).filter(Boolean))) as string[];
-  }, [transactions]);
+    return transactionFilterOpts?.accounts || [];
+  }, [transactionFilterOpts]);
 
   const contactOptions = useMemo(() => {
-    return Array.from(new Set(transactions.map((t) => t.contactName).filter(Boolean))) as string[];
-  }, [transactions]);
+    return transactionFilterOpts?.contacts || [];
+  }, [transactionFilterOpts]);
 
   const paymentMethodOptions = useMemo(() => {
-    return Array.from(new Set(transactions.map((t) => t.paymentMethod).filter(Boolean))) as string[];
-  }, [transactions]);
+    return transactionFilterOpts?.paymentMethods || [];
+  }, [transactionFilterOpts]);
 
   const transactionFilterDefinitions = useMemo(() => {
     const userOptions = [

@@ -87,6 +87,13 @@ import {
   fetchServiceSubscriptionOverview,
   fetchRecycleBinItems,
   fetchRecycleBinPage,
+  fetchRecycleBinFilterOptions,
+  fetchOrderFilterOptions,
+  fetchCustomerFilterOptions,
+  fetchProductFilterOptions,
+  fetchTransactionFilterOptions,
+  fetchBillFilterOptions,
+  fetchVendorFilterOptions,
   fetchBusinessGrowthSettings,
   fetchBusinessRecommendations,
 } from '../services/supabaseQueries';
@@ -163,6 +170,14 @@ export function useCustomersPage(
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useCustomerFilterOptions(): UseQueryResult<{ names?: string[]; phones?: string[]; addresses?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['customerFilterOptions'],
+    queryFn: () => fetchCustomerFilterOptions(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -366,6 +381,14 @@ export function useOrdersPage(
   });
 }
 
+export function useOrderFilterOptions(): UseQueryResult<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['orderFilterOptions'],
+    queryFn: () => fetchOrderFilterOptions(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useOrder(id: string | undefined): UseQueryResult<Order | null, Error> {
   return useQuery({
     queryKey: ['order', id],
@@ -420,6 +443,14 @@ export function useBillsPage(
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useBillFilterOptions(): UseQueryResult<{ billNumbers?: string[]; vendorNames?: string[]; vendorPhones?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['billFilterOptions'],
+    queryFn: () => fetchBillFilterOptions(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -485,6 +516,14 @@ export function useTransactionsPage(
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useTransactionFilterOptions(): UseQueryResult<{ accounts?: string[]; contacts?: string[]; paymentMethods?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['transactionFilterOptions'],
+    queryFn: () => fetchTransactionFilterOptions(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -616,6 +655,14 @@ export function useVendorsPage(
   });
 }
 
+export function useVendorFilterOptions(): UseQueryResult<{ names?: string[]; phones?: string[]; addresses?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['vendorFilterOptions'],
+    queryFn: () => fetchVendorFilterOptions(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useVendor(id: string | undefined): UseQueryResult<Vendor | null, Error> {
   return useQuery({
     queryKey: ['vendor', id],
@@ -664,6 +711,14 @@ export function useProductsPage(
   return useQuery(options);
 }
 
+export function useProductFilterOptions(): UseQueryResult<{ names?: string[]; categories?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['productFilterOptions'],
+    queryFn: () => fetchProductFilterOptions(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useProduct(id: string | undefined): UseQueryResult<Product | null, Error> {
   return useQuery({
     queryKey: ['product', id],
@@ -707,6 +762,14 @@ export function useRecycleBinPage(
     placeholderData: (previousData) => previousData,
     staleTime: 60 * 1000,
     refetchOnMount: false,
+  });
+}
+
+export function useRecycleBinFilterOptions(): UseQueryResult<{ deletedByNames?: string[]; titles?: string[] }, Error> {
+  return useQuery({
+    queryKey: ['recycleBinFilterOptions'],
+    queryFn: () => fetchRecycleBinFilterOptions(),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

@@ -1499,6 +1499,310 @@ final class OperationsApi extends BaseService
         ];
     }
 
+    /**
+     * Return distinct values for order filter dropdowns.
+     * Optionally filtered by a search query for search-as-you-type.
+     */
+    public function fetchOrderFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'customerNames') {
+            $sql = 'SELECT DISTINCT customerName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(customerName, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'customerNames') { $sql .= ' AND customerName LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY customerName LIMIT ' . $limit;
+            $result['customerNames'] = array_column($this->database->fetchAll($sql, $bindings), 'customerName');
+        }
+
+        if ($field === '' || $field === 'customerPhones') {
+            $sql = 'SELECT DISTINCT customerPhone FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(customerPhone, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'customerPhones') { $sql .= ' AND customerPhone LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY customerPhone LIMIT ' . $limit;
+            $result['customerPhones'] = array_column($this->database->fetchAll($sql, $bindings), 'customerPhone');
+        }
+
+        if ($field === '' || $field === 'orderNumbers') {
+            $sql = 'SELECT DISTINCT orderNumber FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(orderNumber, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'orderNumbers') { $sql .= ' AND orderNumber LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY orderNumber LIMIT ' . $limit;
+            $result['orderNumbers'] = array_column($this->database->fetchAll($sql, $bindings), 'orderNumber');
+        }
+
+        if ($field === '' || $field === 'companyNames') {
+            $sql = 'SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) AS companyName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")), "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'companyNames') { $sql .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY companyName LIMIT ' . $limit;
+            $result['companyNames'] = array_column($this->database->fetchAll($sql, $bindings), 'companyName');
+        }
+
+        if ($field === '' || $field === 'courierNames') {
+            $result['courierNames'] = ['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other'];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for customer filter dropdowns.
+     */
+    public function fetchCustomerFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'names') {
+            $sql = 'SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(name, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'names') { $sql .= ' AND name LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY name LIMIT ' . $limit;
+            $result['names'] = array_column($this->database->fetchAll($sql, $bindings), 'name');
+        }
+
+        if ($field === '' || $field === 'phones') {
+            $sql = 'SELECT DISTINCT phone FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(phone, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'phones') { $sql .= ' AND phone LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY phone LIMIT ' . $limit;
+            $result['phones'] = array_column($this->database->fetchAll($sql, $bindings), 'phone');
+        }
+
+        if ($field === '' || $field === 'addresses') {
+            $sql = 'SELECT DISTINCT address FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(address, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'addresses') { $sql .= ' AND address LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY address LIMIT ' . $limit;
+            $result['addresses'] = array_column($this->database->fetchAll($sql, $bindings), 'address');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for product filter dropdowns.
+     */
+    public function fetchProductFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'names') {
+            $sql = 'SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND TRIM(COALESCE(name, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'names') { $sql .= ' AND name LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY name LIMIT ' . $limit;
+            $result['names'] = array_column($this->database->fetchAll($sql, $bindings), 'name');
+        }
+
+        if ($field === '' || $field === 'categories') {
+            $sql = 'SELECT DISTINCT category FROM products WHERE deleted_at IS NULL AND TRIM(COALESCE(category, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'categories') { $sql .= ' AND category LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY category LIMIT ' . $limit;
+            $result['categories'] = array_column($this->database->fetchAll($sql, $bindings), 'category');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for transaction filter dropdowns.
+     */
+    public function fetchTransactionFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'accounts') {
+            $sql = 'SELECT DISTINCT accountName FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(accountName, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'accounts') { $sql .= ' AND accountName LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY accountName LIMIT ' . $limit;
+            $result['accounts'] = array_column($this->database->fetchAll($sql, $bindings), 'accountName');
+        }
+
+        if ($field === '' || $field === 'contacts') {
+            $sql = 'SELECT DISTINCT contactName FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(contactName, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'contacts') { $sql .= ' AND contactName LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY contactName LIMIT ' . $limit;
+            $result['contacts'] = array_column($this->database->fetchAll($sql, $bindings), 'contactName');
+        }
+
+        if ($field === '' || $field === 'paymentMethods') {
+            $sql = 'SELECT DISTINCT paymentMethod FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(paymentMethod, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'paymentMethods') { $sql .= ' AND paymentMethod LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY paymentMethod LIMIT ' . $limit;
+            $result['paymentMethods'] = array_column($this->database->fetchAll($sql, $bindings), 'paymentMethod');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for bill filter dropdowns.
+     */
+    public function fetchBillFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'billNumbers') {
+            $sql = 'SELECT DISTINCT bill_number FROM bills WHERE deleted_at IS NULL AND TRIM(COALESCE(bill_number, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'billNumbers') { $sql .= ' AND bill_number LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY bill_number LIMIT ' . $limit;
+            $result['billNumbers'] = array_column($this->database->fetchAll($sql, $bindings), 'bill_number');
+        }
+
+        if ($field === '' || $field === 'vendorNames') {
+            $sql = "SELECT DISTINCT v.name FROM bills b JOIN vendors v ON b.vendor_id = v.id WHERE b.deleted_at IS NULL AND v.deleted_at IS NULL AND TRIM(COALESCE(v.name, '')) <> ''";
+            $bindings = [];
+            if ($like && $field === 'vendorNames') { $sql .= ' AND v.name LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY v.name LIMIT ' . $limit;
+            $result['vendorNames'] = array_column($this->database->fetchAll($sql, $bindings), 'name');
+        }
+
+        if ($field === '' || $field === 'vendorPhones') {
+            $sql = "SELECT DISTINCT v.phone FROM bills b JOIN vendors v ON b.vendor_id = v.id WHERE b.deleted_at IS NULL AND v.deleted_at IS NULL AND TRIM(COALESCE(v.phone, '')) <> ''";
+            $bindings = [];
+            if ($like && $field === 'vendorPhones') { $sql .= ' AND v.phone LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY v.phone LIMIT ' . $limit;
+            $result['vendorPhones'] = array_column($this->database->fetchAll($sql, $bindings), 'phone');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for vendor filter dropdowns.
+     */
+    public function fetchVendorFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        if ($field === '' || $field === 'names') {
+            $sql = 'SELECT DISTINCT name FROM vendors WHERE deleted_at IS NULL AND TRIM(COALESCE(name, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'names') { $sql .= ' AND name LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY name LIMIT ' . $limit;
+            $result['names'] = array_column($this->database->fetchAll($sql, $bindings), 'name');
+        }
+
+        if ($field === '' || $field === 'phones') {
+            $sql = 'SELECT DISTINCT phone FROM vendors WHERE deleted_at IS NULL AND TRIM(COALESCE(phone, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'phones') { $sql .= ' AND phone LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY phone LIMIT ' . $limit;
+            $result['phones'] = array_column($this->database->fetchAll($sql, $bindings), 'phone');
+        }
+
+        if ($field === '' || $field === 'addresses') {
+            $sql = 'SELECT DISTINCT address FROM vendors WHERE deleted_at IS NULL AND TRIM(COALESCE(address, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'addresses') { $sql .= ' AND address LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY address LIMIT ' . $limit;
+            $result['addresses'] = array_column($this->database->fetchAll($sql, $bindings), 'address');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return distinct values for recycle bin filter dropdowns.
+     */
+    public function fetchRecycleBinFilterOptions(array $params = []): array
+    {
+        $search = trim((string) ($params['search'] ?? ''));
+        $field = trim((string) ($params['field'] ?? ''));
+        $limit = 50;
+        $like = $search !== '' ? '%' . $search . '%' : null;
+
+        $result = [];
+
+        $tables = [
+            'orders' => ['title' => 'orderNumber', 'deleted_by' => 'deleted_by'],
+            'customers' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+            'products' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+            'vendors' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+            'bills' => ['title' => 'bill_number', 'deleted_by' => 'deleted_by'],
+            'transactions' => ['title' => 'description', 'deleted_by' => 'deleted_by'],
+            'users' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+            'accounts' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+        ];
+
+        $deletedByNames = [];
+        $titles = [];
+
+        foreach ($tables as $table => $cols) {
+            if ($field === '' || $field === 'deletedByNames') {
+                $sql = "SELECT DISTINCT u.name AS deletedByName FROM `{$table}` t LEFT JOIN users u ON t.deleted_by = u.id WHERE t.deleted_at IS NULL = FALSE AND t.deleted_at IS NOT NULL AND t.deleted_by IS NOT NULL AND t.deleted_by <> ''";
+                $bindings = [];
+                if ($like) { $sql .= ' AND u.name LIKE :q'; $bindings[':q'] = $like; }
+                $sql .= ' LIMIT ' . $limit;
+                $rows = $this->database->fetchAll($sql, $bindings);
+                foreach ($rows as $row) {
+                    $name = trim((string) ($row['deletedByName'] ?? ''));
+                    if ($name !== '') $deletedByNames[$name] = true;
+                }
+            }
+
+            if ($field === '' || $field === 'titles') {
+                $titleCol = $cols['title'];
+                $sql = "SELECT DISTINCT `{$titleCol}` AS title FROM `{$table}` WHERE deleted_at IS NOT NULL";
+                $bindings = [];
+                if ($like) { $sql .= " AND `{$titleCol}` LIKE :q"; $bindings[':q'] = $like; }
+                $sql .= ' LIMIT ' . $limit;
+                $rows = $this->database->fetchAll($sql, $bindings);
+                foreach ($rows as $row) {
+                    $title = trim((string) ($row['title'] ?? ''));
+                    if ($title !== '') $titles[$title] = true;
+                }
+            }
+        }
+
+        if ($field === '' || $field === 'deletedByNames') {
+            $result['deletedByNames'] = array_values(array_keys($deletedByNames));
+            sort($result['deletedByNames']);
+        }
+        if ($field === '' || $field === 'titles') {
+            $result['titles'] = array_values(array_keys($titles));
+            sort($result['titles']);
+        }
+
+        return $result;
+    }
+
     public function fetchOrderById(array $params): ?array
     {
         $row = $this->fetchOrderRowById(trim((string) ($params['id'] ?? '')));
@@ -1574,13 +1878,13 @@ final class OperationsApi extends BaseService
                 SELECT
                     o.created_by AS user_id,
                     COUNT(*) AS ordersCreated,
-                    SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END) AS completedOrders,
-                    SUM(CASE WHEN o.status IN ('Processing', 'Courier assigned') THEN 1 ELSE 0 END) AS processingOrders,
-                    SUM(CASE WHEN o.status = 'Picked' THEN 1 ELSE 0 END) AS pickedOrders,
+                    SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN 1 ELSE 0 END) AS completedOrders,
+                    SUM(CASE WHEN o.status IN ('Processing', 'Courier assigned', 'Exchange processing') THEN 1 ELSE 0 END) AS processingOrders,
+                    SUM(CASE WHEN o.status IN ('Picked', 'Exchange picked') THEN 1 ELSE 0 END) AS pickedOrders,
                     SUM(CASE WHEN o.status = 'On Hold' THEN 1 ELSE 0 END) AS onHoldOrders,
                     SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelledOrders,
                     COALESCE(SUM(o.total), 0) AS orderValue,
-                    COALESCE(SUM(CASE WHEN o.status = 'Completed' THEN o.total ELSE 0 END), 0) AS completedOrderValue,
+                    COALESCE(SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN o.total ELSE 0 END), 0) AS completedOrderValue,
                     COALESCE(SUM(o.paid_amount), 0) AS orderPaidAmount,
                     COUNT(DISTINCT CASE WHEN o.customer_id IS NULL OR o.customer_id = '' THEN NULL ELSE o.customer_id END) AS uniqueCustomers
                 FROM orders o
@@ -2580,8 +2884,17 @@ final class OperationsApi extends BaseService
 
         foreach ($statusRows as $row) {
             $status = trim((string) ($row['status'] ?? ''));
-            if ($status === 'Courier assigned') {
+            // Map sub-statuses to their parent buckets
+            if ($status === 'Courier assigned' || $status === 'Exchange processing') {
                 $status = 'Processing';
+            } elseif ($status === 'Exchange picked') {
+                $status = 'Picked';
+            } elseif ($status === 'Exchange delivered') {
+                $status = 'Completed';
+            } elseif ($status === 'Exchange returned') {
+                $status = 'Returned';
+            } elseif ($status === 'Exchange cancelled') {
+                $status = 'Cancelled';
             }
             if (!array_key_exists($status, $statusCounts)) {
                 continue;
@@ -3577,7 +3890,7 @@ final class OperationsApi extends BaseService
             }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
-            if ($previousStatus !== 'Picked') {
+            if ($previousStatus !== 'Picked' && $previousStatus !== 'Exchange picked') {
                 throw new RuntimeException('Only picked orders can be finalized from this modal.');
             }
 
@@ -3609,7 +3922,7 @@ final class OperationsApi extends BaseService
             $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
                 ->setTimezone(new \DateTimeZone($this->config->timezone()));
             $dateLabel = $localRecordedAt->format('j M Y');
-            $timeLabel = $localRecordedAt->format('H:i');
+            $timeLabel = $localRecordedAt->format('h:i A');
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
             $payload = [
@@ -3618,12 +3931,25 @@ final class OperationsApi extends BaseService
             $createdTransactions = [];
 
             if ($outcome === 'Delivered') {
-                $history['completed'] = sprintf(
-                    'Marked as delivered by %s on %s at %s.',
-                    trim((string) ($actor['name'] ?? 'System')),
-                    $dateLabel,
-                    $timeLabel
-                );
+                // When completing from exchange picked, set exchange delivered history
+                // but preserve the original delivery history
+                if ($previousStatus === 'Exchange picked') {
+                    if (!isset($history['exchangeDelivered'])) {
+                        $history['exchangeDelivered'] = sprintf(
+                            'Exchange delivered by %s on %s at %s.',
+                            trim((string) ($actor['name'] ?? 'System')),
+                            $dateLabel,
+                            $timeLabel
+                        );
+                    }
+                } else {
+                    $history['completed'] = sprintf(
+                        'Marked as delivered by %s on %s at %s.',
+                        trim((string) ($actor['name'] ?? 'System')),
+                        $dateLabel,
+                        $timeLabel
+                    );
+                }
                 $payload['history'] = $this->jsonEncode($history);
             } else {
                 $createdTransactions[] = $this->createTransactionRecord([
@@ -3764,8 +4090,8 @@ final class OperationsApi extends BaseService
             }
 
             $currentStatus = trim((string) ($orderRow['status'] ?? ''));
-            if (!in_array($currentStatus, ['Completed', 'Picked', 'Returned'], true)) {
-                throw new RuntimeException('Returns/exchanges can only be processed on Completed, Picked, or Returned orders.');
+            if (!in_array($currentStatus, ['Completed', 'Picked', 'Returned', 'Exchange delivered', 'Exchange picked'], true)) {
+                throw new RuntimeException('Returns/exchanges can only be processed on Completed, Picked, Returned, Exchange delivered, or Exchange picked orders.');
             }
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
@@ -3787,7 +4113,7 @@ final class OperationsApi extends BaseService
             $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
                 ->setTimezone(new \DateTimeZone($this->config->timezone()));
             $dateLabel = $localRecordedAt->format('j M Y');
-            $timeLabel = $localRecordedAt->format('H:i');
+            $timeLabel = $localRecordedAt->format('h:i A');
             $actorName = trim((string) ($actor['name'] ?? 'System'));
 
             // Build updated items with return/exchange tracking
@@ -3979,8 +4305,20 @@ final class OperationsApi extends BaseService
                 . implode('. ', $historyLines)
             );
 
-            // Update the order — set status to 'Exchange pending' for exchanges
-            $nextStatus = $action === 'exchange' ? 'Exchange pending' : null;
+            if ($action === 'exchange') {
+                $history['exchangeProcessing'] = "Exchange processing started by {$actorName} on {$dateLabel} at {$timeLabel}.";
+            }
+
+            // Update the order — set status based on action and current status
+            $isExchangeOrder = str_starts_with($currentStatus, 'Exchange ');
+            if ($action === 'exchange') {
+                $nextStatus = 'Exchange processing';
+            } elseif ($action === 'partialReturn' && $isExchangeOrder) {
+                $nextStatus = 'Exchange returned';
+                $history['exchangeReturned'] = "Exchange returned by {$actorName} on {$dateLabel} at {$timeLabel}.";
+            } else {
+                $nextStatus = null;
+            }
             $payload = [
                 'items' => $this->jsonEncode($updatedItems),
                 'subtotal' => $this->formatMoney($newSubtotal),
@@ -4420,7 +4758,7 @@ final class OperationsApi extends BaseService
             $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
                 ->setTimezone(new \DateTimeZone($this->config->timezone()));
             $dateLabel = $localRecordedAt->format('j M Y');
-            $timeLabel = $localRecordedAt->format('H:i');
+            $timeLabel = $localRecordedAt->format('h:i A');
             $actorName = trim((string) ($actor['name'] ?? 'System'));
 
             // Build updated items with return tracking
@@ -6679,7 +7017,7 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Target status is required.');
         }
 
-        $statusOrder = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'];
+        $statusOrder = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'Returned', 'Cancelled'];
 
         if (!in_array($targetStatus, $statusOrder, true)) {
             throw new RuntimeException('Invalid target status.');
@@ -6706,9 +7044,8 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Target status is unrecognised.');
             }
 
-            // "Returned" and "Cancelled" are terminal; treat them at position 4/5 for comparison.
-            // For reverting, we just need the target to be strictly before the current.
-            if ($currentStatus === 'Returned' || $currentStatus === 'Cancelled') {
+            // "Returned", "Exchange returned", and "Cancelled" are terminal; allow reverting to anything before them.
+            if ($currentStatus === 'Returned' || $currentStatus === 'Exchange returned' || $currentStatus === 'Cancelled') {
                 // These are terminal statuses – allow reverting to anything before them
             } elseif ($targetIndex >= $currentIndex) {
                 throw new RuntimeException('Target status must be prior to the current status.');
@@ -6742,12 +7079,15 @@ final class OperationsApi extends BaseService
 
             // Remove history keys that were set during completion/return
             $keysToRemove = [];
-            if (in_array($currentStatus, ['Completed', 'Returned'], true)) {
-                $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned']);
+            if (in_array($currentStatus, ['Completed', 'Returned', 'Exchange returned'], true)) {
+                $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned', 'exchangeReturned']);
+            }
+            if (in_array($currentStatus, ['Exchange delivered', 'Exchange returned'], true)) {
+                $keysToRemove = array_merge($keysToRemove, ['exchangeDelivered']);
             }
 
             // If reverting before Picked, remove picked key
-            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Returned', 'Cancelled'], true);
+            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Returned', 'Cancelled'], true);
             if ($targetIdx !== false && $targetIdx < 3) {
                 // Reverting to On Hold, Processing, or Courier assigned – remove picked
                 $keysToRemove[] = 'picked';
@@ -6770,7 +7110,7 @@ final class OperationsApi extends BaseService
                 $targetStatus,
                 trim((string) ($actor['name'] ?? 'System')),
                 $localNow->format('j M Y'),
-                $localNow->format('H:i')
+                $localNow->format('h:i A')
             );
 
             $payload = [
@@ -6779,7 +7119,7 @@ final class OperationsApi extends BaseService
             ];
 
             // Reset paid_amount if we're reverting away from Completed/Returned
-            if (in_array($currentStatus, ['Completed', 'Returned'], true)) {
+            if (in_array($currentStatus, ['Completed', 'Returned', 'Exchange returned'], true)) {
                 $payload['paid_amount'] = $this->formatMoney(0);
             }
 

@@ -85,6 +85,9 @@ export async function deleteCustomer(id: string) { await remove('deleteCustomer'
 export async function fetchCustomersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string) {
   return call<{ data: Customer[]; count: number }>('fetchCustomersPage', { page, pageSize, search });
 }
+export async function fetchCustomerFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ names?: string[]; phones?: string[]; addresses?: string[] }>('fetchCustomerFilterOptions', params || {});
+}
 export async function fetchCustomersMini() { return call<Array<{ id: string; name: string; phone?: string }>>('fetchCustomersMini'); }
 
 export async function fetchOrders() { return call<Order[]>('fetchOrders'); }
@@ -118,6 +121,9 @@ export async function fetchCustomerSalesReport(params?: { filterRange?: string; 
 export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNot?: string }) {
   return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters });
 }
+export async function fetchOrderFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }>('fetchOrderFilterOptions', params || {});
+}
 export async function fetchOrderById(id: string) { return call<Order | null>('fetchOrderById', { id }); }
 export async function fetchOrdersByCustomerId(customerId: string) { return call<Order[]>('fetchOrdersByCustomerId', { customerId }); }
 export async function fetchEmployeeOrderCounts(createdByIds: string[], filters?: { from?: string; to?: string }) {
@@ -141,6 +147,9 @@ export async function deleteAccount(id: string) { await remove('deleteAccount', 
 export async function fetchTransactions() { return call<Transaction[]>('fetchTransactions'); }
 export async function fetchTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { type?: string; category?: string; from?: string; to?: string; search?: string; createdByIds?: string[] }) {
   return call<{ data: Transaction[]; count: number }>('fetchTransactionsPage', { page, pageSize, filters });
+}
+export async function fetchTransactionFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ accounts?: string[]; contacts?: string[]; paymentMethods?: string[] }>('fetchTransactionFilterOptions', params || {});
 }
 export async function fetchTransactionById(id: string) { return call<Transaction | null>('fetchTransactionById', { id }); }
 export async function createTransaction(transaction: Omit<Transaction, 'id'>) { return call<Transaction>('createTransaction', transaction); }
@@ -177,8 +186,14 @@ export async function deleteUser(id: string) { await remove('deleteUser', id); }
 export async function fetchVendorsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string) {
   return call<{ data: Vendor[]; count: number }>('fetchVendorsPage', { page, pageSize, search });
 }
+export async function fetchVendorFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ names?: string[]; phones?: string[]; addresses?: string[] }>('fetchVendorFilterOptions', params || {});
+}
 export async function fetchBillsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[] }) {
   return call<{ data: Bill[]; count: number }>('fetchBillsPage', { page, pageSize, filters });
+}
+export async function fetchBillFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ billNumbers?: string[]; vendorNames?: string[]; vendorPhones?: string[] }>('fetchBillFilterOptions', params || {});
 }
 export async function fetchBills() { return call<Bill[]>('fetchBills'); }
 export async function fetchBillsByVendorId(vendorId: string) { return call<Bill[]>('fetchBillsByVendorId', { vendorId }); }
@@ -201,6 +216,9 @@ export async function fetchProductImagesByIds(productIds: string[]) { return cal
 export async function fetchProductsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, category?: string, createdByIds?: string[]) {
   return call<{ data: Product[]; count: number }>('fetchProductsPage', { page, pageSize, search, category, createdByIds });
 }
+export async function fetchProductFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ names?: string[]; categories?: string[] }>('fetchProductFilterOptions', params || {});
+}
 export async function fetchProductsMini() { return call<Product[]>('fetchProductsMini'); }
 export async function fetchProductsSearch(q: string, limit: number = 50) { return call<Product[]>('fetchProductsSearch', { q, limit }); }
 export async function createProduct(product: Omit<Product, 'id'>) { return call<Product>('createProduct', product); }
@@ -210,6 +228,9 @@ export async function deleteProduct(id: string) { await remove('deleteProduct', 
 export async function fetchRecycleBinItems(): Promise<RecycleBinItem[]> { return call<RecycleBinItem[]>('fetchRecycleBinItems'); }
 export async function fetchRecycleBinPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, params?: { search?: string; entityType?: string }): Promise<RecycleBinPage> {
   return call<RecycleBinPage>('fetchRecycleBinPage', { page, pageSize, ...(params || {}) });
+}
+export async function fetchRecycleBinFilterOptions(params?: { search?: string; field?: string }) {
+  return call<{ deletedByNames?: string[]; titles?: string[] }>('fetchRecycleBinFilterOptions', params || {});
 }
 export async function restoreDeletedItem(target: { entityType: RecycleBinEntityType; id: string }): Promise<void> { await call('restoreDeletedItem', target); }
 export async function permanentlyDeleteDeletedItem(target: { entityType: RecycleBinEntityType; id: string }): Promise<void> { await call('permanentlyDeleteDeletedItem', target); }

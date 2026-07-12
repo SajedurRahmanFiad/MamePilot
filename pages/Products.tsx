@@ -8,7 +8,7 @@ import { Button, Table, TableCell, IconButton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers } from '../src/hooks/useQueries';
+import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers, useProductFilterOptions } from '../src/hooks/useQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { useDeleteProduct } from '../src/hooks/useMutations';
@@ -55,6 +55,7 @@ const Products: React.FC = () => {
   const products = productsPage?.data ?? [];
   const productIds = useMemo(() => products.map((product) => product.id), [products]);
   const { data: productImages = {} } = useProductImagesByIds(productIds);
+  const { data: productFilterOpts } = useProductFilterOptions();
   const total = productsPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const deleteProductMutation = useDeleteProduct();
@@ -75,12 +76,12 @@ const Products: React.FC = () => {
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
 
   const categoryOptions = useMemo(() => {
-    return Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
-  }, [products]);
+    return productFilterOpts?.categories || [];
+  }, [productFilterOpts]);
 
   const nameOptions = useMemo(() => {
-    return Array.from(new Set(products.map((p) => p.name).filter(Boolean))) as string[];
-  }, [products]);
+    return productFilterOpts?.names || [];
+  }, [productFilterOpts]);
 
   const productFilterDefinitions = useMemo(() => {
     const userOptions = [

@@ -72,6 +72,31 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
     barClass: 'bg-emerald-500',
     trackClass: 'bg-emerald-100',
   },
+  [OrderStatus.EXCHANGE_PROCESSING]: {
+    valueClass: 'text-blue-500',
+    barClass: 'bg-blue-500',
+    trackClass: 'bg-blue-100',
+  },
+  [OrderStatus.EXCHANGE_PICKED]: {
+    valueClass: 'text-purple-500',
+    barClass: 'bg-purple-500',
+    trackClass: 'bg-purple-100',
+  },
+  [OrderStatus.EXCHANGE_DELIVERED]: {
+    valueClass: 'text-emerald-500',
+    barClass: 'bg-emerald-500',
+    trackClass: 'bg-emerald-100',
+  },
+  [OrderStatus.EXCHANGE_RETURNED]: {
+    valueClass: 'text-orange-500',
+    barClass: 'bg-orange-500',
+    trackClass: 'bg-orange-100',
+  },
+  [OrderStatus.EXCHANGE_CANCELLED]: {
+    valueClass: 'text-red-500',
+    barClass: 'bg-red-500',
+    trackClass: 'bg-red-100',
+  },
   [OrderStatus.RETURNED]: {
     valueClass: 'text-orange-500',
     barClass: 'bg-orange-500',

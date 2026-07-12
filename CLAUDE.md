@@ -1,0 +1,1 @@
+For the database updates or upgrades or changes, append the migration as update in schema-only.sql after migrating the local database.

@@ -818,7 +818,12 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 DROP VIEW IF EXISTS orders_with_customer_creator;
 ALTER TABLE `orders`
-  ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL;
+  ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_courier` VARCHAR(32) NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_steadfast_consignment_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_carrybee_consignment_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_paperfly_tracking_number` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_courier_history` TEXT NULL;
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,
@@ -1155,4 +1160,74 @@ ON DUPLICATE KEY UPDATE
   role = VALUES(role),
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
+
+-- 2026-07-12: Ensure orders_with_customer_creator view exists for filter options
+DROP VIEW IF EXISTS orders_with_customer_creator;
+CREATE VIEW orders_with_customer_creator AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  o.page_id AS pageId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
+
+-- 2026-07-12: Ensure bills_with_vendor_creator view exists for filter options
+DROP VIEW IF EXISTS bills_with_vendor_creator;
+CREATE VIEW bills_with_vendor_creator AS
+SELECT
+  b.id,
+  b.bill_number AS billNumber,
+  b.bill_date AS billDate,
+  b.vendor_id AS vendorId,
+  v.name AS vendorName,
+  v.phone AS vendorPhone,
+  b.created_by AS createdBy,
+  u.name AS creatorName,
+  b.status,
+  b.items,
+  b.subtotal,
+  b.discount,
+  b.shipping,
+  b.total,
+  b.paid_amount AS paidAmount,
+  b.notes,
+  b.history,
+  b.created_at AS createdAt,
+  b.deleted_at AS deletedAt,
+  b.deleted_by AS deletedBy
+FROM bills b
+LEFT JOIN vendors v ON v.id = b.vendor_id
+LEFT JOIN users u ON u.id = b.created_by
+WHERE b.deleted_at IS NULL;
 

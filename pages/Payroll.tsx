@@ -17,6 +17,7 @@ import {
   useEmployeeWalletCardsPage,
   usePaymentMethods,
   useSystemDefaults,
+  useUsers,
   useWalletActivityPage,
   useWalletSettings,
 } from '../src/hooks/useQueries';
@@ -151,6 +152,7 @@ const Payroll: React.FC = () => {
   const walletCardsTotal = walletCardsPage.count;
   const walletCardsTotalPages = Math.max(1, Math.ceil(walletCardsTotal / pageSize));
   const summary = walletCardsPage.summary;
+  const { data: allUsers = [] } = useUsers();
   const { data: accounts = [], isPending: accountsLoading } = useAccounts({ enabled: isAdmin && isPayoutModalOpen });
   const { data: paymentMethods = [], isPending: paymentMethodsLoading } = usePaymentMethods(true, { enabled: isAdmin && isPayoutModalOpen });
   const { data: categories = [], isPending: categoriesLoading } = useCategories(undefined, { enabled: isAdmin && isPayoutModalOpen });
@@ -177,8 +179,8 @@ const Payroll: React.FC = () => {
 
   // Filter definitions for DynamicFilterBar
   const filterDefinitions = useMemo(() => {
-    const employeeNames = Array.from(new Set(walletCards.map((c) => c.employeeName).filter(Boolean)));
-    const roles = Array.from(new Set(walletCards.map((c) => c.employeeRole).filter(Boolean)));
+    const employeeNames = Array.from(new Set(allUsers.map((u) => u.name).filter(Boolean)));
+    const roles = Array.from(new Set(allUsers.map((u) => u.role).filter(Boolean)));
 
     return [
       {
@@ -205,7 +207,7 @@ const Payroll: React.FC = () => {
         allowCustomValue: true,
       },
     ];
-  }, [walletCards]);
+  }, [allUsers]);
 
   // Apply client-side filters to wallet cards
   const filteredWalletCards = useMemo(() => {

@@ -312,15 +312,17 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     if (options.length > 0) {
       return (
         <div className="py-2">
-          {options.map((option) => (
-            <button
-              key={`${option.value}-${option.label}`}
-              onMouseDown={() => handleSelectValue(option.value, option.label)}
-              className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-            >
-              {option.label}
-            </button>
-          ))}
+          <div className="max-h-60 overflow-y-auto">
+            {options.map((option) => (
+              <button
+                key={`${option.value}-${option.label}`}
+                onMouseDown={() => handleSelectValue(option.value, option.label)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           {query && allowCustom && !exactMatch && (
             <button
               onMouseDown={() => handleSelectValue(query, labelFormatter(query))}

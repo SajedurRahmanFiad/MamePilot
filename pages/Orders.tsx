@@ -11,7 +11,7 @@ import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletio
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
-import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings, usePaymentMethods } from '../src/hooks/useQueries';
+import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
@@ -74,6 +74,9 @@ const Orders: React.FC = () => {
     paymentMethod: '',
     categoryId: '',
     note: '',
+    refundAmount: 0,
+    refundAccountId: '',
+    refundPaymentMethod: '',
   });
 
   const {
@@ -311,6 +314,7 @@ const Orders: React.FC = () => {
 
   const { data: companySettings } = useCompanySettings();
   const { data: allMetaAds = [] } = useMetaAds({}, true);
+  const { data: orderFilterOpts } = useOrderFilterOptions();
 
   const sourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => {
     const ads = Array.isArray(allMetaAds?.ads) ? allMetaAds.ads : [];
@@ -343,47 +347,32 @@ const Orders: React.FC = () => {
   }, [orders]);
 
   const companyNames = useMemo(() => {
-    const fromOrders = orders.map(o => String(o.pageSnapshot?.name || '').trim()).filter(Boolean);
+    const fromFilterOpts = orderFilterOpts?.companyNames || [];
     const fromSettings = (companySettings?.pages || []).map(p => String(p.name || '').trim()).filter(Boolean);
     const globalName = String(companySettings?.name || '').trim();
-    return Array.from(new Set([...fromSettings, globalName, ...fromOrders].filter(Boolean)));
-  }, [orders, companySettings]);
+    return Array.from(new Set([...fromSettings, globalName, ...fromFilterOpts].filter(Boolean)));
+  }, [orderFilterOpts, companySettings]);
 
   const orderSourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => sourceAdOptions, [sourceAdOptions]);
 
   const orderNumberOptions = useMemo(() => {
-    return Array.from(new Set(orders.map((order) => String(order.orderNumber || '').trim()).filter(Boolean)));
-  }, [orders]);
+    return orderFilterOpts?.orderNumbers || [];
+  }, [orderFilterOpts]);
 
   const courierNames = useMemo(() => {
-    const names = new Set<string>(['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other']);
-    orders.forEach((o) => {
-      const raw = String(o.history?.courier || '').trim();
-      const historyText = raw.toLowerCase();
-      if (o.carrybeeConsignmentId || historyText.includes('carrybee')) names.add('CarryBee');
-      if (o.paperflyTrackingNumber || historyText.includes('paperfly')) names.add('Paperfly');
-      if (o.steadfastConsignmentId || historyText.includes('steadfast')) names.add('SteadFast');
-      const pref = getPreferredCourierFromHistory(o.history?.courier);
-      if (pref === 'paperfly') names.add('Paperfly');
-      if (pref === 'carrybee') names.add('CarryBee');
-      if (pref === 'steadfast') names.add('SteadFast');
-      if (raw && !historyText.includes('steadfast') && !historyText.includes('carrybee') && !historyText.includes('paperfly')) {
-        names.add('Manual/Other');
-      }
-    });
-    return Array.from(names);
-  }, [orders]);
+    return orderFilterOpts?.courierNames || ['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other'];
+  }, [orderFilterOpts]);
 
   const orderFilterDefinitions = useMemo(() => {
-    const customerNameValues = Array.from(new Set(orders.map((o) => String(o.customerName || '').trim()).filter(Boolean)));
-    const customerPhoneValues = Array.from(new Set(orders.map((o) => String(o.customerPhone || '').trim()).filter(Boolean)));
+    const customerNameValues = orderFilterOpts?.customerNames || [];
+    const customerPhoneValues = orderFilterOpts?.customerPhones || [];
     return [
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
         values: Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => ({
           value: status,
-          label: status === OrderStatus.COMPLETED ? 'Delivered' : status,
+          label: getStatusDisplayName(status),
         })),
       },
       {
@@ -744,7 +733,7 @@ const Orders: React.FC = () => {
     }
 
     // Allow Admin/Developer to edit picked orders
-    if (order.status === OrderStatus.PICKED && hasAdminAccess(user?.role)) return true;
+    if ((order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && hasAdminAccess(user?.role)) return true;
 
     return false;
   };
@@ -910,6 +899,11 @@ const Orders: React.FC = () => {
     canAccessRecord(order.createdBy, 'orders.sendToCourierOwn', 'orders.sendToCourierAny')
       && order.status !== OrderStatus.PICKED
       && order.status !== OrderStatus.COMPLETED
+      && order.status !== OrderStatus.EXCHANGE_PROCESSING
+      && order.status !== OrderStatus.EXCHANGE_PICKED
+      && order.status !== OrderStatus.EXCHANGE_DELIVERED
+      && order.status !== OrderStatus.EXCHANGE_RETURNED
+      && order.status !== OrderStatus.EXCHANGE_CANCELLED
       && order.status !== OrderStatus.RETURNED
       && order.status !== OrderStatus.CANCELLED
       && order.status !== OrderStatus.ON_HOLD
@@ -1298,7 +1292,7 @@ const Orders: React.FC = () => {
                 const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly;
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
-                  order.status === OrderStatus.PICKED && (canDeliverOrder(order) || canReturnOrder(order));
+                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
                 const canTrackSelectedOrder = sentToAnyCourier;
                 const canAddPaymentSelectedOrder = canAddPayment(order);
@@ -1341,15 +1335,15 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-5 text-xs font-bold text-gray-500">{getCreatorName(order) || '—'}</td>
                     <td className="px-6 py-5">
                       <div className="flex flex-col gap-2">
-                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{getStatusDisplayName(order.status)}</span>
+                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
                       </div>
-                      {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToSteadfast && (
+                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
                         <img src="/uploads/steadfast.png" alt="Steadfast" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
-                      {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToCarryBee && (
+                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToCarryBee && (
                         <img src="/uploads/carrybee.png" alt="CarryBee" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
-                      {(order.status === OrderStatus.PROCESSING || order.status === OrderStatus.PICKED) && sentToPaperfly && (
+                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
                         <img src="/uploads/paperfly.png" alt="Paperfly" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
                       )}
                     </td>

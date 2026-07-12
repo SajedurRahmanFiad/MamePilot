@@ -10,7 +10,7 @@ import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
 import { theme } from '../theme';
-import { useBillsPage, useUsers, useSystemDefaults } from '../src/hooks/useQueries';
+import { useBillsPage, useUsers, useSystemDefaults, useBillFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useCreateBill, useDeleteBill } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -175,17 +175,18 @@ const Bills: React.FC = () => {
     enabled: canLoadBills,
   });
   const bills = billsPage?.data ?? [];
+  const { data: billFilterOpts } = useBillFilterOptions();
   const billIdOptions = useMemo(
-    () => Array.from(new Set(bills.map((bill) => bill.billNumber).filter(Boolean))).sort(),
-    [bills]
+    () => billFilterOpts?.billNumbers || [],
+    [billFilterOpts]
   );
   const vendorNameOptions = useMemo(
-    () => Array.from(new Set(bills.map((bill) => bill.vendorName || '').filter(Boolean))).sort(),
-    [bills]
+    () => billFilterOpts?.vendorNames || [],
+    [billFilterOpts]
   );
   const vendorPhoneOptions = useMemo(
-    () => Array.from(new Set(bills.map((bill) => bill.vendorPhone || '').filter(Boolean))).sort(),
-    [bills]
+    () => billFilterOpts?.vendorPhones || [],
+    [billFilterOpts]
   );
 
   const getFinalBillStatus = (bill: Bill) => {

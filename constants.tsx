@@ -95,7 +95,11 @@ export const getStatusColor = (status: string): string => {
     'PROCESSING': 'bg-blue-100 text-blue-600',
     'PICKED': 'bg-purple-100 text-purple-600',
     'COMPLETED': 'bg-green-100 text-green-600',
-    'EXCHANGE_PENDING': 'bg-amber-100 text-amber-700',
+    'EXCHANGE_PROCESSING': 'bg-blue-100 text-blue-600',
+    'EXCHANGE_PICKED': 'bg-purple-100 text-purple-600',
+    'EXCHANGE_DELIVERED': 'bg-green-100 text-green-600',
+    'EXCHANGE_RETURNED': 'bg-orange-100 text-orange-700',
+    'EXCHANGE_CANCELLED': 'bg-red-100 text-red-600',
     'RETURNED': 'bg-orange-100 text-orange-700',
     'CANCELLED': 'bg-red-100 text-red-600',
     'COURIER_ASSIGNED': 'bg-blue-100 text-blue-600',
@@ -105,7 +109,11 @@ export const getStatusColor = (status: string): string => {
     'Courier assigned': 'bg-blue-100 text-blue-600',
     'Picked': 'bg-purple-100 text-purple-600',
     'Completed': 'bg-green-100 text-green-600',
-    'Exchange pending': 'bg-amber-100 text-amber-700',
+    'Exchange processing': 'bg-blue-100 text-blue-600',
+    'Exchange picked': 'bg-purple-100 text-purple-600',
+    'Exchange delivered': 'bg-green-100 text-green-600',
+    'Exchange returned': 'bg-orange-100 text-orange-700',
+    'Exchange cancelled': 'bg-red-100 text-red-600',
     'Returned': 'bg-orange-100 text-orange-700',
     'Cancelled': 'bg-red-100 text-red-600',
     'Received': 'bg-green-100 text-green-600',
@@ -133,7 +141,15 @@ export const getPaymentStatusBadgeColor = (status: string): string => {
   return statusMap[status] || 'bg-gray-100 text-gray-600';
 };
 
-export const getStatusDisplayName = (status: string): string => status === 'Completed' ? 'Delivered' : status;
+export const getStatusDisplayName = (status: string): string => {
+  if (status === 'Completed') return 'Delivered';
+  if (status === 'Exchange processing') return 'Exchange Processing';
+  if (status === 'Exchange picked') return 'Exchange Picked';
+  if (status === 'Exchange delivered') return 'Exchange Delivered';
+  if (status === 'Exchange returned') return 'Exchange Returned';
+  if (status === 'Exchange cancelled') return 'Exchange Cancelled';
+  return status;
+};
 
 export const formatNumberWithSuffix = (value: number): { abbreviated: string; full: string } => {
   const absValue = Math.abs(value);

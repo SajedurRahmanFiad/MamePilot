@@ -86,7 +86,7 @@ interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   label?: string;
   error?: string;
   helperText?: string;
-  value: number | string;
+  value: number | string | undefined;
   onChange: (value: number) => void;
   allowDecimals?: boolean;
   decimalPlaces?: number;

@@ -1181,7 +1181,7 @@ final class CourierApi extends BaseService
 
     /**
      * Sync exchange consignment statuses for all couriers.
-     * When an exchange consignment is delivered, move order from 'Exchange pending' to 'Completed'.
+     * Multi-step exchange flow: Exchange processing → Exchange picked → Exchange delivered → Completed.
      */
     public function syncExchangeConsignmentStatuses(array $params = []): array
     {
@@ -1200,7 +1200,7 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_steadfast_consignment_id IS NOT NULL
                    AND exchange_steadfast_consignment_id <> ''
-                   AND status = 'Exchange pending'"
+                   AND status IN ('Exchange processing', 'Exchange picked')"
             );
             foreach ($rows as $row) {
                 $trackingCode = trim((string) ($row['exchange_steadfast_consignment_id'] ?? ''));
@@ -1218,14 +1218,19 @@ final class CourierApi extends BaseService
                 $statusInfo = $this->classifySteadfastDeliveryStatus($details['data']);
                 if (empty($statusInfo['rawStatus']) || empty($statusInfo['status'])) continue;
 
+                $currentStatus = trim((string) ($row['status'] ?? ''));
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
                 $updates = ['history' => $history];
 
                 if ($statusInfo['status'] === 'Delivered') {
+                    $updates['history']['exchangeDelivered'] = 'Exchange delivered via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
                     $updates['status'] = 'Completed';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
                 } elseif ($statusInfo['status'] === 'Returned' || $statusInfo['status'] === 'Cancelled') {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
+                } elseif ($statusInfo['status'] === 'Picked' && $currentStatus === 'Exchange processing') {
+                    $updates['status'] = 'Exchange picked';
+                    $updates['history']['exchangePicked'] = 'Exchange picked up by Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
                 } else {
                     continue;
                 }
@@ -1247,7 +1252,7 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_carrybee_consignment_id IS NOT NULL
                    AND exchange_carrybee_consignment_id <> ''
-                   AND status = 'Exchange pending'"
+                   AND status IN ('Exchange processing', 'Exchange picked')"
             );
             foreach ($rows as $row) {
                 $consignmentId = trim((string) ($row['exchange_carrybee_consignment_id'] ?? ''));
@@ -1271,14 +1276,19 @@ final class CourierApi extends BaseService
                 )));
                 if ($rawStatus === '') continue;
 
+                $currentStatus = trim((string) ($row['status'] ?? ''));
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
                 $updates = ['history' => $history];
 
                 if (strpos($rawStatus, 'delivered') !== false || strpos($rawStatus, 'complete') !== false) {
+                    $updates['history']['exchangeDelivered'] = 'Exchange delivered via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
                     $updates['status'] = 'Completed';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
                 } elseif (strpos($rawStatus, 'return') !== false || strpos($rawStatus, 'cancel') !== false) {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
+                } elseif ($currentStatus === 'Exchange processing') {
+                    $updates['status'] = 'Exchange picked';
+                    $updates['history']['exchangePicked'] = 'Exchange picked up by CarryBee (' . $rawStatus . ') on ' . gmdate('c');
                 } else {
                     continue;
                 }
@@ -1300,7 +1310,7 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_paperfly_tracking_number IS NOT NULL
                    AND exchange_paperfly_tracking_number <> ''
-                   AND status = 'Exchange pending'"
+                   AND status IN ('Exchange processing', 'Exchange picked')"
             );
             foreach ($rows as $row) {
                 $referenceNumber = trim((string) ($row['exchange_paperfly_tracking_number'] ?? ''));
@@ -1326,6 +1336,7 @@ final class CourierApi extends BaseService
 
                 $isDelivered = false;
                 $isReturned = false;
+                $isPicked = false;
                 foreach ($entries as $entry) {
                     $status = strtolower(trim((string) ($entry['status'] ?? $entry['delivery_status'] ?? '')));
                     if (strpos($status, 'delivered') !== false || strpos($status, 'complete') !== false) {
@@ -1334,18 +1345,28 @@ final class CourierApi extends BaseService
                     if (strpos($status, 'return') !== false) {
                         $isReturned = true;
                     }
+                    if ($status !== '' && strpos($status, 'delivered') === false && strpos($status, 'complete') === false && strpos($status, 'return') === false) {
+                        $isPicked = true;
+                    }
                 }
 
-                if (!$isDelivered && !$isReturned) continue;
+                if (!$isDelivered && !$isReturned && !$isPicked) continue;
 
+                $currentStatus = trim((string) ($row['status'] ?? ''));
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
                 $updates = ['history' => $history];
 
                 if ($isDelivered) {
+                    $updates['history']['exchangeDelivered'] = 'Exchange delivered via Paperfly on ' . gmdate('c');
                     $updates['status'] = 'Completed';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Paperfly on ' . gmdate('c');
                 } elseif ($isReturned) {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned via Paperfly on ' . gmdate('c');
+                } elseif ($isPicked && $currentStatus === 'Exchange processing') {
+                    $updates['status'] = 'Exchange picked';
+                    $updates['history']['exchangePicked'] = 'Exchange picked up by Paperfly on ' . gmdate('c');
+                } else {
+                    continue;
                 }
 
                 $this->updateOrderAsCourierSystem(['id' => (string) $row['id'], 'updates' => $updates]);
