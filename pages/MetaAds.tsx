@@ -13,6 +13,7 @@ import { useMetaAd, useMetaAds, useMetaAdsSyncStatus, useMetaAdsSettings, useMet
 import { useSyncMetaAds } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
+import { formatMetaAdsCurrency } from '../src/utils/metaAdsCurrency';
 
 const statusBadgeClass = (status?: string | null): string => {
   const normalized = String(status || '').toUpperCase();
@@ -31,6 +32,61 @@ const prettyStatus = (status?: string | null): string => {
 
 const formatNumber = (value?: number | string | null): string =>
   new Intl.NumberFormat('en-BD').format(Number(value || 0));
+
+const getDateRange = (range: FilterRange, customDates: { from: string; to: string }): { from: string; to: string } => {
+  const today = new Date();
+  const end = new Date(today);
+  const start = new Date(today);
+  const formatDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+  if (range === 'Today') {
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'Last 7 days') {
+    start.setDate(start.getDate() - 6);
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'Last 30 days') {
+    start.setDate(start.getDate() - 29);
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'This Week') {
+    const day = start.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    start.setDate(start.getDate() + diff);
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'This Month') {
+    start.setDate(1);
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'This Year') {
+    start.setMonth(0, 1);
+    return { from: formatDate(start), to: formatDate(end) };
+  }
+
+  if (range === 'Custom') {
+    return { from: customDates.from, to: customDates.to };
+  }
+
+  return { from: '', to: '' };
+};
+
+const filterByDateRange = (items: any[], range: { from: string; to: string }): any[] => {
+  if (!range.from && !range.to) return items;
+  return items.filter((item: any) => {
+    const date = String(item.date || item.insight_date || '');
+    if (!date) return false;
+    if (range.from && date < range.from) return false;
+    if (range.to && date > range.to) return false;
+    return true;
+  });
+};
 
 const MetricCard: React.FC<{ label: string; value: string | number; hint?: string; icon?: React.ReactNode }> = ({ label, value, hint, icon }) => (
   <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -73,10 +129,9 @@ const MetaAdsList: React.FC = () => {
     campaignOperator: '=',
     status: '',
     statusOperator: '=',
-    from: '',
-    to: '',
     search: '',
     searchOperator: 'contains',
+    ...getDateRange('Last 7 days', { from: '', to: '' }),
   });
   const [dynamicFilters, setDynamicFilters] = useState<any[]>([]);
   const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
@@ -206,54 +261,9 @@ const MetaAdsList: React.FC = () => {
     }));
   };
 
-  const applyDateRange = (nextRange: FilterRange, nextCustomDates: { from: string; to: string }) => {
-    const today = new Date();
-    const end = new Date(today);
-    const start = new Date(today);
-    // Use local date (not UTC) so "Today" matches the user's calendar,
-    // which aligns with the ad account's timezone for most users
-    const buildBoundary = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-
-    let from = '';
-    let to = '';
-
-    if (nextRange === 'Today') {
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'Last 7 days') {
-      start.setDate(start.getDate() - 6);
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'Last 30 days') {
-      start.setDate(start.getDate() - 29);
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'This Week') {
-      const day = start.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      start.setDate(start.getDate() + diff);
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'This Month') {
-      start.setDate(1);
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'This Year') {
-      start.setMonth(0, 1);
-      from = buildBoundary(start);
-      to = buildBoundary(end);
-    } else if (nextRange === 'Custom') {
-      from = nextCustomDates.from;
-      to = nextCustomDates.to;
-    }
-
-    setQueryFilters((current) => ({ ...current, from, to }));
-  };
+  const applyDateRange = useCallback((nextRange: FilterRange, nextCustomDates: { from: string; to: string }) => {
+    setQueryFilters((current) => ({ ...current, ...getDateRange(nextRange, nextCustomDates) }));
+  }, []);
 
   const handleFilterRangeChange = (nextRange: FilterRange) => {
     setFilterRange(nextRange);
@@ -332,7 +342,7 @@ const MetaAdsList: React.FC = () => {
             customDates={customDates}
             setCustomDates={handleCustomDatesChange}
             compact
-            ranges={['Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'Custom']}
+            ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'Custom']}
           />
         </div>
         <Button
@@ -390,8 +400,8 @@ const MetaAdsList: React.FC = () => {
               className="group overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
             >
               <div className="relative aspect-[16/9] bg-gray-100">
-                {ad.thumbnailUrl ? (
-                  <img src={ad.thumbnailUrl} alt={ad.name} className="h-full w-full object-cover" />
+                {ad.imageUrl || ad.thumbnailUrl ? (
+                  <img src={ad.imageUrl || ad.thumbnailUrl} alt={ad.name} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-gray-300">{ICONS.Bell}</div>
                 )}
@@ -402,6 +412,13 @@ const MetaAdsList: React.FC = () => {
               <div className="p-3">
                 <h3 className="line-clamp-1 text-sm font-bold text-gray-900">{ad.name}</h3>
                 <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">{ad.campaignName || 'No campaign'}</p>
+                {ad.objective && (
+                  <div className="mt-2 inline-flex flex-wrap gap-2">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-700">
+                      {prettyStatus(ad.objective)}
+                    </span>
+                  </div>
+                )}
                 <div className="mt-2.5 grid grid-cols-3 gap-2 border-t border-gray-100 pt-2.5 text-center">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Impressions</p>
@@ -452,6 +469,8 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
   const { data: ad, isPending, error } = useMetaAd(id);
   const [showRawMetrics, setShowRawMetrics] = useState(false);
   const [activeTab, setActiveTab] = useState<AdDetailsTab>('overview');
+  const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
+  const [customDates, setCustomDates] = useState({ from: '', to: '' });
 
   const { data: dailyData } = useMetaAdInsightsDaily(id);
   const { data: demographicsData } = useMetaAdInsightsDemographics(id);
@@ -462,6 +481,36 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
   const demographicsInsights: any[] = demographicsData?.data || [];
   const placementsInsights: any[] = placementsData?.data || [];
   const devicesInsights: any[] = devicesData?.data || [];
+
+  const detailDateRange = getDateRange(filterRange, customDates);
+  const isDateFiltered = Boolean(detailDateRange.from || detailDateRange.to);
+  const filteredDailyInsights = useMemo(() => filterByDateRange(dailyInsights, detailDateRange), [dailyInsights, detailDateRange.from, detailDateRange.to]);
+
+  const metrics = ad?.metrics || {};
+
+  // Compute KPIs from filtered daily insights when a date range is active
+  const filteredMetrics = useMemo(() => {
+    if (!isDateFiltered || filteredDailyInsights.length === 0) return null;
+    const agg = { spend: 0, impressions: 0, clicks: 0, reach: 0, conversions: 0, results: 0 };
+    filteredDailyInsights.forEach((row: any) => {
+      agg.spend += row.spend || 0;
+      agg.impressions += row.impressions || 0;
+      agg.clicks += row.clicks || 0;
+      agg.reach += row.reach || 0;
+      agg.conversions += row.conversions || 0;
+      agg.results += row.results || 0;
+    });
+    const ctr = agg.impressions > 0 ? (agg.clicks / agg.impressions) * 100 : 0;
+    const roas = agg.spend > 0 && metrics.roas != null ? metrics.roas : null;
+    return { ...agg, ctr, roas };
+  }, [isDateFiltered, filteredDailyInsights, metrics.roas]);
+
+  const displayMetrics = filteredMetrics || metrics;
+
+  const dailyError: string | undefined = dailyData?.error;
+  const demographicsError: string | undefined = demographicsData?.error;
+  const placementsError: string | undefined = placementsData?.error;
+  const devicesError: string | undefined = devicesData?.error;
 
   if (isPending) {
     return <div className="min-h-[40vh] rounded-xl border border-gray-100 bg-white p-8 text-center text-sm font-semibold text-gray-500">Loading ad details...</div>;
@@ -477,9 +526,16 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
   }
 
   const updated = formatDateTimeParts(ad.updatedAt || ad.lastSyncedAt);
-  const metrics = ad.metrics || {};
   const creative = ad.creative || {};
   const rawMetrics = Object.entries(metrics.raw || {}).filter(([, value]) => Array.isArray(value) || (value !== null && typeof value === 'object'));
+
+  const handleFilterRangeChange = (nextRange: FilterRange) => {
+    setFilterRange(nextRange);
+  };
+
+  const handleCustomDatesChange = (nextCustomDates: { from: string; to: string }) => {
+    setCustomDates(nextCustomDates);
+  };
 
   const ageGroups: Record<string, { impressions: number; clicks: number; spend: number; conversions: number }> = {};
   const genderTotals: Record<string, { impressions: number; clicks: number; spend: number }> = {};
@@ -546,11 +602,11 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <MetricCard label="Total Spend" value={<MetaAdsMoney amount={metrics.spend || 0} nativeCode={ad.adAccountCurrency} />} icon={ICONS.Reports} hint="Cumulative spend this period" />
-        <MetricCard label="Impressions" value={formatNumber(metrics.impressions)} icon={<BarChart3 size={18} />} hint="Times your ad was shown" />
-        <MetricCard label="Clicks" value={formatNumber(metrics.clicks)} icon={<MousePointerClick size={18} />} hint="Total link clicks on your ad" />
-        <MetricCard label="CTR" value={`${Number(metrics.ctr || 0).toFixed(2)}%`} hint="Click-Through Rate" />
-        <MetricCard label="ROAS" value={metrics.roas == null ? '-' : `${Number(metrics.roas).toFixed(2)}x`} hint="Return on Ad Spend" />
+        <MetricCard label="Total Spend" value={<MetaAdsMoney amount={displayMetrics.spend || 0} nativeCode={ad.adAccountCurrency} />} icon={ICONS.Reports} hint={isDateFiltered ? 'Spend in selected period' : 'Cumulative spend this period'} />
+        <MetricCard label="Impressions" value={formatNumber(displayMetrics.impressions)} icon={<BarChart3 size={18} />} hint={isDateFiltered ? 'Impressions in selected period' : 'Times your ad was shown'} />
+        <MetricCard label="Clicks" value={formatNumber(displayMetrics.clicks)} icon={<MousePointerClick size={18} />} hint={isDateFiltered ? 'Clicks in selected period' : 'Total link clicks on your ad'} />
+        <MetricCard label="CTR" value={`${Number(displayMetrics.ctr || 0).toFixed(2)}%`} hint="Click-Through Rate" />
+        <MetricCard label="ROAS" value={displayMetrics.roas == null ? '-' : `${Number(displayMetrics.roas).toFixed(2)}x`} hint="Return on Ad Spend" />
       </div>
 
       {/* Tabs */}
@@ -596,7 +652,16 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
                 {creative.primaryText && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Primary Text</p>
-                    <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{creative.primaryText}</p>
+                    <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap overflow-hidden text-ellipsis line-clamp-3">{creative.primaryText}</p>
+                    {creative.primaryText.length > 240 && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('creative')}
+                        className="mt-2 text-sm font-bold text-blue-600 hover:text-blue-800"
+                      >
+                        ... See More
+                      </button>
+                    )}
                   </div>
                 )}
                 {creative.headline && (
@@ -622,11 +687,11 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
           <Card elevated className="p-5">
             <h2 className="text-lg font-black text-gray-900">More Metrics</h2>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              <CompactMetric label="Reach" value={formatNumber(metrics.reach)} hint="Unique people who saw your ad" />
-              <CompactMetric label="CPC" value={<MetaAdsMoney amount={metrics.cpc || 0} nativeCode={ad.adAccountCurrency} />} hint="Cost Per Click" />
-              <CompactMetric label="CPM" value={<MetaAdsMoney amount={metrics.cpm || 0} nativeCode={ad.adAccountCurrency} />} hint="Cost Per 1,000 Impressions" />
-              <CompactMetric label="Conversions" value={metrics.conversions == null ? '-' : formatNumber(metrics.conversions)} hint="Completed purchase or sign-up actions" />
-              <CompactMetric label="Results" value={metrics.results == null ? '-' : formatNumber(metrics.results)} hint="Actions matching your campaign objective" />
+              <CompactMetric label="Reach" value={formatNumber(displayMetrics.reach)} hint="Unique people who saw your ad" />
+              <CompactMetric label="CPC" value={displayMetrics.clicks > 0 ? <MetaAdsMoney amount={displayMetrics.spend / displayMetrics.clicks} nativeCode={ad.adAccountCurrency} /> : '-'} hint="Cost Per Click" />
+              <CompactMetric label="CPM" value={displayMetrics.impressions > 0 ? <MetaAdsMoney amount={(displayMetrics.spend / displayMetrics.impressions) * 1000} nativeCode={ad.adAccountCurrency} /> : '-'} hint="Cost Per 1,000 Impressions" />
+              <CompactMetric label="Conversions" value={displayMetrics.conversions == null || displayMetrics.conversions === 0 ? '-' : formatNumber(displayMetrics.conversions)} hint="Completed purchase or sign-up actions" />
+              <CompactMetric label="Results" value={displayMetrics.results == null || displayMetrics.results === 0 ? '-' : formatNumber(displayMetrics.results)} hint="Actions matching your campaign objective" />
             </div>
             {ad.placements && Object.keys(ad.placements).length > 0 && (
               <div className="mt-4">
@@ -651,7 +716,11 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
             <Card elevated className="p-8 text-center">
               <Users size={32} className="mx-auto text-gray-300" />
               <p className="mt-3 text-sm font-semibold text-gray-500">No demographic data available yet.</p>
-              <p className="mt-1 text-xs text-gray-400">Demographics are populated when Meta Ads insights are synced. Try syncing from Settings.</p>
+              {demographicsError ? (
+                <p className="mt-1 text-xs text-red-400">Failed to load: {demographicsError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400">Demographics are populated when Meta Ads insights are synced. Try syncing from Settings.</p>
+              )}
             </Card>
           ) : (
             <>
@@ -727,7 +796,11 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
             <Card elevated className="p-8 text-center">
               <LayoutGrid size={32} className="mx-auto text-gray-300" />
               <p className="mt-3 text-sm font-semibold text-gray-500">No placement data available yet.</p>
-              <p className="mt-1 text-xs text-gray-400">Placement data is populated when Meta Ads insights are synced.</p>
+              {(placementsError || devicesError) ? (
+                <p className="mt-1 text-xs text-red-400">Failed to load: {placementsError || devicesError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400">Placement data is populated when Meta Ads insights are synced.</p>
+              )}
             </Card>
           ) : (
             <>
@@ -818,11 +891,15 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
       {/* TRENDS */}
       {activeTab === 'trends' && (
         <div className="space-y-6">
-          {dailyInsights.length === 0 ? (
+          {filteredDailyInsights.length === 0 ? (
             <Card elevated className="p-8 text-center">
               <TrendingUp size={32} className="mx-auto text-gray-300" />
               <p className="mt-3 text-sm font-semibold text-gray-500">No daily trend data available yet.</p>
-              <p className="mt-1 text-xs text-gray-400">Daily trends are populated when Meta Ads insights are synced.</p>
+              {dailyError ? (
+                <p className="mt-1 text-xs text-red-400">Failed to load: {dailyError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400">Daily trends are populated when Meta Ads insights are synced.</p>
+              )}
             </Card>
           ) : (
             <>
@@ -833,7 +910,7 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
                 </div>
                 <div className="mt-4" style={{ height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <LineChart data={filteredDailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => { const d = new Date(val); return Number.isNaN(d.getTime()) ? val : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(v: number) => Number(v / 1000).toFixed(0) + 'k'} />
@@ -854,7 +931,7 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
                 </div>
                 <div className="mt-4" style={{ height: 280 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <LineChart data={filteredDailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => { const d = new Date(val); return Number.isNaN(d.getTime()) ? val : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(v: number) => v + '%'} />

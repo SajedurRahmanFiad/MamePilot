@@ -7,8 +7,8 @@ namespace App;
 abstract class BaseService
 {
     protected const DEFAULT_PAGE_SIZE = 25;
-    protected const DEFAULT_PAYROLL_STATUSES = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Cancelled'];
-    protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Completed'];
+    protected const DEFAULT_PAYROLL_STATUSES = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange delivered', 'Cancelled'];
+    protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed'];
     protected const BILL_STOCK_STATUSES = ['Received', 'Paid'];
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';

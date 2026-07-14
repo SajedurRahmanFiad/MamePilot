@@ -841,7 +841,7 @@ final class OperationsApi extends BaseService
             );
         }
 
-        if (($nextStatus !== $previousStatus && $nextStatus === 'Completed') || $completedChanged || $paymentChanged) {
+        if (($nextStatus !== $previousStatus && ($nextStatus === 'Completed' || $nextStatus === 'Exchange delivered')) || $completedChanged || $paymentChanged) {
             $this->assertUserCanManageOrderRecord(
                 $user,
                 $existingRow,
@@ -2578,10 +2578,15 @@ final class OperationsApi extends BaseService
             'On Hold' => 'onHold',
             'Processing' => 'processing',
             'Courier assigned' => 'processing',
+            'Exchange processing' => 'processing',
             'Picked' => 'picked',
+            'Exchange picked' => 'picked',
             'Completed' => 'completed',
+            'Exchange delivered' => 'completed',
             'Returned' => 'returned',
+            'Exchange returned' => 'returned',
             'Cancelled' => 'cancelled',
+            'Exchange cancelled' => 'cancelled',
         ];
 
         $baseMetrics = [
@@ -3932,7 +3937,7 @@ final class OperationsApi extends BaseService
             $orderTotal = (float) ($orderRow['total'] ?? 0);
             $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
-            $nextStatus = $outcome === 'Returned' ? 'Returned' : 'Completed';
+            $nextStatus = $outcome === 'Returned' ? 'Returned' : ($previousStatus === 'Exchange picked' ? 'Exchange delivered' : 'Completed');
             $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
             $systemDefaults = $this->database->fetchOne(

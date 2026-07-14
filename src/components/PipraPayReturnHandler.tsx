@@ -15,9 +15,14 @@ const PipraPayReturnHandler: React.FC = () => {
       return;
     }
 
+    // Only handle payment returns on the subscriptions page
+    if (!location.pathname.startsWith('/subscriptions')) {
+      return;
+    }
+
     const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
     const params = new URLSearchParams(rawQuery);
-    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
+    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('payment_status');
     const reference = params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference') || params.get('order_id') || '';
     const ppId = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || '';
     const shouldVerify = Boolean(ppId || reference);

@@ -1119,7 +1119,7 @@ VALUES (
   'payroll-default',
   1,
   0.00,
-  '["On Hold","Processing","Picked","Completed","Cancelled"]'
+  '["On Hold","Processing","Picked","Completed","Exchange delivered","Cancelled"]'
 )
 ON DUPLICATE KEY UPDATE
   counted_statuses = COALESCE(payroll_settings.counted_statuses, VALUES(counted_statuses));
@@ -1155,4 +1155,12 @@ ON DUPLICATE KEY UPDATE
   role = VALUES(role),
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
+
+-- Migration: Update existing orders that have exchangeDelivered in history
+-- but still have status 'Completed' to use the new 'Exchange delivered' status
+UPDATE orders
+SET status = 'Exchange delivered'
+WHERE status = 'Completed'
+  AND deleted_at IS NULL
+  AND JSON_CONTAINS_PATH(history, 'one', '$.exchangeDelivered');
 

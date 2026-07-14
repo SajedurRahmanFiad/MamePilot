@@ -1224,7 +1224,7 @@ final class CourierApi extends BaseService
 
                 if ($statusInfo['status'] === 'Delivered') {
                     $updates['history']['exchangeDelivered'] = 'Exchange delivered via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
-                    $updates['status'] = 'Completed';
+                    $updates['status'] = 'Exchange delivered';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
                 } elseif ($statusInfo['status'] === 'Returned' || $statusInfo['status'] === 'Cancelled') {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via Steadfast (' . $statusInfo['rawStatus'] . ') on ' . gmdate('c');
@@ -1282,7 +1282,7 @@ final class CourierApi extends BaseService
 
                 if (strpos($rawStatus, 'delivered') !== false || strpos($rawStatus, 'complete') !== false) {
                     $updates['history']['exchangeDelivered'] = 'Exchange delivered via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
-                    $updates['status'] = 'Completed';
+                    $updates['status'] = 'Exchange delivered';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
                 } elseif (strpos($rawStatus, 'return') !== false || strpos($rawStatus, 'cancel') !== false) {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via CarryBee (' . $rawStatus . ') on ' . gmdate('c');
@@ -1358,7 +1358,7 @@ final class CourierApi extends BaseService
 
                 if ($isDelivered) {
                     $updates['history']['exchangeDelivered'] = 'Exchange delivered via Paperfly on ' . gmdate('c');
-                    $updates['status'] = 'Completed';
+                    $updates['status'] = 'Exchange delivered';
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Paperfly on ' . gmdate('c');
                 } elseif ($isReturned) {
                     $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned via Paperfly on ' . gmdate('c');

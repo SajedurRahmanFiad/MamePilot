@@ -1118,9 +1118,17 @@ final class MetaAdsApi extends BaseService
         }
 
         // Filter out date-specific filters from $whereSql (EXISTS subqueries with _d alias and old updated_time filters)
-        $adWhere = preg_replace('/\s*AND\s*EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+meta_ads_insights_daily\s+_d[^)]*\)/i', '', $whereSql);
-        $adWhere = preg_replace('/\s*AND\s*DATE\(COALESCE\(ma\.updated_time[^(]*\([^)]*\)[^)]*\)\)\s*[><=]+\s*:(from|to)_date/', '', $adWhere);
+        $adWhere = preg_replace('/\s*(?:WHERE|AND)\s*EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+meta_ads_insights_daily\s+_d[^)]*\)/i', '', $whereSql);
+        $adWhere = preg_replace('/\s*(?:WHERE|AND)\s*DATE\(COALESCE\(ma\.updated_time[^(]*\([^)]*\)[^)]*\)\)\s*[><=]+\s*:(from|to)_date/i', '', $adWhere);
+        $adWhere = trim($adWhere);
+        if ($adWhere !== '' && preg_match('/^AND\b/i', $adWhere)) {
+            $adWhere = preg_replace('/^AND\b/i', 'WHERE', $adWhere);
+        }
         $adBindings = array_filter($bindings, static fn(string $key): bool => !in_array($key, [':from_date', ':to_date'], true), ARRAY_FILTER_USE_KEY);
+
+        if ($adWhere === '' && $dateFilter !== '') {
+            $dateFilter = 'WHERE ' . ltrim($dateFilter, ' AND');
+        }
 
         $allBindings = array_merge($adBindings, $dateBindings);
         $adRow = $this->database->fetchOne(
@@ -1246,6 +1254,7 @@ final class MetaAdsApi extends BaseService
             'adAccountName' => (string) ($row['ad_account_name'] ?? ''),
             'businessName' => (string) ($row['business_name'] ?? 'Unassigned Business'),
             'status' => $this->displayStatus($row),
+            'objective' => $this->nullableString($row['objective'] ?? null),
             'spend' => (float) ($row['spend'] ?? 0),
             'reach' => (int) ($row['reach'] ?? 0),
             'impressions' => (int) ($row['impressions'] ?? 0),
@@ -1259,6 +1268,7 @@ final class MetaAdsApi extends BaseService
             'createdAt' => $this->toIso($row['created_time'] ?? null),
             'lastUpdatedAt' => $this->toIso($row['updated_time'] ?? $row['last_synced_at'] ?? $row['updated_at'] ?? null),
             'thumbnailUrl' => $this->nullableString($row['thumbnail_url'] ?? null),
+            'imageUrl' => $this->nullableString($row['image_url'] ?? null),
             'adAccountCurrency' => $this->nullableString($row['currency'] ?? null),
         ];
     }
@@ -1550,9 +1560,9 @@ final class MetaAdsApi extends BaseService
         $dataJson = json_encode($data);
         $existing = $this->database->fetchOne('SELECT id FROM meta_ads_insights_cache WHERE ad_id = :ad_id AND category = :category LIMIT 1', [':ad_id' => $adId, ':category' => $category]);
         if ($existing !== null) {
-            $this->database->execute('UPDATE meta_ads_insights_cache SET data_json = :data, last_synced_at = :now, updated_at = :now WHERE ad_id = :ad_id AND category = :category', [':data' => $dataJson, ':now' => $now, ':ad_id' => $adId, ':category' => $category]);
+            $this->database->execute('UPDATE meta_ads_insights_cache SET data_json = :data, last_synced_at = :now_synced, updated_at = :now_updated WHERE ad_id = :ad_id AND category = :category', [':data' => $dataJson, ':now_synced' => $now, ':now_updated' => $now, ':ad_id' => $adId, ':category' => $category]);
         } else {
-            $this->database->execute('INSERT INTO meta_ads_insights_cache (id, ad_id, category, data_json, last_synced_at, created_at, updated_at) VALUES (:id, :ad_id, :category, :data, :now, :now, :now)', [':id' => $this->uuid4(), ':ad_id' => $adId, ':category' => $category, ':data' => $dataJson, ':now' => $now]);
+            $this->database->execute('INSERT INTO meta_ads_insights_cache (id, ad_id, category, data_json, last_synced_at, created_at, updated_at) VALUES (:id, :ad_id, :category, :data, :now_synced, :now_created, :now_updated)', [':id' => $this->uuid4(), ':ad_id' => $adId, ':category' => $category, ':data' => $dataJson, ':now_synced' => $now, ':now_created' => $now, ':now_updated' => $now]);
         }
     }
 
@@ -1588,7 +1598,9 @@ final class MetaAdsApi extends BaseService
                     'roas' => !empty($r['purchase_roas']) ? (float) ($r['purchase_roas'][0]['value'] ?? 0) : null,
                 ];
             }, $rows);
-            $this->saveInsightsCache($id, 'daily', $data);
+            if (!empty($data)) {
+                $this->saveInsightsCache($id, 'daily', $data);
+            }
             return ['data' => $data, 'currency' => $currency];
         } catch (\Throwable $e) {
             return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
@@ -1621,7 +1633,9 @@ final class MetaAdsApi extends BaseService
                     'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase']),
                 ];
             }, $rows);
-            $this->saveInsightsCache($id, 'demographics', $data);
+            if (!empty($data)) {
+                $this->saveInsightsCache($id, 'demographics', $data);
+            }
             return ['data' => $data, 'currency' => $currency];
         } catch (\Throwable $e) {
             return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
@@ -1653,7 +1667,9 @@ final class MetaAdsApi extends BaseService
                     'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
                 ];
             }, $rows);
-            $this->saveInsightsCache($id, 'placements', $data);
+            if (!empty($data)) {
+                $this->saveInsightsCache($id, 'placements', $data);
+            }
             return ['data' => $data, 'currency' => $currency];
         } catch (\Throwable $e) {
             return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
@@ -1685,7 +1701,9 @@ final class MetaAdsApi extends BaseService
                     'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
                 ];
             }, $rows);
-            $this->saveInsightsCache($id, 'devices', $data);
+            if (!empty($data)) {
+                $this->saveInsightsCache($id, 'devices', $data);
+            }
             return ['data' => $data, 'currency' => $currency];
         } catch (\Throwable $e) {
             return ['data' => [], 'error' => $e->getMessage(), 'currency' => $currency];
