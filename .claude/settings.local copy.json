@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(php -l backend/src/AgentExecutor.php)",
+      "Bash(php -l backend/src/MasterDataApi.php)",
+      "Bash(php -l backend/bin/process_agent_queue.php)",
+      "Bash(php *)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npm run *)",
+      "Bash(where mysql.exe)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/xampp/mysql/bin/**)"
+    ]
+  },
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://agentrouter.org/",
+    "ANTHROPIC_API_KEY": "sk-SYGdlDnCPdeUNHiLW97RaYaeYEfgSYAKT2yotqJ483r6uPBt",
+    "ANTHROPIC_AUTH_TOKEN": "",
+    "ANTHROPIC_MODEL": "gpt-5.5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-5.5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-5.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5.5"
+  },
+  "defaultMode": "bypassPermissions",
+  "effortLevel": "xhigh",
+  "model": "gpt-5.5"
+}

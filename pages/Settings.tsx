@@ -515,6 +515,12 @@ const SettingsPage: React.FC = () => {
           countedStatuses: walletSettings.countedStatuses,
         };
 
+        // Invalidate React Query caches so hooks refetch with server-processed data
+        // (e.g. logo base64 → file path conversion). Without this the useCompanySettings
+        // hook keeps returning stale cached data and the useEffect that syncs
+        // companySettingsData → companySettings state never re-runs.
+        queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+
         // Update toast to success
         toast.update(toastId, 'Settings saved successfully!', 'success');
       }).catch((err) => {
