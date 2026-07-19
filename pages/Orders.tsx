@@ -7,7 +7,7 @@ import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
-import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, Dialog, CommonPaymentModal } from '../components';
+import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, CommonPaymentModal } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
@@ -37,6 +37,7 @@ const normalizeCourierFilterValue = (value: string | null | undefined): string =
   if (normalized.includes('steadfast')) return 'steadfast';
   if (normalized.includes('carrybee')) return 'carrybee';
   if (normalized.includes('paperfly')) return 'paperfly';
+  if (normalized.includes('pathao')) return 'pathao';
   if (normalized.includes('manual') || normalized.includes('other')) return 'manual';
   return normalized;
 };
@@ -49,6 +50,8 @@ const getCourierFilterLabel = (value: string | null | undefined): string => {
       return 'CarryBee';
     case 'paperfly':
       return 'Paperfly';
+    case 'pathao':
+      return 'Pathao';
     case 'manual':
       return 'Manual/Other';
     default:
@@ -149,6 +152,7 @@ const Orders: React.FC = () => {
   const [showSteadfast, setShowSteadfast] = useState<string | null>(null);
   const [showCarryBee, setShowCarryBee] = useState<string | null>(null);
   const [showPaperfly, setShowPaperfly] = useState<string | null>(null);
+  const [showPathao, setShowPathao] = useState<string | null>(null);
   const [courierSelectionOrderId, setCourierSelectionOrderId] = useState<string | null>(null);
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
@@ -360,7 +364,7 @@ const Orders: React.FC = () => {
   }, [orderFilterOpts]);
 
   const courierNames = useMemo(() => {
-    return orderFilterOpts?.courierNames || ['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other'];
+    return orderFilterOpts?.courierNames || ['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other'];
   }, [orderFilterOpts]);
 
   const orderFilterDefinitions = useMemo(() => {
@@ -838,11 +842,13 @@ const Orders: React.FC = () => {
     const sentToSteadfast = courierHistory.includes('steadfast') || !!order.steadfastConsignmentId;
     const sentToCarryBee = courierHistory.includes('carrybee') || !!order.carrybeeConsignmentId;
     const sentToPaperfly = courierHistory.includes('paperfly') || !!order.paperflyTrackingNumber;
+    const sentToPathao = courierHistory.includes('pathao') || !!order.pathaoConsignmentId;
     const steadfastTracking = String(
       order.steadfastConsignmentId || extractSteadfastTrackingFromHistory(order.history?.courier) || ''
     ).trim();
     const carryBeeConsignment = String(order.carrybeeConsignmentId || '').trim();
     const paperflyReference = getPaperflyReferenceNumber(order);
+    const pathaoConsignment = String(order.pathaoConsignmentId || '').trim();
 
     const openSteadfastTracking = (): boolean => {
       if (!sentToSteadfast || !steadfastTracking) return false;
@@ -869,10 +875,22 @@ const Orders: React.FC = () => {
       return true;
     };
 
+    const openPathaoTracking = (): boolean => {
+      if (!sentToPathao || !pathaoConsignment) return false;
+
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(pathaoConsignment).catch(() => undefined);
+      }
+      toast.success(`Pathao consignment ID copied: ${pathaoConsignment}`);
+      return true;
+    };
+
+    if (preferredCourier === 'pathao' && openPathaoTracking()) return;
     if (preferredCourier === 'paperfly' && openPaperflyTracking()) return;
     if (preferredCourier === 'carrybee' && openCarryBeeTracking()) return;
     if (preferredCourier === 'steadfast' && openSteadfastTracking()) return;
 
+    if (openPathaoTracking()) return;
     if (openPaperflyTracking()) return;
     if (openCarryBeeTracking()) return;
     if (openSteadfastTracking()) return;
@@ -889,6 +907,11 @@ const Orders: React.FC = () => {
 
     if (courierHistory.includes('paperfly')) {
       toast.warning('Paperfly reference number is missing for this order');
+      return;
+    }
+
+    if (courierHistory.includes('pathao')) {
+      toast.warning('Pathao consignment ID is missing for this order');
       return;
     }
 
@@ -1020,15 +1043,16 @@ const Orders: React.FC = () => {
     }
   };
 
-  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly') => {
+  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly' | 'pathao') => {
     if (!courierSettings) return false;
     if (courier === 'steadfast') return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
     if (courier === 'carrybee') return !!(courierSettings.carryBee?.clientId && courierSettings.carryBee?.clientSecret);
     if (courier === 'paperfly') return !!(courierSettings.paperfly?.username && courierSettings.paperfly?.password);
+    if (courier === 'pathao') return !!(courierSettings.pathao?.baseUrl && courierSettings.pathao?.clientId && courierSettings.pathao?.storeId);
     return false;
   };
 
-  const handleSelectCourierService = (service: 'steadfast' | 'carrybee' | 'paperfly') => {
+  const handleSelectCourierService = (service: 'steadfast' | 'carrybee' | 'paperfly' | 'pathao') => {
     if (!courierSelectionOrderId) return;
 
     if (service === 'steadfast') {
@@ -1037,6 +1061,8 @@ const Orders: React.FC = () => {
       setShowCarryBee(courierSelectionOrderId);
     } else if (service === 'paperfly') {
       setShowPaperfly(courierSelectionOrderId);
+    } else if (service === 'pathao') {
+      setShowPathao(courierSelectionOrderId);
     }
 
     setCourierSelectionOrderId(null);
@@ -1289,7 +1315,8 @@ const Orders: React.FC = () => {
                 const sentToSteadfast = courierHistory.includes('steadfast') || !!order.steadfastConsignmentId;
                 const sentToCarryBee = courierHistory.includes('carrybee') || !!order.carrybeeConsignmentId;
                 const sentToPaperfly = courierHistory.includes('paperfly') || !!order.paperflyTrackingNumber;
-                const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly;
+                const sentToPathao = courierHistory.includes('pathao') || !!order.pathaoConsignmentId;
+                const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly || sentToPathao;
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
                   (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
@@ -1552,6 +1579,16 @@ const Orders: React.FC = () => {
                   <span>Paperfly</span>
                 </button>
               )}
+              {isCourierConfigured('pathao') && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectCourierService('pathao')}
+                  className="w-full inline-flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/pathao.png" alt="Pathao" className="h-6 w-6 rounded-full" />
+                  <span>Pathao</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1595,6 +1632,21 @@ const Orders: React.FC = () => {
           showPaperfly
             ? (() => {
                 const o = orders.find(o => o.id === showPaperfly);
+                return o
+                  ? { id: o.customerId, name: o.customerName || '', phone: o.customerPhone || '', address: o.customerAddress || '', totalOrders: 0, dueAmount: 0 }
+                  : null;
+              })()
+            : null
+        }
+      />
+      <PathaoModal
+        isOpen={!!showPathao}
+        onClose={() => setShowPathao(null)}
+        order={showPathao ? orders.find(o => o.id === showPathao) : null}
+        customer={
+          showPathao
+            ? (() => {
+                const o = orders.find(o => o.id === showPathao);
                 return o
                   ? { id: o.customerId, name: o.customerName || '', phone: o.customerPhone || '', address: o.customerAddress || '', totalOrders: 0, dueAmount: 0 }
                   : null;

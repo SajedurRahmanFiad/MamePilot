@@ -68,6 +68,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.FraudChecker,
         visible: ({ can, hasCapability }) => can('fraudChecker.check') && hasCapability('fraud_checker'),
       },
+      {
+        key: 'whatsapp',
+        label: 'WhatsApp',
+        to: '/whatsapp',
+        icon: ICONS.WhatsApp,
+        visible: ({ hasCapability }) => hasCapability('whatsapp'),
+      },
     ],
   },
   {

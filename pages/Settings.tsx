@@ -146,6 +146,7 @@ const SettingsPage: React.FC = () => {
     steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
     carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '' },
     paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3 },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '' },
     fraudChecker: { apiKey: '' },
   });
   const PAYROLL_STATUS_OPTIONS = [
@@ -190,7 +191,7 @@ const SettingsPage: React.FC = () => {
   });
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
-  const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '' });
+  const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '', isFraction: false });
 
   // CarryBee Stores state
   const [carryBeeStores, setCarryBeeStores] = useState<Array<{ id: string; name: string }>>([]);
@@ -723,35 +724,37 @@ const SettingsPage: React.FC = () => {
       toast.warning('Please enter unit name and short name');
       return;
     }
-    
+
     // Create new unit object with temporary ID
     const newUnit = {
       id: crypto.randomUUID(),
       name: unitForm.name,
       short_name: unitForm.shortName,
       description: unitForm.description || '',
+      is_fraction: unitForm.isFraction,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    
+
     // Optimistically update React Query cache immediately
     const previousUnits = queryClient.getQueryData(['units']);
     queryClient.setQueryData(['units'], (old: any[] = []) => [...old, newUnit]);
-    
+
     // Show toast immediately
     const toastId = toast.loading('Adding unit...');
-    
+
     // Reset form and close modal
     const formData = { ...unitForm };
-    setUnitForm({ name: '', shortName: '', description: '' });
+    setUnitForm({ name: '', shortName: '', description: '', isFraction: false });
     setShowModal(null);
-    
+
     try {
       // Save to database
       await createUnitMutation.mutateAsync({
         name: formData.name,
         shortName: formData.shortName,
         description: formData.description || undefined,
+        isFraction: formData.isFraction,
       });
       
       // Update toast to success
@@ -785,11 +788,12 @@ const SettingsPage: React.FC = () => {
     canEditCompanySettings ? { id: 'company', label: 'Company', icon: ICONS.Dashboard } : null,
     canEditOrderInvoiceSettings ? { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales } : null,
     canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
-    canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
+    hasCapability('human_resources') && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
     hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
     canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
+    canEditPaymentMethods ? { id: 'units', label: 'Units', icon: ICONS.Products } : null,
     hasCapability('courier_automation') && canEditCourierSettings ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
   ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
@@ -1087,17 +1091,19 @@ const SettingsPage: React.FC = () => {
             <div className="space-y-10 animate-in fade-in duration-300">
               <h3 className="text-xl font-bold text-gray-800 border-b pb-4">System Defaults</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
-                  <select 
-                    value={systemDefaults.defaultAccountId}
-                    onChange={e => setSystemDefaults({...systemDefaults, defaultAccountId: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
-                  >
-                    <option value="">Select an account...</option>
-                    {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
-                  </select>
-                </div>
+                {hasCapability('banking') && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
+                    <select
+                      value={systemDefaults.defaultAccountId}
+                      onChange={e => setSystemDefaults({...systemDefaults, defaultAccountId: e.target.value})}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                    >
+                      <option value="">Select an account...</option>
+                      {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
                   <select 
@@ -1742,6 +1748,46 @@ const SettingsPage: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'units' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between border-b pb-4">
+                <h3 className="text-xl font-bold text-gray-800">Product Units</h3>
+                <Button
+                  onClick={() => setShowModal('unit')}
+                  variant="primary"
+                  size="md"
+                >
+                  {ICONS.Plus} Add
+                </Button>
+              </div>
+              {loadingUnits ? (
+                <div className="text-center py-8 text-gray-500">Loading units...</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {units.map(unit => (
+                    <div key={unit.id} className="p-4 border rounded-lg bg-gray-50/50 hover:shadow-sm transition-all flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-800">{unit.name}</p>
+                        <p className="text-xs text-gray-400 mt-1">{unit.isFraction ? 'Fraction (decimal)' : 'Integer (whole number)'}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteUnit(unit.id)}
+                        className="text-red-500 hover:text-red-700 px-2"
+                      >
+                        {ICONS.Delete}
+                      </button>
+                    </div>
+                  ))}
+                  {units.length === 0 && (
+                    <div className="col-span-2 text-center py-8 text-gray-500">
+                      No units yet. Click "Add" to create one.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'courier' && (
             <div className="space-y-10 animate-in fade-in duration-300">
               <section className="space-y-6">
@@ -1920,6 +1966,135 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               </section>
+
+              <section className="space-y-6">
+                <h3 className="text-xl font-bold text-gray-800 border-b pb-4 flex items-center gap-2">
+                  <img src="/uploads/pathao.png" alt="Pathao" className="w-6 h-6 rounded-full" />
+                  <span className="">Pathao</span> Secrets
+                </h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
+                    <input
+                      type="text"
+                      value={courierSettings.pathao.baseUrl}
+                      onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, baseUrl: e.target.value } })}
+                      placeholder="https://merchant-api-live.pathao.com"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Client ID</label>
+                      <input
+                        type="text"
+                        value={courierSettings.pathao.clientId}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, clientId: e.target.value } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Client Secret</label>
+                      <input
+                        type="text"
+                        value={courierSettings.pathao.clientSecret}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, clientSecret: e.target.value } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Username</label>
+                      <input
+                        type="text"
+                        value={courierSettings.pathao.username}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, username: e.target.value } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Password</label>
+                      <input
+                        type="text"
+                        value={courierSettings.pathao.password}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, password: e.target.value } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Store ID</label>
+                    <input
+                      type="text"
+                      value={courierSettings.pathao.storeId}
+                      onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, storeId: e.target.value } })}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Delivery Type</label>
+                      <select
+                        value={courierSettings.pathao.defaultDeliveryType}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, defaultDeliveryType: parseInt(e.target.value) } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value={48}>Normal (48h)</option>
+                        <option value={12}>On Demand (12h)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Item Type</label>
+                      <select
+                        value={courierSettings.pathao.defaultItemType}
+                        onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, defaultItemType: parseInt(e.target.value) } })}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value={2}>Parcel</option>
+                        <option value={1}>Document</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Quantity</label>
+                      <NumericInput
+                        value={courierSettings.pathao.defaultQuantity ?? 1}
+                        onChange={value => setCourierSettings({
+                          ...courierSettings,
+                          pathao: { ...courierSettings.pathao, defaultQuantity: Math.max(1, Math.round(value)) },
+                        })}
+                        className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Weight (kg)</label>
+                      <NumericInput
+                        value={courierSettings.pathao.defaultWeight ?? 1.0}
+                        onChange={value => setCourierSettings({
+                          ...courierSettings,
+                          pathao: { ...courierSettings.pathao, defaultWeight: Math.max(0, value) },
+                        })}
+                        className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                        allowDecimals={true}
+                        decimalPlaces={2}
+                      />
+                    </div>
+                  </div>
+                  {courierSettings.pathao.accessToken && courierSettings.pathao.tokenExpiresAt && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs font-semibold text-blue-700">
+                        Token Status:{' '}
+                        {new Date(courierSettings.pathao.tokenExpiresAt).getTime() > Date.now()
+                          ? <span className="text-green-700">Active (expires {new Date(courierSettings.pathao.tokenExpiresAt).toLocaleString()})</span>
+                          : <span className="text-red-700">Expired</span>
+                        }
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </section>
             </div>
           )}
 
@@ -2070,8 +2245,8 @@ const SettingsPage: React.FC = () => {
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Method Name</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="w-full px-4 py-3 bg-gray-50 border rounded-xl"
                   value={paymentForm.name}
                   onChange={e => setPaymentForm({...paymentForm, name: e.target.value})}
@@ -2079,7 +2254,7 @@ const SettingsPage: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Description</label>
-                <textarea 
+                <textarea
                   className="w-full px-4 py-3 bg-gray-50 border rounded-xl h-24"
                   value={paymentForm.description}
                   onChange={e => setPaymentForm({...paymentForm, description: e.target.value})}
@@ -2089,6 +2264,66 @@ const SettingsPage: React.FC = () => {
             <div className="flex gap-3 pt-4">
               <Button onClick={() => setShowModal(null)} variant="ghost" className="flex-1">Cancel</Button>
               <Button onClick={handleAddPayment} variant="primary" size="md" className="flex-1">Add Method</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal === 'unit' && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={() => setShowModal(null)}></div>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 p-8 space-y-6">
+            <h3 className="text-xl font-bold text-gray-900">Add Product Unit</h3>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Name</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 bg-gray-50 border rounded-xl"
+                  value={unitForm.name}
+                  onChange={e => setUnitForm({...unitForm, name: e.target.value})}
+                  placeholder="e.g. Piece, Kilogram"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Short Name</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 bg-gray-50 border rounded-xl"
+                  value={unitForm.shortName}
+                  onChange={e => setUnitForm({...unitForm, shortName: e.target.value})}
+                  placeholder="e.g. pc, kg"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Type</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="unitType"
+                      checked={!unitForm.isFraction}
+                      onChange={() => setUnitForm({...unitForm, isFraction: false})}
+                      className="w-4 h-4 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Integer (whole numbers)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="unitType"
+                      checked={unitForm.isFraction}
+                      onChange={() => setUnitForm({...unitForm, isFraction: true})}
+                      className="w-4 h-4 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Fraction (decimals)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button onClick={() => setShowModal(null)} variant="ghost" className="flex-1">Cancel</Button>
+              <Button onClick={handleAddUnit} variant="primary" size="md" className="flex-1">Add Unit</Button>
             </div>
           </div>
         </div>

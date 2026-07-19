@@ -34,6 +34,7 @@ final class FeatureAccess
         'steadfast_courier' => 'courier_automation',
         'carrybee_courier' => 'courier_automation',
         'paperfly_courier' => 'courier_automation',
+        'pathao_courier' => 'courier_automation',
         'recycle_bin' => 'recycle_bin_undoer',
         'undoer' => 'recycle_bin_undoer',
     ];
@@ -142,6 +143,11 @@ final class FeatureAccess
         'syncCarryBeeTransferStatuses' => 'carrybee_courier',
         'syncPaperflyOrderStatuses' => 'paperfly_courier',
         'syncSteadfastDeliveryStatuses' => 'steadfast_courier',
+        'submitPathaoOrder' => 'pathao_courier',
+        'generatePathaoToken' => 'pathao_courier',
+        'refreshPathaoToken' => 'pathao_courier',
+        'syncPathaoDeliveryStatuses' => 'pathao_courier',
+        'fetchPathaoOrderInfo' => 'pathao_courier',
         'updatePermissionsSettings' => 'custom_roles',
         'fetchAgentSettings' => 'enterprise_ai_agent',
         'updateAgentSettings' => 'enterprise_ai_agent',
@@ -229,7 +235,7 @@ final class FeatureAccess
         if (!is_array($subCapabilities)) {
             $subCapabilities = [];
         }
-        $hasCourierPayload = isset($payload['steadfast']) || isset($payload['carryBee']) || isset($payload['paperfly']);
+        $hasCourierPayload = isset($payload['steadfast']) || isset($payload['carryBee']) || isset($payload['paperfly']) || isset($payload['pathao']);
         $hasFraudPayload = isset($payload['fraudChecker']);
 
         if ($hasCourierPayload && empty($capabilities['courier_automation'])) {
@@ -252,6 +258,11 @@ final class FeatureAccess
         if (isset($payload['paperfly']) && !empty($capabilities['courier_automation']) && ($subCapabilities['paperfly_courier'] ?? true) === false) {
             throw new ApiException('Paperfly courier is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
                 'capability' => 'paperfly_courier',
+            ]);
+        }
+        if (isset($payload['pathao']) && !empty($capabilities['courier_automation']) && ($subCapabilities['pathao_courier'] ?? true) === false) {
+            throw new ApiException('Pathao courier is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                'capability' => 'pathao_courier',
             ]);
         }
 

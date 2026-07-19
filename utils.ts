@@ -386,11 +386,12 @@ export const openAttachmentPreview = (attachmentUrl?: string | null): boolean =>
 
 export const getPreferredCourierFromHistory = (
   historyText?: string | null
-): 'paperfly' | 'carrybee' | 'steadfast' | null => {
+): 'paperfly' | 'carrybee' | 'steadfast' | 'pathao' | null => {
   const normalized = String(historyText || '').trim().toLowerCase();
   if (!normalized) return null;
   if (normalized.includes('paperfly')) return 'paperfly';
   if (normalized.includes('carrybee')) return 'carrybee';
+  if (normalized.includes('pathao')) return 'pathao';
   if (normalized.includes('steadfast')) return 'steadfast';
   return null;
 };

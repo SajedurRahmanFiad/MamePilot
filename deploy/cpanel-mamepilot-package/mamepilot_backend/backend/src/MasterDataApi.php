@@ -628,7 +628,7 @@ final class MasterDataApi extends BaseService
     public function fetchProducts(array $params = []): array
     {
         $category = trim((string) ($params['category'] ?? ''));
-        $sql = 'SELECT id, name, image, category, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
+        $sql = 'SELECT id, name, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
                 FROM products
                 WHERE deleted_at IS NULL';
         $bindings = [];
@@ -670,7 +670,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, category, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
              FROM products
              {$where}
              ORDER BY created_at DESC
@@ -687,7 +687,7 @@ final class MasterDataApi extends BaseService
     public function fetchProductsMini(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, sale_price, purchase_price, stock FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
+            'SELECT id, name, image, sale_price, purchase_price, stock, dynamic_pricing FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
         );
 
         return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
@@ -702,7 +702,7 @@ final class MasterDataApi extends BaseService
         }
 
         $rows = $this->database->fetchAll(
-            "SELECT id, name, sale_price, purchase_price, stock
+            "SELECT id, name, image, sale_price, purchase_price, stock, dynamic_pricing
              FROM products
              WHERE deleted_at IS NULL AND name LIKE :search
              ORDER BY created_at DESC
@@ -748,16 +748,18 @@ final class MasterDataApi extends BaseService
         $actor = $this->currentUser();
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
-            'INSERT INTO products (id, name, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at)
-             VALUES (:id, :name, :image, :category, :sale_price, :purchase_price, :stock, :created_by, :created_at, :updated_at)',
+            'INSERT INTO products (id, name, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
+             VALUES (:id, :name, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => trim((string) ($params['name'] ?? '')),
                 ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'product-images', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
                 ':category' => $this->nullableString($params['category'] ?? null),
+                ':unit_id' => $this->nullableString($params['unitId'] ?? null),
                 ':sale_price' => $this->formatMoney($params['salePrice'] ?? 0),
                 ':purchase_price' => $this->formatMoney($params['purchasePrice'] ?? 0),
                 ':stock' => (int) ($params['stock'] ?? 0),
+                ':dynamic_pricing' => $this->nullableString($params['dynamicPricing'] ?? null),
                 ':created_by' => (string) $actor['id'],
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -783,6 +785,9 @@ final class MasterDataApi extends BaseService
         if (array_key_exists('category', $updates)) {
             $payload['category'] = $this->nullableString($updates['category']);
         }
+        if (array_key_exists('unitId', $updates)) {
+            $payload['unit_id'] = $this->nullableString($updates['unitId']);
+        }
         if (array_key_exists('salePrice', $updates)) {
             $payload['sale_price'] = $this->formatMoney($updates['salePrice']);
         }
@@ -791,6 +796,9 @@ final class MasterDataApi extends BaseService
         }
         if (array_key_exists('stock', $updates)) {
             $payload['stock'] = (int) $updates['stock'];
+        }
+        if (array_key_exists('dynamicPricing', $updates)) {
+            $payload['dynamic_pricing'] = $this->nullableString($updates['dynamicPricing']);
         }
 
         $this->touchUpdate('products', $id, $payload);
@@ -1068,13 +1076,14 @@ final class MasterDataApi extends BaseService
         }
 
         $this->database->execute(
-            'INSERT INTO units (id, name, short_name, description, created_at, updated_at)
-             VALUES (:id, :name, :short_name, :description, :created_at, :updated_at)',
+            'INSERT INTO units (id, name, short_name, description, is_fraction, created_at, updated_at)
+             VALUES (:id, :name, :short_name, :description, :is_fraction, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => trim((string) ($params['name'] ?? '')),
                 ':short_name' => trim((string) ($params['shortName'] ?? '')),
                 ':description' => $this->nullableString($params['description'] ?? null),
+                ':is_fraction' => (int) (!empty($params['isFraction'])),
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
             ]
@@ -1097,6 +1106,9 @@ final class MasterDataApi extends BaseService
         }
         if (array_key_exists('description', $updates)) {
             $payload['description'] = $this->nullableString($updates['description']);
+        }
+        if (array_key_exists('isFraction', $updates)) {
+            $payload['is_fraction'] = (int) !empty($updates['isFraction']);
         }
         $this->touchUpdate('units', $id, $payload);
         return $this->fetchUnitById(['id' => $id]) ?? throw new RuntimeException('Unit not found.');
@@ -4065,6 +4077,21 @@ TXT;
             'fraudChecker' => [
                 'apiKey' => $hasFraudCheckerColumn ? (string) ($row['fraud_checker_api_key'] ?? '') : '',
             ],
+            'pathao' => [
+                'baseUrl' => (string) ($row['pathao_base_url'] ?? ''),
+                'clientId' => (string) ($row['pathao_client_id'] ?? ''),
+                'clientSecret' => (string) ($row['pathao_client_secret'] ?? ''),
+                'username' => (string) ($row['pathao_username'] ?? ''),
+                'password' => (string) ($row['pathao_password'] ?? ''),
+                'storeId' => (string) ($row['pathao_store_id'] ?? ''),
+                'defaultQuantity' => (int) ($row['pathao_default_quantity'] ?? 1),
+                'defaultWeight' => (float) ($row['pathao_default_weight'] ?? 1.0),
+                'defaultDeliveryType' => (int) ($row['pathao_default_delivery_type'] ?? 48),
+                'defaultItemType' => (int) ($row['pathao_default_item_type'] ?? 2),
+                'accessToken' => (string) ($row['pathao_access_token'] ?? ''),
+                'refreshToken' => (string) ($row['pathao_refresh_token'] ?? ''),
+                'tokenExpiresAt' => (string) ($row['pathao_token_expires_at'] ?? ''),
+            ],
         ];
     }
 
@@ -4075,6 +4102,7 @@ TXT;
         $steadfast = is_array($params['steadfast'] ?? null) ? $params['steadfast'] : [];
         $carryBee = is_array($params['carryBee'] ?? null) ? $params['carryBee'] : [];
         $paperfly = is_array($params['paperfly'] ?? null) ? $params['paperfly'] : [];
+        $pathao = is_array($params['pathao'] ?? null) ? $params['pathao'] : [];
         $fraudChecker = is_array($params['fraudChecker'] ?? null) ? $params['fraudChecker'] : [];
         $hasFraudCheckerColumn = $this->columnExists('courier_settings', 'fraud_checker_api_key');
 
@@ -4101,6 +4129,16 @@ TXT;
             'paperfly_key' => $paperfly['paperflyKey'] ?? $current['paperfly']['paperflyKey'],
             'paperfly_default_shop_name' => $paperfly['defaultShopName'] ?? $current['paperfly']['defaultShopName'],
             'paperfly_max_weight_kg' => array_key_exists('maxWeightKg', $paperfly) ? (float) $paperfly['maxWeightKg'] : $current['paperfly']['maxWeightKg'],
+            'pathao_base_url' => $pathao['baseUrl'] ?? $current['pathao']['baseUrl'],
+            'pathao_client_id' => $pathao['clientId'] ?? $current['pathao']['clientId'],
+            'pathao_client_secret' => $pathao['clientSecret'] ?? $current['pathao']['clientSecret'],
+            'pathao_username' => $pathao['username'] ?? $current['pathao']['username'],
+            'pathao_password' => $pathao['password'] ?? $current['pathao']['password'],
+            'pathao_store_id' => $pathao['storeId'] ?? $current['pathao']['storeId'],
+            'pathao_default_quantity' => array_key_exists('defaultQuantity', $pathao) ? (int) $pathao['defaultQuantity'] : $current['pathao']['defaultQuantity'],
+            'pathao_default_weight' => array_key_exists('defaultWeight', $pathao) ? (float) $pathao['defaultWeight'] : $current['pathao']['defaultWeight'],
+            'pathao_default_delivery_type' => array_key_exists('defaultDeliveryType', $pathao) ? (int) $pathao['defaultDeliveryType'] : $current['pathao']['defaultDeliveryType'],
+            'pathao_default_item_type' => array_key_exists('defaultItemType', $pathao) ? (int) $pathao['defaultItemType'] : $current['pathao']['defaultItemType'],
         ];
 
         if ($hasFraudCheckerColumn) {

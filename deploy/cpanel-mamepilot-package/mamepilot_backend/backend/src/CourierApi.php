@@ -1374,6 +1374,468 @@ final class CourierApi extends BaseService
             }
         }
 
+        // Pathao exchange consignments
+        $pathaoBaseUrl = rtrim(trim((string) ($settings['pathao_base_url'] ?? '')), '/');
+        $pathaoClientId = trim((string) ($settings['pathao_client_id'] ?? ''));
+        $pathaoClientSecret = trim((string) ($settings['pathao_client_secret'] ?? ''));
+        $pathaoUsername = trim((string) ($settings['pathao_username'] ?? ''));
+        $pathaoPassword = trim((string) ($settings['pathao_password'] ?? ''));
+        if ($pathaoBaseUrl !== '' && $pathaoClientId !== '' && $pathaoClientSecret !== '') {
+            // Get or refresh the access token
+            $pathaoAccessToken = trim((string) ($settings['pathao_access_token'] ?? ''));
+            $pathaoTokenExpiresAt = trim((string) ($settings['pathao_token_expires_at'] ?? ''));
+            $pathaoRefreshToken = trim((string) ($settings['pathao_refresh_token'] ?? ''));
+            $pathaoTokenExpired = $pathaoTokenExpiresAt !== '' && strtotime($pathaoTokenExpiresAt) < time();
+
+            if ($pathaoAccessToken === '' || $pathaoTokenExpired) {
+                if ($pathaoRefreshToken !== '') {
+                    $tokenResult = $this->refreshPathaoToken([
+                        'baseUrl' => $pathaoBaseUrl, 'clientId' => $pathaoClientId,
+                        'clientSecret' => $pathaoClientSecret, 'refreshToken' => $pathaoRefreshToken,
+                    ]);
+                } elseif ($pathaoUsername !== '' && $pathaoPassword !== '') {
+                    $tokenResult = $this->generatePathaoToken([
+                        'baseUrl' => $pathaoBaseUrl, 'clientId' => $pathaoClientId,
+                        'clientSecret' => $pathaoClientSecret, 'username' => $pathaoUsername, 'password' => $pathaoPassword,
+                    ]);
+                } else {
+                    $tokenResult = ['error' => 'No Pathao token available'];
+                }
+
+                if (!empty($tokenResult['error'])) {
+                    // Skip Pathao exchange sync if token generation fails
+                } else {
+                    $pathaoAccessToken = $tokenResult['accessToken'];
+                    $expiresIn = $tokenResult['expiresIn'] ?? 86400;
+                    $this->saveSingletonQuiet('courier_settings', 'courier-default', [
+                        'pathao_access_token' => $pathaoAccessToken,
+                        'pathao_refresh_token' => $tokenResult['refreshToken'] ?? $pathaoRefreshToken,
+                        'pathao_token_expires_at' => gmdate('c', time() + $expiresIn),
+                    ]);
+                }
+            }
+
+            if (isset($pathaoAccessToken) && $pathaoAccessToken !== '') {
+                $rows = $this->database->fetchAll(
+                    "SELECT id, status, history, exchange_pathao_consignment_id
+                     FROM orders
+                     WHERE deleted_at IS NULL
+                       AND exchange_pathao_consignment_id IS NOT NULL
+                       AND exchange_pathao_consignment_id <> ''
+                       AND status IN ('Exchange processing', 'Exchange picked')"
+                );
+                foreach ($rows as $row) {
+                    $consignmentId = trim((string) ($row['exchange_pathao_consignment_id'] ?? ''));
+                    if ($consignmentId === '') continue;
+                    $checked += 1;
+
+                    $details = $this->fetchPathaoOrderInfo([
+                        'baseUrl' => $pathaoBaseUrl,
+                        'accessToken' => $pathaoAccessToken,
+                        'consignmentId' => $consignmentId,
+                    ]);
+                    if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
+
+                    $responseData = $details['data'];
+                    $orderData = is_array($responseData['data'] ?? null) ? $responseData['data'] : $responseData;
+                    $orderStatusSlug = strtolower(trim((string) ($orderData['order_status_slug'] ?? $orderData['order_status'] ?? '')));
+                    if ($orderStatusSlug === '') continue;
+
+                    $currentStatus = trim((string) ($row['status'] ?? ''));
+                    $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+                    $updates = ['history' => $history];
+
+                    if (strpos($orderStatusSlug, 'delivered') !== false) {
+                        $updates['history']['exchangeDelivered'] = 'Exchange delivered via Pathao (' . $orderStatusSlug . ') on ' . gmdate('c');
+                        $updates['status'] = 'Exchange delivered';
+                        $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange delivered via Pathao (' . $orderStatusSlug . ') on ' . gmdate('c');
+                    } elseif (strpos($orderStatusSlug, 'return') !== false || strpos($orderStatusSlug, 'cancel') !== false) {
+                        $updates['history']['exchangeCourier'] = ($updates['history']['exchangeCourier'] ?? '') . ' | Exchange returned/cancelled via Pathao (' . $orderStatusSlug . ') on ' . gmdate('c');
+                    } elseif (strpos($orderStatusSlug, 'picked') !== false && $currentStatus === 'Exchange processing') {
+                        $updates['status'] = 'Exchange picked';
+                        $updates['history']['exchangePicked'] = 'Exchange picked up by Pathao (' . $orderStatusSlug . ') on ' . gmdate('c');
+                    } else {
+                        continue;
+                    }
+
+                    $this->updateOrderAsCourierSystem(['id' => (string) $row['id'], 'updates' => $updates]);
+                    $updated += 1;
+                }
+            }
+        }
+
         return ['checked' => $checked, 'updated' => $updated];
+    }
+
+    // ===== Pathao Courier Methods =====
+
+    /**
+     * Generate a Pathao OAuth2 access token using the password grant.
+     * POST {baseUrl}/aladdin/api/v1/issue-token
+     */
+    public function generatePathaoToken(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $clientId = trim((string) ($params['clientId'] ?? ''));
+        $clientSecret = trim((string) ($params['clientSecret'] ?? ''));
+        $username = trim((string) ($params['username'] ?? ''));
+        $password = trim((string) ($params['password'] ?? ''));
+
+        if ($baseUrl === '' || $clientId === '' || $clientSecret === '') {
+            return ['error' => 'Missing required Pathao credentials (baseUrl, clientId, clientSecret)'];
+        }
+        if ($username === '' || $password === '') {
+            return ['error' => 'Missing Pathao username or password for token generation'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/aladdin/api/v1/issue-token',
+            ['Accept' => 'application/json'],
+            [
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'grant_type' => 'password',
+                'username' => $username,
+                'password' => $password,
+            ]
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status'], 'raw' => $response['json'] ?? $response['body']];
+        }
+
+        $json = $response['json'];
+        if (!is_array($json) || empty($json['access_token'])) {
+            return ['error' => 'Pathao token response was missing required fields'];
+        }
+
+        return [
+            'accessToken' => $json['access_token'],
+            'refreshToken' => $json['refresh_token'] ?? '',
+            'expiresIn' => (int) ($json['expires_in'] ?? 86400),
+        ];
+    }
+
+    /**
+     * Refresh a Pathao OAuth2 access token using the refresh_token grant.
+     * POST {baseUrl}/aladdin/api/v1/issue-token
+     */
+    public function refreshPathaoToken(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $clientId = trim((string) ($params['clientId'] ?? ''));
+        $clientSecret = trim((string) ($params['clientSecret'] ?? ''));
+        $refreshToken = trim((string) ($params['refreshToken'] ?? ''));
+
+        if ($baseUrl === '' || $clientId === '' || $clientSecret === '') {
+            return ['error' => 'Missing required Pathao credentials (baseUrl, clientId, clientSecret)'];
+        }
+        if ($refreshToken === '') {
+            return ['error' => 'Missing Pathao refresh token'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/aladdin/api/v1/issue-token',
+            ['Accept' => 'application/json'],
+            [
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $refreshToken,
+            ]
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status'], 'raw' => $response['json'] ?? $response['body']];
+        }
+
+        $json = $response['json'];
+        if (!is_array($json) || empty($json['access_token'])) {
+            return ['error' => 'Pathao token response was missing required fields'];
+        }
+
+        return [
+            'accessToken' => $json['access_token'],
+            'refreshToken' => $json['refresh_token'] ?? '',
+            'expiresIn' => (int) ($json['expires_in'] ?? 86400),
+        ];
+    }
+
+    /**
+     * Create a Pathao delivery order.
+     * POST {baseUrl}/aladdin/api/v1/orders
+     */
+    public function submitPathaoOrder(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $accessToken = trim((string) ($params['accessToken'] ?? ''));
+        $storeId = trim((string) ($params['storeId'] ?? ''));
+
+        if ($baseUrl === '' || $accessToken === '' || $storeId === '') {
+            return ['error' => 'Missing required Pathao parameters (baseUrl, accessToken, storeId)'];
+        }
+
+        $recipientName = trim((string) ($params['recipientName'] ?? ''));
+        $recipientPhone = trim((string) ($params['recipientPhone'] ?? ''));
+        $recipientAddress = trim((string) ($params['recipientAddress'] ?? ''));
+
+        if ($recipientName === '' || $recipientPhone === '' || $recipientAddress === '') {
+            return ['error' => 'Missing required order fields: recipient name, phone, or address'];
+        }
+
+        $payload = [
+            'store_id' => $storeId,
+            'recipient_name' => $recipientName,
+            'recipient_phone' => $recipientPhone,
+            'recipient_address' => $recipientAddress,
+            'delivery_type' => (int) ($params['deliveryType'] ?? 48),
+            'item_type' => (int) ($params['itemType'] ?? 2),
+            'item_quantity' => (int) ($params['itemQuantity'] ?? 1),
+            'item_weight' => (float) ($params['itemWeight'] ?? 1.0),
+            'amount_to_collect' => max(0, (int) round((float) ($params['amountToCollect'] ?? 0))),
+        ];
+
+        $specialInstruction = trim((string) ($params['specialInstruction'] ?? ''));
+        if ($specialInstruction !== '') {
+            $payload['special_instruction'] = $specialInstruction;
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/aladdin/api/v1/orders',
+            [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Accept' => 'application/json',
+            ],
+            $payload
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status'], 'raw' => $response['json'] ?? $response['body']];
+        }
+
+        return is_array($response['json']) ? $response['json'] : ['error' => 'Invalid response'];
+    }
+
+    /**
+     * Fetch Pathao order info (used for auto pickup/delivery status check).
+     * POST {baseUrl}/aladdin/api/v1/orders/{consignmentId}/info
+     */
+    public function fetchPathaoOrderInfo(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $accessToken = trim((string) ($params['accessToken'] ?? ''));
+        $consignmentId = trim((string) ($params['consignmentId'] ?? ''));
+
+        if ($baseUrl === '' || $accessToken === '' || $consignmentId === '') {
+            return ['error' => 'Missing required Pathao parameters (baseUrl, accessToken, consignmentId)'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/aladdin/api/v1/orders/' . rawurlencode($consignmentId) . '/info',
+            [
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Accept' => 'application/json',
+            ]
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status'], 'raw' => $response['json'] ?? $response['body']];
+        }
+
+        return ['data' => $response['json']];
+    }
+
+    /**
+     * Classify a Pathao order status slug into a normalized status.
+     * Keywords: "picked" → Picked, "delivered" → Delivered, "returned" → Returned, "cancelled" → Cancelled
+     */
+    private function classifyPathaoStatus(string $orderStatusSlug): array
+    {
+        $normalized = strtolower(trim($orderStatusSlug));
+        $status = null;
+
+        if ($normalized !== '') {
+            if (strpos($normalized, 'delivered') !== false) {
+                $status = 'Delivered';
+            } elseif (strpos($normalized, 'returned') !== false) {
+                $status = 'Returned';
+            } elseif (strpos($normalized, 'cancelled') !== false || strpos($normalized, 'canceled') !== false) {
+                $status = 'Cancelled';
+            } elseif (strpos($normalized, 'picked') !== false) {
+                $status = 'Picked';
+            } else {
+                // Any other non-empty status means the order is in transit
+                $status = 'Picked';
+            }
+        }
+
+        return [
+            'rawStatus' => $orderStatusSlug,
+            'normalizedStatus' => $normalized,
+            'status' => $status,
+            'isPickedOrBeyond' => $status !== null && $status !== 'Cancelled',
+        ];
+    }
+
+    /**
+     * Sync delivery statuses for all Pathao orders.
+     * Checks order_status_slug via the /info endpoint for keywords: picked, delivered.
+     */
+    public function syncPathaoDeliveryStatuses(array $params = []): array
+    {
+        $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1');
+        $baseUrl = rtrim(trim((string) ($settings['pathao_base_url'] ?? '')), '/');
+        $clientId = trim((string) ($settings['pathao_client_id'] ?? ''));
+        $clientSecret = trim((string) ($settings['pathao_client_secret'] ?? ''));
+        $username = trim((string) ($settings['pathao_username'] ?? ''));
+        $password = trim((string) ($settings['pathao_password'] ?? ''));
+
+        if ($baseUrl === '' || $clientId === '' || $clientSecret === '') {
+            return ['checked' => 0, 'updated' => 0];
+        }
+
+        // Get or refresh the access token
+        $accessToken = trim((string) ($settings['pathao_access_token'] ?? ''));
+        $tokenExpiresAt = trim((string) ($settings['pathao_token_expires_at'] ?? ''));
+        $refreshToken = trim((string) ($settings['pathao_refresh_token'] ?? ''));
+
+        $tokenExpired = $tokenExpiresAt !== '' && strtotime($tokenExpiresAt) < time();
+
+        if ($accessToken === '' || $tokenExpired) {
+            // Try refresh first, then password grant
+            if ($refreshToken !== '') {
+                $tokenResult = $this->refreshPathaoToken([
+                    'baseUrl' => $baseUrl,
+                    'clientId' => $clientId,
+                    'clientSecret' => $clientSecret,
+                    'refreshToken' => $refreshToken,
+                ]);
+            } elseif ($username !== '' && $password !== '') {
+                $tokenResult = $this->generatePathaoToken([
+                    'baseUrl' => $baseUrl,
+                    'clientId' => $clientId,
+                    'clientSecret' => $clientSecret,
+                    'username' => $username,
+                    'password' => $password,
+                ]);
+            } else {
+                return ['checked' => 0, 'updated' => 0, 'error' => 'No valid Pathao token and no credentials to generate one'];
+            }
+
+            if (!empty($tokenResult['error'])) {
+                return ['checked' => 0, 'updated' => 0, 'error' => $tokenResult['error']];
+            }
+
+            $accessToken = $tokenResult['accessToken'];
+            $expiresIn = $tokenResult['expiresIn'] ?? 86400;
+            $newRefreshToken = $tokenResult['refreshToken'] ?? $refreshToken;
+            $newExpiresAt = gmdate('c', time() + $expiresIn);
+
+            // Persist the new token
+            $this->saveSingletonQuiet('courier_settings', 'courier-default', [
+                'pathao_access_token' => $accessToken,
+                'pathao_refresh_token' => $newRefreshToken,
+                'pathao_token_expires_at' => $newExpiresAt,
+            ]);
+        }
+
+        $rows = $this->database->fetchAll(
+            "SELECT id, order_number, status, history, pathao_consignment_id
+             FROM orders
+             WHERE deleted_at IS NULL
+               AND pathao_consignment_id IS NOT NULL
+               AND pathao_consignment_id <> ''
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
+        );
+
+        $checked = 0;
+        $updated = 0;
+        foreach ($rows as $row) {
+            $consignmentId = trim((string) ($row['pathao_consignment_id'] ?? ''));
+            if ($consignmentId === '') {
+                continue;
+            }
+            $checked += 1;
+
+            $details = $this->fetchPathaoOrderInfo([
+                'baseUrl' => $baseUrl,
+                'accessToken' => $accessToken,
+                'consignmentId' => $consignmentId,
+            ]);
+
+            if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
+                continue;
+            }
+
+            $responseData = $details['data'];
+            // The response may have data nested under 'data' key
+            $orderData = is_array($responseData['data'] ?? null) ? $responseData['data'] : $responseData;
+            $orderStatusSlug = trim((string) ($orderData['order_status_slug'] ?? $orderData['order_status'] ?? ''));
+
+            if ($orderStatusSlug === '') {
+                continue;
+            }
+
+            $statusInfo = $this->classifyPathaoStatus($orderStatusSlug);
+            if (empty($statusInfo['status'])) {
+                continue;
+            }
+
+            $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+            $updates = ['history' => $history];
+
+            if ($statusInfo['status'] === 'Delivered') {
+                $updates['status'] = 'Completed';
+                $updates['history']['completed'] = 'Marked delivered automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Returned') {
+                $updates['status'] = 'Returned';
+                $updates['history']['returned'] = 'Marked returned automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } elseif ($statusInfo['status'] === 'Cancelled') {
+                $updates['status'] = 'Cancelled';
+                $updates['history']['cancelled'] = 'Marked cancelled automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+            } else {
+                $updates['status'] = 'Picked';
+                $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
+            }
+
+            $this->updateOrderAsCourierSystem([
+                'id' => (string) $row['id'],
+                'updates' => $updates,
+            ]);
+            $updated += 1;
+        }
+
+        return ['checked' => $checked, 'updated' => $updated];
+    }
+
+    /**
+     * Quietly save settings without requiring admin auth (used for token persistence during sync).
+     */
+    private function saveSingletonQuiet(string $table, string $id, array $updates): void
+    {
+        $existing = $this->database->fetchOne("SELECT id FROM {$table} WHERE id = ?", [$id]);
+        if ($existing === null) {
+            $columns = array_keys($updates);
+            $columns[] = 'id';
+            $placeholders = array_fill(0, count($columns), '?');
+            $sql = "INSERT INTO {$table} (" . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
+            $values = array_values($updates);
+            $values[] = $id;
+            $this->database->execute($sql, $values);
+        } else {
+            $setClauses = [];
+            $values = [];
+            foreach ($updates as $column => $value) {
+                $setClauses[] = "{$column} = ?";
+                $values[] = $value;
+            }
+            $sql = "UPDATE {$table} SET " . implode(', ', $setClauses) . ' WHERE id = ?';
+            $values[] = $id;
+            $this->database->execute($sql, $values);
+        }
     }
 }

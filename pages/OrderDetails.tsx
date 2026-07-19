@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
 import { OrderStatus, Order, type ProcessOrderReturnExchangePayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
-import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, OrderReturnExchangeModal } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction, useProcessOrderReturnExchange } from '../src/hooks/useMutations';
@@ -101,6 +101,7 @@ const OrderDetails: React.FC = () => {
   const [showSteadfast, setShowSteadfast] = useState(false);
   const [showCarryBee, setShowCarryBee] = useState(false);
   const [showPaperfly, setShowPaperfly] = useState(false);
+  const [showPathao, setShowPathao] = useState(false);
   const [showFraudCheckModal, setShowFraudCheckModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
   const [isActionOpen, setIsActionOpen] = useState(false);
@@ -530,13 +531,15 @@ const OrderDetails: React.FC = () => {
   const sentToSteadfast = courierHistoryLower.includes('steadfast') || !!order?.steadfastConsignmentId;
   const sentToCarryBee = courierHistoryLower.includes('carrybee') || !!order?.carrybeeConsignmentId;
   const sentToPaperfly = courierHistoryLower.includes('paperfly') || !!order?.paperflyTrackingNumber;
-  const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly;
+  const sentToPathao = courierHistoryLower.includes('pathao') || !!order?.pathaoConsignmentId;
+  const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly || sentToPathao;
 
   // Exchange consignment tracking
   const sentToExchangeCourier = Boolean(
     order?.exchangeSteadfastConsignmentId ||
     order?.exchangeCarrybeeConsignmentId ||
     order?.exchangePaperflyTrackingNumber ||
+    order?.exchangePathaoConsignmentId ||
     order?.exchangeCourierHistory ||
     order?.history?.exchangeCourier
   );
@@ -547,11 +550,13 @@ const OrderDetails: React.FC = () => {
     ? 'Paperfly'
     : preferredCourier === 'carrybee'
       ? 'CarryBee'
-      : preferredCourier === 'steadfast'
-        ? 'Steadfast'
-        : '';
+      : preferredCourier === 'pathao'
+        ? 'Pathao'
+        : preferredCourier === 'steadfast'
+          ? 'Steadfast'
+          : '';
   
-  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly') => {
+  const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly' | 'pathao') => {
     if (!courierSettings) return false;
     if (courier === 'steadfast') {
       return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
@@ -561,6 +566,9 @@ const OrderDetails: React.FC = () => {
     }
     if (courier === 'paperfly') {
       return !!(courierSettings.paperfly?.username && courierSettings.paperfly?.password);
+    }
+    if (courier === 'pathao') {
+      return !!(courierSettings.pathao?.baseUrl && courierSettings.pathao?.clientId && courierSettings.pathao?.storeId);
     }
     return false;
   };
@@ -857,7 +865,7 @@ const OrderDetails: React.FC = () => {
     setIsExchangeConsignment(false);
   };
 
-  const handleSelectCourierOption = (option: 'steadfast' | 'carrybee' | 'paperfly' | 'manual') => {
+  const handleSelectCourierOption = (option: 'steadfast' | 'carrybee' | 'paperfly' | 'pathao' | 'manual') => {
     setShowCourierSelectionModal(false);
     if (option === 'steadfast') {
       setShowSteadfast(true);
@@ -865,6 +873,8 @@ const OrderDetails: React.FC = () => {
       setShowCarryBee(true);
     } else if (option === 'paperfly') {
       setShowPaperfly(true);
+    } else if (option === 'pathao') {
+      setShowPathao(true);
     } else {
       setShowManualCourierModal(true);
     }
@@ -1253,11 +1263,13 @@ const OrderDetails: React.FC = () => {
     const sentToSteadfast = courierHistory.includes('steadfast') || !!order.steadfastConsignmentId;
     const sentToCarryBee = courierHistory.includes('carrybee') || !!order.carrybeeConsignmentId;
     const sentToPaperfly = courierHistory.includes('paperfly') || !!order.paperflyTrackingNumber;
+    const sentToPathao = courierHistory.includes('pathao') || !!order.pathaoConsignmentId;
     const steadfastTracking = String(
       order.steadfastConsignmentId || extractSteadfastTrackingFromHistory(order.history?.courier) || ''
     ).trim();
     const carryBeeConsignment = String(order.carrybeeConsignmentId || '').trim();
     const paperflyReference = getPaperflyReferenceNumber(order);
+    const pathaoConsignment = String(order.pathaoConsignmentId || '').trim();
 
     const closeTrackingMenu = () => setIsActionOpen(false);
 
@@ -1289,10 +1301,23 @@ const OrderDetails: React.FC = () => {
       return true;
     };
 
+    const openPathaoTracking = (): boolean => {
+      if (!sentToPathao || !pathaoConsignment) return false;
+
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(pathaoConsignment).catch(() => undefined);
+      }
+      toast.success(`Pathao consignment ID copied: ${pathaoConsignment}`);
+      closeTrackingMenu();
+      return true;
+    };
+
+    if (preferredCourier === 'pathao' && openPathaoTracking()) return;
     if (preferredCourier === 'paperfly' && openPaperflyTracking()) return;
     if (preferredCourier === 'carrybee' && openCarryBeeTracking()) return;
     if (preferredCourier === 'steadfast' && openSteadfastTracking()) return;
 
+    if (openPathaoTracking()) return;
     if (openPaperflyTracking()) return;
     if (openCarryBeeTracking()) return;
     if (openSteadfastTracking()) return;
@@ -1311,6 +1336,12 @@ const OrderDetails: React.FC = () => {
 
     if (courierHistory.includes('paperfly')) {
       toast.warning('Paperfly reference number is missing for this order');
+      closeTrackingMenu();
+      return;
+    }
+
+    if (courierHistory.includes('pathao')) {
+      toast.warning('Pathao consignment ID is missing for this order');
       closeTrackingMenu();
       return;
     }
@@ -2084,6 +2115,18 @@ const OrderDetails: React.FC = () => {
                   <span>Paperfly</span>
                 </Button>
               )}
+              {isCourierConfigured('pathao') && (
+                <Button
+                  type="button"
+                  onClick={() => handleSelectCourierOption('pathao')}
+                  variant="ghost"
+                  size="md"
+                  className="w-full justify-start gap-3 rounded-2xl border border-gray-200 bg-slate-50 px-5 py-4 text-left text-sm font-semibold text-slate-900 hover:bg-slate-100"
+                >
+                  <img src="/uploads/pathao.png" alt="Pathao" className="h-6 w-6 rounded-full" />
+                  <span>Pathao</span>
+                </Button>
+              )}
               <Button
                 type="button"
                 onClick={() => handleSelectCourierOption('manual')}
@@ -2163,6 +2206,13 @@ const OrderDetails: React.FC = () => {
           <PaperflyModal
             isOpen={showPaperfly}
             onClose={() => { setShowPaperfly(false); setIsExchangeConsignment(false); }}
+            order={order}
+            customer={customer}
+            isExchangeConsignment={isExchangeConsignment}
+          />
+          <PathaoModal
+            isOpen={showPathao}
+            onClose={() => { setShowPathao(false); setIsExchangeConsignment(false); }}
             order={order}
             customer={customer}
             isExchangeConsignment={isExchangeConsignment}

@@ -799,6 +799,11 @@ final class OperationsApi extends BaseService
                 && $this->nullableString($updates['paperflyTrackingNumber'] ?? $updates['paperfly_tracking_number'] ?? null)
                 !== $this->nullableString($existingRow['paperfly_tracking_number'] ?? null)
             )
+            || (
+                (array_key_exists('pathaoConsignmentId', $updates) || array_key_exists('pathao_consignment_id', $updates))
+                && $this->nullableString($updates['pathaoConsignmentId'] ?? $updates['pathao_consignment_id'] ?? null)
+                !== $this->nullableString($existingRow['pathao_consignment_id'] ?? null)
+            )
             || $this->historyValue($nextHistory, 'courier') !== $this->historyValue($existingHistory, 'courier');
 
         $processingChanged = $this->historyValue($nextHistory, 'processing') !== $this->historyValue($existingHistory, 'processing');
@@ -3651,12 +3656,12 @@ final class OperationsApi extends BaseService
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
                     subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
-                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number, source_ad,
+                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number, pathao_consignment_id, source_ad,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
                     :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
-                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number, :source_ad,
+                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number, :pathao_consignment_id, :source_ad,
                     :created_at, :updated_at
                 )',
                 [
@@ -3680,6 +3685,7 @@ final class OperationsApi extends BaseService
                     ':carrybee_consignment_id' => $this->nullableString($params['carrybeeConsignmentId'] ?? $params['carrybee_consignment_id'] ?? null),
                     ':steadfast_consignment_id' => $this->nullableString($params['steadfastConsignmentId'] ?? $params['steadfast_consignment_id'] ?? null),
                     ':paperfly_tracking_number' => $this->nullableString($params['paperflyTrackingNumber'] ?? $params['paperfly_tracking_number'] ?? null),
+                    ':pathao_consignment_id' => $this->nullableString($params['pathaoConsignmentId'] ?? $params['pathao_consignment_id'] ?? null),
                     ':source_ad' => $this->nullableString($params['sourceAd'] ?? $params['source_ad'] ?? null),
                     ':created_at' => $now,
                     ':updated_at' => $now,
@@ -3822,6 +3828,27 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('paperflyTrackingNumber', $updates) || array_key_exists('paperfly_tracking_number', $updates)) {
                 $payload['paperfly_tracking_number'] = $this->nullableString($updates['paperflyTrackingNumber'] ?? $updates['paperfly_tracking_number'] ?? null);
+            }
+            if (array_key_exists('pathaoConsignmentId', $updates) || array_key_exists('pathao_consignment_id', $updates)) {
+                $payload['pathao_consignment_id'] = $this->nullableString($updates['pathaoConsignmentId'] ?? $updates['pathao_consignment_id'] ?? null);
+            }
+            if (array_key_exists('exchangeCourier', $updates) || array_key_exists('exchange_courier', $updates)) {
+                $payload['exchange_courier'] = $this->nullableString($updates['exchangeCourier'] ?? $updates['exchange_courier'] ?? null);
+            }
+            if (array_key_exists('exchangeSteadfastConsignmentId', $updates) || array_key_exists('exchange_steadfast_consignment_id', $updates)) {
+                $payload['exchange_steadfast_consignment_id'] = $this->nullableString($updates['exchangeSteadfastConsignmentId'] ?? $updates['exchange_steadfast_consignment_id'] ?? null);
+            }
+            if (array_key_exists('exchangeCarrybeeConsignmentId', $updates) || array_key_exists('exchange_carrybee_consignment_id', $updates)) {
+                $payload['exchange_carrybee_consignment_id'] = $this->nullableString($updates['exchangeCarrybeeConsignmentId'] ?? $updates['exchange_carrybee_consignment_id'] ?? null);
+            }
+            if (array_key_exists('exchangePaperflyTrackingNumber', $updates) || array_key_exists('exchange_paperfly_tracking_number', $updates)) {
+                $payload['exchange_paperfly_tracking_number'] = $this->nullableString($updates['exchangePaperflyTrackingNumber'] ?? $updates['exchange_paperfly_tracking_number'] ?? null);
+            }
+            if (array_key_exists('exchangePathaoConsignmentId', $updates) || array_key_exists('exchange_pathao_consignment_id', $updates)) {
+                $payload['exchange_pathao_consignment_id'] = $this->nullableString($updates['exchangePathaoConsignmentId'] ?? $updates['exchange_pathao_consignment_id'] ?? null);
+            }
+            if (array_key_exists('exchangeCourierHistory', $updates) || array_key_exists('exchange_courier_history', $updates)) {
+                $payload['exchange_courier_history'] = $this->nullableString($updates['exchangeCourierHistory'] ?? $updates['exchange_courier_history'] ?? null);
             }
             if (array_key_exists('sourceAd', $updates) || array_key_exists('source_ad', $updates)) {
                 $payload['source_ad'] = $this->nullableString($updates['sourceAd'] ?? $updates['source_ad'] ?? null);

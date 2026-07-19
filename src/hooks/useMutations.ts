@@ -1836,6 +1836,9 @@ export function useUpdateProduct(): UseMutationResult<Product, Error, { id: stri
         } catch (e) {}
       });
       queryClient.setQueryData(['product', data.id], data);
+      // Invalidate lightweight product caches so OrderForm picks up changes (e.g. dynamic pricing)
+      queryClient.invalidateQueries({ queryKey: ['productsMini'] });
+      queryClient.invalidateQueries({ queryKey: ['productsSearch'] });
     },
   });
 }

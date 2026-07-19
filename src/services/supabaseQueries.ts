@@ -292,6 +292,7 @@ export async function updateCourierSettings(updates: {
   steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string };
   carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string };
   paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number };
+  pathao?: { baseUrl?: string; clientId?: string; clientSecret?: string; username?: string; password?: string; storeId?: string; defaultQuantity?: number; defaultWeight?: number; defaultDeliveryType?: number; defaultItemType?: number };
   fraudChecker?: { apiKey?: string };
 }): Promise<CourierSettings> { return call<CourierSettings>('updateCourierSettings', updates); }
 export async function fetchMetaAdsConnectionStatus(): Promise<any> { return call<any>('fetchMetaAdsConnectionStatus'); }
@@ -369,6 +370,11 @@ export async function submitPaperflyExchangeOrder(params: { baseUrl: string; use
 export async function fetchPaperflyOrderTracking(params: { baseUrl: string; username: string; password: string; paperflyKey: string; referenceNumber: string; }): Promise<{ data?: any; error?: string }> { return call<{ data?: any; error?: string }>('fetchPaperflyOrderTracking', params); }
 export async function syncPaperflyOrderStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncPaperflyOrderStatuses'); }
 export async function syncSteadfastDeliveryStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncSteadfastDeliveryStatuses'); }
+export async function generatePathaoToken(params: { baseUrl: string; clientId: string; clientSecret: string; username: string; password: string; }): Promise<{ accessToken?: string; refreshToken?: string; expiresIn?: number; error?: string }> { return call('generatePathaoToken', params); }
+export async function refreshPathaoToken(params: { baseUrl: string; clientId: string; clientSecret: string; refreshToken: string; }): Promise<{ accessToken?: string; refreshToken?: string; expiresIn?: number; error?: string }> { return call('refreshPathaoToken', params); }
+export async function submitPathaoOrder(params: { baseUrl: string; accessToken: string; storeId: string; recipientName: string; recipientPhone: string; recipientAddress: string; deliveryType?: number; itemType?: number; itemQuantity?: number; itemWeight?: number; amountToCollect?: number; specialInstruction?: string; }): Promise<any> { return call<any>('submitPathaoOrder', params); }
+export async function fetchPathaoOrderInfo(params: { baseUrl: string; accessToken: string; consignmentId: string; }): Promise<{ data?: any; error?: string }> { return call('fetchPathaoOrderInfo', params); }
+export async function syncPathaoDeliveryStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncPathaoDeliveryStatuses'); }
 
 export async function fetchMyNotifications(): Promise<NotificationListResponse> {
   return call<NotificationListResponse>('fetchMyNotifications');

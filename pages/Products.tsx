@@ -8,7 +8,7 @@ import { Button, Table, TableCell, IconButton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers, useProductFilterOptions } from '../src/hooks/useQueries';
+import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers, useProductFilterOptions, useUnits } from '../src/hooks/useQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { useDeleteProduct } from '../src/hooks/useMutations';
@@ -33,6 +33,7 @@ const Products: React.FC = () => {
   const canLoadProducts = !systemDefaultsLoading || !!systemDefaults || systemDefaultsError;
   const [page, setPage] = useState<number>(1);
   const { data: users = [] } = useUsers();
+  const { data: units = [] } = useUnits();
 
   const [createdByFilter, setCreatedByFilter] = useState<string>('all');
 
@@ -334,6 +335,18 @@ const Products: React.FC = () => {
                 {category}
               </span>
             ),
+          },
+          {
+            key: 'unitId',
+            label: 'Unit',
+            render: (unitId) => {
+              const unit = units.find(u => u.id === unitId);
+              return unit ? (
+                <span className="text-sm font-medium text-gray-700">{unit.name}</span>
+              ) : (
+                <span className="text-gray-300">—</span>
+              );
+            },
           },
           {
             key: 'salePrice',

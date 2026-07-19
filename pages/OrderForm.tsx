@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Customer, Order, OrderStatus, OrderItem } from '../types';
+import { Customer, Order, OrderStatus, OrderItem, DynamicPricingRule } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
@@ -19,6 +19,48 @@ import { getTodayDate, sanitizePhoneInput } from '../utils';
 import { buildOrderPageSnapshot, getGlobalCompanyPage, normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 
 type CustomerSearchOption = Pick<Customer, 'id' | 'name'> & Partial<Customer>;
+
+/**
+ * Evaluate dynamic pricing rules for a product based on quantity.
+ * Returns the action type, adjusted rate, and per-unit discount amount.
+ */
+function applyDynamicPricing(
+  dynamicPricingJson: string | undefined | null,
+  quantity: number,
+  originalRate: number,
+): { action: 'none' | 'setRate' | 'discount'; adjustedRate: number; discountPerUnit: number } {
+  if (!dynamicPricingJson) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+
+  try {
+    const rules: DynamicPricingRule[] = JSON.parse(dynamicPricingJson);
+    if (!Array.isArray(rules) || rules.length === 0) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+
+    // Find the best matching rule (last matching rule wins for specificity)
+    let bestRule: DynamicPricingRule | null = null;
+    for (const rule of rules) {
+      if (!rule.operator || rule.quantity <= 0 || !rule.action || rule.amount <= 0) continue;
+      let matches = false;
+      switch (rule.operator) {
+        case '=': matches = quantity === rule.quantity; break;
+        case '<': matches = quantity < rule.quantity; break;
+        case '>': matches = quantity > rule.quantity; break;
+      }
+      if (matches) bestRule = rule;
+    }
+
+    if (bestRule) {
+      if (bestRule.action === 'discount') {
+        return { action: 'discount', adjustedRate: originalRate, discountPerUnit: bestRule.amount };
+      } else if (bestRule.action === 'setRate') {
+        return { action: 'setRate', adjustedRate: Math.max(0, bestRule.amount), discountPerUnit: 0 };
+      }
+    }
+  } catch {
+    // Ignore invalid JSON
+  }
+
+  return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+}
 
 const OrderForm: React.FC = () => {
   const { id } = useParams();
@@ -333,10 +375,21 @@ const OrderForm: React.FC = () => {
     }
   }, [location]);
 
-  const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
+  // Calculate totals
+  // For "setRate" rules: rate is already adjusted, amount reflects the new rate
+  // For "discount" rules: rate stays original, discount is tracked per-unit
+  const subtotal = items.reduce((sum, item) => sum + item.rate * item.quantity, 0);
+  const dynamicDiscountTotal = items.reduce((sum, item) => sum + (item.dynamicDiscount || 0) * item.quantity, 0);
   const parsedDiscount = parseFloat(discount) || 0;
   const parsedShipping = parseFloat(shipping) || 0;
-  const total = subtotal - parsedDiscount + parsedShipping;
+  const total = subtotal - dynamicDiscountTotal - parsedDiscount + parsedShipping;
+
+  // Auto-populate discount field with dynamic pricing discount when items change
+  React.useEffect(() => {
+    if (dynamicDiscountTotal > 0) {
+      setDiscount(String(dynamicDiscountTotal));
+    }
+  }, [dynamicDiscountTotal]);
 
   const addItem = (productId: string) => {
     const product = products.find(p => p.id === productId);
@@ -345,12 +398,28 @@ const OrderForm: React.FC = () => {
       toast.warning(`"${product.name}" is out of stock — will be created On Hold.`);
     }
 
+    // Apply dynamic pricing for initial quantity of 1
+    const pricing = applyDynamicPricing(product.dynamicPricing, 1, product.salePrice);
+
+    let itemRate = product.salePrice;
+    let itemDiscount = 0;
+
+    if (pricing.action === 'setRate') {
+      // setRate: change the rate, track original for strikethrough display
+      itemRate = pricing.adjustedRate;
+    } else if (pricing.action === 'discount') {
+      // discount: keep original rate, track per-unit discount for auto-populating discount field
+      itemDiscount = pricing.discountPerUnit;
+    }
+
     const newItem: OrderItem = {
       productId: product.id,
       productName: product.name,
-      rate: product.salePrice,
+      rate: itemRate,
       quantity: 1,
-      amount: product.salePrice
+      amount: itemRate,
+      originalRate: pricing.action !== 'none' ? product.salePrice : undefined,
+      dynamicDiscount: itemDiscount > 0 ? itemDiscount : undefined,
     };
     setItems([...items, newItem]);
     setShowProductSearch(false);
@@ -359,8 +428,33 @@ const OrderForm: React.FC = () => {
 
   const updateQuantity = (index: number, qty: number) => {
     const newItems = [...items];
-    newItems[index].quantity = Math.max(1, qty);
-    newItems[index].amount = newItems[index].rate * newItems[index].quantity;
+    const item = newItems[index];
+    const newQty = Math.max(1, qty);
+    item.quantity = newQty;
+
+    // Re-evaluate dynamic pricing based on new quantity
+    const product = products.find(p => p.id === item.productId);
+    const baseRate = product?.salePrice ?? item.rate;
+    const pricing = applyDynamicPricing(product?.dynamicPricing, newQty, baseRate);
+
+    if (pricing.action === 'setRate') {
+      // setRate: change the rate, track original for strikethrough display
+      item.rate = pricing.adjustedRate;
+      item.originalRate = baseRate;
+      item.dynamicDiscount = undefined;
+    } else if (pricing.action === 'discount') {
+      // discount: keep original rate, track discount
+      item.rate = baseRate;
+      item.originalRate = baseRate;
+      item.dynamicDiscount = pricing.discountPerUnit;
+    } else {
+      // no rule matches
+      item.rate = baseRate;
+      item.originalRate = undefined;
+      item.dynamicDiscount = undefined;
+    }
+
+    item.amount = item.rate * newQty;
     setItems(newItems);
   };
 
@@ -507,10 +601,13 @@ const OrderForm: React.FC = () => {
       if (isEdit) {
         await updateMutation.mutateAsync({ id: id!, updates: orderData });
         toast.success('Order updated successfully');
+        queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
         navigate('/orders');
       } else {
         const createdOrder = await createMutation.mutateAsync(orderData as any);
         toast.success('Order created successfully');
+        // Ensure orders cache is fresh before navigating
+        queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
         navigate(`/orders/${createdOrder.id}`, { state: { from: '/orders', refreshOrdersOnBack: true } });
       }
     } catch (err) {
@@ -573,6 +670,8 @@ const OrderForm: React.FC = () => {
       setShowDuplicateModal(false);
       setPendingOrderData(null);
       setDuplicateOrder(null);
+      // Ensure orders cache is fresh before navigating
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
       navigate(`/orders/${createdOrder.id}`, { state: { from: '/orders', refreshOrdersOnBack: true } });
     } catch (err) {
       console.error('Failed to save order:', err);
@@ -839,7 +938,16 @@ const OrderForm: React.FC = () => {
                       <span className="font-bold text-gray-800 text-sm">{item.productName}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-center text-sm font-bold text-gray-600">{formatCurrency(item.rate)}</td>
+                  <td className="px-4 py-4 text-center text-sm font-bold text-gray-600">
+                    {item.originalRate && item.originalRate !== item.rate ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="line-through text-gray-300 text-xs">{formatCurrency(item.originalRate)}</span>
+                        <span className="text-emerald-600">{formatCurrency(item.rate)}</span>
+                      </div>
+                    ) : (
+                      formatCurrency(item.rate)
+                    )}
+                  </td>
                   <td className="px-4 py-4 text-center">
                     <NumericInput 
                       value={item.quantity} 

@@ -34,7 +34,8 @@ import {
   X,
   Clock3,
   RotateCcw,
-  TrendingUp
+  TrendingUp,
+  MessageSquare
 } from 'lucide-react';
 
 // Fixed missing properties on ICONS object by adding 'Users' and 'Briefcase' keys
@@ -77,7 +78,8 @@ export const ICONS = {
   Close: <X size={18} />,
   Clock: <Clock3 size={18} />,
   Return: <RotateCcw size={20} />,
-  TrendingUp: <TrendingUp size={20} />
+  TrendingUp: <TrendingUp size={20} />,
+  WhatsApp: <MessageSquare size={20} />
 };
 
 export const formatCurrency = (amount: number) => {

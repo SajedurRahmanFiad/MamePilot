@@ -41,6 +41,7 @@ export { default as SteadfastModal } from './SteadfastModal';
 export { default as CarryBeeModal } from './CarryBeeModal';
 
 export { default as PaperflyModal } from './PaperflyModal';
+export { default as PathaoModal } from './PathaoModal';
 export { default as PermissionsSettingsPanel } from './PermissionsSettingsPanel';
 export { default as FraudCheckResults } from './FraudCheckResults';
 export { default as FraudCheckModal } from './FraudCheckModal';

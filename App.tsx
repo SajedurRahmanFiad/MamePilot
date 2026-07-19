@@ -105,6 +105,7 @@ const PrintBill = lazyPage(() => import('./pages/PrintBill'));
 const WalletPage = lazyPage(() => import('./pages/Wallet'));
 const Undoer = lazyPage(() => import('./pages/Undoer'));
 const GrowYourBusiness = lazyPage(() => import('./pages/GrowYourBusiness'));
+const WhatsAppPage = lazyPage(() => import('./pages/WhatsApp'));
 
 const RouteFallback: React.FC = () => (
   <div className="min-h-[40vh] flex items-center justify-center px-6 py-12 text-center text-sm font-medium text-gray-500">
@@ -331,6 +332,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/grow-your-business" element={
         isAuthenticated ? (hasCapability('grow_your_business') ? <Layout><GrowYourBusiness /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/whatsapp" element={
+        isAuthenticated ? (hasCapability('whatsapp') ? <Layout><WhatsAppPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/leads" element={
         isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

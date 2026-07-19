@@ -18,6 +18,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   mamecx: 'MameCX',
   enterprise_ai_agent: 'AI Assistant Mame',
   grow_your_business: 'Grow Your Business',
+  whatsapp: 'WhatsApp',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -38,6 +39,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   mamecx: false,
   enterprise_ai_agent: false,
   grow_your_business: false,
+  whatsapp: false,
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];
@@ -59,6 +61,7 @@ export const SUB_CAPABILITY_LABELS: Record<SubCapabilityKey, string> = {
   steadfast_courier: 'Steadfast',
   carrybee_courier: 'CarryBee',
   paperfly_courier: 'Paperfly',
+  pathao_courier: 'Pathao',
   recycle_bin: 'Recycle Bin',
   undoer: 'Undoer',
 };
@@ -72,6 +75,7 @@ export const SUB_CAPABILITY_PARENT_MAP: Record<SubCapabilityKey, AppCapabilityKe
   steadfast_courier: 'courier_automation',
   carrybee_courier: 'courier_automation',
   paperfly_courier: 'courier_automation',
+  pathao_courier: 'courier_automation',
   recycle_bin: 'recycle_bin_undoer',
   undoer: 'recycle_bin_undoer',
 };
@@ -79,7 +83,7 @@ export const SUB_CAPABILITY_PARENT_MAP: Record<SubCapabilityKey, AppCapabilityKe
 export const PARENT_SUB_CAPABILITIES: Partial<Record<AppCapabilityKey, SubCapabilityKey[]>> = {
   human_resources: ['hr_management', 'payroll'],
   banking: ['accounts', 'transactions', 'transfer'],
-  courier_automation: ['steadfast_courier', 'carrybee_courier', 'paperfly_courier'],
+  courier_automation: ['steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier'],
   recycle_bin_undoer: ['recycle_bin', 'undoer'],
 };
 
@@ -138,6 +142,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/recycle-bin(?:\/|$)|^\/undoer(?:\/|$)/, capability: 'recycle_bin_undoer' },
   { pattern: /^\/fraud-checker(?:\/|$)/, capability: 'fraud_checker' },
   { pattern: /^\/grow-your-business(?:\/|$)/, capability: 'grow_your_business' },
+  { pattern: /^\/whatsapp(?:\/|$)/, capability: 'whatsapp' },
 ];
 
 export function capabilityForPath(pathname: string): AppCapabilityKey | null {

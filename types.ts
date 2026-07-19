@@ -216,12 +216,32 @@ export interface Product {
   name: string;
   image: string;
   category: string;
+  unitId?: string;
   salePrice: number;
   purchasePrice: number;
   stock: number;
+  dynamicPricing?: string;
   createdBy?: string;
   deletedAt?: string;
   deletedBy?: string;
+}
+
+export interface DynamicPricingRule {
+  id: string;
+  operator: '=' | '<' | '>';
+  quantity: number;
+  action: 'discount' | 'setRate';
+  amount: number;
+}
+
+export interface Unit {
+  id: string;
+  name: string;
+  short_name: string;
+  description?: string;
+  is_fraction: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface OrderItem {
@@ -230,6 +250,9 @@ export interface OrderItem {
   rate: number;
   quantity: number;
   amount: number;
+  // Dynamic pricing fields
+  originalRate?: number;
+  dynamicDiscount?: number;
   // Optional return/exchange tracking fields (populated after partial returns/exchanges)
   returnedQty?: number;
   exchangedQty?: number;
@@ -319,6 +342,21 @@ export interface CourierSettings {
     paperflyKey: string;
     defaultShopName: string;
     maxWeightKg: number;
+  };
+  pathao: {
+    baseUrl: string;
+    clientId: string;
+    clientSecret: string;
+    username: string;
+    password: string;
+    storeId: string;
+    defaultQuantity: number;
+    defaultWeight: number;
+    defaultDeliveryType: number;
+    defaultItemType: number;
+    accessToken: string;
+    refreshToken: string;
+    tokenExpiresAt: string;
   };
   fraudChecker: FraudCheckerSettings;
 }
@@ -460,11 +498,13 @@ export interface Order {
   carrybeeConsignmentId?: string;
   steadfastConsignmentId?: string;
   paperflyTrackingNumber?: string;
+  pathaoConsignmentId?: string;
   // Exchange consignment fields — for shipping replacement items after an exchange
-  exchangeCourier?: string; // 'steadfast' | 'carrybee' | 'paperfly' | 'manual'
+  exchangeCourier?: string; // 'steadfast' | 'carrybee' | 'paperfly' | 'pathao' | 'manual'
   exchangeSteadfastConsignmentId?: string;
   exchangeCarrybeeConsignmentId?: string;
   exchangePaperflyTrackingNumber?: string;
+  exchangePathaoConsignmentId?: string;
   exchangeCourierHistory?: string; // manual courier note for exchange
   history: {
     created: string;
@@ -880,7 +920,8 @@ export type AppCapabilityKey =
   | 'automatic_leads'
   | 'mamecx'
   | 'enterprise_ai_agent'
-  | 'grow_your_business';
+  | 'grow_your_business'
+  | 'whatsapp';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
@@ -893,6 +934,7 @@ export type SubCapabilityKey =
   | 'steadfast_courier'
   | 'carrybee_courier'
   | 'paperfly_courier'
+  | 'pathao_courier'
   | 'recycle_bin'
   | 'undoer';
 
