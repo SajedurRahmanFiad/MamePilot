@@ -310,10 +310,23 @@ abstract class BaseService
         $projectRoot = dirname(dirname(__DIR__)); // backend/src → backend → project root
         $categoryPath = 'uploads' . DIRECTORY_SEPARATOR . trim($category, '/');
 
+        // Production uploads must live under the same document root that serves /uploads URLs.
+        foreach (['UPDATE_DOCUMENT_ROOT', 'UPDATE_PUBLIC_ROOT'] as $configKey) {
+            $configuredRoot = trim((string) $this->config->get($configKey, ''));
+            if ($configuredRoot !== '' && is_dir($configuredRoot)) {
+                return rtrim($configuredRoot, '/\\') . DIRECTORY_SEPARATOR . $categoryPath;
+            }
+        }
+
         // 1. Local dev: project_root/public/uploads/
         $publicDir = $projectRoot . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . $categoryPath;
         if (is_dir(dirname($publicDir)) || is_dir($projectRoot . DIRECTORY_SEPARATOR . 'public')) {
             return $publicDir;
+        }
+
+        $serverDocumentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+        if ($serverDocumentRoot !== '' && is_dir($serverDocumentRoot)) {
+            return rtrim($serverDocumentRoot, '/\\') . DIRECTORY_SEPARATOR . $categoryPath;
         }
 
         // 2. cPanel deploy: walk up from project root to find public_html/
@@ -321,6 +334,10 @@ abstract class BaseService
         //    The web root is /home/user/public_html/
         $checkDir = $projectRoot;
         for ($i = 0; $i < 5; $i++) {
+            if (strtolower(basename($checkDir)) === 'public_html' && is_dir($checkDir)) {
+                return $checkDir . DIRECTORY_SEPARATOR . $categoryPath;
+            }
+
             $candidate = $checkDir . DIRECTORY_SEPARATOR . 'public_html';
             if (is_dir($candidate) && (is_file($candidate . DIRECTORY_SEPARATOR . '.htaccess') || is_file($candidate . DIRECTORY_SEPARATOR . 'index.html'))) {
                 return $candidate . DIRECTORY_SEPARATOR . $categoryPath;

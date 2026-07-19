@@ -1,0 +1,1 @@
+import{ab as a}from"./vendor-BqR1Zx1n.js";import{at as c}from"./index-BXhSCBK3.js";function d(t){const{searchQuery:s,setSearchQuery:r}=c(),[n,o]=a.useState(null),e=n!==t;return a.useEffect(()=>{e&&(s!==t&&r(t),o(t))},[e,s,r,t]),{searchQuery:e?t:s,setSearchQuery:r,isHydratingFromUrl:e}}export{d as u};
