@@ -1,11 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { formatCurrency } from '../constants';
+import { formatCurrency, ICONS } from '../constants';
 import { Button, LoadingOverlay } from '../components';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCentralLicenseTiers, useLocalUsageSummary, useServiceSubscriptionOverview } from '../src/hooks/useQueries';
 import { useCreateOrUpdateCentralLicense, useRegisterWebhookWithCentral, useResetCentralLicenseOverride, useSyncLicenseCapabilities, useUpdateCentralLicenseOverride } from '../src/hooks/useMutations';
-import { CAPABILITY_KEYS, CAPABILITY_LABELS, normalizeCapabilities } from '../src/utils/capabilities';
-import type { AppCapabilityKey, AppCapabilityMap, LicenseTier } from '../types';
+import {
+  CAPABILITY_KEYS,
+  CAPABILITY_LABELS,
+  normalizeCapabilities,
+  getSubCapabilities,
+  SUB_CAPABILITY_LABELS,
+  normalizeSubCapabilities,
+} from '../src/utils/capabilities';
+import type { AppCapabilityKey, AppCapabilityMap, LicenseTier, SubCapabilityKey, SubCapabilityMap } from '../types';
 
 const StatCard: React.FC<{ label: string; value: string; hint?: string; valueColor?: string }> = ({ label, value, hint, valueColor }) => (
   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -51,6 +58,8 @@ const DeveloperSubscriptions: React.FC = () => {
   const [renewalDate, setRenewalDate] = useState('');
   const [selectedTierKey, setSelectedTierKey] = useState('');
   const [overrideCapabilities, setOverrideCapabilities] = useState<AppCapabilityMap>(() => normalizeCapabilities(null));
+  const [overrideSubCapabilities, setOverrideSubCapabilities] = useState<SubCapabilityMap>({});
+  const [expandedCapabilities, setExpandedCapabilities] = useState<Record<string, boolean>>({});
   const [monthlyPriceOverride, setMonthlyPriceOverride] = useState('');
   const [yearlyPriceOverride, setYearlyPriceOverride] = useState('');
 
@@ -76,7 +85,11 @@ const DeveloperSubscriptions: React.FC = () => {
     setLicenseApiUrl(capabilitySettings.licenseApiUrl || '');
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
     setSelectedTierKey(capabilitySettings.tierKey || capabilitySettings.availableTiers?.[0]?.tierKey || '');
-    setOverrideCapabilities(normalizeCapabilities(capabilitySettings.capabilities));
+    const caps = normalizeCapabilities(capabilitySettings.capabilities);
+    setOverrideCapabilities(caps);
+    // Extract sub-capabilities from the capabilities response if present
+    const rawSubs = (capabilitySettings.capabilities as any)?.subCapabilities;
+    setOverrideSubCapabilities(normalizeSubCapabilities(rawSubs || {}, caps));
     setMonthlyPriceOverride(typeof capabilitySettings.pricingMetadata?.monthly === 'number' ? String(capabilitySettings.pricingMetadata.monthly) : '');
     setYearlyPriceOverride(typeof capabilitySettings.pricingMetadata?.yearly === 'number' ? String(capabilitySettings.pricingMetadata.yearly) : '');
     if (capabilitySettings.renewalDate) {
@@ -150,11 +163,13 @@ const DeveloperSubscriptions: React.FC = () => {
   const saveOverride = async () => {
     const toastId = toast.loading('Saving central override...');
     try {
+      // Merge sub-capabilities into the capabilities object for storage
+      const capabilitiesWithSubs = { ...overrideCapabilities, subCapabilities: overrideSubCapabilities };
       await overrideMutation.mutateAsync({
         licenseApiUrl,
         licenseOwnerToken: ownerToken,
         licenseKey: capabilitySettings?.licenseKey,
-        capabilities: overrideCapabilities,
+        capabilities: capabilitiesWithSubs,
         pricingMetadata: {
           monthly: Number(monthlyPriceOverride || 0),
           yearly: Number(yearlyPriceOverride || 0),
@@ -170,6 +185,7 @@ const DeveloperSubscriptions: React.FC = () => {
     const toastId = toast.loading('Resetting override...');
     try {
       await resetOverrideMutation.mutateAsync({ licenseApiUrl, licenseOwnerToken: ownerToken, licenseKey: capabilitySettings?.licenseKey });
+      setOverrideSubCapabilities({});
       setMonthlyPriceOverride('');
       setYearlyPriceOverride('');
       toast.update(toastId, 'Reset to tier defaults.', 'success');
@@ -277,35 +293,98 @@ const DeveloperSubscriptions: React.FC = () => {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-black text-gray-900">Capability Override</h2>
-            <p className="mt-1 text-sm text-gray-500">Save only when this client needs custom access outside the selected tier.</p>
+            <p className="mt-1 text-sm text-gray-500">Save only when this client needs custom access outside the selected tier. Expand grouped capabilities to toggle individual features.</p>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={resetOverride} disabled={!capabilitySettings?.licenseKey}>Reset</Button>
             <Button variant="primary" onClick={saveOverride} disabled={!capabilitySettings?.licenseKey}>Save Override</Button>
           </div>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="mt-5 divide-y divide-gray-100 rounded-2xl border border-gray-100">
           {CAPABILITY_KEYS.map((key: AppCapabilityKey) => {
             const checked = Boolean(overrideCapabilities[key]);
             const tierDefault = Boolean(tierDefaultCapabilities[key]);
             const active = Boolean(activeCapabilities[key]);
+            const subKeys = getSubCapabilities(key);
+            const hasSubs = subKeys.length > 0;
+            const isExpanded = expandedCapabilities[key] || false;
+
             return (
-              <label key={key} className={`rounded-2xl border p-4 ${checked ? 'border-[#0f2f57] bg-[#f8fbff]' : 'border-gray-100 bg-gray-50'}`}>
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => setOverrideCapabilities((current) => ({ ...current, [key]: event.target.checked }))}
-                    className="mt-1 h-5 w-5 accent-[#0f2f57]"
-                  />
-                  <div>
-                    <p className="font-black text-gray-900">{CAPABILITY_LABELS[key]}</p>
-                    <p className="mt-1 text-[11px] font-bold text-gray-400">
-                      Tier: {tierDefault ? 'On' : 'Off'} · Active: {active ? 'On' : 'Off'}
-                    </p>
-                  </div>
+              <div key={key}>
+                {/* Parent row */}
+                <div className={`flex items-center gap-3 px-5 py-4 ${checked ? 'bg-[#f8fbff]' : 'bg-white'}`}>
+                  <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const newChecked = event.target.checked;
+                        setOverrideCapabilities((current) => ({ ...current, [key]: newChecked }));
+                        // When parent is toggled off, disable all subs; when on, enable all subs
+                        if (hasSubs) {
+                          setOverrideSubCapabilities((current) => {
+                            const updated = { ...current };
+                            for (const subKey of subKeys) {
+                              updated[subKey] = newChecked;
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                      className="h-5 w-5 accent-[#0f2f57] shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-black text-gray-900 truncate">{CAPABILITY_LABELS[key]}</p>
+                      <p className="mt-0.5 text-[11px] font-bold text-gray-400">
+                        Tier: {tierDefault ? 'On' : 'Off'} · Active: {active ? 'On' : 'Off'}
+                      </p>
+                    </div>
+                  </label>
+                  {hasSubs && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCapabilities((current) => ({ ...current, [key]: !current[key] }))}
+                      className="p-2 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                    >
+                      <span className={`block transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                        {ICONS.ChevronRight}
+                      </span>
+                    </button>
+                  )}
                 </div>
-              </label>
+
+                {/* Sub-capability rows */}
+                {hasSubs && isExpanded && (
+                  <div className="bg-gray-50/60">
+                    {subKeys.map((subKey) => {
+                      const subChecked = overrideSubCapabilities[subKey] !== false;
+                      const parentEnabled = checked;
+                      return (
+                        <label
+                          key={subKey}
+                          className={`flex items-center gap-3 pl-14 pr-5 py-3 border-t border-gray-50 cursor-pointer transition-colors ${
+                            !parentEnabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={subChecked}
+                            disabled={!parentEnabled}
+                            onChange={(event) =>
+                              setOverrideSubCapabilities((current) => ({ ...current, [subKey]: event.target.checked }))
+                            }
+                            className="h-4 w-4 accent-[#0f2f57] shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-700">{SUB_CAPABILITY_LABELS[subKey]}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

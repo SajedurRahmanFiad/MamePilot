@@ -3,7 +3,15 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, LoadingOverlay } from '../components';
 import { useCapabilitySettings, useServiceSubscriptionOverview } from '../src/hooks/useQueries';
 import { useInitiatePipraPayCheckout } from '../src/hooks/useMutations';
-import { CAPABILITY_KEYS, CAPABILITY_LABELS, normalizeCapabilities } from '../src/utils/capabilities';
+import {
+  CAPABILITY_KEYS,
+  CAPABILITY_LABELS,
+  normalizeCapabilities,
+  getSubCapabilities,
+  SUB_CAPABILITY_LABELS,
+  normalizeSubCapabilities,
+} from '../src/utils/capabilities';
+import type { SubCapabilityKey } from '../types';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
@@ -215,6 +223,9 @@ const AdminSubscriptions: React.FC = () => {
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {CAPABILITY_KEYS.map((key) => {
               const active = Boolean(capabilities[key]);
+              const subKeys = getSubCapabilities(key);
+              const rawSubs = (capabilitySettings?.capabilities as any)?.subCapabilities;
+              const subCaps = normalizeSubCapabilities(rawSubs || {}, capabilities);
               return (
                 <div key={key} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -223,6 +234,21 @@ const AdminSubscriptions: React.FC = () => {
                       {active ? 'Active' : 'Inactive'}
                     </span>
                   </div>
+                  {subKeys.length > 0 && active && (
+                    <div className="mt-3 space-y-1.5 pl-2 border-l-2 border-gray-200">
+                      {subKeys.map((subKey: SubCapabilityKey) => {
+                        const subActive = Boolean(subCaps[subKey]);
+                        return (
+                          <div key={subKey} className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-bold text-gray-600">{SUB_CAPABILITY_LABELS[subKey]}</p>
+                            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${subActive ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
+                              {subActive ? 'On' : 'Off'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

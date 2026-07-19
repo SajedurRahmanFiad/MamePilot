@@ -24,6 +24,20 @@ final class FeatureAccess
         'grow_your_business' => false,
     ];
 
+    // Maps sub-capability keys to their parent capability keys
+    private const SUB_CAPABILITY_PARENTS = [
+        'hr_management' => 'human_resources',
+        'payroll' => 'human_resources',
+        'accounts' => 'banking',
+        'transactions' => 'banking',
+        'transfer' => 'banking',
+        'steadfast_courier' => 'courier_automation',
+        'carrybee_courier' => 'courier_automation',
+        'paperfly_courier' => 'courier_automation',
+        'recycle_bin' => 'recycle_bin_undoer',
+        'undoer' => 'recycle_bin_undoer',
+    ];
+
     private const ACTION_CAPABILITIES = [
         'fetchDashboardSnapshot' => 'dashboard',
         'fetchProducts' => 'inventory',
@@ -72,39 +86,39 @@ final class FeatureAccess
         'createVendor' => 'purchases',
         'updateVendor' => 'purchases',
         'deleteVendor' => 'purchases',
-        'fetchAccounts' => 'banking',
-        'fetchAccountById' => 'banking',
-        'createAccount' => 'banking',
-        'updateAccount' => 'banking',
-        'deleteAccount' => 'banking',
-        'fetchTransactions' => 'banking',
-        'fetchTransactionById' => 'banking',
-        'fetchTransactionsPage' => 'banking',
-        'fetchTransactionFilterOptions' => 'banking',
-        'createTransaction' => 'banking',
-        'updateTransaction' => 'banking',
-        'deleteTransaction' => 'banking',
-        'reviewTransactionApproval' => 'banking',
-        'fetchUsers' => 'human_resources',
-        'fetchUsersPage' => 'human_resources',
-        'fetchUsersMini' => 'human_resources',
-        'fetchUserById' => 'human_resources',
-        'fetchUserByPhone' => 'human_resources',
-        'createUser' => 'human_resources',
-        'updateUser' => 'human_resources',
-        'deleteUser' => 'human_resources',
-        'fetchPayrollSettings' => 'human_resources',
-        'updateWalletSettings' => 'human_resources',
-        'fetchPayrollEmployees' => 'human_resources',
-        'fetchPayrollHistory' => 'human_resources',
-        'fetchPayrollSummaries' => 'human_resources',
-        'markPayrollPaid' => 'human_resources',
-        'fetchEmployeeWalletCards' => 'human_resources',
-        'fetchEmployeeWalletCardsPage' => 'human_resources',
-        'fetchMyWalletBalance' => 'human_resources',
-        'fetchWalletActivityPage' => 'human_resources',
-        'payEmployeeWallet' => 'human_resources',
-        'deleteEmployeeWalletPayout' => 'human_resources',
+        'fetchAccounts' => 'accounts',
+        'fetchAccountById' => 'accounts',
+        'createAccount' => 'accounts',
+        'updateAccount' => 'accounts',
+        'deleteAccount' => 'accounts',
+        'fetchTransactions' => 'transactions',
+        'fetchTransactionById' => 'transactions',
+        'fetchTransactionsPage' => 'transactions',
+        'fetchTransactionFilterOptions' => 'transactions',
+        'createTransaction' => 'transactions',
+        'updateTransaction' => 'transactions',
+        'deleteTransaction' => 'transactions',
+        'reviewTransactionApproval' => 'transactions',
+        'fetchUsers' => 'hr_management',
+        'fetchUsersPage' => 'hr_management',
+        'fetchUsersMini' => 'hr_management',
+        'fetchUserById' => 'hr_management',
+        'fetchUserByPhone' => 'hr_management',
+        'createUser' => 'hr_management',
+        'updateUser' => 'hr_management',
+        'deleteUser' => 'hr_management',
+        'fetchPayrollSettings' => 'payroll',
+        'updateWalletSettings' => 'payroll',
+        'fetchPayrollEmployees' => 'payroll',
+        'fetchPayrollHistory' => 'payroll',
+        'fetchPayrollSummaries' => 'payroll',
+        'markPayrollPaid' => 'payroll',
+        'fetchEmployeeWalletCards' => 'payroll',
+        'fetchEmployeeWalletCardsPage' => 'payroll',
+        'fetchMyWalletBalance' => 'payroll',
+        'fetchWalletActivityPage' => 'payroll',
+        'payEmployeeWallet' => 'payroll',
+        'deleteEmployeeWalletPayout' => 'payroll',
         'fetchIncomeSummaryReport' => 'advanced_reports',
         'fetchExpenseSummaryReport' => 'advanced_reports',
         'fetchExpenseSummaryCsv' => 'advanced_reports',
@@ -114,20 +128,20 @@ final class FeatureAccess
         'fetchCustomerSalesReport' => 'advanced_reports',
         'fetchUserActivityPerformanceReportPage' => 'advanced_reports',
         'fetchUserActivityPerformanceLog' => 'advanced_reports',
-        'fetchRecycleBinItems' => 'recycle_bin_undoer',
-        'fetchRecycleBinPage' => 'recycle_bin_undoer',
-        'fetchRecycleBinFilterOptions' => 'recycle_bin_undoer',
-        'restoreDeletedItem' => 'recycle_bin_undoer',
-        'permanentlyDeleteDeletedItem' => 'recycle_bin_undoer',
-        'revertOrderStatus' => 'recycle_bin_undoer',
+        'fetchRecycleBinItems' => 'recycle_bin',
+        'fetchRecycleBinPage' => 'recycle_bin',
+        'fetchRecycleBinFilterOptions' => 'recycle_bin',
+        'restoreDeletedItem' => 'recycle_bin',
+        'permanentlyDeleteDeletedItem' => 'recycle_bin',
+        'revertOrderStatus' => 'undoer',
         'checkFraudCourierHistory' => 'fraud_checker',
-        'submitCarryBeeOrder' => 'courier_automation',
-        'submitPaperflyOrder' => 'courier_automation',
-        'submitSteadfastOrder' => 'courier_automation',
-        'fetchSteadfastStatusByTrackingCode' => 'courier_automation',
-        'syncCarryBeeTransferStatuses' => 'courier_automation',
-        'syncPaperflyOrderStatuses' => 'courier_automation',
-        'syncSteadfastDeliveryStatuses' => 'courier_automation',
+        'submitCarryBeeOrder' => 'carrybee_courier',
+        'submitPaperflyOrder' => 'paperfly_courier',
+        'submitSteadfastOrder' => 'steadfast_courier',
+        'fetchSteadfastStatusByTrackingCode' => 'steadfast_courier',
+        'syncCarryBeeTransferStatuses' => 'carrybee_courier',
+        'syncPaperflyOrderStatuses' => 'paperfly_courier',
+        'syncSteadfastDeliveryStatuses' => 'steadfast_courier',
         'updatePermissionsSettings' => 'custom_roles',
         'fetchAgentSettings' => 'enterprise_ai_agent',
         'updateAgentSettings' => 'enterprise_ai_agent',
@@ -173,6 +187,27 @@ final class FeatureAccess
         }
 
         $capabilities = $this->fetchCapabilities();
+
+        // Check if this is a sub-capability
+        $parentKey = self::SUB_CAPABILITY_PARENTS[$capability] ?? null;
+        if ($parentKey !== null) {
+            // Parent capability must be enabled
+            if (empty($capabilities[$parentKey])) {
+                throw new ApiException('This feature is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                    'capability' => $parentKey,
+                ]);
+            }
+            // Check sub-capability override (stored in capabilities.subCapabilities)
+            $subCapabilities = $capabilities['subCapabilities'] ?? [];
+            if (is_array($subCapabilities) && array_key_exists($capability, $subCapabilities) && $subCapabilities[$capability] === false) {
+                throw new ApiException('This feature is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                    'capability' => $capability,
+                ]);
+            }
+            return;
+        }
+
+        // Regular capability check
         if (!empty($capabilities[$capability])) {
             return;
         }
@@ -190,12 +225,33 @@ final class FeatureAccess
         }
 
         $capabilities = $this->fetchCapabilities();
+        $subCapabilities = $capabilities['subCapabilities'] ?? [];
+        if (!is_array($subCapabilities)) {
+            $subCapabilities = [];
+        }
         $hasCourierPayload = isset($payload['steadfast']) || isset($payload['carryBee']) || isset($payload['paperfly']);
         $hasFraudPayload = isset($payload['fraudChecker']);
 
         if ($hasCourierPayload && empty($capabilities['courier_automation'])) {
             throw new ApiException('Courier automation is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
                 'capability' => 'courier_automation',
+            ]);
+        }
+
+        // Check individual courier sub-capabilities for settings
+        if (isset($payload['steadfast']) && !empty($capabilities['courier_automation']) && ($subCapabilities['steadfast_courier'] ?? true) === false) {
+            throw new ApiException('Steadfast courier is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                'capability' => 'steadfast_courier',
+            ]);
+        }
+        if (isset($payload['carryBee']) && !empty($capabilities['courier_automation']) && ($subCapabilities['carrybee_courier'] ?? true) === false) {
+            throw new ApiException('CarryBee courier is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                'capability' => 'carrybee_courier',
+            ]);
+        }
+        if (isset($payload['paperfly']) && !empty($capabilities['courier_automation']) && ($subCapabilities['paperfly_courier'] ?? true) === false) {
+            throw new ApiException('Paperfly courier is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+                'capability' => 'paperfly_courier',
             ]);
         }
 

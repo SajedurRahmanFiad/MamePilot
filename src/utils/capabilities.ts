@@ -1,4 +1,4 @@
-import type { AppCapabilityKey, AppCapabilityMap } from '../../types';
+import type { AppCapabilityKey, AppCapabilityMap, SubCapabilityKey, SubCapabilityMap } from '../../types';
 
 export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   dashboard: 'Dashboard',
@@ -41,6 +41,82 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];
+
+// ===== Sub-capability definitions =====
+
+export interface SubCapabilityDefinition {
+  key: SubCapabilityKey;
+  label: string;
+  parentKey: AppCapabilityKey;
+}
+
+export const SUB_CAPABILITY_LABELS: Record<SubCapabilityKey, string> = {
+  hr_management: 'Human Resource',
+  payroll: 'Payroll',
+  accounts: 'Accounts',
+  transactions: 'Transactions',
+  transfer: 'Transfer',
+  steadfast_courier: 'Steadfast',
+  carrybee_courier: 'CarryBee',
+  paperfly_courier: 'Paperfly',
+  recycle_bin: 'Recycle Bin',
+  undoer: 'Undoer',
+};
+
+export const SUB_CAPABILITY_PARENT_MAP: Record<SubCapabilityKey, AppCapabilityKey> = {
+  hr_management: 'human_resources',
+  payroll: 'human_resources',
+  accounts: 'banking',
+  transactions: 'banking',
+  transfer: 'banking',
+  steadfast_courier: 'courier_automation',
+  carrybee_courier: 'courier_automation',
+  paperfly_courier: 'courier_automation',
+  recycle_bin: 'recycle_bin_undoer',
+  undoer: 'recycle_bin_undoer',
+};
+
+export const PARENT_SUB_CAPABILITIES: Partial<Record<AppCapabilityKey, SubCapabilityKey[]>> = {
+  human_resources: ['hr_management', 'payroll'],
+  banking: ['accounts', 'transactions', 'transfer'],
+  courier_automation: ['steadfast_courier', 'carrybee_courier', 'paperfly_courier'],
+  recycle_bin_undoer: ['recycle_bin', 'undoer'],
+};
+
+export const SUB_CAPABILITY_KEYS = Object.keys(SUB_CAPABILITY_LABELS) as SubCapabilityKey[];
+
+export function getSubCapabilities(parentKey: AppCapabilityKey): SubCapabilityKey[] {
+  return PARENT_SUB_CAPABILITIES[parentKey] || [];
+}
+
+export function normalizeSubCapabilities(
+  value: SubCapabilityMap | undefined | null,
+  parentCapabilities: AppCapabilityMap,
+): SubCapabilityMap {
+  const result: SubCapabilityMap = {};
+  for (const subKey of SUB_CAPABILITY_KEYS) {
+    const parentKey = SUB_CAPABILITY_PARENT_MAP[subKey];
+    const parentEnabled = Boolean(parentCapabilities[parentKey]);
+    // If parent is off, sub is always off. If parent is on, default sub to on unless explicitly set to false.
+    if (!parentEnabled) {
+      result[subKey] = false;
+    } else {
+      result[subKey] = typeof value?.[subKey] === 'boolean' ? Boolean(value[subKey]) : true;
+    }
+  }
+  return result;
+}
+
+export function resolveSubCapability(
+  subKey: SubCapabilityKey,
+  capabilities: AppCapabilityMap,
+  subCapabilities?: SubCapabilityMap,
+): boolean {
+  const parentKey = SUB_CAPABILITY_PARENT_MAP[subKey];
+  if (!Boolean(capabilities[parentKey])) return false;
+  if (!subCapabilities || typeof subCapabilities[subKey] !== 'boolean') return true;
+  return Boolean(subCapabilities[subKey]);
+}
 
 export function normalizeCapabilities(value: Partial<AppCapabilityMap> | undefined | null): AppCapabilityMap {
   return CAPABILITY_KEYS.reduce((accumulator, key) => {

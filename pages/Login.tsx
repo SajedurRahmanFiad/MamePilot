@@ -142,7 +142,7 @@ const Login: React.FC = () => {
             </div>
           ) : (
             companySettings.logo && (
-              <img src={companySettings.logo} alt="Logo" className="w-12 h-12 rounded-md object-cover" />
+              <img src={companySettings.logo} alt="Logo" className="w-12 h-12 rounded-md object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }} />
             )
           )}
           <div>

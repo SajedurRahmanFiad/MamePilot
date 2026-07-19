@@ -905,7 +905,7 @@ const SettingsPage: React.FC = () => {
                             <div className="md:col-span-2 flex items-center gap-6 rounded-2xl border border-gray-100 bg-gray-50 p-6">
                               <div className="h-20 w-20 overflow-hidden rounded-xl border bg-gray-50">
                                 {page.logo ? (
-                                  <img src={page.logo} className="h-full w-full object-cover" />
+                                  <img src={page.logo} className="h-full w-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }} />
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center text-[10px] font-black uppercase tracking-widest text-gray-300">
                                     No Logo

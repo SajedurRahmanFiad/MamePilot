@@ -125,7 +125,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { data: fetchedCompanySettings, isLoading: isCompanySettingsLoading } = useCompanySettings();
   const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
-  const { hasCapability } = useCapabilities(Boolean(profile));
+  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(profile));
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
@@ -169,7 +169,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     return {
       name: globalPage?.name || db.settings.company.name,
-      logo: globalPage?.logo || db.settings.company.logo,
+      logo: globalPage?.logo || db.settings.company.logo || '/uploads/Avatar.png',
     };
   }, [fetchedCompanySettings, whiteLabelEnabled, isCompanySettingsLoading, isSystemDefaultsLoading]);
   
@@ -195,8 +195,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Update favicon links when company logo becomes available
   useEffect(() => {
-    const faviconUrl = whiteLabelEnabled ? companySettings.logo : '/uploads/Avatar.png';
-    if (!faviconUrl) return;
+    const faviconUrl = (whiteLabelEnabled ? companySettings.logo : '') || '/uploads/Avatar.png';
     try {
       const setLink = (rel: string) => {
         let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
@@ -395,11 +394,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     () => ({
       can,
       hasCapability,
+      hasSubCapability,
       canViewDashboard,
       isAdminAccessUser,
       isDeveloper,
     }),
-    [can, hasCapability, canViewDashboard, isAdminAccessUser, isDeveloper]
+    [can, hasCapability, hasSubCapability, canViewDashboard, isAdminAccessUser, isDeveloper]
   );
 
   const sidebarItems = useMemo(() => {
@@ -451,6 +451,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                       src={companySettings.logo}
                       alt={companySettings.name || 'Mame Pilot'}
                       className="w-10 h-10 rounded-full object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-200" />
@@ -472,6 +473,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   src={isSidebarExpanded ? '/uploads/Full Branding.png' : '/uploads/Avatar.png'}
                   alt="Mame Pilot"
                   className={`object-contain ${isSidebarExpanded ? 'h-14 w-auto' : 'h-10 w-10 rounded-full'}`}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
                 />
               </div>
             )}

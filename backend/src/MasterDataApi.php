@@ -1276,6 +1276,11 @@ final class MasterDataApi extends BaseService
             }
         }
 
+        // Preserve sub-capabilities if present
+        if (isset($raw['subCapabilities']) && is_array($raw['subCapabilities'])) {
+            $defaults['subCapabilities'] = $raw['subCapabilities'];
+        }
+
         return $defaults;
     }
 

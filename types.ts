@@ -884,6 +884,20 @@ export type AppCapabilityKey =
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
+export type SubCapabilityKey =
+  | 'hr_management'
+  | 'payroll'
+  | 'accounts'
+  | 'transactions'
+  | 'transfer'
+  | 'steadfast_courier'
+  | 'carrybee_courier'
+  | 'paperfly_courier'
+  | 'recycle_bin'
+  | 'undoer';
+
+export type SubCapabilityMap = Partial<Record<SubCapabilityKey, boolean>>;
+
 export interface LicenseTier {
   tierKey: string;
   tierName: string;

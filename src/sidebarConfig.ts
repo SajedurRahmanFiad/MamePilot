@@ -1,10 +1,11 @@
 import React from 'react';
 import { ICONS } from '../constants';
-import type { PermissionKey, AppCapabilityKey } from '../types';
+import type { PermissionKey, AppCapabilityKey, SubCapabilityKey } from '../types';
 
 export type SidebarPermissionContext = {
   can: (permission: PermissionKey) => boolean;
   hasCapability: (capability: AppCapabilityKey) => boolean;
+  hasSubCapability: (capability: SubCapabilityKey) => boolean;
   canViewDashboard: boolean;
   isAdminAccessUser: boolean;
   isDeveloper: boolean;
@@ -74,7 +75,7 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     label: 'Wallet',
     to: '/wallet',
     icon: ICONS.Payroll,
-    visible: ({ can, hasCapability, isAdminAccessUser }) => !isAdminAccessUser && can('wallet.view') && hasCapability('human_resources'),
+    visible: ({ can, hasSubCapability, isAdminAccessUser }) => !isAdminAccessUser && can('wallet.view') && hasSubCapability('payroll'),
   },
   {
     key: 'purchases',
@@ -107,21 +108,21 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         label: 'Dashboard',
         to: '/human-resource-dashboard',
         icon: ICONS.Dashboard,
-        visible: ({ can, hasCapability }) => can('users.view') && hasCapability('human_resources'),
+        visible: ({ can, hasSubCapability }) => can('users.view') && hasSubCapability('hr_management'),
       },
       {
         key: 'users',
         label: 'Users',
         to: '/users',
         icon: ICONS.Users,
-        visible: ({ can, hasCapability }) => can('users.view') && hasCapability('human_resources'),
+        visible: ({ can, hasSubCapability }) => can('users.view') && hasSubCapability('hr_management'),
       },
       {
         key: 'payroll',
         label: 'Payroll',
         to: '/payroll',
         icon: ICONS.Payroll,
-        visible: ({ can, hasCapability }) => can('payroll.view') && hasCapability('human_resources'),
+        visible: ({ can, hasSubCapability }) => can('payroll.view') && hasSubCapability('payroll'),
       },
     ],
   },
@@ -163,21 +164,21 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         label: 'Accounts',
         to: '/banking/accounts',
         icon: ICONS.Banking,
-        visible: ({ can, hasCapability }) => can('accounts.view') && hasCapability('banking'),
+        visible: ({ can, hasSubCapability }) => can('accounts.view') && hasSubCapability('accounts'),
       },
       {
         key: 'transactions',
         label: 'Transactions',
         to: '/banking/transactions',
         icon: ICONS.Banking,
-        visible: ({ can, hasCapability }) => can('transactions.view') && hasCapability('banking'),
+        visible: ({ can, hasSubCapability }) => can('transactions.view') && hasSubCapability('transactions'),
       },
       {
         key: 'transfer',
         label: 'Transfer',
         to: '/banking/transfer',
         icon: ICONS.PlusCircle,
-        visible: ({ can, hasCapability }) => can('transfers.create') && hasCapability('banking'),
+        visible: ({ can, hasSubCapability }) => can('transfers.create') && hasSubCapability('transfer'),
       },
     ],
   },
@@ -193,14 +194,14 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     label: 'Recycle Bin',
     to: '/recycle-bin',
     icon: ICONS.RecycleBin,
-    visible: ({ can, hasCapability }) => can('recycleBin.view') && hasCapability('recycle_bin_undoer'),
+    visible: ({ can, hasSubCapability }) => can('recycleBin.view') && hasSubCapability('recycle_bin'),
   },
   {
     key: 'undoer',
     label: 'Undoer',
     to: '/undoer',
     icon: ICONS.Undoer,
-    visible: ({ can, hasCapability }) => can('undoer.view') && hasCapability('recycle_bin_undoer'),
+    visible: ({ can, hasSubCapability }) => can('undoer.view') && hasSubCapability('undoer'),
   },
   {
     key: 'subscriptions',
