@@ -6,6 +6,7 @@ import { formatCurrency, getStatusColor, ICONS } from '../../constants';
 import { theme } from '../../theme';
 import { useAuth } from '../../src/contexts/AuthProvider';
 import { useToastNotifications } from '../../src/contexts/ToastContext';
+import { useCapabilities } from '../../src/hooks/useCapabilities';
 import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage } from '../../src/hooks/useQueries';
 import { UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
 import { FilterRange, formatDate } from '../../utils';
@@ -842,7 +843,11 @@ const UserActivityPerformanceReport: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToastNotifications();
+  const { hasCapability } = useCapabilities();
   const { data: companySettings } = useCompanySettings();
+  const hasSales = hasCapability('sales');
+  const hasPurchases = hasCapability('purchases');
+  const hasBanking = hasCapability('banking');
 
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
@@ -1007,12 +1012,12 @@ const UserActivityPerformanceReport: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 px-6 py-6 md:grid-cols-2 xl:grid-cols-5">
+        <div className={`grid grid-cols-1 gap-4 px-6 py-6 md:grid-cols-2 ${hasSales && hasBanking ? 'xl:grid-cols-5' : hasSales || hasBanking ? 'xl:grid-cols-4' : 'xl:grid-cols-2'}`}>
           <MetricCard label="Users Included" value={formatCount(totals.users)} hint={`${formatCount(totals.activeUsers)} active users`} tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />
-          <MetricCard label="Orders Captured" value={formatCount(totals.orders)} hint="User-created orders in this view" tone="bg-emerald-50 border-emerald-100 text-emerald-700" />
-          <MetricCard label="Bills Captured" value={formatCount(totals.bills)} hint="User-created bills in this view" tone="bg-amber-50 border-amber-100 text-amber-700" />
-          <MetricCard label="Finance Entries" value={formatCount(totals.transactions)} hint="Transactions posted by users" tone="bg-rose-50 border-rose-100 text-rose-700" />
-          <MetricCard label="Gross Order Value" value={formatCurrency(totals.orderValue)} hint="All tracked order totals" tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />
+          {hasSales && <MetricCard label="Orders Captured" value={formatCount(totals.orders)} hint="User-created orders in this view" tone="bg-emerald-50 border-emerald-100 text-emerald-700" />}
+          {hasPurchases && <MetricCard label="Bills Captured" value={formatCount(totals.bills)} hint="User-created bills in this view" tone="bg-amber-50 border-amber-100 text-amber-700" />}
+          {hasBanking && <MetricCard label="Finance Entries" value={formatCount(totals.transactions)} hint="Transactions posted by users" tone="bg-rose-50 border-rose-100 text-rose-700" />}
+          {hasSales && <MetricCard label="Gross Order Value" value={formatCurrency(totals.orderValue)} hint="All tracked order totals" tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />}
         </div>
       </div>
 
@@ -1067,37 +1072,38 @@ const UserActivityPerformanceReport: React.FC = () => {
                   </div>
 
                   <div className="space-y-8 px-6 py-6">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <MetricCard label="Orders Created" value={formatCount(report.metrics.ordersCreated)} hint={`${formatCount(report.metrics.completedOrders)} completed | ${formatCount(report.metrics.cancelledOrders)} cancelled`} tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />
-                      <MetricCard label="Order Value" value={formatCurrency(report.metrics.orderValue)} hint={`${formatCurrency(report.metrics.orderPaidAmount)} collected`} tone="bg-emerald-50 border-emerald-100 text-emerald-700" />
-                      <MetricCard label="Bills Created" value={formatCount(report.metrics.billsCreated)} hint={`${formatCurrency(report.metrics.billValue)} purchase value`} tone="bg-amber-50 border-amber-100 text-amber-700" />
-                      <MetricCard label="Transactions Posted" value={formatCount(report.metrics.transactionsCreated)} hint={`${formatCount(report.metrics.activeDays)} active days`} tone="bg-rose-50 border-rose-100 text-rose-700" />
+                    <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${hasSales && hasPurchases && hasBanking ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+                      {hasSales && <MetricCard label="Orders Created" value={formatCount(report.metrics.ordersCreated)} hint={`${formatCount(report.metrics.completedOrders)} completed | ${formatCount(report.metrics.cancelledOrders)} cancelled`} tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />}
+                      {hasSales && <MetricCard label="Order Value" value={formatCurrency(report.metrics.orderValue)} hint={`${formatCurrency(report.metrics.orderPaidAmount)} collected`} tone="bg-emerald-50 border-emerald-100 text-emerald-700" />}
+                      {hasPurchases && <MetricCard label="Bills Created" value={formatCount(report.metrics.billsCreated)} hint={`${formatCurrency(report.metrics.billValue)} purchase value`} tone="bg-amber-50 border-amber-100 text-amber-700" />}
+                      {hasBanking && <MetricCard label="Transactions Posted" value={formatCount(report.metrics.transactionsCreated)} hint={`${formatCount(report.metrics.activeDays)} active days`} tone="bg-rose-50 border-rose-100 text-rose-700" />}
                     </div>
 
-                    <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                    <div className={`grid gap-6 ${hasSales ? 'xl:grid-cols-[1.15fr_0.85fr]' : ''}`}>
                       <div className="rounded-3xl border border-gray-100 bg-white p-6">
                         <h4 className="text-lg font-black text-gray-900">Salary Analysis Inputs</h4>
                         <p className="text-sm text-gray-500">Tracked inputs admins can use for salary and incentive decisions.</p>
                         <div className="mt-4 grid gap-1 md:grid-cols-2 md:gap-x-8">
                           <div>
                             <StatRow label="Active days" value={formatCount(report.metrics.activeDays)} accent />
-                            <StatRow label="Unique customers served" value={formatCount(report.metrics.uniqueCustomers)} />
-                            <StatRow label="Items handled in orders" value={formatCount(report.metrics.orderQuantity)} />
-                            <StatRow label="Average order value" value={formatCurrency(report.metrics.averageOrderValue)} />
-                            <StatRow label="Completion rate" value={`${Math.round(report.metrics.completionRate)}%`} />
-                            <StatRow label="Collection rate" value={`${Math.round(report.metrics.collectionRate)}%`} />
+                            {hasSales && <StatRow label="Unique customers served" value={formatCount(report.metrics.uniqueCustomers)} />}
+                            {hasSales && <StatRow label="Items handled in orders" value={formatCount(report.metrics.orderQuantity)} />}
+                            {hasSales && <StatRow label="Average order value" value={formatCurrency(report.metrics.averageOrderValue)} />}
+                            {hasSales && <StatRow label="Completion rate" value={`${Math.round(report.metrics.completionRate)}%`} />}
+                            {hasSales && <StatRow label="Collection rate" value={`${Math.round(report.metrics.collectionRate)}%`} />}
                           </div>
                           <div>
-                            <StatRow label="Completed order value" value={formatCurrency(report.metrics.completedOrderValue)} accent />
-                            <StatRow label="Purchase settlement rate" value={`${Math.round(report.metrics.billSettlementRate)}%`} />
-                            <StatRow label="Income entries" value={`${formatCount(report.metrics.incomeTransactions)} | ${formatCurrency(report.metrics.incomeAmount)}`} />
-                            <StatRow label="Expense entries" value={`${formatCount(report.metrics.expenseTransactions)} | ${formatCurrency(report.metrics.expenseAmount)}`} />
-                            <StatRow label="Transfer entries" value={`${formatCount(report.metrics.transferTransactions)} | ${formatCurrency(report.metrics.transferAmount)}`} />
+                            {hasSales && <StatRow label="Completed order value" value={formatCurrency(report.metrics.completedOrderValue)} accent />}
+                            {hasPurchases && <StatRow label="Purchase settlement rate" value={`${Math.round(report.metrics.billSettlementRate)}%`} />}
+                            {hasBanking && <StatRow label="Income entries" value={`${formatCount(report.metrics.incomeTransactions)} | ${formatCurrency(report.metrics.incomeAmount)}`} />}
+                            {hasBanking && <StatRow label="Expense entries" value={`${formatCount(report.metrics.expenseTransactions)} | ${formatCurrency(report.metrics.expenseAmount)}`} />}
+                            {hasBanking && <StatRow label="Transfer entries" value={`${formatCount(report.metrics.transferTransactions)} | ${formatCurrency(report.metrics.transferAmount)}`} />}
                             <StatRow label="Last activity" value={report.metrics.lastActivity ? formatDateTime(report.metrics.lastActivity) : 'No activity'} />
                           </div>
                         </div>
                       </div>
 
+                      {hasSales && (
                       <div className="rounded-3xl border border-gray-100 bg-white p-6">
                         <h4 className="text-lg font-black text-gray-900">Order Status Breakdown</h4>
                         <p className="mt-1 text-sm text-gray-500">Snapshot of all orders created by this user.</p>
@@ -1114,12 +1120,15 @@ const UserActivityPerformanceReport: React.FC = () => {
                             </div>
                           ))}
                         </div>
+                        {hasPurchases && (
                         <div className="mt-6 border-t border-gray-100 pt-5">
                           <StatRow label="Unique vendors handled" value={formatCount(report.metrics.uniqueVendors)} />
                           <StatRow label="Bills paid amount" value={formatCurrency(report.metrics.billPaidAmount)} />
                           <StatRow label="First tracked activity" value={report.metrics.firstActivity ? formatDateTime(report.metrics.firstActivity) : 'No activity'} />
                         </div>
+                        )}
                       </div>
+                      )}
                     </div>
 
                     <div className="exclude-from-user-pdf overflow-hidden rounded-3xl border border-gray-100 bg-white">

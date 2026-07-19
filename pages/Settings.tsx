@@ -496,21 +496,25 @@ const SettingsPage: React.FC = () => {
         updates.permissions = permissionsSettings;
       }
       
-      // Save all settings in background without waiting
-      batchUpdateMutation.mutateAsync(updates).then(() => {
-        // Update mock db for backward compatibility
-        db.settings.company = normalizedCompany;
-        db.settings.order = orderSettings;
-        db.settings.invoice = invoiceSettings;
-        db.settings.defaults = systemDefaults;
-        db.settings.courier = courierSettings;
-        db.settings.permissions = permissionsSettings as any;
+      // Save all settings and use server response to update local state
+      batchUpdateMutation.mutateAsync(updates).then((response) => {
+        // Update mock db with server response (contains processed file paths, not base64)
+        if (response?.company) {
+          db.settings.company = response.company;
+        } else {
+          db.settings.company = normalizedCompany;
+        }
+        db.settings.order = response?.order || orderSettings;
+        db.settings.invoice = response?.invoice || invoiceSettings;
+        db.settings.defaults = response?.defaults || systemDefaults;
+        db.settings.courier = response?.courier || courierSettings;
+        db.settings.permissions = (response?.permissions || permissionsSettings) as any;
         db.settings.payroll = {
           ...db.settings.payroll,
           unitAmount: walletSettings.unitAmount,
           countedStatuses: walletSettings.countedStatuses,
         };
-        
+
         // Update toast to success
         toast.update(toastId, 'Settings saved successfully!', 'success');
       }).catch((err) => {

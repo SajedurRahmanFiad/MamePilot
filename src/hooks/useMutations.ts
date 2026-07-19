@@ -2880,8 +2880,16 @@ export function useBatchUpdateSettings(): UseMutationResult<any, Error, any, unk
         queryClient.setQueryData(['settings', 'wallet'], context.previousWallet);
       }
     },
-    onSuccess: () => {
-      // Refetch all settings in background to validate
+    onSuccess: (data) => {
+      // Directly update caches with server response to avoid stale optimistic data
+      if (data?.company) queryClient.setQueryData(['settings', 'company'], data.company);
+      if (data?.order) queryClient.setQueryData(['settings', 'order'], data.order);
+      if (data?.invoice) queryClient.setQueryData(['settings', 'invoice'], data.invoice);
+      if (data?.defaults) queryClient.setQueryData(['settings', 'defaults'], data.defaults);
+      if (data?.courier) queryClient.setQueryData(['settings', 'courier'], data.courier);
+      if (data?.permissions) queryClient.setQueryData(['settings', 'permissions'], data.permissions);
+      if (data?.wallet) queryClient.setQueryData(['settings', 'wallet'], data.wallet);
+      // Also invalidate to ensure consistency
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
     },

@@ -1156,15 +1156,3 @@ ON DUPLICATE KEY UPDATE
   password_hash = VALUES(password_hash),
   updated_at = VALUES(updated_at);
 
--- Update: Add sub-capabilities support (2026-07-19)
--- Sub-capabilities are stored within the existing capabilities JSON column
--- of app_capability_settings as a nested "subCapabilities" object.
--- Format: {"dashboard":true, ..., "subCapabilities": {"hr_management":true, "payroll":true, ...}}
--- Sub-capability keys: hr_management, payroll, accounts, transactions, transfer,
---   steadfast_courier, carrybee_courier, paperfly_courier, recycle_bin, undoer
--- Parent capabilities: human_resources (hr_management, payroll),
---   banking (accounts, transactions, transfer),
---   courier_automation (steadfast_courier, carrybee_courier, paperfly_courier),
---   recycle_bin_undoer (recycle_bin, undoer)
--- No schema change required - uses existing JSON column.
-

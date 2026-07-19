@@ -140,7 +140,7 @@ const Reports: React.FC = () => {
         icon: ICONS.Users,
         color: 'bg-amber-50 text-amber-600',
         to: '/reports/user-activity-performance',
-        requiredCapabilities: ['sales', 'purchases', 'banking', 'human_resources'] as AppCapabilityKey[],
+        requiredCapabilities: ['human_resources'] as AppCapabilityKey[],
       }
     ];
 

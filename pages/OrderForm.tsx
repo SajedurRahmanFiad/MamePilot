@@ -5,6 +5,7 @@ import { Customer, Order, OrderStatus, OrderItem } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
@@ -24,6 +25,8 @@ const OrderForm: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
   const { can, canAccessRecord, isAdminAccessUser } = useRolePermissions();
+  const { hasCapability } = useCapabilities();
+  const hasMarketing = hasCapability('marketing');
   const isEdit = Boolean(id);
 
   // Wait for auth to load before rendering form
@@ -727,7 +730,8 @@ const OrderForm: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className={`grid grid-cols-1 gap-6 ${availablePages.length > 1 && hasMarketing ? 'md:grid-cols-2' : ''}`}>
+          {availablePages.length > 1 && (
           <div className="space-y-1">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Page</label>
             <select
@@ -749,7 +753,9 @@ const OrderForm: React.FC = () => {
               </p>
             )}
           </div>
+          )}
 
+          {hasMarketing && (
           <div className="space-y-1 relative">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Source Ad</label>
             <div className="relative">
@@ -808,6 +814,7 @@ const OrderForm: React.FC = () => {
               )}
             </div>
           </div>
+          )}
         </div>
 
         <div className="border border-gray-100 rounded-lg overflow-x-auto bg-white">
