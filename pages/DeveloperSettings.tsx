@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings } from '../src/hooks/useMutations';
+import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings } from '../src/hooks/useMutations';
 import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings } from '../types';
 import { theme } from '../theme';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth' | 'email';
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
@@ -55,12 +55,14 @@ const DeveloperSettings: React.FC = () => {
   const { data: maintenanceStatus, isPending: loadingMaintenance } = useMaintenanceStatus(Boolean(user));
   const { data: agentSettings, isPending: loadingAgent } = useAgentSettings(user?.role === 'Developer');
   const { data: businessGrowthSettings, isPending: loadingBusinessGrowth } = useBusinessGrowthSettings(user?.role === 'Developer');
+  const { data: emailSettingsData, isPending: loadingEmailSettings } = useEmailSettings(user?.role === 'Developer');
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
   const setMaintenanceStatus = useSetMaintenanceStatus();
   const updateAgent = useUpdateAgentSettings();
   const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
+  const updateEmail = useUpdateEmailSettings();
 
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
@@ -72,6 +74,16 @@ const DeveloperSettings: React.FC = () => {
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
   const [fraudSettings, setFraudSettings] = useState({ apiKey: '' });
+  const [emailForm, setEmailForm] = useState({
+    recipientEmail: '',
+    smtpHost: '',
+    smtpPort: 587,
+    smtpUsername: '',
+    smtpPassword: '',
+    smtpEncryption: 'tls' as 'tls' | 'ssl' | 'none',
+    senderEmail: '',
+    senderName: '',
+  });
 
   useEffect(() => {
     if (!capabilitySettings) return;
@@ -111,6 +123,12 @@ const DeveloperSettings: React.FC = () => {
       setBusinessGrowthForm(businessGrowthSettings);
     }
   }, [businessGrowthSettings]);
+
+  useEffect(() => {
+    if (emailSettingsData) {
+      setEmailForm(emailSettingsData);
+    }
+  }, [emailSettingsData]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -205,6 +223,16 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveEmailSettings = async () => {
+    const toastId = toast.loading('Saving email settings...');
+    try {
+      await updateEmail.mutateAsync(emailForm);
+      toast.update(toastId, 'Email settings saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save email settings.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
     { id: 'maintenance', label: 'Maintenance Mode' },
@@ -212,6 +240,7 @@ const DeveloperSettings: React.FC = () => {
     { id: 'fraud-checker', label: 'Fraud Checker' },
     { id: 'agent', label: 'AI Agent' },
     { id: 'business_growth', label: 'Business Growth' },
+    { id: 'email', label: 'Email Config' },
   ];
 
   return (
@@ -228,6 +257,7 @@ const DeveloperSettings: React.FC = () => {
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
         {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save AI Agent Settings</Button>}
         {activeTab === 'business_growth' && <Button onClick={saveBusinessGrowthSettings} variant="primary">Save Business Growth Settings</Button>}
+        {activeTab === 'email' && <Button onClick={saveEmailSettings} variant="primary">Save Email Settings</Button>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
@@ -646,6 +676,114 @@ const DeveloperSettings: React.FC = () => {
                 </label>
               </div>
             </section>
+          )}
+
+          {activeTab === 'email' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              {/* Recipient */}
+              <section className="space-y-4">
+                <h3 className="text-xl font-black text-gray-900">Recipient</h3>
+                <p className="text-sm text-gray-500">Email address that will receive notification emails (subscription renewals, recharge confirmations, etc.).</p>
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-gray-700">Recipient Email</span>
+                  <input
+                    type="email"
+                    value={emailForm.recipientEmail}
+                    onChange={(e) => setEmailForm({ ...emailForm, recipientEmail: e.target.value })}
+                    placeholder="admin@example.com"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                  />
+                </label>
+              </section>
+
+              {/* SMTP Settings */}
+              <section className="space-y-4">
+                <h3 className="text-xl font-black text-gray-900">SMTP / Sender Settings</h3>
+                <p className="text-sm text-gray-500">Configure the authenticated SMTP server used to send payment confirmation emails.</p>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">SMTP Host</span>
+                    <input
+                      type="text"
+                      value={emailForm.smtpHost}
+                      onChange={(e) => setEmailForm({ ...emailForm, smtpHost: e.target.value })}
+                      placeholder="smtp.gmail.com"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">SMTP Port</span>
+                    <input
+                      type="number"
+                      value={emailForm.smtpPort}
+                      onChange={(e) => setEmailForm({ ...emailForm, smtpPort: Number(e.target.value) })}
+                      placeholder="587"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">SMTP Username</span>
+                    <input
+                      type="text"
+                      value={emailForm.smtpUsername}
+                      onChange={(e) => setEmailForm({ ...emailForm, smtpUsername: e.target.value })}
+                      placeholder="your-email@gmail.com"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">SMTP Password / App Password</span>
+                    <input
+                      type="password"
+                      value={emailForm.smtpPassword}
+                      onChange={(e) => setEmailForm({ ...emailForm, smtpPassword: e.target.value })}
+                      placeholder="16-character app password"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">Encryption</span>
+                    <select
+                      value={emailForm.smtpEncryption}
+                      onChange={(e) => setEmailForm({ ...emailForm, smtpEncryption: e.target.value as 'tls' | 'ssl' | 'none' })}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    >
+                      <option value="tls">TLS (Port 587)</option>
+                      <option value="ssl">SSL (Port 465)</option>
+                      <option value="none">None</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              {/* Sender Info */}
+              <section className="space-y-4">
+                <h3 className="text-xl font-black text-gray-900">Sender Information</h3>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">Sender Email</span>
+                    <input
+                      type="email"
+                      value={emailForm.senderEmail}
+                      onChange={(e) => setEmailForm({ ...emailForm, senderEmail: e.target.value })}
+                      placeholder="noreply@yourdomain.com"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                    <span className="text-xs text-gray-400">Must match your authenticated SMTP email for Gmail.</span>
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-semibold text-gray-700">Sender Name</span>
+                    <input
+                      type="text"
+                      value={emailForm.senderName}
+                      onChange={(e) => setEmailForm({ ...emailForm, senderName: e.target.value })}
+                      placeholder="MamePilot"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                </div>
+              </section>
+            </div>
           )}
         </div>
       </div>

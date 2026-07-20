@@ -47,6 +47,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\.htaccess') -Destin
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\.htaccess') -Destination (Join-Path $publicRoot 'api\.htaccess') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -Destination (Join-Path $publicRoot 'api\index.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\update.php') -Destination (Join-Path $publicRoot 'api\update.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\webhook-survey.php') -Destination (Join-Path $publicRoot 'api\webhook-survey.php') -Force
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force

@@ -71,6 +71,16 @@ finally {
   Pop-Location
 }
 
+Write-Host 'Synchronizing production-safe schema-only artifact...'
+Push-Location $repoRoot
+try {
+  & powershell.exe -ExecutionPolicy Bypass -File '.\scripts\sync-schema-only.ps1'
+  if ($LASTEXITCODE -ne 0) { throw "sync-schema-only.ps1 failed with exit code $LASTEXITCODE" }
+}
+finally {
+  Pop-Location
+}
+
 Write-Host 'Preparing cPanel auto-update release package...'
 Push-Location $repoRoot
 try {
@@ -83,9 +93,6 @@ finally {
 
 Push-Location $repoRoot
 try {
-  & powershell.exe -ExecutionPolicy Bypass -File '.\scripts\sync-schema-only.ps1'
-  if ($LASTEXITCODE -ne 0) { throw "sync-schema-only.ps1 failed with exit code $LASTEXITCODE" }
-
   git add .
 
   $commitMessage = if ($Message.Trim() -ne '') { $Message.Trim() } else { "Release v$newVersion" }

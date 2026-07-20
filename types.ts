@@ -156,6 +156,9 @@ export enum OrderStatus {
   CANCELLED = 'Cancelled'
 }
 
+export type ConfirmationStatus = 'confirmed' | 'cancelled' | 'on_hold' | 'waiting';
+export type SurveyStatus = 'pending' | 'triggered' | 'initiated' | 'completed' | 'failed' | 'skipped';
+
 export type OrderCompletionOutcome = 'Delivered' | 'Returned';
 
 export enum BillStatus {
@@ -332,6 +335,21 @@ export interface FraudCheckerSettings {
   apiKey: string;
 }
 
+export interface VoiceSurveySettings {
+  enabled: boolean;
+  delayMinutes: number;
+  apiToken: string;
+  sender: string;
+  templateName: string;
+  webhookSecret: string;
+  maxSurveyTimeSeconds: number;
+  missedCallRetryMinutes: number;
+  missedCallRetryCount: number;
+  noKeyRetryMinutes: number;
+  noKeyRetryCount: number;
+  triggerStatuses: string[];
+}
+
 export interface CourierSettings {
   steadfast: { baseUrl: string; apiKey: string; secretKey: string };
   carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string };
@@ -506,6 +524,15 @@ export interface Order {
   exchangePaperflyTrackingNumber?: string;
   exchangePathaoConsignmentId?: string;
   exchangeCourierHistory?: string; // manual courier note for exchange
+  // Voice survey (auto-calling) fields
+  surveyId?: string | null;
+  surveyStatus?: SurveyStatus | null;
+  surveyResponse?: string | null;
+  surveyCallStatus?: string | null;
+  confirmationStatus?: ConfirmationStatus | null;
+  surveyRetryCount?: number;
+  surveyNextRetryAt?: string | null;
+  surveyTriggeredAt?: string | null;
   history: {
     created: string;
     courier?: string;
@@ -921,7 +948,8 @@ export type AppCapabilityKey =
   | 'mamecx'
   | 'enterprise_ai_agent'
   | 'grow_your_business'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'auto_calling';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 

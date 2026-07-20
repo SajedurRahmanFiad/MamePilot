@@ -83,6 +83,13 @@ import {
   updateCourierSettings,
   checkFraudCourierHistory,
   updatePermissionsSettings,
+  updateVoiceSurveySettings,
+  triggerSurveyCall,
+  retrySurveyCall,
+  cancelSurveyCall,
+  updateDeveloperNotes,
+  initiateRechargeCheckout,
+  updateEmailSettings,
   updatePayrollSettings,
   markPayrollPaid,
   updateWalletSettings,
@@ -122,6 +129,7 @@ import type {
   MetaAdsSettings,
   ProcessOrderReturnExchangePayload,
   ProcessBillReturnPayload,
+  VoiceSurveySettings,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -2532,6 +2540,74 @@ export function useSyncMetaAds(): UseMutationResult<any, Error, void, unknown> {
     mutationFn: () => syncMetaAds(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    },
+  });
+}
+
+// ========== VOICE SURVEY ==========
+
+export function useUpdateVoiceSurveySettings(): UseMutationResult<VoiceSurveySettings, Error, Partial<VoiceSurveySettings>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateVoiceSurveySettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
+    },
+  });
+}
+
+export function useTriggerSurveyCall(): UseMutationResult<any, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => triggerSurveyCall(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+    },
+  });
+}
+
+export function useRetrySurveyCall(): UseMutationResult<any, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => retrySurveyCall(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+    },
+  });
+}
+
+export function useCancelSurveyCall(): UseMutationResult<any, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => cancelSurveyCall(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+    },
+  });
+}
+
+export function useUpdateDeveloperNotes(): UseMutationResult<any, Error, { content: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { content: string }) => updateDeveloperNotes(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['developer', 'notes'] });
+    },
+  });
+}
+
+export function useInitiateRechargeCheckout(): UseMutationResult<any, Error, { amount: number }, unknown> {
+  return useMutation({
+    mutationFn: (payload: { amount: number }) => initiateRechargeCheckout(payload),
+  });
+}
+
+export function useUpdateEmailSettings(): UseMutationResult<any, Error, { recipientEmail?: string; smtpHost?: string; smtpPort?: number; smtpUsername?: string; smtpPassword?: string; smtpEncryption?: 'tls' | 'ssl' | 'none'; senderEmail?: string; senderName?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => updateEmailSettings(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['developer', 'email-settings'] });
     },
   });
 }

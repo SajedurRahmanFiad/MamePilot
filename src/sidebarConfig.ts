@@ -75,6 +75,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.WhatsApp,
         visible: ({ hasCapability }) => hasCapability('whatsapp'),
       },
+      {
+        key: 'auto_calling',
+        label: 'Auto Calling',
+        to: '/auto-calling',
+        icon: ICONS.Bell,
+        visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('auto_calling'),
+      },
     ],
   },
   {
@@ -242,6 +249,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         label: 'Settings',
         to: '/developer/settings',
         icon: ICONS.Settings,
+        visible: () => true,
+      },
+      {
+        key: 'developer_notes',
+        label: 'Notes',
+        to: '/developer/notes',
+        icon: ICONS.Edit,
         visible: () => true,
       },
       {

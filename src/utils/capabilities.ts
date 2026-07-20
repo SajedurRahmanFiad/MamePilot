@@ -19,6 +19,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   enterprise_ai_agent: 'AI Assistant Mame',
   grow_your_business: 'Grow Your Business',
   whatsapp: 'WhatsApp',
+  auto_calling: 'Auto Calling (Voice Survey)',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -40,6 +41,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   enterprise_ai_agent: false,
   grow_your_business: false,
   whatsapp: false,
+  auto_calling: false,
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];
@@ -143,6 +145,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/fraud-checker(?:\/|$)/, capability: 'fraud_checker' },
   { pattern: /^\/grow-your-business(?:\/|$)/, capability: 'grow_your_business' },
   { pattern: /^\/whatsapp(?:\/|$)/, capability: 'whatsapp' },
+  { pattern: /^\/auto-calling(?:\/|$)/, capability: 'auto_calling' },
 ];
 
 export function capabilityForPath(pathname: string): AppCapabilityKey | null {

@@ -57,7 +57,7 @@ final class SchemaManager
             throw new RuntimeException("Failed to read SQL file: {$path}");
         }
 
-        $statements = preg_split('/;\s*(?:\r?\n|$)/', $sql) ?: [];
+        $statements = $this->splitSqlStatements($sql);
         $errors = [];
         foreach ($statements as $statement) {
             $trimmed = trim($statement);
@@ -74,7 +74,7 @@ final class SchemaManager
                 // 1050 = Table already exists, 1051 = Unknown table,
                 // 1062 = Duplicate entry, 1146 = Table/view not found (from DROP VIEW IF EXISTS on missing view)
                 // These are safe to ignore during idempotent schema re-runs.
-                $code = (int) $e->getCode();
+                $code = (int) ($e->errorInfo[1] ?? $e->getCode());
                 $safeCodes = [1050, 1051, 1060, 1061, 1062, 1146];
                 if (in_array($code, $safeCodes, true)) {
                     continue;
@@ -88,6 +88,43 @@ final class SchemaManager
                 throw $e;
             }
         }
+    }
+
+    /** @return array<int, string> */
+    private function splitSqlStatements(string $sql): array
+    {
+        $sql = preg_replace('/^\xEF\xBB\xBF/', '', $sql) ?? $sql;
+        $lines = preg_split('/\r?\n/', $sql) ?: [];
+        $delimiter = ';';
+        $buffer = '';
+        $statements = [];
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*DELIMITER\s+(\S+)\s*$/i', $line, $matches) === 1) {
+                $delimiter = $matches[1];
+                continue;
+            }
+
+            $buffer .= $line . "\n";
+            $trimmed = rtrim($line);
+            if ($delimiter === '' || !str_ends_with($trimmed, $delimiter)) {
+                continue;
+            }
+
+            $beforeCurrentLine = substr($buffer, 0, strlen($buffer) - strlen($line) - 1);
+            $currentLineWithoutDelimiter = substr($trimmed, 0, strlen($trimmed) - strlen($delimiter));
+            $statement = trim($beforeCurrentLine . $currentLineWithoutDelimiter);
+            if ($statement !== '') {
+                $statements[] = $statement;
+            }
+            $buffer = '';
+        }
+
+        $last = trim($buffer);
+        if ($last !== '') {
+            $statements[] = $last;
+        }
+        return $statements;
     }
 
     private function shouldSkipSeedStatement(string $statement): bool

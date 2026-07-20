@@ -72,6 +72,7 @@ const AdminSubscriptions: React.FC = () => {
 
       if (ppId || reference) {
         const verifyingMessage = 'Payment received by gateway. Verifying payment status...';
+        let verifyAttempts = 0;
         const verifyOnce = async () => {
           if (cancelled) {
             return;
@@ -82,6 +83,7 @@ const AdminSubscriptions: React.FC = () => {
           }
 
           try {
+            verifyAttempts += 1;
             const result = await verifyPipraPayPayment({ reference, ppId });
             queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
             const resultStatus = String(result?.status || '').toLowerCase();
@@ -95,8 +97,11 @@ const AdminSubscriptions: React.FC = () => {
               // eslint-disable-next-line no-console
               console.log('PipraPay status pending — will retry in 5s', { reference, ppId });
               await new Promise((resolve) => window.setTimeout(resolve, 5000));
-              if (!cancelled) {
+              if (!cancelled && verifyAttempts < 12) {
                 await verifyOnce();
+              } else if (!cancelled) {
+                toast.info('Payment is still processing. The gateway webhook will update the subscription automatically.');
+                setCheckoutMessage(null);
               }
               return;
             }

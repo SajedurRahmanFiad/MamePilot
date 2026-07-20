@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Auth;
 use App\ApiException;
+use App\AutoCallApi;
 use App\BusinessGrowthApi;
 use App\Config;
 use App\CourierApi;
@@ -48,6 +49,7 @@ try {
     $courier = new CourierApi($database, $auth, $config, $operations);
     $metaAds = new MetaAdsApi($database, $auth, $config);
     $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
+    $autoCall = new AutoCallApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok([
@@ -91,13 +93,22 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $metaAds, $businessGrowth];
+    $services = [$master, $operations, $courier, $metaAds, $businessGrowth, $autoCall];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
         }
 
         $result = $service->{$action}($payload);
+        if ($action === 'createOrder' && is_array($result)) {
+            $orderId = trim((string) ($result['id'] ?? ''));
+            $orderStatus = trim((string) ($result['status'] ?? ''));
+            if ($orderId !== '' && $autoCall->queueOrderIfEligible($orderId, $orderStatus)) {
+                register_shutdown_function(static function () use ($autoCall): void {
+                    $autoCall->triggerSurveyBackgroundProcess();
+                });
+            }
+        }
         Http::ok($result);
         exit;
     }

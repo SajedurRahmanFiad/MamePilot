@@ -2250,16 +2250,22 @@ final class MasterDataApi extends BaseService
 
         $settings = $this->tableExists('service_subscription_settings') ? $this->database->fetchOne('SELECT * FROM service_subscription_settings LIMIT 1') : null;
         $billingVersion = max(1, (int) ($settings['billing_version'] ?? 1));
+        $existingPayment = $this->database->fetchOne(
+            "SELECT status FROM service_subscription_payments WHERE billing_version = :billing_version AND status IN ('processing', 'approved') ORDER BY submitted_at DESC LIMIT 1",
+            [':billing_version' => $billingVersion]
+        );
+        if ($existingPayment !== null) {
+            $existingStatus = strtolower((string) ($existingPayment['status'] ?? 'processing'));
+            throw new RuntimeException($existingStatus === 'approved'
+                ? 'This subscription period has already been paid.'
+                : 'A subscription payment is already processing.');
+        }
         $reference = 'SUB-' . strtoupper(substr($this->uuid4(), 0, 12));
 
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
-        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
-        if ($origin !== '') {
-            $returnBase = $origin;
-        } else {
-            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $returnBase = $scheme . '://' . $host;
-        }
+        $forwardedProto = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0]));
+        $scheme = $forwardedProto === 'https' || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $returnBase = $scheme . '://' . $host;
         $metadataArray = [
             'local_reference' => $reference,
             'billing_interval' => $interval,
@@ -2358,18 +2364,16 @@ final class MasterDataApi extends BaseService
     {
         $reference = trim((string) ($params['reference'] ?? $params['transaction_ref'] ?? $params['transaction_reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
         $eventId = trim((string) ($params['pp_id'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
-        $status = strtolower(trim((string) ($params['status'] ?? $params['payment_status'] ?? $params['pp_status'] ?? '')));
-
         if ($eventId === '' && $reference !== '' && $this->tableExists('service_subscription_payments')) {
             $payment = $this->database->fetchOne(
-                'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                'SELECT gateway_payment_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
                 [
                     ':reference' => $reference,
                     ':transaction_reference' => $reference,
                     ':gateway_reference' => $reference,
                 ]
             );
-            $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
+            $eventId = trim((string) ($payment['gateway_payment_id'] ?? ''));
         }
 
         $paymentState = 'processing';
@@ -2384,41 +2388,12 @@ final class MasterDataApi extends BaseService
             } catch (\Throwable $exception) {
                 $paymentState = 'processing';
             }
-        } elseif ($reference !== '' && in_array($status, ['completed', 'complete', 'success', 'successful', 'paid', 'cancelled', 'canceled', 'failed', 'expired'], true)) {
-            $paymentState = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true)
-                ? 'success'
-                : (in_array($status, ['cancelled', 'canceled'], true) ? 'cancelled' : 'failed');
-            $databaseStatus = in_array($status, ['completed', 'complete', 'success', 'successful', 'paid'], true)
-                ? 'approved'
-                : (in_array($status, ['cancelled', 'canceled'], true) ? 'canceled' : 'failed');
-            if ($this->tableExists('service_subscription_payments')) {
-                $payment = $this->database->fetchOne(
-                    'SELECT id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
-                    [
-                        ':reference' => $reference,
-                        ':transaction_reference' => $reference,
-                        ':gateway_reference' => $reference,
-                    ]
-                );
-                if (is_array($payment) && !empty($payment['id'])) {
-                    $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
-                        'status' => $databaseStatus,
-                        'processed_at' => $this->database->nowUtc(),
-                        'raw_payload' => $this->jsonEncode(['return' => $params]),
-                    ]);
-                }
-            }
         }
 
-        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '');
-        if ($origin !== '') {
-            $parsed = parse_url($origin);
-            $base = ($parsed['scheme'] ?? 'http') . '://' . ($parsed['host'] ?? '') . (isset($parsed['port']) ? ':' . $parsed['port'] : '');
-        } else {
-            $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
-            $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $base = $scheme . '://' . $host;
-        }
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $forwardedProto = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0]));
+        $scheme = $forwardedProto === 'https' || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $base = $scheme . '://' . $host;
 
         $qs = '?payment=' . $paymentState;
         if ($reference !== '') {
@@ -2441,17 +2416,24 @@ final class MasterDataApi extends BaseService
         $eventId = trim((string) ($params['ppId'] ?? $params['pp_id'] ?? $params['paymentId'] ?? $params['payment_id'] ?? $params['transaction_id'] ?? $params['order_id'] ?? ''));
         $reference = trim((string) ($params['reference'] ?? $params['transaction_ref'] ?? $params['transaction_reference'] ?? $params['localReference'] ?? $params['local_reference'] ?? ''));
         if ($eventId === '' && $reference !== '') {
-            $payment = $this->tableExists('service_subscription_payments')
-                ? $this->database->fetchOne(
-                    'SELECT gateway_payment_id, transaction_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+            $payment = null;
+            if ($this->tableExists('auto_calling_recharges')) {
+                $payment = $this->database->fetchOne(
+                    'SELECT gateway_payment_id FROM auto_calling_recharges WHERE local_reference = :reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                    [':reference' => $reference, ':gateway_reference' => $reference]
+                );
+            }
+            if ($payment === null && $this->tableExists('service_subscription_payments')) {
+                $payment = $this->database->fetchOne(
+                    'SELECT gateway_payment_id FROM service_subscription_payments WHERE local_reference = :reference OR transaction_id = :transaction_reference OR gateway_payment_id = :gateway_reference LIMIT 1',
                     [
                         ':reference' => $reference,
                         ':transaction_reference' => $reference,
                         ':gateway_reference' => $reference,
                     ]
-                )
-                : null;
-            $eventId = trim((string) ($payment['gateway_payment_id'] ?? $payment['transaction_id'] ?? ''));
+                );
+            }
+            $eventId = trim((string) ($payment['gateway_payment_id'] ?? ''));
         }
         if ($eventId === '') {
             throw new RuntimeException('PipraPay payment id is required for verification.');
@@ -2481,7 +2463,6 @@ final class MasterDataApi extends BaseService
             : null;
         $apiKey = trim((string) ($gateway['piprapay_api_key'] ?? ''));
         $gatewayBaseUrl = trim((string) ($gateway['piprapay_base_url'] ?? ''));
-        $gatewayBaseUrl = preg_replace('#/api/?$#', '', $gatewayBaseUrl);
         $gatewayBaseUrl = rtrim($gatewayBaseUrl, '/');
         $baseUrl = $gatewayBaseUrl;
         $eventId = trim($eventId);
@@ -2493,17 +2474,6 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('PipraPay payment id is required for verification.');
         }
 
-        $hasDuplicateLog = false;
-        if ($eventId !== '' && $this->tableExists('payment_webhook_logs')) {
-            $existing = $this->database->fetchOne(
-                'SELECT id FROM payment_webhook_logs WHERE gateway = :gateway AND event_id = :event_id LIMIT 1',
-                [':gateway' => 'piprapay', ':event_id' => $eventId]
-            );
-            if ($existing !== null) {
-                $hasDuplicateLog = true;
-            }
-        }
-
         $verify = $this->httpJson('POST', $baseUrl . '/verify-payment', [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
@@ -2513,16 +2483,8 @@ final class MasterDataApi extends BaseService
         }
 
         $verified = $this->normalizePipraPayVerificationPayload($verify['json']);
-        // Debug: log verification payload and identifiers to PHP error log to help diagnose missing DB updates
-        try {
-            error_log('[PipraPay DEBUG] verify response: ' . json_encode([ 'eventId' => $eventId, 'reference' => $reference, 'verified' => $verified, 'raw' => $verify['json'] ]));
-        } catch (\Throwable $_e) {
-            // ignore logging errors
-        }
         $status = strtolower(trim((string) ($verified['status'] ?? '')));
-        if ($reference === '') {
-            $reference = trim((string) ($verified['reference'] ?? ''));
-        }
+        $trustedReference = trim((string) ($verified['reference'] ?? ''));
 
         $paymentOutcome = 'pending';
         $databaseStatus = 'processing';
@@ -2547,66 +2509,131 @@ final class MasterDataApi extends BaseService
 
         $isSuccess = $paymentOutcome === 'completed';
         $isFailure = in_array($paymentOutcome, ['failed', 'canceled', 'unknown'], true);
-        $payment = null;
-        if ($reference !== '' || $eventId !== '') {
-            $whereClauses = [];
-            $bindings = [];
-
-            if ($reference !== '') {
-                $whereClauses[] = '(local_reference = :reference OR transaction_id = :reference OR gateway_payment_id = :reference)';
-                $bindings[':reference'] = $reference;
+        $applyResult = $this->database->transaction(function () use (
+            $eventId,
+            $trustedReference,
+            $status,
+            $databaseStatus,
+            $isSuccess,
+            $isFailure,
+            $verified,
+            $rawPayload,
+            $verify
+        ): array {
+            $metadata = is_array($verified['metadata'] ?? null) ? $verified['metadata'] : [];
+            $declaredType = strtolower(trim((string) ($metadata['type'] ?? '')));
+            $subscriptionBindings = [':gateway_event_id' => $eventId, ':transaction_event_id' => $eventId];
+            $subscriptionConditions = '(gateway_payment_id = :gateway_event_id OR transaction_id = :transaction_event_id)';
+            $rechargeBindings = [':recharge_event_id' => $eventId];
+            $rechargeConditions = 'gateway_payment_id = :recharge_event_id';
+            if ($trustedReference !== '') {
+                $subscriptionConditions .= ' OR local_reference = :subscription_reference';
+                $subscriptionBindings[':subscription_reference'] = $trustedReference;
+                $rechargeConditions .= ' OR local_reference = :recharge_reference';
+                $rechargeBindings[':recharge_reference'] = $trustedReference;
             }
 
-            if ($eventId !== '') {
-                $whereClauses[] = '(local_reference = :event_id OR transaction_id = :event_id OR gateway_payment_id = :event_id)';
-                $bindings[':event_id'] = $eventId;
+            $recharge = null;
+            if ($this->tableExists('auto_calling_recharges')) {
+                $recharge = $this->database->fetchOne(
+                    "SELECT * FROM auto_calling_recharges WHERE {$rechargeConditions} LIMIT 1 FOR UPDATE",
+                    $rechargeBindings
+                );
+            }
+            $subscription = $this->tableExists('service_subscription_payments')
+                ? $this->database->fetchOne(
+                    "SELECT * FROM service_subscription_payments WHERE {$subscriptionConditions} LIMIT 1 FOR UPDATE",
+                    $subscriptionBindings
+                )
+                : null;
+
+            $kind = $declaredType === 'auto_calling_recharge' || str_starts_with($trustedReference, 'RCH-')
+                ? 'recharge'
+                : 'subscription';
+            $payment = $kind === 'recharge' ? $recharge : $subscription;
+            if ($payment === null) {
+                $kind = $recharge !== null ? 'recharge' : 'subscription';
+                $payment = $recharge ?? $subscription;
+            }
+            if ($payment === null) {
+                throw new RuntimeException('Verified PipraPay payment does not match a local checkout.');
             }
 
-            $payment = $this->database->fetchOne(
-                'SELECT * FROM service_subscription_payments WHERE ' . implode(' OR ', $whereClauses) . ' LIMIT 1',
-                $bindings
-            );
+            $expectedReference = trim((string) ($payment['local_reference'] ?? ''));
+            if ($trustedReference !== '' && $expectedReference !== '' && !hash_equals($expectedReference, $trustedReference)) {
+                throw new RuntimeException('PipraPay payment reference does not match the local checkout.');
+            }
+            $verifiedAmount = $verified['amount'] ?? null;
+            if ($verifiedAmount !== null && abs((float) $verifiedAmount - (float) ($payment['amount'] ?? 0)) > 0.009) {
+                throw new RuntimeException('PipraPay payment amount does not match the local checkout.');
+            }
+            $verifiedCurrency = strtoupper(trim((string) ($verified['currency'] ?? '')));
+            if ($verifiedCurrency !== '' && $verifiedCurrency !== 'BDT') {
+                throw new RuntimeException('PipraPay payment currency does not match the local checkout.');
+            }
+
+            $previousStatus = strtolower(trim((string) ($payment['status'] ?? 'processing')));
+            $nextStatus = $isSuccess ? 'approved' : ($isFailure ? $databaseStatus : $previousStatus);
+            $newlyApproved = $isSuccess && $previousStatus !== 'approved';
+            $processedAt = $isSuccess || $isFailure ? $this->database->nowUtc() : ($payment['processed_at'] ?? null);
+            $storedPayload = $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]);
+
+            if ($kind === 'recharge') {
+                $this->touchUpdate('auto_calling_recharges', (string) $payment['id'], [
+                    'gateway_payment_id' => $eventId,
+                    'status' => $nextStatus,
+                    'processed_at' => $processedAt,
+                    'raw_payload' => $storedPayload,
+                ]);
+            } else {
+                $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
+                    'gateway_payment_id' => $eventId,
+                    'transaction_id' => $eventId,
+                    'status' => $nextStatus,
+                    'processed_at' => $processedAt,
+                    'raw_payload' => $storedPayload,
+                ]);
+                if ($newlyApproved) {
+                    $this->extendSubscriptionFromPayment($payment);
+                }
+            }
+
+            if ($this->tableExists('payment_webhook_logs')) {
+                $this->database->execute(
+                    'INSERT INTO payment_webhook_logs (id, gateway, event_id, local_reference, status, verified, raw_payload, created_at)
+                     VALUES (:id, :gateway, :event_id, :local_reference, :status, :verified, :raw_payload, :created_at)
+                     ON DUPLICATE KEY UPDATE local_reference = VALUES(local_reference), status = VALUES(status), verified = VALUES(verified), raw_payload = VALUES(raw_payload)',
+                    [
+                        ':id' => $this->uuid4(),
+                        ':gateway' => 'piprapay',
+                        ':event_id' => $eventId,
+                        ':local_reference' => $expectedReference ?: null,
+                        ':status' => $status ?: null,
+                        ':verified' => $isSuccess ? 1 : 0,
+                        ':raw_payload' => $storedPayload,
+                        ':created_at' => $this->database->nowUtc(),
+                    ]
+                );
+            }
+
+            return [
+                'kind' => $kind,
+                'payment' => $payment,
+                'reference' => $expectedReference,
+                'newlyApproved' => $newlyApproved,
+            ];
+        });
+
+        $paymentKind = (string) $applyResult['kind'];
+        $reference = (string) $applyResult['reference'];
+        $emailSent = false;
+        if ($isSuccess && (bool) $applyResult['newlyApproved']) {
+            $emailSent = $this->sendPaymentConfirmationEmail($paymentKind, $applyResult['payment'], $reference, $eventId);
+        }
+        if ($isSuccess && $paymentKind === 'recharge') {
+            $paymentMessage = 'Recharge payment verified. The balance top-up request is ready for processing.';
         }
 
-        if ($payment !== null) {
-            try {
-                error_log('[PipraPay DEBUG] matched payment row: ' . json_encode(['id' => $payment['id'] ?? null, 'gateway_payment_id' => $payment['gateway_payment_id'] ?? null, 'transaction_id' => $payment['transaction_id'] ?? null, 'status' => $payment['status'] ?? null]));
-            } catch (\Throwable $_e) {
-            }
-            $nextStatus = $isSuccess ? 'approved' : ($isFailure ? $databaseStatus : (string) ($payment['status'] ?? 'processing'));
-            $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
-                'gateway_payment_id' => $eventId !== '' ? $eventId : ($payment['gateway_payment_id'] ?? null),
-                'transaction_id' => $eventId !== '' ? $eventId : ($payment['transaction_id'] ?? $reference),
-                'status' => $nextStatus,
-                'processed_at' => $isSuccess || $isFailure ? $this->database->nowUtc() : ($payment['processed_at'] ?? null),
-                'raw_payload' => $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]),
-            ]);
-
-            if ($isSuccess) {
-                $this->extendSubscriptionFromPayment($payment);
-            } elseif ($isFailure) {
-                $this->markSubscriptionPastDue();
-            }
-        }
-
-        if (!$hasDuplicateLog && $this->tableExists('payment_webhook_logs')) {
-            $this->database->execute(
-                'INSERT INTO payment_webhook_logs (id, gateway, event_id, local_reference, status, verified, raw_payload, created_at)
-                 VALUES (:id, :gateway, :event_id, :local_reference, :status, :verified, :raw_payload, :created_at)',
-                [
-                    ':id' => $this->uuid4(),
-                    ':gateway' => 'piprapay',
-                    ':event_id' => $eventId ?: null,
-                    ':local_reference' => $reference ?: null,
-                    ':status' => $status ?: null,
-                    ':verified' => $isSuccess ? 1 : 0,
-                    ':raw_payload' => $this->jsonEncode(['webhook' => $rawPayload, 'verified' => $verify['json']]),
-                    ':created_at' => $this->database->nowUtc(),
-                ]
-            );
-        }
-
-        // Include verification data in the response for debugging (admin-only endpoint)
         return [
             'success' => true,
             'paid' => $isSuccess,
@@ -2615,10 +2642,9 @@ final class MasterDataApi extends BaseService
             'paymentStatus' => $databaseStatus,
             'message' => $paymentMessage,
             'reference' => $reference,
-            'paymentFound' => $payment !== null,
-            'duplicateLog' => $hasDuplicateLog,
-            'verified' => $verified,
-            'payment' => $payment,
+            'paymentFound' => true,
+            'paymentKind' => $paymentKind,
+            'emailSent' => $emailSent,
         ];
     }
 
@@ -2628,15 +2654,18 @@ final class MasterDataApi extends BaseService
         $metadataRaw = $data['metadata'] ?? $payload['metadata'] ?? null;
         $metadata = is_array($metadataRaw) ? $metadataRaw : (is_string($metadataRaw) ? (json_decode($metadataRaw, true) ?: []) : []);
 
-        $status = strtolower(trim((string) ($data['status'] ?? $data['payment_status'] ?? $payload['status'] ?? $payload['payment_status'] ?? $data['pp_status'] ?? $payload['pp_status'] ?? '')));
+        $statusValue = $data['status'] ?? $data['payment_status'] ?? $payload['status'] ?? $payload['payment_status'] ?? $data['pp_status'] ?? $payload['pp_status'] ?? '';
+        $status = is_bool($statusValue)
+            ? ($statusValue ? 'completed' : 'failed')
+            : strtolower(trim((string) $statusValue));
         $reference = trim((string) (
+            $metadata['local_reference'] ??
             $data['order_id'] ??
             $data['transaction_ref'] ??
             $data['transaction_reference'] ??
             $payload['order_id'] ??
             $payload['transaction_ref'] ??
             $payload['transaction_reference'] ??
-            $metadata['local_reference'] ??
             $metadata['transaction_ref'] ??
             $metadata['transaction_reference'] ??
             ''
@@ -2646,6 +2675,12 @@ final class MasterDataApi extends BaseService
             'status' => $status,
             'reference' => $reference,
             'metadata' => $metadata,
+            'amount' => isset($data['amount']) && is_numeric($data['amount'])
+                ? (float) $data['amount']
+                : (isset($data['paid_amount']) && is_numeric($data['paid_amount'])
+                    ? (float) $data['paid_amount']
+                    : (isset($data['charged_amount']) && is_numeric($data['charged_amount']) ? (float) $data['charged_amount'] : null)),
+            'currency' => strtoupper(trim((string) ($data['currency'] ?? $payload['currency'] ?? ''))),
         ];
     }
 
@@ -6565,5 +6600,276 @@ TXT;
             $this->syncServiceSubscriptionNotifications($overview);
             return $overview;
         });
+    }
+
+    // ── Developer Notes ──────────────────────────────────────────────
+
+    public function fetchDeveloperNotes(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->database->fetchOne('SELECT content, updated_at FROM developer_notes LIMIT 1');
+        return [
+            'content' => (string) ($row['content'] ?? ''),
+            'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+        ];
+    }
+
+    public function updateDeveloperNotes(array $params): array
+    {
+        $user = $this->requireDeveloperUser();
+        $content = (string) ($params['content'] ?? '');
+        $now = $this->database->nowUtc();
+        $userId = (string) ($user['id'] ?? '');
+
+        $existing = $this->database->fetchOne('SELECT id FROM developer_notes LIMIT 1');
+        if ($existing !== null) {
+            $this->database->execute(
+                'UPDATE developer_notes SET content = :content, updated_by = :updated_by, updated_at = :updated_at WHERE id = :id',
+                [':content' => $content, ':updated_by' => $userId, ':updated_at' => $now, ':id' => $existing['id']]
+            );
+        } else {
+            $id = $this->stringId(null);
+            $this->database->execute(
+                'INSERT INTO developer_notes (id, content, updated_by, created_at, updated_at) VALUES (:id, :content, :updated_by, :created_at, :updated_at)',
+                [':id' => $id, ':content' => $content, ':updated_by' => $userId, ':created_at' => $now, ':updated_at' => $now]
+            );
+        }
+
+        return ['success' => true, 'updatedAt' => $now];
+    }
+
+    // ── Email Settings ───────────────────────────────────────────────
+
+    public function fetchEmailSettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->database->fetchOne('SELECT * FROM email_settings LIMIT 1');
+        if ($row === null) {
+            return [
+                'recipientEmail' => '',
+                'smtpHost' => '',
+                'smtpPort' => 587,
+                'smtpUsername' => '',
+                'smtpPassword' => '',
+                'smtpEncryption' => 'tls',
+                'senderEmail' => '',
+                'senderName' => '',
+            ];
+        }
+        return [
+            'recipientEmail' => (string) ($row['recipient_email'] ?? ''),
+            'smtpHost' => (string) ($row['smtp_host'] ?? ''),
+            'smtpPort' => (int) ($row['smtp_port'] ?? 587),
+            'smtpUsername' => (string) ($row['smtp_username'] ?? ''),
+            'smtpPassword' => (string) ($row['smtp_password'] ?? ''),
+            'smtpEncryption' => (string) ($row['smtp_encryption'] ?? 'tls'),
+            'senderEmail' => (string) ($row['sender_email'] ?? ''),
+            'senderName' => (string) ($row['sender_name'] ?? ''),
+        ];
+    }
+
+    public function updateEmailSettings(array $params): array
+    {
+        $user = $this->requireDeveloperUser();
+        $now = $this->database->nowUtc();
+
+        $data = [
+            'recipient_email' => $this->nullableString($params['recipientEmail'] ?? null),
+            'smtp_host' => $this->nullableString($params['smtpHost'] ?? null),
+            'smtp_port' => (int) ($params['smtpPort'] ?? 587),
+            'smtp_username' => $this->nullableString($params['smtpUsername'] ?? null),
+            'smtp_password' => $this->nullableString($params['smtpPassword'] ?? null),
+            'smtp_encryption' => in_array(($params['smtpEncryption'] ?? 'tls'), ['tls', 'ssl', 'none'], true) ? $params['smtpEncryption'] : 'tls',
+            'sender_email' => $this->nullableString($params['senderEmail'] ?? null),
+            'sender_name' => $this->nullableString($params['senderName'] ?? null),
+        ];
+
+        $existing = $this->database->fetchOne('SELECT id FROM email_settings LIMIT 1');
+        if ($existing !== null) {
+            [$setClause, $setParams] = $this->database->buildSetClause($data);
+            $this->database->execute(
+                "UPDATE email_settings SET {$setClause}, updated_at = :updated_at WHERE id = :id",
+                array_merge($setParams, [':updated_at' => $now, ':id' => $existing['id']])
+            );
+        } else {
+            $id = $this->stringId(null);
+            $columns = implode(', ', array_keys($data));
+            $placeholders = implode(', ', array_map(fn($k) => ':' . $k, array_keys($data)));
+            $bindings = [];
+            foreach ($data as $k => $v) {
+                $bindings[':' . $k] = $v;
+            }
+            $bindings[':id'] = $id;
+            $bindings[':now'] = $now;
+            $this->database->execute(
+                "INSERT INTO email_settings (id, {$columns}, created_at, updated_at) VALUES (:id, {$placeholders}, :now, :now)",
+                $bindings
+            );
+        }
+
+        return ['success' => true];
+    }
+
+    private function sendPaymentConfirmationEmail(string $kind, array $payment, string $reference, string $gatewayPaymentId): bool
+    {
+        $amount = number_format((float) ($payment['amount'] ?? 0), 2, '.', ',');
+        $safeReference = htmlspecialchars($reference, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeGatewayId = htmlspecialchars($gatewayPaymentId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeAmount = htmlspecialchars($amount, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $isRecharge = $kind === 'recharge';
+        $subject = $isRecharge ? 'Auto-calling recharge payment confirmed' : 'Subscription renewal payment confirmed';
+        $nextStep = $isRecharge
+            ? 'The payment is verified. Process the corresponding AwajDigital balance top-up.'
+            : 'The subscription period has been renewed automatically.';
+        $html = '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172033">'
+            . '<h2 style="margin:0 0 16px">' . htmlspecialchars($subject, ENT_QUOTES, 'UTF-8') . '</h2>'
+            . '<p>' . htmlspecialchars($nextStep, ENT_QUOTES, 'UTF-8') . '</p>'
+            . '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
+            . '<tr><td><strong>Amount</strong></td><td>BDT ' . $safeAmount . '</td></tr>'
+            . '<tr><td><strong>Reference</strong></td><td>' . $safeReference . '</td></tr>'
+            . '<tr><td><strong>PipraPay ID</strong></td><td>' . $safeGatewayId . '</td></tr>'
+            . '</table></body></html>';
+
+        return $this->sendEmailNotification($subject, $html);
+    }
+
+    public function sendEmailNotification(string $subject, string $htmlBody): bool
+    {
+        $row = $this->database->fetchOne('SELECT * FROM email_settings LIMIT 1');
+        if ($row === null) {
+            return false;
+        }
+
+        $host = trim((string) ($row['smtp_host'] ?? ''));
+        $username = trim((string) ($row['smtp_username'] ?? ''));
+        $password = (string) ($row['smtp_password'] ?? '');
+        $recipient = trim((string) ($row['recipient_email'] ?? ''));
+        if ($host === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $port = (int) ($row['smtp_port'] ?? 587);
+        $encryption = (string) ($row['smtp_encryption'] ?? 'tls');
+        $senderEmail = trim((string) (($row['sender_email'] ?? null) ?: $username));
+        $senderName = trim((string) (($row['sender_name'] ?? null) ?: 'MamePilot'));
+        if (!filter_var($senderEmail, FILTER_VALIDATE_EMAIL) || $port < 1 || $port > 65535) {
+            return false;
+        }
+
+        try {
+            return $this->sendSmtpMessage(
+                $host,
+                $port,
+                $encryption,
+                $username,
+                $password,
+                $senderEmail,
+                $senderName,
+                $recipient,
+                $subject,
+                $htmlBody
+            );
+        } catch (\Throwable $exception) {
+            error_log('[SMTP] Email delivery failed: ' . $exception->getMessage());
+            return false;
+        }
+    }
+
+    private function sendSmtpMessage(
+        string $host,
+        int $port,
+        string $encryption,
+        string $username,
+        string $password,
+        string $senderEmail,
+        string $senderName,
+        string $recipient,
+        string $subject,
+        string $htmlBody
+    ): bool {
+        $remote = ($encryption === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
+        $errorNumber = 0;
+        $errorMessage = '';
+        $socket = @stream_socket_client($remote, $errorNumber, $errorMessage, 20, STREAM_CLIENT_CONNECT);
+        if (!is_resource($socket)) {
+            throw new RuntimeException('Could not connect to the configured SMTP server.');
+        }
+        stream_set_timeout($socket, 20);
+
+        try {
+            $this->expectSmtpResponse($socket, [220]);
+            $serverName = preg_replace('/[^A-Za-z0-9.-]/', '', (string) ($_SERVER['SERVER_NAME'] ?? 'localhost')) ?: 'localhost';
+            $this->writeSmtpCommand($socket, 'EHLO ' . $serverName, [250]);
+
+            if ($encryption === 'tls') {
+                $this->writeSmtpCommand($socket, 'STARTTLS', [220]);
+                if (!@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                    throw new RuntimeException('SMTP TLS negotiation failed.');
+                }
+                $this->writeSmtpCommand($socket, 'EHLO ' . $serverName, [250]);
+            }
+
+            if ($username !== '') {
+                $this->writeSmtpCommand($socket, 'AUTH LOGIN', [334]);
+                $this->writeSmtpCommand($socket, base64_encode($username), [334]);
+                $this->writeSmtpCommand($socket, base64_encode($password), [235]);
+            }
+
+            $this->writeSmtpCommand($socket, 'MAIL FROM:<' . $senderEmail . '>', [250]);
+            $this->writeSmtpCommand($socket, 'RCPT TO:<' . $recipient . '>', [250, 251]);
+            $this->writeSmtpCommand($socket, 'DATA', [354]);
+
+            $encodedSubject = '=?UTF-8?B?' . base64_encode(str_replace(["\r", "\n"], '', $subject)) . '?=';
+            $encodedName = '=?UTF-8?B?' . base64_encode(str_replace(["\r", "\n"], '', $senderName)) . '?=';
+            $headers = [
+                'Date: ' . gmdate('D, d M Y H:i:s O'),
+                'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $serverName . '>',
+                'From: ' . $encodedName . ' <' . $senderEmail . '>',
+                'To: <' . $recipient . '>',
+                'Reply-To: <' . $senderEmail . '>',
+                'Subject: ' . $encodedSubject,
+                'MIME-Version: 1.0',
+                'Content-Type: text/html; charset=UTF-8',
+                'Content-Transfer-Encoding: 8bit',
+            ];
+            $message = implode("\r\n", $headers) . "\r\n\r\n" . str_replace(["\r\n", "\r"], "\n", $htmlBody);
+            $message = str_replace("\n", "\r\n", $message);
+            $message = preg_replace('/(?m)^\./', '..', $message) ?? $message;
+            fwrite($socket, $message . "\r\n.\r\n");
+            $this->expectSmtpResponse($socket, [250]);
+            @fwrite($socket, "QUIT\r\n");
+            return true;
+        } finally {
+            fclose($socket);
+        }
+    }
+
+    /** @param resource $socket */
+    private function writeSmtpCommand($socket, string $command, array $expectedCodes): void
+    {
+        if (fwrite($socket, $command . "\r\n") === false) {
+            throw new RuntimeException('Failed to write to the SMTP server.');
+        }
+        $this->expectSmtpResponse($socket, $expectedCodes);
+    }
+
+    /** @param resource $socket */
+    private function expectSmtpResponse($socket, array $expectedCodes): void
+    {
+        $response = '';
+        $code = 0;
+        while (($line = fgets($socket, 515)) !== false) {
+            $response .= $line;
+            if (preg_match('/^(\d{3})([ -])/', $line, $matches) === 1) {
+                $code = (int) $matches[1];
+                if ($matches[2] === ' ') {
+                    break;
+                }
+            }
+        }
+        if (!in_array($code, $expectedCodes, true)) {
+            $safeResponse = trim(preg_replace('/[\r\n]+/', ' ', $response) ?? '');
+            throw new RuntimeException('SMTP server rejected the request (' . $code . '): ' . mb_substr($safeResponse, 0, 200));
+        }
     }
 }

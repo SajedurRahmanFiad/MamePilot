@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import PortalMenu from '../components/PortalMenu';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
-import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, CommonPaymentModal } from '../components';
+import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, CommonPaymentModal, ConfirmationStatusDot } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
@@ -288,6 +288,10 @@ const Orders: React.FC = () => {
 
   const normalizedEffectiveCourier = useMemo(() => normalizeCourierFilterValue(effectiveCourier), [effectiveCourier]);
   const normalizedEffectiveCourierNot = useMemo(() => normalizeCourierFilterValue(effectiveCourierNot), [effectiveCourierNot]);
+
+  const handleRefreshOrders = useCallback(() => {
+    queryClient.refetchQueries({ queryKey: ['orders'], exact: false, type: 'active' });
+  }, [queryClient]);
 
   const { data: ordersPage, isFetching: ordersLoading } = useOrdersPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
@@ -1074,7 +1078,7 @@ const Orders: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <div className="hidden sm:block">
-            <FilterBar 
+            <FilterBar
               title="Orders"
               filterRange={effectiveFilterRange}
               setFilterRange={handleFilterRangeChange}
@@ -1083,6 +1087,8 @@ const Orders: React.FC = () => {
               includeTime={effectiveIncludeTime}
               setIncludeTime={handleIncludeTimeChange}
               compact={true}
+              onRefresh={handleRefreshOrders}
+              isRefreshing={ordersLoading}
             />
           </div>
         </div>
@@ -1098,7 +1104,7 @@ const Orders: React.FC = () => {
         )}
       </div>
       <div className="sm:hidden">
-        <FilterBar 
+        <FilterBar
           title="Orders"
           filterRange={effectiveFilterRange}
           setFilterRange={handleFilterRangeChange}
@@ -1106,6 +1112,8 @@ const Orders: React.FC = () => {
           setCustomDates={handleCustomDatesChange}
           includeTime={effectiveIncludeTime}
           setIncludeTime={handleIncludeTimeChange}
+          onRefresh={handleRefreshOrders}
+          isRefreshing={ordersLoading}
         />
       </div>
       {/* Pagination controls moved below the table to match other pages */}
@@ -1352,7 +1360,10 @@ const Orders: React.FC = () => {
                   className="group relative hover:bg-[#ebf4ff]/20 cursor-pointer transition-all"
                 >
                     <td className="px-6 py-5">
-                      <span className="font-black text-gray-900">#{order.orderNumber}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-gray-900">#{order.orderNumber}</span>
+                        <ConfirmationStatusDot status={order.confirmationStatus} size="sm" />
+                      </div>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 tracking-tight">{formatDate(getOrderActivityDate(order))}</p>
                     </td>
                     <td className="px-6 py-5">

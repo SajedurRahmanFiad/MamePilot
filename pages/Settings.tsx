@@ -5,20 +5,22 @@ import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings } from '../types';
-import { 
+import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
+import {
   useCategories, usePaymentMethods, useUnits,
-  useCompanySettings, useOrderSettings, useInvoiceSettings, 
-  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus
+  useCompanySettings, useOrderSettings, useInvoiceSettings,
+  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus,
+  useVoiceSurveySettings
 } from '../src/hooks/useQueries';
-import { 
-  useCreateCategory, useDeleteCategory, 
-  useCreatePaymentMethod, useDeletePaymentMethod, 
+import {
+  useCreateCategory, useDeleteCategory,
+  useCreatePaymentMethod, useDeletePaymentMethod,
   useCreateUnit, useDeleteUnit,
   useBatchUpdateSettings,
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
-  useUpdateMetaAdsSettings
+  useUpdateMetaAdsSettings,
+  useUpdateVoiceSurveySettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -64,6 +66,7 @@ const SettingsPage: React.FC = () => {
   const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
+  const { data: voiceSurveySettingsData, isPending: voiceSurveyLoading } = useVoiceSurveySettings(activeTab === 'voice-survey');
   const syncMetaAdsMutation = useSyncMetaAds();
   const META_COOLDOWN_KEY = 'metaAdsCooldownEndAt';
   const [metaAdsCooldown, setMetaAdsCooldown] = useState(() => {
@@ -95,6 +98,7 @@ const SettingsPage: React.FC = () => {
   const batchUpdateMutation = useBatchUpdateSettings();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
+  const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
   const toast = useToastNotifications();
 
   // Meta Ads sync cooldown timer
@@ -189,6 +193,20 @@ const SettingsPage: React.FC = () => {
     realtimeRateCache: null,
     realtimeRateUpdatedAt: null,
   });
+  const [voiceSurveySettings, setVoiceSurveySettings] = useState<VoiceSurveySettings>({
+    enabled: false,
+    delayMinutes: 5,
+    apiToken: '',
+    sender: '',
+    templateName: '',
+    webhookSecret: '',
+    maxSurveyTimeSeconds: 120,
+    missedCallRetryMinutes: 30,
+    missedCallRetryCount: 3,
+    noKeyRetryMinutes: 10,
+    noKeyRetryCount: 2,
+    triggerStatuses: ['On Hold'],
+  });
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
   const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '', isFraction: false });
@@ -268,6 +286,25 @@ const SettingsPage: React.FC = () => {
       });
     }
   }, [metaAdsSettingsData]);
+
+  React.useEffect(() => {
+    if (voiceSurveySettingsData) {
+      setVoiceSurveySettings({
+        enabled: voiceSurveySettingsData.enabled ?? false,
+        delayMinutes: voiceSurveySettingsData.delayMinutes ?? 5,
+        apiToken: voiceSurveySettingsData.apiToken || '',
+        sender: voiceSurveySettingsData.sender || '',
+        templateName: voiceSurveySettingsData.templateName || '',
+        webhookSecret: voiceSurveySettingsData.webhookSecret || '',
+        maxSurveyTimeSeconds: voiceSurveySettingsData.maxSurveyTimeSeconds ?? 120,
+        missedCallRetryMinutes: voiceSurveySettingsData.missedCallRetryMinutes ?? 30,
+        missedCallRetryCount: voiceSurveySettingsData.missedCallRetryCount ?? 3,
+        noKeyRetryMinutes: voiceSurveySettingsData.noKeyRetryMinutes ?? 10,
+        noKeyRetryCount: voiceSurveySettingsData.noKeyRetryCount ?? 2,
+        triggerStatuses: voiceSurveySettingsData.triggerStatuses || ['On Hold'],
+      });
+    }
+  }, [voiceSurveySettingsData]);
 
   React.useEffect(() => {
     if (urlTab !== activeTab) {
@@ -363,7 +400,7 @@ const SettingsPage: React.FC = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams, toast, queryClient]);
 
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading));
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading);
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
     setCompanySettings((current) => normalizeCompanySettings({
       ...current,
@@ -599,6 +636,17 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleSaveVoiceSurveySettings = async () => {
+    const toastId = toast.loading('Saving Voice Survey settings...');
+    try {
+      await updateVoiceSurveySettingsMutation.mutateAsync(voiceSurveySettings);
+      toast.update(toastId, 'Voice Survey settings saved.', 'success');
+      queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
+    } catch (err) {
+      toast.update(toastId, err instanceof Error ? err.message : 'Failed to save Voice Survey settings.', 'error');
+    }
+  };
+
   const handleConnectMetaAds = async () => {
     try {
       const response = await beginMetaAdsOAuthMutation.mutateAsync({ redirectAfter: '/settings?tab=meta-ads' });
@@ -795,6 +843,7 @@ const SettingsPage: React.FC = () => {
     canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
     canEditPaymentMethods ? { id: 'units', label: 'Units', icon: ICONS.Products } : null,
     hasCapability('courier_automation') && canEditCourierSettings ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
+    hasCapability('auto_calling') && canEditOrderInvoiceSettings ? { id: 'voice-survey', label: 'Voice Survey', icon: ICONS.Bell } : null,
   ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
 
@@ -1646,6 +1695,223 @@ const SettingsPage: React.FC = () => {
                       </div>
                     ))
                   )}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'voice-survey' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <section className="space-y-6">
+                <div className="flex flex-col gap-4 border-b border-gray-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-800">Voice Survey (Auto Calling)</h3>
+                    <p className="mt-2 max-w-3xl text-sm text-gray-500">
+                      Automatically call customers via AwajDigital when orders are created. Customers press DTMF keys to confirm or cancel their orders.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleSaveVoiceSurveySettings}
+                    loading={updateVoiceSurveySettingsMutation.isPending}
+                  >
+                    Save Voice Survey Settings
+                  </Button>
+                </div>
+
+                {/* Master Toggle */}
+                <div className="rounded-xl border border-gray-100 bg-white p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-base font-black text-gray-900">Enable Auto-Calling</h4>
+                      <p className="mt-1 text-sm text-gray-500">When enabled, new orders will automatically trigger a voice survey call to the customer.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVoiceSurveySettings((s) => ({ ...s, enabled: !s.enabled }))}
+                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${voiceSurveySettings.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${voiceSurveySettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* AwajDigital API Config */}
+                <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
+                  <h4 className="text-base font-black text-gray-900">AwajDigital API Configuration</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>API Token (Bearer)</span>
+                      <input
+                        type="password"
+                        value={voiceSurveySettings.apiToken}
+                        onChange={(e) => setVoiceSurveySettings((s) => ({ ...s, apiToken: e.target.value }))}
+                        placeholder="Enter your AwajDigital API token"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Sender / Caller ID</span>
+                      <input
+                        type="text"
+                        value={voiceSurveySettings.sender}
+                        onChange={(e) => setVoiceSurveySettings((s) => ({ ...s, sender: e.target.value }))}
+                        placeholder="e.g. 01XXXXXXXXX"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Template Name</span>
+                      <input
+                        type="text"
+                        value={voiceSurveySettings.templateName}
+                        onChange={(e) => setVoiceSurveySettings((s) => ({ ...s, templateName: e.target.value }))}
+                        placeholder="Published survey template name"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Webhook Secret</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={voiceSurveySettings.webhookSecret}
+                          onChange={(e) => setVoiceSurveySettings((s) => ({ ...s, webhookSecret: e.target.value }))}
+                          placeholder="Shared secret for webhook auth"
+                          className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const secret = Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, '0')).join('');
+                            setVoiceSurveySettings((s) => ({ ...s, webhookSecret: secret }));
+                          }}
+                        >
+                          Generate
+                        </Button>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Call Timing */}
+                <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
+                  <h4 className="text-base font-black text-gray-900">Call Timing</h4>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <span className="text-sm font-semibold text-gray-700">Trigger auto-call for these order statuses</span>
+                      <div className="flex flex-wrap gap-2">
+                        {['On Hold', 'Processing', 'Created'].map((status) => {
+                          const isSelected = voiceSurveySettings.triggerStatuses.includes(status);
+                          return (
+                            <button
+                              key={status}
+                              type="button"
+                              onClick={() => {
+                                setVoiceSurveySettings((s) => ({
+                                  ...s,
+                                  triggerStatuses: isSelected
+                                    ? s.triggerStatuses.filter((st) => st !== status)
+                                    : [...s.triggerStatuses, status],
+                                }));
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                isSelected
+                                  ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                            >
+                              {isSelected ? '✓ ' : ''}{status}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="text-xs text-gray-400">Orders with these statuses will automatically trigger a voice survey call after the delay below.</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Call delay after order creation (minutes)</span>
+                      <NumericInput
+                        value={voiceSurveySettings.delayMinutes}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, delayMinutes: val || 5 }))}
+                        placeholder="5"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                      <span className="text-xs text-gray-400">Wait this many minutes after an order is created before calling.</span>
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Max survey time (seconds)</span>
+                      <NumericInput
+                        value={voiceSurveySettings.maxSurveyTimeSeconds}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, maxSurveyTimeSeconds: val || 120 }))}
+                        placeholder="120"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                      <span className="text-xs text-gray-400">How long to wait for the call to complete before checking results.</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Retry Settings */}
+                <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
+                  <h4 className="text-base font-black text-gray-900">Retry Settings</h4>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Missed call retry interval (minutes)</span>
+                      <NumericInput
+                        value={voiceSurveySettings.missedCallRetryMinutes}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, missedCallRetryMinutes: val || 30 }))}
+                        placeholder="30"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>Missed call max retries</span>
+                      <NumericInput
+                        value={voiceSurveySettings.missedCallRetryCount}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, missedCallRetryCount: val || 3 }))}
+                        placeholder="3"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>No-key retry interval (minutes)</span>
+                      <NumericInput
+                        value={voiceSurveySettings.noKeyRetryMinutes}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, noKeyRetryMinutes: val || 10 }))}
+                        placeholder="10"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm font-semibold text-gray-700">
+                      <span>No-key max retries</span>
+                      <NumericInput
+                        value={voiceSurveySettings.noKeyRetryCount}
+                        onChange={(val) => setVoiceSurveySettings((s) => ({ ...s, noKeyRetryCount: val || 2 }))}
+                        placeholder="2"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Webhook Info */}
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-5 space-y-3">
+                  <h4 className="text-base font-black text-blue-900">Webhook Configuration</h4>
+                  <p className="text-sm text-blue-700">
+                    This system uses webhooks to receive call results from AwajDigital. Configure the following webhook URL in your AwajDigital dashboard:
+                  </p>
+                  <div className="rounded-lg bg-white border border-blue-200 p-3">
+                    <code className="text-xs font-mono text-blue-800 break-all">
+                      {window.location.origin}/api/webhook-survey.php?token={voiceSurveySettings.webhookSecret || '{your-webhook-secret}'}
+                    </code>
+                  </div>
+                  <p className="text-xs text-blue-600">
+                    Replace <code>{'{your-webhook-secret}'}</code> with the Webhook Secret you configured above. AwajDigital will POST call results to this URL.
+                  </p>
                 </div>
               </section>
             </div>

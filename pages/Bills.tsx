@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import PortalMenu from '../components/PortalMenu';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -164,6 +164,10 @@ const Bills: React.FC = () => {
     }
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
+
+  const handleRefreshBills = useCallback(() => {
+    queryClient.refetchQueries({ queryKey: ['bills'], exact: false, type: 'active' });
+  }, [queryClient]);
 
   const { data: billsPage, isFetching: billsLoading } = useBillsPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
@@ -534,13 +538,15 @@ const Bills: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <div className="hidden sm:block">
-            <FilterBar 
+            <FilterBar
               title="Bills"
               filterRange={effectiveFilterRange}
               setFilterRange={handleFilterRangeChange}
               customDates={effectiveCustomDates}
               setCustomDates={handleCustomDatesChange}
               compact={true}
+              onRefresh={handleRefreshBills}
+              isRefreshing={billsLoading}
             />
           </div>
         </div>
@@ -556,12 +562,14 @@ const Bills: React.FC = () => {
         )}
       </div>
       <div className="sm:hidden">
-        <FilterBar 
+        <FilterBar
           title="Bills"
           filterRange={effectiveFilterRange}
           setFilterRange={handleFilterRangeChange}
           customDates={effectiveCustomDates}
           setCustomDates={handleCustomDatesChange}
+          onRefresh={handleRefreshBills}
+          isRefreshing={billsLoading}
         />
       </div>
 

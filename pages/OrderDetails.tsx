@@ -1,13 +1,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
-import { OrderStatus, Order, type ProcessOrderReturnExchangePayload } from '../types';
+import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmationStatus } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
-import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction, useProcessOrderReturnExchange } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -28,6 +29,7 @@ import { getOrderCompanyPage } from '../src/utils/companyPages';
 const OrderDetails: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const toast = useToastNotifications();
   const { user: authUser } = useAuth();
@@ -76,6 +78,9 @@ const OrderDetails: React.FC = () => {
   const deleteOrderMutation = useDeleteOrder();
   const createTransactionMutation = useCreateTransaction();
   const processReturnExchangeMutation = useProcessOrderReturnExchange();
+  const triggerSurveyCallMutation = useTriggerSurveyCall();
+  const retrySurveyCallMutation = useRetrySurveyCall();
+  const cancelSurveyCallMutation = useCancelSurveyCall();
   const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
   const [showReturnExchangeModal, setShowReturnExchangeModal] = useState(false);
   
@@ -1738,6 +1743,102 @@ const OrderDetails: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Voice Survey Status Section */}
+          {order.confirmationStatus && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Voice Survey</h3>
+                <ConfirmationStatusDot status={order.confirmationStatus} size="md" showLabel />
+              </div>
+
+              {order.confirmationStatus === 'confirmed' && (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                  <p className="text-sm font-bold text-emerald-800">✓ Customer confirmed this order via phone call</p>
+                  {order.surveyResponse && <p className="text-xs text-emerald-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                </div>
+              )}
+              {order.confirmationStatus === 'cancelled' && (
+                <div className="rounded-xl bg-red-50 border border-red-100 p-4">
+                  <p className="text-sm font-bold text-red-800">✕ Customer cancelled this order via phone call</p>
+                  {order.surveyResponse && <p className="text-xs text-red-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                </div>
+              )}
+              {order.confirmationStatus === 'on_hold' && (
+                <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
+                  <p className="text-sm font-bold text-amber-800">☎ Customer requested to speak with someone</p>
+                  {order.surveyResponse && <p className="text-xs text-amber-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                </div>
+              )}
+              {order.confirmationStatus === 'waiting' && (
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
+                  <p className="text-sm font-bold text-gray-600">⏳ Waiting for customer response...</p>
+                  {order.surveyRetryCount > 0 && <p className="text-xs text-gray-500 mt-1">Retries: {order.surveyRetryCount}</p>}
+                  {order.surveyNextRetryAt && <p className="text-xs text-gray-500 mt-1">Next retry: {new Date(order.surveyNextRetryAt).toLocaleString()}</p>}
+                </div>
+              )}
+
+              <div className="mt-3 flex gap-2">
+                {!order.surveyStatus || order.surveyStatus === 'skipped' || order.surveyStatus === 'failed' ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await triggerSurveyCallMutation.mutateAsync(order.id);
+                        toast.success('Survey call triggered');
+                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : 'Failed to trigger call');
+                      }
+                    }}
+                    loading={triggerSurveyCallMutation.isPending}
+                  >
+                    Trigger Call
+                  </Button>
+                ) : null}
+                {order.surveyStatus === 'completed' && order.confirmationStatus === 'waiting' ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await retrySurveyCallMutation.mutateAsync(order.id);
+                        toast.success('Survey call retry triggered');
+                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : 'Failed to retry call');
+                      }
+                    }}
+                    loading={retrySurveyCallMutation.isPending}
+                  >
+                    Retry Call
+                  </Button>
+                ) : null}
+                {order.surveyStatus && !['completed', 'skipped', 'failed'].includes(order.surveyStatus) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await cancelSurveyCallMutation.mutateAsync(order.id);
+                        toast.success('Survey call cancelled');
+                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : 'Failed to cancel call');
+                      }
+                    }}
+                    loading={cancelSurveyCallMutation.isPending}
+                  >
+                    Cancel Survey
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          )}
 
           {/* Order Progress Section */}
           {order ? (

@@ -49,3 +49,5 @@ export { default as OrderReturnExchangeModal } from './OrderReturnExchangeModal'
 export { default as BillReturnModal } from './BillReturnModal';
 
 export { default as MetaAdsMoney } from './MetaAdsMoney';
+
+export { ConfirmationStatusDot } from './ConfirmationStatusDot';

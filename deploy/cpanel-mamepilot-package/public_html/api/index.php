@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\AppVersion;
 use App\Auth;
+use App\AutoCallApi;
 use App\Config;
 use App\CourierApi;
 use App\Database;
@@ -60,6 +61,7 @@ try {
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
+    $autoCall = new AutoCallApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok(array_merge([
@@ -99,13 +101,22 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier];
+    $services = [$master, $operations, $courier, $autoCall];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
         }
 
         $result = $service->{$action}($payload);
+        if ($action === 'createOrder' && is_array($result)) {
+            $orderId = trim((string) ($result['id'] ?? ''));
+            $orderStatus = trim((string) ($result['status'] ?? ''));
+            if ($orderId !== '' && $autoCall->queueOrderIfEligible($orderId, $orderStatus)) {
+                register_shutdown_function(static function () use ($autoCall): void {
+                    $autoCall->triggerSurveyBackgroundProcess();
+                });
+            }
+        }
         Http::ok($result);
         exit;
     }

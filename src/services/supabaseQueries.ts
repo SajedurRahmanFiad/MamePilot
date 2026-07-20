@@ -51,6 +51,7 @@ import type {
   AgentConversation,
   MetaAdsSettings,
   MarketingDashboardResponse,
+  VoiceSurveySettings,
   AgentMessage,
   AgentRunEvent,
   AgentRunReceipt,
@@ -320,6 +321,24 @@ export async function updatePermissionsSettings(updates: PermissionsSettings): P
   return call<PermissionsSettings>('updatePermissionsSettings', updates);
 }
 
+// Voice Survey (Auto Calling)
+export async function fetchVoiceSurveySettings(): Promise<VoiceSurveySettings> { return call<VoiceSurveySettings>('fetchVoiceSurveySettings'); }
+export async function updateVoiceSurveySettings(updates: Partial<VoiceSurveySettings>): Promise<VoiceSurveySettings> { return call<VoiceSurveySettings>('updateVoiceSurveySettings', updates); }
+export async function triggerSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('triggerSurveyCall', { orderId }); }
+export async function retrySurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('retrySurveyCall', { orderId }); }
+export async function cancelSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('cancelSurveyCall', { orderId }); }
+export async function fetchOrderSurveyStatus(orderId: string): Promise<any> { return call<any>('fetchOrderSurveyStatus', { orderId }); }
+export async function fetchDeveloperNotes(): Promise<{ content: string; updatedAt?: string }> { return call<any>('fetchDeveloperNotes'); }
+export async function updateDeveloperNotes(payload: { content: string }): Promise<{ success: boolean; updatedAt: string }> { return call<any>('updateDeveloperNotes', payload); }
+export async function fetchEmailSettings(): Promise<{ recipientEmail: string; smtpHost: string; smtpPort: number; smtpUsername: string; smtpPassword: string; smtpEncryption: 'tls' | 'ssl' | 'none'; senderEmail: string; senderName: string }> { return call<any>('fetchEmailSettings'); }
+export async function updateEmailSettings(payload: { recipientEmail?: string; smtpHost?: string; smtpPort?: number; smtpUsername?: string; smtpPassword?: string; smtpEncryption?: 'tls' | 'ssl' | 'none'; senderEmail?: string; senderName?: string }): Promise<{ success: boolean }> { return call<any>('updateEmailSettings', payload); }
+
+export async function fetchSurveyBalance(): Promise<{ success: boolean; balance: number; message?: string }> { return call<any>('fetchSurveyBalance'); }
+export async function fetchSurveyBroadcasts(params: { startDate?: string; endDate?: string }): Promise<{ success: boolean; broadcasts: Array<{ id: number; name: string; status: string; createdAt: string }>; dateRange?: { startDate: string; endDate: string }; message?: string }> { return call<any>('fetchSurveyBroadcasts', params); }
+export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string }> { return call<any>('fetchSurveySummary'); }
+export async function initiateRechargeCheckout(payload: { amount: number }): Promise<{ checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null }> { return call<any>('initiateRechargeCheckout', payload, { timeoutMs: 30000 }); }
+export async function fetchRechargeHistory(): Promise<Array<{ id: string; localReference: string; gatewayPaymentId: string; amount: number; status: string; submittedAt: string; processedAt: string; createdAt: string }>> { return call<any>('fetchRechargeHistory'); }
+
 export async function fetchPayrollSettings(): Promise<PayrollSettings> { return call<PayrollSettings>('fetchPayrollSettings'); }
 export async function updatePayrollSettings(updates: Partial<PayrollSettings>): Promise<PayrollSettings> { return call<PayrollSettings>('updatePayrollSettings', updates); }
 export async function fetchPayrollEmployees(): Promise<User[]> { return call<User[]>('fetchPayrollEmployees'); }
@@ -493,7 +512,7 @@ export async function verifyPipraPayPayment(payload: {
   reference?: string;
   ppId?: string;
   paymentId?: string;
-}): Promise<{ success: boolean; paid: boolean; status: string; reference?: string; paymentFound?: boolean }> {
+}): Promise<{ success: boolean; paid: boolean; status: string; paymentOutcome?: string; paymentStatus?: string; message?: string; reference?: string; paymentFound?: boolean; paymentKind?: 'subscription' | 'recharge'; emailSent?: boolean }> {
   return call('verifyPipraPayPayment', payload, { timeoutMs: 30000 });
 }
 

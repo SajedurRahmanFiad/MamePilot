@@ -78,10 +78,12 @@ const SettingsPage = lazyPage(() => import('./pages/Settings'));
 const AdminSubscriptions = lazyPage(() => import('./pages/AdminSubscriptions'));
 const DeveloperNotifications = lazyPage(() => import('./pages/DeveloperNotifications'));
 const DeveloperSettings = lazyPage(() => import('./pages/DeveloperSettings'));
+const DeveloperNotes = lazyPage(() => import('./pages/DeveloperNotes'));
 const DeveloperSubscriptions = lazyPage(() => import('./pages/DeveloperSubscriptions'));
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
 const Leads = lazyPage(() => import('./pages/Leads'));
+const AutoCalling = lazyPage(() => import('./pages/AutoCalling'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
 const CustomerDetails = lazyPage(() => import('./pages/CustomerDetails'));
 const Vendors = lazyPage(() => import('./pages/Vendors'));
@@ -199,6 +201,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (can('accounts.view')) preloaders.add(Banking.preload);
     if (can('fraudChecker.check')) preloaders.add(FraudCheckerPage.preload);
     if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
+    if (hasCapability('auto_calling')) preloaders.add(AutoCalling.preload);
     if (can('transfers.create')) preloaders.add(Transfer.preload);
     if (can('users.view')) {
       preloaders.add(Users.preload);
@@ -285,6 +288,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       <Route path="/developer/settings" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSettings /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
+      <Route path="/developer/notes" element={
+        isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperNotes /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
       <Route path="/developer/subscriptions" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -338,6 +344,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/leads" element={
         isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/auto-calling" element={
+        isAuthenticated ? (hasCapability('auto_calling') ? <Layout><AutoCalling /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transfer" element={
         isAuthenticated ? (can('transfers.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

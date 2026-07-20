@@ -22,6 +22,10 @@ final class FeatureAccess
         'marketing' => false,
         'enterprise_ai_agent' => false,
         'grow_your_business' => false,
+        'whatsapp' => false,
+        'automatic_leads' => false,
+        'mamecx' => false,
+        'auto_calling' => false,
     ];
 
     // Maps sub-capability keys to their parent capability keys
@@ -159,6 +163,17 @@ final class FeatureAccess
         'refreshBusinessRecommendations' => 'grow_your_business',
         'fetchBusinessGrowthSettings' => 'grow_your_business',
         'updateBusinessGrowthSettings' => 'grow_your_business',
+        'fetchVoiceSurveySettings' => 'auto_calling',
+        'updateVoiceSurveySettings' => 'auto_calling',
+        'triggerSurveyCall' => 'auto_calling',
+        'retrySurveyCall' => 'auto_calling',
+        'cancelSurveyCall' => 'auto_calling',
+        'fetchOrderSurveyStatus' => 'auto_calling',
+        'fetchSurveyBalance' => 'auto_calling',
+        'fetchSurveyBroadcasts' => 'auto_calling',
+        'fetchSurveySummary' => 'auto_calling',
+        'initiateRechargeCheckout' => 'auto_calling',
+        'fetchRechargeHistory' => 'auto_calling',
     ];
 
     private Database $database;

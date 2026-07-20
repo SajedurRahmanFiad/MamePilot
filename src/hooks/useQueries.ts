@@ -96,6 +96,13 @@ import {
   fetchVendorFilterOptions,
   fetchBusinessGrowthSettings,
   fetchBusinessRecommendations,
+  fetchVoiceSurveySettings,
+  fetchSurveyBalance,
+  fetchSurveyBroadcasts,
+  fetchSurveySummary,
+  fetchRechargeHistory,
+  fetchDeveloperNotes,
+  fetchEmailSettings,
 } from '../services/supabaseQueries';
 import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import { useNetwork } from '../contexts/NetworkProvider';
@@ -144,6 +151,7 @@ import type {
   PaymentGatewaySettings,
   AgentSettings,
   LicenseTier,
+  VoiceSurveySettings,
 } from '../../types';
 import { db } from '../../db';
 import { hasAdminAccess } from '../../types';
@@ -1215,6 +1223,72 @@ export function useMetaAdsSyncStatus(enabled: boolean = true): UseQueryResult<{ 
     queryFn: fetchMetaAdsSyncStatus,
     staleTime: 5 * 1000,
     refetchInterval: 10 * 1000,
+    enabled,
+  });
+}
+
+// ========== VOICE SURVEY ==========
+
+export function useVoiceSurveySettings(enabled: boolean = true): UseQueryResult<VoiceSurveySettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'voice-survey'],
+    queryFn: fetchVoiceSurveySettings,
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useSurveyBalance(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['survey', 'balance'],
+    queryFn: fetchSurveyBalance,
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useSurveyBroadcasts(params: { startDate?: string; endDate?: string }, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['survey', 'broadcasts', params.startDate, params.endDate],
+    queryFn: () => fetchSurveyBroadcasts(params),
+    staleTime: 30 * 1000,
+    enabled,
+  });
+}
+
+export function useSurveySummary(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['survey', 'summary'],
+    queryFn: fetchSurveySummary,
+    staleTime: 30 * 1000,
+    enabled,
+  });
+}
+
+export function useRechargeHistory(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['survey', 'recharges'],
+    queryFn: fetchRechargeHistory,
+    staleTime: 30 * 1000,
+    enabled,
+  });
+}
+
+export function useDeveloperNotes(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['developer', 'notes'],
+    queryFn: fetchDeveloperNotes,
+    staleTime: 60 * 1000,
+    enabled,
+  });
+}
+
+export function useEmailSettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['developer', 'email-settings'],
+    queryFn: fetchEmailSettings,
+    staleTime: 5 * 60 * 1000,
     enabled,
   });
 }

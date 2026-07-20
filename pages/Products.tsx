@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Product, hasAdminAccess, isEmployeeRole } from '../types';
@@ -53,6 +53,9 @@ const Products: React.FC = () => {
   const { data: productsPage, isFetching } = useProductsPage(effectivePage, pageSize, searchQuery, undefined, createdByIds, {
     enabled: canLoadProducts,
   });
+  const handleRefreshProducts = useCallback(() => {
+    queryClient.refetchQueries({ queryKey: ['products'], exact: false, type: 'active' });
+  }, [queryClient]);
   const products = productsPage?.data ?? [];
   const productIds = useMemo(() => products.map((product) => product.id), [products]);
   const { data: productImages = {} } = useProductImagesByIds(productIds);
@@ -298,6 +301,15 @@ const Products: React.FC = () => {
             }}
           />
         </div>
+        <button
+          onClick={handleRefreshProducts}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold text-gray-500 bg-white border border-gray-100 shadow-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+          title="Refresh"
+        >
+          <svg className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Refresh
+        </button>
         {canCreateProducts && (
           <Button
             onClick={() => navigate('/products/new')}

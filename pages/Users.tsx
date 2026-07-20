@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasAdminAccess } from '../types';
@@ -54,6 +54,9 @@ const Users: React.FC = () => {
   const users = usersPage?.data || [];
   const total = usersPage?.count || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const handleRefreshUsers = useCallback(() => {
+    queryClient.refetchQueries({ queryKey: ['users'], exact: false, type: 'active' });
+  }, [queryClient]);
   const isAdmin = hasAdminAccess(user?.role);
 
   // Track location to detect browser back navigation
@@ -383,6 +386,15 @@ const Users: React.FC = () => {
             }}
           />
         </div>
+        <button
+          onClick={handleRefreshUsers}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold text-gray-500 bg-white border border-gray-100 shadow-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+          title="Refresh"
+        >
+          <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Refresh
+        </button>
         {canCreateUsers && (
           <Button
             onClick={() => navigate('/users/new')}

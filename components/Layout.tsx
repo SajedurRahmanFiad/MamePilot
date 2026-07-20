@@ -358,6 +358,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/dashboard')) {
       return { title: 'Dashboard', subtitle: 'Snapshot of your core operations and recent activity.' };
     }
+    if (pathname.startsWith('/auto-calling')) {
+      return { title: 'Auto Calling', subtitle: 'Manage automatic voice surveys, broadcasts, and balance.' };
+    }
+    if (pathname.startsWith('/grow-your-business')) {
+      return { title: 'Grow Your Business', subtitle: 'AI-powered recommendations to optimize your product portfolio and boost sales.' };
+    }
 
     return { title: 'Overview', subtitle: 'Manage your business workspace.' };
   }, [location.pathname]);

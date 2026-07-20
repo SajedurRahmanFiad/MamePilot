@@ -29,6 +29,10 @@ interface FilterBarProps {
   compact?: boolean;
   /** Override which range chips are shown. Defaults to the standard set. */
   ranges?: FilterRange[];
+  /** Callback for an optional refresh button rendered to the right of the filter bar. */
+  onRefresh?: () => void;
+  /** Whether the refresh action is in progress. */
+  isRefreshing?: boolean;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -44,6 +48,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
   title
   , compact = false
   , ranges: rangesProp
+  , onRefresh
+  , isRefreshing = false
 }) => {
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const { searchQuery, setSearchQuery } = useSearch();
@@ -115,8 +121,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
                   key={tab}
                   onClick={() => setStatusTab(tab)}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                    statusTab === tab 
-                      ? 'bg-white text-gray-900 shadow-sm' 
+                    statusTab === tab
+                      ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-400 hover:text-gray-600'
                   }`}
                 >
@@ -127,6 +133,17 @@ const FilterBar: React.FC<FilterBarProps> = ({
           )}
         </div>
 
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold text-gray-500 bg-white border border-gray-100 shadow-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+            title="Refresh"
+          >
+            <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            Refresh
+          </button>
+        )}
       </div>
     </>
   );

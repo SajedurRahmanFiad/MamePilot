@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import PortalMenu from '../components/PortalMenu';
@@ -206,6 +206,10 @@ const Transactions: React.FC = () => {
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label));
   }, [allCategories]);
+
+  const handleRefreshTransactions = useCallback(() => {
+    queryClient.refetchQueries({ queryKey: ['transactions'], exact: false, type: 'active' });
+  }, [queryClient]);
 
   const { data: transactionsPage, isFetching: transactionsLoading } = useTransactionsPage(effectivePage, pageSize, {
     type: effectiveTypeTab === 'All' ? undefined : effectiveTypeTab,
@@ -667,6 +671,8 @@ const Transactions: React.FC = () => {
               customDates={effectiveCustomDates}
               setCustomDates={handleCustomDatesChange}
               compact={true}
+              onRefresh={handleRefreshTransactions}
+              isRefreshing={transactionsLoading}
             />
           </div>
         </div>
@@ -684,6 +690,8 @@ const Transactions: React.FC = () => {
           setFilterRange={handleFilterRangeChange}
           customDates={effectiveCustomDates}
           setCustomDates={handleCustomDatesChange}
+          onRefresh={handleRefreshTransactions}
+          isRefreshing={transactionsLoading}
         />
       </div>
 
