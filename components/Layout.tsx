@@ -469,7 +469,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
                       {brandLoading ? 'Loading...' : companySettings.name || 'Mame Pilot'}
                     </h1>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest`}>Business Management</span>
                   </div>
                 )}
               </>

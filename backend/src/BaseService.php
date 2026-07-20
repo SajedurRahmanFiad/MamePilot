@@ -310,8 +310,21 @@ abstract class BaseService
         $projectRoot = dirname(dirname(__DIR__)); // backend/src → backend → project root
         $categoryPath = 'uploads' . DIRECTORY_SEPARATOR . trim($category, '/');
 
-        // Production uploads must live under the same document root that serves /uploads URLs.
-        foreach (['UPDATE_DOCUMENT_ROOT', 'UPDATE_PUBLIC_ROOT'] as $configKey) {
+        // During an HTTP request, the active site's document root is authoritative for
+        // absolute /uploads URLs. This also avoids writing a subdomain's files into a
+        // parent public_html directory when updater paths are stale or too broad.
+        $requestPublicRoot = $this->requestPublicRoot();
+        if ($requestPublicRoot !== null) {
+            return $requestPublicRoot . DIRECTORY_SEPARATOR . $categoryPath;
+        }
+
+        // Package releases publish to UPDATE_PUBLIC_ROOT; git releases publish to
+        // UPDATE_DOCUMENT_ROOT. Prefer the path that matches the configured mode.
+        $useGitUpdates = filter_var($this->config->get('UPDATE_USE_GIT', '0'), FILTER_VALIDATE_BOOLEAN);
+        $configKeys = $useGitUpdates
+            ? ['UPDATE_DOCUMENT_ROOT', 'UPDATE_PUBLIC_ROOT']
+            : ['UPDATE_PUBLIC_ROOT', 'UPDATE_DOCUMENT_ROOT'];
+        foreach ($configKeys as $configKey) {
             $configuredRoot = trim((string) $this->config->get($configKey, ''));
             if ($configuredRoot !== '' && is_dir($configuredRoot)) {
                 return rtrim($configuredRoot, '/\\') . DIRECTORY_SEPARATOR . $categoryPath;
@@ -351,6 +364,67 @@ abstract class BaseService
 
         // 3. Fallback: backend/public/uploads/
         return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . $categoryPath;
+    }
+
+    protected function ensurePublicUploadedFileValue(string $value): string
+    {
+        $trimmed = trim($value);
+        if (preg_match('#^/uploads/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_.-]+)$#', $trimmed, $matches) !== 1) {
+            return $trimmed;
+        }
+
+        $targetDirectory = $this->uploadPublicPath($matches[1]);
+        $targetPath = $targetDirectory . DIRECTORY_SEPARATOR . $matches[2];
+        if (is_file($targetPath)) {
+            return $trimmed;
+        }
+
+        // Recover files saved by older deployments under backend/public/uploads.
+        $legacyDirectories = [
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $matches[1],
+            dirname(dirname(__DIR__)) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $matches[1],
+        ];
+        foreach (array_unique($legacyDirectories) as $legacyDirectory) {
+            $legacyPath = $legacyDirectory . DIRECTORY_SEPARATOR . $matches[2];
+            if (!is_file($legacyPath) || $legacyPath === $targetPath) {
+                continue;
+            }
+
+            if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0755, true) && !is_dir($targetDirectory)) {
+                return $trimmed;
+            }
+
+            if (@copy($legacyPath, $targetPath)) {
+                break;
+            }
+        }
+
+        return $trimmed;
+    }
+
+    private function requestPublicRoot(): ?string
+    {
+        // The PHP development server handles API calls from backend/public while Vite
+        // serves the frontend's public directory, so its document root is intentionally
+        // ignored here and the local-project branch below remains in control.
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
+            return null;
+        }
+
+        $scriptFilename = trim((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
+        if ($scriptFilename !== '' && strtolower(basename(dirname($scriptFilename))) === 'api') {
+            $gatewayRoot = dirname(dirname($scriptFilename));
+            if (is_dir($gatewayRoot)) {
+                return rtrim($gatewayRoot, '/\\');
+            }
+        }
+
+        $serverDocumentRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+        if ($serverDocumentRoot !== '' && is_dir($serverDocumentRoot)) {
+            return rtrim($serverDocumentRoot, '/\\');
+        }
+
+        return null;
     }
 
     protected function uniqueUploadFilename(string $extension, ?string $originalFileName = null): string
@@ -837,7 +911,7 @@ abstract class BaseService
         return [
             'id' => (string) $row['id'],
             'name' => (string) ($row['name'] ?? ''),
-            'image' => (string) ($row['image'] ?? ''),
+            'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
             'category' => (string) ($row['category'] ?? ''),
             'unitId' => $this->nullableString($row['unit_id'] ?? null),
             'salePrice' => (float) ($row['sale_price'] ?? $row['salePrice'] ?? 0),
