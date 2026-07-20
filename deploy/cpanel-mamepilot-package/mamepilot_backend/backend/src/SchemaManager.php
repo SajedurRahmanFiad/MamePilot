@@ -58,7 +58,6 @@ final class SchemaManager
         }
 
         $statements = $this->splitSqlStatements($sql);
-        $errors = [];
         foreach ($statements as $statement) {
             $trimmed = trim($statement);
             if ($trimmed === '') {
@@ -77,12 +76,6 @@ final class SchemaManager
                 $code = (int) ($e->errorInfo[1] ?? $e->getCode());
                 $safeCodes = [1050, 1051, 1060, 1061, 1062, 1146];
                 if (in_array($code, $safeCodes, true)) {
-                    continue;
-                }
-                // MySQL < 8.0.29 does not support IF NOT EXISTS on ALTER TABLE ADD COLUMN.
-                // Treat the syntax error as non-fatal so subsequent statements (e.g. CREATE VIEW) still run.
-                if ($code === 1064 && stripos($trimmed, 'ALTER TABLE') === 0) {
-                    $errors[] = $e->getMessage();
                     continue;
                 }
                 throw $e;

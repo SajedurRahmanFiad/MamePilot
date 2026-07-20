@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS vendors (
   CONSTRAINT fk_vendors_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
   CONSTRAINT fk_vendors_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS units (
+  id VARCHAR(64) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  short_name VARCHAR(32) NOT NULL,
+  description TEXT NULL,
+  is_fraction TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_units_name (name),
+  UNIQUE KEY uq_units_short_name (short_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -101,6 +113,30 @@ CREATE TABLE IF NOT EXISTS products (
   CONSTRAINT fk_products_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL,
   CONSTRAINT fk_products_unit_id FOREIGN KEY (unit_id) REFERENCES units (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Upgrade compatibility for the v0.0.52 product-unit feature. Keep this in
+-- schema.sql so the release that upgrades the updater itself also repairs
+-- existing databases while that process is still running the old PHP class.
+ALTER TABLE `units`
+  ADD COLUMN IF NOT EXISTS `is_fraction` TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE `products`
+  ADD COLUMN IF NOT EXISTS `unit_id` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `dynamic_pricing` LONGTEXT NULL;
+SET @mamepilot_product_unit_fk_sql = (
+  SELECT IF(
+    EXISTS(
+      SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'products'
+        AND CONSTRAINT_NAME = 'fk_products_unit_id'
+        AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+    ),
+    'SET @mamepilot_product_unit_fk_noop = 1',
+    'ALTER TABLE `products` ADD CONSTRAINT `fk_products_unit_id` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE SET NULL'
+  )
+);
+PREPARE mamepilot_product_unit_fk_stmt FROM @mamepilot_product_unit_fk_sql;
+EXECUTE mamepilot_product_unit_fk_stmt;
+DEALLOCATE PREPARE mamepilot_product_unit_fk_stmt;
 CREATE TABLE IF NOT EXISTS accounts (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -139,18 +175,6 @@ CREATE TABLE IF NOT EXISTS payment_methods (
   PRIMARY KEY (id),
   UNIQUE KEY uq_payment_methods_name (name),
   KEY idx_payment_methods_is_active (is_active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS units (
-  id VARCHAR(64) NOT NULL,
-  name VARCHAR(100) NOT NULL,
-  short_name VARCHAR(32) NOT NULL,
-  description TEXT NULL,
-  is_fraction TINYINT(1) NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_units_name (name),
-  UNIQUE KEY uq_units_short_name (short_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS company_settings (
   id VARCHAR(64) NOT NULL,
@@ -1067,4 +1091,3 @@ LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
 -- New API endpoints: processOrderReturnExchange, processBillReturn.
 -- New permission keys: orders.processReturnExchangeOwn/Any, bills.processReturnOwn/Any.
 -- See migrations/2026-07-11_order_bill_return_exchange.sql for details.
-

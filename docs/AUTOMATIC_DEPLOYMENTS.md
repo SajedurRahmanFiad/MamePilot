@@ -93,7 +93,7 @@ Then it copies:
 - `backend/` to `UPDATE_BACKEND_ROOT/backend/`
 - `.env.example` and `VERSION` to `UPDATE_BACKEND_ROOT/`
 
-Then it applies `schema.sql`.
+Then it applies `schema-only.sql`.
 
 Important: `git pull --ff-only` will fail if the server has local file changes. That is good. It prevents accidental overwrites.
 
@@ -170,14 +170,15 @@ Then create the cron job. Without the cron, the server will not check or install
 
 ## Database files
 
-MamePilot now has two database files:
+MamePilot keeps fresh-install, production-upgrade, and seed responsibilities separate:
 
 | File | Purpose |
 | :--- | :--- |
-| `backend/database/schema.sql` | Pure schema only. No data seeding. Safe to run repeatedly on production databases. |
+| `backend/database/schema.sql` | Complete schema for a fresh database. `CREATE TABLE IF NOT EXISTS` alone does not upgrade columns in existing tables. |
+| `backend/database/schema-only.sql` | Generated additive production-upgrade artifact. The automatic updater applies this file. |
 | `backend/database/seed.sql` | Basic default data for fresh installs. Do not run this repeatedly on customer databases unless you intentionally want to refresh defaults. |
 
-The old combined file is still available for compatibility and is generated from the two files above:
+`schema-only.sql` is generated from `schema.sql` plus every SQL file in `migrations/`:
 
 ```text
 backend/database/schema-only.sql
@@ -189,11 +190,11 @@ To regenerate it manually:
 npm run schema:sync
 ```
 
-New work should point to:
+For every schema change, update the fresh schema and add an idempotent migration:
 
 ```text
 backend/database/schema.sql
-backend/database/seed.sql
+migrations/YYYY-MM-DD_description.sql
 ```
 
 ---
@@ -201,7 +202,7 @@ backend/database/seed.sql
 ## What happens when you fix a bug
 
 1. Fix the bug.
-2. If the database changed, edit `backend/database/schema.sql`.
+2. If the database changed, edit `backend/database/schema.sql` and add an idempotent file under `migrations/`.
 3. If fresh installs need default data, edit `backend/database/seed.sql`.
 4. Run this one command:
 
@@ -256,7 +257,7 @@ For a brand-new deployment:
 For an existing customer database:
 
 - Do **not** run `seed.sql`
-- Run `schema.sql`
+- Run `schema-only.sql`
 - Keep `.env` untouched
 
 The update agent does this automatically when it installs a new release.
@@ -321,7 +322,7 @@ php backend/bin/restore_db.php --file /path/to/backup.sql.gz
 Before release:
 
 - [ ] I fixed the bug.
-- [ ] If database changed, I updated `backend/database/schema.sql`.
+- [ ] If database changed, I updated `backend/database/schema.sql` and added an idempotent migration under `migrations/`.
 - [ ] If fresh-install defaults changed, I updated `backend/database/seed.sql`.
 - [ ] I ran `npm run schema:sync` if I manually edited SQL files.
 - [ ] I ran `npm run release:push`.

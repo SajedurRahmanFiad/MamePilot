@@ -90,9 +90,7 @@ final class UpdateManager
 
             $databaseResult = [];
             if ($this->boolConfig('UPDATE_RUN_SCHEMA', true)) {
-                $schemaPath = $this->config->get('UPDATE_SCHEMA_PATH', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'schema.sql');
-                (new SchemaManager($this->config, $this->database))->runSqlFile($schemaPath, false);
-                $databaseResult['schema'] = 'Applied schema.sql';
+                $databaseResult = $this->runSchemaUpdate(dirname(__DIR__, 2));
 
                 if ($this->boolConfig('UPDATE_RUN_SEED', false)) {
                     $seedPath = $this->config->get('UPDATE_SEED_PATH', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'seed.sql');
@@ -164,9 +162,7 @@ final class UpdateManager
             $this->deployGitCheckout($gitRoot, $documentRoot, $backendRoot);
 
             if ($this->boolConfig('UPDATE_RUN_SCHEMA', true)) {
-                $schemaPath = $this->config->get('UPDATE_SCHEMA_PATH', $gitRoot . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'schema.sql');
-                (new SchemaManager($this->config, $this->database))->runSqlFile($schemaPath, false);
-                $databaseResult = ['schema' => 'Applied schema.sql'];
+                $databaseResult = $this->runSchemaUpdate($gitRoot);
             } else {
                 $databaseResult = ['message' => 'Schema update skipped by UPDATE_RUN_SCHEMA=0.'];
             }
@@ -211,6 +207,45 @@ final class UpdateManager
         }
 
         $this->runShellCommand($gitRoot, $command);
+    }
+
+    /** @return array{schema: string, path: string} */
+    private function runSchemaUpdate(string $root): array
+    {
+        $schemaPath = $this->schemaUpdatePath($root);
+        (new SchemaManager($this->config, $this->database))->runSqlFile($schemaPath, false);
+
+        return [
+            'schema' => 'Applied ' . basename($schemaPath),
+            'path' => $schemaPath,
+        ];
+    }
+
+    private function schemaUpdatePath(string $root): string
+    {
+        $configuredPath = trim((string) $this->config->get('UPDATE_SCHEMA_PATH', ''));
+        if ($configuredPath === '') {
+            return $root . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'schema-only.sql';
+        }
+
+        $isAbsolute = str_starts_with($configuredPath, DIRECTORY_SEPARATOR)
+            || preg_match('/^[A-Za-z]:[\\\\\/]/', $configuredPath) === 1;
+        if (!$isAbsolute) {
+            $configuredPath = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $configuredPath;
+        }
+
+        // Older .env examples pointed at schema.sql. That file creates fresh tables,
+        // but CREATE TABLE IF NOT EXISTS cannot add columns to an existing table.
+        // Transparently prefer the sibling production upgrade artifact so existing
+        // installations receive additive migrations without requiring an .env edit.
+        if (strtolower(basename($configuredPath)) === 'schema.sql') {
+            $upgradePath = dirname($configuredPath) . DIRECTORY_SEPARATOR . 'schema-only.sql';
+            if (is_file($upgradePath)) {
+                return $upgradePath;
+            }
+        }
+
+        return $configuredPath;
     }
 
     private function deployGitCheckout(string $gitRoot, string $documentRoot, string $backendRoot): void
