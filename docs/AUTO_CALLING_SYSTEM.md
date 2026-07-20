@@ -1,8 +1,8 @@
 # Auto Calling System
 
 MamePilot integrates with AwajDigital voice surveys. A newly created order is
-queued only when its order status is listed in Voice Survey settings (the
-default is `On Hold`). The queue creates one Awaj survey for one customer and
+queued only when its order status matches the single trigger status selected
+in Voice Survey settings (the default is `On Hold`). The queue creates one Awaj survey for one customer and
 passes the order id in metadata.
 
 ## Current flow
@@ -32,6 +32,12 @@ passes the order id in metadata.
    answered call without a key is scheduled for the configured retry policy.
    Duplicate callbacks and callbacks from an older retry are ignored.
 
+The worker starts every eligible order in its batch after the preceding create
+request is accepted; it never waits for a survey-result response or webhook
+before creating the next survey. The persisted public webhook URL is included
+as `webhook_url` in every create request because CLI workers do not have a
+reliable HTTP host context.
+
 There is no result polling. The only periodic survey request in the frontend
 is the five-minute Awaj account-balance refresh; it does not fetch call
 results.
@@ -44,9 +50,10 @@ optional `webhook_url` is called when the survey is complete. The callback has
 `survey_id`, `metadata`, and `results`; each result has `phone_number`,
 `status`, `duration`, `response`, and `responses`.
 
-The listener accepts only POST and requires HTTPS in production. The shared
-secret is generated when Voice Survey is enabled. Configure the public URL
-behind the reverse proxy so `X-Forwarded-Proto: https` is preserved.
+The listener accepts only POST and requires HTTPS in production. API credentials,
+sender/template values, and the webhook secret/URL are managed in the
+developer-only AwajDigital settings tab. Configure the public URL behind the
+reverse proxy so `X-Forwarded-Proto: https` is preserved.
 
 ## Queue operation
 
@@ -84,4 +91,3 @@ is not used for polling.
 - A test callback with an old `survey_id` does not change the current order.
 - Replaying the same callback does not increment retry count or change an
   already completed order.
-

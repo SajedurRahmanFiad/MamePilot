@@ -108,6 +108,7 @@ const OrderDetails: React.FC = () => {
   const [showPaperfly, setShowPaperfly] = useState(false);
   const [showPathao, setShowPathao] = useState(false);
   const [showFraudCheckModal, setShowFraudCheckModal] = useState(false);
+  const [showSurveyIndicatorTooltip, setShowSurveyIndicatorTooltip] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -119,6 +120,31 @@ const OrderDetails: React.FC = () => {
   const courierHistoryMutation = useCheckFraudCourierHistory();
   const [showManualCourierModal, setShowManualCourierModal] = useState(false);
   const [manualCourierNote, setManualCourierNote] = useState('');
+
+  const isBusinessGrowthEnabled = hasCapability('grow_your_business');
+  const currentCustomerPhone = normalizePhoneSearchValue(customer?.phone || order?.customerPhone || '');
+  const storedFraudPhone = normalizePhoneSearchValue(customer?.fraudCheckPhone || '');
+  const storedFraudResult = customer?.fraudCheckResult && (!storedFraudPhone || storedFraudPhone === currentCustomerPhone)
+    ? customer.fraudCheckResult
+    : null;
+  const activeFraudResult = courierHistoryMutation.data || storedFraudResult;
+  const fraudPercentage = courierHistoryMutation.data?.summary?.successRatio
+    ?? (storedFraudResult ? (customer?.fraudCheckPercentage ?? storedFraudResult.summary.successRatio) : null);
+
+  React.useEffect(() => {
+    if (!isBusinessGrowthEnabled || !order?.customerId) return;
+    const orderCreatedAt = order.createdAt ? new Date(order.createdAt).getTime() : 0;
+    const checkedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
+    if (checkedAt >= orderCreatedAt && checkedAt > 0) return;
+
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      queryClient.invalidateQueries({ queryKey: ['customer', order.customerId] });
+      if (attempts >= 10) window.clearInterval(timer);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient]);
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
   type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick';
   type OrderStatusTransition = {
@@ -467,7 +493,7 @@ const OrderDetails: React.FC = () => {
   const activityTimelineEntries = React.useMemo(() => {
     if (!order) return [];
 
-    const history = order.history || {};
+    const history: Partial<Order['history']> = order.history || {};
     const defaultCreated = order.createdAt
       ? `Created by ${createdByUser?.name || order.createdBy} on ${new Date(order.createdAt).toLocaleDateString('en-BD', {
           day: 'numeric',
@@ -506,12 +532,50 @@ const OrderDetails: React.FC = () => {
       text: line,
     }));
 
+    const surveyEntries = (order.surveyEvents || []).map((event) => {
+      const labels: Record<string, string> = {
+        queued: 'Auto call queued',
+        initiated: 'Auto call initiated',
+        result_received: 'Survey response',
+        retry_scheduled: 'Retry scheduled',
+        retry_initiated: 'Retry initiated',
+        failed: 'Auto call failed',
+        cancelled: 'Auto call cancelled',
+      };
+      const eventDate = event.createdAt ? new Date(event.createdAt) : null;
+      const timestamp = eventDate && !Number.isNaN(eventDate.getTime())
+        ? eventDate.toLocaleString('en-BD', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+      return {
+        key: `survey-${event.id}`,
+        label: labels[event.eventType] || 'Voice survey update',
+        icon: event.eventType === 'failed' || event.eventType === 'cancelled' ? ICONS.Close : ICONS.Bell,
+        text: `${event.details || labels[event.eventType] || 'Voice survey updated.'}${timestamp ? ` · ${timestamp}` : ''}`,
+        parsedAt: eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null,
+        branch: !['queued', 'initiated'].includes(event.eventType),
+      };
+    });
+
+    if (surveyEntries.length === 0 && order.surveyTriggeredAt) {
+      const initiatedAt = new Date(order.surveyTriggeredAt);
+      surveyEntries.push({
+        key: 'survey-legacy-initiated',
+        label: 'Auto call initiated',
+        icon: ICONS.Bell,
+        text: `Voice survey initiated · ${initiatedAt.toLocaleString('en-BD')}`,
+        parsedAt: initiatedAt,
+        branch: false,
+      });
+    }
+
     const entries = [...baseEntries, ...paymentEntries]
       .map((entry) => ({
         ...entry,
         text: formatHistoryTextForTimeline(entry.text),
         parsedAt: parseHistoryTimestamp(entry.text),
+        branch: false,
       }))
+      .concat(surveyEntries)
       .sort((a, b) => {
         if (a.parsedAt && b.parsedAt) return a.parsedAt.getTime() - b.parsedAt.getTime();
         if (a.parsedAt) return -1;
@@ -855,14 +919,11 @@ const OrderDetails: React.FC = () => {
       return;
     }
 
-    courierHistoryMutation.mutate({ phone: normalizedOrderPhone });
+    courierHistoryMutation.mutate({ phone: normalizedOrderPhone, customerId: order?.customerId });
   };
 
   const openCourierSelectionModal = () => {
     setShowCourierSelectionModal(true);
-    if (canRunFraudChecker) {
-      loadCourierHistory();
-    }
   };
 
   const closeCourierSelectionModal = () => {
@@ -1405,6 +1466,52 @@ const OrderDetails: React.FC = () => {
     || canProcessReturnExchange
     || canAssignExchangeCourier;
 
+  const buyerTrust = (() => {
+    if (fraudPercentage === null) {
+      return {
+        label: 'Buyer check in progress',
+        message: 'Verify the customer before sending.',
+        className: 'bg-gray-100 text-gray-700 border-gray-200',
+      };
+    }
+    if (fraudPercentage >= 90) {
+      return { label: 'Trusted Buyer', message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    }
+    if (fraudPercentage >= 70) {
+      return { label: 'Standard Buyer', message: 'Send with normal checks', className: 'bg-blue-100 text-blue-700 border-blue-200' };
+    }
+    if (fraudPercentage >= 40) {
+      return { label: 'Moderate Risk', message: 'Confirm before sending', className: 'bg-amber-100 text-amber-700 border-amber-200' };
+    }
+    return { label: 'High Risk', message: 'Do not send without verification', className: 'bg-rose-100 text-rose-700 border-rose-200' };
+  })();
+
+  const latestSurveyEvent = order.surveyEvents?.[order.surveyEvents.length - 1];
+  const surveyIndicator = (() => {
+    if (!order.surveyStatus && !latestSurveyEvent) return null;
+    const isAwaiting = ['queued', 'initiated', 'retry_initiated'].includes(latestSurveyEvent?.eventType || '')
+      || ['pending', 'triggered', 'initiated'].includes(order.surveyStatus || '');
+    if (isAwaiting && latestSurveyEvent?.eventType !== 'retry_scheduled') {
+      return { loading: true, className: 'border-blue-600 border-t-transparent', text: 'Waiting for the voice survey result.' };
+    }
+
+    const response = latestSurveyEvent?.response || order.surveyResponse;
+    const callStatus = latestSurveyEvent?.callStatus || order.surveyCallStatus;
+    if (response === '1' || order.confirmationStatus === 'confirmed') {
+      return { loading: false, className: 'bg-emerald-500', text: 'Customer pressed 1 and confirmed the order.' };
+    }
+    if (response === '2' || order.confirmationStatus === 'cancelled') {
+      return { loading: false, className: 'bg-red-500', text: 'Customer pressed 2 and cancelled the order.' };
+    }
+    if ((response && !['1', '2'].includes(response)) || order.confirmationStatus === 'on_hold') {
+      return { loading: false, className: 'bg-amber-400', text: `Customer pressed ${response || '3'} and requested follow-up.` };
+    }
+    if (callStatus === 'not_answered' || latestSurveyEvent?.eventType === 'retry_scheduled' || order.confirmationStatus === 'waiting') {
+      return { loading: false, className: 'bg-black', text: callStatus === 'not_answered' ? 'Customer did not pick up.' : 'Customer answered without selecting an option.' };
+    }
+    return { loading: false, className: 'bg-gray-400', text: 'Voice survey is not complete.' };
+  })();
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay isLoading={loading && !order} message="Loading order details..." />
@@ -1432,6 +1539,23 @@ const OrderDetails: React.FC = () => {
           <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
             {getStatusDisplayName(order.status)}
           </span>
+          {surveyIndicator ? (
+            <button
+              type="button"
+              className="group relative flex h-7 w-7 items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+              aria-label={surveyIndicator.text}
+              onClick={() => setShowSurveyIndicatorTooltip((visible) => !visible)}
+              onBlur={() => setShowSurveyIndicatorTooltip(false)}
+            >
+              <span className={surveyIndicator.loading
+                ? `h-4 w-4 animate-spin rounded-full border-2 ${surveyIndicator.className}`
+                : `h-3.5 w-3.5 rounded-full shadow-sm ring-2 ring-white ${surveyIndicator.className}`}
+              />
+              <span className={`${showSurveyIndicatorTooltip ? 'block' : 'hidden'} absolute left-1/2 top-full z-30 mt-2 w-56 -translate-x-1/2 rounded-lg bg-gray-950 px-3 py-2 text-center text-xs font-medium normal-case tracking-normal text-white shadow-xl group-hover:block`}>
+                {surveyIndicator.text}
+              </span>
+            </button>
+          ) : null}
           {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
             <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
           )}
@@ -1489,7 +1613,7 @@ const OrderDetails: React.FC = () => {
                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold ${canRunFraudChecker ? 'text-gray-700' : 'cursor-not-allowed text-gray-300'}`}
                         disabled={!canRunFraudChecker}
                       >
-                        {ICONS.FraudChecker} Check Courier History
+                        {ICONS.FraudChecker} Buyer Trust Details
                       </button>
                     )}
                     {sentToAnyCourier && canUseCourierAutomation && (
@@ -1523,6 +1647,13 @@ const OrderDetails: React.FC = () => {
           )}
         </div>
       </div>
+
+      {isBusinessGrowthEnabled ? (
+        <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${buyerTrust.className}`}>
+          <p className="text-sm font-black">{buyerTrust.label}{fraudPercentage !== null ? ` · ${Math.round(fraudPercentage)}% delivered` : ''}</p>
+          <p className="text-sm font-bold">{buyerTrust.message}</p>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         {/* On-Screen Invoice Format */}
@@ -1745,36 +1876,40 @@ const OrderDetails: React.FC = () => {
           </div>
 
           {/* Voice Survey Status Section */}
-          {order.confirmationStatus && (
+          {order.surveyStatus && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Voice Survey</h3>
-                <ConfirmationStatusDot status={order.confirmationStatus} size="md" showLabel />
+                {order.confirmationStatus ? <ConfirmationStatusDot status={order.confirmationStatus} size="md" showLabel /> : (
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">In progress</span>
+                )}
               </div>
 
               {order.confirmationStatus === 'confirmed' && (
                 <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
-                  <p className="text-sm font-bold text-emerald-800">✓ Customer confirmed this order via phone call</p>
-                  {order.surveyResponse && <p className="text-xs text-emerald-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                  <p className="text-sm font-bold text-emerald-800">Confirmed by customer</p>
+                  <p className="mt-1 text-xs text-emerald-700">The customer pressed 1. This order is ready to process.</p>
                 </div>
               )}
               {order.confirmationStatus === 'cancelled' && (
                 <div className="rounded-xl bg-red-50 border border-red-100 p-4">
-                  <p className="text-sm font-bold text-red-800">✕ Customer cancelled this order via phone call</p>
-                  {order.surveyResponse && <p className="text-xs text-red-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                  <p className="text-sm font-bold text-red-800">Cancelled by customer</p>
+                  <p className="mt-1 text-xs text-red-700">The customer pressed 2. Do not dispatch this parcel.</p>
                 </div>
               )}
               {order.confirmationStatus === 'on_hold' && (
                 <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
-                  <p className="text-sm font-bold text-amber-800">☎ Customer requested to speak with someone</p>
-                  {order.surveyResponse && <p className="text-xs text-amber-600 mt-1">DTMF Response: Key {order.surveyResponse}</p>}
+                  <p className="text-sm font-bold text-amber-800">Follow-up required</p>
+                  <p className="mt-1 text-xs text-amber-700">The customer pressed {order.surveyResponse || '3'}. Contact them before dispatch.</p>
                 </div>
               )}
-              {order.confirmationStatus === 'waiting' && (
+              {(!order.confirmationStatus || order.confirmationStatus === 'waiting') && (
                 <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
-                  <p className="text-sm font-bold text-gray-600">⏳ Waiting for customer response...</p>
-                  {order.surveyRetryCount > 0 && <p className="text-xs text-gray-500 mt-1">Retries: {order.surveyRetryCount}</p>}
-                  {order.surveyNextRetryAt && <p className="text-xs text-gray-500 mt-1">Next retry: {new Date(order.surveyNextRetryAt).toLocaleString()}</p>}
+                  <p className="text-sm font-bold text-gray-700">{order.surveyCallStatus === 'not_answered' ? 'Customer did not pick up' : 'Waiting for webhook result'}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {order.surveyNextRetryAt ? `Retry scheduled for ${new Date(order.surveyNextRetryAt).toLocaleString('en-BD')}.` : 'This updates automatically when AwajDigital sends the webhook.'}
+                  </p>
+                  {order.surveyRetryCount > 0 ? <p className="mt-1 text-xs font-semibold text-gray-500">Retry attempt {order.surveyRetryCount}</p> : null}
                 </div>
               )}
 
@@ -2027,20 +2162,20 @@ const OrderDetails: React.FC = () => {
                   ) : null}
 
                   {/* Courier History Display */}
-                  {courierHistoryMutation.data?.summary && (
+                  {activeFraudResult?.summary && (
                     <div className="border border-gray-200 rounded-lg p-3 space-y-2">
                       <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Courier Statistics</p>
                       <div className="grid grid-cols-3 gap-3 text-center">
                         <div>
-                          <p className="text-lg font-black text-gray-900">{courierHistoryMutation.data.summary.totalParcel}</p>
+                          <p className="text-lg font-black text-gray-900">{activeFraudResult.summary.totalParcel}</p>
                           <p className="text-xs text-gray-600 mt-1">Total Orders</p>
                         </div>
                         <div>
-                          <p className="text-lg font-black text-emerald-600">{courierHistoryMutation.data.summary.successParcel}</p>
+                          <p className="text-lg font-black text-emerald-600">{activeFraudResult.summary.successParcel}</p>
                           <p className="text-xs text-gray-600 mt-1">Delivered</p>
                         </div>
                         <div>
-                          <p className="text-lg font-black text-red-600">{courierHistoryMutation.data.summary.cancelledParcel}</p>
+                          <p className="text-lg font-black text-red-600">{activeFraudResult.summary.cancelledParcel}</p>
                           <p className="text-xs text-gray-600 mt-1">Cancelled</p>
                         </div>
                       </div>
@@ -2064,13 +2199,14 @@ const OrderDetails: React.FC = () => {
         <div className="p-5 space-y-4">
           {activityTimelineEntries.length > 0 ? (
             activityTimelineEntries.map((entry) => (
-              <div key={entry.key} className="flex gap-3 pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 items-center">
+              <div key={entry.key} className={`relative flex gap-3 pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 items-center ${entry.branch ? 'ml-5 border-l-2 border-l-blue-100 pl-4' : ''}`}>
                 <div className="flex-shrink-0">
                   <div className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600">
                     {entry.icon}
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
+                  <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{entry.label}</p>
                   <p className="text-xs text-gray-700 leading-relaxed font-medium">{entry.text}</p>
                 </div>
               </div>
@@ -2159,20 +2295,20 @@ const OrderDetails: React.FC = () => {
             </div>
             
             {/* Courier History Section */}
-            {courierHistoryMutation.data && (
+            {activeFraudResult && (
               <div className="border-b border-gray-100 p-6 bg-gray-50">
                 <h3 className="text-sm font-bold text-gray-700 uppercase tracking-widest mb-4">Customer Courier History</h3>
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <p className="text-2xl font-black text-gray-900">{courierHistoryMutation.data.summary?.totalParcel || 0}</p>
+                    <p className="text-2xl font-black text-gray-900">{activeFraudResult.summary?.totalParcel || 0}</p>
                     <p className="text-xs text-gray-500 font-medium mt-1">Total Orders</p>
                   </div>
                   <div>
-                    <p className="text-2xl font-black text-emerald-600">{courierHistoryMutation.data.summary?.successParcel || 0}</p>
+                    <p className="text-2xl font-black text-emerald-600">{activeFraudResult.summary?.successParcel || 0}</p>
                     <p className="text-xs text-gray-500 font-medium mt-1">Delivered</p>
                   </div>
                   <div>
-                    <p className="text-2xl font-black text-red-600">{courierHistoryMutation.data.summary?.cancelledParcel || 0}</p>
+                    <p className="text-2xl font-black text-red-600">{activeFraudResult.summary?.cancelledParcel || 0}</p>
                     <p className="text-xs text-gray-500 font-medium mt-1">Cancelled</p>
                   </div>
                 </div>
@@ -2326,6 +2462,8 @@ const OrderDetails: React.FC = () => {
           onClose={() => setShowFraudCheckModal(false)}
           phone={orderPhone}
           customerName={customer?.name || order.customerName || ''}
+          result={storedFraudResult}
+          checkedAt={customer?.fraudCheckedAt}
         />
       )}
 

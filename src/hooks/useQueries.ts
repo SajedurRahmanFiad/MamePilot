@@ -97,6 +97,7 @@ import {
   fetchBusinessGrowthSettings,
   fetchBusinessRecommendations,
   fetchVoiceSurveySettings,
+  fetchVoiceSurveyIntegrationSettings,
   fetchSurveyBalance,
   fetchSurveyBroadcasts,
   fetchSurveySummary,
@@ -152,6 +153,7 @@ import type {
   AgentSettings,
   LicenseTier,
   VoiceSurveySettings,
+  VoiceSurveyIntegrationSettings,
 } from '../../types';
 import { db } from '../../db';
 import { hasAdminAccess } from '../../types';
@@ -1233,6 +1235,15 @@ export function useVoiceSurveySettings(enabled: boolean = true): UseQueryResult<
   return useQuery({
     queryKey: ['settings', 'voice-survey'],
     queryFn: fetchVoiceSurveySettings,
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useVoiceSurveyIntegrationSettings(enabled: boolean = true): UseQueryResult<VoiceSurveyIntegrationSettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'voice-survey-integration'],
+    queryFn: fetchVoiceSurveyIntegrationSettings,
     staleTime: 5 * 60 * 1000,
     enabled,
   });

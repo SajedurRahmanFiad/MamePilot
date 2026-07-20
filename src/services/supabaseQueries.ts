@@ -52,6 +52,7 @@ import type {
   MetaAdsSettings,
   MarketingDashboardResponse,
   VoiceSurveySettings,
+  VoiceSurveyIntegrationSettings,
   AgentMessage,
   AgentRunEvent,
   AgentRunReceipt,
@@ -313,8 +314,8 @@ export async function fetchMetaAdById(id: string): Promise<any | null> { return 
 export async function fetchMarketingDashboard(filters?: { from?: string; to?: string }): Promise<MarketingDashboardResponse> {
   return call<MarketingDashboardResponse>('fetchMarketingDashboard', filters || {}, { timeoutMs: 60000 });
 }
-export async function checkFraudCourierHistory(phone: string): Promise<FraudCheckResult> {
-  return call<FraudCheckResult>('checkFraudCourierHistory', { phone }, { timeoutMs: 30000 });
+export async function checkFraudCourierHistory(phone: string, customerId?: string): Promise<FraudCheckResult> {
+  return call<FraudCheckResult>('checkFraudCourierHistory', { phone, customerId }, { timeoutMs: 30000 });
 }
 export async function fetchPermissionsSettings(): Promise<PermissionsSettings> { return call<PermissionsSettings>('fetchPermissionsSettings'); }
 export async function updatePermissionsSettings(updates: PermissionsSettings): Promise<PermissionsSettings> {
@@ -324,6 +325,8 @@ export async function updatePermissionsSettings(updates: PermissionsSettings): P
 // Voice Survey (Auto Calling)
 export async function fetchVoiceSurveySettings(): Promise<VoiceSurveySettings> { return call<VoiceSurveySettings>('fetchVoiceSurveySettings'); }
 export async function updateVoiceSurveySettings(updates: Partial<VoiceSurveySettings>): Promise<VoiceSurveySettings> { return call<VoiceSurveySettings>('updateVoiceSurveySettings', updates); }
+export async function fetchVoiceSurveyIntegrationSettings(): Promise<VoiceSurveyIntegrationSettings> { return call<VoiceSurveyIntegrationSettings>('fetchVoiceSurveyIntegrationSettings'); }
+export async function updateVoiceSurveyIntegrationSettings(updates: Partial<VoiceSurveyIntegrationSettings>): Promise<VoiceSurveyIntegrationSettings> { return call<VoiceSurveyIntegrationSettings>('updateVoiceSurveyIntegrationSettings', updates); }
 export async function triggerSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('triggerSurveyCall', { orderId }); }
 export async function retrySurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('retrySurveyCall', { orderId }); }
 export async function cancelSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('cancelSurveyCall', { orderId }); }

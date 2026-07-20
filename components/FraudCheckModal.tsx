@@ -2,8 +2,7 @@ import React from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import { FraudCheckResults } from './FraudCheckResults';
-import { ICONS } from '../constants';
-import { useCheckFraudCourierHistory } from '../src/hooks/useMutations';
+import type { FraudCheckResult } from '../types';
 import { normalizePhoneSearchValue } from '../utils';
 
 type FraudCheckModalProps = {
@@ -11,6 +10,8 @@ type FraudCheckModalProps = {
   onClose: () => void;
   phone: string;
   customerName?: string;
+  result?: FraudCheckResult | null;
+  checkedAt?: string | null;
 };
 
 const isValidPhone = (value: string): boolean => /^0\d{10}$/.test(value);
@@ -20,28 +21,11 @@ export const FraudCheckModal: React.FC<FraudCheckModalProps> = ({
   onClose,
   phone,
   customerName,
+  result,
+  checkedAt,
 }) => {
-  const mutation = useCheckFraudCourierHistory();
-  const { mutate, reset } = mutation;
   const normalizedPhone = normalizePhoneSearchValue(phone);
   const validPhone = isValidPhone(normalizedPhone);
-
-  const runCheck = React.useCallback(() => {
-    if (!validPhone) return;
-    mutate({ phone: normalizedPhone });
-  }, [mutate, normalizedPhone, validPhone]);
-
-  React.useEffect(() => {
-    if (isOpen && validPhone) {
-      runCheck();
-    }
-  }, [isOpen, runCheck, validPhone]);
-
-  React.useEffect(() => {
-    if (!isOpen) {
-      reset();
-    }
-  }, [isOpen, reset]);
 
   return (
     <Modal
@@ -54,16 +38,6 @@ export const FraudCheckModal: React.FC<FraudCheckModalProps> = ({
         <>
           <Button type="button" variant="ghost" onClick={onClose}>
             Close
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={runCheck}
-            loading={mutation.isPending}
-            disabled={!validPhone}
-            icon={ICONS.FraudChecker}
-          >
-            Refresh Check
           </Button>
         </>
       }
@@ -83,19 +57,17 @@ export const FraudCheckModal: React.FC<FraudCheckModalProps> = ({
           </div>
         ) : null}
 
-        {validPhone && mutation.isPending && !mutation.data ? (
+        {validPhone && !result ? (
           <div className="rounded-2xl border border-gray-100 bg-white px-6 py-14 text-center text-sm font-medium text-gray-400 shadow-sm">
-            Checking courier history...
+            Courier history is being checked in the background.
           </div>
         ) : null}
-
-        {validPhone && mutation.error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-600">
-            {mutation.error.message}
-          </div>
+        {validPhone && result ? (
+          <>
+            {checkedAt ? <p className="text-xs font-medium text-gray-400">Last checked {new Date(checkedAt).toLocaleString('en-BD')}</p> : null}
+            <FraudCheckResults result={result} />
+          </>
         ) : null}
-
-        {validPhone && mutation.data ? <FraudCheckResults result={mutation.data} /> : null}
       </div>
     </Modal>
   );

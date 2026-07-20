@@ -84,6 +84,7 @@ import {
   checkFraudCourierHistory,
   updatePermissionsSettings,
   updateVoiceSurveySettings,
+  updateVoiceSurveyIntegrationSettings,
   triggerSurveyCall,
   retrySurveyCall,
   cancelSurveyCall,
@@ -130,6 +131,7 @@ import type {
   ProcessOrderReturnExchangePayload,
   ProcessBillReturnPayload,
   VoiceSurveySettings,
+  VoiceSurveyIntegrationSettings,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -2770,9 +2772,15 @@ export function useDeleteEmployeeWalletPayout(): UseMutationResult<
   });
 }
 
-export function useCheckFraudCourierHistory(): UseMutationResult<FraudCheckResult, Error, { phone: string }, unknown> {
+export function useCheckFraudCourierHistory(): UseMutationResult<FraudCheckResult, Error, { phone: string; customerId?: string }, unknown> {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ phone }) => checkFraudCourierHistory(phone),
+    mutationFn: ({ phone, customerId }) => checkFraudCourierHistory(phone, customerId),
+    onSuccess: (_result, variables) => {
+      if (variables.customerId) {
+        queryClient.invalidateQueries({ queryKey: ['customer', variables.customerId] });
+      }
+    },
   });
 }
 
@@ -3043,6 +3051,16 @@ export function useRefreshBusinessRecommendations() {
     mutationFn: refreshBusinessRecommendations,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['business-recommendations'] });
+    },
+  });
+}
+
+export function useUpdateVoiceSurveyIntegrationSettings(): UseMutationResult<VoiceSurveyIntegrationSettings, Error, Partial<VoiceSurveyIntegrationSettings>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateVoiceSurveyIntegrationSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey-integration'] });
     },
   });
 }

@@ -198,6 +198,11 @@ export interface Customer {
   totalOrders: number;
   dueAmount: number;
   createdBy?: string;
+  createdAt?: string;
+  fraudCheckResult?: FraudCheckResult | null;
+  fraudCheckPercentage?: number | null;
+  fraudCheckPhone?: string | null;
+  fraudCheckedAt?: string | null;
   deletedAt?: string;
   deletedBy?: string;
 }
@@ -338,16 +343,19 @@ export interface FraudCheckerSettings {
 export interface VoiceSurveySettings {
   enabled: boolean;
   delayMinutes: number;
-  apiToken: string;
-  sender: string;
-  templateName: string;
-  webhookSecret: string;
-  maxSurveyTimeSeconds: number;
   missedCallRetryMinutes: number;
   missedCallRetryCount: number;
   noKeyRetryMinutes: number;
   noKeyRetryCount: number;
   triggerStatuses: string[];
+}
+
+export interface VoiceSurveyIntegrationSettings {
+  apiToken: string;
+  sender: string;
+  templateName: string;
+  webhookSecret: string;
+  webhookUrl: string;
 }
 
 export interface CourierSettings {
@@ -533,6 +541,9 @@ export interface Order {
   surveyRetryCount?: number;
   surveyNextRetryAt?: string | null;
   surveyTriggeredAt?: string | null;
+  surveyLastRetryReason?: string | null;
+  surveyLastRetryAt?: string | null;
+  surveyEvents?: VoiceSurveyEvent[];
   history: {
     created: string;
     courier?: string;
@@ -1137,6 +1148,16 @@ export interface FraudCheckResult {
   couriers: FraudCheckCourierHistory[];
   summary: FraudCheckSummary;
   reports: FraudCheckReport[];
+}
+
+export interface VoiceSurveyEvent {
+  id: string;
+  surveyId?: string | null;
+  eventType: 'queued' | 'initiated' | 'result_received' | 'retry_scheduled' | 'retry_initiated' | 'failed' | 'cancelled' | string;
+  callStatus?: string | null;
+  response?: string | null;
+  details?: string | null;
+  createdAt: string;
 }
 
 export interface PayrollSettings {

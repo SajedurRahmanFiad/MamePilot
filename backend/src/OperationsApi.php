@@ -1182,7 +1182,15 @@ final class OperationsApi extends BaseService
 
     private function fetchOrderRowById(string $id): ?array
     {
-        return $this->database->fetchOne('SELECT * FROM orders_with_customer_creator WHERE id = :id LIMIT 1', [':id' => $id]);
+        return $this->database->fetchOne(
+            'SELECT o.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, u.name AS creator_name
+             FROM orders o
+             LEFT JOIN customers c ON c.id = o.customer_id
+             LEFT JOIN users u ON u.id = o.created_by
+             WHERE o.id = :id AND o.deleted_at IS NULL
+             LIMIT 1',
+            [':id' => $id]
+        );
     }
 
     private function fetchBillRowById(string $id): ?array
@@ -1811,7 +1819,32 @@ final class OperationsApi extends BaseService
     public function fetchOrderById(array $params): ?array
     {
         $row = $this->fetchOrderRowById(trim((string) ($params['id'] ?? '')));
-        return $row ? $this->mapOrder($row) : null;
+        if ($row === null) {
+            return null;
+        }
+
+        $order = $this->mapOrder($row);
+        $order['surveyEvents'] = [];
+        if ($this->tableExists('voice_survey_events')) {
+            $events = $this->database->fetchAll(
+                'SELECT id, survey_id, event_type, call_status, response, details, created_at
+                 FROM voice_survey_events
+                 WHERE order_id = :order_id
+                 ORDER BY created_at ASC, id ASC',
+                [':order_id' => (string) $row['id']]
+            );
+            $order['surveyEvents'] = array_map(fn (array $event): array => [
+                'id' => (string) $event['id'],
+                'surveyId' => $this->nullableString($event['survey_id'] ?? null),
+                'eventType' => (string) ($event['event_type'] ?? ''),
+                'callStatus' => $this->nullableString($event['call_status'] ?? null),
+                'response' => $this->nullableString($event['response'] ?? null),
+                'details' => $this->nullableString($event['details'] ?? null),
+                'createdAt' => $this->toIso($event['created_at'] ?? null) ?? '',
+            ], $events);
+        }
+
+        return $order;
     }
 
     public function fetchOrdersByCustomerId(array $params): array

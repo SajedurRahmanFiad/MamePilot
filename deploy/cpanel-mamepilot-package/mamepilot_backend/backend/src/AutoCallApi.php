@@ -20,19 +20,13 @@ final class AutoCallApi extends BaseService
         $this->requireAdmin();
         $row = $this->fetchSettingsRow();
 
-        $triggerStatuses = json_decode((string) ($row['trigger_statuses'] ?? '[]'), true);
-        if (!is_array($triggerStatuses)) {
-            $triggerStatuses = ['On Hold'];
-        }
+        $triggerStatuses = $this->normalizeTriggerStatuses(
+            json_decode((string) ($row['trigger_statuses'] ?? '[]'), true)
+        );
 
         return [
             'enabled' => (bool) ($row['enabled'] ?? false),
             'delayMinutes' => (int) ($row['delay_minutes'] ?? 5),
-            'apiToken' => (string) ($row['api_token'] ?? ''),
-            'sender' => (string) ($row['sender'] ?? ''),
-            'templateName' => (string) ($row['template_name'] ?? ''),
-            'webhookSecret' => (string) ($row['webhook_secret'] ?? ''),
-            'maxSurveyTimeSeconds' => (int) ($row['max_survey_time_seconds'] ?? 120),
             'missedCallRetryMinutes' => (int) ($row['missed_call_retry_minutes'] ?? 30),
             'missedCallRetryCount' => (int) ($row['missed_call_retry_count'] ?? 3),
             'noKeyRetryMinutes' => (int) ($row['no_key_retry_minutes'] ?? 10),
@@ -46,31 +40,23 @@ final class AutoCallApi extends BaseService
         $this->requireAdmin();
         $existing = $this->fetchSettingsRow();
 
-        $triggerStatuses = $params['triggerStatuses'] ?? null;
-        if ($triggerStatuses !== null && is_array($triggerStatuses)) {
-            $triggerStatusesJson = $this->jsonEncode($triggerStatuses);
-        } else {
-            $triggerStatusesJson = $existing['trigger_statuses'] ?? '["On Hold"]';
-        }
-
-        $webhookSecret = $this->nullableString($params['webhookSecret'] ?? $existing['webhook_secret'] ?? null);
-        if ((bool) ($params['enabled'] ?? $existing['enabled'] ?? false) && $webhookSecret === null) {
-            $webhookSecret = bin2hex(random_bytes(32));
-        }
+        $triggerStatuses = array_key_exists('triggerStatuses', $params)
+            ? $this->normalizeTriggerStatuses($params['triggerStatuses'])
+            : $this->normalizeTriggerStatuses(json_decode((string) ($existing['trigger_statuses'] ?? '[]'), true));
 
         $data = [
             'enabled' => isset($params['enabled']) ? (int) (bool) $params['enabled'] : (int) ($existing['enabled'] ?? 0),
             'delay_minutes' => (int) ($params['delayMinutes'] ?? $existing['delay_minutes'] ?? 5),
-            'api_token' => $this->nullableString($params['apiToken'] ?? $existing['api_token'] ?? null),
-            'sender' => $this->nullableString($params['sender'] ?? $existing['sender'] ?? null),
-            'template_name' => $this->nullableString($params['templateName'] ?? $existing['template_name'] ?? null),
-            'webhook_secret' => $webhookSecret,
-            'max_survey_time_seconds' => (int) ($params['maxSurveyTimeSeconds'] ?? $existing['max_survey_time_seconds'] ?? 120),
+            'api_token' => $this->nullableString($existing['api_token'] ?? null),
+            'sender' => $this->nullableString($existing['sender'] ?? null),
+            'template_name' => $this->nullableString($existing['template_name'] ?? null),
+            'webhook_secret' => $this->nullableString($existing['webhook_secret'] ?? null),
+            'max_survey_time_seconds' => (int) ($existing['max_survey_time_seconds'] ?? 120),
             'missed_call_retry_minutes' => (int) ($params['missedCallRetryMinutes'] ?? $existing['missed_call_retry_minutes'] ?? 30),
             'missed_call_retry_count' => (int) ($params['missedCallRetryCount'] ?? $existing['missed_call_retry_count'] ?? 3),
             'no_key_retry_minutes' => (int) ($params['noKeyRetryMinutes'] ?? $existing['no_key_retry_minutes'] ?? 10),
             'no_key_retry_count' => (int) ($params['noKeyRetryCount'] ?? $existing['no_key_retry_count'] ?? 2),
-            'trigger_statuses' => $triggerStatusesJson,
+            'trigger_statuses' => $this->jsonEncode($triggerStatuses),
         ];
 
         if ($existing === null) {
@@ -91,6 +77,61 @@ final class AutoCallApi extends BaseService
         return $this->fetchVoiceSurveySettings();
     }
 
+    public function fetchVoiceSurveyIntegrationSettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $row = $this->fetchSettingsRow();
+
+        return [
+            'apiToken' => (string) ($row['api_token'] ?? ''),
+            'sender' => (string) ($row['sender'] ?? ''),
+            'templateName' => (string) ($row['template_name'] ?? ''),
+            'webhookSecret' => (string) ($row['webhook_secret'] ?? ''),
+            'webhookUrl' => $this->buildWebhookUrl($row ?? []),
+        ];
+    }
+
+    public function updateVoiceSurveyIntegrationSettings(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $existing = $this->fetchSettingsRow();
+        $existingWebhookSecret = trim((string) ($existing['webhook_secret'] ?? ''));
+        $webhookSecret = $this->nullableString($params['webhookSecret'] ?? $existing['webhook_secret'] ?? null);
+        if ($webhookSecret === null) {
+            $webhookSecret = bin2hex(random_bytes(32));
+        }
+        $webhookUrl = $this->nullableString($params['webhookUrl'] ?? null);
+        $secretChanged = !hash_equals($existingWebhookSecret, $webhookSecret);
+        if ($webhookUrl === null || ($secretChanged && strpos($webhookUrl, urlencode($webhookSecret)) === false)) {
+            $webhookUrl = $this->deriveWebhookUrl($webhookSecret);
+        }
+        $this->assertWebhookUrlValid($webhookUrl, $webhookSecret);
+
+        $data = [
+            'api_token' => $this->nullableString($params['apiToken'] ?? $existing['api_token'] ?? null),
+            'sender' => $this->nullableString($params['sender'] ?? $existing['sender'] ?? null),
+            'template_name' => $this->nullableString($params['templateName'] ?? $existing['template_name'] ?? null),
+            'webhook_secret' => $webhookSecret,
+            'webhook_url' => $webhookUrl,
+        ];
+
+        if ($existing === null) {
+            $now = $this->database->nowUtc();
+            $this->database->execute(
+                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, webhook_url, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, 0, 5, :api_token, :sender, :template_name, :webhook_secret, :webhook_url, 120, 30, 3, 10, 2, :trigger_statuses, :now, :now)',
+                array_merge($data, [':id' => $this->stringId(null), ':trigger_statuses' => '["On Hold"]', ':now' => $now])
+            );
+        } else {
+            [$setClause, $setParams] = $this->database->buildSetClause($data);
+            $this->database->execute(
+                "UPDATE voice_survey_settings SET {$setClause}, updated_at = :updated_at WHERE id = :id",
+                array_merge($setParams, [':updated_at' => $this->database->nowUtc(), ':id' => $existing['id']])
+            );
+        }
+
+        return $this->fetchVoiceSurveyIntegrationSettings();
+    }
+
     public function queueOrderIfEligible(string $orderId, string $status): bool
     {
         if (!$this->tableExists('voice_survey_settings') || !$this->columnExists('orders', 'survey_status')) {
@@ -108,6 +149,9 @@ final class AutoCallApi extends BaseService
             "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, confirmation_status = NULL, updated_at = :now WHERE id = :id AND deleted_at IS NULL AND (survey_status IS NULL OR survey_status = '')",
             [':now' => $this->database->nowUtc(), ':id' => $orderId]
         );
+        if ($queued === 1) {
+            $this->logSurveyEvent($orderId, 'queued', null, 'pending', null, 'Automatic survey queued.');
+        }
         return $queued === 1;
     }
 
@@ -138,6 +182,7 @@ final class AutoCallApi extends BaseService
             "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, confirmation_status = NULL, updated_at = :updated_at WHERE id = :id",
             [':updated_at' => $this->database->nowUtc(), ':id' => $orderId]
         );
+        $this->logSurveyEvent($orderId, 'queued', null, 'pending', null, 'Survey queued manually.');
 
         if (!$this->initiateSurveyCall($order, $settings)) {
             throw new RuntimeException('Survey call could not be started. Check the customer phone number and call status.');
@@ -168,6 +213,10 @@ final class AutoCallApi extends BaseService
         );
 
         $freshOrder = $this->fetchOrderRow($orderId);
+        $this->logSurveyEvent($orderId, 'retry_initiated', null, 'triggered', null, 'Manual retry initiated.');
+        if ($freshOrder !== null) {
+            $freshOrder['survey_retry_count'] = 0;
+        }
         if ($freshOrder === null || !$this->initiateSurveyCall($freshOrder, $settings)) {
             throw new RuntimeException('Survey call retry could not be started.');
         }
@@ -187,6 +236,7 @@ final class AutoCallApi extends BaseService
             "UPDATE orders SET survey_status = 'skipped', survey_next_retry_at = NULL, updated_at = :updated_at WHERE id = :id AND survey_status NOT IN ('completed', 'skipped')",
             [':updated_at' => $this->database->nowUtc(), ':id' => $orderId]
         );
+        $this->logSurveyEvent($orderId, 'cancelled', null, 'skipped', null, 'Survey cancelled manually.');
 
         return ['success' => true, 'message' => 'Survey call cancelled.'];
     }
@@ -638,6 +688,17 @@ final class AutoCallApi extends BaseService
                 $bindings
             );
 
+            if ($updated === 1) {
+                $details = $confirmationStatus === 'confirmed'
+                    ? 'Customer confirmed the order.'
+                    : ($confirmationStatus === 'cancelled'
+                        ? 'Customer cancelled the order.'
+                        : ($confirmationStatus === 'on_hold'
+                            ? 'Customer requested follow-up.'
+                            : ($surveyCallStatus === 'not_answered' ? 'Customer did not pick up.' : 'Customer answered without pressing a key.')));
+                $this->logSurveyEvent($orderId, 'result_received', $surveyId, $surveyCallStatus, $response !== null ? (string) $response : null, $details);
+            }
+
             // Only the first delivery for the active survey may schedule a retry.
             if ($updated === 1 && $confirmationStatus === 'waiting') {
                 $reason = $surveyCallStatus === 'not_answered' ? 'missed_call' : 'answered_no_key';
@@ -664,6 +725,7 @@ final class AutoCallApi extends BaseService
                 "UPDATE orders SET survey_status = 'failed', survey_call_status = 'invalid_phone', confirmation_status = 'on_hold', updated_at = :now WHERE id = :id",
                 [':now' => $this->database->nowUtc(), ':id' => $orderId]
             );
+            $this->logSurveyEvent($orderId, 'failed', null, 'invalid_phone', null, 'Customer phone number is invalid.');
             return false;
         }
         $requestId = 'mame_' . substr(hash('sha256', $orderId . '|' . $normalizedPhone . '|' . microtime(true)), 0, 40);
@@ -689,6 +751,10 @@ final class AutoCallApi extends BaseService
             return false;
         }
 
+        if ((int) ($order['survey_retry_count'] ?? 0) > 0) {
+            $this->logSurveyEvent($orderId, 'retry_initiated', null, 'triggered', null, 'Scheduled retry initiated.');
+        }
+
         $response = $this->httpPost(self::SURVEY_API_BASE, $payload, $settings);
 
         if ($response['success']) {
@@ -698,6 +764,7 @@ final class AutoCallApi extends BaseService
                     "UPDATE orders SET survey_status = 'completed', survey_call_status = 'api_error: missing survey id', updated_at = :now WHERE id = :id AND survey_status = 'triggered'",
                     [':now' => $this->database->nowUtc(), ':id' => $orderId]
                 );
+                $this->logSurveyEvent($orderId, 'failed', null, 'api_error', null, 'AwajDigital accepted no survey identifier.');
                 $this->handleWebhookRetry($orderId, 'missed_call', $settings);
                 return false;
             }
@@ -705,12 +772,14 @@ final class AutoCallApi extends BaseService
                 "UPDATE orders SET survey_status = 'initiated', survey_id = :survey_id, survey_call_status = 'api_success', updated_at = :now WHERE id = :id AND survey_status = 'triggered'",
                 [':survey_id' => $surveyId, ':now' => $this->database->nowUtc(), ':id' => $orderId]
             );
+            $this->logSurveyEvent($orderId, 'initiated', (string) $surveyId, 'initiated', null, 'AwajDigital survey started; awaiting webhook result.');
         } else {
             $error = $response['error'] ?? 'Unknown error';
             $this->database->execute(
                 "UPDATE orders SET survey_status = 'completed', survey_call_status = :error, updated_at = :now WHERE id = :id AND survey_status = 'triggered'",
                 [':error' => 'api_error: ' . mb_substr($error, 0, 200), ':now' => $this->database->nowUtc(), ':id' => $orderId]
             );
+            $this->logSurveyEvent($orderId, 'failed', null, 'api_error', null, mb_substr((string) $error, 0, 500));
             $this->handleWebhookRetry($orderId, 'missed_call', $settings);
             return false;
         }
@@ -775,13 +844,9 @@ final class AutoCallApi extends BaseService
     private function getTriggerStatuses(array $settings): array
     {
         $raw = $settings['trigger_statuses'] ?? null;
-        if ($raw !== null) {
-            $decoded = json_decode((string) $raw, true);
-            if (is_array($decoded) && count($decoded) > 0) {
-                return $decoded;
-            }
-        }
-        return ['On Hold'];
+        return $this->normalizeTriggerStatuses(
+            $raw !== null ? json_decode((string) $raw, true) : null
+        );
     }
 
     private function recoverStuckOrders(): int
@@ -812,6 +877,7 @@ final class AutoCallApi extends BaseService
                 "UPDATE orders SET survey_status = 'failed', survey_last_retry_reason = :reason, updated_at = :now WHERE id = :id",
                 [':reason' => $reason, ':now' => $this->database->nowUtc(), ':id' => $orderId]
             );
+            $this->logSurveyEvent($orderId, 'failed', null, $reason, null, 'Retry limit reached.');
             return;
         }
 
@@ -819,6 +885,14 @@ final class AutoCallApi extends BaseService
         $this->database->execute(
             "UPDATE orders SET survey_status = 'pending', survey_id = NULL, survey_next_retry_at = :next_retry, survey_retry_count = survey_retry_count + 1, survey_last_retry_reason = :reason, survey_last_retry_at = :now, confirmation_status = NULL, updated_at = :now WHERE id = :id",
             [':next_retry' => $nextRetry, ':reason' => $reason, ':now' => $this->database->nowUtc(), ':id' => $orderId]
+        );
+        $this->logSurveyEvent(
+            $orderId,
+            'retry_scheduled',
+            null,
+            $reason,
+            null,
+            'Retry scheduled for ' . gmdate('c', strtotime($nextRetry) ?: time()) . '.'
         );
     }
 
@@ -853,6 +927,9 @@ final class AutoCallApi extends BaseService
         if (!is_array($decoded)) {
             return ['success' => false, 'error' => 'Invalid JSON response.'];
         }
+        if (($decoded['success'] ?? true) !== true) {
+            return ['success' => false, 'error' => (string) ($decoded['message'] ?? $decoded['error'] ?? 'AwajDigital rejected the survey request.')];
+        }
 
         $surveyId = $decoded['survey']['id'] ?? $decoded['data']['id'] ?? $decoded['id'] ?? null;
         return ['success' => true, 'id' => $surveyId ? (string) $surveyId : null];
@@ -861,6 +938,63 @@ final class AutoCallApi extends BaseService
     private function fetchSettingsRow(): ?array
     {
         return $this->database->fetchOne('SELECT * FROM voice_survey_settings LIMIT 1');
+    }
+
+    private function logSurveyEvent(
+        string $orderId,
+        string $eventType,
+        ?string $surveyId = null,
+        ?string $callStatus = null,
+        ?string $response = null,
+        ?string $details = null
+    ): void {
+        if (!$this->tableExists('voice_survey_events')) {
+            return;
+        }
+
+        $this->database->execute(
+            'INSERT INTO voice_survey_events (order_id, survey_id, event_type, call_status, response, details, created_at)
+             VALUES (:order_id, :survey_id, :event_type, :call_status, :response, :details, :created_at)',
+            [
+                ':order_id' => $orderId,
+                ':survey_id' => $this->nullableString($surveyId),
+                ':event_type' => $eventType,
+                ':call_status' => $this->nullableString($callStatus),
+                ':response' => $this->nullableString($response),
+                ':details' => $this->nullableString($details),
+                ':created_at' => $this->database->nowUtc(),
+            ]
+        );
+    }
+
+    private function requireDeveloperUser(): array
+    {
+        $user = $this->currentUser();
+        if (trim((string) ($user['role'] ?? '')) !== 'Developer') {
+            throw new ApiException('Developer access required.', 403, 'DEVELOPER_ACCESS_REQUIRED');
+        }
+
+        return $user;
+    }
+
+    /**
+     * Exactly one order status may trigger automatic calls.
+     *
+     * @return array<int, string>
+     */
+    private function normalizeTriggerStatuses(mixed $statuses): array
+    {
+        $allowed = ['On Hold', 'Processing', 'Created'];
+        if (is_array($statuses)) {
+            foreach ($statuses as $status) {
+                $normalized = trim((string) $status);
+                if (in_array($normalized, $allowed, true)) {
+                    return [$normalized];
+                }
+            }
+        }
+
+        return ['On Hold'];
     }
 
     private function fetchOrderRow(string $id): ?array
@@ -897,12 +1031,25 @@ final class AutoCallApi extends BaseService
 
     private function buildWebhookUrl(array $settings): string
     {
+        $configured = trim((string) ($settings['webhook_url'] ?? ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        if (PHP_SAPI === 'cli') {
+            throw new RuntimeException('Survey webhook URL is not configured. Save AwajDigital settings from Developer Settings.');
+        }
+
+        return $this->deriveWebhookUrl((string) ($settings['webhook_secret'] ?? ''));
+    }
+
+    private function deriveWebhookUrl(string $secret): string
+    {
         $forwardedProto = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0]));
         $protocol = $forwardedProto === 'https' || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
         $basePath = dirname($_SERVER['SCRIPT_NAME'] ?? '/');
         $basePath = rtrim($basePath, '/');
-        $secret = (string) ($settings['webhook_secret'] ?? '');
 
         return sprintf('%s://%s%s/webhook-survey.php?token=%s', $protocol, $host, $basePath, urlencode($secret));
     }
@@ -913,7 +1060,7 @@ final class AutoCallApi extends BaseService
             throw new RuntimeException('Voice survey is not enabled. Enable it in Settings → Voice Survey.');
         }
         if (empty($settings['api_token'])) {
-            throw new RuntimeException('AwajDigital API token is not configured.');
+            throw new RuntimeException('AwajDigital API token is not configured in Developer Settings.');
         }
         if (empty($settings['template_name'])) {
             throw new RuntimeException('Survey template name is not configured.');
@@ -922,7 +1069,33 @@ final class AutoCallApi extends BaseService
             throw new RuntimeException('Survey sender is not configured.');
         }
         if (empty($settings['webhook_secret'])) {
-            throw new RuntimeException('Survey webhook secret is not configured. Save Voice Survey settings once to generate it.');
+            throw new RuntimeException('Survey webhook secret is not configured in Developer Settings.');
+        }
+        if (empty($settings['webhook_url']) && PHP_SAPI === 'cli') {
+            throw new RuntimeException('Survey webhook URL is not configured in Developer Settings.');
+        }
+        if (!empty($settings['webhook_url'])) {
+            $this->assertWebhookUrlValid((string) $settings['webhook_url'], (string) $settings['webhook_secret']);
+        }
+    }
+
+    private function assertWebhookUrlValid(string $url, string $secret): void
+    {
+        if (filter_var($url, FILTER_VALIDATE_URL) === false) {
+            throw new RuntimeException('Enter a valid public survey webhook URL.');
+        }
+
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        if ($scheme !== 'https' && !in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            throw new RuntimeException('The survey webhook URL must use HTTPS.');
+        }
+
+        $query = [];
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        $token = trim((string) ($query['token'] ?? ''));
+        if ($token === '' || !hash_equals($secret, $token)) {
+            throw new RuntimeException('The survey webhook URL token must match the webhook secret.');
         }
     }
 }

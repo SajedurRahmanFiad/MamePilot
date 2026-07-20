@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings } from '../src/hooks/useMutations';
-import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings } from '../types';
+import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings } from '../src/hooks/useMutations';
+import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
 import { theme } from '../theme';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth' | 'email';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
@@ -45,6 +45,14 @@ const emptyBusinessGrowthSettings: BusinessGrowthSettings = {
   recommendationCacheHours: 6,
 };
 
+const emptyVoiceSurveyIntegration: VoiceSurveyIntegrationSettings = {
+  apiToken: '',
+  sender: '',
+  templateName: '',
+  webhookSecret: '',
+  webhookUrl: '',
+};
+
 const DeveloperSettings: React.FC = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -56,6 +64,7 @@ const DeveloperSettings: React.FC = () => {
   const { data: agentSettings, isPending: loadingAgent } = useAgentSettings(user?.role === 'Developer');
   const { data: businessGrowthSettings, isPending: loadingBusinessGrowth } = useBusinessGrowthSettings(user?.role === 'Developer');
   const { data: emailSettingsData, isPending: loadingEmailSettings } = useEmailSettings(user?.role === 'Developer');
+  const { data: voiceSurveyIntegrationData, isPending: loadingVoiceSurveyIntegration } = useVoiceSurveyIntegrationSettings(user?.role === 'Developer');
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
@@ -63,13 +72,15 @@ const DeveloperSettings: React.FC = () => {
   const updateAgent = useUpdateAgentSettings();
   const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
   const updateEmail = useUpdateEmailSettings();
+  const updateVoiceSurveyIntegration = useUpdateVoiceSurveyIntegrationSettings();
 
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
   const [businessGrowthForm, setBusinessGrowthForm] = useState<BusinessGrowthSettings>(emptyBusinessGrowthSettings);
+  const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent', 'business_growth'];
+  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent', 'business_growth', 'email', 'awajdigital'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -129,6 +140,12 @@ const DeveloperSettings: React.FC = () => {
       setEmailForm(emailSettingsData);
     }
   }, [emailSettingsData]);
+
+  useEffect(() => {
+    if (voiceSurveyIntegrationData) {
+      setVoiceSurveyIntegrationForm(voiceSurveyIntegrationData);
+    }
+  }, [voiceSurveyIntegrationData]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -233,6 +250,17 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveVoiceSurveyIntegration = async () => {
+    const toastId = toast.loading('Saving AwajDigital configuration...');
+    try {
+      const settings = await updateVoiceSurveyIntegration.mutateAsync(voiceSurveyIntegrationForm);
+      setVoiceSurveyIntegrationForm(settings);
+      toast.update(toastId, 'AwajDigital API and webhook configuration saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save AwajDigital configuration.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
     { id: 'maintenance', label: 'Maintenance Mode' },
@@ -241,12 +269,13 @@ const DeveloperSettings: React.FC = () => {
     { id: 'agent', label: 'AI Agent' },
     { id: 'business_growth', label: 'Business Growth' },
     { id: 'email', label: 'Email Config' },
+    { id: 'awajdigital', label: 'AwajDigital' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay
-        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || loadingBusinessGrowth || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending || updateBusinessGrowth.isPending}
+        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || loadingBusinessGrowth || loadingEmailSettings || loadingVoiceSurveyIntegration || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending || updateBusinessGrowth.isPending || updateEmail.isPending || updateVoiceSurveyIntegration.isPending}
         message="Loading developer settings..."
       />
 
@@ -258,6 +287,7 @@ const DeveloperSettings: React.FC = () => {
         {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save AI Agent Settings</Button>}
         {activeTab === 'business_growth' && <Button onClick={saveBusinessGrowthSettings} variant="primary">Save Business Growth Settings</Button>}
         {activeTab === 'email' && <Button onClick={saveEmailSettings} variant="primary">Save Email Settings</Button>}
+        {activeTab === 'awajdigital' && <Button onClick={saveVoiceSurveyIntegration} variant="primary">Save AwajDigital</Button>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
@@ -674,6 +704,88 @@ const DeveloperSettings: React.FC = () => {
                   />
                   <p className="text-sm text-gray-500">How long to cache AI-generated recommendations before regenerating. Default: 6 hours.</p>
                 </label>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'awajdigital' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-7">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">AwajDigital API & Webhook</h3>
+                <p className="mt-1 text-sm text-gray-500">Developer-only credentials used to create survey calls and authenticate incoming result webhooks.</p>
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Token (Bearer)</span>
+                  <input
+                    type="password"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.apiToken}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, apiToken: event.target.value })}
+                    placeholder="Enter the AwajDigital API token"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Sender / Caller ID</span>
+                  <input
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.sender}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, sender: event.target.value })}
+                    placeholder="01XXXXXXXXX"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Template Name</span>
+                  <input
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.templateName}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, templateName: event.target.value })}
+                    placeholder="Published survey template name"
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50 p-5">
+                <div>
+                  <h4 className="font-black text-blue-950">Webhook Configuration</h4>
+                  <p className="mt-1 text-sm text-blue-700">AwajDigital posts completed survey results to this endpoint. No result polling is required.</p>
+                </div>
+                <label className="block space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-blue-700">Webhook Secret</span>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="password"
+                      className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-4 py-3"
+                      value={voiceSurveyIntegrationForm.webhookSecret}
+                      onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, webhookSecret: event.target.value, webhookUrl: '' })}
+                      placeholder="Shared secret for webhook authentication"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const webhookSecret = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                          .map((byte) => byte.toString(16).padStart(2, '0'))
+                          .join('');
+                        setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, webhookSecret, webhookUrl: '' });
+                      }}
+                    >
+                      Generate
+                    </Button>
+                  </div>
+                </label>
+                <div className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-blue-700">Public Webhook URL</span>
+                  <input
+                    type="url"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-blue-950"
+                    value={voiceSurveyIntegrationForm.webhookUrl}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, webhookUrl: event.target.value })}
+                    placeholder={`${window.location.origin}/api/webhook-survey.php?token=${voiceSurveyIntegrationForm.webhookSecret || '{webhook-secret}'}`}
+                  />
+                  <p className="text-xs text-blue-700">This exact URL is sent as <code>webhook_url</code> in every create-survey request. It is not configured in the AwajDigital dashboard.</p>
+                </div>
               </div>
             </section>
           )}

@@ -108,6 +108,33 @@ try {
                     $autoCall->triggerSurveyBackgroundProcess();
                 });
             }
+
+            $capabilities = $featureAccess->fetchCapabilities();
+            $customerId = trim((string) ($result['customerId'] ?? ''));
+            if (!empty($capabilities['grow_your_business']) && $customerId !== '') {
+                register_shutdown_function(static function () use ($customerId): void {
+                    $script = dirname(__DIR__) . '/bin/process_customer_fraud_check.php';
+                    if (!is_file($script)) {
+                        return;
+                    }
+
+                    $php = PHP_BINARY ?: 'php';
+                    if (DIRECTORY_SEPARATOR === '\\') {
+                        $command = 'cmd /c start "" /B ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > NUL 2>&1';
+                    } else {
+                        $command = 'nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > /dev/null 2>&1 &';
+                    }
+
+                    if (function_exists('popen')) {
+                        $process = @popen($command, 'r');
+                        if (is_resource($process)) {
+                            @pclose($process);
+                        }
+                    } elseif (function_exists('shell_exec')) {
+                        @shell_exec($command);
+                    }
+                });
+            }
         }
         Http::ok($result);
         exit;

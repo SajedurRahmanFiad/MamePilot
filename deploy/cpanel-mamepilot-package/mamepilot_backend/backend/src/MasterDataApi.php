@@ -385,7 +385,7 @@ final class MasterDataApi extends BaseService
     public function fetchCustomers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by, fraud_check_result, fraud_check_percentage, fraud_check_phone, fraud_checked_at
              FROM customers
              WHERE deleted_at IS NULL
              ORDER BY created_at DESC'
@@ -412,7 +412,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM customers {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by, fraud_check_result, fraud_check_percentage, fraud_check_phone, fraud_checked_at
              FROM customers
              {$where}
              ORDER BY created_at DESC

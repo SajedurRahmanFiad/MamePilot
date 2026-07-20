@@ -227,7 +227,7 @@ final class CourierApi extends BaseService
             'successRatio' => round((float) ($summaryPayload['success_ratio'] ?? 0), 2),
         ];
 
-        if ($summary['totalParcel'] > 0 && $summary['successRatio'] <= 0) {
+        if ($summary['totalParcel'] > 0) {
             $summary['successRatio'] = round(($summary['successParcel'] / $summary['totalParcel']) * 100, 2);
         }
 
@@ -324,6 +324,50 @@ final class CourierApi extends BaseService
             throw new RuntimeException('Enter a valid 11-digit phone number starting with 0.');
         }
 
+        $result = $this->performFraudCheck($phone);
+        $this->persistCustomerFraudSnapshot(
+            trim((string) ($params['customerId'] ?? '')),
+            $phone,
+            $result
+        );
+
+        return $result;
+    }
+
+    /**
+     * CLI-only entry point used by the post-order background worker.
+     */
+    public function processCustomerFraudCheck(array $params): array
+    {
+        if (PHP_SAPI !== 'cli') {
+            throw new RuntimeException('Background fraud checks are available only from CLI.');
+        }
+
+        $customerId = trim((string) ($params['customerId'] ?? ''));
+        if ($customerId === '') {
+            throw new RuntimeException('Customer ID is required.');
+        }
+
+        $customer = $this->database->fetchOne(
+            'SELECT id, phone FROM customers WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => $customerId]
+        );
+        if ($customer === null) {
+            throw new RuntimeException('Customer not found.');
+        }
+
+        $phone = $this->normalizeFraudCheckerPhone((string) ($customer['phone'] ?? ''));
+        if (preg_match('/^0\d{10}$/', $phone) !== 1) {
+            throw new RuntimeException('Customer phone is not valid for a fraud check.');
+        }
+
+        $result = $this->performFraudCheck($phone);
+        $this->persistCustomerFraudSnapshot($customerId, $phone, $result);
+        return $result;
+    }
+
+    private function performFraudCheck(string $phone): array
+    {
         $settings = $this->database->fetchOne('SELECT fraud_checker_api_key FROM courier_settings LIMIT 1');
         $apiKey = trim((string) ($settings['fraud_checker_api_key'] ?? ''));
         if ($apiKey === '') {
@@ -344,12 +388,43 @@ final class CourierApi extends BaseService
         if ($response['status'] < 200 || $response['status'] >= 300) {
             throw new RuntimeException((string) ($payload['message'] ?? $payload['error'] ?? ('Fraud Checker request failed with HTTP ' . $response['status'] . '.')));
         }
-
         if (($payload['status'] ?? 'success') !== 'success' && !is_array($payload['data'] ?? null)) {
             throw new RuntimeException((string) ($payload['message'] ?? $payload['error'] ?? 'Fraud Checker request failed.'));
         }
 
         return $this->mapFraudCheckResponse($payload, $phone);
+    }
+
+    private function persistCustomerFraudSnapshot(string $customerId, string $phone, array $result): void
+    {
+        if (!$this->columnExists('customers', 'fraud_check_result')) {
+            throw new RuntimeException('Customer fraud snapshot columns are missing. Run schema-only.sql first.');
+        }
+
+        $customer = null;
+        if ($customerId !== '') {
+            $customer = $this->database->fetchOne(
+                'SELECT id FROM customers WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                [':id' => $customerId]
+            );
+        }
+        if ($customer === null) {
+            $customer = $this->database->fetchOne(
+                'SELECT id FROM customers WHERE phone = :phone AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1',
+                [':phone' => $phone]
+            );
+        }
+        if ($customer === null) {
+            return;
+        }
+
+        $percentage = max(0, min(100, (float) ($result['summary']['successRatio'] ?? 0)));
+        $this->touchUpdate('customers', (string) $customer['id'], [
+            'fraud_check_result' => $this->jsonEncode($result),
+            'fraud_check_percentage' => $percentage,
+            'fraud_check_phone' => $phone,
+            'fraud_checked_at' => $this->database->nowUtc(),
+        ]);
     }
 
     public function fetchCarryBeeCities(array $params): array

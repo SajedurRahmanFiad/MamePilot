@@ -165,6 +165,8 @@ final class FeatureAccess
         'updateBusinessGrowthSettings' => 'grow_your_business',
         'fetchVoiceSurveySettings' => 'auto_calling',
         'updateVoiceSurveySettings' => 'auto_calling',
+        'fetchVoiceSurveyIntegrationSettings' => 'auto_calling',
+        'updateVoiceSurveyIntegrationSettings' => 'auto_calling',
         'triggerSurveyCall' => 'auto_calling',
         'retrySurveyCall' => 'auto_calling',
         'cancelSurveyCall' => 'auto_calling',
