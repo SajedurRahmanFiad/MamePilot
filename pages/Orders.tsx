@@ -1408,18 +1408,21 @@ const Orders: React.FC = () => {
                     </td>
                     <td className="px-6 py-5 text-xs font-bold text-gray-500">{getCreatorName(order) || '—'}</td>
                     <td className="px-6 py-5">
-                      <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
                         <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
+                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
+                          <img src="/uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full" />
+                        )}
+                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToCarryBee && (
+                          <img src="/uploads/carrybee.png" alt="CarryBee" className="w-5 h-5 rounded-full" />
+                        )}
+                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
+                          <img src="/uploads/paperfly.png" alt="Paperfly" className="w-5 h-5 rounded-full" />
+                        )}
+                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPathao && (
+                          <img src="/uploads/pathao.png" alt="Pathao" className="w-5 h-5 rounded-full" />
+                        )}
                       </div>
-                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
-                        <img src="/uploads/steadfast.png" alt="Steadfast" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
-                      )}
-                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToCarryBee && (
-                        <img src="/uploads/carrybee.png" alt="CarryBee" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
-                      )}
-                      {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
-                        <img src="/uploads/paperfly.png" alt="Paperfly" className="inline-block w-5 h-5 rounded-full ml-2 mt-2" />
-                      )}
                     </td>
                     <td className="px-6 py-5 text-right">
                       <span className="font-black text-gray-900 text-base">{formatCurrency(order.total)}</span>

@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { db } from '../db';
 import { formatCurrency } from '../constants';
 import { triggerPrintDialog } from '../src/utils/printUtils';
-import { useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings } from '../src/hooks/useQueries';
+import { useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { resolveThemeColorPalette } from '../theme';
 import { getOrderCompanyPage } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
@@ -13,6 +14,7 @@ interface InvoiceContentProps {
   productImages: Record<string, string>;
   branding: any;
   invoiceSettings: any;
+  themeColorHex: string;
 }
 
 const InvoiceContent: React.FC<InvoiceContentProps> = ({
@@ -21,6 +23,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
   productImages,
   branding,
   invoiceSettings,
+  themeColorHex,
 }) => {
   return (
     <div className="space-y-5 print:space-y-4 text-gray-900">
@@ -38,7 +41,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
                   alt="Company Logo"
                 />
               )}
-              <h1 className={`text-xl font-black uppercase tracking-tighter`}>
+              <h1 className="text-xl font-black uppercase tracking-tighter" style={{ color: themeColorHex }}>
                 {branding?.name || db.settings.company.name}
               </h1>
               <div className="mt-2 text-xs text-gray-400 font-medium space-y-1 print:text-gray-600">
@@ -201,11 +204,16 @@ const PrintOrder: React.FC = () => {
   const { data: productImages = {} } = useProductImagesByIds(orderItemProductIds);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
+  const { data: systemDefaults } = useSystemDefaults();
   const printTriggeredRef = useRef(false);
   const orderBranding = useMemo(
     () => getOrderCompanyPage(order, companySettings || db.settings.company),
     [companySettings, order],
   );
+  const themeColorHex = useMemo(() => {
+    const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
+    return resolveThemeColorPalette(tc).primary;
+  }, [systemDefaults?.themeColor]);
 
   // Trigger print dialog when order data is loaded (only once)
   useEffect(() => {
@@ -239,6 +247,7 @@ const PrintOrder: React.FC = () => {
             productImages={productImages}
             branding={orderBranding}
             invoiceSettings={invoiceSettings}
+            themeColorHex={themeColorHex}
           />
         </div>
 
@@ -250,6 +259,7 @@ const PrintOrder: React.FC = () => {
             productImages={productImages}
             branding={orderBranding}
             invoiceSettings={invoiceSettings}
+            themeColorHex={themeColorHex}
           />
         </div>
       </div>

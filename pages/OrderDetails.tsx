@@ -6,8 +6,8 @@ import { db } from '../db';
 import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmationStatus } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
-import { theme } from '../theme';
-import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
+import { theme, resolveThemeColorPalette } from '../theme';
+import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -61,6 +61,11 @@ const OrderDetails: React.FC = () => {
   const { data: productImages = {} } = useProductImagesByIds(orderItemProductIds);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
+  const { data: systemDefaults } = useSystemDefaults();
+  const themeColorHex = useMemo(() => {
+    const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
+    return resolveThemeColorPalette(tc).primary;
+  }, [systemDefaults?.themeColor]);
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: metaAdsData } = useMetaAds({}, true);
@@ -1534,6 +1539,9 @@ const OrderDetails: React.FC = () => {
           {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
             <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
           )}
+          {canUseCourierAutomation && ([OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPathao && (
+            <img src="/uploads/pathao.png" alt="Pathao" className="w-6 h-6 rounded-full" />
+          )}
         </div>
         
         <div className="flex items-center gap-2 relative">
@@ -1643,7 +1651,7 @@ const OrderDetails: React.FC = () => {
                     alt="Company Logo"
                   />
                 )}
-                <h1 className="text-sm sm:text-base lg:text-xl font-black text-blue-600 uppercase tracking-tighter break-words">{orderBranding?.name || db.settings.company.name}</h1>
+                <h1 className="text-sm sm:text-base lg:text-xl font-black uppercase tracking-tighter break-words" style={{ color: themeColorHex }}>{orderBranding?.name || db.settings.company.name}</h1>
                 <div className="mt-1 sm:mt-2 text-[9px] sm:text-[10px] lg:text-xs text-gray-400 font-medium space-y-0.5 sm:space-y-1">
                   <p className="break-words">{orderBranding?.address || db.settings.company.address}</p>
                   <p className="text-[8px] sm:text-[9px] break-words">{orderBranding?.phone || db.settings.company.phone} • {orderBranding?.email || db.settings.company.email}</p>

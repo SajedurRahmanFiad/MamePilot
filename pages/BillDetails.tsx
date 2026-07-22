@@ -4,8 +4,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
 import { BillStatus, Bill, type ProcessBillReturnPayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor } from '../constants';
-import { theme } from '../theme';
-import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor } from '../src/hooks/useQueries';
+import { theme, resolveThemeColorPalette } from '../theme';
+import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor, useSystemDefaults } from '../src/hooks/useQueries';
 import { useUpdateBill, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay, CommonPaymentModal, Modal, BillReturnModal } from '../components';
@@ -33,6 +33,11 @@ const BillDetails: React.FC = () => {
   const { data: productImages = {} } = useProductImagesByIds(billItemProductIds);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
+  const { data: systemDefaults } = useSystemDefaults();
+  const themeColorHex = useMemo(() => {
+    const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
+    return resolveThemeColorPalette(tc).primary;
+  }, [systemDefaults?.themeColor]);
   
   // Mutations
   const updateMutation = useUpdateBill();
@@ -605,7 +610,7 @@ const BillDetails: React.FC = () => {
                     alt="Company Logo"
                   />
                 )}
-                <h1 className="text-sm sm:text-base lg:text-xl font-black text-blue-600 uppercase tracking-tighter break-words">{companySettings?.name || db.settings.company.name}</h1>
+                <h1 className="text-sm sm:text-base lg:text-xl font-black uppercase tracking-tighter break-words" style={{ color: themeColorHex }}>{companySettings?.name || db.settings.company.name}</h1>
                 <div className="mt-1 sm:mt-2 text-[9px] sm:text-[10px] lg:text-xs text-gray-400 font-medium space-y-0.5 sm:space-y-1">
                   <p className="break-words">{companySettings?.address || db.settings.company.address}</p>
                   <p className="text-[8px] sm:text-[9px] break-words">{companySettings?.phone || db.settings.company.phone} • {companySettings?.email || db.settings.company.email}</p>

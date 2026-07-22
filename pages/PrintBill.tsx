@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { db } from '../db';
 import { formatCurrency } from '../constants';
 import { triggerPrintDialog } from '../src/utils/printUtils';
-import { useBill, useVendor, useProductImagesByIds, useCompanySettings, useInvoiceSettings } from '../src/hooks/useQueries';
+import { useBill, useVendor, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { resolveThemeColorPalette } from '../theme';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 interface BillInvoiceContentProps {
@@ -12,6 +13,7 @@ interface BillInvoiceContentProps {
   productImages: Record<string, string>;
   companySettings: any;
   invoiceSettings: any;
+  themeColorHex: string;
 }
 
 const formatDisplayDate = (value?: string) => {
@@ -35,6 +37,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
   productImages,
   companySettings,
   invoiceSettings,
+  themeColorHex,
 }) => {
   return (
     <div className="space-y-5 print:space-y-4 text-gray-900">
@@ -51,7 +54,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
               alt="Company Logo"
             />
           )}
-          <h1 className="text-xl font-black uppercase tracking-tighter">
+          <h1 className="text-xl font-black uppercase tracking-tighter" style={{ color: themeColorHex }}>
             {companySettings?.name || db.settings.company.name}
           </h1>
           <div className="mt-2 text-xs text-gray-400 font-medium space-y-1 print:text-gray-600">
@@ -203,7 +206,12 @@ const PrintBill: React.FC = () => {
   const { data: productImages = {} } = useProductImagesByIds(billItemProductIds);
   const { data: companySettings, isPending: companySettingsLoading } = useCompanySettings();
   const { data: invoiceSettings, isPending: invoiceSettingsLoading } = useInvoiceSettings();
+  const { data: systemDefaults } = useSystemDefaults();
   const printTriggeredRef = useRef(false);
+  const themeColorHex = useMemo(() => {
+    const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
+    return resolveThemeColorPalette(tc).primary;
+  }, [systemDefaults?.themeColor]);
   const invoiceLoading = billLoading || vendorLoading || companySettingsLoading || invoiceSettingsLoading;
 
   useEffect(() => {
@@ -235,6 +243,7 @@ const PrintBill: React.FC = () => {
             productImages={productImages}
             companySettings={companySettings}
             invoiceSettings={invoiceSettings}
+            themeColorHex={themeColorHex}
           />
         </div>
 
@@ -245,6 +254,7 @@ const PrintBill: React.FC = () => {
             productImages={productImages}
             companySettings={companySettings}
             invoiceSettings={invoiceSettings}
+            themeColorHex={themeColorHex}
           />
         </div>
       </div>
