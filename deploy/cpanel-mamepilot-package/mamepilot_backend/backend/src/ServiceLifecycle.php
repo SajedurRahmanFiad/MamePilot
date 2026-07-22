@@ -49,6 +49,7 @@ final class ServiceLifecycle
         'submitSteadfastOrder',
         'syncCarryBeeTransferStatuses',
         'syncPaperflyOrderStatuses',
+        'syncPathaoDeliveryStatuses',
         'syncSteadfastDeliveryStatuses',
         'updateAccount',
         'updateBill',

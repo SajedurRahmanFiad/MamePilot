@@ -618,7 +618,6 @@ const OrderDetails: React.FC = () => {
   );
 
   const preferredCourier = getPreferredCourierFromHistory(order?.history?.courier);
-  const isManualCourier = !preferredCourier && Boolean(order?.history?.courier);
   const courierDisplayName = preferredCourier === 'paperfly'
     ? 'Paperfly'
     : preferredCourier === 'carrybee'
@@ -803,10 +802,13 @@ const OrderDetails: React.FC = () => {
       };
     }
 
-    if (!hasPicked && (isManualCourier || !sentToAnyCourier)) {
+    // Courier-assigned orders always require the Picked step before manual
+    // completion, even when a supported courier is also updating the order
+    // automatically in the background.
+    if (order.status === OrderStatus.COURIER_ASSIGNED || !hasPicked) {
       return {
         action: 'pick' as const,
-        label: 'Mark picked by courier',
+        label: 'Mark order as picked',
         nextStatus: OrderStatus.PICKED,
         historyKey: 'picked',
         description: 'Record when the courier picks up the order.',

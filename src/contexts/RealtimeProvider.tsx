@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { syncCarryBeeTransferStatuses, syncPaperflyOrderStatuses, syncSteadfastDeliveryStatuses } from '../services/supabaseQueries';
+import {
+  syncCarryBeeTransferStatuses,
+  syncPaperflyOrderStatuses,
+  syncPathaoDeliveryStatuses,
+  syncSteadfastDeliveryStatuses,
+} from '../services/supabaseQueries';
 import { useAuth } from './AuthProvider';
 import { ENABLE_CLIENT_COURIER_SYNC } from '../config/incidentMode';
 
@@ -26,13 +31,25 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       syncingRef.current = true;
       try {
-        const [carryBeeResult, paperflyResult, steadfastResult] = await Promise.all([
+        const results = await Promise.allSettled([
           syncCarryBeeTransferStatuses(),
           syncPaperflyOrderStatuses(),
           syncSteadfastDeliveryStatuses(),
+          syncPathaoDeliveryStatuses(),
         ]);
 
-        if (!cancelled && (carryBeeResult.updated > 0 || paperflyResult.updated > 0 || steadfastResult.updated > 0)) {
+        const hasUpdates = results.some(
+          (result) => result.status === 'fulfilled' && result.value.updated > 0,
+        );
+        const failures = results.filter(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+
+        if (failures.length > 0) {
+          console.error('[Realtime] One or more courier syncs failed:', failures.map((result) => result.reason));
+        }
+
+        if (!cancelled && hasUpdates) {
           queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
           queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
           queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
