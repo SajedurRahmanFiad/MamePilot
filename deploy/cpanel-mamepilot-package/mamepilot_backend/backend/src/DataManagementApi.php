@@ -970,9 +970,14 @@ final class DataManagementApi extends BaseService
         if ($dynamicPricing !== '') {
             $this->jsonValue($row, 'dynamicPricing', true);
         }
+        $image = $this->normalizeUploadedFileValue(
+            $this->nullableString($row['image'] ?? null),
+            'product-images',
+            isset($row['imageName']) ? trim((string) $row['imageName']) : null
+        );
         return $this->saveByIdentity('products', '', 'name', $name, [
             'name' => $name,
-            'image' => $this->nullableString($row['image'] ?? null),
+            'image' => $image,
             'category' => $this->nullableString($row['category'] ?? null),
             'unit_id' => $this->resolveUnitId($row),
             'sale_price' => $this->formatMoney(max(0, $this->number($row, 'salePrice'))),
@@ -1124,6 +1129,22 @@ final class DataManagementApi extends BaseService
         return [$items, $subtotal, $total];
     }
 
+    private function nextImportDocumentSequence(string $table, string $column): int
+    {
+        $allowed = [
+            'orders' => 'order_seq',
+            'bills' => 'bill_seq',
+        ];
+        if (($allowed[$table] ?? null) !== $column) {
+            throw new RuntimeException('Unsupported document sequence.');
+        }
+
+        $row = $this->database->fetchOne(
+            "SELECT COALESCE(MAX({$column}), 0) AS max_seq FROM {$table} FOR UPDATE"
+        );
+        return ((int) ($row['max_seq'] ?? 0)) + 1;
+    }
+
     /** @return 'created'|'updated' */
     private function importOrder(array $row, array $actor): string
     {
@@ -1135,6 +1156,9 @@ final class DataManagementApi extends BaseService
             throw new RuntimeException('Order Paid Amount cannot exceed Total.');
         }
         $previous = $this->database->fetchOne('SELECT * FROM orders WHERE order_number = :number LIMIT 1', [':number' => $orderNumber]) ?? [];
+        $orderSequence = ($previous['order_seq'] ?? null) !== null
+            ? (int) $previous['order_seq']
+            : $this->nextImportDocumentSequence('orders', 'order_seq');
         $customerId = $this->resolveCustomerId($row, $actor);
         $companyPageName = $this->text($row, 'companyPage');
         [$pageId, $pageSnapshot] = $companyPageName !== ''
@@ -1145,7 +1169,7 @@ final class DataManagementApi extends BaseService
         $courierColumns = $this->importedCourierColumns($row, $previous);
         $operation = $this->saveByIdentity('orders', '', 'order_number', $orderNumber, array_merge([
             'order_number' => $orderNumber,
-            'order_seq' => $previous['order_seq'] ?? null,
+            'order_seq' => $orderSequence,
             'order_date' => $this->dateValue($row, 'orderDate', true, true),
             'customer_id' => $customerId,
             'page_id' => $pageId,
@@ -1181,10 +1205,13 @@ final class DataManagementApi extends BaseService
             throw new RuntimeException('Bill Paid Amount cannot exceed Total.');
         }
         $previous = $this->database->fetchOne('SELECT * FROM bills WHERE bill_number = :number LIMIT 1', [':number' => $billNumber]) ?? [];
+        $billSequence = ($previous['bill_seq'] ?? null) !== null
+            ? (int) $previous['bill_seq']
+            : $this->nextImportDocumentSequence('bills', 'bill_seq');
         $vendorId = $this->resolveVendorId($row, $actor);
         $operation = $this->saveByIdentity('bills', '', 'bill_number', $billNumber, [
             'bill_number' => $billNumber,
-            'bill_seq' => $previous['bill_seq'] ?? null,
+            'bill_seq' => $billSequence,
             'bill_date' => $this->dateValue($row, 'billDate', true, true),
             'vendor_id' => $vendorId,
             'created_by' => $this->resolveUserId($row, $actor),

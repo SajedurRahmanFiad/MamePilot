@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Database, Download, FileDown, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -35,6 +36,75 @@ interface ImportSummary {
 }
 
 const IMPORT_BATCH_SIZE = 200;
+const PRODUCT_PACKAGE_BATCH_SIZE = 20;
+const PRODUCT_PACKAGE_BATCH_BYTES = 12 * 1024 * 1024;
+const MAX_CSV_SIZE = 25 * 1024 * 1024;
+const MAX_PRODUCT_PACKAGE_SIZE = 100 * 1024 * 1024;
+const MAX_PACKAGED_IMAGE_SIZE = 8 * 1024 * 1024;
+
+const imageExtension = (mimeType: string, fallbackPath = '') => {
+  const byMime: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+  };
+  if (byMime[mimeType.toLocaleLowerCase()]) return byMime[mimeType.toLocaleLowerCase()];
+  const match = fallbackPath.match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i);
+  return match?.[1]?.toLocaleLowerCase() || 'bin';
+};
+
+const imageMimeType = (path: string) => {
+  const extension = imageExtension('', path);
+  return ({
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+    webp: 'image/webp', svg: 'image/svg+xml',
+  } as Record<string, string>)[extension] || '';
+};
+
+const safePackageName = (value: string, fallback: string) => {
+  const normalized = value.normalize('NFKD').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+};
+
+const bytesToDataUrl = (bytes: Uint8Array, mimeType: string) => {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const createProductPackageBatches = (records: Array<Record<string, string>>) => {
+  const batches: Array<Array<Record<string, string>>> = [];
+  let current: Array<Record<string, string>> = [];
+  let currentBytes = 0;
+  records.forEach((record) => {
+    const recordBytes = JSON.stringify(record).length;
+    if (current.length > 0 && (current.length >= PRODUCT_PACKAGE_BATCH_SIZE || currentBytes + recordBytes > PRODUCT_PACKAGE_BATCH_BYTES)) {
+      batches.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(record);
+    currentBytes += recordBytes;
+  });
+  if (current.length > 0) batches.push(current);
+  return batches;
+};
 
 const DataManagementSettingsPanel: React.FC = () => {
   const queryClient = useQueryClient();
@@ -85,17 +155,55 @@ const DataManagementSettingsPanel: React.FC = () => {
     try {
       const response = await exportDataRecords(dataset.key);
       const headers = response.fields.map((field) => field.label);
-      const rows = response.rows.map((row) => response.fields.map((field) => row[field.key]));
-      const csv = buildCsv(headers, rows);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = response.filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      const exportedRows = response.rows.map((row) => ({ ...row }));
+
+      if (dataset.key === 'products') {
+        const archive: Record<string, Uint8Array> = {};
+        let packagedImages = 0;
+        let unavailableImages = 0;
+
+        for (let offset = 0; offset < exportedRows.length; offset += 6) {
+          await Promise.all(exportedRows.slice(offset, offset + 6).map(async (row, batchIndex) => {
+            const index = offset + batchIndex;
+            const imageValue = String(row.image ?? '').trim();
+            if (!imageValue) return;
+
+            try {
+              const imageUrl = new URL(imageValue, window.location.origin);
+              const imageResponse = await fetch(imageUrl, { credentials: imageUrl.origin === window.location.origin ? 'same-origin' : 'omit' });
+              if (!imageResponse.ok) throw new Error(`HTTP ${imageResponse.status}`);
+              const mimeType = (imageResponse.headers.get('content-type') || '').split(';')[0].trim().toLocaleLowerCase();
+              if (!mimeType.startsWith('image/')) throw new Error('The file is not an image.');
+              const bytes = new Uint8Array(await imageResponse.arrayBuffer());
+              if (bytes.length === 0 || bytes.length > MAX_PACKAGED_IMAGE_SIZE) throw new Error('The image is empty or too large.');
+              const productName = safePackageName(String(row.name ?? ''), `product-${index + 1}`);
+              const packagePath = `images/${String(index + 1).padStart(5, '0')}-${productName}.${imageExtension(mimeType, imageUrl.pathname)}`;
+              archive[packagePath] = bytes;
+              row.image = packagePath;
+              packagedImages++;
+            } catch {
+              row.image = imageValue.startsWith('/') ? new URL(imageValue, window.location.origin).toString() : imageValue;
+              unavailableImages++;
+            }
+          }));
+        }
+
+        const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
+        archive[response.filename] = strToU8(buildCsv(headers, rows));
+        archive['README.txt'] = strToU8(
+          'MamePilot Product Package\n\nImport this ZIP from Settings > Import and Export Data > Products. '
+          + 'The product CSV and packaged images will be restored automatically.\n'
+        );
+        const packageFilename = response.filename.replace(/\.csv$/i, '.zip');
+        const zipBytes = zipSync(archive, { level: 6 });
+        downloadBlob(new Blob([zipBytes as BlobPart], { type: 'application/zip' }), packageFilename);
+        const missingNote = unavailableImages > 0 ? ` ${unavailableImages} unavailable image(s) were left as URLs.` : '';
+        toast.success(`${response.rows.length} products and ${packagedImages} image(s) exported.${missingNote}`);
+        return;
+      }
+
+      const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
+      downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), response.filename);
       toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} exported.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not export ${dataset.label.toLocaleLowerCase()}.`);
@@ -131,25 +239,65 @@ const DataManagementSettingsPanel: React.FC = () => {
     const file = event.target.files?.[0];
     const dataset = datasets.find((candidate) => candidate.key === selectedDatasetKey);
     if (!file || !dataset) return;
-    if (!file.name.toLocaleLowerCase().endsWith('.csv')) {
-      toast.error('Select a .csv file.');
+    const lowerFileName = file.name.toLocaleLowerCase();
+    const isProductPackage = lowerFileName.endsWith('.zip');
+    if (!lowerFileName.endsWith('.csv') && !isProductPackage) {
+      toast.error(dataset.key === 'products' ? 'Select a product .zip package or .csv file.' : 'Select a .csv file.');
       return;
     }
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error('CSV files can be up to 25 MB.');
+    if (isProductPackage && dataset.key !== 'products') {
+      toast.error('ZIP packages are only supported for Products.');
+      return;
+    }
+    const maxFileSize = isProductPackage ? MAX_PRODUCT_PACKAGE_SIZE : MAX_CSV_SIZE;
+    if (file.size > maxFileSize) {
+      toast.error(isProductPackage ? 'Product packages can be up to 100 MB.' : 'CSV files can be up to 25 MB.');
       return;
     }
 
     try {
-      const parsed = parseCsv(await file.text());
+      let importFileName = file.name;
+      let csvText = isProductPackage ? '' : await file.text();
+      let packageFiles: Record<string, Uint8Array> | null = null;
+      if (isProductPackage) {
+        packageFiles = unzipSync(new Uint8Array(await file.arrayBuffer()));
+        const csvNames = Object.keys(packageFiles).filter((name) => /(^|\/)mamepilot-products-[^/]*\.csv$/i.test(name));
+        if (csvNames.length !== 1) {
+          throw new Error('The product package must contain exactly one MamePilot products CSV file.');
+        }
+        importFileName = csvNames[0].split('/').pop() || csvNames[0];
+        csvText = strFromU8(packageFiles[csvNames[0]]);
+      }
+
+      const parsed = parseCsv(csvText);
       const mapping = createAutomaticDataMapping(dataset, parsed.headers);
+      if (packageFiles) {
+        const imageColumn = mapping.image;
+        if (imageColumn === undefined) throw new Error('The product package CSV is missing its Image URL column.');
+        const packageEntries = new Map(
+          Object.entries(packageFiles).map(([name, bytes]) => [name.replace(/\\/g, '/').replace(/^\.\//, ''), bytes])
+        );
+        for (const row of parsed.rows) {
+          const imagePath = String(row[Number(imageColumn)] ?? '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
+          if (!imagePath || !imagePath.toLocaleLowerCase().startsWith('images/')) continue;
+          if (imagePath.split('/').includes('..')) throw new Error('The product package contains an unsafe image path.');
+          const imageBytes = packageEntries.get(imagePath);
+          if (!imageBytes) throw new Error(`The product package is missing ${imagePath}.`);
+          if (imageBytes.length === 0 || imageBytes.length > MAX_PACKAGED_IMAGE_SIZE) {
+            throw new Error(`${imagePath} is empty or larger than 8 MB.`);
+          }
+          const mimeType = imageMimeType(imagePath);
+          if (!mimeType) throw new Error(`${imagePath} is not a supported image type.`);
+          row[Number(imageColumn)] = bytesToDataUrl(imageBytes, mimeType);
+        }
+      }
       setSession({
         dataset,
         fileName: file.name,
         headers: parsed.headers,
         rows: parsed.rows,
         mapping,
-        appGenerated: isMamePilotDataExport(dataset, file.name, parsed.headers),
+        appGenerated: isMamePilotDataExport(dataset, importFileName, parsed.headers),
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The CSV file could not be read.');
@@ -188,7 +336,10 @@ const DataManagementSettingsPanel: React.FC = () => {
 
     let batches: Array<Array<Record<string, string>>>;
     try {
-      batches = createDataImportBatches(session.dataset.key, records, IMPORT_BATCH_SIZE);
+      const isPackagedProductImport = session.dataset.key === 'products' && session.fileName.toLocaleLowerCase().endsWith('.zip');
+      batches = isPackagedProductImport
+        ? createProductPackageBatches(records)
+        : createDataImportBatches(session.dataset.key, records, IMPORT_BATCH_SIZE);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The CSV could not be divided into safe import batches.');
       return;
@@ -254,7 +405,7 @@ const DataManagementSettingsPanel: React.FC = () => {
 
   return (
     <div className="space-y-7 animate-in fade-in duration-300">
-      <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileSelected} />
+      <input ref={fileInputRef} type="file" accept=".csv,.zip,text/csv,application/zip" className="hidden" onChange={handleFileSelected} />
 
       <div className="border-b border-gray-100 pb-5">
         <div className="flex items-start gap-3">
@@ -310,7 +461,7 @@ const DataManagementSettingsPanel: React.FC = () => {
                 disabled={Boolean(exportingKey)}
                 onClick={() => handleExport(dataset)}
               >
-                Export CSV
+                {dataset.key === 'products' ? 'Export Package' : 'Export CSV'}
               </Button>
               <Button
                 type="button"
@@ -320,7 +471,7 @@ const DataManagementSettingsPanel: React.FC = () => {
                 disabled={Boolean(exportingKey)}
                 onClick={() => openFilePicker(dataset)}
               >
-                Import CSV
+                {dataset.key === 'products' ? 'Import CSV / Package' : 'Import CSV'}
               </Button>
             </div>
           </section>

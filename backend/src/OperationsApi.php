@@ -1218,15 +1218,41 @@ final class OperationsApi extends BaseService
         $nextNumber = (int) ($settings['next_number'] ?? 1);
         $maxSeqRow = $this->database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) AS max_seq FROM orders');
         $maxSeq = (int) ($maxSeqRow['max_seq'] ?? 0);
-        $next = max($nextNumber, $maxSeq + 1);
+        $next = $this->nextAvailableOrderSequence($prefix, max($nextNumber, $maxSeq + 1));
         return $prefix . $next;
     }
 
     private function nextBillNumberPreview(): string
     {
         $maxSeqRow = $this->database->fetchOne('SELECT COALESCE(MAX(bill_seq), 0) AS max_seq FROM bills');
-        $next = ((int) ($maxSeqRow['max_seq'] ?? 0)) + 1;
+        $next = $this->nextAvailableBillSequence(((int) ($maxSeqRow['max_seq'] ?? 0)) + 1);
         return 'Bill-' . $next;
+    }
+
+    private function nextAvailableOrderSequence(string $prefix, int $candidate): int
+    {
+        $next = max(1, $candidate);
+        while ($this->database->fetchOne(
+            'SELECT id FROM orders WHERE order_number = :order_number LIMIT 1',
+            [':order_number' => $prefix . $next]
+        ) !== null) {
+            $next++;
+        }
+
+        return $next;
+    }
+
+    private function nextAvailableBillSequence(int $candidate): int
+    {
+        $next = max(1, $candidate);
+        while ($this->database->fetchOne(
+            'SELECT id FROM bills WHERE bill_number = :bill_number LIMIT 1',
+            [':bill_number' => 'Bill-' . $next]
+        ) !== null) {
+            $next++;
+        }
+
+        return $next;
     }
 
     /**
@@ -1241,8 +1267,8 @@ final class OperationsApi extends BaseService
 
         $maxSeqRow = $this->database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) AS max_seq FROM orders FOR UPDATE');
         $maxSeq = (int) ($maxSeqRow['max_seq'] ?? 0);
-        $next = max((int) ($settings['next_number'] ?? 1), $maxSeq + 1);
         $prefix = (string) ($settings['prefix'] ?? 'ORD-');
+        $next = $this->nextAvailableOrderSequence($prefix, max((int) ($settings['next_number'] ?? 1), $maxSeq + 1));
         $orderNumber = $prefix . $next;
 
         $this->database->execute(
@@ -1268,7 +1294,7 @@ final class OperationsApi extends BaseService
     private function allocateBillNumber(): array
     {
         $maxSeqRow = $this->database->fetchOne('SELECT COALESCE(MAX(bill_seq), 0) AS max_seq FROM bills FOR UPDATE');
-        $next = ((int) ($maxSeqRow['max_seq'] ?? 0)) + 1;
+        $next = $this->nextAvailableBillSequence(((int) ($maxSeqRow['max_seq'] ?? 0)) + 1);
         return ['next' => $next, 'billNumber' => 'Bill-' . $next];
     }
 

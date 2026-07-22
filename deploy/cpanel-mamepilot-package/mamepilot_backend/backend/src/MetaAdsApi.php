@@ -1550,9 +1550,11 @@ final class MetaAdsApi extends BaseService
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
-        if (!$this->columnExists('meta_ads_sync_cache', 'last_manual_sync_at')) {
-            $this->database->execute('ALTER TABLE meta_ads_sync_cache ADD COLUMN last_manual_sync_at DATETIME DEFAULT NULL');
-        }
+        // Multiple dashboard requests can reach this lazy compatibility check at
+        // the same time. MariaDB's IF NOT EXISTS keeps that race idempotent.
+        $this->database->execute(
+            'ALTER TABLE meta_ads_sync_cache ADD COLUMN IF NOT EXISTS last_manual_sync_at DATETIME DEFAULT NULL'
+        );
     }
 
     private function saveSyncResultsToCache(array $syncResult, bool $isManual = false): void

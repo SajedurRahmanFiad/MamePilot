@@ -8,6 +8,7 @@ use App\Auth;
 use App\Config;
 use App\Database;
 use App\DataManagementApi;
+use App\OperationsApi;
 
 $config = Config::load(dirname(__DIR__));
 $database = new Database($config);
@@ -34,6 +35,7 @@ $billNumber = 'FRIENDLY-BILL-' . $stamp;
 $transactionNumber = 'FRIENDLY-TXN-' . $stamp;
 $accountName = 'Friendly Account ' . $stamp;
 $unitName = 'Friendly Unit ' . substr($stamp, -8);
+$createdImagePath = null;
 
 $pdo = $database->connect();
 $pdo->beginTransaction();
@@ -69,8 +71,8 @@ try {
     if ($invoke('importOrder', [$work[0]['row'], $actor]) !== 'created') {
         throw new RuntimeException('Friendly order create failed.');
     }
-    $order = $database->fetchOne('SELECT id, items, total FROM orders WHERE order_number = :number', [':number' => $orderNumber]);
-    if ($order === null || count(json_decode((string) $order['items'], true)) !== 2 || abs((float) $order['total'] - 245) > 0.001) {
+    $order = $database->fetchOne('SELECT id, order_seq, customer_id, items, total FROM orders WHERE order_number = :number', [':number' => $orderNumber]);
+    if ($order === null || (int) $order['order_seq'] <= 0 || count(json_decode((string) $order['items'], true)) !== 2 || abs((float) $order['total'] - 245) > 0.001) {
         throw new RuntimeException('Grouped order values are incorrect.');
     }
     if ($database->fetchOne('SELECT id FROM customers WHERE phone = :phone', [':phone' => $customerPhone]) === null) {
@@ -103,6 +105,10 @@ try {
     if ($invoke('importBill', [$billWork[0]['row'], $actor]) !== 'created') {
         throw new RuntimeException('Friendly bill create failed.');
     }
+    $bill = $database->fetchOne('SELECT id, bill_seq, vendor_id FROM bills WHERE bill_number = :number', [':number' => $billNumber]);
+    if ($bill === null || (int) $bill['bill_seq'] <= 0) {
+        throw new RuntimeException('Imported bill did not receive an internal sequence.');
+    }
     if ($database->fetchOne('SELECT id FROM vendors WHERE phone = :phone', [':phone' => $vendorPhone]) === null) {
         throw new RuntimeException('Bill did not auto-create its vendor.');
     }
@@ -112,11 +118,72 @@ try {
         throw new RuntimeException('Vendor natural-key update failed.');
     }
 
+    $operations = new OperationsApi($database, $auth, $config);
+    $operationsReflection = new ReflectionClass($operations);
+    $invokeOperation = static function (string $method, array $arguments = []) use ($operationsReflection, $operations) {
+        return $operationsReflection->getMethod($method)->invokeArgs($operations, $arguments);
+    };
+    $orderSettings = $database->fetchOne('SELECT prefix, next_number FROM order_settings LIMIT 1') ?? [];
+    $prefix = (string) ($orderSettings['prefix'] ?? 'ORD-');
+    $orderMax = (int) (($database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) AS value FROM orders') ?? [])['value'] ?? 0);
+    $orderCollisionSequence = max((int) ($orderSettings['next_number'] ?? 1), $orderMax + 1);
+    while ($database->fetchOne('SELECT id FROM orders WHERE order_number = :number', [':number' => $prefix . $orderCollisionSequence]) !== null) {
+        $orderCollisionSequence++;
+    }
+    $orderCollisionNumber = $prefix . $orderCollisionSequence;
+    $database->execute(
+        'INSERT INTO orders (id, order_number, order_seq, order_date, customer_id, created_by, status, items, subtotal, discount, shipping, total, paid_amount, history, created_at, updated_at)
+         VALUES (:id, :number, NULL, :date, :customer, :creator, :status, :items, 0, 0, 0, 0, 0, :history, :created_at, :updated_at)',
+        [
+            ':id' => 'test-order-collision-' . substr($stamp, -24), ':number' => $orderCollisionNumber,
+            ':date' => '2026-07-22', ':customer' => $order['customer_id'],
+            ':creator' => $actor['id'], ':status' => 'On Hold', ':items' => '[]', ':history' => '[]',
+            ':created_at' => $database->nowUtc(), ':updated_at' => $database->nowUtc(),
+        ]
+    );
+    if ($invokeOperation('nextOrderNumberPreview') === $orderCollisionNumber) {
+        throw new RuntimeException('Order preview reused an imported order number.');
+    }
+    $orderAllocation = $invokeOperation('allocateOrderNumber');
+    if (($orderAllocation['orderNumber'] ?? '') === $orderCollisionNumber) {
+        throw new RuntimeException('Order allocation reused an imported order number.');
+    }
+
+    $billMax = (int) (($database->fetchOne('SELECT COALESCE(MAX(bill_seq), 0) AS value FROM bills') ?? [])['value'] ?? 0);
+    $billCollisionSequence = $billMax + 1;
+    while ($database->fetchOne('SELECT id FROM bills WHERE bill_number = :number', [':number' => 'Bill-' . $billCollisionSequence]) !== null) {
+        $billCollisionSequence++;
+    }
+    $billCollisionNumber = 'Bill-' . $billCollisionSequence;
+    $vendorId = (string) $bill['vendor_id'];
+    $database->execute(
+        'INSERT INTO bills (id, bill_number, bill_seq, bill_date, vendor_id, created_by, status, items, subtotal, discount, shipping, total, paid_amount, history, created_at, updated_at)
+         VALUES (:id, :number, NULL, :date, :vendor, :creator, :status, :items, 0, 0, 0, 0, 0, :history, :created_at, :updated_at)',
+        [
+            ':id' => 'test-bill-collision-' . substr($stamp, -25), ':number' => $billCollisionNumber,
+            ':date' => '2026-07-22', ':vendor' => $vendorId, ':creator' => $actor['id'], ':status' => 'On Hold',
+            ':items' => '[]', ':history' => '[]', ':created_at' => $database->nowUtc(), ':updated_at' => $database->nowUtc(),
+        ]
+    );
+    if ($invokeOperation('nextBillNumberPreview') === $billCollisionNumber) {
+        throw new RuntimeException('Bill preview reused an imported bill number.');
+    }
+    $billAllocation = $invokeOperation('allocateBillNumber');
+    if (($billAllocation['billNumber'] ?? '') === $billCollisionNumber) {
+        throw new RuntimeException('Bill allocation reused an imported bill number.');
+    }
+
     if ($invoke('importProduct', [[
         'name' => $productName, 'category' => 'Test', 'unitName' => $unitName,
         'salePrice' => '120', 'purchasePrice' => '60', 'stock' => '20',
+        'image' => 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#123456"/></svg>'),
     ], $actor]) !== 'updated') {
         throw new RuntimeException('Product natural-key update failed.');
+    }
+    $importedProduct = $database->fetchOne('SELECT image FROM products WHERE name = :name', [':name' => $productName]) ?? [];
+    $createdImagePath = trim((string) ($importedProduct['image'] ?? ''));
+    if (!str_starts_with($createdImagePath, '/uploads/product-images/')) {
+        throw new RuntimeException('Packaged product image was not saved into local uploads.');
     }
     if ($database->fetchOne('SELECT id FROM units WHERE name = :name', [':name' => $unitName]) === null) {
         throw new RuntimeException('Product import did not auto-create its unit.');
@@ -154,6 +221,12 @@ try {
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
+    }
+    if (is_string($createdImagePath) && str_starts_with($createdImagePath, '/uploads/product-images/')) {
+        $physicalImagePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . str_replace('/', DIRECTORY_SEPARATOR, $createdImagePath);
+        if (is_file($physicalImagePath)) {
+            unlink($physicalImagePath);
+        }
     }
 }
 
