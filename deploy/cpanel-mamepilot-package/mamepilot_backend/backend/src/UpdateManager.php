@@ -271,10 +271,7 @@ final class UpdateManager
         if (!is_dir($apiRoot) && !mkdir($apiRoot, 0755, true) && !is_dir($apiRoot)) {
             throw new RuntimeException("Failed to create API directory: {$apiRoot}");
         }
-        $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . '.htaccess', $apiRoot . DIRECTORY_SEPARATOR . '.htaccess');
-        $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'index.php', $apiRoot . DIRECTORY_SEPARATOR . 'index.php');
-        $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'update.php', $apiRoot . DIRECTORY_SEPARATOR . 'update.php');
-        $this->copyFile($templateRoot . DIRECTORY_SEPARATOR . 'api' . DIRECTORY_SEPARATOR . 'trigger_update.php', $apiRoot . DIRECTORY_SEPARATOR . 'trigger_update.php');
+        $this->copyDirectory($templateRoot . DIRECTORY_SEPARATOR . 'api', $apiRoot, []);
 
         if (!is_dir($backendRoot) && !mkdir($backendRoot, 0755, true) && !is_dir($backendRoot)) {
             throw new RuntimeException("Failed to create backend root: {$backendRoot}");
@@ -395,7 +392,17 @@ final class UpdateManager
 
     private function projectRoot(): string
     {
-        return $this->config->get('UPDATE_PROJECT_ROOT', dirname(__DIR__, 2));
+        $configuredRoot = trim((string) $this->config->get('UPDATE_PROJECT_ROOT', ''));
+        if ($configuredRoot !== '' && is_file(rtrim($configuredRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'VERSION')) {
+            return rtrim($configuredRoot, DIRECTORY_SEPARATOR);
+        }
+
+        $appRoot = trim((string) $this->config->get('UPDATE_APP_ROOT', ''));
+        if ($appRoot !== '' && is_file(rtrim($appRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'VERSION')) {
+            return rtrim($appRoot, DIRECTORY_SEPARATOR);
+        }
+
+        return dirname(__DIR__, 2);
     }
 
     private function temporaryDirectory(): string

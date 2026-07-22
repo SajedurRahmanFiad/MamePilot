@@ -62,9 +62,10 @@ final class AutoCallApi extends BaseService
         if ($existing === null) {
             $id = $this->stringId(null);
             $now = $this->database->nowUtc();
+            $insertParams = $this->insertBindings($data);
             $this->database->execute(
-                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, :enabled, :delay_minutes, :api_token, :sender, :template_name, :webhook_secret, :max_survey_time_seconds, :missed_call_retry_minutes, :missed_call_retry_count, :no_key_retry_minutes, :no_key_retry_count, :trigger_statuses, :now, :now)',
-                array_merge($data, [':id' => $id, ':now' => $now])
+                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, :enabled, :delay_minutes, :api_token, :sender, :template_name, :webhook_secret, :max_survey_time_seconds, :missed_call_retry_minutes, :missed_call_retry_count, :no_key_retry_minutes, :no_key_retry_count, :trigger_statuses, :created_at, :updated_at)',
+                array_merge($insertParams, [':id' => $id, ':created_at' => $now, ':updated_at' => $now])
             );
         } else {
             [$setClause, $setParams] = $this->database->buildSetClause($data);
@@ -117,9 +118,10 @@ final class AutoCallApi extends BaseService
 
         if ($existing === null) {
             $now = $this->database->nowUtc();
+            $insertParams = $this->insertBindings($data);
             $this->database->execute(
-                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, webhook_url, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, 0, 5, :api_token, :sender, :template_name, :webhook_secret, :webhook_url, 120, 30, 3, 10, 2, :trigger_statuses, :now, :now)',
-                array_merge($data, [':id' => $this->stringId(null), ':trigger_statuses' => '["On Hold"]', ':now' => $now])
+                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, webhook_url, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, 0, 5, :api_token, :sender, :template_name, :webhook_secret, :webhook_url, 120, 30, 3, 10, 2, :trigger_statuses, :created_at, :updated_at)',
+                array_merge($insertParams, [':id' => $this->stringId(null), ':trigger_statuses' => '["On Hold"]', ':created_at' => $now, ':updated_at' => $now])
             );
         } else {
             [$setClause, $setParams] = $this->database->buildSetClause($data);
@@ -373,7 +375,7 @@ final class AutoCallApi extends BaseService
     public function fetchSurveySummary(array $params = []): array
     {
         $this->requireAdmin();
-        $settings = $this->fetchSettingsRow();
+        $settings = $this->fetchSettingsRow() ?? [];
 
         if (!$this->columnExists('orders', 'survey_status')) {
             return [
@@ -946,6 +948,19 @@ final class AutoCallApi extends BaseService
             $this->ensureSettingsTable();
         }
         return $this->database->fetchOne('SELECT * FROM voice_survey_settings LIMIT 1');
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function insertBindings(array $data): array
+    {
+        $bindings = [];
+        foreach ($data as $column => $value) {
+            $bindings[':' . $column] = $value;
+        }
+        return $bindings;
     }
 
     private function ensureSettingsTable(): void
