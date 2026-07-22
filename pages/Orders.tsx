@@ -1410,16 +1410,16 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
                         <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
-                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToSteadfast && (
+                        {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToSteadfast && (
                           <img src="/uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full" />
                         )}
-                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToCarryBee && (
+                        {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToCarryBee && (
                           <img src="/uploads/carrybee.png" alt="CarryBee" className="w-5 h-5 rounded-full" />
                         )}
-                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPaperfly && (
+                        {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToPaperfly && (
                           <img src="/uploads/paperfly.png" alt="Paperfly" className="w-5 h-5 rounded-full" />
                         )}
-                        {([OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED].includes(order.status)) && sentToPathao && (
+                        {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToPathao && (
                           <img src="/uploads/pathao.png" alt="Pathao" className="w-5 h-5 rounded-full" />
                         )}
                       </div>
