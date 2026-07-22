@@ -46,7 +46,7 @@ function scheduleIdlePreload(task: () => void): () => void {
 }
 
 
-import { hasAdminAccess } from './types';
+import { hasAdminAccess, isEmployeeRole } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
 import { useCapabilities } from './src/hooks/useCapabilities';
 import { useBackgroundSync } from './src/hooks/useBackgroundSync';
@@ -108,6 +108,7 @@ const WalletPage = lazyPage(() => import('./pages/Wallet'));
 const Undoer = lazyPage(() => import('./pages/Undoer'));
 const GrowYourBusiness = lazyPage(() => import('./pages/GrowYourBusiness'));
 const WhatsAppPage = lazyPage(() => import('./pages/WhatsApp'));
+const MessengerPage = lazyPage(() => import('./pages/Messenger'));
 
 const RouteFallback: React.FC = () => (
   <div className="min-h-[40vh] flex items-center justify-center px-6 py-12 text-center text-sm font-medium text-gray-500">
@@ -124,11 +125,12 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   const isAdmin = hasAdminAccess(activeUser?.role);
   const location = useLocation();
   const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard, canViewSettings, canViewSubscriptions, canViewMarketing } = useRolePermissions();
-  const { hasCapability, isDeveloper } = useCapabilities(isAuthenticated);
+  const { hasCapability, hasSubCapability, isDeveloper } = useCapabilities(isAuthenticated);
   const writeFreezeEnabled = WRITE_FREEZE_ENABLED;
   const { isReadOnly } = useSubscriptionReadOnly();
   const writeDisabled = writeFreezeEnabled || isReadOnly;
   const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
+  const canAccessEmployeeWallet = isEmployeeRole(activeUser?.role) && can('wallet.view') && hasSubCapability('payroll');
   const defaultProtectedRoute = canViewDashboard
     ? '/dashboard'
     : can('orders.view') && hasCapability('sales')
@@ -149,14 +151,18 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
                     ? '/fraud-checker'
                   : can('transfers.create') && hasCapability('banking')
                     ? '/banking/transfer'
-                    : can('wallet.view') && hasCapability('human_resources')
+                    : canAccessEmployeeWallet
                       ? '/wallet'
                       : can('reports.view') && hasCapability('advanced_reports')
                         ? '/reports'
                         : can('recycleBin.view') && hasCapability('recycle_bin_undoer')
                           ? '/recycle-bin'
-          : can('users.view') && hasCapability('human_resources')
+          : can('users.view') && hasSubCapability('hr_management')
             ? '/users'
+            : hasCapability('messenger')
+              ? '/messenger'
+              : hasCapability('whatsapp')
+                ? '/whatsapp'
             : isAdmin
               ? '/subscriptions'
             : '/dashboard';
@@ -203,13 +209,13 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
     if (hasCapability('auto_calling')) preloaders.add(AutoCalling.preload);
     if (can('transfers.create')) preloaders.add(Transfer.preload);
-    if (can('users.view')) {
+    if (can('users.view') && hasSubCapability('hr_management')) {
       preloaders.add(Users.preload);
       preloaders.add(UserDetails.preload);
-      preloaders.add(UserForm.preload);
     }
-    if (can('wallet.view')) preloaders.add(WalletPage.preload);
-    if (can('payroll.view')) preloaders.add(Payroll.preload);
+    if ((can('users.create') || can('users.edit')) && hasSubCapability('hr_management')) preloaders.add(UserForm.preload);
+    if (canAccessEmployeeWallet) preloaders.add(WalletPage.preload);
+    if (can('payroll.view') && hasSubCapability('payroll')) preloaders.add(Payroll.preload);
     if (can('reports.view')) {
       preloaders.add(Reports.preload);
       preloaders.add(ExpenseSummary.preload);
@@ -342,6 +348,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       <Route path="/whatsapp" element={
         isAuthenticated ? (hasCapability('whatsapp') ? <Layout><WhatsAppPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
+      <Route path="/messenger" element={
+        isAuthenticated ? (hasCapability('messenger') ? <Layout><MessengerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
       <Route path="/leads" element={
         isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -402,16 +411,16 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
 
       <Route path="/users" element={
-        isAuthenticated ? (can('users.view') ? <Layout><Users /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.view') && hasSubCapability('hr_management') ? <Layout><Users /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/new" element={
-        isAuthenticated ? (can('users.view') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.create') && hasSubCapability('hr_management') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/edit/:id" element={
-        isAuthenticated ? (can('users.view') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.edit') && hasSubCapability('hr_management') ? (writeDisabled ? <Navigate to="/users" replace /> : <Layout><UserForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/users/:id" element={
-        isAuthenticated ? (can('users.view') ? <Layout><UserDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('users.view') && hasSubCapability('hr_management') ? <Layout><UserDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/reports" element={
@@ -419,7 +428,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/human-resource-dashboard" element={
         isAuthenticated
-          ? can('users.view') && hasCapability('human_resources')
+          ? can('users.view') && hasSubCapability('hr_management')
             ? <Layout><HumanResourceDashboard /></Layout>
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
@@ -447,9 +456,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/payroll" element={
         isAuthenticated
-          ? can('payroll.view')
+          ? can('payroll.view') && hasSubCapability('payroll')
             ? <Layout><Payroll /></Layout>
-            : can('wallet.view')
+            : canAccessEmployeeWallet
               ? <Navigate to="/wallet" replace />
               : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
@@ -458,14 +467,14 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated
           ? can('recycleBin.view')
             ? <Layout><RecycleBin /></Layout>
-            : can('wallet.view')
+            : canAccessEmployeeWallet
               ? <Navigate to="/wallet" replace />
               : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />
       } />
       <Route path="/wallet" element={
         isAuthenticated
-          ? can('wallet.view')
+          ? canAccessEmployeeWallet
             ? <Layout><WalletPage /></Layout>
             : <Navigate to={defaultProtectedRoute} replace />
           : <Navigate to="/login" replace />

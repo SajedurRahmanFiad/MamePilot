@@ -932,7 +932,7 @@ const UserActivityPerformanceReport: React.FC = () => {
       printWindow.focus();
     } catch (error) {
       printWindow.close();
-      toast.error(`Failed to prepare the user PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : 'Could not prepare the report. Please try again.');
     }
   };
 

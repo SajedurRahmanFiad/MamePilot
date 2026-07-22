@@ -2,11 +2,11 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { db } from '../db';
-import { BillStatus, Bill, Transaction, type ProcessBillReturnPayload } from '../types';
-import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getStatusColor } from '../constants';
+import { BillStatus, Bill, type ProcessBillReturnPayload } from '../types';
+import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor } from '../constants';
 import { theme } from '../theme';
 import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor } from '../src/hooks/useQueries';
-import { useUpdateBill, useCreateTransaction, useProcessBillReturn } from '../src/hooks/useMutations';
+import { useUpdateBill, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay, CommonPaymentModal, Modal, BillReturnModal } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
@@ -36,21 +36,27 @@ const BillDetails: React.FC = () => {
   
   // Mutations
   const updateMutation = useUpdateBill();
-  const createTransactionMutation = useCreateTransaction();
   const processBillReturnMutation = useProcessBillReturn();
   const toast = useToastNotifications();
-  const isPaymentLoading = updateMutation.isPending || createTransactionMutation.isPending;
+  const isPaymentLoading = updateMutation.isPending;
   
   const loading = billLoading;
   
   // Modal states
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
     date: getTodayDate(),
     time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0
+  });
+  const [refundForm, setRefundForm] = useState({
+    date: getTodayDate(),
+    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    accountId: db.settings.defaults.defaultAccountId || '',
+    amount: 0,
   });
 
   const [expandedSection, setExpandedSection] = useState<Record<string, boolean>>({
@@ -107,10 +113,10 @@ const BillDetails: React.FC = () => {
     if (!currentBill) return 0;
     const returnedHistory = (currentBill.history as Record<string, string | undefined>)?.returned;
     const cancelledHistory = (currentBill.history as Record<string, string | undefined>)?.cancelled;
-    if (returnedHistory) {
+    if (currentBill.status === BillStatus.RETURNED || returnedHistory) {
       return billProgressSteps.findIndex((item) => item.label === 'Returned');
     }
-    if (cancelledHistory) {
+    if (currentBill.status === BillStatus.CANCELLED || cancelledHistory) {
       return billProgressSteps.findIndex((item) => item.label === 'Cancelled');
     }
     if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) {
@@ -128,7 +134,7 @@ const BillDetails: React.FC = () => {
     if (!activeBill) return 0;
     const returnedHistory = (activeBill.history as Record<string, string | undefined>)?.returned;
     const cancelledHistory = (activeBill.history as Record<string, string | undefined>)?.cancelled;
-    if (returnedHistory || cancelledHistory) return 100;
+    if (activeBill.status === BillStatus.RETURNED || activeBill.status === BillStatus.CANCELLED || returnedHistory || cancelledHistory) return 100;
     if (activeBill.status === BillStatus.PAID || activeBill.status === BillStatus.RECEIVED) return 100;
 
     const finalStepIndex = billProgressSteps.findIndex((item) => item.label === 'Received');
@@ -142,8 +148,8 @@ const BillDetails: React.FC = () => {
     if (!currentBill) return null;
     const returnedHistory = (currentBill.history as Record<string, string | undefined>)?.returned;
     const cancelledHistory = (currentBill.history as Record<string, string | undefined>)?.cancelled;
-    if (returnedHistory) return 'Returned' as BillTimelineLabel;
-    if (cancelledHistory) return 'Cancelled' as BillTimelineLabel;
+    if (currentBill.status === BillStatus.RETURNED || returnedHistory) return 'Returned' as BillTimelineLabel;
+    if (currentBill.status === BillStatus.CANCELLED || cancelledHistory) return 'Cancelled' as BillTimelineLabel;
     if (currentBill.status === BillStatus.PAID || currentBill.status === BillStatus.RECEIVED) {
       return (hasExchangedItems(currentBill) ? 'Exchanged' : 'Received') as BillTimelineLabel;
     }
@@ -326,24 +332,33 @@ const BillDetails: React.FC = () => {
   const canMarkCurrentBillPaid = canAccessRecord(bill.createdBy, 'bills.markPaidOwn', 'bills.markPaidAny');
   const canCancelCurrentBill = canAccessRecord(bill.createdBy, 'bills.cancelOwn', 'bills.cancelAny');
   const canProcessReturn = canAccessRecord(bill.createdBy, 'bills.processReturnOwn', 'bills.processReturnAny');
+  const isVoidedBeforeReceipt = bill.status === BillStatus.CANCELLED
+    || (bill.status === BillStatus.RETURNED && !String(bill.history?.return || '').trim());
+  const settlementTotal = isVoidedBeforeReceipt ? 0 : bill.total;
 
   // Calculate payment status
   const getPaymentStatus = () => {
-    const dueAmount = bill.total - bill.paidAmount;
-    if (bill.paidAmount === 0) return 'Unpaid';
-    if (dueAmount > 0) return 'Partially Paid';
-    if (dueAmount === 0) return 'Paid';
-    if (dueAmount < 0) return 'Overpaid';
-    return 'Unpaid';
+    return getPaymentStatusLabel(bill.paidAmount, settlementTotal, bill.history);
+  };
+
+  const appendBillHistory = (key: 'paid' | 'refund', eventText: string): Bill['history'] => {
+    const existing = String(bill.history?.[key] || '').trim();
+    return {
+      ...bill.history,
+      [key]: existing ? `${existing}\n${eventText}` : eventText,
+    };
   };
 
   const updateStatus = async (newStatus: BillStatus, historyKey?: keyof Exclude<Bill['history'], undefined>, historyText?: string) => {
     if (!bill) return;
     try {
+      const existingHistoryText = historyKey ? String(bill.history?.[historyKey] || '').trim() : '';
       const updates = { 
         ...bill, 
         status: newStatus, 
-        history: historyKey ? { ...bill.history, [historyKey]: historyText } : bill.history
+        history: historyKey
+          ? { ...bill.history, [historyKey]: existingHistoryText && historyText ? `${existingHistoryText}\n${historyText}` : historyText }
+          : bill.history
       };
       await updateMutation.mutateAsync({ id: id!, updates });
       setIsActionOpen(false);
@@ -369,7 +384,7 @@ const BillDetails: React.FC = () => {
     }
 
     const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
-    const newStatus = completionOutcome === 'Returned' ? BillStatus.ON_HOLD : BillStatus.RECEIVED;
+    const newStatus = completionOutcome === 'Returned' ? BillStatus.RETURNED : BillStatus.RECEIVED;
     const historyKey = completionOutcome === 'Returned' ? 'returned' : 'received';
 
     await updateStatus(newStatus, historyKey as keyof Exclude<Bill['history'], undefined>, historyText);
@@ -382,7 +397,7 @@ const BillDetails: React.FC = () => {
       return;
     }
     const historyText = `Reverted/cancelled by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
-    await updateStatus(BillStatus.ON_HOLD, 'cancelled', historyText);
+    await updateStatus(BillStatus.CANCELLED, 'cancelled', historyText);
   };
 
   const handlePayment = async () => {
@@ -396,12 +411,15 @@ const BillDetails: React.FC = () => {
         toast.error('Please select an account');
         return;
       }
-
-      const updatedPaid = bill.paidAmount + paymentForm.amount;
-      
-      // Determine if bill is fully paid
-      const isFullyPaid = updatedPaid >= bill.total;
-      const newStatus = isFullyPaid ? BillStatus.PAID : bill.status;
+      if (paymentForm.amount <= 0) {
+        toast.error('Enter a payment amount greater than zero');
+        return;
+      }
+      const remainingDue = Math.max(settlementTotal - bill.paidAmount, 0);
+      if (paymentForm.amount > remainingDue) {
+        toast.error(`Payment cannot exceed the remaining due of ${formatCurrency(remainingDue)}`);
+        return;
+      }
       
       // Compose ISO datetime from date and time
       const fullDatetime = buildLocalDateTime(paymentForm.date, paymentForm.time);
@@ -412,37 +430,18 @@ const BillDetails: React.FC = () => {
       const isoDatetime = fullDatetime.toISOString();
       const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
       
-      const updatedBill = { 
-        ...bill, 
-        paidAmount: updatedPaid,
-        status: newStatus,
-        history: { ...bill.history, paid: historyText },
-        paidAt: isoDatetime
-      };
-
-      const expenseTxn: Transaction = {
-        id: Math.random().toString(36).substr(2, 9),
-        date: isoDatetime,
-        type: 'Expense',
-        category: db.settings.defaults.expenseCategoryId || 'expense_purchases',
+      const updatedBill: any = {
+        history: appendBillHistory('paid', historyText),
+        paymentAmount: paymentForm.amount,
         accountId: paymentForm.accountId,
-        amount: paymentForm.amount,
-        description: `Payment for Bill #${bill.billNumber}`,
-        referenceId: bill.id,
-        contactId: bill.vendorId,
         paymentMethod: db.settings.defaults.defaultPaymentMethod || 'Cash',
-        createdBy: user.id
+        transactionDate: isoDatetime,
       };
-      const createdTransaction = await createTransactionMutation.mutateAsync(expenseTxn as any);
 
       await updateMutation.mutateAsync({ id: id!, updates: updatedBill });
 
       setShowPaymentModal(false);
-      if (createdTransaction.approvalStatus === 'pending') {
-        toast.info('Bill payment was recorded, and the expense transaction is waiting for admin approval.');
-      } else {
-        toast.success('Payment recorded successfully');
-      }
+      toast.success('Payment recorded successfully');
     } catch (err) {
       console.error('Failed to record payment:', err);
       toast.error('Failed to record payment');
@@ -459,9 +458,60 @@ const BillDetails: React.FC = () => {
       date: getTodayDate(),
       time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
       accountId: db.settings.defaults.defaultAccountId || '',
-      amount: bill.total - bill.paidAmount
+      amount: Math.max(settlementTotal - bill.paidAmount, 0)
     });
     setShowPaymentModal(true);
+  };
+
+  const openRefund = () => {
+    if (!bill) return;
+    const refundDue = Math.max(bill.paidAmount - settlementTotal, 0);
+    if (refundDue <= 0) {
+      toast.info('There is no vendor refund due on this bill.');
+      return;
+    }
+    setRefundForm({
+      date: getTodayDate(),
+      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      accountId: db.settings.defaults.defaultAccountId || '',
+      amount: refundDue,
+    });
+    setShowRefundModal(true);
+  };
+
+  const handleRefund = async () => {
+    if (!bill) return;
+    const maxRefund = Math.max(bill.paidAmount - settlementTotal, 0);
+    if (!refundForm.accountId) {
+      toast.error('Please select the account that received the refund');
+      return;
+    }
+    if (refundForm.amount <= 0 || refundForm.amount > maxRefund) {
+      toast.error(`Refund must be between 0 and ${formatCurrency(maxRefund)}`);
+      return;
+    }
+    const fullDatetime = buildLocalDateTime(refundForm.date, refundForm.time);
+    if (!fullDatetime) {
+      toast.error('Please enter a valid refund date and time');
+      return;
+    }
+    const historyText = `Vendor refund of ${formatCurrency(refundForm.amount)} recorded by ${user.name} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    try {
+      await updateMutation.mutateAsync({
+        id: id!,
+        updates: {
+          history: appendBillHistory('refund', historyText),
+          refundAmount: refundForm.amount,
+          accountId: refundForm.accountId,
+          paymentMethod: db.settings.defaults.defaultPaymentMethod || 'Cash',
+          transactionDate: fullDatetime.toISOString(),
+        } as any,
+      });
+      setShowRefundModal(false);
+      toast.success('Vendor refund recorded successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to record vendor refund');
+    }
   };
 
   const handleProcessBillReturn = async (payload: ProcessBillReturnPayload) => {
@@ -524,10 +574,10 @@ const BillDetails: React.FC = () => {
                   <div className="absolute right-0 mt-2 w-48 bg-white border rounded-xl shadow-xl z-50 py-2">
                     <button onClick={() => { handlePrintBill(id!, navigate); setIsActionOpen(false); }} className="md:hidden w-full text-left px-4 py-2 text-sm hover:bg-gray-50">Print Bill</button>
                     <div className="md:hidden border-t my-1"></div>
-                    {canProcessReturn && (bill.status === BillStatus.RECEIVED || bill.status === BillStatus.PAID || bill.status === BillStatus.PROCESSING) && (
+                    {canProcessReturn && (bill.status === BillStatus.RECEIVED || bill.status === BillStatus.PAID) && (
                       <button onClick={() => { setShowReturnModal(true); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700">{ICONS.Return} Return to Vendor</button>
                     )}
-                    {canCancelCurrentBill && <button disabled={bill.status === BillStatus.PAID || bill.status === BillStatus.ON_HOLD} onClick={() => { cancelBill(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 disabled:hover:bg-gray-50 flex items-center gap-2 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">{ICONS.Close} Cancel Bill</button>}
+                    {canCancelCurrentBill && <button disabled={bill.status !== BillStatus.PROCESSING} onClick={() => { cancelBill(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 disabled:hover:bg-gray-50 flex items-center gap-2 text-red-600 font-bold disabled:text-gray-300 disabled:cursor-not-allowed">{ICONS.Close} Cancel Bill</button>}
                     {canEditCurrentBill && <button onClick={() => { navigate(`/bills/edit/${bill.id}`); setIsActionOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Edit} Edit Bill</button>}
                   </div>
                 </>
@@ -698,29 +748,31 @@ const BillDetails: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-100">
                     <span className="text-xs text-gray-500 font-medium">Due Amount</span>
-                    <span className={`font-bold ${bill.total - bill.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {formatCurrency(Math.max(bill.total - bill.paidAmount, 0))}
+                    <span className={`font-bold ${settlementTotal - bill.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(Math.max(settlementTotal - bill.paidAmount, 0))}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium">Refunded</span>
-                    <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
+                    <span className="text-xs text-gray-500 font-medium">Vendor Refund Due</span>
+                    <span className="font-bold text-orange-600">{formatCurrency(Math.max(bill.paidAmount - settlementTotal, 0))}</span>
                   </div>
                 </div>
 
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={openPayment}
-                    disabled={!canMarkCurrentBillPaid || bill.paidAmount >= bill.total}
+                    disabled={!canMarkCurrentBillPaid || bill.paidAmount >= settlementTotal || bill.status === BillStatus.RETURNED || bill.status === BillStatus.CANCELLED}
                     className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     Add Payment
                   </button>
                   <button
                     type="button"
+                    onClick={openRefund}
+                    disabled={!canMarkCurrentBillPaid || bill.paidAmount <= settlementTotal}
                     className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Issue Refund
+                    Record Vendor Refund
                   </button>
                 </div>
               </div>
@@ -889,6 +941,19 @@ const BillDetails: React.FC = () => {
             </div>
           )}
 
+          {bill.history?.refund && (
+            <div className="flex gap-3 pb-4 border-b border-gray-100">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-orange-100">
+                  {ICONS.Return}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-orange-700 leading-relaxed font-bold">{bill.history.refund}</p>
+              </div>
+            </div>
+          )}
+
           {bill.history?.cancelled && (
             <div className="flex gap-3">
               <div className="flex-shrink-0">
@@ -919,6 +984,18 @@ const BillDetails: React.FC = () => {
         isLoading={isPaymentLoading}
         title="Record Payment"
         buttonText="Add Payment"
+      />
+
+      <CommonPaymentModal
+        isOpen={showRefundModal}
+        onClose={() => setShowRefundModal(false)}
+        onSubmit={handleRefund}
+        accounts={accounts}
+        paymentForm={refundForm}
+        setPaymentForm={setRefundForm}
+        isLoading={isPaymentLoading}
+        title="Record Vendor Refund"
+        buttonText="Record Refund"
       />
 
       <Modal

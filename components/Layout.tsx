@@ -4,12 +4,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
 import { RotateCcw } from 'lucide-react';
 import { db } from '../db';
-import { hasAdminAccess } from '../types';
+import { hasAdminAccess, isEmployeeRole } from '../types';
 import { resolveThemeColorPalette, theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useCompanySettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { useGlobalBranding, useSystemDefaults } from '../src/hooks/useQueries';
 import { buildHistoryBackState } from '../src/utils/navigation';
-import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
@@ -122,8 +121,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
-  const { data: fetchedCompanySettings, isLoading: isCompanySettingsLoading } = useCompanySettings();
   const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
+  const whiteLabelEnabled = Boolean(systemDefaults?.whiteLabel);
+  const { data: globalBranding, isLoading: isCompanySettingsLoading } = useGlobalBranding(whiteLabelEnabled);
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability, hasSubCapability } = useCapabilities(Boolean(profile));
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
@@ -131,7 +131,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const whiteLabelEnabled = Boolean(systemDefaults?.whiteLabel);
   const isSidebarExpanded = isSidebarOpen || isSidebarHovered;
   const sidebarWidth = isSidebarOpen || isSidebarExpanded ? 288 : 80;
   const sidebarTransitionStyle = {
@@ -141,6 +140,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     willChange: 'width',
   };
   const brandLoading = isSystemDefaultsLoading || (whiteLabelEnabled && isCompanySettingsLoading);
+  const isWhatsAppPage = location.pathname.startsWith('/whatsapp');
+  const isMessengerPage = location.pathname.startsWith('/messenger');
+  const isConversationPage = isWhatsAppPage || isMessengerPage;
 
   const companySettings = useMemo(() => {
     if (isSystemDefaultsLoading) {
@@ -164,14 +166,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       };
     }
 
-    const normalizedCompany = normalizeCompanySettings(fetchedCompanySettings || db.settings.company);
-    const globalPage = getGlobalCompanyPage(normalizedCompany);
-
     return {
-      name: globalPage?.name || db.settings.company.name,
-      logo: globalPage?.logo || db.settings.company.logo || '/uploads/Avatar.png',
+      name: globalBranding?.name || db.settings.company.name,
+      logo: globalBranding?.logo || db.settings.company.logo || '/uploads/Avatar.png',
     };
-  }, [fetchedCompanySettings, whiteLabelEnabled, isCompanySettingsLoading, isSystemDefaultsLoading]);
+  }, [globalBranding, whiteLabelEnabled, isCompanySettingsLoading, isSystemDefaultsLoading]);
   
   // Use profile from Auth context if available, fallback to db.currentUser
   const user = profile || db.currentUser;
@@ -364,6 +363,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/grow-your-business')) {
       return { title: 'Grow Your Business', subtitle: 'AI-powered recommendations to optimize your product portfolio and boost sales.' };
     }
+    if (pathname.startsWith('/whatsapp')) {
+      return { title: 'WhatsApp', subtitle: 'Chat with customers on WhatsApp.' };
+    }
+    if (pathname.startsWith('/messenger')) {
+      return { title: 'Messenger', subtitle: 'Chat with customers on Messenger.' };
+    }
 
     return { title: 'Overview', subtitle: 'Manage your business workspace.' };
   }, [location.pathname]);
@@ -394,6 +399,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
   const canViewDashboard = (canViewAdminDashboard || canViewEmployeeDashboard) && hasCapability('dashboard');
   const isAdminAccessUser = hasAdminAccess(user.role);
+  const isEmployeeUser = isEmployeeRole(user.role);
   const isDeveloper = user.role === 'Developer';
 
   const sidebarPermissionContext = useMemo(
@@ -403,9 +409,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       hasSubCapability,
       canViewDashboard,
       isAdminAccessUser,
+      isEmployeeUser,
       isDeveloper,
     }),
-    [can, hasCapability, hasSubCapability, canViewDashboard, isAdminAccessUser, isDeveloper]
+    [can, hasCapability, hasSubCapability, canViewDashboard, isAdminAccessUser, isEmployeeUser, isDeveloper]
   );
 
   const sidebarItems = useMemo(() => {
@@ -614,10 +621,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-10 animate-in fade-in duration-500 relative">
-          <IncidentModeBanner />
+        <main className={`relative min-h-0 flex-1 animate-in fade-in duration-500 ${isConversationPage ? 'overflow-hidden p-0' : 'overflow-y-auto p-6 lg:p-10'}`}>
+          {!isConversationPage && <IncidentModeBanner />}
           {children}
-          <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
+          {!isConversationPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
               © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}
               <span className="mx-2">|</span>
@@ -626,9 +633,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               All rights reserved.
             </p>
             <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by Mame Studio</p>
-          </footer>
+          </footer>}
         </main>
-        {hasCapability('enterprise_ai_agent') && <MameChat />}
+        {hasCapability('enterprise_ai_agent') && !isConversationPage && <MameChat />}
       </div>
     </div>
   );

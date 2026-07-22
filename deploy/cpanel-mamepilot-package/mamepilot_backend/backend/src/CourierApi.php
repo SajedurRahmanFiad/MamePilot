@@ -24,7 +24,7 @@ final class CourierApi extends BaseService
         $actor = $this->database->fetchOne(
             "SELECT id, name, phone, role
              FROM users
-             WHERE deleted_at IS NULL AND role IN ('Admin', 'Developer')
+             WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 AND role IN ('Admin', 'Developer')
              ORDER BY CASE WHEN role = 'Developer' THEN 0 ELSE 1 END, created_at ASC
              LIMIT 1"
         );

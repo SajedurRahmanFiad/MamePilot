@@ -9,11 +9,16 @@ use App\BusinessGrowthApi;
 use App\Config;
 use App\CourierApi;
 use App\Database;
+use App\DataManagementApi;
 use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
 use App\MetaAdsApi;
+use App\MessengerApi;
 use App\OperationsApi;
+use App\OrderPostCreateEffects;
+use App\WhatsAppApi;
+use App\WooCommerceApi;
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
@@ -47,9 +52,14 @@ try {
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
+    $dataManagement = new DataManagementApi($database, $auth, $config);
     $metaAds = new MetaAdsApi($database, $auth, $config);
+    $whatsapp = new WhatsAppApi($database, $auth, $config);
+    $messenger = new MessengerApi($database, $auth, $config);
     $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
     $autoCall = new AutoCallApi($database, $auth, $config);
+    $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
+    $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
 
     if ($action === 'health') {
         Http::ok([
@@ -62,6 +72,14 @@ try {
 
     if ($action === 'metaAdsOAuthCallback') {
         $metaAds->redirectAfterOAuth($payload);
+        exit;
+    }
+
+    // Central notification delivery must remain reachable during maintenance or
+    // subscription read-only mode. The endpoint authenticates the raw payload
+    // with its per-deployment HMAC secret before writing anything.
+    if ($action === 'receiveCentralNotification') {
+        Http::ok($master->receiveCentralNotification($payload));
         exit;
     }
 
@@ -93,7 +111,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $metaAds, $businessGrowth, $autoCall];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
@@ -101,40 +119,7 @@ try {
 
         $result = $service->{$action}($payload);
         if ($action === 'createOrder' && is_array($result)) {
-            $orderId = trim((string) ($result['id'] ?? ''));
-            $orderStatus = trim((string) ($result['status'] ?? ''));
-            if ($orderId !== '' && $autoCall->queueOrderIfEligible($orderId, $orderStatus)) {
-                register_shutdown_function(static function () use ($autoCall): void {
-                    $autoCall->triggerSurveyBackgroundProcess();
-                });
-            }
-
-            $capabilities = $featureAccess->fetchCapabilities();
-            $customerId = trim((string) ($result['customerId'] ?? ''));
-            if (!empty($capabilities['grow_your_business']) && $customerId !== '') {
-                register_shutdown_function(static function () use ($customerId): void {
-                    $script = dirname(__DIR__) . '/bin/process_customer_fraud_check.php';
-                    if (!is_file($script)) {
-                        return;
-                    }
-
-                    $php = PHP_BINARY ?: 'php';
-                    if (DIRECTORY_SEPARATOR === '\\') {
-                        $command = 'cmd /c start "" /B ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > NUL 2>&1';
-                    } else {
-                        $command = 'nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > /dev/null 2>&1 &';
-                    }
-
-                    if (function_exists('popen')) {
-                        $process = @popen($command, 'r');
-                        if (is_resource($process)) {
-                            @pclose($process);
-                        }
-                    } elseif (function_exists('shell_exec')) {
-                        @shell_exec($command);
-                    }
-                });
-            }
+            $postCreateEffects->schedule($result);
         }
         Http::ok($result);
         exit;
@@ -144,16 +129,9 @@ try {
 } catch (ApiException $exception) {
     Http::error(
         $exception->httpStatus(),
-        $exception->getMessage(),
+        Http::safeErrorMessage($exception->getMessage()),
         array_merge(['code' => $exception->errorCode()], $exception->extra())
     );
 } catch (Throwable $exception) {
-    $message = $exception->getMessage();
-    $status = 500;
-    if ($message === 'Authentication required.') {
-        $status = 401;
-    } elseif ($message === 'Admin access required.') {
-        $status = 403;
-    }
-    Http::error($status, $message . ' [' . $exception->getFile() . ':' . $exception->getLine() . ' | ' . substr($exception->getTraceAsString(), 0, 500) . ']');
+    Http::unexpectedError($exception);
 }

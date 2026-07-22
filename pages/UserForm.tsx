@@ -52,7 +52,7 @@ const UserForm: React.FC = () => {
     bloodGroup: '',
     nationality: '',
     cv: '',
-    isCommissionBased: false,
+    isCommissionBased: true,
     fixedSalary: null,
   });
 
@@ -78,6 +78,7 @@ const UserForm: React.FC = () => {
 
   const isAdmin = hasAdminAccess(currentUser?.role);
   const isDeveloperTarget = form.role === UserRole.DEVELOPER;
+  const isEmployeeTarget = form.role === UserRole.EMPLOYEE;
   const showExtendedProfile = !isDeveloperTarget;
   const assignableRoles = getAssignableUserRoles(permissionsSettings || db.settings.permissions, {
     includeDeveloper: existingUser?.role === UserRole.DEVELOPER,
@@ -127,13 +128,21 @@ const UserForm: React.FC = () => {
     bloodGroup: showExtendedProfile ? (form.bloodGroup || '') : '',
     nationality: showExtendedProfile ? (form.nationality || '') : '',
     cv: showExtendedProfile ? (form.cv || '') : '',
-    isCommissionBased: showExtendedProfile ? Boolean(form.isCommissionBased) : false,
-    fixedSalary: showExtendedProfile && !form.isCommissionBased ? form.fixedSalary ?? null : null,
+    isCommissionBased: isEmployeeTarget ? Boolean(form.isCommissionBased) : false,
+    fixedSalary: isEmployeeTarget && !form.isCommissionBased ? form.fixedSalary ?? null : null,
   });
 
   const handleSave = async () => {
+    if (isEdit && !canEditUsers) {
+      toast.error('You do not have permission to edit users');
+      return;
+    }
     if (!form.name || !form.phone || (isAdmin && !isEdit && !form.password)) {
       toast.warning('Please fill mandatory fields (Name, Phone, Password)');
+      return;
+    }
+    if (isEmployeeTarget && !form.isCommissionBased && Number(form.fixedSalary || 0) <= 0) {
+      toast.warning('Enter a fixed monthly salary greater than zero.');
       return;
     }
 
@@ -334,23 +343,40 @@ const UserForm: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Commission Based</label>
-                  <select className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.isCommissionBased ? 'yes' : 'no'} onChange={e => setFormValue('isCommissionBased', e.target.value === 'yes')}>
-                    <option value="no">No</option>
-                    <option value="yes">Yes</option>
-                  </select>
-                </div>
+                {isEmployeeTarget && (
+                  <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] p-4 md:p-5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#0f2f57]">Compensation</p>
+                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Compensation Type</label>
+                        <select
+                          className="w-full rounded-xl border bg-white px-4 py-3 focus:ring-2 focus:ring-[#3c5a82]"
+                          value={form.isCommissionBased ? 'commission' : 'fixed'}
+                          onChange={(event) => setFormValue('isCommissionBased', event.target.value === 'commission')}
+                        >
+                          <option value="commission">Commission per eligible order</option>
+                          <option value="fixed">Fixed monthly salary</option>
+                        </select>
+                        <p className="text-xs font-medium text-gray-500">
+                          {form.isCommissionBased
+                            ? 'Eligible orders add credits to the employee wallet.'
+                            : 'Payroll calculates the salary for the selected calendar period.'}
+                        </p>
+                      </div>
 
-                {!form.isCommissionBased && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fixed Salary</label>
-                    <NumericInput
-                      value={form.fixedSalary ?? ''}
-                      onChange={(value) => setFormValue('fixedSalary', value)}
-                      placeholder="0.00"
-                      className="bg-gray-50 border rounded-xl"
-                    />
+                      {!form.isCommissionBased && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Monthly Salary <span className="text-rose-500">*</span></label>
+                          <NumericInput
+                            value={form.fixedSalary ?? ''}
+                            onChange={(value) => setFormValue('fixedSalary', value)}
+                            placeholder="Enter monthly salary"
+                            className="rounded-xl border bg-white"
+                          />
+                          <p className="text-xs font-medium text-gray-500">Must be greater than zero before this employee can be paid.</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

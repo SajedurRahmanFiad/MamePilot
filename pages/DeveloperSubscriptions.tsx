@@ -104,24 +104,24 @@ const DeveloperSubscriptions: React.FC = () => {
   }, [availableTiers, selectedTierKey]);
 
   const loadTiers = async () => {
-    const toastId = toast.loading('Loading central tiers...');
+    const toastId = toast.loading('Loading subscription plans...');
     try {
       const result = await tiersQuery.refetch();
       if (result.error) {
         throw result.error;
       }
-      toast.update(toastId, 'Central tiers loaded.', 'success');
+      toast.update(toastId, 'Subscription plans loaded.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to load tiers.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not load subscription plans. Please try again.', 'error');
     }
   };
 
   const saveLicense = async () => {
     if (!selectedTierKey) {
-      toast.error('Please select a tier first.');
+      toast.error('Please select a subscription plan first.');
       return;
     }
-    const toastId = toast.loading(capabilitySettings?.licenseKey ? 'Updating license tier...' : 'Creating license...');
+    const toastId = toast.loading(capabilitySettings?.licenseKey ? 'Updating subscription access...' : 'Creating subscription access...');
     try {
       await saveLicenseMutation.mutateAsync({
         licenseApiUrl,
@@ -136,32 +136,32 @@ const DeveloperSubscriptions: React.FC = () => {
           yearly: Number(yearlyPriceOverride || 0),
         },
       });
-      toast.update(toastId, 'License saved and synced.', 'success');
+      toast.update(toastId, 'Subscription access saved.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save license.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save subscription access. Please try again.', 'error');
     }
   };
 
   const syncNow = async () => {
-    const toastId = toast.loading('Syncing license...');
+    const toastId = toast.loading('Refreshing subscription access...');
     try {
       await syncMutation.mutateAsync({ licenseKey: capabilitySettings?.licenseKey, licenseApiUrl });
-      toast.update(toastId, 'License synced. Registering webhook...', 'success');
+      toast.update(toastId, 'Subscription access is up to date.', 'success');
       try {
         const webhookResult = await registerWebhookMutation.mutateAsync({});
         if (webhookResult.success) {
-          toast.success('Webhook registered with central server.');
+          toast.success('Automatic subscription updates are ready.');
         }
       } catch {
         // Webhook registration is best-effort; license sync already succeeded
       }
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'License sync failed.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not refresh subscription access. Please try again.', 'error');
     }
   };
 
   const saveOverride = async () => {
-    const toastId = toast.loading('Saving central override...');
+    const toastId = toast.loading('Saving custom subscription access...');
     try {
       // Merge sub-capabilities into the capabilities object for storage
       const capabilitiesWithSubs = { ...overrideCapabilities, subCapabilities: overrideSubCapabilities };
@@ -175,22 +175,22 @@ const DeveloperSubscriptions: React.FC = () => {
           yearly: Number(yearlyPriceOverride || 0),
         },
       });
-      toast.update(toastId, 'Override saved and synced.', 'success');
+      toast.update(toastId, 'Custom subscription access saved.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save override.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save custom subscription access. Please try again.', 'error');
     }
   };
 
   const resetOverride = async () => {
-    const toastId = toast.loading('Resetting override...');
+    const toastId = toast.loading('Restoring subscription plan defaults...');
     try {
       await resetOverrideMutation.mutateAsync({ licenseApiUrl, licenseOwnerToken: ownerToken, licenseKey: capabilitySettings?.licenseKey });
       setOverrideSubCapabilities({});
       setMonthlyPriceOverride('');
       setYearlyPriceOverride('');
-      toast.update(toastId, 'Reset to tier defaults.', 'success');
+      toast.update(toastId, 'Subscription plan defaults restored.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to reset override.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not restore the plan defaults. Please try again.', 'error');
     }
   };
 
@@ -215,7 +215,21 @@ const DeveloperSubscriptions: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={loadTiers} disabled={!licenseApiUrl}>Load Tiers</Button>
             <Button variant="secondary" onClick={syncNow} disabled={!capabilitySettings?.licenseKey || !licenseApiUrl}>Sync Now</Button>
-                      <Button variant="secondary" onClick={async () => { const t = toast.loading('Registering webhook...'); try { const r = await registerWebhookMutation.mutateAsync({}); toast.update(t, r.message || 'Webhook registered.', 'success'); } catch (e) { toast.update(t, e instanceof Error ? e.message : 'Webhook registration failed.', 'error'); } }} disabled={!capabilitySettings?.licenseKey || !licenseApiUrl || registerWebhookMutation.isPending}>Register Webhook</Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                const toastId = toast.loading('Turning on automatic updates...');
+                try {
+                  await registerWebhookMutation.mutateAsync({});
+                  toast.update(toastId, 'Automatic subscription updates are ready.', 'success');
+                } catch (error) {
+                  toast.update(toastId, error instanceof Error ? error.message : 'Could not turn on automatic updates. Please try again.', 'error');
+                }
+              }}
+              disabled={!capabilitySettings?.licenseKey || !licenseApiUrl || registerWebhookMutation.isPending}
+            >
+              Register Webhook
+            </Button>
             <Button variant="primary" onClick={saveLicense} disabled={!licenseApiUrl || !ownerToken || !selectedTierKey}>
               {capabilitySettings?.licenseKey ? 'Update Tier' : 'Create License'}
             </Button>

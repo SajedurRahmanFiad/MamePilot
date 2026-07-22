@@ -5,6 +5,7 @@ import { theme } from '../theme';
 import { Order, OrderItem, ReturnExchangeAction, ReturnExchangeItemSelection, ProcessOrderReturnExchangePayload, Product } from '../types';
 import { useAccounts, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
 import { fetchProductsSearch } from '../src/services/supabaseQueries';
+import { calculateReturnAdjustment } from '../utils';
 
 interface OrderReturnExchangeModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
   const [itemSelections, setItemSelections] = useState<ReturnExchangeItemSelection[]>([]);
   const [refundAmount, setRefundAmount] = useState(0);
   const [extraCollectionAmount, setExtraCollectionAmount] = useState(0);
+  const [settleNow, setSettleNow] = useState(true);
   const [accountId, setAccountId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [note, setNote] = useState('');
@@ -61,6 +63,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
     setActiveExchangeItemIdx(null);
     setSearchQuery('');
     setSearchResults([]);
+    setSettleNow(true);
   }, [activeTab, isOpen]);
 
   // Initialize selections when order changes
@@ -69,16 +72,18 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
 
     // Only include items the customer currently has (exclude fully returned/exchanged items)
     const selections: ReturnExchangeItemSelection[] = order.items
-      .filter((item) => {
+      .map((item, lineIndex) => ({ item, lineIndex }))
+      .filter(({ item }) => {
         const returnedQty = item.returnedQty ?? 0;
         const exchangedQty = item.exchangedQty ?? 0;
         return (item.quantity - returnedQty - exchangedQty) > 0;
       })
-      .map((item) => {
+      .map(({ item, lineIndex }) => {
         const returnedQty = item.returnedQty ?? 0;
         const exchangedQty = item.exchangedQty ?? 0;
         const activeQty = item.quantity - returnedQty - exchangedQty;
         return {
+          lineIndex,
           productId: item.productId,
           productName: item.productName,
           originalQty: activeQty,
@@ -92,6 +97,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
     setActiveTab('partialReturn');
     setRefundAmount(0);
     setExtraCollectionAmount(0);
+    setSettleNow(true);
     setNote('');
     setSearchQuery('');
     setSearchResults([]);
@@ -121,20 +127,30 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
       }
       return sum;
     }, 0);
+    const discountEligibleSubtotal = order.items.reduce((sum, item) => {
+      if (item.discountEligible === false) return sum;
+      const activeQty = Math.max(0, item.quantity - (item.returnedQty ?? 0) - (item.exchangedQty ?? 0));
+      return sum + item.rate * activeQty;
+    }, 0);
+    const discountEligibleReturnValue = itemSelections.reduce((sum, selection) => {
+      const item = order.items[selection.lineIndex];
+      if (!item || item.discountEligible === false || selection.action === 'keep' || selection.returnQty <= 0) return sum;
+      return sum + selection.originalRate * selection.returnQty;
+    }, 0);
 
-    // Proportional discount
-    const originalSubtotal = order.subtotal;
-    const keptValue = originalSubtotal - returnValue + replacementValue;
-    const discountRatio = originalSubtotal > 0 ? (keptValue / originalSubtotal) : 1;
-    const newDiscount = Math.round(order.discount * discountRatio * 100) / 100;
-    const newTotal = keptValue - newDiscount + order.shipping;
+    const adjustment = calculateReturnAdjustment({
+      subtotal: order.subtotal,
+      discount: order.discount,
+      shipping: order.shipping,
+      paidAmount: order.paidAmount,
+      returnValue,
+      replacementValue,
+      discountEligibleSubtotal,
+      discountEligibleReturnValue,
+    });
 
-    // Refund only if customer has paid and is overpaid
-    const overpaid = Math.max(0, order.paidAmount - newTotal);
-    const stillOwed = Math.max(0, newTotal - order.paidAmount);
-
-    setRefundAmount(overpaid);
-    setExtraCollectionAmount(stillOwed);
+    setRefundAmount(adjustment.maxRefund);
+    setExtraCollectionAmount(adjustment.maxCollection);
   }, [itemSelections, activeTab, order]);
 
   // Product search debounce — fetches suggestions when opened, and on typing
@@ -184,6 +200,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
   };
 
   const addReplacementItem = (idx: number, product: Product) => {
+    if (product.stock <= 0) return;
     setItemSelections((prev) => {
       const next = [...prev];
       const sel = next[idx];
@@ -194,8 +211,8 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
         const updated = [...existing];
         updated[existingIdx] = {
           ...updated[existingIdx],
-          quantity: updated[existingIdx].quantity + 1,
-          amount: updated[existingIdx].rate * (updated[existingIdx].quantity + 1),
+          quantity: Math.min(updated[existingIdx].quantity + 1, product.stock),
+          amount: updated[existingIdx].rate * Math.min(updated[existingIdx].quantity + 1, product.stock),
         };
         next[idx] = { ...sel, replacementItems: updated };
       } else {
@@ -209,6 +226,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
               quantity: 1,
               rate: product.salePrice,
               amount: product.salePrice,
+              availableStock: product.stock,
             },
           ],
         };
@@ -239,8 +257,8 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
       const reps = [...(sel.replacementItems || [])];
       reps[repIdx] = {
         ...reps[repIdx],
-        quantity: Math.max(1, qty),
-        amount: reps[repIdx].rate * Math.max(1, qty),
+        quantity: Math.min(Math.max(1, qty), Math.max(1, reps[repIdx].availableStock ?? qty)),
+        amount: reps[repIdx].rate * Math.min(Math.max(1, qty), Math.max(1, reps[repIdx].availableStock ?? qty)),
       };
       next[itemIdx] = { ...sel, replacementItems: reps };
       return next;
@@ -266,41 +284,62 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
     [itemSelections]
   );
 
+  const discountEligibleSubtotal = useMemo(() => order?.items.reduce((sum, item) => {
+    if (item.discountEligible === false) return sum;
+    const activeQty = Math.max(0, item.quantity - (item.returnedQty ?? 0) - (item.exchangedQty ?? 0));
+    return sum + item.rate * activeQty;
+  }, 0) ?? 0, [order]);
+
+  const discountEligibleReturnValue = useMemo(() => selectedItems.reduce((sum, selection) => {
+    const item = order?.items[selection.lineIndex];
+    if (!item || item.discountEligible === false) return sum;
+    return sum + selection.originalRate * selection.returnQty;
+  }, 0), [order, selectedItems]);
+
+  const adjustment = useMemo(() => order ? calculateReturnAdjustment({
+    subtotal: order.subtotal,
+    discount: order.discount,
+    shipping: order.shipping,
+    paidAmount: order.paidAmount,
+    returnValue,
+    replacementValue,
+    discountEligibleSubtotal,
+    discountEligibleReturnValue,
+  }) : null, [order, returnValue, replacementValue, discountEligibleSubtotal, discountEligibleReturnValue]);
+
   // Compute the actual refund/collection amounts that respect paidAmount
   const computedRefund = useMemo(() => {
-    if (!order || order.paidAmount <= 0 || refundAmount <= 0) return 0;
-    const originalSubtotal = order.subtotal;
-    const keptValue = originalSubtotal - returnValue + replacementValue;
-    const discountRatio = originalSubtotal > 0 ? (keptValue / originalSubtotal) : 1;
-    const newDiscount = Math.round(order.discount * discountRatio * 100) / 100;
-    const newTotal = keptValue - newDiscount + order.shipping;
-    const overpaid = Math.max(0, order.paidAmount - newTotal);
-    return Math.min(refundAmount, overpaid);
-  }, [order, refundAmount, returnValue, replacementValue]);
+    if (!settleNow || !order || !adjustment || order.paidAmount <= 0 || refundAmount <= 0) return 0;
+    return Math.min(refundAmount, adjustment.maxRefund);
+  }, [settleNow, order, adjustment, refundAmount]);
 
   const computedCollection = useMemo(() => {
-    if (!order || extraCollectionAmount <= 0) return 0;
-    const originalSubtotal = order.subtotal;
-    const keptValue = originalSubtotal - returnValue + replacementValue;
-    const discountRatio = originalSubtotal > 0 ? (keptValue / originalSubtotal) : 1;
-    const newDiscount = Math.round(order.discount * discountRatio * 100) / 100;
-    const newTotal = keptValue - newDiscount + order.shipping;
-    const stillOwed = Math.max(0, newTotal - order.paidAmount);
-    return Math.min(extraCollectionAmount, stillOwed);
-  }, [order, extraCollectionAmount, returnValue, replacementValue]);
+    if (!settleNow || !order || !adjustment || extraCollectionAmount <= 0) return 0;
+    return Math.min(extraCollectionAmount, adjustment.maxCollection);
+  }, [settleNow, order, adjustment, extraCollectionAmount]);
 
   const canSubmit = useMemo(() => {
     if (selectedItems.length === 0) return false;
     if (activeTab === 'exchange') {
-      const hasReplacements = itemSelections.some(
-        (s) => s.action === 'exchange' && (s.replacementItems || []).length > 0
-      );
-      if (!hasReplacements) return false;
+      const everyExchangeHasReplacement = selectedItems
+        .filter((s) => s.action === 'exchange')
+        .every((s) => (s.replacementItems || []).length > 0);
+      if (!everyExchangeHasReplacement) return false;
+
+      const requestedByProduct = new Map<string, { requested: number; available: number }>();
+      selectedItems.forEach((selection) => (selection.replacementItems || []).forEach((replacement) => {
+        const current = requestedByProduct.get(replacement.productId) || { requested: 0, available: replacement.availableStock ?? 0 };
+        current.requested += replacement.quantity;
+        current.available = Math.max(current.available, replacement.availableStock ?? 0);
+        requestedByProduct.set(replacement.productId, current);
+      }));
+      if (Array.from(requestedByProduct.values()).some(({ requested, available }) => available <= 0 || requested > available)) return false;
     }
     if (computedRefund > 0 && accountId === '') return false;
     if (computedCollection > 0 && accountId === '') return false;
+    if ((computedRefund > 0 || computedCollection > 0) && paymentMethod === '') return false;
     return true;
-  }, [activeTab, selectedItems, computedRefund, computedCollection, accountId, itemSelections]);
+  }, [activeTab, selectedItems, computedRefund, computedCollection, accountId, paymentMethod]);
 
   const handleSubmit = async () => {
     if (!order) return;
@@ -567,14 +606,9 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
         )}
 
         {/* Summary & Payment Section */}
-        {selectedItems.length > 0 && (() => {
-          // Calculate proportional discount
-          const originalSubtotal = order.subtotal;
-          const keptValue = originalSubtotal - returnValue + replacementValue;
-          const discountRatio = originalSubtotal > 0 ? (keptValue / originalSubtotal) : 1;
-          const newDiscount = Math.round(order.discount * discountRatio * 100) / 100;
-          const discountSaved = order.discount - newDiscount;
-          const newTotal = keptValue - newDiscount + order.shipping;
+        {selectedItems.length > 0 && adjustment && (() => {
+          const discountSaved = adjustment.discountReduction;
+          const newTotal = adjustment.newTotal;
 
           return (
             <div className="mt-6 bg-gray-50 rounded-xl p-4 space-y-3">
@@ -611,6 +645,24 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
                   <span>{formatCurrency(order.paidAmount)}</span>
                 </div>
               </div>
+
+              {(adjustment.maxRefund > 0 || adjustment.maxCollection > 0) && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={settleNow}
+                    onChange={(event) => setSettleNow(event.target.checked)}
+                    disabled={isLoading}
+                    className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>
+                    <span className="block font-bold text-blue-900">Record the refund or extra collection now</span>
+                    <span className="mt-0.5 block text-xs text-blue-700">
+                      Turn this off when the item movement happens now but the money will be settled later from the Payment section.
+                    </span>
+                  </span>
+                </label>
+              )}
 
               {/* Refund — only if customer has actually paid and is owed money */}
               {computedRefund > 0 && (
@@ -696,9 +748,11 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
               {computedRefund === 0 && computedCollection === 0 && (
                 <div className="border-t border-gray-200 pt-2">
                   <p className="text-xs text-gray-500">
-                    {order.paidAmount > 0
-                      ? 'No refund due — customer has not overpaid.'
-                      : 'No payment recorded yet — order total will be adjusted.'}
+                    {!settleNow && (adjustment.maxRefund > 0 || adjustment.maxCollection > 0)
+                      ? `Settlement deferred — ${adjustment.maxRefund > 0 ? `${formatCurrency(adjustment.maxRefund)} remains refundable` : `${formatCurrency(adjustment.maxCollection)} remains collectible`}.`
+                      : order.paidAmount > 0
+                        ? 'No refund due — customer has not overpaid.'
+                        : 'No payment recorded yet — order total will be adjusted.'}
                   </p>
                 </div>
               )}

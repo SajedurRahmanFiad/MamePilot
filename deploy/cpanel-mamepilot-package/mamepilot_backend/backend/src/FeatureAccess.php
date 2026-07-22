@@ -23,9 +23,11 @@ final class FeatureAccess
         'enterprise_ai_agent' => false,
         'grow_your_business' => false,
         'whatsapp' => false,
+        'messenger' => false,
         'automatic_leads' => false,
         'mamecx' => false,
         'auto_calling' => false,
+        'woocommerce' => false,
     ];
 
     // Maps sub-capability keys to their parent capability keys
@@ -113,6 +115,8 @@ final class FeatureAccess
         'updateUser' => 'hr_management',
         'deleteUser' => 'hr_management',
         'fetchPayrollSettings' => 'payroll',
+        'updatePayrollSettings' => 'payroll',
+        'fetchWalletSettings' => 'payroll',
         'updateWalletSettings' => 'payroll',
         'fetchPayrollEmployees' => 'payroll',
         'fetchPayrollHistory' => 'payroll',
@@ -120,7 +124,9 @@ final class FeatureAccess
         'markPayrollPaid' => 'payroll',
         'fetchEmployeeWalletCards' => 'payroll',
         'fetchEmployeeWalletCardsPage' => 'payroll',
+        'fetchMyWallet' => 'payroll',
         'fetchMyWalletBalance' => 'payroll',
+        'fetchWalletActivity' => 'payroll',
         'fetchWalletActivityPage' => 'payroll',
         'payEmployeeWallet' => 'payroll',
         'deleteEmployeeWalletPayout' => 'payroll',
@@ -176,6 +182,39 @@ final class FeatureAccess
         'fetchSurveySummary' => 'auto_calling',
         'initiateRechargeCheckout' => 'auto_calling',
         'fetchRechargeHistory' => 'auto_calling',
+        'fetchWhatsAppSettings' => 'whatsapp',
+        'updateWhatsAppSettings' => 'whatsapp',
+        'updateWhatsAppWelcomeExperience' => 'whatsapp',
+        'testWhatsAppConnection' => 'whatsapp',
+        'fetchWhatsAppContacts' => 'whatsapp',
+        'fetchWhatsAppMessages' => 'whatsapp',
+        'createWhatsAppConversation' => 'whatsapp',
+        'markWhatsAppConversationRead' => 'whatsapp',
+        'sendWhatsAppMessage' => 'whatsapp',
+        'sendWhatsAppMediaMessage' => 'whatsapp',
+        'fetchWhatsAppTemplates' => 'whatsapp',
+        'sendWhatsAppTemplate' => 'whatsapp',
+        'fetchMessengerSettings' => 'messenger',
+        'updateMessengerSettings' => 'messenger',
+        'testMessengerConnection' => 'messenger',
+        'subscribeMessengerPage' => 'messenger',
+        'fetchMessengerProfile' => 'messenger',
+        'updateMessengerProfile' => 'messenger',
+        'fetchMessengerContacts' => 'messenger',
+        'fetchMessengerMessages' => 'messenger',
+        'markMessengerConversationRead' => 'messenger',
+        'sendMessengerMessage' => 'messenger',
+        'sendMessengerMediaMessage' => 'messenger',
+        'sendMessengerQuickReplies' => 'messenger',
+        'sendMessengerCard' => 'messenger',
+        'sendMessengerReaction' => 'messenger',
+        'sendMessengerSenderAction' => 'messenger',
+        'fetchWooCommerceStores' => 'woocommerce',
+        'saveWooCommerceStore' => 'woocommerce',
+        'deleteWooCommerceStore' => 'woocommerce',
+        'testWooCommerceStore' => 'woocommerce',
+        'registerWooCommerceWebhook' => 'woocommerce',
+        'syncWooCommerceOrders' => 'woocommerce',
     ];
 
     private Database $database;
@@ -307,6 +346,19 @@ final class FeatureAccess
         foreach ($capabilities as $key => $default) {
             if (array_key_exists($key, $decoded)) {
                 $capabilities[$key] = (bool) $decoded[$key];
+            }
+        }
+
+        $decodedSubCapabilities = $decoded['subCapabilities'] ?? null;
+        if (is_array($decodedSubCapabilities)) {
+            $subCapabilities = [];
+            foreach (self::SUB_CAPABILITY_PARENTS as $key => $_parent) {
+                if (array_key_exists($key, $decodedSubCapabilities) && is_bool($decodedSubCapabilities[$key])) {
+                    $subCapabilities[$key] = $decodedSubCapabilities[$key];
+                }
+            }
+            if ($subCapabilities !== []) {
+                $capabilities['subCapabilities'] = $subCapabilities;
             }
         }
 

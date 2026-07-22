@@ -1,14 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
+import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
 import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings } from '../src/hooks/useMutations';
-import { hasAdminAccess, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
+import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
 import { theme } from '../theme';
+import { compressImage } from '../utils';
+import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 
 type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
+type MaintenanceContentForm = {
+  imageUrl: string;
+  caption: string;
+  subtitle: string;
+  explanation: string;
+  endsAt: string;
+};
+
+const toLocalDateTimeInput = (value?: string | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const toIsoDateTime = (value: string): string | null => {
+  if (!value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
 
 const emptyGateway: PaymentGatewaySettings = {
   piprapayBaseUrl: '',
@@ -61,6 +84,7 @@ const DeveloperSettings: React.FC = () => {
   const { data: courierSettings, isPending: loadingCourierSettings } = useCourierSettings();
   const { data: gatewaySettings, isPending: loadingGateway } = usePaymentGatewaySettings(user?.role === 'Developer');
   const { data: maintenanceStatus, isPending: loadingMaintenance } = useMaintenanceStatus(Boolean(user));
+  const { data: deployments, isLoading: isLoadingDeployments, isError: isDeploymentsError, error: deploymentsError } = useDeployments(user?.role === 'Developer');
   const { data: agentSettings, isPending: loadingAgent } = useAgentSettings(user?.role === 'Developer');
   const { data: businessGrowthSettings, isPending: loadingBusinessGrowth } = useBusinessGrowthSettings(user?.role === 'Developer');
   const { data: emailSettingsData, isPending: loadingEmailSettings } = useEmailSettings(user?.role === 'Developer');
@@ -74,7 +98,14 @@ const DeveloperSettings: React.FC = () => {
   const updateEmail = useUpdateEmailSettings();
   const updateVoiceSurveyIntegration = useUpdateVoiceSurveyIntegrationSettings();
 
-  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceModeEnabled, setMaintenanceModeEnabled] = useState(false);
+  const [maintenanceDeploymentScope, setMaintenanceDeploymentScope] = useState<DeploymentScope>('all');
+  const [maintenanceTargetDeployments, setMaintenanceTargetDeployments] = useState<string[]>([]);
+  const [maintenanceDeploymentSearch, setMaintenanceDeploymentSearch] = useState('');
+  const maintenanceFormDirty = useRef(false);
+  const [maintenanceContent, setMaintenanceContent] = useState<MaintenanceContentForm>({ ...DEFAULT_MAINTENANCE_CONTENT, endsAt: '' });
+  const [maintenanceImageName, setMaintenanceImageName] = useState<string | undefined>(undefined);
+  const [isCompressingMaintenanceImage, setIsCompressingMaintenanceImage] = useState(false);
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
   const [businessGrowthForm, setBusinessGrowthForm] = useState<BusinessGrowthSettings>(emptyBusinessGrowthSettings);
   const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
@@ -95,6 +126,17 @@ const DeveloperSettings: React.FC = () => {
     senderEmail: '',
     senderName: '',
   });
+
+  const filteredMaintenanceDeployments = useMemo(() => {
+    if (!deployments) return [];
+    const query = maintenanceDeploymentSearch.trim().toLowerCase();
+    if (!query) return deployments;
+    return deployments.filter((deployment) =>
+      deployment.clientName.toLowerCase().includes(query)
+      || deployment.licenseKey.toLowerCase().includes(query)
+      || (deployment.domain || '').toLowerCase().includes(query)
+    );
+  }, [deployments, maintenanceDeploymentSearch]);
 
   useEffect(() => {
     if (!capabilitySettings) return;
@@ -118,8 +160,18 @@ const DeveloperSettings: React.FC = () => {
   }, [courierSettings]);
 
   useEffect(() => {
-    if (maintenanceStatus?.maintenanceEnabled !== undefined) {
-      setMaintenanceEnabled(maintenanceStatus.maintenanceEnabled);
+    if (!maintenanceFormDirty.current && maintenanceStatus?.maintenanceEnabled !== undefined) {
+      setMaintenanceModeEnabled(maintenanceStatus.maintenanceModeEnabled ?? maintenanceStatus.maintenanceEnabled);
+      setMaintenanceDeploymentScope(maintenanceStatus.deploymentScope || 'all');
+      setMaintenanceTargetDeployments(maintenanceStatus.targetDeployments || []);
+      setMaintenanceContent({
+        imageUrl: maintenanceStatus.imageUrl || DEFAULT_MAINTENANCE_CONTENT.imageUrl,
+        caption: maintenanceStatus.caption || DEFAULT_MAINTENANCE_CONTENT.caption,
+        subtitle: maintenanceStatus.subtitle || DEFAULT_MAINTENANCE_CONTENT.subtitle,
+        explanation: maintenanceStatus.explanation || DEFAULT_MAINTENANCE_CONTENT.explanation,
+        endsAt: toLocalDateTimeInput(maintenanceStatus.endsAt),
+      });
+      setMaintenanceImageName(undefined);
     }
   }, [maintenanceStatus]);
 
@@ -180,22 +232,22 @@ const DeveloperSettings: React.FC = () => {
   }
 
   const syncNow = async () => {
-    const toastId = toast.loading('Syncing license capabilities...');
+    const toastId = toast.loading('Refreshing subscription access...');
     try {
       await syncCapabilities.mutateAsync(licenseForm);
-      toast.update(toastId, 'License capabilities synced.', 'success');
+      toast.update(toastId, 'Subscription access is up to date.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'License sync failed.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not refresh subscription access. Please try again.', 'error');
     }
   };
 
   const saveGateway = async () => {
-    const toastId = toast.loading('Saving gateway credentials...');
+    const toastId = toast.loading('Saving payment settings...');
     try {
       await updateGateway.mutateAsync(gatewayForm);
-      toast.update(toastId, 'Payment gateway settings saved.', 'success');
+      toast.update(toastId, 'Payment settings saved.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save gateway settings.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save payment settings. Please try again.', 'error');
     }
   };
 
@@ -209,12 +261,89 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
-  const saveMaintenanceMode = async () => {
+  const toggleMaintenanceDeployment = (licenseKey: string) => {
+    maintenanceFormDirty.current = true;
+    setMaintenanceTargetDeployments((current) =>
+      current.includes(licenseKey)
+        ? current.filter((key) => key !== licenseKey)
+        : [...current, licenseKey]
+    );
+  };
+
+  const updateMaintenanceContent = (field: keyof typeof maintenanceContent, value: string) => {
+    maintenanceFormDirty.current = true;
+    setMaintenanceContent((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleMaintenanceImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Select a valid image file.');
+      return;
+    }
+
+    setIsCompressingMaintenanceImage(true);
+    try {
+      const compressed = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.82, force: true });
+      maintenanceFormDirty.current = true;
+      setMaintenanceImageName(file.name);
+      setMaintenanceContent((current) => ({ ...current, imageUrl: compressed }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to process the image.');
+    } finally {
+      setIsCompressingMaintenanceImage(false);
+    }
+  };
+
+  const resetMaintenanceContent = () => {
+    maintenanceFormDirty.current = true;
+    setMaintenanceImageName(undefined);
+    setMaintenanceContent({ ...DEFAULT_MAINTENANCE_CONTENT, endsAt: '' });
+  };
+
+  const saveMaintenanceMode = async (nextEnabled: boolean, action: 'save' | 'toggle' = 'toggle') => {
+    if (nextEnabled && maintenanceDeploymentScope !== 'all' && maintenanceTargetDeployments.length === 0) {
+      toast.error('Select at least one deployment.');
+      return;
+    }
+
+    maintenanceFormDirty.current = true;
     const toastId = toast.loading('Updating maintenance mode...');
     try {
-      const result = await setMaintenanceStatus.mutateAsync({ maintenanceEnabled: !maintenanceEnabled });
-      setMaintenanceEnabled(result.maintenanceEnabled);
-      toast.update(toastId, result.maintenanceEnabled ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.', 'success');
+      const result = await setMaintenanceStatus.mutateAsync({
+        maintenanceEnabled: nextEnabled,
+        deploymentScope: maintenanceDeploymentScope,
+        targetDeployments: maintenanceDeploymentScope === 'all' ? [] : maintenanceTargetDeployments,
+        imageUrl: maintenanceContent.imageUrl,
+        imageName: maintenanceImageName,
+        caption: maintenanceContent.caption,
+        subtitle: maintenanceContent.subtitle,
+        explanation: maintenanceContent.explanation,
+        endsAt: toIsoDateTime(maintenanceContent.endsAt),
+      });
+      setMaintenanceModeEnabled(result.maintenanceModeEnabled ?? nextEnabled);
+      setMaintenanceDeploymentScope(result.deploymentScope || 'all');
+      setMaintenanceTargetDeployments(result.targetDeployments || []);
+      setMaintenanceContent({
+        imageUrl: result.imageUrl || DEFAULT_MAINTENANCE_CONTENT.imageUrl,
+        caption: result.caption || DEFAULT_MAINTENANCE_CONTENT.caption,
+        subtitle: result.subtitle || DEFAULT_MAINTENANCE_CONTENT.subtitle,
+        explanation: result.explanation || DEFAULT_MAINTENANCE_CONTENT.explanation,
+        endsAt: toLocalDateTimeInput(result.endsAt),
+      });
+      setMaintenanceImageName(undefined);
+      maintenanceFormDirty.current = false;
+      const savedEnabled = result.maintenanceModeEnabled ?? nextEnabled;
+      const message = action === 'save'
+        ? 'Maintenance settings saved.'
+        : nextEnabled && !savedEnabled
+          ? 'The selected end time has passed, so maintenance remains disabled.'
+          : savedEnabled
+            ? 'Maintenance settings saved and enabled.'
+            : 'Maintenance mode disabled.';
+      toast.update(toastId, message, 'success');
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'Failed to update maintenance mode.', 'error');
     }
@@ -251,13 +380,13 @@ const DeveloperSettings: React.FC = () => {
   };
 
   const saveVoiceSurveyIntegration = async () => {
-    const toastId = toast.loading('Saving AwajDigital configuration...');
+    const toastId = toast.loading('Saving voice survey connection...');
     try {
       const settings = await updateVoiceSurveyIntegration.mutateAsync(voiceSurveyIntegrationForm);
       setVoiceSurveyIntegrationForm(settings);
-      toast.update(toastId, 'AwajDigital API and webhook configuration saved.', 'success');
+      toast.update(toastId, 'Voice survey connection saved.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save AwajDigital configuration.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save the voice survey connection. Please try again.', 'error');
     }
   };
 
@@ -341,12 +470,186 @@ const DeveloperSettings: React.FC = () => {
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">Maintenance Mode</h3>
-                <p className="mt-1 text-sm text-gray-500">When enabled, all non-developer users are redirected to the maintenance page and login is restricted to developer users only.</p>
+                <p className="mt-1 text-sm text-gray-500">When enabled, non-developer users in the selected deployments are redirected to the maintenance page and cannot log in.</p>
               </div>
-              <div>
-                <Button onClick={saveMaintenanceMode} variant="primary">
-                  {maintenanceEnabled ? 'Disable Maintenance' : 'Enable Maintenance'}
+
+              <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${maintenanceModeEnabled ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                {maintenanceModeEnabled ? 'Maintenance mode is currently enabled.' : 'Maintenance mode is currently disabled.'}
+              </div>
+
+              <div className="rounded-[1.35rem] border border-gray-100 bg-gray-50/80 p-4 space-y-5">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Maintenance Message</label>
+                  <p className="mt-1 text-sm text-gray-500">Customize what visitors see while the selected deployments are offline. Empty text fields use the defaults.</p>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <img
+                      src={maintenanceContent.imageUrl || DEFAULT_MAINTENANCE_CONTENT.imageUrl}
+                      alt="Maintenance thumbnail"
+                      className="h-full w-full object-cover"
+                      onError={(event) => { event.currentTarget.src = DEFAULT_MAINTENANCE_CONTENT.imageUrl; }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-black uppercase tracking-widest text-gray-400">Image</p>
+                    <input id="maintenance-image-upload" type="file" accept="image/*" className="hidden" onChange={handleMaintenanceImageUpload} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      loading={isCompressingMaintenanceImage}
+                      onClick={() => document.getElementById('maintenance-image-upload')?.click()}
+                    >
+                      {maintenanceContent.imageUrl === DEFAULT_MAINTENANCE_CONTENT.imageUrl ? 'Upload Image' : 'Change Image'}
+                    </Button>
+                    <p className="text-xs text-gray-400">Compressed before upload. Stored in the public uploads folder, never in the database as base64.</p>
+                  </div>
+                </div>
+
+                <label className="block space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Caption</span>
+                  <input
+                    type="text"
+                    value={maintenanceContent.caption}
+                    onChange={(event) => updateMaintenanceContent('caption', event.target.value)}
+                    placeholder={DEFAULT_MAINTENANCE_CONTENT.caption}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Subtitle</span>
+                  <textarea
+                    rows={2}
+                    value={maintenanceContent.subtitle}
+                    onChange={(event) => updateMaintenanceContent('subtitle', event.target.value)}
+                    placeholder={DEFAULT_MAINTENANCE_CONTENT.subtitle}
+                    className="w-full resize-y rounded-xl border border-gray-200 bg-white px-4 py-3"
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Explanation</span>
+                  <textarea
+                    rows={4}
+                    value={maintenanceContent.explanation}
+                    onChange={(event) => updateMaintenanceContent('explanation', event.target.value)}
+                    placeholder={DEFAULT_MAINTENANCE_CONTENT.explanation}
+                    className="w-full resize-y rounded-xl border border-gray-200 bg-white px-4 py-3"
+                  />
+                </label>
+
+                <label className="block max-w-md space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Maintenance Ends At</span>
+                  <input
+                    type="datetime-local"
+                    value={maintenanceContent.endsAt}
+                    onChange={(event) => updateMaintenanceContent('endsAt', event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
+                  />
+                  <p className="text-xs text-gray-400">The visitor sees a countdown in their own local time. Leave this empty for no automatic expiry.</p>
+                </label>
+
+                <Button type="button" variant="outline" size="sm" onClick={resetMaintenanceContent}>
+                  Reset Message Defaults
                 </Button>
+              </div>
+
+              <div className="rounded-[1.35rem] border border-gray-100 bg-gray-50/80 p-4 space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Target Deployments</label>
+                <p className="text-sm text-gray-500">Choose which deployments enter maintenance mode.</p>
+                <div className="flex flex-wrap gap-2">
+                  {(['all', 'include', 'exclude'] as DeploymentScope[]).map((scope) => {
+                    const selected = maintenanceDeploymentScope === scope;
+                    const label = scope === 'all' ? 'All deployments' : scope === 'include' ? 'Specific deployments' : 'All except specific';
+                    return (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() => {
+                          maintenanceFormDirty.current = true;
+                          setMaintenanceDeploymentScope(scope);
+                          if (scope === 'all') setMaintenanceTargetDeployments([]);
+                        }}
+                        className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition-all ${
+                          selected
+                            ? 'bg-[var(--primary-color,#0f2f57)] text-white'
+                            : 'border border-gray-200 bg-white text-gray-500 hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)] hover:text-[var(--primary-color,#0f2f57)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {maintenanceDeploymentScope !== 'all' && (
+                  <div className="space-y-3 pt-1">
+                    <input
+                      type="text"
+                      value={maintenanceDeploymentSearch}
+                      onChange={(event) => setMaintenanceDeploymentSearch(event.target.value)}
+                      placeholder="Search deployments..."
+                      className="w-full rounded-xl border border-gray-100 bg-white px-4 py-2.5 text-sm font-medium outline-none transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                    />
+                    {isLoadingDeployments ? (
+                      <p className="py-3 text-center text-sm font-medium text-gray-400">Loading deployments...</p>
+                    ) : isDeploymentsError ? (
+                      <p className="py-3 text-center text-sm font-medium text-red-500">{deploymentsError?.message || 'Failed to load deployments. Check central server configuration.'}</p>
+                    ) : filteredMaintenanceDeployments.length === 0 ? (
+                      <p className="py-3 text-center text-sm font-medium text-gray-400">No deployments found.</p>
+                    ) : (
+                      <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                        {filteredMaintenanceDeployments.map((deployment) => {
+                          const selected = maintenanceTargetDeployments.includes(deployment.licenseKey);
+                          return (
+                            <button
+                              key={deployment.licenseKey}
+                              type="button"
+                              onClick={() => toggleMaintenanceDeployment(deployment.licenseKey)}
+                              className={`w-full rounded-xl px-4 py-3 text-left transition-all ${
+                                selected
+                                  ? 'border-2 border-[var(--primary-color,#0f2f57)] bg-[var(--primary-soft,#ebf4ff)]'
+                                  : 'border border-gray-200 bg-white hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-bold text-gray-900">{deployment.clientName}</p>
+                                  <p className="mt-0.5 truncate text-[10px] font-medium tracking-wide text-gray-400">{deployment.domain || deployment.licenseKey}</p>
+                                </div>
+                                <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${selected ? 'border-[var(--primary-color,#0f2f57)] bg-[var(--primary-color,#0f2f57)]' : 'border-gray-300 bg-white'}`}>
+                                  {selected && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={() => saveMaintenanceMode(maintenanceModeEnabled, 'save')} variant="primary" loading={setMaintenanceStatus.isPending} disabled={isCompressingMaintenanceImage || setMaintenanceStatus.isPending}>
+                  Save Maintenance Settings
+                </Button>
+                {maintenanceModeEnabled ? (
+                  <Button onClick={() => saveMaintenanceMode(false)} variant="danger" disabled={isCompressingMaintenanceImage || setMaintenanceStatus.isPending}>
+                    Disable Maintenance
+                  </Button>
+                ) : (
+                  <Button onClick={() => saveMaintenanceMode(true)} variant="secondary" disabled={isCompressingMaintenanceImage || setMaintenanceStatus.isPending}>
+                    Enable Maintenance
+                  </Button>
+                )}
               </div>
             </section>
           )}

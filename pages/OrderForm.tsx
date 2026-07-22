@@ -50,7 +50,7 @@ function applyDynamicPricing(
 
     if (bestRule) {
       if (bestRule.action === 'discount') {
-        return { action: 'discount', adjustedRate: originalRate, discountPerUnit: bestRule.amount };
+        return { action: 'discount', adjustedRate: originalRate, discountPerUnit: Math.min(bestRule.amount, Math.max(0, originalRate)) };
       } else if (bestRule.action === 'setRate') {
         return { action: 'setRate', adjustedRate: Math.max(0, bestRule.amount), discountPerUnit: 0 };
       }
@@ -382,13 +382,11 @@ const OrderForm: React.FC = () => {
   const dynamicDiscountTotal = items.reduce((sum, item) => sum + (item.dynamicDiscount || 0) * item.quantity, 0);
   const parsedDiscount = parseFloat(discount) || 0;
   const parsedShipping = parseFloat(shipping) || 0;
-  const total = subtotal - dynamicDiscountTotal - parsedDiscount + parsedShipping;
+  const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
 
   // Auto-populate discount field with dynamic pricing discount when items change
   React.useEffect(() => {
-    if (dynamicDiscountTotal > 0) {
-      setDiscount(String(dynamicDiscountTotal));
-    }
+    setDiscount(String(dynamicDiscountTotal));
   }, [dynamicDiscountTotal]);
 
   const addItem = (productId: string) => {
@@ -516,6 +514,14 @@ const OrderForm: React.FC = () => {
       setError('User session expired. Please log in again.');
       return;
     }
+    if (parsedDiscount < 0 || parsedDiscount > subtotal) {
+      toast.error(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(subtotal)}.`);
+      return;
+    }
+    if (parsedShipping < 0) {
+      toast.error('Shipping charge cannot be negative.');
+      return;
+    }
 
     // Check for duplicate orders (only if creating new order, not editing)
     if (!isEdit) {
@@ -528,7 +534,7 @@ const OrderForm: React.FC = () => {
         const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
         const parsedDiscount = parseFloat(discount) || 0;
         const parsedShipping = parseFloat(shipping) || 0;
-        const total = subtotal - parsedDiscount + parsedShipping;
+        const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
         const now = new Date();
         const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
         const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
@@ -559,7 +565,7 @@ const OrderForm: React.FC = () => {
       const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
       const parsedDiscount = parseFloat(discount) || 0;
       const parsedShipping = parseFloat(shipping) || 0;
-      const total = subtotal - parsedDiscount + parsedShipping;
+      const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
       const now = new Date();
       const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
       const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
@@ -1044,7 +1050,7 @@ const OrderForm: React.FC = () => {
                 <span className="text-xs text-gray-500 font-black">৳</span>
                 <NumericInput 
                   value={discount} 
-                  onChange={(value) => setDiscount(value)} 
+                  onChange={(value) => setDiscount(String(value))}
                   className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white"
                   allowDecimals={true}
                   decimalPlaces={2}
@@ -1057,7 +1063,7 @@ const OrderForm: React.FC = () => {
                 <span className="text-xs text-gray-500 font-black">৳</span>
                 <NumericInput
                   value={shipping}
-                  onChange={(value) => setShipping(value)}
+                  onChange={(value) => setShipping(String(value))}
                   className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white"
                   allowDecimals={true}
                   decimalPlaces={2}

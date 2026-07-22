@@ -273,6 +273,7 @@ final class MetaAdsApi extends BaseService
     public function fetchMetaAds(array $params = []): array
     {
         $this->currentUser();
+        $this->ensureMetaAdsInsightsDailyTable();
         // Auto-sync stale data in background (non-blocking)
         $this->autoSyncIfNeeded();
         $businessId = trim((string) ($params['businessId'] ?? ''));
@@ -285,27 +286,29 @@ final class MetaAdsApi extends BaseService
         $statusOperator = trim((string) ($params['statusOperator'] ?? '='));
         $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
         $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));
-        // Convert dates to ad account timezone for daily insights comparison
-        $insightsFrom = $from !== '' ? $this->toAdAccountDate($from) : '';
-        $insightsTo = $to !== '' ? $this->toAdAccountDate($to) : '';
+        // Meta stores insight_date as the ad account's calendar date. The UI
+        // sends date-only values, so shifting them through UTC can move the
+        // selected day and must not be done here.
+        $insightsFrom = $from;
+        $insightsTo = $to;
         $search = trim((string) ($params['search'] ?? ''));
         $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
 
         $where = [];
         $bindings = [];
         if ($businessId !== '') {
-            $operator = $businessOperator === '≠' ? '!=' : '=';
-            $where[] = "ma.business_id {$operator} :business_id";
+            $operator = $businessOperator === '≠' ? '<>' : '=';
+            $where[] = "COALESCE(ma.business_id, '') {$operator} :business_id";
             $bindings[':business_id'] = $businessId;
         }
         if ($accountId !== '') {
-            $operator = $accountOperator === '≠' ? '!=' : '=';
-            $where[] = "ma.ad_account_id {$operator} :ad_account_id";
+            $operator = $accountOperator === '≠' ? '<>' : '=';
+            $where[] = "COALESCE(ma.ad_account_id, '') {$operator} :ad_account_id";
             $bindings[':ad_account_id'] = $accountId;
         }
         if ($campaignId !== '') {
-            $operator = $campaignOperator === '≠' ? '!=' : '=';
-            $where[] = "ma.campaign_id {$operator} :campaign_id";
+            $operator = $campaignOperator === '≠' ? '<>' : '=';
+            $where[] = "COALESCE(ma.campaign_id, '') {$operator} :campaign_id";
             $bindings[':campaign_id'] = $campaignId;
         }
         if ($status !== '') {
@@ -326,14 +329,21 @@ final class MetaAdsApi extends BaseService
             $bindings[':to_date'] = $insightsTo;
         }
         if ($search !== '') {
-            if ($searchOperator === '≠') {
-                $where[] = 'ma.name NOT LIKE :search';
+            if ($searchOperator === 'does not contain') {
+                $where[] = "COALESCE(ma.name, '') NOT LIKE :search ESCAPE '='";
+            } elseif ($searchOperator === '≠') {
+                $where[] = "COALESCE(ma.name, '') <> :search";
             } elseif ($searchOperator === '=') {
-                $where[] = 'ma.name = :search';
+                $where[] = "COALESCE(ma.name, '') = :search";
             } else {
-                $where[] = 'ma.name LIKE :search';
+                $where[] = "COALESCE(ma.name, '') LIKE :search ESCAPE '='";
             }
-            $bindings[':search'] = $searchOperator === '=' ? $search : '%' . $search . '%';
+            if (in_array($searchOperator, ['=', '≠'], true)) {
+                $bindings[':search'] = $search;
+            } else {
+                $escapedSearch = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search);
+                $bindings[':search'] = '%' . $escapedSearch . '%';
+            }
         }
 
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
@@ -351,8 +361,36 @@ final class MetaAdsApi extends BaseService
             $bindings
         );
 
+        $dailyMetricsByAd = ($insightsFrom !== '' || $insightsTo !== '')
+            ? $this->fetchDailyMetricsByAd(array_column($rows, 'id'), $insightsFrom, $insightsTo)
+            : [];
+        $cards = array_map(function (array $row) use ($dailyMetricsByAd, $insightsFrom, $insightsTo): array {
+            $card = $this->mapAdCard($row);
+            if ($insightsFrom === '' && $insightsTo === '') {
+                $card['metricsWindow'] = 'lifetime';
+                return $card;
+            }
+            $rangeMetrics = $dailyMetricsByAd[(string) ($row['id'] ?? '')] ?? null;
+            $card['metricsWindow'] = 'selected_range';
+            if ($rangeMetrics === null) {
+                return array_merge($card, [
+                    'spend' => 0.0,
+                    'reach' => 0,
+                    'impressions' => 0,
+                    'clicks' => 0,
+                    'ctr' => 0.0,
+                    'cpc' => null,
+                    'cpm' => null,
+                    'conversions' => null,
+                    'results' => null,
+                    'roas' => null,
+                ]);
+            }
+            return array_merge($card, $rangeMetrics);
+        }, $rows);
+
         return [
-            'ads' => array_map(fn(array $row): array => $this->mapAdCard($row), $rows),
+            'ads' => $cards,
             'summary' => $this->buildSummary($whereSql, $bindings, $from, $to, $insightsFrom, $insightsTo),
             'filters' => $this->fetchMetaAdsFilters(),
         ];
@@ -554,7 +592,7 @@ final class MetaAdsApi extends BaseService
         }
 
         $rows = $this->graphGetAll('/' . $metaAccountId . '/insights', $accessToken, [
-            'fields' => 'ad_id,spend,impressions,reach,clicks,ctr,cpc,cpm,actions',
+            'fields' => 'ad_id,spend,impressions,reach,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas',
             'level' => 'ad',
             'time_increment' => 1,
             'date_preset' => 'last_90d',
@@ -574,6 +612,8 @@ final class MetaAdsApi extends BaseService
             }
             $localAdId = $localByMeta[$metaAdId];
             $actions = is_array($row['actions'] ?? null) ? $row['actions'] : [];
+            $actionValues = is_array($row['action_values'] ?? null) ? $row['action_values'] : [];
+            $purchaseRoas = is_array($row['purchase_roas'] ?? null) ? $row['purchase_roas'] : [];
             $payload = [
                 'ad_id' => $localAdId,
                 'meta_ad_id' => $metaAdId,
@@ -585,7 +625,9 @@ final class MetaAdsApi extends BaseService
                 'ctr' => isset($row['ctr']) ? (float) $row['ctr'] : null,
                 'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
                 'cpm' => isset($row['cpm']) ? (float) $row['cpm'] : null,
-                'conversions' => $this->metricFromActions($actions, ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'lead']),
+                'conversions' => $this->metricFromActions($actions, ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase', 'lead']),
+                'purchase_value' => $this->metricFromActions($actionValues, ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase']) ?? 0.0,
+                'purchase_roas' => $this->metricFromActions($purchaseRoas, ['omni_purchase', 'purchase']),
                 'currency' => $currency,
                 'synced_at' => $now,
             ];
@@ -780,7 +822,7 @@ final class MetaAdsApi extends BaseService
             'ctr' => (float) ($insight['ctr'] ?? 0),
             'cpc' => (float) ($insight['cpc'] ?? 0),
             'cpm' => (float) ($insight['cpm'] ?? 0),
-            'conversions' => $this->metricFromActions($actions, ['offsite_conversion', 'purchase', 'lead']),
+            'conversions' => $this->metricFromActions($actions, ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase', 'lead']),
             'results' => $this->metricFromActions($actions, ['lead', 'purchase', 'link_click', 'onsite_conversion']),
             'roas' => $this->metricFromActions($roasRows, ['omni_purchase', 'purchase']),
             'metrics_json' => $this->jsonEncode($insight),
@@ -1020,6 +1062,12 @@ final class MetaAdsApi extends BaseService
             return 1.0;
         }
 
+        $configuredCode = strtoupper(trim((string) ($settingsRow['display_currency_code'] ?? '')));
+        if ($configuredCode !== '' && $configuredCode !== $adsCode) {
+            // A rate saved for one currency must never be applied to another.
+            return null;
+        }
+
         $mode = (string) ($settingsRow['exchange_rate_mode'] ?? 'fixed');
 
         if ($mode === 'vat_based') {
@@ -1101,6 +1149,82 @@ final class MetaAdsApi extends BaseService
         ];
     }
 
+    /**
+     * Range-specific ad metrics used by the list cards. Without this, a date
+     * filter only selected ads that had activity while still showing their
+     * lifetime totals, which was materially misleading.
+     */
+    private function fetchDailyMetricsByAd(array $adIds, string $from = '', string $to = ''): array
+    {
+        $adIds = array_values(array_unique(array_filter(array_map('strval', $adIds))));
+        if ($adIds === []) {
+            return [];
+        }
+
+        $bindings = [];
+        $placeholders = [];
+        foreach ($adIds as $index => $adId) {
+            $key = ':metric_ad_' . $index;
+            $placeholders[] = $key;
+            $bindings[$key] = $adId;
+        }
+        $dateSql = '';
+        if ($from !== '') {
+            $dateSql .= ' AND insight_date >= :metric_from';
+            $bindings[':metric_from'] = $from;
+        }
+        if ($to !== '') {
+            $dateSql .= ' AND insight_date <= :metric_to';
+            $bindings[':metric_to'] = $to;
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT ad_id,
+                    COALESCE(SUM(spend), 0) AS spend,
+                    COALESCE(SUM(reach), 0) AS reach,
+                    COALESCE(SUM(impressions), 0) AS impressions,
+                    COALESCE(SUM(clicks), 0) AS clicks,
+                    COALESCE(SUM(conversions), 0) AS conversions,
+                    COALESCE(SUM(CASE
+                        WHEN purchase_value IS NOT NULL THEN purchase_value
+                        WHEN purchase_roas IS NOT NULL THEN spend * purchase_roas
+                        ELSE 0
+                    END), 0) AS purchase_value,
+                    COUNT(*) AS row_count,
+                    COALESCE(SUM(CASE WHEN purchase_value IS NOT NULL THEN 1 ELSE 0 END), 0) AS purchase_rows
+             FROM meta_ads_insights_daily
+             WHERE ad_id IN (' . implode(', ', $placeholders) . ')' . $dateSql . '
+             GROUP BY ad_id',
+            $bindings
+        );
+
+        $result = [];
+        foreach ($rows as $row) {
+            $spend = (float) ($row['spend'] ?? 0);
+            $impressions = (int) ($row['impressions'] ?? 0);
+            $clicks = (int) ($row['clicks'] ?? 0);
+            $hasPurchaseValue = (int) ($row['row_count'] ?? 0) > 0
+                && (int) ($row['purchase_rows'] ?? 0) === (int) ($row['row_count'] ?? 0);
+            $result[(string) ($row['ad_id'] ?? '')] = [
+                'spend' => $spend,
+                // Daily reach is additive here and can contain repeat people.
+                'reach' => (int) ($row['reach'] ?? 0),
+                'reachIsSummed' => true,
+                'impressions' => $impressions,
+                'clicks' => $clicks,
+                'ctr' => $impressions > 0 ? ($clicks / $impressions) * 100 : 0.0,
+                'cpc' => $clicks > 0 ? $spend / $clicks : null,
+                'cpm' => $impressions > 0 ? ($spend / $impressions) * 1000 : null,
+                'conversions' => (float) ($row['conversions'] ?? 0),
+                'results' => null,
+                'roas' => $hasPurchaseValue && $spend > 0
+                    ? (float) ($row['purchase_value'] ?? 0) / $spend
+                    : null,
+            ];
+        }
+        return $result;
+    }
+
     private function buildSummary(string $whereSql = '', array $bindings = [], string $from = '', string $to = '', string $insightsFrom = '', string $insightsTo = ''): array
     {
         // Build ad-level date filter using daily insights (not updated_time)
@@ -1133,14 +1257,43 @@ final class MetaAdsApi extends BaseService
         $allBindings = array_merge($adBindings, $dateBindings);
         $adRow = $this->database->fetchOne(
             "SELECT COUNT(*) AS total_ads,
-                    COALESCE(SUM(CASE WHEN COALESCE(effective_status, status) = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active_ads,
-                    COALESCE(SUM(CASE WHEN COALESCE(effective_status, status) <> 'ACTIVE' THEN 1 ELSE 0 END), 0) AS inactive_ads,
-                    COALESCE(SUM(spend), 0) AS total_spend,
-                    COALESCE(SUM(impressions), 0) AS total_impressions,
-                    COALESCE(SUM(clicks), 0) AS total_clicks
-             FROM meta_ads ma {$adWhere} {$dateFilter}",
+                    COALESCE(SUM(CASE WHEN COALESCE(ma.effective_status, ma.status) = 'ACTIVE' THEN 1 ELSE 0 END), 0) AS active_ads,
+                    COALESCE(SUM(CASE WHEN COALESCE(ma.effective_status, ma.status) <> 'ACTIVE' THEN 1 ELSE 0 END), 0) AS inactive_ads,
+                    COUNT(DISTINCT CASE WHEN COALESCE(ma.effective_status, ma.status) = 'ACTIVE' THEN ma.campaign_id END) AS active_campaigns,
+                    COUNT(DISTINCT CASE WHEN COALESCE(ma.effective_status, ma.status) = 'ACTIVE' THEN ma.ad_set_id END) AS active_ad_sets,
+                    COALESCE(SUM(ma.spend), 0) AS total_spend,
+                    COALESCE(SUM(CASE WHEN ma.spend > 0 THEN ma.spend * COALESCE(ma.roas, 0) ELSE 0 END), 0) AS purchase_value,
+                    COALESCE(SUM(CASE WHEN ma.spend > 0 THEN ma.spend ELSE 0 END), 0) AS roas_spend,
+                    GROUP_CONCAT(DISTINCT NULLIF(UPPER(TRIM(maa.currency)), '') ORDER BY maa.currency SEPARATOR ',') AS currencies
+             FROM meta_ads ma
+             INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
+             {$adWhere} {$dateFilter}",
             $allBindings
         ) ?? [];
+
+        $isDateFiltered = $from !== '' || $to !== '';
+        $dailySummary = $isDateFiltered
+            ? $this->summarizeFilteredDailyInsights($adWhere, $adBindings, $from, $to)
+            : null;
+        $currencyCsv = (string) ($dailySummary['currencies'] ?? $adRow['currencies'] ?? '');
+        $currencies = array_values(array_filter(array_unique(array_map('trim', explode(',', $currencyCsv)))));
+        $mixedCurrencies = count($currencies) > 1;
+        $spend = $isDateFiltered
+            ? (float) ($dailySummary['spend'] ?? 0)
+            : (float) ($adRow['total_spend'] ?? 0);
+        $purchaseValue = $isDateFiltered
+            ? (float) ($dailySummary['purchase_value'] ?? 0)
+            : (float) ($adRow['purchase_value'] ?? 0);
+        $roasSpend = $isDateFiltered
+            ? ((int) ($dailySummary['row_count'] ?? 0) > 0
+                && (int) ($dailySummary['purchase_rows'] ?? 0) === (int) ($dailySummary['row_count'] ?? 0)
+                    ? $spend
+                    : 0.0)
+            : (float) ($adRow['roas_spend'] ?? 0);
+        $currentRoas = !$mixedCurrencies && $roasSpend > 0
+            ? round($purchaseValue / $roasSpend, 2)
+            : null;
+
         return [
             'totalBusinesses' => (int) (($this->database->fetchOne('SELECT COUNT(*) AS count FROM meta_businesses')['count'] ?? 0)),
             'totalAdAccounts' => (int) (($this->database->fetchOne('SELECT COUNT(*) AS count FROM meta_ad_accounts')['count'] ?? 0)),
@@ -1149,83 +1302,47 @@ final class MetaAdsApi extends BaseService
             'activeAds' => (int) ($adRow['active_ads'] ?? 0),
             'inactiveAds' => (int) ($adRow['inactive_ads'] ?? 0),
             'totalSpend' => (float) ($adRow['total_spend'] ?? 0),
-            'filteredSpend' => $this->spendFromDailyInsights($adWhere, $adBindings, $from, $to),
-            'activeCampaigns' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
-            'activeAdSets' => (int) (($this->database->fetchOne("SELECT COUNT(*) AS c FROM meta_ad_sets WHERE COALESCE(effective_status, status) = 'ACTIVE'")['c'] ?? 0)),
-            // Prefer average Meta purchase_roas from ad rows; never use clicks/spend.
-            'currentRoas' => $this->averageStoredAdRoas($adWhere, $adBindings),
+            'filteredSpend' => $spend,
+            'activeCampaigns' => (int) ($adRow['active_campaigns'] ?? 0),
+            'activeAdSets' => (int) ($adRow['active_ad_sets'] ?? 0),
+            'currentRoas' => $currentRoas,
+            'currency' => count($currencies) === 1 ? $currencies[0] : null,
+            'currencies' => $currencies,
+            'mixedCurrencies' => $mixedCurrencies,
+            'metricsWindow' => $isDateFiltered ? 'selected_range' : 'lifetime',
+            'dailyHistoryDays' => 90,
+            'roasAvailable' => $currentRoas !== null,
         ];
     }
 
-    /**
-     * Get spend from daily insights table for the given date range.
-     * When from/to are empty, sums all daily insights (full range).
-     * Respects ad-level filters (business, account, campaign) via JOIN with meta_ads.
-     */
-    private function spendFromDailyInsights(string $adWhere, array $bindings, string $from = '', string $to = ''): float
+    private function summarizeFilteredDailyInsights(string $adWhere, array $bindings, string $from = '', string $to = ''): array
     {
-        // Convert UTC dates from frontend to ad account's local dates
-        // (insight_date is stored in the ad account's timezone from Meta's date_start)
+        $where = $adWhere !== '' ? $adWhere : 'WHERE 1 = 1';
+        $extraBindings = [];
         if ($from !== '') {
-            $from = $this->toAdAccountDate($from);
+            $where .= ' AND d.insight_date >= :summary_from';
+            $extraBindings[':summary_from'] = $from;
         }
         if ($to !== '') {
-            $to = $this->toAdAccountDate($to);
+            $where .= ' AND d.insight_date <= :summary_to';
+            $extraBindings[':summary_to'] = $to;
         }
-
-        // Use :ins_from/:ins_to to avoid collision with :from_date/:to_date in $bindings
-        // (fetchMetaAds already uses those names for the ad-level date filter)
-        $dateFilter = '';
-        $extraBindings = [];
-        if ($from !== '' && $to !== '') {
-            $dateFilter = 'AND d.insight_date >= :ins_from AND d.insight_date <= :ins_to';
-            $extraBindings = [':ins_from' => $from, ':ins_to' => $to];
-        } elseif ($from !== '') {
-            $dateFilter = 'AND d.insight_date >= :ins_from';
-            $extraBindings = [':ins_from' => $from];
-        } elseif ($to !== '') {
-            $dateFilter = 'AND d.insight_date <= :ins_to';
-            $extraBindings = [':ins_to' => $to];
-        }
-
-        // If there are ad-level filters, we need to JOIN with meta_ads to apply them
-        if ($adWhere !== '') {
-            // The adWhere clause uses "ma." prefix — rewrite to "ma2." for the JOIN
-            $joinWhere = str_replace('ma.', 'ma2.', $adWhere);
-            $row = $this->database->fetchOne(
-                "SELECT COALESCE(SUM(d.spend), 0) AS s
-                 FROM meta_ads_insights_daily d
-                 INNER JOIN meta_ads ma2 ON ma2.id = d.ad_id
-                 {$joinWhere}
-                 {$dateFilter}",
-                array_merge($bindings, $extraBindings)
-            );
-        } else {
-            $whereClause = $dateFilter !== '' ? 'WHERE ' . ltrim($dateFilter, 'AND ') : '';
-            $row = $this->database->fetchOne(
-                "SELECT COALESCE(SUM(spend), 0) AS s
-                 FROM meta_ads_insights_daily d
-                 {$whereClause}",
-                $extraBindings
-            );
-        }
-
-        return (float) ($row['s'] ?? 0);
-    }
-
-    private function averageStoredAdRoas(string $whereSql, array $bindings): ?float
-    {
-        $row = $this->database->fetchOne(
-            "SELECT AVG(roas) AS avg_roas, COUNT(*) AS cnt
-             FROM meta_ads ma
-             {$whereSql}
-             " . ($whereSql !== '' ? 'AND' : 'WHERE') . ' roas IS NOT NULL AND roas > 0',
-            $bindings
-        );
-        if ($row === null || (int) ($row['cnt'] ?? 0) === 0) {
-            return null;
-        }
-        return round((float) ($row['avg_roas'] ?? 0), 2);
+        return $this->database->fetchOne(
+            "SELECT COALESCE(SUM(d.spend), 0) AS spend,
+                    COALESCE(SUM(CASE
+                        WHEN d.purchase_value IS NOT NULL THEN d.purchase_value
+                        WHEN d.purchase_roas IS NOT NULL THEN d.spend * d.purchase_roas
+                        ELSE 0
+                    END), 0) AS purchase_value,
+                    COUNT(*) AS row_count,
+                    COALESCE(SUM(CASE WHEN d.purchase_value IS NOT NULL THEN 1 ELSE 0 END), 0) AS purchase_rows,
+                    GROUP_CONCAT(DISTINCT NULLIF(UPPER(TRIM(COALESCE(d.currency, maa.currency))), '') ORDER BY COALESCE(d.currency, maa.currency) SEPARATOR ',') AS currencies
+             FROM meta_ads_insights_daily d
+             INNER JOIN meta_ads ma ON ma.id = d.ad_id
+             INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
+             {$where}",
+            array_merge($bindings, $extraBindings)
+        ) ?? [];
     }
 
     private function mapConnection(array $row): array
@@ -1364,12 +1481,14 @@ final class MetaAdsApi extends BaseService
 
     private function metricFromActions(array $rows, array $needles): ?float
     {
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $type = strtolower((string) ($row['action_type'] ?? ''));
-            foreach ($needles as $needle) {
+        // Meta does not guarantee action row order. Honour the caller's
+        // priority so a broad/secondary action cannot win by appearing first.
+        foreach ($needles as $needle) {
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $type = strtolower((string) ($row['action_type'] ?? ''));
                 if ($type !== '' && str_contains($type, strtolower($needle))) {
                     return (float) ($row['value'] ?? 0);
                 }
@@ -1589,13 +1708,22 @@ final class MetaAdsApi extends BaseService
                 'time_increment' => 1, 'date_preset' => 'last_90d', 'limit' => 100,
             ]);
             $data = array_map(function(array $r) {
+                $purchaseValue = $this->metricFromActions(
+                    is_array($r['action_values'] ?? null) ? $r['action_values'] : [],
+                    ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase']
+                ) ?? 0.0;
+                $purchaseRoas = $this->metricFromActions(
+                    is_array($r['purchase_roas'] ?? null) ? $r['purchase_roas'] : [],
+                    ['omni_purchase', 'purchase']
+                );
                 return [
                     'date' => $r['date_start'] ?? '', 'spend' => (float) ($r['spend'] ?? 0),
                     'impressions' => (int) ($r['impressions'] ?? 0), 'reach' => (int) ($r['reach'] ?? 0),
                     'clicks' => (int) ($r['clicks'] ?? 0), 'ctr' => (float) ($r['ctr'] ?? 0),
                     'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
-                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase']),
-                    'roas' => !empty($r['purchase_roas']) ? (float) ($r['purchase_roas'][0]['value'] ?? 0) : null,
+                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase']),
+                    'purchaseValue' => $purchaseValue,
+                    'roas' => $purchaseRoas,
                 ];
             }, $rows);
             if (!empty($data)) {
@@ -1630,7 +1758,7 @@ final class MetaAdsApi extends BaseService
                     'spend' => (float) ($r['spend'] ?? 0), 'impressions' => (int) ($r['impressions'] ?? 0),
                     'reach' => (int) ($r['reach'] ?? 0), 'clicks' => (int) ($r['clicks'] ?? 0),
                     'ctr' => (float) ($r['ctr'] ?? 0), 'cpc' => (float) ($r['cpc'] ?? 0), 'cpm' => (float) ($r['cpm'] ?? 0),
-                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase']),
+                    'conversions' => $this->metricFromActions($r['actions'] ?? [], ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase']),
                 ];
             }, $rows);
             if (!empty($data)) {
@@ -1773,35 +1901,6 @@ final class MetaAdsApi extends BaseService
         return $row !== null ? (string) $row['currency'] : null;
     }
 
-    /**
-     * Detect the ad account timezone from the most recently synced account.
-     * Falls back to UTC if not available.
-     */
-    private function detectAdAccountTimezone(): string
-    {
-        $row = $this->database->fetchOne("SELECT timezone_name FROM meta_ad_accounts WHERE timezone_name IS NOT NULL AND timezone_name <> '' ORDER BY updated_at DESC LIMIT 1");
-        return $row !== null ? (string) $row['timezone_name'] : 'UTC';
-    }
-
-    /**
-     * Convert a UTC date string (Y-m-d) to the ad account's local date.
-     * Since insight_date from Meta is in the ad account's timezone, we need
-     * to compare using the same timezone to get accurate results.
-     */
-    private function toAdAccountDate(string $utcDate): string
-    {
-        try {
-            $tzName = $this->detectAdAccountTimezone();
-            $tz = new \DateTimeZone($tzName);
-            // Create a datetime at noon UTC to avoid edge cases around midnight
-            $dt = new \DateTimeImmutable($utcDate . ' 12:00:00', new \DateTimeZone('UTC'));
-            $local = $dt->setTimezone($tz);
-            return $local->format('Y-m-d');
-        } catch (\Throwable) {
-            return $utcDate;
-        }
-    }
-
     private function ensureMetaAdsInsightsDailyTable(): void
     {
         $this->database->execute(
@@ -1818,6 +1917,8 @@ final class MetaAdsApi extends BaseService
                 cpc DECIMAL(14,4) DEFAULT NULL,
                 cpm DECIMAL(14,4) DEFAULT NULL,
                 conversions DECIMAL(14,4) DEFAULT NULL,
+                purchase_value DECIMAL(16,4) DEFAULT NULL,
+                purchase_roas DECIMAL(14,6) DEFAULT NULL,
                 currency VARCHAR(16) DEFAULT NULL,
                 synced_at DATETIME DEFAULT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1828,6 +1929,12 @@ final class MetaAdsApi extends BaseService
                 KEY idx_meta_ads_insights_daily_meta_ad (meta_ad_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        if (!$this->columnExists('meta_ads_insights_daily', 'purchase_value')) {
+            $this->database->execute('ALTER TABLE meta_ads_insights_daily ADD COLUMN purchase_value DECIMAL(16,4) DEFAULT NULL AFTER conversions');
+        }
+        if (!$this->columnExists('meta_ads_insights_daily', 'purchase_roas')) {
+            $this->database->execute('ALTER TABLE meta_ads_insights_daily ADD COLUMN purchase_roas DECIMAL(14,6) DEFAULT NULL AFTER purchase_value');
+        }
     }
 
     /**
@@ -1852,18 +1959,31 @@ final class MetaAdsApi extends BaseService
 
         $prev = $this->previousDateWindow($from, $to);
         $settingsRow = $this->fetchMetaAdsSettingsRow();
-        $adsCode = strtoupper(trim((string) ($settingsRow['display_currency_code'] ?? '')) ?: ($this->detectAdAccountCurrency() ?? 'BDT'));
-        $rateToBdt = $this->resolveExchangeRate($adsCode, $settingsRow);
 
         $currentInsights = $this->aggregateDailyInsights($from, $to);
         $previousInsights = $this->aggregateDailyInsights($prev['from'], $prev['to']);
+        $insightCurrencies = is_array($currentInsights['currencies'] ?? null) ? $currentInsights['currencies'] : [];
+        $previousInsightCurrencies = is_array($previousInsights['currencies'] ?? null) ? $previousInsights['currencies'] : [];
+        $configuredAdsCode = strtoupper(trim((string) ($settingsRow['display_currency_code'] ?? '')));
+        $adsCode = count($insightCurrencies) === 1
+            ? (string) $insightCurrencies[0]
+            : ($configuredAdsCode !== '' ? $configuredAdsCode : ($this->detectAdAccountCurrency() ?? 'BDT'));
+        $mixedCurrencies = count($insightCurrencies) > 1;
+        $rateToBdt = $mixedCurrencies ? null : $this->resolveExchangeRate($adsCode, $settingsRow);
         $currentOrders = $this->aggregateAttributedOrders($from, $to);
         $previousOrders = $this->aggregateAttributedOrders($prev['from'], $prev['to']);
-        $pipeline = $this->aggregateAttributedPipeline();
+        $pipeline = $this->aggregateAttributedPipeline($from, $to);
         $series = $this->buildMarketingSeries($from, $to);
         $campaigns = $this->buildCampaignPerformance($from, $to);
-        $recentOrders = $this->fetchRecentAttributedOrders(10);
-        $alerts = $this->buildMarketingAlerts($currentInsights, $currentOrders, $adsCode, $rateToBdt);
+        $recentOrders = $this->fetchRecentAttributedOrders($from, $to, 10);
+        $alerts = $this->buildMarketingAlerts(
+            $currentInsights,
+            $currentOrders,
+            $adsCode,
+            $rateToBdt,
+            $configuredAdsCode,
+            $mixedCurrencies
+        );
 
         $kpis = $this->composeMarketingKpis($currentInsights, $currentOrders, $pipeline);
         $previousKpis = $this->composeMarketingKpis($previousInsights, $previousOrders, ['count' => 0, 'value' => 0, 'byStatus' => []]);
@@ -1884,14 +2004,18 @@ final class MetaAdsApi extends BaseService
         $activeCampaigns = (int) (($this->database->fetchOne(
             "SELECT COUNT(*) AS c FROM meta_campaigns WHERE COALESCE(effective_status, status) = 'ACTIVE'"
         )['c'] ?? 0));
-        $dailyRowCount = (int) (($this->database->fetchOne(
-            'SELECT COUNT(*) AS c FROM meta_ads_insights_daily'
-        )['c'] ?? 0));
+        $dailyRowCount = (int) ($currentInsights['rowCount'] ?? 0);
 
         return [
             'currency' => [
                 'adsCode' => $adsCode,
                 'rateToBdt' => $rateToBdt,
+                'currencies' => $insightCurrencies,
+                'mixedCurrencies' => $mixedCurrencies,
+                'comparable' => !$mixedCurrencies && ($adsCode === 'BDT' || ($rateToBdt !== null && $rateToBdt > 0)),
+                'previousCurrencies' => $previousInsightCurrencies,
+                'previousComparable' => count($previousInsightCurrencies) <= 1
+                    && ($previousInsightCurrencies === [] || (string) $previousInsightCurrencies[0] === $adsCode),
                 'exchangeRateMode' => (string) ($settingsRow['exchange_rate_mode'] ?? 'fixed'),
                 'vatPercentage' => $settingsRow['vat_percentage'] !== null ? (float) $settingsRow['vat_percentage'] : null,
                 'realtimeRateCache' => $settingsRow['realtime_rate_cache'] !== null ? (float) $settingsRow['realtime_rate_cache'] : null,
@@ -1918,12 +2042,13 @@ final class MetaAdsApi extends BaseService
                 'hasDailyInsights' => $dailyRowCount > 0,
                 'definitions' => [
                     'spend' => 'Sum of Meta daily insights spend in the range (ads currency).',
-                    'purchases' => 'App orders with sourceAd set and order_date in range.',
-                    'bookedRevenue' => 'Sum of those order totals (BDT) — orders placed, any status.',
-                    'realizedRevenue' => 'Sum of completed (delivered) attributed order totals with order_date in range (BDT).',
+                    'purchases' => 'App orders with sourceAd set and order_date in range. This is an attributed order count, not Meta pixel purchases.',
+                    'bookedRevenue' => 'Current value of attributed orders placed in the range that are still open or delivered (BDT). Cancelled and returned orders are excluded.',
+                    'realizedRevenue' => 'Value of attributed orders from the selected order-date cohort whose current status is Delivered or Exchange Delivered (BDT).',
                     'bookedRoas' => 'bookedRevenue (BDT) / spend converted to BDT.',
                     'realizedRoas' => 'realizedRevenue (BDT) / spend converted to BDT.',
-                    'note' => 'Same-day ROAS is directional only; use multi-day windows. Delivery lag means realized ROAS matures over time.',
+                    'deliveryRate' => 'Delivered / (Delivered + Returned) among settled attributed orders. Open and cancelled orders are excluded.',
+                    'note' => 'Same-day ROAS is directional only; use multi-day windows. Revenue is grouped by order date, so realized ROAS matures as that cohort delivers.',
                 ],
             ],
         ];
@@ -1944,10 +2069,6 @@ final class MetaAdsApi extends BaseService
 
     private function aggregateDailyInsights(string $from, string $to): array
     {
-        // Convert UTC dates from frontend to ad account's local dates
-        $localFrom = $this->toAdAccountDate($from);
-        $localTo = $this->toAdAccountDate($to);
-
         $row = $this->database->fetchOne(
             'SELECT
                 COALESCE(SUM(spend), 0) AS spend,
@@ -1955,16 +2076,19 @@ final class MetaAdsApi extends BaseService
                 COALESCE(SUM(reach), 0) AS reach,
                 COALESCE(SUM(clicks), 0) AS clicks,
                 COALESCE(SUM(conversions), 0) AS conversions,
-                MAX(currency) AS currency
+                MAX(currency) AS currency,
+                COUNT(*) AS row_count,
+                GROUP_CONCAT(DISTINCT NULLIF(UPPER(TRIM(currency)), "") ORDER BY currency SEPARATOR ",") AS currencies
              FROM meta_ads_insights_daily
              WHERE insight_date >= :from_date AND insight_date <= :to_date',
-            [':from_date' => $localFrom, ':to_date' => $localTo]
+            [':from_date' => $from, ':to_date' => $to]
         ) ?? [];
 
         $spend = (float) ($row['spend'] ?? 0);
         $impressions = (int) ($row['impressions'] ?? 0);
         $clicks = (int) ($row['clicks'] ?? 0);
 
+        $currencyCsv = (string) ($row['currencies'] ?? '');
         return [
             'spend' => $spend,
             'impressions' => $impressions,
@@ -1972,6 +2096,8 @@ final class MetaAdsApi extends BaseService
             'clicks' => $clicks,
             'conversions' => (float) ($row['conversions'] ?? 0),
             'currency' => $this->nullableString($row['currency'] ?? null),
+            'currencies' => array_values(array_filter(array_unique(array_map('trim', explode(',', $currencyCsv))))),
+            'rowCount' => (int) ($row['row_count'] ?? 0),
             'ctr' => $impressions > 0 ? ($clicks / $impressions) * 100 : 0.0,
             'cpc' => $clicks > 0 ? $spend / $clicks : 0.0,
             'cpm' => $impressions > 0 ? ($spend / $impressions) * 1000 : 0.0,
@@ -1983,12 +2109,12 @@ final class MetaAdsApi extends BaseService
         $row = $this->database->fetchOne(
             "SELECT
                 COUNT(*) AS purchases,
-                COALESCE(SUM(total), 0) AS booked_revenue,
-                COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count,
-                COALESCE(SUM(CASE WHEN status = 'Completed' THEN total ELSE 0 END), 0) AS delivered_revenue,
-                COALESCE(SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count,
-                COALESCE(SUM(CASE WHEN status = 'Returned' THEN 1 ELSE 0 END), 0) AS returned_count,
-                COALESCE(SUM(CASE WHEN status = 'Returned' THEN total ELSE 0 END), 0) AS returned_revenue
+                COALESCE(SUM(CASE WHEN status NOT IN ('Cancelled', 'Exchange cancelled', 'Returned', 'Exchange returned') THEN total ELSE 0 END), 0) AS booked_revenue,
+                COALESCE(SUM(CASE WHEN status IN ('Completed', 'Exchange delivered') THEN 1 ELSE 0 END), 0) AS delivered_count,
+                COALESCE(SUM(CASE WHEN status IN ('Completed', 'Exchange delivered') THEN total ELSE 0 END), 0) AS delivered_revenue,
+                COALESCE(SUM(CASE WHEN status IN ('Cancelled', 'Exchange cancelled') THEN 1 ELSE 0 END), 0) AS cancelled_count,
+                COALESCE(SUM(CASE WHEN status IN ('Returned', 'Exchange returned') THEN 1 ELSE 0 END), 0) AS returned_count,
+                COALESCE(SUM(CASE WHEN status IN ('Returned', 'Exchange returned') THEN total ELSE 0 END), 0) AS returned_revenue
              FROM orders
              WHERE deleted_at IS NULL
                AND source_ad IS NOT NULL
@@ -2009,9 +2135,9 @@ final class MetaAdsApi extends BaseService
         ];
     }
 
-    private function aggregateAttributedPipeline(): array
+    private function aggregateAttributedPipeline(string $from, string $to): array
     {
-        $openStatuses = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Exchange pending', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Created'];
+        $openStatuses = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Exchange pending', 'Exchange processing', 'Exchange picked', 'Created'];
         $placeholders = [];
         $bindings = [];
         foreach ($openStatuses as $i => $status) {
@@ -2020,6 +2146,8 @@ final class MetaAdsApi extends BaseService
             $bindings[$key] = $status;
         }
         $in = implode(', ', $placeholders);
+        $bindings[':pipeline_from'] = $from;
+        $bindings[':pipeline_to'] = $to;
 
         $rows = $this->database->fetchAll(
             "SELECT status, COUNT(*) AS cnt, COALESCE(SUM(total), 0) AS value
@@ -2028,6 +2156,8 @@ final class MetaAdsApi extends BaseService
                AND source_ad IS NOT NULL
                AND TRIM(source_ad) <> ''
                AND status IN ({$in})
+               AND order_date >= :pipeline_from
+               AND order_date <= :pipeline_to
              GROUP BY status
              ORDER BY cnt DESC",
             $bindings
@@ -2060,7 +2190,7 @@ final class MetaAdsApi extends BaseService
         $deliveredRevenue = (float) ($orders['deliveredRevenue'] ?? 0);
         $cancelledCount = (int) ($orders['cancelledCount'] ?? 0);
         $returnedCount = (int) ($orders['returnedCount'] ?? 0);
-        $eligible = max(0, $purchases - $cancelledCount);
+        $settled = $deliveredCount + $returnedCount;
 
         return [
             'spend' => $spend,
@@ -2084,17 +2214,13 @@ final class MetaAdsApi extends BaseService
             // We expose raw ratios only when spend is already BDT; FE recomputes with FX.
             'cpa' => $purchases > 0 ? $spend / $purchases : 0.0,
             'costPerDelivered' => $deliveredCount > 0 ? $spend / $deliveredCount : 0.0,
-            'deliveryRate' => $eligible > 0 ? ($deliveredCount / $eligible) * 100 : 0.0,
-            'returnRate' => $purchases > 0 ? ($returnedCount / $purchases) * 100 : 0.0,
+            'deliveryRate' => $settled > 0 ? ($deliveredCount / $settled) * 100 : 0.0,
+            'returnRate' => $settled > 0 ? ($returnedCount / $settled) * 100 : 0.0,
         ];
     }
 
     private function buildMarketingSeries(string $from, string $to): array
     {
-        // Convert UTC dates to ad account's local dates for daily insights
-        $localFrom = $this->toAdAccountDate($from);
-        $localTo = $this->toAdAccountDate($to);
-
         $insightRows = $this->database->fetchAll(
             'SELECT insight_date AS d,
                     COALESCE(SUM(spend), 0) AS spend,
@@ -2103,7 +2229,7 @@ final class MetaAdsApi extends BaseService
              FROM meta_ads_insights_daily
              WHERE insight_date >= :from_date AND insight_date <= :to_date
              GROUP BY insight_date',
-            [':from_date' => $localFrom, ':to_date' => $localTo]
+            [':from_date' => $from, ':to_date' => $to]
         );
         $insightsByDate = [];
         foreach ($insightRows as $row) {
@@ -2113,9 +2239,9 @@ final class MetaAdsApi extends BaseService
         $orderRows = $this->database->fetchAll(
             "SELECT order_date AS d,
                     COUNT(*) AS purchases,
-                    COALESCE(SUM(total), 0) AS booked_revenue,
-                    COALESCE(SUM(CASE WHEN status = 'Completed' THEN total ELSE 0 END), 0) AS delivered_revenue,
-                    COALESCE(SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count
+                    COALESCE(SUM(CASE WHEN status NOT IN ('Cancelled', 'Exchange cancelled', 'Returned', 'Exchange returned') THEN total ELSE 0 END), 0) AS booked_revenue,
+                    COALESCE(SUM(CASE WHEN status IN ('Completed', 'Exchange delivered') THEN total ELSE 0 END), 0) AS delivered_revenue,
+                    COALESCE(SUM(CASE WHEN status IN ('Completed', 'Exchange delivered') THEN 1 ELSE 0 END), 0) AS delivered_count
              FROM orders
              WHERE deleted_at IS NULL
                AND source_ad IS NOT NULL
@@ -2131,8 +2257,8 @@ final class MetaAdsApi extends BaseService
         }
 
         $series = [];
-        $cursor = new \DateTimeImmutable($localFrom . ' 00:00:00', $this->utcTimezone());
-        $end = new \DateTimeImmutable($localTo . ' 00:00:00', $this->utcTimezone());
+        $cursor = new \DateTimeImmutable($from . ' 00:00:00', $this->utcTimezone());
+        $end = new \DateTimeImmutable($to . ' 00:00:00', $this->utcTimezone());
         while ($cursor <= $end) {
             $key = $cursor->format('Y-m-d');
             $ins = $insightsByDate[$key] ?? null;
@@ -2157,10 +2283,6 @@ final class MetaAdsApi extends BaseService
 
     private function buildCampaignPerformance(string $from, string $to): array
     {
-        // Convert UTC dates to ad account's local dates for daily insights
-        $localFrom = $this->toAdAccountDate($from);
-        $localTo = $this->toAdAccountDate($to);
-
         $spendRows = $this->database->fetchAll(
             'SELECT
                 COALESCE(mc.id, "") AS campaign_id,
@@ -2168,13 +2290,16 @@ final class MetaAdsApi extends BaseService
                 COALESCE(SUM(d.spend), 0) AS spend,
                 COALESCE(SUM(d.impressions), 0) AS impressions,
                 COALESCE(SUM(d.clicks), 0) AS clicks,
-                COALESCE(SUM(d.conversions), 0) AS conversions
+                COALESCE(SUM(d.conversions), 0) AS conversions,
+                MAX(COALESCE(d.currency, maa.currency)) AS currency,
+                COUNT(DISTINCT COALESCE(d.currency, maa.currency)) AS currency_count
              FROM meta_ads_insights_daily d
              INNER JOIN meta_ads ma ON ma.id = d.ad_id
+             INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
              WHERE d.insight_date >= :from_date AND d.insight_date <= :to_date
              GROUP BY COALESCE(mc.id, ""), COALESCE(mc.name, "Unassigned Campaign")',
-            [':from_date' => $localFrom, ':to_date' => $localTo]
+            [':from_date' => $from, ':to_date' => $to]
         );
 
         $orderRows = $this->database->fetchAll(
@@ -2183,11 +2308,11 @@ final class MetaAdsApi extends BaseService
                 COALESCE(mc.id, '') AS campaign_id,
                 COALESCE(mc.name, 'Unassigned Campaign') AS campaign_name,
                 COUNT(*) AS purchases,
-                COALESCE(SUM(o.total), 0) AS booked_revenue,
-                COALESCE(SUM(CASE WHEN o.status = 'Completed' THEN 1 ELSE 0 END), 0) AS delivered_count,
-                COALESCE(SUM(CASE WHEN o.status = 'Completed' THEN o.total ELSE 0 END), 0) AS delivered_revenue,
-                COALESCE(SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count,
-                COALESCE(SUM(CASE WHEN o.status = 'Returned' THEN 1 ELSE 0 END), 0) AS returned_count
+                COALESCE(SUM(CASE WHEN o.status NOT IN ('Cancelled', 'Exchange cancelled', 'Returned', 'Exchange returned') THEN o.total ELSE 0 END), 0) AS booked_revenue,
+                COALESCE(SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN 1 ELSE 0 END), 0) AS delivered_count,
+                COALESCE(SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN o.total ELSE 0 END), 0) AS delivered_revenue,
+                COALESCE(SUM(CASE WHEN o.status IN ('Cancelled', 'Exchange cancelled') THEN 1 ELSE 0 END), 0) AS cancelled_count,
+                COALESCE(SUM(CASE WHEN o.status IN ('Returned', 'Exchange returned') THEN 1 ELSE 0 END), 0) AS returned_count
              FROM orders o
              LEFT JOIN meta_ads ma ON ma.id = o.source_ad OR ma.meta_ad_id = o.source_ad
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
@@ -2210,6 +2335,8 @@ final class MetaAdsApi extends BaseService
                 'impressions' => (int) ($row['impressions'] ?? 0),
                 'clicks' => (int) ($row['clicks'] ?? 0),
                 'conversions' => (float) ($row['conversions'] ?? 0),
+                'currency' => $this->nullableString($row['currency'] ?? null),
+                'mixedCurrencies' => (int) ($row['currency_count'] ?? 0) > 1,
                 'purchases' => 0,
                 'bookedRevenue' => 0.0,
                 'deliveredCount' => 0,
@@ -2231,6 +2358,8 @@ final class MetaAdsApi extends BaseService
                     'impressions' => 0,
                     'clicks' => 0,
                     'conversions' => 0.0,
+                    'currency' => null,
+                    'mixedCurrencies' => false,
                     'purchases' => 0,
                     'bookedRevenue' => 0.0,
                     'deliveredCount' => 0,
@@ -2254,7 +2383,7 @@ final class MetaAdsApi extends BaseService
         return $list;
     }
 
-    private function fetchRecentAttributedOrders(int $limit = 10): array
+    private function fetchRecentAttributedOrders(string $from, string $to, int $limit = 10): array
     {
         $limit = max(1, min(50, $limit));
         $rows = $this->database->fetchAll(
@@ -2266,8 +2395,11 @@ final class MetaAdsApi extends BaseService
              WHERE o.deleted_at IS NULL
                AND o.source_ad IS NOT NULL
                AND TRIM(o.source_ad) <> ''
+               AND o.order_date >= :recent_from
+               AND o.order_date <= :recent_to
              ORDER BY o.order_date DESC, o.created_at DESC
-             LIMIT {$limit}"
+             LIMIT {$limit}",
+            [':recent_from' => $from, ':recent_to' => $to]
         );
         return array_map(static function (array $row): array {
             return [
@@ -2283,15 +2415,45 @@ final class MetaAdsApi extends BaseService
         }, $rows);
     }
 
-    private function buildMarketingAlerts(array $insights, array $orders, string $adsCode, ?float $rateToBdt): array
+    private function buildMarketingAlerts(
+        array $insights,
+        array $orders,
+        string $adsCode,
+        ?float $rateToBdt,
+        string $configuredAdsCode = '',
+        bool $mixedCurrencies = false
+    ): array
     {
         $alerts = [];
         $spend = (float) ($insights['spend'] ?? 0);
         $purchases = (int) ($orders['purchases'] ?? 0);
         $booked = (float) ($orders['bookedRevenue'] ?? 0);
         $returned = (int) ($orders['returnedCount'] ?? 0);
+        $delivered = (int) ($orders['deliveredCount'] ?? 0);
 
-        if (strtoupper($adsCode) !== 'BDT' && ($rateToBdt === null || $rateToBdt <= 0)) {
+        if ($mixedCurrencies) {
+            $currencies = is_array($insights['currencies'] ?? null) ? implode(', ', $insights['currencies']) : '';
+            $alerts[] = [
+                'severity' => 'danger',
+                'code' => 'mixed_ad_currencies',
+                'message' => 'This range contains multiple ad currencies' . ($currencies !== '' ? ' (' . $currencies . ')' : '') . '. Spend, cost and ROAS totals are hidden because those amounts cannot be added safely.',
+            ];
+        }
+
+        if (!$mixedCurrencies && $configuredAdsCode !== '' && $configuredAdsCode !== $adsCode) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'code' => 'currency_setting_mismatch',
+                'message' => 'Meta insights use ' . $adsCode . ', but Settings → Meta Ads is configured for ' . $configuredAdsCode . '. Update the currency and exchange rate before using BDT cost or ROAS.',
+            ];
+        }
+
+        if (
+            !$mixedCurrencies
+            && ($configuredAdsCode === '' || $configuredAdsCode === $adsCode)
+            && strtoupper($adsCode) !== 'BDT'
+            && ($rateToBdt === null || $rateToBdt <= 0)
+        ) {
             $alerts[] = [
                 'severity' => 'warning',
                 'code' => 'missing_exchange_rate',
@@ -2299,12 +2461,12 @@ final class MetaAdsApi extends BaseService
             ];
         }
 
-        $dailyCount = (int) (($this->database->fetchOne('SELECT COUNT(*) AS c FROM meta_ads_insights_daily')['c'] ?? 0));
+        $dailyCount = (int) ($insights['rowCount'] ?? 0);
         if ($dailyCount === 0) {
             $alerts[] = [
                 'severity' => 'info',
                 'code' => 'no_daily_insights',
-                'message' => 'No daily ad insights yet. Run Sync Now on Meta Ads so spend and trends use real daily data.',
+                'message' => 'No daily ad insights exist for the selected range. Sync Meta Ads or choose a range within the available 90-day history.',
             ];
         }
 
@@ -2319,15 +2481,16 @@ final class MetaAdsApi extends BaseService
         $spendBdt = strtoupper($adsCode) === 'BDT' || ($rateToBdt !== null && $rateToBdt > 0)
             ? (strtoupper($adsCode) === 'BDT' ? $spend : $spend * (float) $rateToBdt)
             : null;
-        if ($spendBdt !== null && $spendBdt > 0 && $booked > 0 && ($booked / $spendBdt) < 1) {
+        if (!$mixedCurrencies && $spendBdt !== null && $spendBdt > 0 && $purchases > 0 && ($booked / $spendBdt) < 1) {
             $alerts[] = [
                 'severity' => 'warning',
                 'code' => 'low_booked_roas',
-                'message' => 'Booked ROAS is below 1x for this range (order value vs ad spend).',
+                'message' => 'Order-value ROAS is below 1x for this range (open + delivered attributed order value vs ad spend).',
             ];
         }
 
-        if ($purchases >= 5 && $returned / max(1, $purchases) >= 0.2) {
+        $settled = $delivered + $returned;
+        if ($settled >= 5 && $returned / max(1, $settled) >= 0.2) {
             $alerts[] = [
                 'severity' => 'danger',
                 'code' => 'high_return_rate',

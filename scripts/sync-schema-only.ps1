@@ -17,9 +17,25 @@ function Split-SqlStatements([string]$Sql) {
   $statements = New-Object System.Collections.Generic.List[string]
   $buffer = New-Object System.Text.StringBuilder
   $quote = [char]0
+  $lineComment = $false
+  $blockComment = $false
 
   for ($i = 0; $i -lt $Sql.Length; $i++) {
     $char = $Sql[$i]
+    if ($lineComment) {
+      [void]$buffer.Append($char)
+      if ($char -eq "`n") { $lineComment = $false }
+      continue
+    }
+    if ($blockComment) {
+      [void]$buffer.Append($char)
+      if ($char -eq '*' -and $i + 1 -lt $Sql.Length -and $Sql[$i + 1] -eq '/') {
+        [void]$buffer.Append($Sql[$i + 1])
+        $i++
+        $blockComment = $false
+      }
+      continue
+    }
     if ($quote -ne [char]0) {
       [void]$buffer.Append($char)
       if ($char -eq $quote) {
@@ -30,6 +46,20 @@ function Split-SqlStatements([string]$Sql) {
           $quote = [char]0
         }
       }
+      continue
+    }
+    if ($char -eq '-' -and $i + 1 -lt $Sql.Length -and $Sql[$i + 1] -eq '-') {
+      [void]$buffer.Append($char)
+      [void]$buffer.Append($Sql[$i + 1])
+      $i++
+      $lineComment = $true
+      continue
+    }
+    if ($char -eq '/' -and $i + 1 -lt $Sql.Length -and $Sql[$i + 1] -eq '*') {
+      [void]$buffer.Append($char)
+      [void]$buffer.Append($Sql[$i + 1])
+      $i++
+      $blockComment = $true
       continue
     }
     if ($char -eq "'" -or $char -eq '"' -or $char -eq '`') {
@@ -117,6 +147,19 @@ function Convert-AlterTable([string]$Statement, [string]$SourceName) {
       continue
     }
 
+    $uniqueIndex = [regex]::Match($clause, '(?is)^\s*ADD\s+UNIQUE\s+(?:KEY|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?\s*\((.+)\)$')
+    if ($uniqueIndex.Success) {
+      $columns = Quote-SqlLiteral $uniqueIndex.Groups[2].Value.Trim()
+      $output.Add("CALL sp_create_unique_idx('$table', '$($uniqueIndex.Groups[1].Value)', '$columns');")
+      continue
+    }
+
+    $dropIndex = [regex]::Match($clause, '(?is)^\s*DROP\s+(?:KEY|INDEX)\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?$')
+    if ($dropIndex.Success) {
+      $output.Add("CALL sp_drop_idx('$table', '$($dropIndex.Groups[1].Value)');")
+      continue
+    }
+
     throw "Unsupported ALTER TABLE clause in ${SourceName}: $clause"
   }
   return ($output -join "`r`n")
@@ -137,10 +180,11 @@ function Convert-SchemaSource([string]$Sql, [string]$SourceName) {
       continue
     }
 
-    $createIndex = [regex]::Match($core, '(?is)^CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?\s+ON\s+`?([A-Za-z0-9_]+)`?\s*\((.+)\)$')
+    $createIndex = [regex]::Match($core, '(?is)^CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?\s+ON\s+`?([A-Za-z0-9_]+)`?\s*\((.+)\)$')
     if ($createIndex.Success) {
-      $columns = Quote-SqlLiteral $createIndex.Groups[3].Value.Trim()
-      $output.Add("CALL sp_create_idx('$($createIndex.Groups[2].Value)', '$($createIndex.Groups[1].Value)', '$columns');")
+      $columns = Quote-SqlLiteral $createIndex.Groups[4].Value.Trim()
+      $helper = if ($createIndex.Groups[1].Success) { 'sp_create_unique_idx' } else { 'sp_create_idx' }
+      $output.Add("CALL $helper('$($createIndex.Groups[3].Value)', '$($createIndex.Groups[2].Value)', '$columns');")
       continue
     }
 
@@ -150,7 +194,7 @@ function Convert-SchemaSource([string]$Sql, [string]$SourceName) {
 }
 
 $helpers = @'
--- Helper procedures make additive column and index upgrades idempotent on
+-- Helper procedures make row-preserving column and index changes idempotent on
 -- MariaDB and MySQL versions that do not support every IF NOT EXISTS form.
 DROP PROCEDURE IF EXISTS sp_add_col;
 DELIMITER $$
@@ -183,12 +227,44 @@ BEGIN
   END IF;
 END $$
 DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_create_unique_idx;
+DELIMITER $$
+CREATE PROCEDURE sp_create_unique_idx(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_columns TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
+  ) THEN
+    SET @sql = CONCAT('CREATE UNIQUE INDEX `', p_index, '` ON `', p_table, '` (', p_columns, ')');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_drop_idx;
+DELIMITER $$
+CREATE PROCEDURE sp_drop_idx(IN p_table VARCHAR(64), IN p_index VARCHAR(64))
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` DROP INDEX `', p_index, '`');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
 '@
 
 $sections = New-Object System.Collections.Generic.List[string]
 $sections.Add('-- MamePilot production-safe schema-only migration.')
 $sections.Add('-- Generated from backend/database/schema.sql plus migrations/*.sql.')
-$sections.Add('-- Contains additive DDL only: no seed inserts and no business-row updates.')
+$sections.Add('-- Contains row-preserving DDL only: no seed inserts and no business-row updates.')
 $sections.Add($helpers.Trim())
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8
 $sections.Add((Convert-SchemaSource $schema $SchemaFile))
@@ -198,8 +274,8 @@ foreach ($migration in (Get-ChildItem -LiteralPath $migrationsPath -File -Filter
   $sections.Add("-- Migration: $($migration.Name)`r`n" + (Convert-SchemaSource $migrationSql $migration.Name))
 }
 
-$sections.Add("DROP PROCEDURE IF EXISTS sp_add_col;`r`nDROP PROCEDURE IF EXISTS sp_create_idx;")
+$sections.Add("DROP PROCEDURE IF EXISTS sp_add_col;`r`nDROP PROCEDURE IF EXISTS sp_create_idx;`r`nDROP PROCEDURE IF EXISTS sp_create_unique_idx;`r`nDROP PROCEDURE IF EXISTS sp_drop_idx;")
 $content = ($sections -join "`r`n`r`n").TrimEnd() + "`r`n"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($outputPath, $content, $utf8NoBom)
-Write-Host "Synced $OutputFile from schema plus additive migration DDL"
+Write-Host "Synced $OutputFile from schema plus row-preserving migration DDL"

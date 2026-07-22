@@ -22,6 +22,8 @@ import { buildHistoryBackState, getPositivePageParam } from '../src/utils/naviga
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import {
   buildLocalDateTime,
+  decodeDynamicTextFilterValue,
+  encodeDynamicTextFilterValue,
   extractSteadfastTrackingFromHistory,
   formatDate,
   getDateTimeFilters,
@@ -41,6 +43,8 @@ const normalizeCourierFilterValue = (value: string | null | undefined): string =
   if (normalized.includes('manual') || normalized.includes('other')) return 'manual';
   return normalized;
 };
+
+const getOrderSettlementTotal = (order: Order): number => order.status === OrderStatus.CANCELLED ? 0 : order.total;
 
 const getCourierFilterLabel = (value: string | null | undefined): string => {
   switch (normalizeCourierFilterValue(value)) {
@@ -273,18 +277,26 @@ const Orders: React.FC = () => {
 
   // Compute createdByIds based on createdByFilter
   const createdByIds = useMemo(() => {
+    const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
     if (effectiveCreatedByFilter === 'all') return undefined;
     if (effectiveCreatedByFilter === 'admins') {
-      return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+      return requireMatch(users.filter((u) => u.role === 'Admin').map((u) => u.id));
     }
     if (effectiveCreatedByFilter === 'employees') {
-      return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+      return requireMatch(users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id));
     }
     if (effectiveCreatedByFilter === 'developers') {
-      return users.filter((u) => u.role === 'Developer').map((u) => u.id);
+      return requireMatch(users.filter((u) => u.role === 'Developer').map((u) => u.id));
     }
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
+  const createdByNotIds = useMemo(() => {
+    if (!effectiveCreatedByNot) return undefined;
+    if (effectiveCreatedByNot === 'admins') return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+    if (effectiveCreatedByNot === 'employees') return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+    if (effectiveCreatedByNot === 'developers') return users.filter((u) => u.role === 'Developer').map((u) => u.id);
+    return [effectiveCreatedByNot];
+  }, [effectiveCreatedByNot, users]);
 
   const normalizedEffectiveCourier = useMemo(() => normalizeCourierFilterValue(effectiveCourier), [effectiveCourier]);
   const normalizedEffectiveCourierNot = useMemo(() => normalizeCourierFilterValue(effectiveCourierNot), [effectiveCourierNot]);
@@ -314,7 +326,7 @@ const Orders: React.FC = () => {
     to: timeFilters.to,
     search: searchQuery,
     createdByIds,
-    createdByNot: effectiveCreatedByNot || undefined,
+    createdByNotIds,
   }, {
     enabled: canLoadOrders,
   });
@@ -368,7 +380,8 @@ const Orders: React.FC = () => {
   }, [orderFilterOpts]);
 
   const courierNames = useMemo(() => {
-    return orderFilterOpts?.courierNames || ['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other'];
+    const configuredNames = orderFilterOpts?.courierNames || [];
+    return Array.from(new Set(['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other', ...configuredNames]));
   }, [orderFilterOpts]);
 
   const orderFilterDefinitions = useMemo(() => {
@@ -378,7 +391,7 @@ const Orders: React.FC = () => {
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
-        values: Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => ({
+        values: Object.values(OrderStatus).map((status) => ({
           value: status,
           label: getStatusDisplayName(status),
         })),
@@ -386,7 +399,7 @@ const Orders: React.FC = () => {
       {
         type: 'Payment Status',
         operators: ['=', '≠'] as const,
-        values: ['Paid', 'Partially Paid', 'Unpaid', 'Refunded'],
+        values: ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'],
       },
       {
         type: 'Source Ad',
@@ -402,10 +415,15 @@ const Orders: React.FC = () => {
         type: 'Created by',
         operators: ['=', '≠'] as const,
         renderOptions: (query: string) => {
-          const list = users
-            .slice()
-            .sort((a, b) => a.role.localeCompare(b.role))
-            .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` }));
+          const list = [
+            { value: 'admins', label: 'Admins' },
+            { value: 'employees', label: 'Employees' },
+            { value: 'developers', label: 'Developers' },
+            ...users
+              .slice()
+              .sort((a, b) => a.role.localeCompare(b.role))
+              .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
+          ];
           return query
             ? list.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
             : list;
@@ -413,25 +431,25 @@ const Orders: React.FC = () => {
       },
       {
         type: 'Order ID',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         values: orderNumberOptions,
         allowCustomValue: true,
       },
       {
         type: 'Customer Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         values: customerNameValues,
         allowCustomValue: true,
       },
       {
         type: 'Customer Phone',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         values: customerPhoneValues,
         allowCustomValue: true,
       },
       {
         type: 'Company',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         values: companyNames,
         allowCustomValue: true,
       },
@@ -476,7 +494,18 @@ const Orders: React.FC = () => {
   const urlSearch = searchParams.get('search') || '';
 
   const initialFilters = useMemo(() => {
-    const filters: Array<{ id: string; type: string; operator: '=' | '≠' | 'contains'; value: string; display?: string }> = [];
+    const filters: Array<{ id: string; type: string; operator: '=' | '≠' | 'contains' | 'does not contain'; value: string; display?: string }> = [];
+    const getCreatorFilterLabel = (value: string) => value === 'admins' ? 'Admins'
+      : value === 'employees' ? 'Employees'
+        : value === 'developers' ? 'Developers'
+          : users.find((user) => user.id === value)?.name || value;
+    const decodeTextPattern = (value: string, negative = false) => {
+      const { contains: isContains, value: decodedValue } = decodeDynamicTextFilterValue(value);
+      return {
+        operator: (isContains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '=')) as '=' | '≠' | 'contains' | 'does not contain',
+        value: decodedValue,
+      };
+    };
 
     if (urlStatusTab && urlStatusTab !== 'All') {
       filters.push({
@@ -515,28 +544,28 @@ const Orders: React.FC = () => {
       });
     }
     if (urlOrderNumber) {
-      filters.push({ id: `orderNumber-${urlOrderNumber}`, type: 'Order ID', operator: '=', value: urlOrderNumber });
+      filters.push({ id: `orderNumber-${urlOrderNumber}`, type: 'Order ID', ...decodeTextPattern(urlOrderNumber) });
     }
     if (urlOrderNumberNot) {
-      filters.push({ id: `orderNumberNot-${urlOrderNumberNot}`, type: 'Order ID', operator: '≠', value: urlOrderNumberNot });
+      filters.push({ id: `orderNumberNot-${urlOrderNumberNot}`, type: 'Order ID', ...decodeTextPattern(urlOrderNumberNot, true) });
     }
     if (urlCustomerName) {
-      filters.push({ id: `customerName-${urlCustomerName}`, type: 'Customer Name', operator: '=', value: urlCustomerName });
+      filters.push({ id: `customerName-${urlCustomerName}`, type: 'Customer Name', ...decodeTextPattern(urlCustomerName) });
     }
     if (urlCustomerNameNot) {
-      filters.push({ id: `customerNameNot-${urlCustomerNameNot}`, type: 'Customer Name', operator: '≠', value: urlCustomerNameNot });
+      filters.push({ id: `customerNameNot-${urlCustomerNameNot}`, type: 'Customer Name', ...decodeTextPattern(urlCustomerNameNot, true) });
     }
     if (urlCustomerPhone) {
-      filters.push({ id: `customerPhone-${urlCustomerPhone}`, type: 'Customer Phone', operator: '=', value: urlCustomerPhone });
+      filters.push({ id: `customerPhone-${urlCustomerPhone}`, type: 'Customer Phone', ...decodeTextPattern(urlCustomerPhone) });
     }
     if (urlCustomerPhoneNot) {
-      filters.push({ id: `customerPhoneNot-${urlCustomerPhoneNot}`, type: 'Customer Phone', operator: '≠', value: urlCustomerPhoneNot });
+      filters.push({ id: `customerPhoneNot-${urlCustomerPhoneNot}`, type: 'Customer Phone', ...decodeTextPattern(urlCustomerPhoneNot, true) });
     }
     if (urlCompany) {
-      filters.push({ id: `company-${urlCompany}`, type: 'Company', operator: '=', value: urlCompany });
+      filters.push({ id: `company-${urlCompany}`, type: 'Company', ...decodeTextPattern(urlCompany) });
     }
     if (urlCompanyNot) {
-      filters.push({ id: `companyNot-${urlCompanyNot}`, type: 'Company', operator: '≠', value: urlCompanyNot });
+      filters.push({ id: `companyNot-${urlCompanyNot}`, type: 'Company', ...decodeTextPattern(urlCompanyNot, true) });
     }
     if (urlCourier) {
       filters.push({ id: `courier-${urlCourier}`, type: 'Assigned courier', operator: '=', value: urlCourier, display: getCourierFilterLabel(urlCourier) });
@@ -551,10 +580,10 @@ const Orders: React.FC = () => {
       filters.push({ id: `sourceAdNot-${urlSourceAdNot}`, type: 'Source Ad', operator: '≠', value: urlSourceAdNot, display: getSourceAdLabel(urlSourceAdNot) });
     }
     if (urlCreatedByFilter && urlCreatedByFilter !== 'all') {
-      filters.push({ id: `createdBy-${urlCreatedByFilter}`, type: 'Created by', operator: '=', value: urlCreatedByFilter });
+      filters.push({ id: `createdBy-${urlCreatedByFilter}`, type: 'Created by', operator: '=', value: urlCreatedByFilter, display: getCreatorFilterLabel(urlCreatedByFilter) });
     }
     if (urlCreatedByNot) {
-      filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot });
+      filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot, display: getCreatorFilterLabel(urlCreatedByNot) });
     }
     if (urlSearch) {
       filters.push({ id: `search-${urlSearch}`, type: 'Orders', operator: 'contains', value: urlSearch, display: urlSearch });
@@ -580,6 +609,7 @@ const Orders: React.FC = () => {
     urlCreatedByFilter,
     urlCreatedByNot,
     urlSearch,
+    users,
     getSourceAdLabel,
   ]);
 
@@ -730,7 +760,7 @@ const Orders: React.FC = () => {
       toast.success('Order duplicated successfully');
     } catch (err) {
       console.error('Failed to duplicate order', err);
-      toast.error('Failed to duplicate order: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not duplicate the order. Please try again.');
     }
   };
 
@@ -836,7 +866,7 @@ const Orders: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to finalize order:', err);
-      toast.error('Failed to finalize order: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not finalize the order. Please try again.');
     }
   };
 
@@ -957,7 +987,7 @@ const Orders: React.FC = () => {
       setDeleteOrderTarget(null);
     } catch (error) {
       console.error('Failed to delete order:', error);
-      toast.error('Failed to delete order: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      toast.error(error instanceof Error ? error.message : 'Could not delete the order. Please try again.');
     }
   };
 
@@ -972,8 +1002,7 @@ const Orders: React.FC = () => {
   };
 
   const canAddPayment = (order: Order) => {
-    const status = getPaymentStatusLabel(order.paidAmount, order.total, order.history);
-    return status === 'Unpaid' || status === 'Partially paid' || status === 'Partially Paid';
+    return order.status !== OrderStatus.CANCELLED && order.paidAmount < getOrderSettlementTotal(order);
   };
 
   const openPayment = (order: Order) => {
@@ -1134,6 +1163,8 @@ const Orders: React.FC = () => {
           onApply={(appliedFilters) => {
             // Apply filters: map known types to query params, others to search
             const params: Record<string, string> = {};
+            const encodeTextValue = (filter: { operator: string; value: string }) =>
+              encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
             // keep existing pagination reset
             setPage(1);
 
@@ -1185,66 +1216,69 @@ const Orders: React.FC = () => {
               setCreatedByNot('');
             }
 
-            const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && f.operator === '=');
-            const orderIdNotFilter = appliedFilters.find(f => f.type === 'Order ID' && f.operator === '≠');
+            const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && (f.operator === '=' || f.operator === 'contains'));
+            const orderIdNotFilter = appliedFilters.find(f => f.type === 'Order ID' && (f.operator === '≠' || f.operator === 'does not contain'));
             if (orderIdFilter) {
-              setOrderNumber(orderIdFilter.value);
+              const encodedValue = encodeTextValue(orderIdFilter);
+              setOrderNumber(encodedValue);
               setOrderNumberNot('');
-              // Send as a LIKE pattern so small fragments match order numbers with prefixes/suffixes.
-              params.orderNumber = orderIdFilter.value.includes('%') ? orderIdFilter.value : `%${orderIdFilter.value}%`;
-              // If user provided a numeric fragment, also put it in `search` as a fallback
-              if (/^\d+$/.test(orderIdFilter.value)) {
-                params.search = (params.search ? params.search + ' ' : '') + orderIdFilter.value;
-              }
+              params.orderNumber = encodedValue;
             } else if (orderIdNotFilter) {
+              const encodedValue = encodeTextValue(orderIdNotFilter);
               setOrderNumber('');
-              setOrderNumberNot(orderIdNotFilter.value);
-              params.orderNumberNot = orderIdNotFilter.value.includes('%') ? orderIdNotFilter.value : `%${orderIdNotFilter.value}%`;
+              setOrderNumberNot(encodedValue);
+              params.orderNumberNot = encodedValue;
             } else {
               setOrderNumber('');
               setOrderNumberNot('');
             }
 
-            const customerNameFilter = appliedFilters.find(f => f.type === 'Customer Name' && f.operator === '=');
-            const customerNameNotFilter = appliedFilters.find(f => f.type === 'Customer Name' && f.operator === '≠');
+            const customerNameFilter = appliedFilters.find(f => f.type === 'Customer Name' && (f.operator === '=' || f.operator === 'contains'));
+            const customerNameNotFilter = appliedFilters.find(f => f.type === 'Customer Name' && (f.operator === '≠' || f.operator === 'does not contain'));
             if (customerNameFilter) {
-              setCustomerName(customerNameFilter.value);
+              const encodedValue = encodeTextValue(customerNameFilter);
+              setCustomerName(encodedValue);
               setCustomerNameNot('');
-              params.customerName = customerNameFilter.value.includes('%') ? customerNameFilter.value : `%${customerNameFilter.value}%`;
+              params.customerName = encodedValue;
             } else if (customerNameNotFilter) {
+              const encodedValue = encodeTextValue(customerNameNotFilter);
               setCustomerName('');
-              setCustomerNameNot(customerNameNotFilter.value);
-              params.customerNameNot = customerNameNotFilter.value.includes('%') ? customerNameNotFilter.value : `%${customerNameNotFilter.value}%`;
+              setCustomerNameNot(encodedValue);
+              params.customerNameNot = encodedValue;
             } else {
               setCustomerName('');
               setCustomerNameNot('');
             }
 
-            const customerPhoneFilter = appliedFilters.find(f => f.type === 'Customer Phone' && f.operator === '=');
-            const customerPhoneNotFilter = appliedFilters.find(f => f.type === 'Customer Phone' && f.operator === '≠');
+            const customerPhoneFilter = appliedFilters.find(f => f.type === 'Customer Phone' && (f.operator === '=' || f.operator === 'contains'));
+            const customerPhoneNotFilter = appliedFilters.find(f => f.type === 'Customer Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
             if (customerPhoneFilter) {
-              setCustomerPhone(customerPhoneFilter.value);
+              const encodedValue = encodeTextValue(customerPhoneFilter);
+              setCustomerPhone(encodedValue);
               setCustomerPhoneNot('');
-              params.customerPhone = customerPhoneFilter.value.includes('%') ? customerPhoneFilter.value : `%${customerPhoneFilter.value}%`;
+              params.customerPhone = encodedValue;
             } else if (customerPhoneNotFilter) {
+              const encodedValue = encodeTextValue(customerPhoneNotFilter);
               setCustomerPhone('');
-              setCustomerPhoneNot(customerPhoneNotFilter.value);
-              params.customerPhoneNot = customerPhoneNotFilter.value.includes('%') ? customerPhoneNotFilter.value : `%${customerPhoneNotFilter.value}%`;
+              setCustomerPhoneNot(encodedValue);
+              params.customerPhoneNot = encodedValue;
             } else {
               setCustomerPhone('');
               setCustomerPhoneNot('');
             }
 
-            const companyFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '=');
-            const companyNotFilter = appliedFilters.find(f => f.type === 'Company' && f.operator === '≠');
+            const companyFilter = appliedFilters.find(f => f.type === 'Company' && (f.operator === '=' || f.operator === 'contains'));
+            const companyNotFilter = appliedFilters.find(f => f.type === 'Company' && (f.operator === '≠' || f.operator === 'does not contain'));
             if (companyFilter) {
-              setCompany(companyFilter.value);
+              const encodedValue = encodeTextValue(companyFilter);
+              setCompany(encodedValue);
               setCompanyNot('');
-              params.company = companyFilter.value.includes('%') ? companyFilter.value : `%${companyFilter.value}%`;
+              params.company = encodedValue;
             } else if (companyNotFilter) {
+              const encodedValue = encodeTextValue(companyNotFilter);
               setCompany('');
-              setCompanyNot(companyNotFilter.value);
-              params.companyNot = companyNotFilter.value.includes('%') ? companyNotFilter.value : `%${companyNotFilter.value}%`;
+              setCompanyNot(encodedValue);
+              params.companyNot = encodedValue;
             } else {
               setCompany('');
               setCompanyNot('');
@@ -1338,12 +1372,14 @@ const Orders: React.FC = () => {
                   || canTrackSelectedOrder
                   || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
-                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.total, order.history);
+                const settlementTotal = getOrderSettlementTotal(order);
+                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, settlementTotal, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
                 const isRefunded = paymentStatusLabel === 'Refunded';
-                const isFullyPaid = !isPartiallyPaid && !isUnpaid && !isRefunded && order.paidAmount >= order.total;
-                const paidAmountTextColor = isPartiallyPaid ? 'text-amber-500' : isRefunded ? 'text-orange-500' : isUnpaid ? 'text-red-500' : 'text-green-500';
+                const isOverpaid = paymentStatusLabel === 'Overpaid';
+                const isFullyPaid = !isPartiallyPaid && !isUnpaid && !isRefunded && !isOverpaid && order.paidAmount >= settlementTotal;
+                const paidAmountTextColor = isPartiallyPaid ? 'text-amber-500' : (isRefunded || isOverpaid) ? 'text-orange-500' : isUnpaid ? 'text-red-500' : 'text-green-500';
                 return (
                 <tr 
                   key={order.id} 
@@ -1387,7 +1423,11 @@ const Orders: React.FC = () => {
                     </td>
                     <td className="px-6 py-5 text-right">
                       <span className="font-black text-gray-900 text-base">{formatCurrency(order.total)}</span>
-                      {isRefunded ? (
+                      {isOverpaid ? (
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
+                          Overpaid · refund due {formatCurrency(Math.max(order.paidAmount - settlementTotal, 0))}
+                        </p>
+                      ) : isRefunded ? (
                         <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
                           Refunded
                         </p>

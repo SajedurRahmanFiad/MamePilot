@@ -1,12 +1,12 @@
 import { theme } from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, MousePointerClick, RefreshCw, Users, TrendingUp, Monitor, LayoutGrid, Image as ImageIcon, FileJson, Calendar } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BarChart3, MousePointerClick, RefreshCw, Users, TrendingUp, Monitor, LayoutGrid, Image as ImageIcon, FileJson, Calendar } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { Card, Button, MetaAdsMoney } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { type FilterRange } from '../components/FilterBar';
-import { formatCurrency, ICONS } from '../constants';
+import { ICONS } from '../constants';
 import { formatDate, formatDateTimeParts } from '../utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMetaAd, useMetaAds, useMetaAdsSyncStatus, useMetaAdsSettings, useMetaAdInsightsDaily, useMetaAdInsightsDemographics, useMetaAdInsightsPlacements, useMetaAdInsightsDevices } from '../src/hooks/useQueries';
@@ -71,7 +71,10 @@ const getDateRange = (range: FilterRange, customDates: { from: string; to: strin
   }
 
   if (range === 'Custom') {
-    return { from: customDates.from, to: customDates.to };
+    const fallback = formatDate(today);
+    const from = customDates.from || customDates.to || fallback;
+    const to = customDates.to || customDates.from || fallback;
+    return from <= to ? { from, to } : { from: to, to: from };
   }
 
   return { from: '', to: '' };
@@ -88,7 +91,7 @@ const filterByDateRange = (items: any[], range: { from: string; to: string }): a
   });
 };
 
-const MetricCard: React.FC<{ label: string; value: string | number; hint?: string; icon?: React.ReactNode }> = ({ label, value, hint, icon }) => (
+const MetricCard: React.FC<{ label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: React.ReactNode }> = ({ label, value, hint, icon }) => (
   <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
     <div className="flex items-start justify-between gap-3">
       <div>
@@ -119,7 +122,9 @@ const CompactMetric: React.FC<{ label: string; value?: React.ReactNode; hint?: s
 );
 const MetaAdsList: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToastNotifications();
+  const restoredListState = (location.state as any)?.metaAdsListState || {};
   const [queryFilters, setQueryFilters] = useState({
     businessId: '',
     businessOperator: '=',
@@ -132,17 +137,18 @@ const MetaAdsList: React.FC = () => {
     search: '',
     searchOperator: 'contains',
     ...getDateRange('Last 7 days', { from: '', to: '' }),
+    ...(restoredListState.queryFilters || {}),
   });
-  const [dynamicFilters, setDynamicFilters] = useState<any[]>([]);
-  const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
-  const [customDates, setCustomDates] = useState({ from: '', to: '' });
-  const { data: metaAdsSettings } = useMetaAdsSettings();
+  const [dynamicFilters, setDynamicFilters] = useState<any[]>(restoredListState.dynamicFilters || []);
+  const [filterRange, setFilterRange] = useState<FilterRange>(restoredListState.filterRange || 'Last 7 days');
+  const [customDates, setCustomDates] = useState(restoredListState.customDates || { from: '', to: '' });
+  const { data: metaAdsSettings, isPending: settingsPending } = useMetaAdsSettings();
   const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
-  const { data, isPending, error, refetch } = useMetaAds(queryFilters);
+  const { data, isPending, error, refetch } = useMetaAds(queryFilters, isMetaAdsConfigured);
   const { data: syncStatus, refetch: refetchSyncStatus } = useMetaAdsSyncStatus(true);
   const syncMutation = useSyncMetaAds();
   const queryClient = useQueryClient();
-  const COOLDOWN_KEY = 'metaAdsCooldownEndAt';
+  const COOLDOWN_KEY = 'meta-ads-sync-cooldown-until';
   const [cooldownRemaining, setCooldownRemaining] = useState(() => {
     const saved = localStorage.getItem(COOLDOWN_KEY);
     if (saved) {
@@ -204,8 +210,14 @@ const MetaAdsList: React.FC = () => {
   const filterOptions = data?.filters || { businesses: [], adAccounts: [], campaigns: [], statuses: [] };
 
   const ads = useMemo(() => data?.ads || [], [data?.ads]);
-  const selectedBusinessId = useMemo(() => dynamicFilters.find((filter) => filter.type === 'Business')?.value || '', [dynamicFilters]);
-  const selectedAdAccountId = useMemo(() => dynamicFilters.find((filter) => filter.type === 'Ad Account')?.value || '', [dynamicFilters]);
+  const selectedBusinessId = useMemo(() => {
+    const filter = dynamicFilters.find((item) => item.type === 'Business');
+    return filter?.operator === '=' ? filter.value : '';
+  }, [dynamicFilters]);
+  const selectedAdAccountId = useMemo(() => {
+    const filter = dynamicFilters.find((item) => item.type === 'Ad Account');
+    return filter?.operator === '=' ? filter.value : '';
+  }, [dynamicFilters]);
 
   const adAccounts = useMemo(() => {
     const rows = filterOptions.adAccounts || [];
@@ -226,19 +238,40 @@ const MetaAdsList: React.FC = () => {
     const accounts = (adAccounts || []).map((account: any) => ({ value: String(account.id), label: String(account.name) }));
     const campaignOptions = (campaigns || []).map((campaign: any) => ({ value: String(campaign.id), label: String(campaign.name) }));
     const statuses = (filterOptions.statuses || []).map((status: string) => ({ value: String(status), label: prettyStatus(status) }));
-    const adNames = Array.from(new Set((ads || []).map((ad: any) => String(ad.name || '').trim()).filter(Boolean))).map((name) => ({ value: name, label: name }));
+    const adNames = Array.from(new Set<string>((ads || []).map((ad: any) => String(ad.name || '').trim()).filter(Boolean))).map((name) => ({ value: name, label: name }));
 
     return [
       { type: 'Business', operators: ['=', '≠'] as const, values: businesses, defaultOperator: '=' as const },
       { type: 'Ad Account', operators: ['=', '≠'] as const, values: accounts, defaultOperator: '=' as const },
       { type: 'Campaign', operators: ['=', '≠'] as const, values: campaignOptions, defaultOperator: '=' as const },
       { type: 'Status', operators: ['=', '≠'] as const, values: statuses, defaultOperator: '=' as const },
-      { type: 'Ad Name', operators: ['=', '≠', 'contains'] as const, values: adNames, defaultOperator: 'contains' as const, allowCustomValue: true },
+      { type: 'Ad Name', operators: ['=', '≠', 'contains', 'does not contain'] as const, values: adNames, defaultOperator: 'contains' as const, allowCustomValue: true },
     ];
   }, [adAccounts, campaigns, filterOptions.businesses, filterOptions.statuses, ads]);
 
   const applyDynamicFilters = (nextFilters: any[]) => {
-    const normalizedFilters = nextFilters.filter((filter) => ['Business', 'Ad Account', 'Campaign', 'Status', 'Ad Name'].includes(filter.type));
+    let normalizedFilters = nextFilters.filter((filter) => ['Business', 'Ad Account', 'Campaign', 'Status', 'Ad Name'].includes(filter.type));
+    const nextBusinessFilter = normalizedFilters.find((filter) => filter.type === 'Business');
+    const positiveBusinessId = nextBusinessFilter?.operator === '=' ? String(nextBusinessFilter.value) : '';
+    if (positiveBusinessId) {
+      const allowedAccountIds = new Set(
+        (filterOptions.adAccounts || [])
+          .filter((account: any) => String(account.businessId) === positiveBusinessId)
+          .map((account: any) => String(account.id))
+      );
+      normalizedFilters = normalizedFilters.filter((filter) => filter.type !== 'Ad Account' || allowedAccountIds.has(String(filter.value)));
+    }
+    const nextAdAccountFilter = normalizedFilters.find((filter) => filter.type === 'Ad Account');
+    const positiveAdAccountId = nextAdAccountFilter?.operator === '=' ? String(nextAdAccountFilter.value) : '';
+    if (positiveBusinessId || positiveAdAccountId) {
+      const allowedCampaignIds = new Set(
+        (filterOptions.campaigns || [])
+          .filter((campaign: any) => (!positiveBusinessId || String(campaign.businessId) === positiveBusinessId)
+            && (!positiveAdAccountId || String(campaign.adAccountId) === positiveAdAccountId))
+          .map((campaign: any) => String(campaign.id))
+      );
+      normalizedFilters = normalizedFilters.filter((filter) => filter.type !== 'Campaign' || allowedCampaignIds.has(String(filter.value)));
+    }
     const businessFilter = normalizedFilters.find((filter) => filter.type === 'Business');
     const adAccountFilter = normalizedFilters.find((filter) => filter.type === 'Ad Account');
     const campaignFilter = normalizedFilters.find((filter) => filter.type === 'Campaign');
@@ -267,6 +300,12 @@ const MetaAdsList: React.FC = () => {
 
   const handleFilterRangeChange = (nextRange: FilterRange) => {
     setFilterRange(nextRange);
+    if (nextRange === 'Custom' && !customDates.from && !customDates.to) {
+      const todayRange = getDateRange('Today', customDates);
+      setCustomDates(todayRange);
+      applyDateRange(nextRange, todayRange);
+      return;
+    }
     applyDateRange(nextRange, customDates);
   };
 
@@ -290,30 +329,40 @@ const MetaAdsList: React.FC = () => {
 
   const handleSync = useCallback(async () => {
     if (cooldownRemaining > 0 || syncMutation.isPending) return;
-    const toastId = toast.loading('Starting Meta Ads sync...');
+    const toastId = toast.loading('Refreshing Meta Ads...');
     try {
       const result = await syncMutation.mutateAsync();
       if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
         applyCooldown(result.cooldownRemainingSeconds);
-        toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+        toast.update(toastId, 'Please wait ' + result.cooldownRemainingSeconds + ' seconds before refreshing again.', 'error');
       } else if (result?.started) {
         // Background sync started — don't await completion, just apply cooldown and poll
         applyCooldown(120);
-        toast.update(toastId, 'Sync started. Data will refresh automatically when ready.', 'success');
+        toast.update(toastId, 'Your latest Meta Ads results will appear here shortly.', 'success');
       } else {
         // Synchronous fallback completed
         applyCooldown(120);
-        toast.update(toastId, 'Meta Ads synced successfully.', 'success');
+        toast.update(toastId, 'Meta Ads results are up to date.', 'success');
         await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
         await refetch();
         await refetchSyncStatus();
       }
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to sync Meta Ads.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not refresh Meta Ads results. Please try again.', 'error');
     }
   }, [cooldownRemaining, syncMutation, toast, refetch, refetchSyncStatus, applyCooldown, queryClient]);
 
   const summary = data?.summary || {};
+  const summaryCurrency = String(summary.currency || metaAdsSettings?.displayCurrencyCode || 'BDT').toUpperCase();
+  const mixedCurrencies = Boolean(summary.mixedCurrencies);
+  const metricWindowLabel = summary.metricsWindow === 'lifetime' ? 'lifetime' : 'selected date range';
+  const lastSyncedLabel = syncStatus?.lastSyncedAt
+    ? new Date(syncStatus.lastSyncedAt).toLocaleString()
+    : null;
+
+  if (settingsPending && !metaAdsSettings) {
+    return <div className="h-64 animate-pulse rounded-xl border border-gray-100 bg-white" aria-label="Loading Meta Ads settings" />;
+  }
 
   if (!isMetaAdsConfigured) {
     return (
@@ -334,7 +383,7 @@ const MetaAdsList: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex-1">
           <FilterBar
             filterRange={filterRange}
@@ -344,6 +393,17 @@ const MetaAdsList: React.FC = () => {
             compact
             ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'Custom']}
           />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-500">
+            <span>{isPending && !data ? 'Loading ads…' : `${formatNumber(summary.totalAds ?? ads.length)} matching ads`}</span>
+            <span aria-hidden="true">·</span>
+            <span>Cards show {metricWindowLabel} metrics</span>
+            {lastSyncedLabel && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>Synced {lastSyncedLabel}</span>
+              </>
+            )}
+          </div>
         </div>
         <Button
           type="button"
@@ -366,17 +426,50 @@ const MetaAdsList: React.FC = () => {
           className="w-full"
         />
       </div>
+
+      {mixedCurrencies && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span>
+            Matching ads use multiple currencies ({(summary.currencies || []).join(', ')}). Combined spend and ROAS are hidden; filter to one ad account for comparable money metrics.
+          </span>
+        </div>
+      )}
+      {isPending && !data ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5" aria-label="Loading Meta Ads summary">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-xl border border-gray-100 bg-white" />
+          ))}
+        </div>
+      ) : error && !data ? null : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Active Campaigns" value={summary.activeCampaigns ?? 0} icon={<BarChart3 size={18} />} hint="Campaigns currently delivering" />
-        <MetricCard label="Active Ad Sets" value={summary.activeAdSets ?? 0} icon={ICONS.Banking} hint="Ad sets with active targeting" />
-        <MetricCard label="Active Ads" value={summary.activeAds ?? 0} icon={ICONS.Check} hint="Individual ads currently live" />
-        <MetricCard label="Total Spend" value={<MetaAdsMoney amount={summary.filteredSpend ?? 0} />} icon={ICONS.Reports} hint="Spend for the selected date range" />
-        <MetricCard label="Current ROAS" value={summary.currentRoas == null ? '-' : Number(summary.currentRoas).toFixed(2)} hint="Return on Ad Spend" />
+        <MetricCard label="Active Campaigns" value={summary.activeCampaigns ?? 0} icon={<BarChart3 size={18} />} hint="Active campaigns in the filtered ad set" />
+        <MetricCard label="Active Ad Sets" value={summary.activeAdSets ?? 0} icon={ICONS.Banking} hint="Active ad sets in the filtered ad set" />
+        <MetricCard label="Active Ads" value={summary.activeAds ?? 0} icon={ICONS.Check} hint="Matching ads currently active" />
+        <MetricCard
+          label={summary.metricsWindow === 'lifetime' ? 'Lifetime Spend' : 'Range Spend'}
+          value={mixedCurrencies ? '—' : <MetaAdsMoney amount={summary.filteredSpend ?? 0} nativeCode={summaryCurrency} />}
+          icon={ICONS.Reports}
+          hint={summary.metricsWindow === 'lifetime' ? 'Lifetime total reported by Meta' : 'Spend inside the selected date range'}
+        />
+        <MetricCard
+          label={summary.metricsWindow === 'lifetime' ? 'Lifetime Purchase ROAS' : 'Range Purchase ROAS'}
+          value={summary.currentRoas == null ? '—' : `${Number(summary.currentRoas).toFixed(2)}x`}
+          hint={mixedCurrencies
+            ? 'Unavailable across mixed currencies'
+            : Number(summary.filteredSpend || 0) <= 0
+              ? 'No spend in this period'
+              : summary.currentRoas == null
+                ? 'Unavailable until purchase-value insights are synced'
+                : 'Purchase value ÷ spend; spend-weighted, not an ad average'}
+        />
       </div>
+      )}
 
       {error && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
-          {error.message}
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+          <span>{error.message}</span>
+          <button type="button" onClick={() => refetch()} className="shrink-0 underline">Retry</button>
         </div>
       )}
 
@@ -386,17 +479,25 @@ const MetaAdsList: React.FC = () => {
             <div key={index} className="h-60 animate-pulse rounded-xl border border-gray-100 bg-white" />
           ))}
         </div>
-      ) : ads.length === 0 ? (
+      ) : error && ads.length === 0 ? null : ads.length === 0 ? (
         <Card elevated className="p-8 text-center">
           <p className="text-sm font-semibold text-gray-500">No Meta ads found for the selected filters.</p>
+          <p className="mt-1 text-xs text-gray-400">Try All Time, clear a filter, or sync Meta to refresh daily insights.</p>
         </Card>
       ) : (
+        <>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {ads.map((ad: any) => (
             <button
               type="button"
               key={ad.id}
-              onClick={() => navigate(`/meta-ads/${ad.id}`)}
+              onClick={() => navigate(`/meta-ads/${ad.id}`, {
+                state: {
+                  from: '/meta-ads',
+                  backLabel: 'Meta Ads',
+                  metaAdsListState: { queryFilters, dynamicFilters, filterRange, customDates },
+                },
+              })}
               className="group overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
             >
               <div className="relative aspect-[16/9] bg-gray-100">
@@ -419,7 +520,11 @@ const MetaAdsList: React.FC = () => {
                     </span>
                   </div>
                 )}
-                <div className="mt-2.5 grid grid-cols-3 gap-2 border-t border-gray-100 pt-2.5 text-center">
+                <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-gray-100 pt-2.5 text-center sm:grid-cols-4">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Spend</p>
+                    <p className="text-sm font-bold text-gray-900"><MetaAdsMoney amount={ad.spend ?? 0} nativeCode={ad.adAccountCurrency} compact /></p>
+                  </div>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Impressions</p>
                     <p className="text-sm font-bold text-gray-900">{formatNumber(ad.impressions ?? 0)}</p>
@@ -437,6 +542,12 @@ const MetaAdsList: React.FC = () => {
             </button>
           ))}
         </div>
+        {(summary.totalAds ?? 0) > ads.length && (
+          <p className="text-center text-xs font-semibold text-amber-700">
+            Showing the first {formatNumber(ads.length)} of {formatNumber(summary.totalAds)} matching ads. Narrow the filters to see a specific ad.
+          </p>
+        )}
+        </>
       )}
     </div>
   );
@@ -466,16 +577,16 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
   const navState = getPreservedRouteState(location.state);
   const backLabel = navState.backLabel ? `Back to ${navState.backLabel}` : 'Back to Meta Ads';
   const backLink = navState.from || '/meta-ads';
+  const handleBack = () => navigate(backLink, { state: location.state });
   const { data: ad, isPending, error } = useMetaAd(id);
-  const [showRawMetrics, setShowRawMetrics] = useState(false);
   const [activeTab, setActiveTab] = useState<AdDetailsTab>('overview');
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
 
-  const { data: dailyData } = useMetaAdInsightsDaily(id);
-  const { data: demographicsData } = useMetaAdInsightsDemographics(id);
-  const { data: placementsData } = useMetaAdInsightsPlacements(id);
-  const { data: devicesData } = useMetaAdInsightsDevices(id);
+  const { data: dailyData, isPending: dailyPending } = useMetaAdInsightsDaily(id);
+  const { data: demographicsData } = useMetaAdInsightsDemographics(id, activeTab === 'audience');
+  const { data: placementsData } = useMetaAdInsightsPlacements(id, activeTab === 'placements');
+  const { data: devicesData } = useMetaAdInsightsDevices(id, activeTab === 'placements');
 
   const dailyInsights: any[] = dailyData?.data || [];
   const demographicsInsights: any[] = demographicsData?.data || [];
@@ -490,22 +601,32 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
 
   // Compute KPIs from filtered daily insights when a date range is active
   const filteredMetrics = useMemo(() => {
-    if (!isDateFiltered || filteredDailyInsights.length === 0) return null;
-    const agg = { spend: 0, impressions: 0, clicks: 0, reach: 0, conversions: 0, results: 0 };
+    if (!isDateFiltered) return null;
+    const agg = { spend: 0, impressions: 0, clicks: 0, reach: 0, conversions: 0, purchaseValue: 0 };
+    let purchaseMetricRows = 0;
     filteredDailyInsights.forEach((row: any) => {
       agg.spend += row.spend || 0;
       agg.impressions += row.impressions || 0;
       agg.clicks += row.clicks || 0;
       agg.reach += row.reach || 0;
       agg.conversions += row.conversions || 0;
-      agg.results += row.results || 0;
+      if (Object.prototype.hasOwnProperty.call(row, 'purchaseValue')) {
+        agg.purchaseValue += Number(row.purchaseValue || 0);
+        purchaseMetricRows += 1;
+      } else if (row.roas != null) {
+        agg.purchaseValue += Number(row.spend || 0) * Number(row.roas || 0);
+        purchaseMetricRows += 1;
+      }
     });
     const ctr = agg.impressions > 0 ? (agg.clicks / agg.impressions) * 100 : 0;
-    const roas = agg.spend > 0 && metrics.roas != null ? metrics.roas : null;
-    return { ...agg, ctr, roas };
-  }, [isDateFiltered, filteredDailyInsights, metrics.roas]);
+    const roas = agg.spend > 0 && purchaseMetricRows === filteredDailyInsights.length
+      ? agg.purchaseValue / agg.spend
+      : null;
+    return { ...agg, ctr, roas, results: null, reachIsSummed: true };
+  }, [isDateFiltered, filteredDailyInsights]);
 
   const displayMetrics = filteredMetrics || metrics;
+  const dateMetricsLoading = isDateFiltered && dailyPending;
 
   const dailyError: string | undefined = dailyData?.error;
   const demographicsError: string | undefined = demographicsData?.error;
@@ -520,7 +641,7 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
     return (
       <Card elevated className="p-8 text-center">
         <p className="text-sm font-semibold text-red-600">{error?.message || 'Meta ad not found.'}</p>
-        <Button type="button" variant="outline" className="mt-4" onClick={() => navigate(backLink)}>{backLabel}</Button>
+        <Button type="button" variant="outline" className="mt-4" onClick={handleBack}>{backLabel}</Button>
       </Card>
     );
   }
@@ -531,6 +652,9 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
 
   const handleFilterRangeChange = (nextRange: FilterRange) => {
     setFilterRange(nextRange);
+    if (nextRange === 'Custom' && !customDates.from && !customDates.to) {
+      setCustomDates(getDateRange('Today', customDates));
+    }
   };
 
   const handleCustomDatesChange = (nextCustomDates: { from: string; to: string }) => {
@@ -581,7 +705,7 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
       <div>
         <button
           type="button"
-          onClick={() => navigate(backLink)}
+          onClick={handleBack}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900"
         >
           <ArrowLeft size={16} />
@@ -600,13 +724,41 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
         </div>
       </div>
 
+      <Card elevated className="p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-2">
+            <Calendar size={17} className="mt-0.5 shrink-0 text-blue-600" />
+            <div>
+              <p className="text-sm font-black text-gray-900">Performance period</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Applies to the KPI cards and Trends. Audience and placement breakdowns remain lifetime views. Daily history covers the latest 90 days.
+              </p>
+            </div>
+          </div>
+          <FilterBar
+            filterRange={filterRange}
+            setFilterRange={handleFilterRangeChange}
+            customDates={customDates}
+            setCustomDates={handleCustomDatesChange}
+            compact
+            ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'Custom']}
+          />
+        </div>
+      </Card>
+
+      {isDateFiltered && !dailyPending && filteredDailyInsights.length === 0 && (
+        <div className="rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
+          No daily insights were found in this period. Range metrics are shown as zero or unavailable—not replaced with lifetime totals.
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <MetricCard label="Total Spend" value={<MetaAdsMoney amount={displayMetrics.spend || 0} nativeCode={ad.adAccountCurrency} />} icon={ICONS.Reports} hint={isDateFiltered ? 'Spend in selected period' : 'Cumulative spend this period'} />
-        <MetricCard label="Impressions" value={formatNumber(displayMetrics.impressions)} icon={<BarChart3 size={18} />} hint={isDateFiltered ? 'Impressions in selected period' : 'Times your ad was shown'} />
-        <MetricCard label="Clicks" value={formatNumber(displayMetrics.clicks)} icon={<MousePointerClick size={18} />} hint={isDateFiltered ? 'Clicks in selected period' : 'Total link clicks on your ad'} />
-        <MetricCard label="CTR" value={`${Number(displayMetrics.ctr || 0).toFixed(2)}%`} hint="Click-Through Rate" />
-        <MetricCard label="ROAS" value={displayMetrics.roas == null ? '-' : `${Number(displayMetrics.roas).toFixed(2)}x`} hint="Return on Ad Spend" />
+        <MetricCard label={isDateFiltered ? 'Range Spend' : 'Lifetime Spend'} value={dateMetricsLoading ? '…' : <MetaAdsMoney amount={displayMetrics.spend || 0} nativeCode={ad.adAccountCurrency} />} icon={ICONS.Reports} hint={isDateFiltered ? 'Spend in selected period' : 'Lifetime spend reported by Meta'} />
+        <MetricCard label="Impressions" value={dateMetricsLoading ? '…' : formatNumber(displayMetrics.impressions)} icon={<BarChart3 size={18} />} hint={isDateFiltered ? 'Impressions in selected period' : 'Times your ad was shown'} />
+        <MetricCard label="Clicks" value={dateMetricsLoading ? '…' : formatNumber(displayMetrics.clicks)} icon={<MousePointerClick size={18} />} hint="All clicks reported by Meta" />
+        <MetricCard label="CTR" value={dateMetricsLoading ? '…' : `${Number(displayMetrics.ctr || 0).toFixed(2)}%`} hint="Clicks ÷ impressions" />
+        <MetricCard label="Purchase ROAS" value={dateMetricsLoading ? '…' : displayMetrics.roas == null ? '—' : `${Number(displayMetrics.roas).toFixed(2)}x`} hint="Meta purchase value ÷ spend" />
       </div>
 
       {/* Tabs */}
@@ -687,11 +839,15 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
           <Card elevated className="p-5">
             <h2 className="text-lg font-black text-gray-900">More Metrics</h2>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              <CompactMetric label="Reach" value={formatNumber(displayMetrics.reach)} hint="Unique people who saw your ad" />
-              <CompactMetric label="CPC" value={displayMetrics.clicks > 0 ? <MetaAdsMoney amount={displayMetrics.spend / displayMetrics.clicks} nativeCode={ad.adAccountCurrency} /> : '-'} hint="Cost Per Click" />
-              <CompactMetric label="CPM" value={displayMetrics.impressions > 0 ? <MetaAdsMoney amount={(displayMetrics.spend / displayMetrics.impressions) * 1000} nativeCode={ad.adAccountCurrency} /> : '-'} hint="Cost Per 1,000 Impressions" />
-              <CompactMetric label="Conversions" value={displayMetrics.conversions == null || displayMetrics.conversions === 0 ? '-' : formatNumber(displayMetrics.conversions)} hint="Completed purchase or sign-up actions" />
-              <CompactMetric label="Results" value={displayMetrics.results == null || displayMetrics.results === 0 ? '-' : formatNumber(displayMetrics.results)} hint="Actions matching your campaign objective" />
+              <CompactMetric
+                label={displayMetrics.reachIsSummed ? 'Daily Reach Total' : 'Reach'}
+                value={dateMetricsLoading ? '…' : formatNumber(displayMetrics.reach)}
+                hint={displayMetrics.reachIsSummed ? 'Daily reach added together; people may repeat across days' : 'People reached for this lifetime ad insight'}
+              />
+              <CompactMetric label="CPC" value={dateMetricsLoading ? '…' : displayMetrics.clicks > 0 ? <MetaAdsMoney amount={displayMetrics.spend / displayMetrics.clicks} nativeCode={ad.adAccountCurrency} /> : '—'} hint="Spend ÷ clicks" />
+              <CompactMetric label="CPM" value={dateMetricsLoading ? '…' : displayMetrics.impressions > 0 ? <MetaAdsMoney amount={(displayMetrics.spend / displayMetrics.impressions) * 1000} nativeCode={ad.adAccountCurrency} /> : '—'} hint="Spend per 1,000 impressions" />
+              <CompactMetric label="Conversions" value={dateMetricsLoading || displayMetrics.conversions == null ? '—' : formatNumber(displayMetrics.conversions)} hint="Prioritized purchase or lead action reported by Meta" />
+              <CompactMetric label="Reported Result" value={isDateFiltered || displayMetrics.results == null ? '—' : formatNumber(displayMetrics.results)} hint={isDateFiltered ? 'Not available from daily range insights' : 'Prioritized action stored from Meta'} />
             </div>
             {ad.placements && Object.keys(ad.placements).length > 0 && (
               <div className="mt-4">

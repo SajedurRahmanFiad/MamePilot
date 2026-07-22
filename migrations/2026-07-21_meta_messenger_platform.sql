@@ -1,0 +1,76 @@
+-- Meta Messenger Platform shared inbox for Facebook Page conversations.
+-- Message transport remains with Meta; these tables retain webhook history and Page configuration.
+
+CREATE TABLE IF NOT EXISTS messenger_settings (
+  id VARCHAR(64) NOT NULL,
+  page_access_token TEXT NULL,
+  page_id VARCHAR(64) NULL,
+  verify_token VARCHAR(255) NULL,
+  app_secret VARCHAR(500) NULL,
+  graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0',
+  page_name VARCHAR(191) NULL,
+  page_username VARCHAR(191) NULL,
+  page_picture_url VARCHAR(1000) NULL,
+  human_agent_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  subscribed TINYINT(1) NOT NULL DEFAULT 0,
+  subscribed_fields LONGTEXT NULL,
+  greeting VARCHAR(160) NULL,
+  get_started_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  ice_breakers_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS messenger_contacts (
+  id VARCHAR(64) NOT NULL,
+  psid VARCHAR(191) NOT NULL,
+  name VARCHAR(191) NULL,
+  first_name VARCHAR(100) NULL,
+  last_name VARCHAR(100) NULL,
+  profile_picture_url VARCHAR(1000) NULL,
+  locale VARCHAR(32) NULL,
+  unread_count INT NOT NULL DEFAULT 0,
+  last_message_preview VARCHAR(500) NULL,
+  last_message_type VARCHAR(32) NULL,
+  last_message_at DATETIME NULL,
+  last_user_message_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_messenger_contacts_psid (psid),
+  KEY idx_messenger_contacts_last_message (last_message_at),
+  KEY idx_messenger_contacts_unread (unread_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS messenger_messages (
+  id VARCHAR(64) NOT NULL,
+  contact_id VARCHAR(64) NOT NULL,
+  mid VARCHAR(255) NULL,
+  direction VARCHAR(16) NOT NULL,
+  message_type VARCHAR(32) NOT NULL DEFAULT 'text',
+  message_text LONGTEXT NULL,
+  attachment_url VARCHAR(1500) NULL,
+  attachment_id VARCHAR(255) NULL,
+  attachments_json LONGTEXT NULL,
+  media_mime_type VARCHAR(127) NULL,
+  file_name VARCHAR(255) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'received',
+  error_code VARCHAR(64) NULL,
+  error_message TEXT NULL,
+  reply_to_mid VARCHAR(255) NULL,
+  reaction VARCHAR(64) NULL,
+  reaction_actor VARCHAR(16) NULL,
+  quick_reply_payload VARCHAR(500) NULL,
+  quick_replies_json LONGTEXT NULL,
+  payload_json LONGTEXT NULL,
+  message_at DATETIME NOT NULL,
+  created_by VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_messenger_messages_mid (mid),
+  KEY idx_messenger_messages_contact_time (contact_id, message_at),
+  KEY idx_messenger_messages_status (status),
+  CONSTRAINT fk_messenger_messages_contact FOREIGN KEY (contact_id) REFERENCES messenger_contacts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

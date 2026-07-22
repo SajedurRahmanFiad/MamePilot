@@ -31,6 +31,10 @@ import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/com
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import WhatsAppSettingsPanel from '../components/WhatsAppSettingsPanel';
+import MessengerSettingsPanel from '../components/MessengerSettingsPanel';
+import WooCommerceSettingsPanel from '../components/WooCommerceSettingsPanel';
+import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -378,7 +382,7 @@ const SettingsPage: React.FC = () => {
     if (!result) return;
 
     if (result === 'connected') {
-      toast.success('Meta Ads connected and synchronized.');
+      toast.success('Meta Ads connected. Your latest results are ready.');
       queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
     } else if (result === 'error') {
       toast.error(message || 'Meta Ads connection failed.');
@@ -553,11 +557,11 @@ const SettingsPage: React.FC = () => {
         toast.update(toastId, 'Settings saved successfully!', 'success');
       }).catch((err) => {
         console.error('Failed to save settings:', err);
-        toast.update(toastId, 'Failed to save settings: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+        toast.update(toastId, err instanceof Error ? err.message : 'Could not save the settings. Please try again.', 'error');
       });
     } catch (err) {
       console.error('Failed to initiate settings save:', err);
-      toast.error('Failed to save settings: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not save the settings. Please try again.');
     }
   };
 
@@ -607,7 +611,7 @@ const SettingsPage: React.FC = () => {
       queryClient.setQueryData(['categories'], previousCategories);
       
       // Show error toast
-      toast.update(toastId, 'Failed to add category: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not add the category. Please try again.', 'error');
       
       // Reopen modal so user can try again
       setShowModal('category');
@@ -661,26 +665,26 @@ const SettingsPage: React.FC = () => {
 
   const handleSyncMetaAds = useCallback(async () => {
     if (metaAdsCooldown > 0 || syncMetaAdsMutation.isPending) return;
-    const toastId = toast.loading('Starting Meta Ads sync...');
+    const toastId = toast.loading('Refreshing Meta Ads...');
     try {
       const result = await syncMetaAdsMutation.mutateAsync();
       if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
         applyMetaCooldown(result.cooldownRemainingSeconds);
-        toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+        toast.update(toastId, 'Please wait ' + result.cooldownRemainingSeconds + ' seconds before refreshing again.', 'error');
       } else if (result?.started) {
         // Background sync started — don't await completion
         applyMetaCooldown(120);
-        toast.update(toastId, 'Sync started. Data will refresh automatically when ready.', 'success');
+        toast.update(toastId, 'Your latest Meta Ads results will appear here shortly.', 'success');
       } else {
         // Synchronous fallback completed
         applyMetaCooldown(120);
-        toast.update(toastId, 'Meta Ads synced successfully.', 'success');
+        toast.update(toastId, 'Meta Ads results are up to date.', 'success');
         await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
         await refetchMetaAdsSyncStatus();
         await refetchMetaAdsConnectionStatus();
       }
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to sync Meta Ads.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not refresh Meta Ads results. Please try again.', 'error');
     }
   }, [metaAdsCooldown, syncMetaAdsMutation, toast, queryClient, refetchMetaAdsSyncStatus, applyMetaCooldown]);
 
@@ -691,7 +695,7 @@ const SettingsPage: React.FC = () => {
       toast.success('Category deleted successfully!');
     } catch (err) {
       console.error('Failed to delete category:', err);
-      toast.error('Failed to delete category: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not delete the category. Please try again.');
     }
   };
 
@@ -738,7 +742,7 @@ const SettingsPage: React.FC = () => {
       queryClient.setQueryData(['paymentMethods'], previousPaymentMethods);
       
       // Show error toast
-      toast.update(toastId, 'Failed to add payment method: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not add the payment method. Please try again.', 'error');
       
       // Reopen modal so user can try again
       setShowModal('payment');
@@ -753,7 +757,7 @@ const SettingsPage: React.FC = () => {
       toast.success('Payment method deleted successfully!');
     } catch (err) {
       console.error('Failed to delete payment method:', err);
-      toast.error('Failed to delete payment method: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not delete the payment method. Please try again.');
     }
   };
 
@@ -803,7 +807,7 @@ const SettingsPage: React.FC = () => {
       queryClient.setQueryData(['units'], previousUnits);
       
       // Show error toast
-      toast.update(toastId, 'Failed to add unit: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not add the unit. Please try again.', 'error');
       
       // Reopen modal so user can try again
       setShowModal('unit');
@@ -818,7 +822,7 @@ const SettingsPage: React.FC = () => {
       toast.success('Unit deleted successfully!');
     } catch (err) {
       console.error('Failed to delete unit:', err);
-      toast.error('Failed to delete unit: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not delete the unit. Please try again.');
     }
   };
 
@@ -828,12 +832,16 @@ const SettingsPage: React.FC = () => {
     canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
     hasCapability('human_resources') && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
     hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
+    hasCapability('whatsapp') && hasAdminAccess(user?.role) ? { id: 'whatsapp', label: 'WhatsApp', icon: ICONS.WhatsApp } : null,
+    hasCapability('messenger') && hasAdminAccess(user?.role) ? { id: 'messenger', label: 'Messenger', icon: ICONS.Messenger } : null,
+    hasCapability('woocommerce') && hasAdminAccess(user?.role) ? { id: 'woocommerce', label: 'WooCommerce', icon: ICONS.Sales } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
     canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
     canEditPaymentMethods ? { id: 'units', label: 'Units', icon: ICONS.Products } : null,
     hasCapability('courier_automation') && canEditCourierSettings ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
     hasCapability('auto_calling') && hasAdminAccess(user?.role) ? { id: 'voice-survey', label: 'Voice Survey', icon: ICONS.Bell } : null,
+    hasAdminAccess(user?.role) ? { id: 'data-management', label: 'Import & Export', icon: ICONS.Download } : null,
   ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
 
@@ -871,13 +879,13 @@ const SettingsPage: React.FC = () => {
       <LoadingOverlay isLoading={loading} message="Loading settings..." />
       <div className="flex items-center justify-between">
         <div />
-        <Button
+        {!['meta-ads', 'whatsapp', 'messenger', 'woocommerce', 'voice-survey', 'data-management'].includes(activeTab) && <Button
           onClick={handleSave}
           variant="primary"
           size="md"
         >
           Save Changes
-        </Button>
+        </Button>}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
@@ -1689,6 +1697,11 @@ const SettingsPage: React.FC = () => {
               </section>
             </div>
           )}
+
+          {activeTab === 'whatsapp' && <WhatsAppSettingsPanel />}
+          {activeTab === 'messenger' && <MessengerSettingsPanel />}
+          {activeTab === 'woocommerce' && <WooCommerceSettingsPanel companyPages={companySettings.pages} />}
+          {activeTab === 'data-management' && <DataManagementSettingsPanel />}
 
           {activeTab === 'voice-survey' && (
             <div className="space-y-8 animate-in fade-in duration-300">

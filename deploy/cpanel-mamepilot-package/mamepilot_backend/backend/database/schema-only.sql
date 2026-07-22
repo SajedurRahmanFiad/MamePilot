@@ -2,9 +2,9 @@
 
 -- Generated from backend/database/schema.sql plus migrations/*.sql.
 
--- Contains additive DDL only: no seed inserts and no business-row updates.
+-- Contains row-preserving DDL only: no seed inserts and no business-row updates.
 
--- Helper procedures make additive column and index upgrades idempotent on
+-- Helper procedures make row-preserving column and index changes idempotent on
 -- MariaDB and MySQL versions that do not support every IF NOT EXISTS form.
 DROP PROCEDURE IF EXISTS sp_add_col;
 DELIMITER $$
@@ -38,6 +38,38 @@ BEGIN
 END $$
 DELIMITER ;
 
+DROP PROCEDURE IF EXISTS sp_create_unique_idx;
+DELIMITER $$
+CREATE PROCEDURE sp_create_unique_idx(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_columns TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
+  ) THEN
+    SET @sql = CONCAT('CREATE UNIQUE INDEX `', p_index, '` ON `', p_table, '` (', p_columns, ')');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_drop_idx;
+DELIMITER $$
+CREATE PROCEDURE sp_drop_idx(IN p_table VARCHAR(64), IN p_index VARCHAR(64))
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` DROP INDEX `', p_index, '`');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
 -- MamePilot pure schema file.
 -- Safe for fresh installs and repeated production updates.
 -- This file must not contain INSERT/seed data.
@@ -51,6 +83,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(64) NOT NULL,
   role VARCHAR(32) NOT NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
   image LONGTEXT NULL,
   email VARCHAR(255) NULL,
   address TEXT NULL,
@@ -367,6 +400,11 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   renewal_date DATETIME NULL,
   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
   maintenance_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  maintenance_image_url VARCHAR(1000) NULL,
+  maintenance_caption VARCHAR(500) NULL,
+  maintenance_subtitle TEXT NULL,
+  maintenance_explanation TEXT NULL,
+  maintenance_ends_at DATETIME NULL,
   available_tiers LONGTEXT NULL,
   pricing_metadata LONGTEXT NULL,
   last_synced_at DATETIME NULL,
@@ -382,6 +420,11 @@ CALL sp_add_col('app_capability_settings', 'license_owner_token', 'VARCHAR(500) 
 CALL sp_add_col('app_capability_settings', 'tier_key', 'VARCHAR(64) NULL');
 CALL sp_add_col('app_capability_settings', 'override_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('app_capability_settings', 'maintenance_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('app_capability_settings', 'maintenance_image_url', 'VARCHAR(1000) NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_caption', 'VARCHAR(500) NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_subtitle', 'TEXT NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_explanation', 'TEXT NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_ends_at', 'DATETIME NULL');
 CALL sp_add_col('app_capability_settings', 'available_tiers', 'LONGTEXT NULL');
 CALL sp_add_col('app_capability_settings', 'pricing_metadata', 'LONGTEXT NULL');
 
@@ -791,6 +834,61 @@ CREATE TABLE IF NOT EXISTS orders (
   CONSTRAINT fk_orders_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS woocommerce_stores (
+  id VARCHAR(64) NOT NULL,
+  store_name VARCHAR(191) NOT NULL,
+  store_url VARCHAR(500) NOT NULL,
+  consumer_key VARCHAR(255) NULL,
+  consumer_secret VARCHAR(255) NULL,
+  webhook_secret VARCHAR(255) NULL,
+  webhook_base_url VARCHAR(1000) NULL,
+  webhook_id BIGINT NULL,
+  company_page_id VARCHAR(64) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(32) NULL,
+  last_sync_message VARCHAR(1000) NULL,
+  orders_synced INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_woocommerce_stores_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS woocommerce_order_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_order_id BIGINT NOT NULL,
+  wc_order_number VARCHAR(64) NULL,
+  order_id VARCHAR(64) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'imported',
+  message VARCHAR(1000) NULL,
+  payload_hash VARCHAR(64) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_order_links_store_order (store_id, wc_order_id),
+  KEY idx_wc_order_links_store_created (store_id, created_at),
+  CONSTRAINT fk_wc_order_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS woocommerce_product_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_product_id BIGINT NOT NULL,
+  wc_variation_id BIGINT NOT NULL DEFAULT 0,
+  sku VARCHAR(191) NULL,
+  product_id VARCHAR(64) NOT NULL,
+  auto_created TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_product_links_remote (store_id, wc_product_id, wc_variation_id),
+  KEY idx_wc_product_links_product (product_id),
+  CONSTRAINT fk_wc_product_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE,
+  CONSTRAINT fk_wc_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS bills (
   id VARCHAR(64) NOT NULL,
   bill_number VARCHAR(100) NOT NULL,
@@ -889,7 +987,17 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   unit_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   counted_statuses_snapshot LONGTEXT NULL,
   order_count_snapshot INT NOT NULL DEFAULT 0,
+  compensation_type VARCHAR(32) NOT NULL DEFAULT 'commission',
+  fixed_salary_snapshot DECIMAL(12,2) NULL,
+  base_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  bonus_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  deduction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  wallet_payout_id VARCHAR(64) NULL,
+  transaction_id VARCHAR(64) NULL,
+  account_id VARCHAR(64) NULL,
+  payment_method VARCHAR(255) NULL,
+  category_id VARCHAR(64) NULL,
   paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   paid_by VARCHAR(64) NOT NULL,
   note TEXT NULL,
@@ -898,9 +1006,27 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   PRIMARY KEY (id),
   KEY idx_payroll_payments_employee_paid_at (employee_id, paid_at),
   KEY idx_payroll_payments_period (period_start, period_end),
+  KEY idx_payroll_payments_employee_period (employee_id, period_start, period_end),
+  UNIQUE KEY uq_payroll_payments_wallet_payout (wallet_payout_id),
+  UNIQUE KEY uq_payroll_payments_transaction (transaction_id),
   CONSTRAINT fk_payroll_payments_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_payroll_payments_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('payroll_payments', 'compensation_type', 'VARCHAR(32) NOT NULL DEFAULT ''commission''');
+CALL sp_add_col('payroll_payments', 'fixed_salary_snapshot', 'DECIMAL(12,2) NULL');
+CALL sp_add_col('payroll_payments', 'base_amount_snapshot', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('payroll_payments', 'bonus_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('payroll_payments', 'deduction_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('payroll_payments', 'wallet_payout_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('payroll_payments', 'transaction_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('payroll_payments', 'account_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('payroll_payments', 'payment_method', 'VARCHAR(255) NULL');
+CALL sp_add_col('payroll_payments', 'category_id', 'VARCHAR(64) NULL');
+
+CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_employee_period', '`employee_id`, `period_start`, `period_end`');
+CALL sp_create_unique_idx('payroll_payments', 'uq_payroll_payments_wallet_payout', '`wallet_payout_id`');
+CALL sp_create_unique_idx('payroll_payments', 'uq_payroll_payments_transaction', '`transaction_id`');
 
 CREATE TABLE IF NOT EXISTS wallet_payouts (
   id VARCHAR(64) NOT NULL,
@@ -910,6 +1036,7 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   payment_method VARCHAR(255) NOT NULL,
   category_id VARCHAR(64) NOT NULL,
   transaction_id VARCHAR(64) NOT NULL,
+  payroll_payment_id VARCHAR(64) NULL,
   paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   paid_by VARCHAR(64) NOT NULL,
   note TEXT NULL,
@@ -917,6 +1044,7 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_wallet_payouts_transaction_id (transaction_id),
+  UNIQUE KEY uq_wallet_payouts_payroll_payment (payroll_payment_id),
   KEY idx_wallet_payouts_employee_paid_at (employee_id, paid_at),
   KEY idx_wallet_payouts_paid_at (paid_at),
   CONSTRAINT fk_wallet_payouts_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
@@ -927,6 +1055,9 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CALL sp_add_col('wallet_payouts', 'transaction_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('wallet_payouts', 'payroll_payment_id', 'VARCHAR(64) NULL');
+
+CALL sp_create_unique_idx('wallet_payouts', 'uq_wallet_payouts_payroll_payment', '`payroll_payment_id`');
 
 CREATE TABLE IF NOT EXISTS wallet_entries (
   id VARCHAR(64) NOT NULL,
@@ -937,20 +1068,31 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
   source_order_id VARCHAR(64) NULL,
   source_order_number VARCHAR(100) NULL,
   wallet_payout_id VARCHAR(64) NULL,
+  payroll_payment_id VARCHAR(64) NULL,
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by VARCHAR(64) NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_wallet_entries_order_entry_type (source_order_id, entry_type),
+  KEY idx_wallet_entries_order_entry_type (source_order_id, entry_type),
   UNIQUE KEY uq_wallet_entries_wallet_payout_id (wallet_payout_id),
   KEY idx_wallet_entries_employee_created_at (employee_id, created_at),
   KEY idx_wallet_entries_created_at (created_at),
   KEY idx_wallet_entries_entry_type (entry_type),
+  KEY idx_wallet_entries_payroll_payment (payroll_payment_id),
+  UNIQUE KEY uq_wallet_entries_payroll_entry (payroll_payment_id, entry_type),
   CONSTRAINT fk_wallet_entries_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_wallet_entries_order FOREIGN KEY (source_order_id) REFERENCES orders (id) ON DELETE SET NULL,
   CONSTRAINT fk_wallet_entries_wallet_payout FOREIGN KEY (wallet_payout_id) REFERENCES wallet_payouts (id) ON DELETE SET NULL,
   CONSTRAINT fk_wallet_entries_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('wallet_entries', 'payroll_payment_id', 'VARCHAR(64) NULL');
+
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_order_entry_type', '`source_order_id`, `entry_type`');
+
+CALL sp_drop_idx('wallet_entries', 'uq_wallet_entries_order_entry_type');
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_payroll_payment', '`payroll_payment_id`');
+CALL sp_create_unique_idx('wallet_entries', 'uq_wallet_entries_payroll_entry', '`payroll_payment_id`, `entry_type`');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
@@ -1151,12 +1293,20 @@ SELECT
   we.source_order_id AS orderId,
   COALESCE(we.source_order_number, o.order_number) AS orderNumber,
   we.wallet_payout_id AS payoutId,
+  COALESCE(we.payroll_payment_id, wp.payroll_payment_id) AS payrollPaymentId,
   wp.transaction_id AS transactionId,
   wp.account_id AS accountId,
   a.name AS accountName,
   wp.payment_method AS paymentMethod,
   wp.category_id AS categoryId,
   c.name AS categoryName,
+  pp.compensation_type AS compensationType,
+  pp.base_amount_snapshot AS baseAmountSnapshot,
+  pp.bonus_amount AS bonusAmount,
+  pp.deduction_amount AS deductionAmount,
+  pp.amount_snapshot AS netAmount,
+  pp.period_start AS periodStart,
+  pp.period_end AS periodEnd,
   we.note,
   we.created_at AS createdAt,
   we.created_by AS createdBy,
@@ -1168,6 +1318,7 @@ FROM wallet_entries we
 LEFT JOIN users employee_user ON employee_user.id = we.employee_id
 LEFT JOIN orders o ON o.id = we.source_order_id
 LEFT JOIN wallet_payouts wp ON wp.id = we.wallet_payout_id
+LEFT JOIN payroll_payments pp ON pp.id = COALESCE(we.payroll_payment_id, wp.payroll_payment_id)
 LEFT JOIN accounts a ON a.id = wp.account_id
 LEFT JOIN categories c ON c.id = wp.category_id
 LEFT JOIN users creator_user ON creator_user.id = we.created_by
@@ -1724,5 +1875,231 @@ CALL sp_add_col('units', 'is_fraction', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('products', 'unit_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('products', 'dynamic_pricing', 'LONGTEXT NULL');
 
+-- Migration: 2026-07-21_maintenance_content.sql
+CALL sp_add_col('app_capability_settings', 'maintenance_image_url', 'VARCHAR(1000) NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_caption', 'VARCHAR(500) NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_subtitle', 'TEXT NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_explanation', 'TEXT NULL');
+CALL sp_add_col('app_capability_settings', 'maintenance_ends_at', 'DATETIME NULL');
+
+-- Migration: 2026-07-21_meta_ads_metric_accuracy.sql
+CALL sp_add_col('meta_ads_insights_daily', 'purchase_value', 'DECIMAL(16,4) NULL AFTER `conversions`');
+CALL sp_add_col('meta_ads_insights_daily', 'purchase_roas', 'DECIMAL(14,6) NULL AFTER `purchase_value`');
+
+-- Migration: 2026-07-21_meta_messenger_platform.sql
+-- Meta Messenger Platform shared inbox for Facebook Page conversations.
+-- Message transport remains with Meta; these tables retain webhook history and Page configuration.
+
+CREATE TABLE IF NOT EXISTS messenger_settings (
+  id VARCHAR(64) NOT NULL,
+  page_access_token TEXT NULL,
+  page_id VARCHAR(64) NULL,
+  verify_token VARCHAR(255) NULL,
+  app_secret VARCHAR(500) NULL,
+  graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0',
+  page_name VARCHAR(191) NULL,
+  page_username VARCHAR(191) NULL,
+  page_picture_url VARCHAR(1000) NULL,
+  human_agent_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  subscribed TINYINT(1) NOT NULL DEFAULT 0,
+  subscribed_fields LONGTEXT NULL,
+  greeting VARCHAR(160) NULL,
+  get_started_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  ice_breakers_json LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS messenger_contacts (
+  id VARCHAR(64) NOT NULL,
+  psid VARCHAR(191) NOT NULL,
+  name VARCHAR(191) NULL,
+  first_name VARCHAR(100) NULL,
+  last_name VARCHAR(100) NULL,
+  profile_picture_url VARCHAR(1000) NULL,
+  locale VARCHAR(32) NULL,
+  unread_count INT NOT NULL DEFAULT 0,
+  last_message_preview VARCHAR(500) NULL,
+  last_message_type VARCHAR(32) NULL,
+  last_message_at DATETIME NULL,
+  last_user_message_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_messenger_contacts_psid (psid),
+  KEY idx_messenger_contacts_last_message (last_message_at),
+  KEY idx_messenger_contacts_unread (unread_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS messenger_messages (
+  id VARCHAR(64) NOT NULL,
+  contact_id VARCHAR(64) NOT NULL,
+  mid VARCHAR(255) NULL,
+  direction VARCHAR(16) NOT NULL,
+  message_type VARCHAR(32) NOT NULL DEFAULT 'text',
+  message_text LONGTEXT NULL,
+  attachment_url VARCHAR(1500) NULL,
+  attachment_id VARCHAR(255) NULL,
+  attachments_json LONGTEXT NULL,
+  media_mime_type VARCHAR(127) NULL,
+  file_name VARCHAR(255) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'received',
+  error_code VARCHAR(64) NULL,
+  error_message TEXT NULL,
+  reply_to_mid VARCHAR(255) NULL,
+  reaction VARCHAR(64) NULL,
+  reaction_actor VARCHAR(16) NULL,
+  quick_reply_payload VARCHAR(500) NULL,
+  quick_replies_json LONGTEXT NULL,
+  payload_json LONGTEXT NULL,
+  message_at DATETIME NOT NULL,
+  created_by VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_messenger_messages_mid (mid),
+  KEY idx_messenger_messages_contact_time (contact_id, message_at),
+  KEY idx_messenger_messages_status (status),
+  CONSTRAINT fk_messenger_messages_contact FOREIGN KEY (contact_id) REFERENCES messenger_contacts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-21_meta_whatsapp_cloud_api.sql
+-- Meta WhatsApp Cloud API inbox.
+-- Message transport comes from Meta; these tables retain webhook-delivered history for the inbox UI.
+
+CREATE TABLE IF NOT EXISTS whatsapp_settings (
+  id VARCHAR(64) NOT NULL,
+  access_token TEXT NULL,
+  phone_number_id VARCHAR(64) NULL,
+  business_account_id VARCHAR(64) NULL,
+  verify_token VARCHAR(255) NULL,
+  app_secret VARCHAR(500) NULL,
+  graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0',
+  display_phone_number VARCHAR(64) NULL,
+  verified_name VARCHAR(191) NULL,
+  quality_rating VARCHAR(32) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+  id VARCHAR(64) NOT NULL,
+  wa_id VARCHAR(32) NOT NULL,
+  phone_number VARCHAR(32) NOT NULL,
+  name VARCHAR(191) NULL,
+  profile_name VARCHAR(191) NULL,
+  unread_count INT NOT NULL DEFAULT 0,
+  last_message_preview VARCHAR(500) NULL,
+  last_message_type VARCHAR(32) NULL,
+  last_message_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_whatsapp_contacts_wa_id (wa_id),
+  KEY idx_whatsapp_contacts_last_message_at (last_message_at),
+  KEY idx_whatsapp_contacts_unread (unread_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+  id VARCHAR(64) NOT NULL,
+  contact_id VARCHAR(64) NOT NULL,
+  wa_message_id VARCHAR(255) NULL,
+  direction VARCHAR(16) NOT NULL,
+  message_type VARCHAR(32) NOT NULL DEFAULT 'text',
+  message_text LONGTEXT NULL,
+  caption TEXT NULL,
+  media_id VARCHAR(255) NULL,
+  media_url VARCHAR(500) NULL,
+  media_mime_type VARCHAR(127) NULL,
+  file_name VARCHAR(255) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'received',
+  error_code VARCHAR(64) NULL,
+  error_message TEXT NULL,
+  reply_to_message_id VARCHAR(255) NULL,
+  payload_json LONGTEXT NULL,
+  message_at DATETIME NOT NULL,
+  created_by VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_whatsapp_messages_wa_message_id (wa_message_id),
+  KEY idx_whatsapp_messages_contact_time (contact_id, message_at),
+  KEY idx_whatsapp_messages_status (status),
+  CONSTRAINT fk_whatsapp_messages_contact FOREIGN KEY (contact_id) REFERENCES whatsapp_contacts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-21_whatsapp_welcome_experience.sql
+CALL sp_add_col('whatsapp_settings', 'welcome_message', 'TEXT NULL AFTER quality_rating');
+CALL sp_add_col('whatsapp_settings', 'get_started_enabled', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER welcome_message');
+CALL sp_add_col('whatsapp_settings', 'ice_breakers_json', 'LONGTEXT NULL AFTER get_started_enabled');
+
+CALL sp_add_col('whatsapp_contacts', 'welcome_sent_at', 'DATETIME NULL AFTER last_message_at');
+
+CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_welcome_sent', 'welcome_sent_at');
+
+-- Migration: 2026-07-21_woocommerce_integration.sql
+CALL sp_add_col('users', 'is_system', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER role');
+
+CREATE TABLE IF NOT EXISTS woocommerce_stores (
+  id VARCHAR(64) NOT NULL,
+  store_name VARCHAR(191) NOT NULL,
+  store_url VARCHAR(500) NOT NULL,
+  consumer_key VARCHAR(255) NULL,
+  consumer_secret VARCHAR(255) NULL,
+  webhook_secret VARCHAR(255) NULL,
+  webhook_base_url VARCHAR(1000) NULL,
+  webhook_id BIGINT NULL,
+  company_page_id VARCHAR(64) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(32) NULL,
+  last_sync_message VARCHAR(1000) NULL,
+  orders_synced INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_woocommerce_stores_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('woocommerce_stores', 'webhook_base_url', 'VARCHAR(1000) NULL AFTER webhook_secret');
+
+CREATE TABLE IF NOT EXISTS woocommerce_order_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_order_id BIGINT NOT NULL,
+  wc_order_number VARCHAR(64) NULL,
+  order_id VARCHAR(64) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'imported',
+  message VARCHAR(1000) NULL,
+  payload_hash VARCHAR(64) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_order_links_store_order (store_id, wc_order_id),
+  KEY idx_wc_order_links_store_created (store_id, created_at),
+  CONSTRAINT fk_wc_order_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS woocommerce_product_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_product_id BIGINT NOT NULL,
+  wc_variation_id BIGINT NOT NULL DEFAULT 0,
+  sku VARCHAR(191) NULL,
+  product_id VARCHAR(64) NOT NULL,
+  auto_created TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_product_links_remote (store_id, wc_product_id, wc_variation_id),
+  KEY idx_wc_product_links_product (product_id),
+  CONSTRAINT fk_wc_product_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE,
+  CONSTRAINT fk_wc_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
+DROP PROCEDURE IF EXISTS sp_create_unique_idx;
+DROP PROCEDURE IF EXISTS sp_drop_idx;

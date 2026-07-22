@@ -82,7 +82,7 @@ const Transfer: React.FC = () => {
         });
       } catch (err) {
         console.error('Transfer failed:', err);
-        toast.error('Failed to complete transfer: ' + (err instanceof Error ? err.message : 'Unknown error'));
+        toast.error(err instanceof Error ? err.message : 'Could not complete the transfer. Please try again.');
       }
     }
   };

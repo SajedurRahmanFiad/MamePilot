@@ -11,6 +11,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const Banking: React.FC = () => {
   const { data: accounts = [], isLoading } = useAccounts();
@@ -20,18 +21,6 @@ const Banking: React.FC = () => {
   const toast = useToastNotifications();
   const { canCreateAccounts, canDeleteAccounts } = useRolePermissions();
 
-  const filteredAccounts = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return accounts;
-    }
-    
-    const query = searchQuery.toLowerCase();
-    return accounts.filter(account => 
-      account.name.toLowerCase().includes(query) ||
-      account.type.toLowerCase().includes(query)
-    );
-  }, [accounts, searchQuery]);
-  
   const [showAddModal, setShowAddModal] = useState(false);
   const [openDeleteMenu, setOpenDeleteMenu] = useState<string | null>(null);
   const [newAcc, setNewAcc] = useState<{ name: string; type: 'Bank' | 'Cash'; openingBalance: number }>({
@@ -44,6 +33,28 @@ const Banking: React.FC = () => {
   const [nameFilter, setNameFilter] = useState<string>('');
   const [nameNotFilter, setNameNotFilter] = useState<string>('');
   const [balanceFilter, setBalanceFilter] = useState<{ operator: string; value: string } | null>(null);
+  const filteredAccounts = useMemo(() => accounts.filter((account) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query && !account.name.toLowerCase().includes(query) && !account.type.toLowerCase().includes(query)) return false;
+    if (typeFilter && account.type !== typeFilter) return false;
+    if (typeNotFilter && account.type === typeNotFilter) return false;
+    const matchesText = (actual: string, encoded: string) => {
+      const normalized = actual.toLowerCase();
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      const expected = value.toLowerCase();
+      return contains ? normalized.includes(expected) : normalized === expected;
+    };
+    if (nameFilter && !matchesText(account.name, nameFilter)) return false;
+    if (nameNotFilter && matchesText(account.name, nameNotFilter)) return false;
+    if (balanceFilter && Number.isFinite(Number(balanceFilter.value))) {
+      const expected = Number(balanceFilter.value);
+      if (balanceFilter.operator === '=' && account.currentBalance !== expected) return false;
+      if (balanceFilter.operator === '≠' && account.currentBalance === expected) return false;
+      if (balanceFilter.operator === '<' && account.currentBalance >= expected) return false;
+      if (balanceFilter.operator === '>' && account.currentBalance <= expected) return false;
+    }
+    return true;
+  }), [accounts, searchQuery, typeFilter, typeNotFilter, nameFilter, nameNotFilter, balanceFilter]);
 
   const handleAddAccount = async () => {
     if (!newAcc.name) return;
@@ -95,7 +106,7 @@ const Banking: React.FC = () => {
       },
       {
         type: 'Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
       },
       {
@@ -107,7 +118,20 @@ const Banking: React.FC = () => {
     ];
   }, []);
 
-  const initialFilters = useMemo(() => [], []);
+  const initialFilters = useMemo(() => {
+    const filters: any[] = [];
+    if (typeFilter) filters.push({ id: 'type', type: 'Type', operator: '=', value: typeFilter });
+    if (typeNotFilter) filters.push({ id: 'type-not', type: 'Type', operator: '≠', value: typeNotFilter });
+    const addName = (id: string, encoded: string, negative = false) => {
+      if (!encoded) return;
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      filters.push({ id, type: 'Name', operator: contains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '='), value });
+    };
+    addName('name', nameFilter);
+    addName('name-not', nameNotFilter, true);
+    if (balanceFilter) filters.push({ id: 'balance', type: 'Balance', ...balanceFilter });
+    return filters;
+  }, [typeFilter, typeNotFilter, nameFilter, nameNotFilter, balanceFilter]);
 
   return (
     <div className="space-y-6">
@@ -118,15 +142,16 @@ const Banking: React.FC = () => {
             filterDefinitions={accountFilterDefinitions}
             initialFilters={initialFilters}
             onApply={(appliedFilters) => {
+              const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
               const typeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');
               const typeNotFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '≠');
               setTypeFilter(typeFilter?.value ?? '');
               setTypeNotFilter(typeNotFilter?.value ?? '');
 
-              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
-              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
-              setNameFilter(nameFilter?.value ?? '');
-              setNameNotFilter(nameNotFilter?.value ?? '');
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '=' || f.operator === 'contains'));
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setNameFilter(nameFilter ? encodeTextValue(nameFilter) : '');
+              setNameNotFilter(nameNotFilter ? encodeTextValue(nameNotFilter) : '');
 
               const balanceFilter = appliedFilters.find((f) => f.type === 'Balance');
               setBalanceFilter(balanceFilter ? { operator: balanceFilter.operator, value: balanceFilter.value } : null);

@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { fetchAccounts, fetchBootstrapSession, fetchSystemDefaults, loginUser, syncLicenseCapabilities } from '../services/supabaseQueries';
+import { fetchAccounts, fetchBootstrapSession, loginUser, syncLicenseCapabilities } from '../services/supabaseQueries';
 import { ApiError, clearAuthToken, getAuthToken, setAuthToken } from '../services/apiClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasAdminAccess, type CapabilitySettings, type PermissionsSettings, type User } from '../../types';
 import { db, saveDb } from '../../db';
+import { readSystemDefaultsCache } from '../utils/startupCache';
 
 export type StartupStatus = 'idle' | 'checking' | 'ready' | 'anonymous' | 'timeout' | 'offline' | 'error';
 
@@ -148,6 +149,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     db.currentUser = session.user;
     queryClient.setQueryData(['settings', 'permissions'], session.permissions);
     queryClient.setQueryData(['settings', 'capabilities'], session.capabilities);
+    const cachedDefaults = readSystemDefaultsCache();
+    if (cachedDefaults) {
+      queryClient.setQueryData(['settings', 'defaults'], cachedDefaults.data, { updatedAt: cachedDefaults.cachedAt });
+      db.settings.defaults = { ...db.settings.defaults, ...cachedDefaults.data };
+    }
     setStartupError(null);
     setStartupStatus('ready');
     saveDb();
@@ -178,11 +184,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         staleTime: 15 * 60 * 1000,
       }).catch(() => {});
 
-      queryClient.prefetchQuery({
-        queryKey: ['settings', 'defaults'],
-        queryFn: () => fetchSystemDefaults(),
-        staleTime: 60 * 60 * 1000,
-      }).catch(() => {});
     } catch (error) {
       console.warn('[Auth] Background prefetch failed to start:', error);
     }

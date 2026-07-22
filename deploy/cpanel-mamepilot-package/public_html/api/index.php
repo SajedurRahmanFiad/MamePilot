@@ -11,7 +11,11 @@ use App\Database;
 use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
+use App\MessengerApi;
 use App\OperationsApi;
+use App\OrderPostCreateEffects;
+use App\WhatsAppApi;
+use App\WooCommerceApi;
 
 $configuredRoot = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
 $appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
@@ -62,6 +66,10 @@ try {
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
     $autoCall = new AutoCallApi($database, $auth, $config);
+    $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
+    $whatsapp = new WhatsAppApi($database, $auth, $config);
+    $messenger = new MessengerApi($database, $auth, $config);
+    $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
 
     if ($action === 'health') {
         Http::ok(array_merge([
@@ -70,6 +78,13 @@ try {
             'db' => $database->fetchOne('SELECT 1 AS ok'),
             'appRoot' => $appRoot,
         ], AppVersion::info($appRoot)));
+        exit;
+    }
+
+    // Keep signed central notification delivery available even when normal
+    // write actions are restricted by maintenance/subscription state.
+    if ($action === 'receiveCentralNotification') {
+        Http::ok($master->receiveCentralNotification($payload));
         exit;
     }
 
@@ -101,7 +116,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $autoCall];
+    $services = [$master, $operations, $courier, $autoCall, $whatsapp, $messenger, $woocommerce];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
@@ -109,13 +124,7 @@ try {
 
         $result = $service->{$action}($payload);
         if ($action === 'createOrder' && is_array($result)) {
-            $orderId = trim((string) ($result['id'] ?? ''));
-            $orderStatus = trim((string) ($result['status'] ?? ''));
-            if ($orderId !== '' && $autoCall->queueOrderIfEligible($orderId, $orderStatus)) {
-                register_shutdown_function(static function () use ($autoCall): void {
-                    $autoCall->triggerSurveyBackgroundProcess();
-                });
-            }
+            $postCreateEffects->schedule($result);
         }
         Http::ok($result);
         exit;
@@ -125,16 +134,9 @@ try {
 } catch (\App\ApiException $exception) {
     Http::error(
         $exception->httpStatus(),
-        $exception->getMessage(),
+        Http::safeErrorMessage($exception->getMessage()),
         array_merge(['code' => $exception->errorCode()], $exception->extra())
     );
 } catch (Throwable $exception) {
-    $message = $exception->getMessage();
-    $status = 500;
-    if ($message === 'Authentication required.') {
-        $status = 401;
-    } elseif ($message === 'Admin access required.') {
-        $status = 403;
-    }
-    Http::error($status, $message);
+    Http::unexpectedError($exception);
 }

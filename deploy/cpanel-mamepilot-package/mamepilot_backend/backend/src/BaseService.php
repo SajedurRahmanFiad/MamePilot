@@ -8,6 +8,11 @@ abstract class BaseService
 {
     protected const DEFAULT_PAGE_SIZE = 25;
     protected const DEFAULT_PAYROLL_STATUSES = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange delivered', 'Cancelled'];
+    protected const ALL_ORDER_STATUSES = [
+        'Created', 'On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed',
+        'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned',
+        'Exchange cancelled', 'Returned', 'Cancelled',
+    ];
     protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed'];
     protected const BILL_STOCK_STATUSES = ['Received', 'Paid'];
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
@@ -77,7 +82,10 @@ abstract class BaseService
         'transfers.create',
         'reports.view',
         'wallet.view',
+        'settings.editWallet',
         'payroll.view',
+        'payroll.pay',
+        'payroll.deletePayments',
         'recycleBin.view',
         'users.view',
     ];
@@ -948,6 +956,16 @@ abstract class BaseService
      */
     protected function mapUser(array $row): array
     {
+        $fixedSalary = isset($row['fixed_salary']) || isset($row['fixedSalary'])
+            ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'] ?? 0)
+            : null;
+        // Historic employee rows defaulted is_commission_based to false while
+        // leaving salary empty. Preserve their operational commission behavior;
+        // fixed salary is authoritative only when a positive salary exists.
+        $isCommissionBased = !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? false)
+            || $fixedSalary === null
+            || $fixedSalary <= 0;
+
         return [
             'id' => (string) $row['id'],
             'name' => (string) ($row['name'] ?? ''),
@@ -962,10 +980,9 @@ abstract class BaseService
             'bloodGroup' => $this->nullableString($row['blood_group'] ?? $row['bloodGroup'] ?? null),
             'nationality' => $this->nullableString($row['nationality'] ?? null),
             'cv' => $this->nullableString($row['cv'] ?? null),
-            'isCommissionBased' => !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? false),
-            'fixedSalary' => isset($row['fixed_salary']) || isset($row['fixedSalary'])
-                ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'] ?? 0)
-                : null,
+            'isCommissionBased' => $isCommissionBased,
+            'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
+            'fixedSalary' => $fixedSalary,
             'createdAt' => $this->toIso($row['created_at'] ?? null),
             'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
             'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),
@@ -1178,6 +1195,29 @@ abstract class BaseService
     {
         $employee = $userMap[(string) ($row['employee_id'] ?? '')] ?? null;
         $payer = $userMap[(string) ($row['paid_by'] ?? '')] ?? null;
+        $compensationType = trim((string) ($row['compensation_type'] ?? $row['compensationType'] ?? ''));
+        if (!in_array($compensationType, ['commission', 'fixed'], true)) {
+            $employeeFixedSalary = ($employee['fixed_salary'] ?? $employee['fixedSalary'] ?? null) !== null
+                ? (float) ($employee['fixed_salary'] ?? $employee['fixedSalary'])
+                : null;
+            $isCommissionBased = !empty($employee['is_commission_based'] ?? $employee['isCommissionBased'] ?? false)
+                || $employeeFixedSalary === null
+                || $employeeFixedSalary <= 0;
+            $compensationType = $isCommissionBased ? 'commission' : 'fixed';
+        }
+        $netAmount = (float) ($row['amount_snapshot'] ?? $row['amountSnapshot'] ?? 0);
+        $baseAmount = array_key_exists('base_amount_snapshot', $row) || array_key_exists('baseAmountSnapshot', $row)
+            ? (float) ($row['base_amount_snapshot'] ?? $row['baseAmountSnapshot'] ?? 0)
+            : $netAmount;
+        $isLegacySnapshot = $baseAmount === 0.0
+            && $netAmount > 0
+            && (float) ($row['bonus_amount'] ?? $row['bonusAmount'] ?? 0) === 0.0
+            && (float) ($row['deduction_amount'] ?? $row['deductionAmount'] ?? 0) === 0.0
+            && trim((string) ($row['wallet_payout_id'] ?? $row['walletPayoutId'] ?? '')) === ''
+            && trim((string) ($row['transaction_id'] ?? $row['transactionId'] ?? '')) === '';
+        if ($isLegacySnapshot) {
+            $baseAmount = $netAmount;
+        }
 
         return [
             'id' => (string) $row['id'],
@@ -1194,7 +1234,23 @@ abstract class BaseService
                 true
             ),
             'orderCountSnapshot' => (int) ($row['order_count_snapshot'] ?? 0),
-            'amountSnapshot' => (float) ($row['amount_snapshot'] ?? 0),
+            'compensationType' => $compensationType,
+            'isCommissionBased' => $compensationType === 'commission',
+            'fixedSalarySnapshot' => ($row['fixed_salary_snapshot'] ?? $row['fixedSalarySnapshot'] ?? null) !== null
+                ? (float) ($row['fixed_salary_snapshot'] ?? $row['fixedSalarySnapshot'])
+                : null,
+            'baseAmountSnapshot' => $baseAmount,
+            'bonusAmount' => (float) ($row['bonus_amount'] ?? $row['bonusAmount'] ?? 0),
+            'deductionAmount' => (float) ($row['deduction_amount'] ?? $row['deductionAmount'] ?? 0),
+            'amountSnapshot' => $netAmount,
+            'netAmount' => $netAmount,
+            'walletPayoutId' => $this->nullableString($row['wallet_payout_id'] ?? $row['walletPayoutId'] ?? null),
+            'transactionId' => $this->nullableString($row['transaction_id'] ?? $row['transactionId'] ?? null),
+            'accountId' => $this->nullableString($row['account_id'] ?? $row['accountId'] ?? null),
+            'accountName' => $this->nullableString($row['account_name'] ?? $row['accountName'] ?? null),
+            'paymentMethod' => $this->nullableString($row['payment_method'] ?? $row['paymentMethod'] ?? null),
+            'categoryId' => $this->nullableString($row['category_id'] ?? $row['categoryId'] ?? null),
+            'categoryName' => $this->nullableString($row['category_name'] ?? $row['categoryName'] ?? null),
             'paidAt' => $this->toIso($row['paid_at'] ?? null) ?? (string) ($row['paid_at'] ?? ''),
             'paidBy' => (string) ($row['paid_by'] ?? ''),
             'paidByName' => $this->nullableString($row['paid_by_name'] ?? ($payer['name'] ?? null)),
@@ -1212,6 +1268,17 @@ abstract class BaseService
             'employeeId' => (string) ($row['employee_id'] ?? $row['employeeId'] ?? ''),
             'employeeName' => (string) ($row['employee_name'] ?? $row['employeeName'] ?? 'Unknown Employee'),
             'employeeRole' => (string) ($row['employee_role'] ?? $row['employeeRole'] ?? 'Employee'),
+            'compensationType' => (string) ($row['compensation_type'] ?? $row['compensationType'] ?? 'commission'),
+            'isCommissionBased' => !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? true),
+            'fixedSalary' => ($row['fixed_salary'] ?? $row['fixedSalary'] ?? null) !== null
+                ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'])
+                : null,
+            'balancePeriodStart' => $this->nullableString($row['balance_period_start'] ?? $row['balancePeriodStart'] ?? null),
+            'balancePeriodEnd' => $this->nullableString($row['balance_period_end'] ?? $row['balancePeriodEnd'] ?? null),
+            'baseEarned' => (float) ($row['base_earned'] ?? $row['baseEarned'] ?? $row['total_earned'] ?? $row['totalEarned'] ?? 0),
+            'basePaid' => (float) ($row['base_paid'] ?? $row['basePaid'] ?? 0),
+            'totalBonuses' => (float) ($row['total_bonuses'] ?? $row['totalBonuses'] ?? 0),
+            'totalDeductions' => (float) ($row['total_deductions'] ?? $row['totalDeductions'] ?? 0),
             'currentBalance' => (float) ($row['current_balance'] ?? $row['currentBalance'] ?? 0),
             'totalEarned' => (float) ($row['total_earned'] ?? $row['totalEarned'] ?? 0),
             'totalPaid' => (float) ($row['total_paid'] ?? $row['totalPaid'] ?? 0),
@@ -1238,12 +1305,24 @@ abstract class BaseService
             'orderId' => $this->nullableString($row['order_id'] ?? $row['orderId'] ?? null),
             'orderNumber' => $this->nullableString($row['order_number'] ?? $row['orderNumber'] ?? null),
             'payoutId' => $this->nullableString($row['payout_id'] ?? $row['payoutId'] ?? null),
+            'payrollPaymentId' => $this->nullableString($row['payroll_payment_id'] ?? $row['payrollPaymentId'] ?? null),
             'transactionId' => $this->nullableString($row['transaction_id'] ?? $row['transactionId'] ?? null),
             'accountId' => $this->nullableString($row['account_id'] ?? $row['accountId'] ?? null),
             'accountName' => $this->nullableString($row['account_name'] ?? $row['accountName'] ?? null),
             'paymentMethod' => $this->nullableString($row['payment_method'] ?? $row['paymentMethod'] ?? null),
             'categoryId' => $this->nullableString($row['category_id'] ?? $row['categoryId'] ?? null),
             'categoryName' => $this->nullableString($row['category_name'] ?? $row['categoryName'] ?? null),
+            'compensationType' => $this->nullableString($row['compensation_type'] ?? $row['compensationType'] ?? null),
+            'baseAmountSnapshot' => ($row['base_amount_snapshot'] ?? $row['baseAmountSnapshot'] ?? null) !== null
+                ? (float) ($row['base_amount_snapshot'] ?? $row['baseAmountSnapshot'])
+                : null,
+            'bonusAmount' => (float) ($row['bonus_amount'] ?? $row['bonusAmount'] ?? 0),
+            'deductionAmount' => (float) ($row['deduction_amount'] ?? $row['deductionAmount'] ?? 0),
+            'netAmount' => ($row['net_amount'] ?? $row['netAmount'] ?? null) !== null
+                ? (float) ($row['net_amount'] ?? $row['netAmount'])
+                : null,
+            'periodStart' => $this->nullableString($row['period_start'] ?? $row['periodStart'] ?? null),
+            'periodEnd' => $this->nullableString($row['period_end'] ?? $row['periodEnd'] ?? null),
             'note' => $this->nullableString($row['note'] ?? null),
             'createdAt' => $this->toIso($row['created_at'] ?? $row['createdAt'] ?? null) ?? (string) ($row['created_at'] ?? ''),
             'createdBy' => $this->nullableString($row['created_by'] ?? $row['createdBy'] ?? null),
@@ -1264,9 +1343,19 @@ abstract class BaseService
             'employeeId' => (string) ($row['employee_id'] ?? $row['employeeId'] ?? ''),
             'amount' => (float) ($row['amount'] ?? 0),
             'accountId' => (string) ($row['account_id'] ?? $row['accountId'] ?? ''),
+            'accountName' => $this->nullableString($row['account_name'] ?? $row['accountName'] ?? null),
             'paymentMethod' => (string) ($row['payment_method'] ?? $row['paymentMethod'] ?? ''),
             'categoryId' => (string) ($row['category_id'] ?? $row['categoryId'] ?? ''),
+            'categoryName' => $this->nullableString($row['category_name'] ?? $row['categoryName'] ?? null),
             'transactionId' => (string) ($row['transaction_id'] ?? $row['transactionId'] ?? ''),
+            'payrollPaymentId' => $this->nullableString($row['payroll_payment_id'] ?? $row['payrollPaymentId'] ?? null),
+            'compensationType' => $this->nullableString($row['compensation_type'] ?? $row['compensationType'] ?? null),
+            'baseAmount' => (float) ($row['base_amount'] ?? $row['baseAmount'] ?? 0),
+            'bonusAmount' => (float) ($row['bonus_amount'] ?? $row['bonusAmount'] ?? 0),
+            'deductionAmount' => (float) ($row['deduction_amount'] ?? $row['deductionAmount'] ?? 0),
+            'netAmount' => (float) ($row['net_amount'] ?? $row['netAmount'] ?? $row['amount'] ?? 0),
+            'periodStart' => $this->nullableString($row['period_start'] ?? $row['periodStart'] ?? null),
+            'periodEnd' => $this->nullableString($row['period_end'] ?? $row['periodEnd'] ?? null),
             'paidAt' => $this->toIso($row['paid_at'] ?? $row['paidAt'] ?? null) ?? (string) ($row['paid_at'] ?? ''),
             'paidBy' => (string) ($row['paid_by'] ?? $row['paidBy'] ?? ''),
             'paidByName' => $this->nullableString($row['paid_by_name'] ?? $row['paidByName'] ?? null),
@@ -1590,7 +1679,7 @@ abstract class BaseService
      */
     protected function normalizePayrollStatuses(array $statuses, bool $fallbackToDefault): array
     {
-        $allowed = self::DEFAULT_PAYROLL_STATUSES;
+        $allowed = self::ALL_ORDER_STATUSES;
         $normalized = [];
         foreach ($statuses as $status) {
             $statusText = trim((string) $status);
@@ -1650,5 +1739,37 @@ abstract class BaseService
         }
 
         return $this->normalizeDateOnly($orderDate);
+    }
+
+    protected function pipraPayApiUrl(string $configuredBaseUrl, string $endpoint): string
+    {
+        $baseUrl = rtrim(trim($configuredBaseUrl), '/');
+        $path = '/' . ltrim($endpoint, '/');
+
+        // PipraPay V3 documents routes under /api. Accept either the host URL
+        // or a URL already ending in /api so existing deployments keep working.
+        if (preg_match('#/api$#i', $baseUrl) === 1) {
+            return $baseUrl . $path;
+        }
+
+        return $baseUrl . '/api' . $path;
+    }
+
+    protected function appendUrlQueryParameter(string $url, string $name, string $value): string
+    {
+        $fragment = '';
+        $fragmentPosition = strpos($url, '#');
+        if ($fragmentPosition !== false) {
+            $fragment = substr($url, $fragmentPosition);
+            $url = substr($url, 0, $fragmentPosition);
+        }
+
+        if ($fragment !== '') {
+            $separator = str_contains($fragment, '?') ? '&' : '?';
+            return $url . $fragment . $separator . rawurlencode($name) . '=' . rawurlencode($value);
+        }
+
+        $separator = str_contains($url, '?') ? '&' : '?';
+        return $url . $separator . rawurlencode($name) . '=' . rawurlencode($value);
     }
 }

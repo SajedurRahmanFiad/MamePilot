@@ -8,6 +8,49 @@ use Throwable;
 
 final class MasterDataApi extends BaseService
 {
+    private const MAINTENANCE_DEFAULT_IMAGE_URL = '/uploads/Rat_avatar.png';
+    private const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
+    private const MAINTENANCE_DEFAULT_SUBTITLE = 'Mame is actively chasing him with a piece of cheese to get it back to make the server work again.';
+    private const MAINTENANCE_DEFAULT_EXPLANATION = "Some new updates are in progress. For the sake of safety and security, the server is currently turned off. You'll be able to access the app again as soon as the update is complete.";
+
+    private function appendEncodedTextFilter(
+        string &$where,
+        array &$bindings,
+        string $column,
+        string $value,
+        string $bindingName,
+        bool $negative = false
+    ): void {
+        if ($value === '') return;
+
+        $prefix = '__mp_filter_v1__:';
+        $contains = false;
+        if (str_starts_with($value, $prefix)) {
+            $payload = substr($value, strlen($prefix));
+            $separator = strpos($payload, ':');
+            $mode = $separator === false ? '' : substr($payload, 0, $separator);
+            if ($separator !== false && in_array($mode, ['equals', 'contains'], true)) {
+                $value = rawurldecode(substr($payload, $separator + 1));
+                $contains = $mode === 'contains';
+            }
+        } else {
+            // Backward compatibility for navigation state created before tagged filters.
+            $contains = strlen($value) >= 2 && str_starts_with($value, '%') && str_ends_with($value, '%');
+            if ($contains) {
+                $value = substr($value, 1, -1);
+            }
+        }
+        if (!$contains) {
+            $where .= " AND COALESCE({$column}, '') " . ($negative ? '<>' : '=') . " :{$bindingName}";
+            $bindings[':' . $bindingName] = $value;
+            return;
+        }
+
+        $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $value);
+        $where .= " AND COALESCE({$column}, '') " . ($negative ? 'NOT LIKE' : 'LIKE') . " :{$bindingName} ESCAPE '='";
+        $bindings[':' . $bindingName] = '%' . $escaped . '%';
+    }
+
     public function me(array $params = []): array
     {
         return $this->mapUser($this->currentUser());
@@ -60,23 +103,26 @@ final class MasterDataApi extends BaseService
     public function fetchMaintenanceStatus(array $params = []): array
     {
         $row = $this->capabilityRow();
-        $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
+        $status = $this->localMaintenanceStatus($row);
+        $maintenanceEnabled = !empty($status['maintenanceEnabled']);
 
         if ($row !== null && trim((string) ($row['license_api_url'] ?? '')) !== '') {
             try {
-                $remoteMaintenanceEnabled = $this->fetchRemoteMaintenanceEnabled((string) $row['license_api_url']);
-                if ($remoteMaintenanceEnabled !== $maintenanceEnabled) {
-                    $maintenanceEnabled = $remoteMaintenanceEnabled;
-                    $this->touchUpdate('app_capability_settings', (string) $row['id'], [
-                        'maintenance_enabled' => $maintenanceEnabled ? 1 : 0,
-                    ]);
-                }
+                $status = $this->fetchRemoteMaintenanceStatus(
+                    (string) $row['license_api_url'],
+                    (string) ($row['license_owner_token'] ?? ''),
+                    (string) ($row['license_key'] ?? '')
+                );
+                $remoteMaintenanceEnabled = !empty($status['maintenanceEnabled']);
+                $maintenanceEnabled = $remoteMaintenanceEnabled;
+                $this->persistLocalMaintenanceStatus((string) $row['id'], $status);
             } catch (\Throwable $exception) {
                 // Preserve local maintenance state if central API is temporarily unavailable.
             }
         }
 
-        return ['maintenanceEnabled' => $maintenanceEnabled];
+        $status['maintenanceEnabled'] = $maintenanceEnabled;
+        return $status;
     }
 
     public function setMaintenanceStatus(array $params): array
@@ -84,21 +130,70 @@ final class MasterDataApi extends BaseService
         $enabled = !empty($params['maintenanceEnabled'] ?? $params['maintenance_enabled'] ?? false);
         $this->requireDeveloperUser();
 
+        $targetDeployments = $this->normalizeNotificationTargetRoles($params['targetDeployments'] ?? $params['target_deployments'] ?? []);
+        $deploymentScope = trim((string) ($params['deploymentScope'] ?? $params['deployment_scope'] ?? 'all'));
+        if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+            $deploymentScope = 'all';
+        }
+        if ($deploymentScope === 'all') {
+            $targetDeployments = [];
+        } elseif ($enabled && $targetDeployments === []) {
+            throw new RuntimeException('Select at least one deployment.');
+        }
+
         $row = $this->capabilityRow();
         $apiUrl = trim((string) ($row['license_api_url'] ?? ''));
         $ownerToken = trim((string) ($row['license_owner_token'] ?? ''));
-        if ($apiUrl !== '') {
-            try {
-                $this->centralLicenseRequest($apiUrl, $ownerToken, 'set_maintenance_status', [
-                    'maintenanceEnabled' => $enabled,
-                ]);
-            } catch (\Throwable $exception) {
-                // Central persistence is best-effort; keep local state up-to-date even if remote fails.
-            }
+        $licenseKey = trim((string) ($row['license_key'] ?? ''));
+        $imageInput = trim((string) ($params['imageUrl'] ?? $params['image_url'] ?? self::MAINTENANCE_DEFAULT_IMAGE_URL));
+        $imageUrl = $this->normalizeUploadedFileValue(
+            $imageInput !== '' ? $imageInput : self::MAINTENANCE_DEFAULT_IMAGE_URL,
+            'maintenance',
+            isset($params['imageName']) ? trim((string) $params['imageName']) : null
+        ) ?? self::MAINTENANCE_DEFAULT_IMAGE_URL;
+        if ($this->isDataUrl($imageUrl)) {
+            throw new RuntimeException('Failed to store the maintenance image in the uploads folder.');
+        }
+        $caption = trim((string) ($params['caption'] ?? '')) ?: self::MAINTENANCE_DEFAULT_CAPTION;
+        $subtitle = trim((string) ($params['subtitle'] ?? '')) ?: self::MAINTENANCE_DEFAULT_SUBTITLE;
+        $explanation = trim((string) ($params['explanation'] ?? '')) ?: self::MAINTENANCE_DEFAULT_EXPLANATION;
+        $endsAtInput = trim((string) ($params['endsAt'] ?? $params['ends_at'] ?? ''));
+        $endsAt = $endsAtInput !== '' ? $this->normalizeDateTimeInput($endsAtInput) : null;
+        if ($enabled && $endsAt !== null && strtotime($endsAt . ' UTC') <= time()) {
+            $enabled = false;
         }
 
-        $result = $this->updateCapabilitySettings(['maintenanceEnabled' => $enabled]);
-        return ['maintenanceEnabled' => $result['maintenanceEnabled'] ?? $enabled];
+        $status = [
+            'maintenanceEnabled' => $enabled,
+            'maintenanceModeEnabled' => $enabled,
+            'targetDeployments' => $targetDeployments,
+            'deploymentScope' => $deploymentScope,
+            'imageUrl' => $imageUrl,
+            'caption' => $caption,
+            'subtitle' => $subtitle,
+            'explanation' => $explanation,
+            'endsAt' => $this->toIso($endsAt),
+        ];
+        if ($apiUrl !== '') {
+            $centralImageUrl = $this->absoluteMaintenanceImageUrl($imageUrl);
+            $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'set_maintenance_status', [
+                'maintenanceEnabled' => $enabled,
+                'targetDeployments' => $targetDeployments,
+                'deploymentScope' => $deploymentScope,
+                'license_key' => $licenseKey,
+                'imageUrl' => $centralImageUrl,
+                'caption' => $caption,
+                'subtitle' => $subtitle,
+                'explanation' => $explanation,
+                'endsAt' => $endsAt,
+            ]);
+            $status = $this->normalizeMaintenanceStatus($response, $status);
+        } elseif ($deploymentScope !== 'all') {
+            throw new RuntimeException('Central server configuration is required to target specific deployments.');
+        }
+
+        $this->persistLocalMaintenanceStatus((string) ($row['id'] ?? 'app-capabilities-default'), $status);
+        return $status;
     }
 
     public function fetchUsers(array $params = []): array
@@ -106,7 +201,7 @@ final class MasterDataApi extends BaseService
         $rows = $this->database->fetchAll(
             'SELECT id, name, phone, role, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
-             WHERE deleted_at IS NULL
+             WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
              ORDER BY created_at DESC, name ASC'
         );
 
@@ -121,12 +216,17 @@ final class MasterDataApi extends BaseService
         $search = trim((string) ($params['search'] ?? ''));
         $role = trim((string) ($params['role'] ?? ''));
 
-        $where = 'WHERE deleted_at IS NULL';
+        $where = 'WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0';
         $bindings = [];
 
         if ($role !== '' && $role !== 'All') {
             $where .= ' AND role = :role';
             $bindings[':role'] = $role;
+        }
+        $roleNot = trim((string) ($params['roleNot'] ?? ''));
+        if ($roleNot !== '') {
+            $where .= ' AND role <> :role_not';
+            $bindings[':role_not'] = $roleNot;
         }
 
         if ($search !== '') {
@@ -134,6 +234,32 @@ final class MasterDataApi extends BaseService
             $bindings[':search_name'] = '%' . $search . '%';
             $bindings[':search_phone'] = '%' . $search . '%';
             $bindings[':search_role'] = '%' . $search . '%';
+        }
+
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'user_name');
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['nameNot'] ?? '')), 'user_name_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phone'] ?? '')), 'user_phone');
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phoneNot'] ?? '')), 'user_phone_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'nationality', trim((string) ($params['nationality'] ?? '')), 'user_nationality');
+        $this->appendEncodedTextFilter($where, $bindings, 'nationality', trim((string) ($params['nationalityNot'] ?? '')), 'user_nationality_not', true);
+        foreach ([['gender', 'gender'], ['bloodGroup', 'blood_group']] as [$key, $column]) {
+            $value = trim((string) ($params[$key] ?? ''));
+            if ($value !== '') {
+                $where .= " AND COALESCE({$column}, '') = :user_{$key}";
+                $bindings[':user_' . $key] = $value === '__not_specified__' ? '' : $value;
+            }
+            $notValue = trim((string) ($params[$key . 'Not'] ?? ''));
+            if ($notValue !== '') {
+                $where .= " AND COALESCE({$column}, '') <> :user_{$key}_not";
+                $bindings[':user_' . $key . '_not'] = $notValue === '__not_specified__' ? '' : $notValue;
+            }
+        }
+        $joined = is_array($params['joined'] ?? null) ? $params['joined'] : [];
+        $joinedValue = trim((string) ($joined['value'] ?? ''));
+        $joinedOperator = ['on' => '=', 'before' => '<', 'after' => '>'][(string) ($joined['operator'] ?? '')] ?? null;
+        if ($joinedOperator !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $joinedValue)) {
+            $where .= " AND DATE(created_at) {$joinedOperator} :joined_date";
+            $bindings[':joined_date'] = $joinedValue;
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM users {$where}", $bindings);
@@ -146,7 +272,7 @@ final class MasterDataApi extends BaseService
             $bindings
         );
         $roleRows = $this->database->fetchAll(
-            'SELECT DISTINCT role FROM users WHERE deleted_at IS NULL ORDER BY role ASC'
+            'SELECT DISTINCT role FROM users WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY role ASC'
         );
 
         return [
@@ -162,7 +288,7 @@ final class MasterDataApi extends BaseService
     public function fetchUsersMini(array $params = []): array
     {
         return $this->database->fetchAll(
-            'SELECT id, name FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC, name ASC'
+            'SELECT id, name FROM users WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY created_at DESC, name ASC'
         );
     }
 
@@ -217,8 +343,17 @@ final class MasterDataApi extends BaseService
         }
 
         $id = $this->stringId($params['id'] ?? null);
-        $isCommissionBased = !empty($params['isCommissionBased'] ?? $params['is_commission_based'] ?? false);
-        $fixedSalary = $isCommissionBased ? null : ($params['fixedSalary'] ?? $params['fixed_salary'] ?? null);
+        $fixedSalaryInput = $params['fixedSalary'] ?? $params['fixed_salary'] ?? null;
+        $hasCommissionSelection = array_key_exists('isCommissionBased', $params) || array_key_exists('is_commission_based', $params);
+        $isCommissionBased = $hasCommissionSelection
+            ? !empty($params['isCommissionBased'] ?? $params['is_commission_based'] ?? false)
+            : ($fixedSalaryInput === null || $fixedSalaryInput === '' || (float) $fixedSalaryInput <= 0);
+        $fixedSalary = $isCommissionBased || $fixedSalaryInput === null || $fixedSalaryInput === ''
+            ? null
+            : (float) $fixedSalaryInput;
+        if ($requestedRole === 'Employee' && !$isCommissionBased && ($fixedSalary === null || $fixedSalary <= 0)) {
+            throw new RuntimeException('A fixed-salary employee must have a monthly salary greater than zero.');
+        }
         $this->database->execute(
             'INSERT INTO users (
                 id,
@@ -274,7 +409,7 @@ final class MasterDataApi extends BaseService
                 ':nationality' => $this->nullableString($params['nationality'] ?? null),
                 ':cv' => $this->normalizeUploadedFileValue($params['cv'] ?? null, 'documents', null),
                 ':is_commission_based' => $isCommissionBased ? 1 : 0,
-                ':fixed_salary' => $fixedSalary === null || $fixedSalary === '' ? null : (float) $fixedSalary,
+                ':fixed_salary' => $fixedSalary,
                 ':password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -293,7 +428,7 @@ final class MasterDataApi extends BaseService
         }
 
         $existing = $this->database->fetchOne(
-            'SELECT id, role FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            'SELECT id, role, is_commission_based, fixed_salary FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
             [':id' => $id]
         );
         if ($existing === null) {
@@ -362,6 +497,27 @@ final class MasterDataApi extends BaseService
             $payload['password_hash'] = password_hash((string) $updates['password'], PASSWORD_BCRYPT, ['cost' => 12]);
         }
 
+        $compensationTouched = array_key_exists('role', $updates)
+            || array_key_exists('isCommissionBased', $updates)
+            || array_key_exists('is_commission_based', $updates)
+            || array_key_exists('fixedSalary', $updates)
+            || array_key_exists('fixed_salary', $updates);
+        $finalRole = (string) ($payload['role'] ?? $existing['role'] ?? '');
+        $finalIsCommissionBased = array_key_exists('is_commission_based', $payload)
+            ? (bool) $payload['is_commission_based']
+            : !empty($existing['is_commission_based'] ?? false);
+        $finalFixedSalary = array_key_exists('fixed_salary', $payload)
+            ? $payload['fixed_salary']
+            : ($existing['fixed_salary'] ?? null);
+        if (
+            $compensationTouched
+            && $finalRole === 'Employee'
+            && !$finalIsCommissionBased
+            && ($finalFixedSalary === null || (float) $finalFixedSalary <= 0)
+        ) {
+            throw new RuntimeException('A fixed-salary employee must have a monthly salary greater than zero.');
+        }
+
         $this->touchUpdate('users', $id, $payload);
         return $this->fetchUserById(['id' => $id]) ?? throw new RuntimeException('User not found.');
     }
@@ -385,7 +541,7 @@ final class MasterDataApi extends BaseService
     public function fetchCustomers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by, fraud_check_result, fraud_check_percentage, fraud_check_phone, fraud_checked_at
+            'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
              WHERE deleted_at IS NULL
              ORDER BY created_at DESC'
@@ -410,9 +566,35 @@ final class MasterDataApi extends BaseService
             $bindings[':search_address'] = '%' . $search . '%';
         }
 
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'name');
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['nameNot'] ?? '')), 'name_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phone'] ?? '')), 'phone');
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phoneNot'] ?? '')), 'phone_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'address', trim((string) ($params['address'] ?? '')), 'address');
+        $this->appendEncodedTextFilter($where, $bindings, 'address', trim((string) ($params['addressNot'] ?? '')), 'address_not', true);
+
+        foreach ([['createdByIds', false], ['createdByNotIds', true]] as [$key, $negative]) {
+            $ids = is_array($params[$key] ?? null) ? array_values(array_filter(array_map('strval', $params[$key]))) : [];
+            if ($ids === []) continue;
+            [$placeholders, $idBindings] = $this->inClause($ids, $negative ? 'customer_creator_not' : 'customer_creator');
+            $where .= ' AND created_by ' . ($negative ? 'NOT IN' : 'IN') . ' (' . implode(', ', $placeholders) . ')';
+            $bindings += $idBindings;
+        }
+
+        foreach ([['totalOrders', 'total_orders'], ['dueAmount', 'due_amount']] as [$key, $column]) {
+            $filter = is_array($params[$key] ?? null) ? $params[$key] : [];
+            $operator = (string) ($filter['operator'] ?? '');
+            $value = $filter['value'] ?? null;
+            $sqlOperator = ['=' => '=', '≠' => '<>', '<' => '<', '>' => '>'][$operator] ?? null;
+            if ($sqlOperator === null || !is_numeric($value)) continue;
+            $bindingKey = $key === 'totalOrders' ? 'total_orders' : 'due_amount';
+            $where .= " AND {$column} {$sqlOperator} :{$bindingKey}";
+            $bindings[':' . $bindingKey] = (float) $value;
+        }
+
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM customers {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by, fraud_check_result, fraud_check_percentage, fraud_check_phone, fraud_checked_at
+            "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
              {$where}
              ORDER BY created_at DESC
@@ -536,6 +718,20 @@ final class MasterDataApi extends BaseService
             $bindings[':search_phone'] = '%' . $search . '%';
             $bindings[':search_address'] = '%' . $search . '%';
         }
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'vendor_name');
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['nameNot'] ?? '')), 'vendor_name_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phone'] ?? '')), 'vendor_phone');
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phoneNot'] ?? '')), 'vendor_phone_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'address', trim((string) ($params['address'] ?? '')), 'vendor_address');
+        $this->appendEncodedTextFilter($where, $bindings, 'address', trim((string) ($params['addressNot'] ?? '')), 'vendor_address_not', true);
+        foreach ([['purchases', 'total_purchases'], ['payable', 'due_amount']] as [$key, $column]) {
+            $filter = is_array($params[$key] ?? null) ? $params[$key] : [];
+            $operator = ['=' => '=', '≠' => '<>', '<' => '<', '>' => '>'][(string) ($filter['operator'] ?? '')] ?? null;
+            if ($operator === null || !is_numeric($filter['value'] ?? null)) continue;
+            $bindingKey = 'vendor_' . $key;
+            $where .= " AND {$column} {$operator} :{$bindingKey}";
+            $bindings[':' . $bindingKey] = (float) $filter['value'];
+        }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM vendors {$where}", $bindings);
         $rows = $this->database->fetchAll(
@@ -658,14 +854,33 @@ final class MasterDataApi extends BaseService
             $bindings[':search'] = '%' . $search . '%';
         }
         if ($category !== '') {
-            $where .= ' AND category = :category';
-            $bindings[':category'] = $category;
+            $this->appendEncodedTextFilter($where, $bindings, 'category', $category, 'category');
         }
+        $categoryNot = trim((string) ($params['categoryNot'] ?? ''));
+        $this->appendEncodedTextFilter($where, $bindings, 'category', $categoryNot, 'category_not', true);
+        $name = trim((string) ($params['name'] ?? ''));
+        $this->appendEncodedTextFilter($where, $bindings, 'name', $name, 'name_filter');
+        $nameNot = trim((string) ($params['nameNot'] ?? ''));
+        $this->appendEncodedTextFilter($where, $bindings, 'name', $nameNot, 'name_not', true);
         $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND created_by IN (' . implode(', ', $placeholders) . ')';
             $bindings += $inBindings;
+        }
+        $createdByNotIds = is_array($params['createdByNotIds'] ?? null) ? array_values(array_filter(array_map('strval', $params['createdByNotIds']))) : [];
+        if ($createdByNotIds !== []) {
+            [$placeholders, $notBindings] = $this->inClause($createdByNotIds, 'product_created_by_not');
+            $where .= ' AND created_by NOT IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $notBindings;
+        }
+        foreach ([['stock', 'stock'], ['salePrice', 'sale_price'], ['purchasePrice', 'purchase_price']] as [$key, $column]) {
+            $filter = is_array($params[$key] ?? null) ? $params[$key] : [];
+            $operator = ['=' => '=', '≠' => '<>', '<' => '<', '>' => '>'][(string) ($filter['operator'] ?? '')] ?? null;
+            if ($operator === null || !is_numeric($filter['value'] ?? null)) continue;
+            $bindingKey = 'product_' . strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $key));
+            $where .= " AND {$column} {$operator} :{$bindingKey}";
+            $bindings[':' . $bindingKey] = (float) $filter['value'];
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
@@ -1174,7 +1389,7 @@ final class MasterDataApi extends BaseService
 
         $globalPage = $this->getGlobalCompanyPage($pages);
 
-        return $this->saveSingleton(
+        $saved = $this->saveSingleton(
             'company_settings',
             'company-default',
             [
@@ -1187,6 +1402,8 @@ final class MasterDataApi extends BaseService
             ],
             fn(): array => $this->fetchCompanySettings()
         );
+        $this->purgeGlobalBrandingCache();
+        return $saved;
     }
 
     public function fetchOrderSettings(array $params = []): array
@@ -1318,7 +1535,12 @@ final class MasterDataApi extends BaseService
 
         if ($row !== null && trim((string) ($row['license_api_url'] ?? '')) !== '') {
             try {
-                $remoteMaintenanceEnabled = $this->fetchRemoteMaintenanceEnabled((string) $row['license_api_url']);
+                $remoteMaintenanceStatus = $this->fetchRemoteMaintenanceStatus(
+                    (string) $row['license_api_url'],
+                    (string) ($row['license_owner_token'] ?? ''),
+                    (string) ($row['license_key'] ?? '')
+                );
+                $remoteMaintenanceEnabled = !empty($remoteMaintenanceStatus['maintenanceEnabled']);
                 if ($remoteMaintenanceEnabled !== $maintenanceEnabled) {
                     $maintenanceEnabled = $remoteMaintenanceEnabled;
                     $this->touchUpdate('app_capability_settings', (string) $row['id'], [
@@ -1351,10 +1573,160 @@ final class MasterDataApi extends BaseService
         ];
     }
 
-    private function fetchRemoteMaintenanceEnabled(string $apiUrl): bool
+    /** @return array<string, mixed> */
+    private function fetchRemoteMaintenanceStatus(string $apiUrl, string $ownerToken, string $licenseKey): array
     {
-        $response = $this->centralLicenseRequest($apiUrl, null, 'fetch_maintenance_status');
-        return !empty($response['maintenanceEnabled'] ?? $response['maintenance_enabled'] ?? false);
+        $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'fetch_maintenance_status', [
+            'license_key' => trim($licenseKey),
+        ]);
+        return $this->normalizeMaintenanceStatus($response, $this->localMaintenanceStatus($this->capabilityRow()));
+    }
+
+    /** @return array<string, mixed> */
+    private function localMaintenanceStatus(?array $row): array
+    {
+        $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
+        $endsAt = $this->toIso($row['maintenance_ends_at'] ?? null);
+        if ($maintenanceEnabled && $endsAt !== null) {
+            $deadline = strtotime($endsAt);
+            if ($deadline !== false && $deadline <= time()) {
+                $maintenanceEnabled = false;
+                if ($row !== null && isset($row['id'])) {
+                    $this->touchUpdate('app_capability_settings', (string) $row['id'], ['maintenance_enabled' => 0]);
+                }
+            }
+        }
+
+        return [
+            'maintenanceEnabled' => $maintenanceEnabled,
+            'maintenanceModeEnabled' => $maintenanceEnabled,
+            'targetDeployments' => [],
+            'deploymentScope' => 'all',
+            'imageUrl' => trim((string) ($row['maintenance_image_url'] ?? '')) ?: self::MAINTENANCE_DEFAULT_IMAGE_URL,
+            'caption' => trim((string) ($row['maintenance_caption'] ?? '')) ?: self::MAINTENANCE_DEFAULT_CAPTION,
+            'subtitle' => trim((string) ($row['maintenance_subtitle'] ?? '')) ?: self::MAINTENANCE_DEFAULT_SUBTITLE,
+            'explanation' => trim((string) ($row['maintenance_explanation'] ?? '')) ?: self::MAINTENANCE_DEFAULT_EXPLANATION,
+            'endsAt' => $endsAt,
+        ];
+    }
+
+    public function fetchGlobalBranding(array $params = []): array
+    {
+        $cacheKey = $this->globalBrandingCacheKey();
+        if (function_exists('apcu_fetch')) {
+            $hit = false;
+            $cached = apcu_fetch($cacheKey, $hit);
+            if ($hit && is_array($cached)) {
+                return $cached;
+            }
+        }
+
+        $cachePath = $this->globalBrandingCachePath();
+        if (is_file($cachePath)) {
+            $decoded = json_decode((string) @file_get_contents($cachePath), true);
+            if (is_array($decoded) && isset($decoded['name'], $decoded['logo'], $decoded['version'])) {
+                if (function_exists('apcu_store')) {
+                    @apcu_store($cacheKey, $decoded, 86400);
+                }
+                return $decoded;
+            }
+        }
+
+        $row = $this->database->fetchOne('SELECT name, logo, pages, updated_at FROM company_settings LIMIT 1');
+        $pages = $this->normalizeCompanyPages($row['pages'] ?? [], $row ?? []);
+        $globalPage = $this->getGlobalCompanyPage($pages);
+        $branding = [
+            'name' => (string) ($globalPage['name'] ?? $row['name'] ?? 'Mame Pilot'),
+            'logo' => (string) ($globalPage['logo'] ?? $row['logo'] ?? '/uploads/Avatar.png'),
+            'version' => (string) ($row['updated_at'] ?? 'default'),
+        ];
+
+        @file_put_contents($cachePath, $this->jsonEncode($branding), LOCK_EX);
+        if (function_exists('apcu_store')) {
+            @apcu_store($cacheKey, $branding, 86400);
+        }
+        return $branding;
+    }
+
+    /** @param array<string, mixed> $fallback @return array<string, mixed> */
+    private function normalizeMaintenanceStatus(array $response, array $fallback): array
+    {
+        $deploymentScope = trim((string) ($response['deploymentScope'] ?? $response['deployment_scope'] ?? $fallback['deploymentScope'] ?? 'all'));
+        if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+            $deploymentScope = 'all';
+        }
+        $endsAtValue = trim((string) ($response['endsAt'] ?? $response['ends_at'] ?? $fallback['endsAt'] ?? ''));
+        $maintenanceEnabled = !empty($response['maintenanceEnabled'] ?? $response['maintenance_enabled'] ?? $fallback['maintenanceEnabled'] ?? false);
+
+        return [
+            'maintenanceEnabled' => $maintenanceEnabled,
+            'maintenanceModeEnabled' => !empty($response['maintenanceModeEnabled'] ?? $response['maintenance_mode_enabled'] ?? $fallback['maintenanceModeEnabled'] ?? $maintenanceEnabled),
+            'targetDeployments' => $this->normalizeNotificationTargetRoles($response['targetDeployments'] ?? $response['target_deployments'] ?? $fallback['targetDeployments'] ?? []),
+            'deploymentScope' => $deploymentScope,
+            'imageUrl' => trim((string) ($response['imageUrl'] ?? $response['image_url'] ?? $fallback['imageUrl'] ?? '')) ?: self::MAINTENANCE_DEFAULT_IMAGE_URL,
+            'caption' => trim((string) ($response['caption'] ?? $fallback['caption'] ?? '')) ?: self::MAINTENANCE_DEFAULT_CAPTION,
+            'subtitle' => trim((string) ($response['subtitle'] ?? $fallback['subtitle'] ?? '')) ?: self::MAINTENANCE_DEFAULT_SUBTITLE,
+            'explanation' => trim((string) ($response['explanation'] ?? $fallback['explanation'] ?? '')) ?: self::MAINTENANCE_DEFAULT_EXPLANATION,
+            'endsAt' => $endsAtValue !== '' ? $this->toIso($endsAtValue) : null,
+        ];
+    }
+
+    /** @param array<string, mixed> $status */
+    private function persistLocalMaintenanceStatus(string $id, array $status): void
+    {
+        if ($id === '' || !$this->tableExists('app_capability_settings')) {
+            return;
+        }
+
+        $endsAt = trim((string) ($status['endsAt'] ?? ''));
+        $payload = [
+            'maintenance_enabled' => !empty($status['maintenanceEnabled']) ? 1 : 0,
+            'maintenance_image_url' => trim((string) ($status['imageUrl'] ?? '')) ?: self::MAINTENANCE_DEFAULT_IMAGE_URL,
+            'maintenance_caption' => trim((string) ($status['caption'] ?? '')) ?: self::MAINTENANCE_DEFAULT_CAPTION,
+            'maintenance_subtitle' => trim((string) ($status['subtitle'] ?? '')) ?: self::MAINTENANCE_DEFAULT_SUBTITLE,
+            'maintenance_explanation' => trim((string) ($status['explanation'] ?? '')) ?: self::MAINTENANCE_DEFAULT_EXPLANATION,
+            'maintenance_ends_at' => $endsAt !== '' ? $this->normalizeDateTimeInput($endsAt) : null,
+        ];
+        foreach (array_keys($payload) as $column) {
+            if (!$this->columnExists('app_capability_settings', $column)) {
+                unset($payload[$column]);
+            }
+        }
+        $current = $this->capabilityRow();
+        foreach ($payload as $column => $value) {
+            $currentValue = $current[$column] ?? null;
+            if (($currentValue === null && $value === null) || (string) $currentValue === (string) $value) {
+                unset($payload[$column]);
+            }
+        }
+        if ($payload !== []) {
+            $this->touchUpdate('app_capability_settings', $id, $payload);
+        }
+    }
+
+    private function absoluteMaintenanceImageUrl(string $imageUrl): string
+    {
+        $imageUrl = trim($imageUrl);
+        if ($imageUrl === '' || $imageUrl === self::MAINTENANCE_DEFAULT_IMAGE_URL || preg_match('#^https?://#i', $imageUrl) === 1) {
+            return $imageUrl !== '' ? $imageUrl : self::MAINTENANCE_DEFAULT_IMAGE_URL;
+        }
+        if (!str_starts_with($imageUrl, '/')) {
+            return $imageUrl;
+        }
+
+        $baseUrl = rtrim(trim((string) ($this->config->get('APP_FRONTEND_URL', '') ?? '')), '/');
+        if ($baseUrl === '') {
+            $forwardedProto = trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+            $scheme = $forwardedProto !== ''
+                ? strtolower(explode(',', $forwardedProto)[0])
+                : ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http');
+            $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+            if ($host !== '') {
+                $baseUrl = $scheme . '://' . $host;
+            }
+        }
+
+        return $baseUrl !== '' ? $baseUrl . $imageUrl : $imageUrl;
     }
 
     public function updateCapabilitySettings(array $params): array
@@ -2193,7 +2565,7 @@ final class MasterDataApi extends BaseService
         };
 
         return [
-            'activeUsers' => $count('users', 'WHERE deleted_at IS NULL'),
+            'activeUsers' => $count('users', 'WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0'),
             'totalTransactions' => $count('transactions', 'WHERE deleted_at IS NULL'),
             'totalOrders' => $count('orders', 'WHERE deleted_at IS NULL'),
             'totalBills' => $count('bills', 'WHERE deleted_at IS NULL'),
@@ -2287,6 +2659,7 @@ final class MasterDataApi extends BaseService
         } elseif (strpos($configuredReturnUrl, '#') === false) {
             $configuredReturnUrl = preg_replace('#(/subscriptions/?)(\?.*)?$#', '/#\1$2', $configuredReturnUrl);
         }
+        $configuredReturnUrl = $this->appendUrlQueryParameter($configuredReturnUrl, 'reference', $reference);
 
         $payload = [
             'full_name' => (string) ($user['name'] ?? 'Admin'),
@@ -2299,7 +2672,7 @@ final class MasterDataApi extends BaseService
             'webhook_url' => $configuredWebhookUrl,
         ];
 
-        $response = $this->httpJson('POST', $baseUrl . '/checkout/redirect', [
+        $response = $this->httpJson('POST', $this->pipraPayApiUrl($baseUrl, 'checkout/redirect'), [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
         ], $payload);
@@ -2474,7 +2847,7 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('PipraPay payment id is required for verification.');
         }
 
-        $verify = $this->httpJson('POST', $baseUrl . '/verify-payment', [
+        $verify = $this->httpJson('POST', $this->pipraPayApiUrl($baseUrl, 'verify-payment'), [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
         ], ['pp_id' => $eventId]);
@@ -2485,6 +2858,10 @@ final class MasterDataApi extends BaseService
         $verified = $this->normalizePipraPayVerificationPayload($verify['json']);
         $status = strtolower(trim((string) ($verified['status'] ?? '')));
         $trustedReference = trim((string) ($verified['reference'] ?? ''));
+        $verifiedPaymentId = trim((string) ($verified['paymentId'] ?? ''));
+        if ($verifiedPaymentId !== '' && !hash_equals($eventId, $verifiedPaymentId)) {
+            throw new RuntimeException('PipraPay verification returned a different payment id.');
+        }
 
         $paymentOutcome = 'pending';
         $databaseStatus = 'processing';
@@ -2493,6 +2870,10 @@ final class MasterDataApi extends BaseService
             $paymentOutcome = 'completed';
             $databaseStatus = 'approved';
             $paymentMessage = 'Payment verified successfully. Your subscription has been renewed.';
+        } elseif (in_array($status, ['pending', 'processing', 'initiated', 'unpaid', 'awaiting_payment', 'awaiting payment'], true) || $status === '') {
+            $paymentOutcome = 'pending';
+            $databaseStatus = 'processing';
+            $paymentMessage = 'Payment is still pending verification.';
         } elseif (in_array($status, ['failed', 'failure', 'declined', 'expired'], true)) {
             $paymentOutcome = 'failed';
             $databaseStatus = 'failed';
@@ -2673,6 +3054,7 @@ final class MasterDataApi extends BaseService
 
         return [
             'status' => $status,
+            'paymentId' => trim((string) ($data['pp_id'] ?? $payload['pp_id'] ?? '')),
             'reference' => $reference,
             'metadata' => $metadata,
             'amount' => isset($data['amount']) && is_numeric($data['amount'])
@@ -4034,7 +4416,7 @@ TXT;
     private function resolveSystemActorId(): string
     {
         $row = $this->database->fetchOne(
-            "SELECT id FROM users WHERE role IN ('Developer', 'Admin') AND deleted_at IS NULL ORDER BY FIELD(role, 'Developer', 'Admin'), created_at ASC LIMIT 1"
+            "SELECT id FROM users WHERE role IN ('Developer', 'Admin') AND deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY FIELD(role, 'Developer', 'Admin'), created_at ASC LIMIT 1"
         );
 
         return (string) ($row['id'] ?? '');
@@ -4186,6 +4568,29 @@ TXT;
             $updates,
             fn(): array => $this->fetchCourierSettings()
         );
+    }
+
+    private function globalBrandingCacheKey(): string
+    {
+        return 'mamepilot:global-branding:' . hash('sha256', __DIR__);
+    }
+
+    private function globalBrandingCachePath(): string
+    {
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'mamepilot_global_branding_' . hash('sha256', __DIR__) . '.json';
+    }
+
+    private function purgeGlobalBrandingCache(): void
+    {
+        if (function_exists('apcu_delete')) {
+            @apcu_delete($this->globalBrandingCacheKey());
+        }
+        $path = $this->globalBrandingCachePath();
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     public function fetchPermissionsSettings(array $params = []): array
@@ -4514,6 +4919,7 @@ TXT;
                     NULL AS acted_at
                  FROM users u
                  WHERE u.deleted_at IS NULL
+                   AND COALESCE(u.is_system, 0) = 0
                    AND u.role IN (' . implode(', ', $placeholders) . ')
                  ORDER BY
                    CASE u.role
@@ -4540,6 +4946,7 @@ TXT;
                ON nr.user_id = u.id
               AND nr.notification_id = :notification_id
              WHERE u.deleted_at IS NULL
+               AND COALESCE(u.is_system, 0) = 0
                AND u.role IN (' . implode(', ', $placeholders) . ')
              ORDER BY
                CASE u.role
@@ -5143,11 +5550,15 @@ TXT;
         $settingsRow = $this->capabilityRow();
         $webhookSecret = trim((string) ($settingsRow['webhook_secret'] ?? ''));
 
-        if ($webhookSecret !== '' && $signature !== '') {
-            $expectedSignature = hash_hmac('sha256', $rawBody, $webhookSecret);
-            if (!hash_equals($expectedSignature, $signature)) {
-                throw new RuntimeException('Invalid webhook signature.');
-            }
+        if ($webhookSecret === '') {
+            throw new RuntimeException('Notification webhook is not registered with a signing secret.');
+        }
+        if ($signature === '') {
+            throw new RuntimeException('Missing notification webhook signature.');
+        }
+        $expectedSignature = hash_hmac('sha256', $rawBody, $webhookSecret);
+        if (!hash_equals($expectedSignature, $signature)) {
+            throw new RuntimeException('Invalid webhook signature.');
         }
 
         $event = trim((string) ($body['event'] ?? ''));
@@ -5188,9 +5599,9 @@ TXT;
             // Auto-detect from current request
             $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
-            $scriptPath = dirname($_SERVER['SCRIPT_NAME'] ?? '');
-            if ($host !== '') {
-                $webhookUrl = $scheme . '://' . $host . rtrim($scriptPath, '/') . '/api.php?action=receiveCentralNotification';
+            $scriptName = trim((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+            if ($host !== '' && $scriptName !== '') {
+                $webhookUrl = $scheme . '://' . $host . '/' . ltrim($scriptName, '/') . '?action=receiveCentralNotification';
             }
         }
 
@@ -5295,7 +5706,7 @@ TXT;
         $token = trim((string) ($_GET['token'] ?? $params['token'] ?? ''));
         if ($token !== '') {
             // Validate token and get user
-            $user = $this->auth->validateToken($token);
+            $user = $this->auth->userFromToken($token);
             if ($user === null) {
                 http_response_code(401);
                 echo "event: error\ndata: {\"error\": \"Invalid token\"}\n\n";

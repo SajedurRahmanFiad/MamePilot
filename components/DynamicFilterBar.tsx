@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ICONS } from '../constants';
 
-type FilterOperator = '=' | '≠' | 'contains' | '<' | '>' | 'on' | 'before' | 'after';
+export type FilterOperator = '=' | '≠' | 'contains' | 'does not contain' | '<' | '>' | 'on' | 'before' | 'after';
 
 type FilterValueType = 'text' | 'number' | 'date';
 
@@ -10,7 +10,7 @@ interface FilterValueOption {
   label?: string;
 }
 
-interface FilterDefinition {
+export interface FilterDefinition {
   type: string;
   label?: string;
   operators?: readonly FilterOperator[];
@@ -56,7 +56,19 @@ interface DynamicFilterBarProps {
   companies?: string[];
   couriers?: string[];
 }
-const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid', 'Refunded'];
+const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'];
+
+const filterSignature = (items: CombinedFilter[] | undefined): string => JSON.stringify(
+  (items ?? [])
+    .map(({ type, operator, value }) => [type, operator, value])
+    .sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')))
+);
+
+const filterPresentationSignature = (items: CombinedFilter[] | undefined): string => JSON.stringify(
+  (items ?? [])
+    .map(({ type, operator, value, display }) => [type, operator, value, display ?? ''])
+    .sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')))
+);
 
 const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', filterDefinitions, initialFilters, onApply, className }) => {
   const [inputValue, setInputValue] = useState('');
@@ -65,15 +77,42 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   const [stage, setStage] = useState(0);
   const [currentType, setCurrentType] = useState<string | null>(null);
   const [currentOperator, setCurrentOperator] = useState<FilterOperator | null>(null);
-  const [filters, setFilters] = useState<CombinedFilter[]>([]);
+  const [filters, setFilters] = useState<CombinedFilter[]>(() => initialFilters ?? []);
   const [chipsWidth, setChipsWidth] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chipsRef = useRef<HTMLDivElement | null>(null);
+  const acceptedExternalSignatureRef = useRef(filterSignature(initialFilters));
+  const pendingLocalSyncRef = useRef<{ submitted: string; previousExternal: string; submittedAt: number } | null>(null);
 
   useEffect(() => {
     if (initialFilters === undefined) return;
-    setFilters(initialFilters);
+    const incomingSignature = filterSignature(initialFilters);
+    const pending = pendingLocalSyncRef.current;
+
+    if (pending) {
+      if (incomingSignature === pending.submitted) {
+        pendingLocalSyncRef.current = null;
+      } else if (incomingSignature === pending.previousExternal && Date.now() - pending.submittedAt < 2000) {
+        // A controlled parent can briefly render its previous state while it
+        // updates several state fields or URL parameters. Do not let that stale
+        // snapshot erase the filter the user just submitted.
+        return;
+      } else {
+        // A different semantic value is an intentional external replacement
+        // (for example browser history hydration or parent normalization).
+        pendingLocalSyncRef.current = null;
+      }
+    }
+
+    acceptedExternalSignatureRef.current = incomingSignature;
+    // Semantic equality keeps locally submitted chips stable, but their labels
+    // can improve later when async option metadata arrives (for example an ID
+    // becoming a category name after hydration). Accept those display-only
+    // updates without using generated filter IDs as a source of churn.
+    setFilters((current) => filterPresentationSignature(current) === filterPresentationSignature(initialFilters)
+      ? current
+      : initialFilters);
   }, [initialFilters]);
 
   useLayoutEffect(() => {
@@ -81,32 +120,39 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   }, [filters, currentType, currentOperator, inputValue]);
 
   useEffect(() => {
-    if (!isOpen) setStage(0);
+    if (!isOpen) {
+      setStage(0);
+      setCurrentType(null);
+      setCurrentOperator(null);
+      setInputValue('');
+      if (inputRef.current === document.activeElement) {
+        inputRef.current.blur();
+      }
+    }
   }, [isOpen]);
 
-  // Close dropdown when user clicks outside or focus moves away
+  // Close on outside interaction. Dropdown buttons retain input focus while
+  // moving between stages, so an unmounted option cannot reset the badges.
   useEffect(() => {
     if (!isOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (!containerRef.current) return;
+      const container = containerRef.current;
+      if (!container) return;
+      // Selecting a dropdown item changes the stage and unmounts that button
+      // before this document listener runs. `contains(target)` then becomes
+      // false even though the pointer event originated inside the filterbar.
+      // The composed path is captured for the whole event dispatch and keeps
+      // the original ancestry, so it remains reliable across that rerender.
+      if (e.composedPath().includes(container)) return;
       const target = e.target as Node | null;
-      if (target && !containerRef.current.contains(target)) {
-        setIsOpen(false);
-      }
-    };
-    const onFocusIn = () => {
-      if (!containerRef.current) return;
-      const active = document.activeElement;
-      if (active && containerRef.current.contains(active)) return;
+      if (target && container.contains(target)) return;
       setIsOpen(false);
     };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('touchstart', onDocClick);
-    document.addEventListener('focusin', onFocusIn);
     return () => {
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('touchstart', onDocClick);
-      document.removeEventListener('focusin', onFocusIn);
     };
   }, [isOpen]);
 
@@ -116,18 +162,17 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   );
 
   const normalizeFilterValues = (values: Array<string | FilterValueOption>) => {
-    return Array.from(
-      new Set(
-        values
-          .filter(Boolean)
-          .map((value) => typeof value === 'string' ? { value, label: value } : value)
-          .map((item) => ({
-            value: String(item.value).trim(),
-            label: String(item.label || item.value).trim(),
-          }))
-          .filter((item) => item.value !== '')
-      )
-    );
+    const unique = new Map<string, FilterValueOption>();
+    values
+      .filter(Boolean)
+      .map((value) => typeof value === 'string' ? { value, label: value } : value)
+      .map((item) => ({
+        value: String(item.value).trim(),
+        label: String(item.label || item.value).trim(),
+      }))
+      .filter((item) => item.value !== '')
+      .forEach((item) => unique.set(item.value, item));
+    return Array.from(unique.values());
   };
 
   const defaultFilterDefinitions = useMemo<FilterDefinition[]>(() => {
@@ -201,17 +246,27 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
 
   const handleSelectValue = (val: string, display?: string) => {
     if (!currentType) return;
+    const normalizedValue = String(val).trim();
+    if (!normalizedValue) return;
+    const valueType = currentDefinition?.valueType || 'text';
+    if (valueType === 'number' && !Number.isFinite(Number(normalizedValue))) return;
+    if (valueType === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) return;
 
     const combined: CombinedFilter = {
       id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
       type: currentType,
       operator: currentOperator ?? currentDefinition?.operators?.[0] ?? 'contains',
-      value: val,
+      value: normalizedValue,
       display,
     };
 
     const nextFilters = filters.filter((filter) => filter.type !== combined.type);
     nextFilters.push(combined);
+    pendingLocalSyncRef.current = {
+      submitted: filterSignature(nextFilters),
+      previousExternal: acceptedExternalSignatureRef.current,
+      submittedAt: Date.now(),
+    };
     setFilters(nextFilters);
     onApply?.(nextFilters);
 
@@ -223,6 +278,11 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
 
   const handleRemoveFilter = (id: string) => {
     const newFilters = filters.filter((f) => f.id !== id);
+    pendingLocalSyncRef.current = {
+      submitted: filterSignature(newFilters),
+      previousExternal: acceptedExternalSignatureRef.current,
+      submittedAt: Date.now(),
+    };
     setFilters(newFilters);
     onApply?.(newFilters);
   };
@@ -257,7 +317,8 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     const valueType = definition?.valueType || 'text';
     const options = getValueOptions(definition, query);
     const exactMatch = query && options.some((item) => item.value.toLowerCase() === query.toLowerCase());
-    const allowCustom = definition?.allowCustomValue ?? true;
+    const hasDefinedOptions = Boolean(definition?.values || definition?.suggestions || definition?.renderOptions);
+    const allowCustom = definition?.allowCustomValue ?? !hasDefinedOptions;
     const labelFormatter = definition?.valueLabelFormatter ?? ((value: string) => value);
 
     // Date picker for date filters
@@ -274,7 +335,9 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
           />
           {query && (
             <button
-              onMouseDown={() => {
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
                 handleSelectValue(query, formatDateDisplay(query));
                 setIsOpen(false);
               }}
@@ -315,8 +378,13 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
           <div className="max-h-60 overflow-y-auto">
             {options.map((option) => (
               <button
+                type="button"
                 key={`${option.value}-${option.label}`}
-                onMouseDown={() => handleSelectValue(option.value, option.label)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSelectValue(option.value, option.label);
+                  setIsOpen(false);
+                }}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
               >
                 {option.label}
@@ -325,7 +393,11 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
           </div>
           {query && allowCustom && !exactMatch && (
             <button
-              onMouseDown={() => handleSelectValue(query, labelFormatter(query))}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                handleSelectValue(query, labelFormatter(query));
+              }}
               className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
             >
               Use "{query}"
@@ -342,7 +414,11 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       return (
         <div className="py-2">
           <button
-            onMouseDown={() => handleSelectValue(query, labelFormatter(query))}
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              handleSelectValue(query, labelFormatter(query));
+            }}
             className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
           >
             Use "{query}"
@@ -365,6 +441,16 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       }
 
       if (effectiveStage === 2 && inputValue.trim()) {
+        const hasDefinedOptions = Boolean(currentDefinition?.values || currentDefinition?.suggestions || currentDefinition?.renderOptions);
+        const allowCustom = currentDefinition?.allowCustomValue ?? !hasDefinedOptions;
+        if (!allowCustom) {
+          const exactOption = getValueOptions(currentDefinition, inputValue)
+            .find((option) => option.value.toLowerCase() === inputValue.trim().toLowerCase());
+          if (!exactOption) return;
+          handleSelectValue(exactOption.value, exactOption.label);
+          setIsOpen(false);
+          return;
+        }
         handleSelectValue(inputValue.trim());
         setIsOpen(false);
         return;
@@ -397,7 +483,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
         return (
           <div className="py-2">
             {filteredTypes.map((t) => (
-              <button key={t} onMouseDown={() => handleSelectType(t)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">
+              <button type="button" key={t} onMouseDown={(event) => { event.preventDefault(); handleSelectType(t); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">
                 {t}
               </button>
             ))}
@@ -407,7 +493,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       return (
         <div className="py-2">
           {filteredTypes.map((t) => (
-            <button key={t} onMouseDown={() => handleSelectType(t)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">
+            <button type="button" key={t} onMouseDown={(event) => { event.preventDefault(); handleSelectType(t); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100">
               {t}
             </button>
           ))}
@@ -423,7 +509,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       return (
         <div className="py-2 p-2 flex flex-col gap-1">
           {operators.map((op) => (
-            <button key={op} onMouseDown={() => handleSelectOperator(op)} className="px-3 py-2 rounded-lg hover:bg-gray-100 text-sm text-left">
+            <button type="button" key={op} onMouseDown={(event) => { event.preventDefault(); handleSelectOperator(op); }} className="px-3 py-2 rounded-lg hover:bg-gray-100 text-sm text-left">
               {op}
             </button>
           ))}
@@ -436,7 +522,10 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   return (
     <div className={"w-full " + (className || '')}>
       <div className="w-full overflow-visible">
-        <div className="relative w-full rounded-2xl border border-gray-200 bg-white shadow-sm" ref={containerRef}>
+        <div
+          className="relative w-full rounded-2xl border border-gray-200 bg-white shadow-sm"
+          ref={containerRef}
+        >
           <div className="flex w-full items-center gap-2 px-3 py-2.5">
             <div className="flex flex-1 items-center gap-2">
               <div ref={chipsRef} className="flex flex-wrap items-center gap-2">
@@ -445,7 +534,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
                     <span className="opacity-80">{f.type}</span>
                     <span>{f.operator}</span>
                     <span className="font-normal">{f.display ?? f.value}</span>
-                    <button onClick={() => handleRemoveFilter(f.id)} className="ml-2 text-gray-400">×</button>
+                    <button type="button" onClick={() => handleRemoveFilter(f.id)} className="ml-2 text-gray-400">×</button>
                   </div>
                 ))}
 
@@ -453,14 +542,14 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
                 {currentType && (
                   <div className="inline-flex items-center gap-2 bg-white border border-gray-200 px-3 py-1 rounded-full text-sm font-bold">
                     <span className="opacity-90">{currentType}</span>
-                    <button onClick={() => { setCurrentType(null); setStage(0); setCurrentOperator(null); setTimeout(() => inputRef.current?.focus(), 0); }} className="ml-2 text-gray-400">×</button>
+                    <button type="button" onClick={() => { setCurrentType(null); setStage(0); setCurrentOperator(null); setTimeout(() => inputRef.current?.focus(), 0); }} className="ml-2 text-gray-400">×</button>
                   </div>
                 )}
 
                 {currentOperator && currentDefinition?.operators && currentDefinition.operators.length > 1 && (
                   <div className="inline-flex items-center gap-2 bg-white border border-gray-200 px-3 py-1 rounded-full text-sm font-bold">
                     <span className="opacity-90">{currentOperator}</span>
-                    <button onClick={() => { setCurrentOperator(null); setStage(1); setTimeout(() => inputRef.current?.focus(), 0); }} className="ml-2 text-gray-400">×</button>
+                    <button type="button" onClick={() => { setCurrentOperator(null); setStage(1); setTimeout(() => inputRef.current?.focus(), 0); }} className="ml-2 text-gray-400">×</button>
                   </div>
                 )}
               </div>

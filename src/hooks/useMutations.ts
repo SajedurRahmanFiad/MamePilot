@@ -99,6 +99,27 @@ import {
   batchUpdateSettings,
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
+  updateWhatsAppSettings,
+  updateWhatsAppWelcomeExperience,
+  testWhatsAppConnection,
+  createWhatsAppConversation,
+  markWhatsAppConversationRead,
+  sendWhatsAppMessage,
+  sendWhatsAppMediaMessage,
+  sendWhatsAppTemplate,
+  updateMessengerSettings,
+  testMessengerConnection,
+  subscribeMessengerPage,
+  updateMessengerProfile,
+  markMessengerConversationRead,
+  sendMessengerMessage,
+  sendMessengerMediaMessage,
+  sendMessengerQuickReplies,
+  sendMessengerCard,
+  sendMessengerReaction,
+  sendMessengerSenderAction,
+  type MaintenanceStatus,
+  type MaintenanceUpdatePayload,
 } from '../services/supabaseQueries';
 import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import type {
@@ -118,6 +139,7 @@ import type {
   ServiceSubscriptionOverview,
   TransactionApprovalDecision,
   TransactionApprovalReviewResult,
+  EmployeeWalletPayoutPayload,
   WalletPayout,
   WalletSettings,
   RecycleBinEntityType,
@@ -132,6 +154,12 @@ import type {
   ProcessBillReturnPayload,
   VoiceSurveySettings,
   VoiceSurveyIntegrationSettings,
+  WhatsAppSettings,
+  WhatsAppContact,
+  WhatsAppMessage,
+  MessengerSettings,
+  MessengerProfileSettings,
+  MessengerMessage,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -2276,6 +2304,7 @@ export function useUpdateCompanySettings(): UseMutationResult<CompanySettings, E
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'company'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'global-branding'] });
     },
   });
 }
@@ -2373,7 +2402,7 @@ export function useUpdateCapabilitySettings(): UseMutationResult<CapabilitySetti
   });
 }
 
-export function useSetMaintenanceStatus(): UseMutationResult<{ maintenanceEnabled: boolean }, Error, { maintenanceEnabled: boolean }, unknown> {
+export function useSetMaintenanceStatus(): UseMutationResult<MaintenanceStatus, Error, MaintenanceUpdatePayload, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: setMaintenanceStatus,
@@ -2731,21 +2760,14 @@ export function useUpdateWalletSettings(): UseMutationResult<
 export function usePayEmployeeWallet(): UseMutationResult<
   WalletPayout,
   Error,
-  {
-    employeeId: string;
-    amount: number;
-    accountId: string;
-    paymentMethod: string;
-    categoryId: string;
-    paidAt: string;
-    note?: string;
-  },
+  EmployeeWalletPayoutPayload,
   unknown
 > {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: payEmployeeWallet,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -2764,6 +2786,7 @@ export function useDeleteEmployeeWalletPayout(): UseMutationResult<
   return useMutation({
     mutationFn: ({ id }) => deleteEmployeeWalletPayout(id),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -2782,6 +2805,105 @@ export function useCheckFraudCourierHistory(): UseMutationResult<FraudCheckResul
       }
     },
   });
+}
+
+export function useUpdateWhatsAppSettings(): UseMutationResult<WhatsAppSettings, Error, Partial<WhatsAppSettings>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateWhatsAppSettings, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
+}
+
+export function useUpdateWhatsAppWelcomeExperience(): UseMutationResult<WhatsAppSettings, Error, Pick<WhatsAppSettings, 'welcomeMessage' | 'getStartedEnabled' | 'iceBreakers'>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateWhatsAppWelcomeExperience, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
+}
+
+export function useTestWhatsAppConnection(): UseMutationResult<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string }, Error, void, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => testWhatsAppConnection(), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp', 'settings'] }) });
+}
+
+export function useCreateWhatsAppConversation(): UseMutationResult<WhatsAppContact, Error, { phoneNumber: string; name?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: createWhatsAppConversation, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] }) });
+}
+
+export function useMarkWhatsAppConversationRead(): UseMutationResult<{ ok: boolean; contactId: string }, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: markWhatsAppConversationRead, onSuccess: (_data, contactId) => { queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] }); queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', contactId] }); } });
+}
+
+export function useSendWhatsAppMessage(): UseMutationResult<WhatsAppMessage, Error, { contactId: string; text: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendWhatsAppMessage, onSuccess: (_data, variables) => { queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] }); queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', variables.contactId] }); } });
+}
+
+export function useSendWhatsAppMediaMessage(): UseMutationResult<WhatsAppMessage, Error, { contactId: string; dataUrl: string; fileName: string; mimeType: string; caption?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendWhatsAppMediaMessage, onSuccess: (_data, variables) => { queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] }); queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', variables.contactId] }); } });
+}
+
+export function useSendWhatsAppTemplate(): UseMutationResult<WhatsAppMessage, Error, { contactId: string; templateName: string; languageCode: string; components?: any[] }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendWhatsAppTemplate, onSuccess: (_data, variables) => { queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] }); queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', variables.contactId] }); } });
+}
+
+const invalidateMessengerConversation = (queryClient: ReturnType<typeof useQueryClient>, contactId?: string) => {
+  queryClient.invalidateQueries({ queryKey: ['messenger', 'contacts'] });
+  if (contactId) queryClient.invalidateQueries({ queryKey: ['messenger', 'messages', contactId] });
+};
+
+export function useUpdateMessengerSettings(): UseMutationResult<MessengerSettings, Error, Partial<MessengerSettings>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateMessengerSettings, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['messenger'] }) });
+}
+
+export function useTestMessengerConnection() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => testMessengerConnection(), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['messenger', 'settings'] }) });
+}
+
+export function useSubscribeMessengerPage() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => subscribeMessengerPage(), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['messenger', 'settings'] }) });
+}
+
+export function useUpdateMessengerProfile(): UseMutationResult<MessengerProfileSettings, Error, MessengerProfileSettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateMessengerProfile, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['messenger', 'profile'] }) });
+}
+
+export function useMarkMessengerConversationRead() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: markMessengerConversationRead, onSuccess: (_data, contactId) => invalidateMessengerConversation(queryClient, contactId) });
+}
+
+export function useSendMessengerSenderAction() {
+  return useMutation({ mutationFn: sendMessengerSenderAction });
+}
+
+export function useSendMessengerMessage(): UseMutationResult<MessengerMessage, Error, { contactId: string; text: string; replyToMid?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendMessengerMessage, onSuccess: (_data, variables) => invalidateMessengerConversation(queryClient, variables.contactId) });
+}
+
+export function useSendMessengerMediaMessage() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendMessengerMediaMessage, onSuccess: (_data, variables) => invalidateMessengerConversation(queryClient, variables.contactId) });
+}
+
+export function useSendMessengerQuickReplies() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendMessengerQuickReplies, onSuccess: (_data, variables) => invalidateMessengerConversation(queryClient, variables.contactId) });
+}
+
+export function useSendMessengerCard() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendMessengerCard, onSuccess: (_data, variables) => invalidateMessengerConversation(queryClient, variables.contactId) });
+}
+
+export function useSendMessengerReaction() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: sendMessengerReaction, onSuccess: (_data, variables) => invalidateMessengerConversation(queryClient, variables.contactId) });
 }
 
 export function useCreateNotification() {
@@ -2978,6 +3100,7 @@ export function useBatchUpdateSettings(): UseMutationResult<any, Error, any, unk
       if (data?.wallet) queryClient.setQueryData(['settings', 'wallet'], data.wallet);
       // Also invalidate to ensure consistency
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'global-branding'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
     },
   });

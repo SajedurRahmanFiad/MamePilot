@@ -433,7 +433,7 @@ final class AutoCallApi extends BaseService
         if ($configuredWebhookUrl === '') {
             $configuredWebhookUrl = $returnBase . '/api/?action=handlePipraPayIpn';
         }
-        $configuredReturnUrl = $returnBase . '/#/auto-calling';
+        $configuredReturnUrl = $this->appendUrlQueryParameter($returnBase . '/#/auto-calling', 'reference', $reference);
 
         $payload = [
             'full_name' => (string) ($user['name'] ?? 'Admin'),
@@ -446,7 +446,7 @@ final class AutoCallApi extends BaseService
             'webhook_url' => $configuredWebhookUrl,
         ];
 
-        $response = $this->httpJson('POST', $baseUrl . '/checkout/redirect', [
+        $response = $this->httpJson('POST', $this->pipraPayApiUrl($baseUrl, 'checkout/redirect'), [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
             'Accept' => 'application/json',
         ], $payload);

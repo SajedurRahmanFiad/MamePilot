@@ -10,6 +10,7 @@ import { useRecycleBinPage, useSystemDefaults, useRecycleBinFilterOptions } from
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { RecycleBinEntityType, RecycleBinItem, hasAdminAccess } from '../types';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const ENTITY_LABELS: Record<RecycleBinEntityType, string> = {
   customer: 'Customer',
@@ -71,6 +72,12 @@ const RecycleBin: React.FC = () => {
       enabled: isAdmin,
       search: deferredSearchQuery,
       entityType: typeFilter,
+      entityTypeNot: typeNotFilter || undefined,
+      deletedBy: deletedByFilter || undefined,
+      deletedByNot: deletedByNotFilter || undefined,
+      title: titleFilter || undefined,
+      titleNot: titleNotFilter || undefined,
+      deletedDate: deletedDateFilter || undefined,
     }
   );
   const visibleItems = recycleBinPage.data;
@@ -108,7 +115,7 @@ const RecycleBin: React.FC = () => {
       },
       {
         type: 'Title',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -142,10 +149,12 @@ const RecycleBin: React.FC = () => {
       filters.push({ id: 'deleted-by-not', type: 'Deleted by', operator: '≠' as const, value: deletedByNotFilter });
     }
     if (titleFilter) {
-      filters.push({ id: 'title', type: 'Title', operator: '=' as const, value: titleFilter });
+      const { contains, value } = decodeDynamicTextFilterValue(titleFilter);
+      filters.push({ id: 'title', type: 'Title', operator: contains ? 'contains' as const : '=' as const, value });
     }
     if (titleNotFilter) {
-      filters.push({ id: 'title-not', type: 'Title', operator: '≠' as const, value: titleNotFilter });
+      const { contains, value } = decodeDynamicTextFilterValue(titleNotFilter);
+      filters.push({ id: 'title-not', type: 'Title', operator: contains ? 'does not contain' as const : '≠' as const, value });
     }
     if (deletedDateFilter) {
       filters.push({ id: 'deleted', type: 'Deleted', operator: deletedDateFilter.operator as any, value: deletedDateFilter.value, display: formatDateDisplay(deletedDateFilter.value) });
@@ -153,56 +162,8 @@ const RecycleBin: React.FC = () => {
     return filters;
   }, [typeFilter, typeNotFilter, deletedByFilter, deletedByNotFilter, titleFilter, titleNotFilter, deletedDateFilter]);
 
-  // Client-side filters for additional fields
-  const filteredItems = useMemo(() => {
-    let filtered = visibleItems;
-
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter((item) => item.entityType === typeFilter);
-    }
-    if (typeNotFilter) {
-      filtered = filtered.filter((item) => item.entityType !== typeNotFilter);
-    }
-    if (deletedByFilter) {
-      filtered = filtered.filter((item) => {
-        const name = (item.deletedByName || item.deletedBy || '').toLowerCase();
-        return name.includes(deletedByFilter.toLowerCase());
-      });
-    }
-    if (deletedByNotFilter) {
-      filtered = filtered.filter((item) => {
-        const name = (item.deletedByName || item.deletedBy || '').toLowerCase();
-        return !name.includes(deletedByNotFilter.toLowerCase());
-      });
-    }
-    if (titleFilter) {
-      filtered = filtered.filter((item) => item.title?.toLowerCase().includes(titleFilter.toLowerCase()));
-    }
-    if (titleNotFilter) {
-      filtered = filtered.filter((item) => !item.title?.toLowerCase().includes(titleNotFilter.toLowerCase()));
-    }
-
-    // Date filter for Deleted
-    if (deletedDateFilter) {
-      const filterDate = new Date(deletedDateFilter.value);
-      if (!isNaN(filterDate.getTime())) {
-        filtered = filtered.filter((item) => {
-          if (!item.deletedAt) return false;
-          const itemDate = new Date(item.deletedAt);
-          const filterDateStr = deletedDateFilter.value;
-          const itemDateStr = itemDate.toISOString().split('T')[0];
-          switch (deletedDateFilter.operator) {
-            case 'on': return itemDateStr === filterDateStr;
-            case 'before': return itemDateStr < filterDateStr;
-            case 'after': return itemDateStr > filterDateStr;
-            default: return true;
-          }
-        });
-      }
-    }
-
-    return filtered;
-  }, [visibleItems, typeFilter, typeNotFilter, deletedByFilter, deletedByNotFilter, titleFilter, titleNotFilter, deletedDateFilter]);
+  // All filters are applied before pagination by the backend.
+  const filteredItems = visibleItems;
 
   useEffect(() => {
     setPage(1);
@@ -269,6 +230,7 @@ const RecycleBin: React.FC = () => {
         initialFilters={initialFilters}
         onApply={(appliedFilters) => {
           setPage(1);
+          const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
 
           const entityTypeFilter = appliedFilters.find((f) => f.type === 'Entity Type' && f.operator === '=');
           const entityTypeNotFilter = appliedFilters.find((f) => f.type === 'Entity Type' && f.operator === '≠');
@@ -280,10 +242,10 @@ const RecycleBin: React.FC = () => {
           setDeletedByFilter(deletedByFilter?.value ?? '');
           setDeletedByNotFilter(deletedByNotFilter?.value ?? '');
 
-          const titleFilter = appliedFilters.find((f) => f.type === 'Title' && f.operator === '=');
-          const titleNotFilter = appliedFilters.find((f) => f.type === 'Title' && f.operator === '≠');
-          setTitleFilter(titleFilter?.value ?? '');
-          setTitleNotFilter(titleNotFilter?.value ?? '');
+          const titleFilter = appliedFilters.find((f) => f.type === 'Title' && (f.operator === '=' || f.operator === 'contains'));
+          const titleNotFilter = appliedFilters.find((f) => f.type === 'Title' && (f.operator === '≠' || f.operator === 'does not contain'));
+          setTitleFilter(titleFilter ? encodeTextValue(titleFilter) : '');
+          setTitleNotFilter(titleNotFilter ? encodeTextValue(titleNotFilter) : '');
 
           const deletedDateFilter = appliedFilters.find((f) => f.type === 'Deleted');
           setDeletedDateFilter(deletedDateFilter ? { operator: deletedDateFilter.operator, value: deletedDateFilter.value } : null);

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(64) NOT NULL,
   role VARCHAR(32) NOT NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
   image LONGTEXT NULL,
   email VARCHAR(255) NULL,
   address TEXT NULL,
@@ -311,6 +312,11 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   renewal_date DATETIME NULL,
   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
   maintenance_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  maintenance_image_url VARCHAR(1000) NULL,
+  maintenance_caption VARCHAR(500) NULL,
+  maintenance_subtitle TEXT NULL,
+  maintenance_explanation TEXT NULL,
+  maintenance_ends_at DATETIME NULL,
   available_tiers LONGTEXT NULL,
   pricing_metadata LONGTEXT NULL,
   last_synced_at DATETIME NULL,
@@ -326,6 +332,11 @@ ALTER TABLE `app_capability_settings`
   ADD COLUMN IF NOT EXISTS `tier_key` VARCHAR(64) NULL,
   ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `maintenance_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `maintenance_image_url` VARCHAR(1000) NULL,
+  ADD COLUMN IF NOT EXISTS `maintenance_caption` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `maintenance_subtitle` TEXT NULL,
+  ADD COLUMN IF NOT EXISTS `maintenance_explanation` TEXT NULL,
+  ADD COLUMN IF NOT EXISTS `maintenance_ends_at` DATETIME NULL,
   ADD COLUMN IF NOT EXISTS `available_tiers` LONGTEXT NULL,
   ADD COLUMN IF NOT EXISTS `pricing_metadata` LONGTEXT NULL;
 CREATE TABLE IF NOT EXISTS payment_gateway_settings (
@@ -717,6 +728,58 @@ CREATE TABLE IF NOT EXISTS orders (
   CONSTRAINT fk_orders_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE RESTRICT,
   CONSTRAINT fk_orders_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS woocommerce_stores (
+  id VARCHAR(64) NOT NULL,
+  store_name VARCHAR(191) NOT NULL,
+  store_url VARCHAR(500) NOT NULL,
+  consumer_key VARCHAR(255) NULL,
+  consumer_secret VARCHAR(255) NULL,
+  webhook_secret VARCHAR(255) NULL,
+  webhook_base_url VARCHAR(1000) NULL,
+  webhook_id BIGINT NULL,
+  company_page_id VARCHAR(64) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(32) NULL,
+  last_sync_message VARCHAR(1000) NULL,
+  orders_synced INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_woocommerce_stores_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS woocommerce_order_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_order_id BIGINT NOT NULL,
+  wc_order_number VARCHAR(64) NULL,
+  order_id VARCHAR(64) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'imported',
+  message VARCHAR(1000) NULL,
+  payload_hash VARCHAR(64) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_order_links_store_order (store_id, wc_order_id),
+  KEY idx_wc_order_links_store_created (store_id, created_at),
+  CONSTRAINT fk_wc_order_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS woocommerce_product_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  wc_product_id BIGINT NOT NULL,
+  wc_variation_id BIGINT NOT NULL DEFAULT 0,
+  sku VARCHAR(191) NULL,
+  product_id VARCHAR(64) NOT NULL,
+  auto_created TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_wc_product_links_remote (store_id, wc_product_id, wc_variation_id),
+  KEY idx_wc_product_links_product (product_id),
+  CONSTRAINT fk_wc_product_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE,
+  CONSTRAINT fk_wc_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS bills (
   id VARCHAR(64) NOT NULL,
   bill_number VARCHAR(100) NOT NULL,
@@ -813,7 +876,17 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   unit_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   counted_statuses_snapshot LONGTEXT NULL,
   order_count_snapshot INT NOT NULL DEFAULT 0,
+  compensation_type VARCHAR(32) NOT NULL DEFAULT 'commission',
+  fixed_salary_snapshot DECIMAL(12,2) NULL,
+  base_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  bonus_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  deduction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  wallet_payout_id VARCHAR(64) NULL,
+  transaction_id VARCHAR(64) NULL,
+  account_id VARCHAR(64) NULL,
+  payment_method VARCHAR(255) NULL,
+  category_id VARCHAR(64) NULL,
   paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   paid_by VARCHAR(64) NOT NULL,
   note TEXT NULL,
@@ -822,9 +895,27 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   PRIMARY KEY (id),
   KEY idx_payroll_payments_employee_paid_at (employee_id, paid_at),
   KEY idx_payroll_payments_period (period_start, period_end),
+  KEY idx_payroll_payments_employee_period (employee_id, period_start, period_end),
+  UNIQUE KEY uq_payroll_payments_wallet_payout (wallet_payout_id),
+  UNIQUE KEY uq_payroll_payments_transaction (transaction_id),
   CONSTRAINT fk_payroll_payments_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_payroll_payments_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `payroll_payments`
+  ADD COLUMN IF NOT EXISTS `compensation_type` VARCHAR(32) NOT NULL DEFAULT 'commission',
+  ADD COLUMN IF NOT EXISTS `fixed_salary_snapshot` DECIMAL(12,2) NULL,
+  ADD COLUMN IF NOT EXISTS `base_amount_snapshot` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `bonus_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `deduction_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `wallet_payout_id` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `account_id` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `payment_method` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `category_id` VARCHAR(64) NULL;
+ALTER TABLE `payroll_payments`
+  ADD KEY IF NOT EXISTS `idx_payroll_payments_employee_period` (`employee_id`, `period_start`, `period_end`),
+  ADD UNIQUE KEY IF NOT EXISTS `uq_payroll_payments_wallet_payout` (`wallet_payout_id`),
+  ADD UNIQUE KEY IF NOT EXISTS `uq_payroll_payments_transaction` (`transaction_id`);
 CREATE TABLE IF NOT EXISTS wallet_payouts (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
@@ -833,6 +924,7 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   payment_method VARCHAR(255) NOT NULL,
   category_id VARCHAR(64) NOT NULL,
   transaction_id VARCHAR(64) NOT NULL,
+  payroll_payment_id VARCHAR(64) NULL,
   paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   paid_by VARCHAR(64) NOT NULL,
   note TEXT NULL,
@@ -840,6 +932,7 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_wallet_payouts_transaction_id (transaction_id),
+  UNIQUE KEY uq_wallet_payouts_payroll_payment (payroll_payment_id),
   KEY idx_wallet_payouts_employee_paid_at (employee_id, paid_at),
   KEY idx_wallet_payouts_paid_at (paid_at),
   CONSTRAINT fk_wallet_payouts_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
@@ -849,7 +942,10 @@ CREATE TABLE IF NOT EXISTS wallet_payouts (
   CONSTRAINT fk_wallet_payouts_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `wallet_payouts`
-  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(64) NULL;
+  ADD COLUMN IF NOT EXISTS `transaction_id` VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS `payroll_payment_id` VARCHAR(64) NULL;
+ALTER TABLE `wallet_payouts`
+  ADD UNIQUE KEY IF NOT EXISTS `uq_wallet_payouts_payroll_payment` (`payroll_payment_id`);
 CREATE TABLE IF NOT EXISTS wallet_entries (
   id VARCHAR(64) NOT NULL,
   employee_id VARCHAR(64) NOT NULL,
@@ -859,20 +955,31 @@ CREATE TABLE IF NOT EXISTS wallet_entries (
   source_order_id VARCHAR(64) NULL,
   source_order_number VARCHAR(100) NULL,
   wallet_payout_id VARCHAR(64) NULL,
+  payroll_payment_id VARCHAR(64) NULL,
   note TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by VARCHAR(64) NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_wallet_entries_order_entry_type (source_order_id, entry_type),
+  KEY idx_wallet_entries_order_entry_type (source_order_id, entry_type),
   UNIQUE KEY uq_wallet_entries_wallet_payout_id (wallet_payout_id),
   KEY idx_wallet_entries_employee_created_at (employee_id, created_at),
   KEY idx_wallet_entries_created_at (created_at),
   KEY idx_wallet_entries_entry_type (entry_type),
+  KEY idx_wallet_entries_payroll_payment (payroll_payment_id),
+  UNIQUE KEY uq_wallet_entries_payroll_entry (payroll_payment_id, entry_type),
   CONSTRAINT fk_wallet_entries_employee FOREIGN KEY (employee_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT fk_wallet_entries_order FOREIGN KEY (source_order_id) REFERENCES orders (id) ON DELETE SET NULL,
   CONSTRAINT fk_wallet_entries_wallet_payout FOREIGN KEY (wallet_payout_id) REFERENCES wallet_payouts (id) ON DELETE SET NULL,
   CONSTRAINT fk_wallet_entries_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `wallet_entries`
+  ADD COLUMN IF NOT EXISTS `payroll_payment_id` VARCHAR(64) NULL;
+ALTER TABLE `wallet_entries`
+  ADD KEY IF NOT EXISTS `idx_wallet_entries_order_entry_type` (`source_order_id`, `entry_type`);
+ALTER TABLE `wallet_entries`
+  DROP INDEX IF EXISTS `uq_wallet_entries_order_entry_type`,
+  ADD KEY IF NOT EXISTS `idx_wallet_entries_payroll_payment` (`payroll_payment_id`),
+  ADD UNIQUE KEY IF NOT EXISTS `uq_wallet_entries_payroll_entry` (`payroll_payment_id`, `entry_type`);
 DROP VIEW IF EXISTS orders_with_customer_creator;
 ALTER TABLE `orders`
   ADD COLUMN IF NOT EXISTS `pathao_consignment_id` VARCHAR(255) NULL,
@@ -1063,12 +1170,20 @@ SELECT
   we.source_order_id AS orderId,
   COALESCE(we.source_order_number, o.order_number) AS orderNumber,
   we.wallet_payout_id AS payoutId,
+  COALESCE(we.payroll_payment_id, wp.payroll_payment_id) AS payrollPaymentId,
   wp.transaction_id AS transactionId,
   wp.account_id AS accountId,
   a.name AS accountName,
   wp.payment_method AS paymentMethod,
   wp.category_id AS categoryId,
   c.name AS categoryName,
+  pp.compensation_type AS compensationType,
+  pp.base_amount_snapshot AS baseAmountSnapshot,
+  pp.bonus_amount AS bonusAmount,
+  pp.deduction_amount AS deductionAmount,
+  pp.amount_snapshot AS netAmount,
+  pp.period_start AS periodStart,
+  pp.period_end AS periodEnd,
   we.note,
   we.created_at AS createdAt,
   we.created_by AS createdBy,
@@ -1080,6 +1195,7 @@ FROM wallet_entries we
 LEFT JOIN users employee_user ON employee_user.id = we.employee_id
 LEFT JOIN orders o ON o.id = we.source_order_id
 LEFT JOIN wallet_payouts wp ON wp.id = we.wallet_payout_id
+LEFT JOIN payroll_payments pp ON pp.id = COALESCE(we.payroll_payment_id, wp.payroll_payment_id)
 LEFT JOIN accounts a ON a.id = wp.account_id
 LEFT JOIN categories c ON c.id = wp.category_id
 LEFT JOIN users creator_user ON creator_user.id = we.created_by

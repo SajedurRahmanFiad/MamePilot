@@ -8,7 +8,7 @@ import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabe
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme } from '../theme';
 import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useCreateTransaction, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -76,7 +76,6 @@ const OrderDetails: React.FC = () => {
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
   const deleteOrderMutation = useDeleteOrder();
-  const createTransactionMutation = useCreateTransaction();
   const processReturnExchangeMutation = useProcessOrderReturnExchange();
   const triggerSurveyCallMutation = useTriggerSurveyCall();
   const retrySurveyCallMutation = useRetrySurveyCall();
@@ -97,7 +96,7 @@ const OrderDetails: React.FC = () => {
       navigate('/orders', { state: { refreshOrders: true } });
     } catch (err) {
       console.error('Failed to delete order:', err);
-      toast.error('Failed to delete order: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not delete the order. Please try again.');
     }
   };
 
@@ -820,9 +819,10 @@ const OrderDetails: React.FC = () => {
   }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier]);
 
   // Calculate payment status
+  const settlementTotal = order?.status === OrderStatus.CANCELLED ? 0 : (order?.total ?? 0);
   const getPaymentStatus = () => {
     if (!order) return 'Unpaid';
-    return getPaymentStatusLabel(order.paidAmount, order.total, order.history);
+    return getPaymentStatusLabel(order.paidAmount, settlementTotal, order.history);
   };
   
   const loading = orderLoading;
@@ -910,7 +910,7 @@ const OrderDetails: React.FC = () => {
 
   const loadCourierHistory = () => {
     if (!isFraudCheckerConfigured) {
-      toast.warning('Fraud Checker API key is not configured. Enable it in Settings before checking courier history.');
+      toast.warning('Courier history is not available yet. Ask an administrator to enable it in Settings.');
       return;
     }
 
@@ -1069,28 +1069,22 @@ const OrderDetails: React.FC = () => {
     }
 
     if (completionForm.outcome === 'Returned') {
-      if (!completionForm.accountId) {
-        toast.error('Please select an account');
+      if (completionForm.amount < 0) {
+        toast.error('Return expense cannot be negative');
         return;
       }
-      if (completionForm.amount <= 0) {
-        toast.error('Please enter the return expense amount');
-        return;
-      }
-      if (!completionForm.paymentMethod) {
-        toast.error('Please select a payment method');
-        return;
-      }
-      if (!completionForm.categoryId) {
-        toast.error('Please select an expense category');
-        return;
-      }
-      const selectedAccount = accounts.find((account) => account.id === completionForm.accountId);
-      if (selectedAccount && selectedAccount.currentBalance < completionForm.amount) {
-        toast.error(
-          `${selectedAccount.name} does not have enough balance for this return. Available ${formatCurrency(selectedAccount.currentBalance)}, required ${formatCurrency(completionForm.amount)}.`
-        );
-        return;
+      if (completionForm.amount > 0) {
+        if (!completionForm.accountId || !completionForm.paymentMethod || !completionForm.categoryId) {
+          toast.error('Select an account, payment method, and expense category for the return expense');
+          return;
+        }
+        const selectedAccount = accounts.find((account) => account.id === completionForm.accountId);
+        if (selectedAccount && selectedAccount.currentBalance < completionForm.amount) {
+          toast.error(
+            `${selectedAccount.name} does not have enough balance for this return. Available ${formatCurrency(selectedAccount.currentBalance)}, required ${formatCurrency(completionForm.amount)}.`
+          );
+          return;
+        }
       }
 
       // Validate refund fields if a refund amount is entered
@@ -1162,7 +1156,7 @@ const OrderDetails: React.FC = () => {
       date: getTodayDate(),
       time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
       accountId: db.settings.defaults.defaultAccountId || '',
-      amount: Math.max(order.total - order.paidAmount, 0),
+      amount: Math.max(settlementTotal - order.paidAmount, 0),
       paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
     });
     setShowPaymentModal(true);
@@ -1171,11 +1165,13 @@ const OrderDetails: React.FC = () => {
   const openRefund = () => {
     if (!order) return;
 
+    const refundDue = Math.max(order.paidAmount - settlementTotal, 0);
+
     setRefundForm({
       date: getTodayDate(),
       time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
       accountId: db.settings.defaults.defaultAccountId || '',
-      amount: Math.max(order.paidAmount, 0),
+      amount: refundDue > 0 ? refundDue : Math.max(order.paidAmount, 0),
       paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
     });
     setShowRefundModal(true);
@@ -1183,16 +1179,7 @@ const OrderDetails: React.FC = () => {
 
   const appendHistoryEntry = (history: Partial<Order['history']> | undefined, eventText: string): Order['history'] => {
     const existingPaymentHistory = String(history?.payment || '').trim();
-    const base = {
-      created: String(history?.created || ''),
-      courier: history?.courier,
-      processing: history?.processing,
-      packed: history?.packed,
-      picked: history?.picked,
-      completed: history?.completed,
-      returned: history?.returned,
-      cancelled: history?.cancelled,
-    } as Order['history'];
+    const base = { ...(history || {}), created: String(history?.created || '') } as Order['history'];
 
     if (!existingPaymentHistory) {
       return { ...base, payment: eventText };
@@ -1212,6 +1199,11 @@ const OrderDetails: React.FC = () => {
       toast.error('Please enter an amount to record payment');
       return;
     }
+    const remainingDue = Math.max(settlementTotal - order.paidAmount, 0);
+    if (paymentForm.amount > remainingDue) {
+      toast.error(`Payment cannot exceed the remaining due of ${formatCurrency(remainingDue)}`);
+      return;
+    }
 
     try {
       const fullDatetime = buildLocalDateTime(paymentForm.date, paymentForm.time) || new Date();
@@ -1220,33 +1212,17 @@ const OrderDetails: React.FC = () => {
       const paymentMethod = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
       const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
-      // Create income transaction for this payment
-      const incomeTxn = {
-        date: isoDatetime,
-        type: 'Income' as const,
-        category: db.settings.defaults.incomeCategoryId || 'income_sales',
-        accountId: paymentForm.accountId,
-        amount: paymentForm.amount,
-        description: `Payment for Order #${order.orderNumber}`,
-        referenceId: order.id,
-        contactId: order.customerId,
-        paymentMethod,
-        createdBy: user.id,
-      };
-      const createdTransaction = await createTransactionMutation.mutateAsync(incomeTxn as any);
-
-      const updates: Partial<Order> = {
-        paidAmount: order.paidAmount + paymentForm.amount,
+      const updates: any = {
         history: appendHistoryEntry(order.history, historyText) as any,
+        paymentAmount: paymentForm.amount,
+        paymentAccountId: paymentForm.accountId,
+        paymentMethod,
+        paymentDate: isoDatetime,
       };
 
       await updateMutation.mutateAsync({ id: id!, updates });
       setShowPaymentModal(false);
-      if (createdTransaction?.approvalStatus === 'pending') {
-        toast.info('Payment recorded, and the income transaction is waiting for admin approval.');
-      } else {
-        toast.success('Payment recorded successfully');
-      }
+      toast.success('Payment recorded successfully');
     } catch (err) {
       console.error('Failed to record payment:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to record payment');
@@ -1276,7 +1252,6 @@ const OrderDetails: React.FC = () => {
       const paymentMethod = refundForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
       const historyText = `Refund of ${formatCurrency(refundForm.amount)} issued by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
       const updates: any = {
-        paidAmount: Math.max(order.paidAmount - refundForm.amount, 0),
         paidAt: isoDatetime,
         history: appendHistoryEntry(order.history, historyText) as any,
         refundAmount: refundForm.amount,
@@ -1439,7 +1414,7 @@ const OrderDetails: React.FC = () => {
       await createOrderMutation.mutateAsync(duplicateOrder as any);
       navigate('/orders');
     } catch (err) {
-      toast.error('Failed to duplicate order: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not duplicate the order. Please try again.');
     }
   };
 
@@ -1466,19 +1441,13 @@ const OrderDetails: React.FC = () => {
     || canProcessReturnExchange
     || canAssignExchangeCourier;
 
-  const buyerTrust = (() => {
-    if (fraudPercentage === null) {
-      return {
-        label: 'Buyer check in progress',
-        message: 'Verify the customer before sending.',
-        className: 'bg-gray-100 text-gray-700 border-gray-200',
-      };
-    }
+  const customerTrust = (() => {
+    if (fraudPercentage === null) return null;
     if (fraudPercentage >= 90) {
-      return { label: 'Trusted Buyer', message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+      return { label: 'Trusted Customer', message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
     }
     if (fraudPercentage >= 70) {
-      return { label: 'Standard Buyer', message: 'Send with normal checks', className: 'bg-blue-100 text-blue-700 border-blue-200' };
+      return { label: 'Standard Customer', message: 'Send with normal checks', className: 'bg-blue-100 text-blue-700 border-blue-200' };
     }
     if (fraudPercentage >= 40) {
       return { label: 'Moderate Risk', message: 'Confirm before sending', className: 'bg-amber-100 text-amber-700 border-amber-200' };
@@ -1613,7 +1582,7 @@ const OrderDetails: React.FC = () => {
                         className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold ${canRunFraudChecker ? 'text-gray-700' : 'cursor-not-allowed text-gray-300'}`}
                         disabled={!canRunFraudChecker}
                       >
-                        {ICONS.FraudChecker} Buyer Trust Details
+                        {ICONS.FraudChecker} Customer Trust Details
                       </button>
                     )}
                     {sentToAnyCourier && canUseCourierAutomation && (
@@ -1648,10 +1617,10 @@ const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {isBusinessGrowthEnabled ? (
-        <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${buyerTrust.className}`}>
-          <p className="text-sm font-black">{buyerTrust.label}{fraudPercentage !== null ? ` · ${Math.round(fraudPercentage)}% delivered` : ''}</p>
-          <p className="text-sm font-bold">{buyerTrust.message}</p>
+      {isBusinessGrowthEnabled && customerTrust ? (
+        <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
+          <p className="text-sm font-black">{customerTrust.label} · {Math.round(fraudPercentage)}% delivered</p>
+          <p className="text-sm font-bold">{customerTrust.message}</p>
         </div>
       ) : null}
 
@@ -1844,20 +1813,20 @@ const OrderDetails: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-100">
                     <span className="text-xs text-gray-500 font-medium">Due Amount</span>
-                    <span className={`font-bold ${order.total - order.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {formatCurrency(Math.max(order.total - order.paidAmount, 0))}
+                    <span className={`font-bold ${settlementTotal - order.paidAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(Math.max(settlementTotal - order.paidAmount, 0))}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium">Refunded</span>
-                    <span className="font-bold text-orange-600">{formatCurrency(0)}</span>
+                    <span className="text-xs text-gray-500 font-medium">Customer Refund Due</span>
+                    <span className="font-bold text-orange-600">{formatCurrency(Math.max(order.paidAmount - settlementTotal, 0))}</span>
                   </div>
                 </div>
 
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={openPayment}
-                    disabled={getPaymentStatus() === 'Refunded'}
+                    disabled={order.paidAmount >= settlementTotal || order.status === OrderStatus.CANCELLED}
                     className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     Add Payment
@@ -1922,7 +1891,7 @@ const OrderDetails: React.FC = () => {
                     onClick={async () => {
                       try {
                         await triggerSurveyCallMutation.mutateAsync(order.id);
-                        toast.success('Survey call triggered');
+                        toast.success('Survey call started.');
                         queryClient.invalidateQueries({ queryKey: ['order', order.id] });
                       } catch (err) {
                         toast.error(err instanceof Error ? err.message : 'Failed to trigger call');
@@ -1941,10 +1910,10 @@ const OrderDetails: React.FC = () => {
                     onClick={async () => {
                       try {
                         await retrySurveyCallMutation.mutateAsync(order.id);
-                        toast.success('Survey call retry triggered');
+                        toast.success('Survey call started again.');
                         queryClient.invalidateQueries({ queryKey: ['order', order.id] });
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : 'Failed to retry call');
+                        toast.error(err instanceof Error ? err.message : 'Could not start the survey call again. Please try again.');
                       }
                     }}
                     loading={retrySurveyCallMutation.isPending}

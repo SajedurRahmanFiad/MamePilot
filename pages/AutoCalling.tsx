@@ -8,6 +8,7 @@ import { theme } from '../theme';
 import { useRechargeHistory, useSurveyBalance, useSurveyBroadcasts, useSurveySummary } from '../src/hooks/useQueries';
 import { useInitiateRechargeCheckout } from '../src/hooks/useMutations';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
+import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import Pagination from '../src/components/Pagination';
 
@@ -102,16 +103,14 @@ const AutoCalling: React.FC = () => {
   // Handle PipraPay payment return
   useEffect(() => {
     let cancelled = false;
-    const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
-    const params = new URLSearchParams(rawQuery);
-    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
+    const params = readPipraPayReturnParams();
+    const paymentStatus = readPipraPayReturnStatus(params);
     const ppId = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || '';
     const reference = params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference') || params.get('order_id') || '';
 
-    if (!paymentStatus && !ppId) return;
+    if (!paymentStatus && !ppId && !reference) return;
 
-    const cleanHash = window.location.hash.split('?')[0];
-    window.history.replaceState(null, '', window.location.pathname + cleanHash);
+    clearPipraPayReturnParams();
 
     const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
       ? 'cancelled' : paymentStatus === 'failed' ? 'failed' : paymentStatus === 'success' ? 'success' : 'processing';
@@ -138,15 +137,19 @@ const AutoCalling: React.FC = () => {
           if (['completed', 'complete', 'success', 'successful', 'paid'].includes(paymentOutcome) || result?.paid) {
             toast.success(result?.message || 'Recharge payment verified. The balance top-up is ready for processing.');
             queryClient.invalidateQueries({ queryKey: ['survey'], exact: false });
-          } else if (normalizedStatus === 'cancelled') {
-            toast.warning('Payment was cancelled.');
+          } else if (paymentOutcome === 'canceled' || paymentOutcome === 'cancelled') {
+            toast.warning(result?.message || 'Payment was cancelled. No charges were made.');
+            queryClient.invalidateQueries({ queryKey: ['survey'], exact: false });
+          } else if (paymentOutcome === 'failed') {
+            toast.error(result?.message || 'Payment failed. Please try again.');
+            queryClient.invalidateQueries({ queryKey: ['survey'], exact: false });
           } else {
             toast.error('Payment could not be verified. Please check your balance.');
           }
           return;
         }
         if (!cancelled) {
-          toast.info('Payment is still processing. The gateway webhook will update recharge history automatically.');
+          toast.info('Payment is still being confirmed. Your recharge history will update automatically.');
         }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Payment verification failed.');
@@ -177,7 +180,7 @@ const AutoCalling: React.FC = () => {
       if (result?.checkoutUrl) {
         window.location.href = result.checkoutUrl;
       } else {
-        toast.error('Could not get checkout URL from payment gateway.');
+        toast.error('The payment page could not be opened. Please try again.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to initiate recharge.');

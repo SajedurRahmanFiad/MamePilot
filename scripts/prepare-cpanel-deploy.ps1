@@ -48,6 +48,9 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\.htaccess') -De
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -Destination (Join-Path $publicRoot 'api\index.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\update.php') -Destination (Join-Path $publicRoot 'api\update.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\webhook-survey.php') -Destination (Join-Path $publicRoot 'api\webhook-survey.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\whatsapp-webhook.php') -Destination (Join-Path $publicRoot 'api\whatsapp-webhook.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\messenger-webhook.php') -Destination (Join-Path $publicRoot 'api\messenger-webhook.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\woocommerce-webhook.php') -Destination (Join-Path $publicRoot 'api\woocommerce-webhook.php') -Force
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force

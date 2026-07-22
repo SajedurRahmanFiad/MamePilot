@@ -2,7 +2,7 @@
 import React, { useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Customer, hasAdminAccess } from '../types';
+import { Customer, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, Table, TableCell, IconButton, TableLoadingSkeleton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
@@ -19,6 +19,7 @@ import { useMemo, useEffect } from 'react';
 import { isTempId } from '../src/utils/optimisticIdMap';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
@@ -43,15 +44,9 @@ const Customers: React.FC = () => {
   const previousSearchQueryRef = React.useRef(searchQuery);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
   const { data: users = [] } = useUsers();
-  const { data: customersPage, isFetching, error } = useCustomersPage(effectivePage, pageSize, searchQuery, {
-    enabled: canLoadCustomers,
-  });
   const handleRefreshCustomers = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['customers'], exact: false, type: 'active' });
   }, [queryClient]);
-  const customers = customersPage?.data ?? [];
-  const total = customersPage?.count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const deleteCustomerMutation = useDeleteCustomer();
   const { data: customerFilterOpts } = useCustomerFilterOptions();
   const isAdmin = hasAdminAccess(user?.role);
@@ -70,6 +65,36 @@ const Customers: React.FC = () => {
   const [addressNotFilter, setAddressNotFilter] = React.useState<string>('');
   const [totalOrdersFilter, setTotalOrdersFilter] = React.useState<{ operator: string; value: string } | null>(null);
   const [dueAmountFilter, setDueAmountFilter] = React.useState<{ operator: string; value: string } | null>(null);
+  const includedCreatorIds = useMemo(() => {
+    const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
+    if (createdByFilter === 'all') return undefined;
+    if (createdByFilter === 'admins') return requireMatch(users.filter((u) => u.role === 'Admin').map((u) => u.id));
+    if (createdByFilter === 'employees') return requireMatch(users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id));
+    if (createdByFilter === 'developers') return requireMatch(users.filter((u) => u.role === 'Developer').map((u) => u.id));
+    return [createdByFilter];
+  }, [createdByFilter, users]);
+  const excludedCreatorIds = useMemo(() => {
+    if (!createdByNotFilter) return undefined;
+    if (createdByNotFilter === 'admins') return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+    if (createdByNotFilter === 'employees') return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+    if (createdByNotFilter === 'developers') return users.filter((u) => u.role === 'Developer').map((u) => u.id);
+    return [createdByNotFilter];
+  }, [createdByNotFilter, users]);
+  const { data: customersPage, isFetching, error } = useCustomersPage(effectivePage, pageSize, searchQuery, {
+    createdByIds: includedCreatorIds,
+    createdByNotIds: excludedCreatorIds,
+    name: nameFilter || undefined,
+    nameNot: nameNotFilter || undefined,
+    phone: phoneFilter || undefined,
+    phoneNot: phoneNotFilter || undefined,
+    address: addressFilter || undefined,
+    addressNot: addressNotFilter || undefined,
+    totalOrders: totalOrdersFilter || undefined,
+    dueAmount: dueAmountFilter || undefined,
+  }, { enabled: canLoadCustomers });
+  const customers = customersPage?.data ?? [];
+  const total = customersPage?.count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const nameOptions = useMemo(() => {
     return customerFilterOpts?.names || [];
@@ -87,6 +112,7 @@ const Customers: React.FC = () => {
     const userOptions = [
       { value: 'admins', label: 'Admins' },
       { value: 'employees', label: 'Employees' },
+      { value: 'developers', label: 'Developers' },
       ...users
         .slice()
         .sort((a, b) => a.role.localeCompare(b.role))
@@ -106,7 +132,7 @@ const Customers: React.FC = () => {
       },
       {
         type: 'Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -117,7 +143,7 @@ const Customers: React.FC = () => {
       },
       {
         type: 'Phone',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -128,7 +154,7 @@ const Customers: React.FC = () => {
       },
       {
         type: 'Address',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -154,6 +180,13 @@ const Customers: React.FC = () => {
 
   const initialFilters = useMemo(() => {
     const filters = [];
+    const decodeText = (encoded: string, negative = false) => {
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      return {
+        operator: contains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '='),
+        value,
+      };
+    };
     if (createdByFilter !== 'all') {
       const user = users.find((u) => u.id === createdByFilter);
       const display = createdByFilter === 'admins' ? 'Admins'
@@ -162,25 +195,30 @@ const Customers: React.FC = () => {
       filters.push({ id: 'created-by', type: 'Created by', operator: '=' as const, value: createdByFilter, display });
     }
     if (createdByNotFilter) {
-      filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠' as const, value: createdByNotFilter });
+      const user = users.find((u) => u.id === createdByNotFilter);
+      const display = createdByNotFilter === 'admins' ? 'Admins'
+        : createdByNotFilter === 'employees' ? 'Employees'
+          : createdByNotFilter === 'developers' ? 'Developers'
+            : user ? `${user.role}: ${user.name}` : createdByNotFilter;
+      filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠' as const, value: createdByNotFilter, display });
     }
     if (nameFilter) {
-      filters.push({ id: 'name', type: 'Name', operator: '=' as const, value: nameFilter });
+      filters.push({ id: 'name', type: 'Name', ...decodeText(nameFilter) });
     }
     if (nameNotFilter) {
-      filters.push({ id: 'name-not', type: 'Name', operator: '≠' as const, value: nameNotFilter });
+      filters.push({ id: 'name-not', type: 'Name', ...decodeText(nameNotFilter, true) });
     }
     if (phoneFilter) {
-      filters.push({ id: 'phone', type: 'Phone', operator: '=' as const, value: phoneFilter });
+      filters.push({ id: 'phone', type: 'Phone', ...decodeText(phoneFilter) });
     }
     if (phoneNotFilter) {
-      filters.push({ id: 'phone-not', type: 'Phone', operator: '≠' as const, value: phoneNotFilter });
+      filters.push({ id: 'phone-not', type: 'Phone', ...decodeText(phoneNotFilter, true) });
     }
     if (addressFilter) {
-      filters.push({ id: 'address', type: 'Address', operator: '=' as const, value: addressFilter });
+      filters.push({ id: 'address', type: 'Address', ...decodeText(addressFilter) });
     }
     if (addressNotFilter) {
-      filters.push({ id: 'address-not', type: 'Address', operator: '≠' as const, value: addressNotFilter });
+      filters.push({ id: 'address-not', type: 'Address', ...decodeText(addressNotFilter, true) });
     }
     if (totalOrdersFilter) {
       filters.push({ id: 'total-orders', type: 'Total Orders', operator: totalOrdersFilter.operator as any, value: totalOrdersFilter.value });
@@ -245,77 +283,7 @@ const Customers: React.FC = () => {
     }
   }, [shouldHydrateFromUrl, isNavigatingViaHistory, effectivePage, searchQuery, currentSearchParams, setSearchParams]);
 
-  // Server-side search is applied via the paginated hook. Client-side filters for additional fields.
-  const filteredCustomers = useMemo(() => {
-    let filtered = customers;
-
-    if (createdByFilter !== 'all') {
-      const createdByIds = createdByFilter === 'admins'
-        ? users.filter((u) => u.role === 'Admin').map((u) => u.id)
-        : createdByFilter === 'employees'
-          ? users.filter((u) => u.role === 'Employee').map((u) => u.id)
-          : [createdByFilter];
-      filtered = filtered.filter((c) => c.createdBy && createdByIds.includes(c.createdBy));
-    }
-    if (createdByNotFilter) {
-      const notIds = createdByNotFilter === 'admins'
-        ? users.filter((u) => u.role === 'Admin').map((u) => u.id)
-        : createdByNotFilter === 'employees'
-          ? users.filter((u) => u.role === 'Employee').map((u) => u.id)
-          : [createdByNotFilter];
-      filtered = filtered.filter((c) => !c.createdBy || !notIds.includes(c.createdBy));
-    }
-    if (nameFilter) {
-      filtered = filtered.filter((c) => c.name?.toLowerCase().includes(nameFilter.toLowerCase()));
-    }
-    if (nameNotFilter) {
-      filtered = filtered.filter((c) => !c.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
-    }
-    if (phoneFilter) {
-      filtered = filtered.filter((c) => c.phone?.toLowerCase().includes(phoneFilter.toLowerCase()));
-    }
-    if (phoneNotFilter) {
-      filtered = filtered.filter((c) => !c.phone?.toLowerCase().includes(phoneNotFilter.toLowerCase()));
-    }
-    if (addressFilter) {
-      filtered = filtered.filter((c) => c.address?.toLowerCase().includes(addressFilter.toLowerCase()));
-    }
-    if (addressNotFilter) {
-      filtered = filtered.filter((c) => !c.address?.toLowerCase().includes(addressNotFilter.toLowerCase()));
-    }
-
-    // Numeric filters
-    if (totalOrdersFilter) {
-      const val = Number(totalOrdersFilter.value);
-      if (!isNaN(val)) {
-        filtered = filtered.filter((c) => {
-          switch (totalOrdersFilter.operator) {
-            case '=': return c.totalOrders === val;
-            case '≠': return c.totalOrders !== val;
-            case '<': return c.totalOrders < val;
-            case '>': return c.totalOrders > val;
-            default: return true;
-          }
-        });
-      }
-    }
-    if (dueAmountFilter) {
-      const val = Number(dueAmountFilter.value);
-      if (!isNaN(val)) {
-        filtered = filtered.filter((c) => {
-          switch (dueAmountFilter.operator) {
-            case '=': return c.dueAmount === val;
-            case '≠': return c.dueAmount !== val;
-            case '<': return c.dueAmount < val;
-            case '>': return c.dueAmount > val;
-            default: return true;
-          }
-        });
-      }
-    }
-
-    return filtered;
-  }, [customers, createdByFilter, createdByNotFilter, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, totalOrdersFilter, dueAmountFilter, users]);
+  const filteredCustomers = customers;
 
   const handleDelete = async (customerId: string) => {
     if (!confirm('Move this customer to the recycle bin? You can restore it later.')) return;
@@ -326,7 +294,7 @@ const Customers: React.FC = () => {
         if (!old) return old;
         return old.filter(c => c.id !== customerId);
       });
-      toast.success('Customer removed locally');
+      toast.success('Customer removed from this list.');
       return;
     }
 
@@ -354,26 +322,28 @@ const Customers: React.FC = () => {
           users={users}
           onApply={(appliedFilters) => {
           setPage(1);
+          const encodeTextValue = (filter: { operator: string; value: string }) =>
+            encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
           
           const createdByFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '=');
           const createdByNotFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '≠');
           setCreatedByFilter(createdByFilter?.value ?? 'all');
           setCreatedByNotFilter(createdByNotFilter?.value ?? '');
           
-          const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
-          const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
-          setNameFilter(nameFilter?.value ?? '');
-          setNameNotFilter(nameNotFilter?.value ?? '');
+          const nameFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '=' || f.operator === 'contains'));
+          const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '≠' || f.operator === 'does not contain'));
+          setNameFilter(nameFilter ? encodeTextValue(nameFilter) : '');
+          setNameNotFilter(nameNotFilter ? encodeTextValue(nameNotFilter) : '');
           
-          const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '=');
-          const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '≠');
-          setPhoneFilter(phoneFilter?.value ?? '');
-          setPhoneNotFilter(phoneNotFilter?.value ?? '');
+          const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '=' || f.operator === 'contains'));
+          const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
+          setPhoneFilter(phoneFilter ? encodeTextValue(phoneFilter) : '');
+          setPhoneNotFilter(phoneNotFilter ? encodeTextValue(phoneNotFilter) : '');
           
-          const addressFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '=');
-          const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '≠');
-          setAddressFilter(addressFilter?.value ?? '');
-          setAddressNotFilter(addressNotFilter?.value ?? '');
+          const addressFilter = appliedFilters.find((f) => f.type === 'Address' && (f.operator === '=' || f.operator === 'contains'));
+          const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && (f.operator === '≠' || f.operator === 'does not contain'));
+          setAddressFilter(addressFilter ? encodeTextValue(addressFilter) : '');
+          setAddressNotFilter(addressNotFilter ? encodeTextValue(addressNotFilter) : '');
           
           const totalOrdersFilter = appliedFilters.find((f) => f.type === 'Total Orders');
           setTotalOrdersFilter(totalOrdersFilter ? { operator: totalOrdersFilter.operator, value: totalOrdersFilter.value } : null);

@@ -8,6 +8,7 @@ export type SidebarPermissionContext = {
   hasSubCapability: (capability: SubCapabilityKey) => boolean;
   canViewDashboard: boolean;
   isAdminAccessUser: boolean;
+  isEmployeeUser: boolean;
   isDeveloper: boolean;
 };
 
@@ -76,6 +77,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         visible: ({ hasCapability }) => hasCapability('whatsapp'),
       },
       {
+        key: 'messenger',
+        label: 'Messenger',
+        to: '/messenger',
+        icon: ICONS.Messenger,
+        visible: ({ hasCapability }) => hasCapability('messenger'),
+      },
+      {
         key: 'auto_calling',
         label: 'Auto Calling',
         to: '/auto-calling',
@@ -89,7 +97,7 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     label: 'Wallet',
     to: '/wallet',
     icon: ICONS.Payroll,
-    visible: ({ can, hasSubCapability, isAdminAccessUser }) => !isAdminAccessUser && can('wallet.view') && hasSubCapability('payroll'),
+    visible: ({ can, hasSubCapability, isEmployeeUser }) => isEmployeeUser && can('wallet.view') && hasSubCapability('payroll'),
   },
   {
     key: 'purchases',

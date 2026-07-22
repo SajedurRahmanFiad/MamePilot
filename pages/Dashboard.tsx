@@ -113,21 +113,30 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
 const EmployeeSummaryCard: React.FC<{
   title: string;
   value: string | number;
+  hint: string;
   icon: React.ReactNode;
   cardClassName: string;
   iconClassName: string;
-}> = ({ title, value, icon, cardClassName, iconClassName }) => (
-  <div className={`rounded-[12px] px-4 py-4 text-white shadow-[0_18px_40px_rgba(15,47,87,0.12)] ${cardClassName}`}>
+  onClick?: () => void;
+}> = ({ title, value, hint, icon, cardClassName, iconClassName, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={!onClick}
+    className={`group w-full rounded-2xl px-5 py-5 text-left text-white shadow-[0_18px_40px_rgba(15,47,87,0.12)] transition focus:outline-none focus:ring-2 focus:ring-[#3c5a82] focus:ring-offset-2 ${onClick ? 'hover:-translate-y-0.5 hover:shadow-[0_22px_44px_rgba(15,47,87,0.18)]' : 'cursor-default'} ${cardClassName}`}
+  >
     <div className="flex items-center gap-4">
-      <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${iconClassName}`}>
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClassName}`}>
         {icon}
       </div>
-      <div>
+      <div className="min-w-0 flex-1">
         <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/80">{title}</p>
-        <p className="mt-1 text-lg font-black leading-none">{value}</p>
+        <p className="mt-1.5 truncate text-xl font-black leading-none">{value}</p>
       </div>
+      {onClick && <span aria-hidden="true" className="text-white/60 transition-transform group-hover:translate-x-0.5">{ICONS.ChevronRight}</span>}
     </div>
-  </div>
+    <p className="mt-4 text-xs font-semibold text-white/75">{hint}</p>
+  </button>
 );
 
 const EmployeeStatusCard: React.FC<{
@@ -146,7 +155,8 @@ const EmployeeStatusCard: React.FC<{
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-[12px] border border-gray-100 bg-white px-4 py-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#c7dff5] hover:bg-[#f8fbff]"
+      disabled={!onClick}
+      className={`w-full rounded-[12px] border border-gray-100 bg-white px-4 py-4 text-left shadow-sm transition-all ${onClick ? 'hover:-translate-y-0.5 hover:border-[#c7dff5] hover:bg-[#f8fbff]' : 'cursor-default'}`}
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-[16px] font-black text-gray-900">{title}</p>
@@ -160,20 +170,26 @@ const EmployeeStatusCard: React.FC<{
 };
 
 const EmployeeComparisonRow: React.FC<{
+  rank: number;
   name: string;
   role: string;
   orderCount: number;
   maxCount: number;
   isCurrentUser: boolean;
-}> = ({ name, role, orderCount, maxCount, isCurrentUser }) => {
+}> = ({ rank, name, role, orderCount, maxCount, isCurrentUser }) => {
   const width = maxCount > 0 && orderCount > 0 ? Math.max((orderCount / maxCount) * 100, 8) : 0;
 
   return (
     <div className={`rounded-[12px] border px-4 py-4 shadow-sm ${isCurrentUser ? 'border-[#c7dff5] bg-[#f8fbff]' : 'border-gray-100 bg-white'}`}>
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="truncate text-md font-black text-gray-900">{name}</p>
-          <p className="mt-1 text-[10px] font-black uppercase text-gray-400">{role}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${isCurrentUser ? 'bg-[#0f2f57] text-white' : 'bg-gray-100 text-gray-500'}`}>
+            {rank}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-md font-black text-gray-900">{name}{isCurrentUser ? ' (You)' : ''}</p>
+            <p className="mt-1 text-[10px] font-black uppercase text-gray-400">{role}</p>
+          </div>
         </div>
         <div className="text-right">
           <p className="text-lg font-black leading-none text-[#0f172a]">{orderCount}</p>
@@ -187,6 +203,23 @@ const EmployeeComparisonRow: React.FC<{
   );
 };
 
+const EmployeeInsight: React.FC<{
+  label: string;
+  value: string;
+  detail: string;
+  valueClassName?: string;
+}> = ({ label, value, detail, valueClassName = 'text-gray-900' }) => (
+  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-gray-400">{label}</p>
+        <p className="mt-1.5 text-xs font-medium text-gray-500">{detail}</p>
+      </div>
+      <p className={`shrink-0 text-lg font-black ${valueClassName}`}>{value}</p>
+    </div>
+  </div>
+);
+
 const SectionState: React.FC<{ text: string; minHeight?: string }> = ({ text, minHeight = 'min-h-[220px]' }) => (
   <div className={`flex items-center justify-center ${minHeight}`}>
     <p className="text-sm font-medium text-gray-400">{text}</p>
@@ -196,8 +229,8 @@ const SectionState: React.FC<{ text: string; minHeight?: string }> = ({ text, mi
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
-  const { canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
-  const { hasCapability } = useCapabilities(Boolean(user));
+  const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
+  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
@@ -208,6 +241,15 @@ const Dashboard: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const canLoadDashboard = Boolean(user) && (canViewAdminDashboard || canViewEmployeeDashboard);
+  const { data: snapshot, error } = useDashboardSnapshot(
+    filterRange,
+    customDates,
+    { enabled: canLoadDashboard }
+  );
+  const canViewOrders = can('orders.view');
+  const canViewWallet = can('wallet.view') && hasSubCapability('payroll');
 
   if (authLoading) {
     return <div className="p-8 text-center text-gray-500">Loading session...</div>;
@@ -222,7 +264,6 @@ const Dashboard: React.FC = () => {
   }
 
   const isAdmin = canViewAdminDashboard;
-  const { data: snapshot, error } = useDashboardSnapshot(filterRange, customDates);
   const adminSnapshot = snapshot?.admin;
   const employeeSnapshot = snapshot?.employee;
   const inlinePlaceholder = error ? 'Failed to load' : 'Loading...';
@@ -241,8 +282,38 @@ const Dashboard: React.FC = () => {
     if (includeTime) params.set('includeTime', 'true');
     navigate(`/orders?${params.toString()}`);
   };
+
+  const handleOpenMyOrders = (status?: OrderStatus, includeSelectedRange: boolean = true) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    params.set('createdBy', String(user.id));
+    if (includeSelectedRange) {
+      if (filterRange !== 'All Time') params.set('range', filterRange);
+      if (customDates.from) params.set('from', customDates.from);
+      if (customDates.to) params.set('to', customDates.to);
+      if (includeTime) params.set('includeTime', 'true');
+    }
+    navigate(`/orders?${params.toString()}`);
+  };
   const employeeComparisonRows = employeeSnapshot?.employeeComparisonRows ?? [];
   const employeeComparisonMax = Math.max(0, ...employeeComparisonRows.map((row) => row.orderCount));
+  const employeeStatusTotal = employeeSnapshot?.employeeStatusSnapshot.reduce((sum, item) => sum + item.value, 0) ?? 0;
+  const employeeStatusValue = (status: OrderStatus): number =>
+    employeeSnapshot?.employeeStatusSnapshot.find((item) => item.status === status)?.value ?? 0;
+  const employeeActiveOrders = employeeStatusValue(OrderStatus.ON_HOLD)
+    + employeeStatusValue(OrderStatus.PROCESSING)
+    + employeeStatusValue(OrderStatus.PICKED);
+  const employeeCompletedOrders = employeeStatusValue(OrderStatus.COMPLETED);
+  const employeeExceptionOrders = employeeStatusValue(OrderStatus.RETURNED) + employeeStatusValue(OrderStatus.CANCELLED);
+  const employeeCompletionRate = employeeStatusTotal > 0
+    ? Math.round((employeeCompletedOrders / employeeStatusTotal) * 100)
+    : 0;
+  const employeeExceptionRate = employeeStatusTotal > 0
+    ? Math.round((employeeExceptionOrders / employeeStatusTotal) * 100)
+    : 0;
+  const rankedEmployeeRows = employeeComparisonRows.map((row, index) => ({ ...row, rank: index + 1 }));
+  const currentEmployeeRow = rankedEmployeeRows.find((row) => row.isCurrentUser);
+  const visibleEmployeeRows = rankedEmployeeRows.filter((row) => row.rank <= 5 || row.isCurrentUser);
 
   if (isAdmin) {
     return (
@@ -550,6 +621,47 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
+      <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f2f57] via-[#163f70] to-[#25608f] px-6 py-6 text-white shadow-[0_20px_50px_rgba(15,47,87,0.2)] md:px-8 md:py-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-200">Employee workspace</p>
+            <h1 className="mt-2 text-2xl font-black md:text-3xl">Welcome back, {user.name?.split(' ')[0] || 'there'}</h1>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-blue-100">
+              Track your order workload, understand your results, and open the records that need attention from one place.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {can('orders.create') && (
+              <button
+                type="button"
+                onClick={() => navigate('/orders/new')}
+                className="rounded-xl bg-white px-4 py-2.5 text-sm font-black text-[#0f2f57] shadow-sm transition hover:bg-blue-50"
+              >
+                Create order
+              </button>
+            )}
+            {canViewOrders && (
+              <button
+                type="button"
+                onClick={() => handleOpenMyOrders()}
+                className="rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/20"
+              >
+                View my orders
+              </button>
+            )}
+            {canViewWallet && (
+              <button
+                type="button"
+                onClick={() => navigate('/wallet')}
+                className="rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/20"
+              >
+                Open wallet
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
       <FilterBar
         filterRange={filterRange}
         setFilterRange={setFilterRange}
@@ -559,53 +671,66 @@ const Dashboard: React.FC = () => {
         setIncludeTime={setIncludeTime}
       />
 
-      <section className="rounded-[16px] border border-gray-100 bg-white p-5 shadow-sm md:p-8">
-        <div className="grid gap-4 xl:grid-cols-4">
+      <section className={`grid gap-4 sm:grid-cols-2 ${canViewWallet ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+        <EmployeeSummaryCard
+          title="All-time orders"
+          value={employeeSnapshot ? employeeSnapshot.myTotalCreated : inlinePlaceholder}
+          hint="Every order you have created"
+          icon={ICONS.Sales}
+          cardClassName="bg-gradient-to-br from-[#2d5fe6] to-[#366ae8]"
+          iconClassName="bg-[#2452cb]"
+          onClick={canViewOrders ? () => handleOpenMyOrders(undefined, false) : undefined}
+        />
+        <EmployeeSummaryCard
+          title="Created today"
+          value={employeeSnapshot ? employeeSnapshot.myCreatedToday : inlinePlaceholder}
+          hint="Your output since midnight"
+          icon={ICONS.Dashboard}
+          cardClassName="bg-gradient-to-br from-[#159b96] to-[#2bbdb2]"
+          iconClassName="bg-[#0f817c]"
+          onClick={canViewOrders ? () => {
+            const params = new URLSearchParams({ createdBy: String(user.id), range: 'Today' });
+            navigate(`/orders?${params.toString()}`);
+          } : undefined}
+        />
+        <EmployeeSummaryCard
+          title="Active in this view"
+          value={employeeSnapshot ? employeeActiveOrders : inlinePlaceholder}
+          hint="On hold, processing, or picked"
+          icon={ICONS.Clock}
+          cardClassName="bg-gradient-to-br from-[#ef6c00] to-[#f59e0b]"
+          iconClassName="bg-[#d65f00]"
+          onClick={canViewOrders ? () => handleOpenMyOrders() : undefined}
+        />
+        {canViewWallet && (
           <EmployeeSummaryCard
-            title="Total Created"
-            value={employeeSnapshot ? employeeSnapshot.myTotalCreated : inlinePlaceholder}
-            icon={ICONS.Sales}
-            cardClassName="bg-gradient-to-r from-[#2d5fe6] to-[#366ae8]"
-            iconClassName="bg-[#2452cb]"
-          />
-          <EmployeeSummaryCard
-            title="Created Today"
-            value={employeeSnapshot ? employeeSnapshot.myCreatedToday : inlinePlaceholder}
-            icon={ICONS.Dashboard}
-            cardClassName="bg-gradient-to-r from-[#1fa9a2] to-[#2bbdb2]"
-            iconClassName="bg-[#14948d]"
-          />
-          <EmployeeSummaryCard
-            title="On Hold"
-            value={employeeSnapshot ? employeeSnapshot.myPendingOrders : inlinePlaceholder}
-            icon={ICONS.More}
-            cardClassName="bg-gradient-to-r from-[#ff7a11] to-[#ff7a11]"
-            iconClassName="bg-[#ef6800]"
-          />
-          {hasCapability('human_resources') && (
-          <EmployeeSummaryCard
-            title="Wallet Balance"
-            value={employeeSnapshot ? formatCurrency(employeeSnapshot.walletBalance) : inlinePlaceholder}
+            title="Available balance"
+            value={employeeSnapshot ? formatCurrency(Math.max(0, employeeSnapshot.walletBalance)) : inlinePlaceholder}
+            hint="Open your private wallet details"
             icon={ICONS.Payroll}
-            cardClassName="bg-gradient-to-r from-[#119f57] to-[#43cf7f]"
-            iconClassName="bg-[#0d7f46]"
+            cardClassName="bg-gradient-to-br from-[#07854a] to-[#22b76b]"
+            iconClassName="bg-[#086c3f]"
+            onClick={() => navigate('/wallet')}
           />
-          )}
-        </div>
+        )}
+      </section>
 
-        <div className="mt-8 border-t border-gray-100 pt-8">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-7">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h3 className="text-xl font-black text-gray-900">My Orders by Status</h3>
-              <p className="mt-1.5 text-xs font-medium text-gray-400">Based on the selected date range</p>
+              <p className="mt-1.5 text-sm font-medium text-gray-500">A clickable breakdown for the selected date range.</p>
             </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Quick Status Snapshot</p>
+            <div className="rounded-full bg-[#eef5fb] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f2f57]">
+              {employeeSnapshot ? `${employeeStatusTotal.toLocaleString('en-BD')} tracked orders` : inlinePlaceholder}
+            </div>
           </div>
 
           {!employeeSnapshot ? (
             <SectionState text={sectionPlaceholder} minHeight="min-h-[180px]" />
           ) : (
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {employeeSnapshot.employeeStatusSnapshot.map((entry) => {
                 const styles = EMPLOYEE_STATUS_STYLES[entry.status];
                 return (
@@ -613,35 +738,65 @@ const Dashboard: React.FC = () => {
                     key={entry.status}
                     title={entry.label}
                     value={entry.value}
-                    total={Math.max(
-                      employeeSnapshot.employeeStatusSnapshot.reduce((sum, item) => sum + item.value, 0),
-                      1
-                    )}
+                    total={Math.max(employeeStatusTotal, 1)}
                     valueClass={styles.valueClass}
                     barClass={styles.barClass}
                     trackClass={styles.trackClass}
-                    onClick={() => {
-                      const params = new URLSearchParams();
-                      params.set('status', entry.status);
-                      params.set('createdBy', String(user.id));
-                      if (filterRange !== 'All Time') params.set('range', filterRange);
-                      if (customDates.from) params.set('from', customDates.from);
-                      if (customDates.to) params.set('to', customDates.to);
-                      if (includeTime) params.set('includeTime', 'true');
-                      navigate(`/orders?${params.toString()}`);
-                    }}
+                    onClick={canViewOrders ? () => handleOpenMyOrders(entry.status) : undefined}
                   />
                 );
               })}
             </div>
           )}
-        </div>
-      </section>
+        </section>
 
-      <section className="rounded-[16px] border border-gray-100 bg-white p-5 shadow-sm md:p-8">
-        <div>
-          <h3 className="text-xl font-black text-gray-900">Order Comparison</h3>
-          <p className="mt-1 text-xs font-medium text-gray-400">Orders created by all employees in the selected date range</p>
+        <aside className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-7">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Performance overview</p>
+          <h3 className="mt-2 text-xl font-black text-gray-900">Understand this view</h3>
+          <p className="mt-1.5 text-sm font-medium leading-6 text-gray-500">
+            These indicators use the same date filter as the status cards.
+          </p>
+          <div className="mt-6 space-y-3">
+            <EmployeeInsight
+              label="Completion rate"
+              value={employeeSnapshot ? `${employeeCompletionRate}%` : inlinePlaceholder}
+              detail={`${employeeCompletedOrders.toLocaleString('en-BD')} delivered orders`}
+              valueClassName="text-emerald-600"
+            />
+            <EmployeeInsight
+              label="Active workflow"
+              value={employeeSnapshot ? employeeActiveOrders.toLocaleString('en-BD') : inlinePlaceholder}
+              detail="Orders still moving through fulfilment"
+              valueClassName="text-sky-600"
+            />
+            <EmployeeInsight
+              label="Exception rate"
+              value={employeeSnapshot ? `${employeeExceptionRate}%` : inlinePlaceholder}
+              detail={`${employeeExceptionOrders.toLocaleString('en-BD')} returned or cancelled`}
+              valueClassName={employeeExceptionRate > 20 ? 'text-rose-600' : 'text-amber-600'}
+            />
+            <EmployeeInsight
+              label="Today"
+              value={employeeSnapshot ? employeeSnapshot.myCreatedToday.toLocaleString('en-BD') : inlinePlaceholder}
+              detail="Orders created since midnight"
+              valueClassName="text-[#0f2f57]"
+            />
+          </div>
+        </aside>
+      </div>
+
+      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-7">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Team context</p>
+            <h3 className="mt-2 text-xl font-black text-gray-900">Order activity</h3>
+            <p className="mt-1.5 text-sm font-medium text-gray-500">Top performers plus your position for the selected date range.</p>
+          </div>
+          {currentEmployeeRow && (
+            <div className="rounded-xl border border-[#d6e3f0] bg-[#f8fbff] px-4 py-3 text-sm font-bold text-[#0f2f57]">
+              Your position: <span className="font-black">#{currentEmployeeRow.rank} of {rankedEmployeeRows.length}</span>
+            </div>
+          )}
         </div>
 
         {!employeeSnapshot ? (
@@ -652,9 +807,10 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <div className="mt-6 space-y-4">
-            {employeeComparisonRows.map((entry) => (
+            {visibleEmployeeRows.map((entry) => (
               <EmployeeComparisonRow
                 key={entry.userId}
+                rank={entry.rank}
                 name={entry.name}
                 role={entry.role}
                 orderCount={entry.orderCount}

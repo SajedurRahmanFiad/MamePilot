@@ -15,6 +15,7 @@ import type { SubCapabilityKey } from '../types';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
+import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
 
 const AdminSubscriptions: React.FC = () => {
   const { data: overview, isPending: loadingOverview } = useServiceSubscriptionOverview(true);
@@ -29,12 +30,8 @@ const AdminSubscriptions: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
-    const params = new URLSearchParams(rawQuery);
-    // Debug: log incoming return query/hash so we can see why verification may not run
-    // eslint-disable-next-line no-console
-    console.log('AdminSubscriptions useEffect invoked', { rawQuery, params: Object.fromEntries(params.entries()) });
-    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
+    const params = readPipraPayReturnParams();
+    const paymentStatus = readPipraPayReturnStatus(params);
     const verificationRequested = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || params.get('payment') || params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference');
     if (!paymentStatus && !verificationRequested) {
       return () => {
@@ -42,14 +39,13 @@ const AdminSubscriptions: React.FC = () => {
       };
     }
 
-    const cleanHash = window.location.hash.split('?')[0];
-    window.history.replaceState(null, '', window.location.pathname + cleanHash);
+    clearPipraPayReturnParams();
 
     const reference = params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference') || params.get('order_id') || '';
     const ppId = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || '';
     const normalizedStatus = paymentStatus === 'cancelled' || paymentStatus === 'canceled'
       ? 'cancelled'
-      : paymentStatus === 'failed'
+      : paymentStatus === 'failed' || paymentStatus === 'expired'
         ? 'failed'
         : paymentStatus === 'success'
           ? 'success'
@@ -100,7 +96,7 @@ const AdminSubscriptions: React.FC = () => {
               if (!cancelled && verifyAttempts < 12) {
                 await verifyOnce();
               } else if (!cancelled) {
-                toast.info('Payment is still processing. The gateway webhook will update the subscription automatically.');
+                toast.info('Payment is still being confirmed. Your subscription will update automatically.');
                 setCheckoutMessage(null);
               }
               return;
@@ -159,7 +155,7 @@ const AdminSubscriptions: React.FC = () => {
         return;
       }
 
-      const message = 'Payment has returned from gateway and is awaiting PipraPay verification.';
+      const message = 'Payment was received and is still being confirmed.';
       toast.info(message);
       if (!cancelled) setCheckoutMessage(message);
       queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
@@ -186,7 +182,7 @@ const AdminSubscriptions: React.FC = () => {
         // Redirect the user to the PipraPay gateway page
         window.location.href = result.checkoutUrl;
       } else {
-        toast.error('Could not get checkout URL from payment gateway. Please try again.');
+        toast.error('The payment page could not be opened. Please try again.');
       }
     } catch (err: any) {
       toast.error(err?.message || 'Checkout failed. Please try again.');

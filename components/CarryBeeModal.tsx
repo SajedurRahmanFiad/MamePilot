@@ -252,18 +252,18 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
             <Button
               onClick={async () => {
                 if (!selectedCity || !selectedZone) {
-                  alert('Please select both City and Zone');
+                  toast.warning('Please select both a city and a zone.');
                   return;
                 }
 
                 if (!order || !customer) {
-                  alert('Missing order or customer information');
+                  toast.error('Order details are unavailable. Refresh the page and try again.');
                   console.error('Missing order or customer:', { order, customer });
                   return;
                 }
 
                 if (!courierSettings?.carryBee) {
-                  alert('CarryBee settings not configured');
+                  toast.warning('CarryBee is not available yet. Ask an administrator to enable it in Settings.');
                   console.error('Missing CarryBee settings:', courierSettings);
                   return;
                 }
@@ -271,7 +271,7 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                 const { baseUrl, clientId, clientSecret, clientContext, storeId } = courierSettings.carryBee;
                 
                 if (!baseUrl || !clientId || !clientSecret || !clientContext || !storeId) {
-                  alert('CarryBee settings incomplete. Please configure Base URL, Client ID, Client Secret, Client Context, and Store ID in Settings.');
+                  toast.warning('CarryBee is not ready yet. Ask an administrator to finish the setup in Settings.');
                   console.error('Incomplete CarryBee settings:', { baseUrl, clientId, clientSecret, clientContext, storeId });
                   return;
                 }

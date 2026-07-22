@@ -106,7 +106,7 @@ const CustomerDetails: React.FC = () => {
       navigate('/orders');
     } catch (error) {
       console.error('Failed to duplicate order', error);
-      toast.error('Failed to duplicate order: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      toast.error(error instanceof Error ? error.message : 'Could not duplicate the order. Please try again.');
     }
   };
 

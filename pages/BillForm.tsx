@@ -162,7 +162,7 @@ const BillForm: React.FC = () => {
   }, [id]);
 
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
-  const total = subtotal - discount + shipping;
+  const total = Math.max(0, subtotal - discount + shipping);
 
   const addItem = (productId: string) => {
     const product = products.find(p => p.id === productId);
@@ -201,13 +201,21 @@ const BillForm: React.FC = () => {
       setError('User session expired. Please log in again.');
       return;
     }
+    if (discount < 0 || discount > subtotal) {
+      setError(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(subtotal)}.`);
+      return;
+    }
+    if (shipping < 0) {
+      setError('Shipping charge cannot be negative.');
+      return;
+    }
 
     setSaving(true);
     setError(null);
 
     try {
       const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
-      const total = subtotal - discount + shipping;
+      const total = Math.max(0, subtotal - discount + shipping);
       const dateStr = new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
       const timeStr = new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
 

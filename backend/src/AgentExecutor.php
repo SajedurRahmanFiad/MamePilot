@@ -1086,7 +1086,7 @@ final class AgentExecutor extends BaseService
             // Transactions
             ['pattern' => '/\b(transactions?|transaction count|payments?|payment count)\b/', 'sql' => "SELECT COUNT(*) AS result FROM `transactions` WHERE `deleted_at` IS NULL", 'label' => 'total transactions', 'description' => 'Counting total transactions.', 'format' => 'number'],
             // Employees (users)
-            ['pattern' => '/\b(employees?|employee count|staff|staff count|users?|user count|team\s+members?)\b/', 'sql' => "SELECT COUNT(*) AS result FROM `users` WHERE `deleted_at` IS NULL", 'label' => 'total users', 'description' => 'Counting total users/staff.', 'format' => 'number'],
+            ['pattern' => '/\b(employees?|employee count|staff|staff count|users?|user count|team\s+members?)\b/', 'sql' => "SELECT COUNT(*) AS result FROM `users` WHERE `deleted_at` IS NULL AND COALESCE(`is_system`, 0) = 0", 'label' => 'total users', 'description' => 'Counting total users/staff.', 'format' => 'number'],
             // Vendors
             ['pattern' => '/\b(vendors?|vendor count|suppliers?|supplier count)\b/', 'sql' => "SELECT COUNT(*) AS result FROM `vendors` WHERE `deleted_at` IS NULL", 'label' => 'total vendors', 'description' => 'Counting total vendors.', 'format' => 'number'],
         ];

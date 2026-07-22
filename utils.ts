@@ -5,6 +5,39 @@
 
 import type { Bill, Order, Transaction } from './types';
 
+const DYNAMIC_TEXT_FILTER_PREFIX = '__mp_filter_v1__:';
+
+export const encodeDynamicTextFilterValue = (value: string, contains: boolean): string => (
+  `${DYNAMIC_TEXT_FILTER_PREFIX}${contains ? 'contains' : 'equals'}:${encodeURIComponent(String(value ?? ''))}`
+);
+
+export const decodeDynamicTextFilterValue = (encoded: string): { value: string; contains: boolean } => {
+  const raw = String(encoded ?? '');
+  if (raw.startsWith(DYNAMIC_TEXT_FILTER_PREFIX)) {
+    const payload = raw.slice(DYNAMIC_TEXT_FILTER_PREFIX.length);
+    const separatorIndex = payload.indexOf(':');
+    if (separatorIndex > 0) {
+      const mode = payload.slice(0, separatorIndex);
+      if (mode === 'equals' || mode === 'contains') {
+        try {
+          return {
+            value: decodeURIComponent(payload.slice(separatorIndex + 1)),
+            contains: mode === 'contains',
+          };
+        } catch {
+          // Fall through to legacy/plain decoding for malformed external state.
+        }
+      }
+    }
+  }
+
+  const contains = raw.length >= 2 && raw.startsWith('%') && raw.endsWith('%');
+  return {
+    value: contains ? raw.slice(1, -1) : raw,
+    contains,
+  };
+};
+
 export type FilterRange =
   | 'All Time'
   | 'Today'
@@ -491,12 +524,14 @@ export const compressImage = (
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    force?: boolean;
   } = {},
 ): Promise<string> => {
   const {
     maxWidth = 1920,
     maxHeight = 1920,
     quality = 0.82,
+    force = false,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -509,7 +544,7 @@ export const compressImage = (
       return;
     }
 
-    if (file.size < 200 * 1024) {
+    if (!force && file.size < 200 * 1024) {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = () => reject(new Error('Failed to read file'));
@@ -603,4 +638,63 @@ export const resolveUploadUrl = (path?: string | null): string => {
   }
 
   return normalized;
+};
+
+const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+
+/**
+ * Calculate the financial result of returning existing items and optionally
+ * adding exchange replacements. Existing discount is reduced only in
+ * proportion to the existing merchandise returned; replacement merchandise
+ * does not inherit or amplify the old discount.
+ */
+export const calculateReturnAdjustment = ({
+  subtotal,
+  discount,
+  shipping,
+  paidAmount,
+  returnValue,
+  replacementValue = 0,
+  discountEligibleSubtotal,
+  discountEligibleReturnValue,
+}: {
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  paidAmount: number;
+  returnValue: number;
+  replacementValue?: number;
+  discountEligibleSubtotal?: number;
+  discountEligibleReturnValue?: number;
+}) => {
+  const safeSubtotal = Math.max(0, Number(subtotal) || 0);
+  const safeReturnValue = Math.min(safeSubtotal, Math.max(0, Number(returnValue) || 0));
+  const safeReplacementValue = Math.max(0, Number(replacementValue) || 0);
+  const safeDiscountEligibleSubtotal = Math.min(
+    safeSubtotal,
+    Math.max(0, Number(discountEligibleSubtotal ?? safeSubtotal) || 0),
+  );
+  const safeDiscountEligibleReturnValue = Math.min(
+    safeDiscountEligibleSubtotal,
+    Math.max(0, Number(discountEligibleReturnValue ?? safeReturnValue) || 0),
+  );
+  const remainingExistingSubtotal = Math.max(0, safeSubtotal - safeReturnValue);
+  const remainingDiscountEligibleSubtotal = Math.max(0, safeDiscountEligibleSubtotal - safeDiscountEligibleReturnValue);
+  const remainingRatio = safeDiscountEligibleSubtotal > 0
+    ? remainingDiscountEligibleSubtotal / safeDiscountEligibleSubtotal
+    : 0;
+  const newDiscount = roundMoney(Math.min(Math.max(0, Number(discount) || 0), Math.max(0, Number(discount) || 0) * remainingRatio));
+  const newSubtotal = roundMoney(remainingExistingSubtotal + safeReplacementValue);
+  const newTotal = roundMoney(Math.max(0, newSubtotal - newDiscount + Math.max(0, Number(shipping) || 0)));
+  const safePaidAmount = Math.max(0, Number(paidAmount) || 0);
+
+  return {
+    remainingExistingSubtotal: roundMoney(remainingExistingSubtotal),
+    newSubtotal,
+    newDiscount,
+    newTotal,
+    discountReduction: roundMoney(Math.max(0, (Number(discount) || 0) - newDiscount)),
+    maxRefund: roundMoney(Math.max(0, safePaidAmount - newTotal)),
+    maxCollection: roundMoney(Math.max(0, newTotal - safePaidAmount)),
+  };
 };

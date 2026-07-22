@@ -59,7 +59,7 @@ const PipraPayReturnHandler: React.FC = () => {
       }
 
       if (!shouldVerify) {
-        const message = 'Payment has returned from gateway and is awaiting verification.';
+        const message = 'Payment was received and is still being confirmed.';
         toast.info(message);
         queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
         clearReturnQuery();
@@ -67,7 +67,7 @@ const PipraPayReturnHandler: React.FC = () => {
       }
 
       try {
-        const message = 'Payment received by gateway. Verifying payment status...';
+        const message = 'Confirming your payment...';
         toast.info(message);
 
         const result = await verifyPipraPayPayment({ reference, ppId });

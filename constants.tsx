@@ -35,7 +35,8 @@ import {
   Clock3,
   RotateCcw,
   TrendingUp,
-  MessageSquare
+  MessageSquare,
+  MessageCircle
 } from 'lucide-react';
 
 // Fixed missing properties on ICONS object by adding 'Users' and 'Briefcase' keys
@@ -79,7 +80,8 @@ export const ICONS = {
   Clock: <Clock3 size={18} />,
   Return: <RotateCcw size={20} />,
   TrendingUp: <TrendingUp size={20} />,
-  WhatsApp: <MessageSquare size={20} />
+  WhatsApp: <MessageSquare size={20} />,
+  Messenger: <MessageCircle size={20} />
 };
 
 export const formatCurrency = (amount: number) => {
@@ -125,10 +127,14 @@ export const getStatusColor = (status: string): string => {
 
 export const getPaymentStatusLabel = (paidAmount: number, total: number, history?: Record<string, string | undefined> | null): string => {
   const historyText = history ? Object.values(history).filter(Boolean).join(' ') : '';
-  if (historyText && /refund/i.test(historyText)) return 'Refunded';
-  if (paidAmount === 0) return 'Unpaid';
-  if (paidAmount >= total) return 'Paid';
-  return 'Partially paid';
+  const normalizedPaid = Math.max(0, Number(paidAmount) || 0);
+  const normalizedTotal = Math.max(0, Number(total) || 0);
+  if (normalizedPaid > normalizedTotal) return 'Overpaid';
+  if (normalizedPaid === 0 && historyText && /refund/i.test(historyText)) return 'Refunded';
+  if (normalizedTotal === 0) return 'Paid';
+  if (normalizedPaid === 0) return 'Unpaid';
+  if (normalizedPaid < normalizedTotal) return 'Partially Paid';
+  return 'Paid';
 };
 
 export const getPaymentStatusBadgeColor = (status: string): string => {

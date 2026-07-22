@@ -286,7 +286,7 @@ const TransactionForm: React.FC = () => {
       handleClose();
     } catch (error) {
       console.error('Failed to save transaction:', error);
-      toast.error(`Failed to ${isEdit ? 'update' : 'save'} transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : `Could not ${isEdit ? 'update' : 'save'} the transaction. Please try again.`);
     }
   };
 

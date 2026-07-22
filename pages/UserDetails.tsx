@@ -79,7 +79,7 @@ const UserDetails: React.FC = () => {
       navigate('/users');
     } catch (err) {
       console.error('Failed to delete user:', err);
-      toast.error('Failed to delete user: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(err instanceof Error ? err.message : 'Could not delete the user. Please try again.');
     } finally {
       setShowDeleteConfirm(false);
     }

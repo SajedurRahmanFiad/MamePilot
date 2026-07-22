@@ -3,6 +3,7 @@ import { Button, NumericInput } from './index';
 import { formatCurrency, ICONS } from '../constants';
 import { Bill, ProcessBillReturnPayload } from '../types';
 import { useAccounts, usePaymentMethods, useCategories, useSystemDefaults } from '../src/hooks/useQueries';
+import { calculateReturnAdjustment } from '../utils';
 
 interface BillReturnModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface BillReturnModalProps {
 }
 
 interface ItemSelection {
+  lineIndex: number;
   productId: string;
   productName: string;
   originalQty: number;
@@ -35,6 +37,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
 
   const [itemSelections, setItemSelections] = useState<ItemSelection[]>([]);
   const [refundAmount, setRefundAmount] = useState(0);
+  const [recordRefundNow, setRecordRefundNow] = useState(true);
   const [accountId, setAccountId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -43,16 +46,18 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
   useEffect(() => {
     if (!isOpen || !bill) return;
 
-    const selections: ItemSelection[] = bill.items.map((item) => ({
+    const selections: ItemSelection[] = bill.items.map((item, lineIndex) => ({
+      lineIndex,
       productId: item.productId,
       productName: item.productName,
-      originalQty: item.quantity,
+      originalQty: Math.max(0, item.quantity - (item.returnedQty ?? 0)),
       rate: item.rate,
       returnQty: 0,
       selected: false,
     }));
     setItemSelections(selections);
     setRefundAmount(0);
+    setRecordRefundNow(true);
     setNote('');
 
     const fallbackAccountId = systemDefaults?.defaultAccountId || accounts[0]?.id || '';
@@ -64,19 +69,30 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
 
   // Auto-calculate refund
   useEffect(() => {
-    const total = itemSelections.reduce((sum, sel) => {
+    const returnValue = itemSelections.reduce((sum, sel) => {
       if (sel.selected && sel.returnQty > 0) {
         return sum + sel.rate * sel.returnQty;
       }
       return sum;
     }, 0);
-    setRefundAmount(total);
-  }, [itemSelections]);
+    if (!bill) {
+      setRefundAmount(0);
+      return;
+    }
+    setRefundAmount(calculateReturnAdjustment({
+      subtotal: bill.subtotal,
+      discount: bill.discount,
+      shipping: bill.shipping,
+      paidAmount: bill.paidAmount,
+      returnValue,
+    }).maxRefund);
+  }, [itemSelections, bill]);
 
   const toggleItem = (idx: number) => {
     setItemSelections((prev) => {
       const next = [...prev];
       const sel = next[idx];
+      if (sel.originalQty <= 0) return prev;
       next[idx] = {
         ...sel,
         selected: !sel.selected,
@@ -99,7 +115,20 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
     [itemSelections]
   );
 
-  const canSubmit = selectedItems.length > 0 && refundAmount > 0 && accountId !== '';
+  const returnValue = useMemo(
+    () => selectedItems.reduce((sum, item) => sum + item.rate * item.returnQty, 0),
+    [selectedItems]
+  );
+  const adjustment = useMemo(() => bill ? calculateReturnAdjustment({
+    subtotal: bill.subtotal,
+    discount: bill.discount,
+    shipping: bill.shipping,
+    paidAmount: bill.paidAmount,
+    returnValue,
+  }) : null, [bill, returnValue]);
+  const effectiveRefund = recordRefundNow ? Math.min(refundAmount, adjustment?.maxRefund ?? 0) : 0;
+  const canSubmit = selectedItems.length > 0
+    && (effectiveRefund <= 0 || (accountId !== '' && paymentMethod !== ''));
 
   const handleSubmit = async () => {
     if (!bill) return;
@@ -107,6 +136,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
     const payload: ProcessBillReturnPayload = {
       billId: bill.id,
       items: selectedItems.map((s) => ({
+        lineIndex: s.lineIndex,
         productId: s.productId,
         productName: s.productName,
         originalQty: s.originalQty,
@@ -114,7 +144,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
         rate: s.rate,
         amount: s.rate * s.returnQty,
       })),
-      refundAmount,
+      refundAmount: effectiveRefund,
       accountId,
       paymentMethod,
       categoryId,
@@ -156,7 +186,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
             return (
               <div
                 key={item.productId + idx}
-                className={`flex items-center gap-4 p-4 rounded-xl border transition cursor-pointer ${
+                className={`flex items-center gap-4 p-4 rounded-xl border transition ${sel.originalQty > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} ${
                   sel.selected
                     ? 'border-orange-300 bg-orange-50'
                     : 'border-gray-100 bg-gray-50 hover:border-gray-200'
@@ -171,7 +201,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-gray-900 text-sm">{item.productName}</p>
                   <p className="text-xs text-gray-500">
-                    {formatCurrency(item.rate)} × {item.quantity} = {formatCurrency(item.amount)}
+                    {formatCurrency(item.rate)} × {sel.originalQty} available to return
                   </p>
                 </div>
                 {sel.selected && (
@@ -197,17 +227,46 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
         </div>
 
         {/* Refund Summary */}
-        {selectedItems.length > 0 && (
-          <div className="bg-gray-50 rounded-xl p-4 mb-4">
+        {selectedItems.length > 0 && adjustment && (
+          <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="font-bold text-emerald-600">Expected refund from vendor</span>
-              <span className="font-black text-emerald-600">{formatCurrency(refundAmount)}</span>
+              <span className="font-bold text-gray-600">Returned item value</span>
+              <span className="font-black text-gray-900">{formatCurrency(returnValue)}</span>
             </div>
+            <div className="flex justify-between text-sm">
+              <span className="font-bold text-gray-600">Adjusted bill total</span>
+              <span className="font-black text-gray-900">{formatCurrency(adjustment.newTotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="font-bold text-emerald-600">Refund due from vendor</span>
+              <span className="font-black text-emerald-600">{formatCurrency(adjustment.maxRefund)}</span>
+            </div>
+            {adjustment.maxRefund === 0 && (
+              <p className="text-xs text-gray-500">No cash refund is due because the adjusted bill is not overpaid.</p>
+            )}
           </div>
         )}
 
+        {selectedItems.length > 0 && adjustment && adjustment.maxRefund > 0 && (
+          <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
+            <input
+              type="checkbox"
+              checked={recordRefundNow}
+              onChange={(event) => setRecordRefundNow(event.target.checked)}
+              disabled={isLoading}
+              className="mt-0.5 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              <span className="block font-bold text-blue-900">Record the vendor refund now</span>
+              <span className="mt-0.5 block text-xs text-blue-700">
+                Turn this off if the items are returned now and the vendor will refund the money later.
+              </span>
+            </span>
+          </label>
+        )}
+
         {/* Payment */}
-        {refundAmount > 0 && (
+        {effectiveRefund > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="space-y-1">
               <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Refund into Account</label>

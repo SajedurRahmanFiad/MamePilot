@@ -1,4 +1,10 @@
 <?php
+$apiKey = trim((string) getenv('PIPRAPAY_API_KEY'));
+if ($apiKey === '') {
+    fwrite(STDERR, "Set PIPRAPAY_API_KEY before running this diagnostic.\n");
+    exit(1);
+}
+
 $url = 'https://payment.sajedurrahmanfiad.me/api/checkout/redirect';
 $payload = [
     'full_name' => 'Test',
@@ -14,11 +20,12 @@ $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'MHS-PIPRAPAY-API-KEY: 506fe47705680a174eef8965a0827dcaf1daa1c83a1921698c',
+    'MHS-PIPRAPAY-API-KEY: ' . $apiKey,
     'Content-Type: application/json',
     'Accept: application/json'
 ]);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 $res = curl_exec($ch);
 $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);

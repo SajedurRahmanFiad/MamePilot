@@ -31,11 +31,27 @@ CREATE TABLE IF NOT EXISTS licenses (
 CREATE TABLE IF NOT EXISTS maintenance_settings (
   id VARCHAR(64) NOT NULL PRIMARY KEY,
   enabled TINYINT(1) NOT NULL DEFAULT 0,
+  target_deployments LONGTEXT NULL,
+  deployment_scope VARCHAR(32) NOT NULL DEFAULT 'all',
+  image_url VARCHAR(1000) NULL,
+  caption VARCHAR(500) NULL,
+  subtitle TEXT NULL,
+  explanation TEXT NULL,
+  ends_at DATETIME NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
-  ON DUPLICATE KEY UPDATE enabled = VALUES(enabled);
+  ON DUPLICATE KEY UPDATE id = VALUES(id);
+
+ALTER TABLE maintenance_settings
+  ADD COLUMN IF NOT EXISTS target_deployments LONGTEXT NULL AFTER enabled,
+  ADD COLUMN IF NOT EXISTS deployment_scope VARCHAR(32) NOT NULL DEFAULT 'all' AFTER target_deployments,
+  ADD COLUMN IF NOT EXISTS image_url VARCHAR(1000) NULL AFTER deployment_scope,
+  ADD COLUMN IF NOT EXISTS caption VARCHAR(500) NULL AFTER image_url,
+  ADD COLUMN IF NOT EXISTS subtitle TEXT NULL AFTER caption,
+  ADD COLUMN IF NOT EXISTS explanation TEXT NULL AFTER subtitle,
+  ADD COLUMN IF NOT EXISTS ends_at DATETIME NULL AFTER explanation;
 
 INSERT INTO license_tiers (tier_key, tier_name, monthly_price, yearly_price, capabilities, sort_order) VALUES
 ('copilot', 'Co-Pilot', 299, 3200, '["dashboard","inventory","sales"]', 1),

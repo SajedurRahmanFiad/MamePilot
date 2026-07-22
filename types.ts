@@ -165,7 +165,10 @@ export enum BillStatus {
   ON_HOLD = 'On Hold',
   PROCESSING = 'Processing',
   RECEIVED = 'Received',
-  PAID = 'Paid'
+  /** @deprecated Payment is tracked by paidAmount; retained for legacy records. */
+  PAID = 'Paid',
+  RETURNED = 'Returned',
+  CANCELLED = 'Cancelled'
 }
 
 export interface User {
@@ -183,6 +186,7 @@ export interface User {
   nationality?: string | null;
   cv?: string | null;
   isCommissionBased?: boolean;
+  compensationType?: 'commission' | 'fixed' | string;
   fixedSalary?: number | null;
   password?: string;
   createdAt?: string;
@@ -265,11 +269,17 @@ export interface OrderItem {
   returnedQty?: number;
   exchangedQty?: number;
   exchangedWith?: Array<{ productId: string; productName: string; quantity: number; rate: number; amount: number }>;
+  /** Exchange replacements do not inherit the discount from the original sale. */
+  discountEligible?: boolean;
+  /** Identifies a line that was added as an exchange replacement. */
+  isExchangeReplacement?: boolean;
 }
 
 export type ReturnExchangeAction = 'partialReturn' | 'exchange';
 
 export interface ReturnExchangeItemSelection {
+  /** Stable source line in Order.items; productId alone is not unique. */
+  lineIndex: number;
   productId: string;
   productName: string;
   originalQty: number;
@@ -283,6 +293,8 @@ export interface ReturnExchangeItemSelection {
     quantity: number;
     rate: number;
     amount: number;
+    /** UI-only snapshot used to prevent selecting more than available stock. */
+    availableStock?: number;
   }>;
 }
 
@@ -301,6 +313,8 @@ export interface ProcessOrderReturnExchangePayload {
 export interface ProcessBillReturnPayload {
   billId: string;
   items: Array<{
+    /** Stable source line in Bill.items; productId alone is not unique. */
+    lineIndex: number;
     productId: string;
     productName: string;
     originalQty: number;
@@ -348,6 +362,36 @@ export interface VoiceSurveySettings {
   noKeyRetryMinutes: number;
   noKeyRetryCount: number;
   triggerStatuses: string[];
+}
+
+export interface WooCommerceStore {
+  id: string;
+  storeName: string;
+  storeUrl: string;
+  consumerKey: string;
+  consumerSecret: string;
+  webhookSecret: string;
+  webhookBaseUrl: string;
+  webhookId?: number | null;
+  webhookUrl: string;
+  companyPageId: string;
+  enabled: boolean;
+  lastSyncedAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncMessage?: string | null;
+  ordersSynced: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface WooCommerceSyncResult {
+  success: boolean;
+  message: string;
+  processed: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
 }
 
 export interface VoiceSurveyIntegrationSettings {
@@ -458,6 +502,8 @@ export interface MarketingDashboardCampaign {
   deliveredRevenue: number;
   cancelledCount: number;
   returnedCount: number;
+  currency: string | null;
+  mixedCurrencies: boolean;
 }
 
 export interface MarketingDashboardAlert {
@@ -470,6 +516,11 @@ export interface MarketingDashboardResponse {
   currency: {
     adsCode: string;
     rateToBdt: number | null;
+    currencies: string[];
+    mixedCurrencies: boolean;
+    comparable: boolean;
+    previousCurrencies?: string[];
+    previousComparable?: boolean;
     exchangeRateMode?: string;
     vatPercentage?: number | null;
     realtimeRateCache?: number | null;
@@ -600,6 +651,7 @@ export interface Bill {
     cancelled?: string;
     paid?: string;
     return?: string;
+    refund?: string;
   };
   paidAmount: number;
   processedAt?: string; // ISO timestamp when marked processing
@@ -960,7 +1012,9 @@ export type AppCapabilityKey =
   | 'enterprise_ai_agent'
   | 'grow_your_business'
   | 'whatsapp'
-  | 'auto_calling';
+  | 'messenger'
+  | 'auto_calling'
+  | 'woocommerce';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
@@ -1150,6 +1204,123 @@ export interface FraudCheckResult {
   reports: FraudCheckReport[];
 }
 
+export interface WhatsAppSettings {
+  accessToken: string;
+  phoneNumberId: string;
+  businessAccountId: string;
+  verifyToken: string;
+  appSecret: string;
+  graphVersion: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  qualityRating: string;
+  webhookUrl: string;
+  configured: boolean;
+  webhookConfigured: boolean;
+  welcomeMessage: string;
+  getStartedEnabled: boolean;
+  iceBreakers: string[];
+  welcomeActive: boolean;
+}
+
+export interface WhatsAppContact {
+  id: string;
+  waId: string;
+  phoneNumber: string;
+  name: string;
+  profileName: string;
+  unreadCount: number;
+  lastMessagePreview: string;
+  lastMessageType: string;
+  lastMessageAt: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface WhatsAppMessage {
+  id: string;
+  waMessageId: string;
+  contactId: string;
+  direction: 'inbound' | 'outbound' | string;
+  type: string;
+  text: string;
+  caption: string;
+  mediaId: string;
+  mediaUrl: string;
+  mimeType: string;
+  fileName: string;
+  status: string;
+  errorCode: string;
+  errorMessage: string;
+  messageAt: string | null;
+  createdAt?: string | null;
+}
+
+export interface MessengerSettings {
+  pageAccessToken: string;
+  pageId: string;
+  verifyToken: string;
+  appSecret: string;
+  graphVersion: string;
+  pageName: string;
+  pageUsername: string;
+  pagePictureUrl: string;
+  humanAgentEnabled: boolean;
+  webhookUrl: string;
+  configured: boolean;
+  webhookConfigured: boolean;
+  subscribed: boolean;
+  subscribedFields: string[];
+}
+
+export interface MessengerProfileSettings {
+  greeting: string;
+  getStartedEnabled: boolean;
+  iceBreakers: string[];
+}
+
+export interface MessengerContact {
+  id: string;
+  psid: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  profilePictureUrl: string;
+  locale: string;
+  unreadCount: number;
+  lastMessagePreview: string;
+  lastMessageType: string;
+  lastMessageAt: string | null;
+  lastUserMessageAt: string | null;
+  canReply: boolean;
+  replyWindow: 'standard' | 'human_agent' | 'closed' | string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface MessengerMessage {
+  id: string;
+  mid: string;
+  contactId: string;
+  direction: 'inbound' | 'outbound' | string;
+  type: string;
+  text: string;
+  attachmentUrl: string;
+  attachmentId: string;
+  attachments: Array<{ type: string; url: string; title?: string }>;
+  mimeType: string;
+  fileName: string;
+  status: string;
+  errorCode: string;
+  errorMessage: string;
+  replyToMid: string;
+  reaction: string;
+  reactionActor: string;
+  quickReplies: Array<{ title: string; payload?: string; imageUrl?: string }>;
+  messageAt: string | null;
+  createdAt?: string | null;
+}
+
 export interface VoiceSurveyEvent {
   id: string;
   surveyId?: string | null;
@@ -1178,6 +1349,20 @@ export interface PayrollPayment {
   countedStatusesSnapshot: OrderStatus[];
   orderCountSnapshot: number;
   amountSnapshot: number;
+  compensationType?: 'commission' | 'fixed' | string;
+  isCommissionBased?: boolean;
+  fixedSalarySnapshot?: number | null;
+  baseAmountSnapshot?: number;
+  bonusAmount?: number;
+  deductionAmount?: number;
+  netAmount?: number;
+  walletPayoutId?: string | null;
+  accountId?: string | null;
+  accountName?: string | null;
+  paymentMethod?: string | null;
+  transactionId?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
   paidAt: string;
   paidBy: string;
   paidByName?: string;
@@ -1189,16 +1374,36 @@ export interface PayrollSummaryRow {
   employeeId: string;
   employeeName: string;
   employeeRole: string;
+  isCommissionBased?: boolean;
+  compensationType?: 'commission' | 'fixed' | string;
+  fixedSalary?: number | null;
   countedOrderCount: number;
   unitAmount: number;
   estimatedAmount: number;
+  baseAmount?: number;
+  grossBaseAmount?: number;
+  balancePeriodStart?: string | null;
+  balancePeriodEnd?: string | null;
   paymentStatus: 'paid' | 'unpaid';
   paymentSnapshot?: PayrollPayment;
+  paymentCount?: number;
+  paidBaseAmount?: number;
+  paidNetAmount?: number;
+  paidBonusAmount?: number;
+  paidDeductionAmount?: number;
+  periodBaseAmount?: number;
+  hasOutstandingTopUp?: boolean;
+  hasBlockingPeriodOverlap?: boolean;
   liveAmountDelta?: number;
   liveOrderCountDelta?: number;
 }
 
-export type WalletEntryType = 'order_credit' | 'order_reversal' | 'payout';
+export type WalletEntryType =
+  | 'order_credit'
+  | 'order_reversal'
+  | 'payroll_bonus'
+  | 'payroll_deduction'
+  | 'payout';
 
 export interface WalletSettings {
   unitAmount: number;
@@ -1210,11 +1415,19 @@ export interface WalletBalanceCard {
   employeeName: string;
   employeeRole: string;
   isCommissionBased: boolean;
+  compensationType?: 'commission' | 'fixed' | string;
   fixedSalary: number | null;
   currentBalance: number;
   totalEarned: number;
   totalPaid: number;
   creditedOrders: number;
+  balancePeriodStart?: string | null;
+  balancePeriodEnd?: string | null;
+  baseEarned?: number;
+  basePaid?: number;
+  totalBonuses?: number;
+  totalDeductions?: number;
+  carryAdjustment?: number;
   lastActivityAt?: string;
 }
 
@@ -1222,6 +1435,11 @@ export interface WalletBalanceSummary {
   totalBalance: number;
   totalEarned: number;
   totalPaid: number;
+  totalBaseEarned?: number;
+  totalBasePaid?: number;
+  totalBonuses?: number;
+  totalDeductions?: number;
+  totalCarryAdjustments?: number;
   employeesDue: number;
   fixedSalaryEmployees: number;
   totalFixedSalaryDue: number;
@@ -1240,6 +1458,12 @@ export interface WalletActivityEntry {
   employeeRole?: string;
   entryType: WalletEntryType;
   amountDelta: number;
+  compensationType?: 'commission' | 'fixed' | string;
+  baseAmountSnapshot?: number;
+  bonusAmount?: number;
+  deductionAmount?: number;
+  payrollPaymentId?: string;
+  walletPayoutId?: string;
   unitAmountSnapshot?: number;
   orderId?: string;
   orderNumber?: string;
@@ -1267,9 +1491,38 @@ export interface WalletPayout {
   paymentMethod: string;
   categoryId: string;
   transactionId: string;
+  accountName?: string | null;
+  categoryName?: string | null;
+  payrollPaymentId?: string | null;
+  compensationType?: 'commission' | 'fixed' | string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  periodKind?: 'month' | 'custom' | string;
+  periodLabel?: string | null;
+  baseAmount?: number;
+  bonusAmount?: number;
+  deductionAmount?: number;
+  netAmount?: number;
+  payrollPayment?: PayrollPayment;
   paidAt: string;
   paidBy: string;
   paidByName?: string;
+  note?: string;
+}
+
+export interface EmployeeWalletPayoutPayload {
+  employeeId: string;
+  amount: number;
+  accountId: string;
+  paymentMethod: string;
+  categoryId: string;
+  paidAt: string;
+  periodStart: string;
+  periodEnd: string;
+  periodKind?: 'month' | 'custom';
+  periodLabel?: string;
+  bonusAmount?: number;
+  deductionAmount?: number;
   note?: string;
 }
 
@@ -1288,7 +1541,8 @@ export type NotificationActionKind = 'none' | 'link' | 'decision' | 'link_and_de
 export type NotificationDecisionMode = 'record_only' | 'transaction_approval';
 export type NotificationDecision = 'accepted' | 'declined';
 export type NotificationDecisionScope = 'single_user' | 'all_users';
-export type NotificationDeploymentScope = 'all' | 'include' | 'exclude';
+export type DeploymentScope = 'all' | 'include' | 'exclude';
+export type NotificationDeploymentScope = DeploymentScope;
 
 export interface NotificationActionConfig {
   kind: NotificationActionKind;

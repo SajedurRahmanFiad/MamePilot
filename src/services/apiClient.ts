@@ -1,3 +1,5 @@
+import { GENERIC_ACTION_ERROR, userFacingErrorMessage } from '../utils/userFacingMessages';
+
 const RAW_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api/';
 const AUTH_TOKEN_KEY = 'authToken';
 
@@ -82,11 +84,11 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
     }
 
     if (error?.name === 'AbortError') {
-      throw new ApiError('Request timed out.', { code: 'TIMEOUT' });
+      throw new ApiError('This is taking longer than expected. Please try again.', { code: 'TIMEOUT' });
     }
 
     if (error instanceof TypeError) {
-      throw new ApiError('Network request failed.', { code: 'NETWORK' });
+      throw new ApiError('Could not connect. Check your internet connection and try again.', { code: 'NETWORK' });
     }
 
     throw error;
@@ -115,12 +117,14 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
       window.dispatchEvent(new CustomEvent('api:service-blocked', {
         detail: {
           code: String(parsed.code),
-          message: parsed?.error || `Request failed with status ${response.status}`,
+          message: userFacingErrorMessage(parsed?.error, 'Your service is currently unavailable. Please contact an administrator.'),
         },
       }));
     }
 
-    throw new ApiError(parsed?.error || `Request failed with status ${response.status}`, {
+    const rawMessage = parsed?.error || `Request failed with status ${response.status}`;
+    const fallback = response.status >= 500 ? GENERIC_ACTION_ERROR : 'We could not complete this request. Please try again.';
+    throw new ApiError(userFacingErrorMessage(rawMessage, fallback), {
       status: response.status,
       code: parsed?.code || 'HTTP_ERROR',
     });

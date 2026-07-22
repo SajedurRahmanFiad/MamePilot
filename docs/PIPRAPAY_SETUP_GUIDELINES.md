@@ -7,7 +7,7 @@
 
 ## 2. Redirect checkout flow
 - When the user clicks the subscription checkout button, the app sends a POST request to:
-  - /checkout/redirect
+  - /api/checkout/redirect
 - The request must include:
   - `full_name`
   - `email_address`
@@ -41,7 +41,7 @@ if ($data) {
 
 ## 4. Payment verification
 - After the user returns from the gateway, or when the webhook arrives, call the verification endpoint:
-  - /verify-payment
+  - /api/verify-payment
 - The request must include the PipraPay payment id as `pp_id`.
 - The response should be checked for a completed payment before updating the subscription.
 

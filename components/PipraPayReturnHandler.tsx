@@ -3,6 +3,12 @@ import { useLocation } from 'react-router-dom';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
+import {
+  clearPipraPayReturnParams,
+  hasPipraPayReturnSignal,
+  readPipraPayReturnParams,
+  readPipraPayReturnStatus,
+} from '../src/utils/piprapay';
 
 const PipraPayReturnHandler: React.FC = () => {
   const location = useLocation();
@@ -15,26 +21,26 @@ const PipraPayReturnHandler: React.FC = () => {
       return;
     }
 
-    const rawQuery = window.location.search || window.location.hash.split('?')[1] || '';
-    const params = new URLSearchParams(rawQuery);
-    const paymentStatus = params.get('payment') || params.get('pp_status') || params.get('status') || params.get('payment_status');
+    const returnRoute = window.location.hash.split('?')[0];
+    if (returnRoute === '#/subscriptions' || returnRoute === '#/auto-calling') {
+      return;
+    }
+
+    const params = readPipraPayReturnParams();
+    // `status` belongs to normal app routes too (for example Orders uses
+    // `?status=On+Hold`). Only gateway-specific signals may start this flow.
+    if (!hasPipraPayReturnSignal(params)) {
+      return;
+    }
+    const paymentStatus = readPipraPayReturnStatus(params);
     const reference = params.get('reference') || params.get('transaction_ref') || params.get('transaction_reference') || params.get('order_id') || '';
     const ppId = params.get('pp_id') || params.get('payment_id') || params.get('transaction_id') || params.get('order_id') || '';
     const shouldVerify = Boolean(ppId || reference);
 
-    if (!paymentStatus && !shouldVerify) {
-      return;
-    }
-
     hasRun.current = true;
 
     const clearReturnQuery = (): void => {
-      const hash = window.location.hash || '';
-      if (hash.includes('?')) {
-        window.history.replaceState(null, '', window.location.pathname + hash.split('?')[0]);
-      } else if (window.location.search) {
-        window.history.replaceState(null, '', window.location.pathname + window.location.hash);
-      }
+      clearPipraPayReturnParams();
     };
 
     const handleStatusOnly = (): void => {
@@ -54,7 +60,7 @@ const PipraPayReturnHandler: React.FC = () => {
       }
 
       if (!shouldVerify) {
-        const message = 'Payment has returned from gateway and is awaiting verification.';
+        const message = 'Payment was received and is still being confirmed.';
         toast.info(message);
         queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
         clearReturnQuery();
@@ -62,7 +68,7 @@ const PipraPayReturnHandler: React.FC = () => {
       }
 
       try {
-        toast.info('Payment received by gateway. Verifying payment status...');
+        toast.info('Confirming your payment...');
         const result = await verifyPipraPayPayment({ reference, ppId });
         queryClient.invalidateQueries({ queryKey: ['service-subscription'], exact: false });
         clearReturnQuery();

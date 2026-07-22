@@ -582,6 +582,134 @@ final class OperationsApi extends BaseService
         return $this->resolveProductStockUpdates($deltas, 'bill');
     }
 
+    /**
+     * @return array{remainingExistingSubtotal: float, newSubtotal: float, newDiscount: float, newTotal: float, maxRefund: float, maxCollection: float}
+     */
+    private function calculateReturnAdjustment(
+        float $subtotal,
+        float $discount,
+        float $shipping,
+        float $paidAmount,
+        float $returnValue,
+        float $replacementValue = 0.0,
+        ?float $discountEligibleSubtotal = null,
+        ?float $discountEligibleReturnValue = null
+    ): array {
+        $safeSubtotal = max(0.0, $subtotal);
+        $safeReturnValue = min($safeSubtotal, max(0.0, $returnValue));
+        $safeDiscountEligibleSubtotal = min(
+            $safeSubtotal,
+            max(0.0, $discountEligibleSubtotal ?? $safeSubtotal)
+        );
+        $safeDiscountEligibleReturnValue = min(
+            $safeDiscountEligibleSubtotal,
+            max(0.0, $discountEligibleReturnValue ?? $safeReturnValue)
+        );
+        $remainingExistingSubtotal = max(0.0, $safeSubtotal - $safeReturnValue);
+        $remainingDiscountEligibleSubtotal = max(0.0, $safeDiscountEligibleSubtotal - $safeDiscountEligibleReturnValue);
+        $remainingRatio = $safeDiscountEligibleSubtotal > 0
+            ? $remainingDiscountEligibleSubtotal / $safeDiscountEligibleSubtotal
+            : 0.0;
+        $newDiscount = round(max(0.0, $discount) * $remainingRatio, 2);
+        $newSubtotal = round($remainingExistingSubtotal + max(0.0, $replacementValue), 2);
+        $newTotal = round(max(0.0, $newSubtotal - $newDiscount + max(0.0, $shipping)), 2);
+
+        return [
+            'remainingExistingSubtotal' => round($remainingExistingSubtotal, 2),
+            'newSubtotal' => $newSubtotal,
+            'newDiscount' => $newDiscount,
+            'newTotal' => $newTotal,
+            'maxRefund' => round(max(0.0, max(0.0, $paidAmount) - $newTotal), 2),
+            'maxCollection' => round(max(0.0, $newTotal - max(0.0, $paidAmount)), 2),
+        ];
+    }
+
+    private function appendHistoryText(string $existing, string $event): string
+    {
+        $existing = trim($existing);
+        $event = trim($event);
+        if ($existing === '') return $event;
+        if ($event === '') return $existing;
+        return $existing . "\n" . $event;
+    }
+
+    /** @return array{0: string, 1: bool} */
+    private function decodeEncodedTextFilterValue(string $value): array
+    {
+        $prefix = '__mp_filter_v1__:';
+        if (str_starts_with($value, $prefix)) {
+            $payload = substr($value, strlen($prefix));
+            $separator = strpos($payload, ':');
+            $mode = $separator === false ? '' : substr($payload, 0, $separator);
+            if ($separator !== false && in_array($mode, ['equals', 'contains'], true)) {
+                return [rawurldecode(substr($payload, $separator + 1)), $mode === 'contains'];
+            }
+        }
+
+        // Backward compatibility for navigation state created before tagged filters.
+        $contains = strlen($value) >= 2 && str_starts_with($value, '%') && str_ends_with($value, '%');
+        return [$contains ? substr($value, 1, -1) : $value, $contains];
+    }
+
+    private function appendEncodedTextFilter(
+        string &$where,
+        array &$bindings,
+        string $column,
+        string $value,
+        string $bindingName,
+        bool $negative = false
+    ): void {
+        if ($value === '') return;
+
+        [$value, $contains] = $this->decodeEncodedTextFilterValue($value);
+        if (!$contains) {
+            $where .= " AND COALESCE({$column}, '') " . ($negative ? '<>' : '=') . " :{$bindingName}";
+            $bindings[':' . $bindingName] = $value;
+            return;
+        }
+
+        $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $value);
+        $where .= " AND COALESCE({$column}, '') " . ($negative ? 'NOT LIKE' : 'LIKE') . " :{$bindingName} ESCAPE '='";
+        $bindings[':' . $bindingName] = '%' . $escaped . '%';
+    }
+
+    /** @param array<int, array<string, mixed>> $items */
+    private function validateDocumentAmounts(array $params, array $items, string $documentLabel): void
+    {
+        if ($items === []) {
+            throw new RuntimeException("{$documentLabel} must contain at least one item.");
+        }
+        $calculatedSubtotal = 0.0;
+        foreach ($items as $item) {
+            $productId = trim((string) ($item['productId'] ?? ''));
+            $quantity = (int) ($item['quantity'] ?? 0);
+            $rate = round((float) ($item['rate'] ?? 0), 2);
+            $amount = round((float) ($item['amount'] ?? ($rate * $quantity)), 2);
+            if ($productId === '' || $quantity <= 0 || $rate < 0) {
+                throw new RuntimeException("{$documentLabel} items require a product, a positive quantity, and a non-negative rate.");
+            }
+            if (abs($amount - round($rate * $quantity, 2)) > 0.01) {
+                throw new RuntimeException("{$documentLabel} item amount does not match rate × quantity.");
+            }
+            $calculatedSubtotal += $amount;
+        }
+        $calculatedSubtotal = round($calculatedSubtotal, 2);
+        $submittedSubtotal = round((float) ($params['subtotal'] ?? 0), 2);
+        $discount = round((float) ($params['discount'] ?? 0), 2);
+        $shipping = round((float) ($params['shipping'] ?? 0), 2);
+        $submittedTotal = round((float) ($params['total'] ?? 0), 2);
+        $expectedTotal = round(max(0.0, $calculatedSubtotal - $discount + $shipping), 2);
+        if (abs($submittedSubtotal - $calculatedSubtotal) > 0.01) {
+            throw new RuntimeException("{$documentLabel} subtotal does not match its items.");
+        }
+        if ($discount < 0 || $discount > $calculatedSubtotal) {
+            throw new RuntimeException("{$documentLabel} discount must be between zero and the subtotal.");
+        }
+        if ($shipping < 0 || abs($submittedTotal - $expectedTotal) > 0.01) {
+            throw new RuntimeException("{$documentLabel} total is invalid.");
+        }
+    }
+
     private function deletedStateSql(string $deletedState): string
     {
         if ($deletedState === 'deleted') {
@@ -962,8 +1090,10 @@ final class OperationsApi extends BaseService
 
         $processingChanged = $this->historyValue($nextHistory, 'processing') !== $this->historyValue($existingHistory, 'processing');
         $receivedChanged = $this->historyValue($nextHistory, 'received') !== $this->historyValue($existingHistory, 'received');
+        $returnedChanged = $this->historyValue($nextHistory, 'returned') !== $this->historyValue($existingHistory, 'returned');
         $cancelledChanged = $this->historyValue($nextHistory, 'cancelled') !== $this->historyValue($existingHistory, 'cancelled');
         $paidChanged = $this->historyValue($nextHistory, 'paid') !== $this->historyValue($existingHistory, 'paid');
+        $refundChanged = $this->historyValue($nextHistory, 'refund') !== $this->historyValue($existingHistory, 'refund');
 
         if (($nextStatus !== $previousStatus && $nextStatus === 'Processing') || $processingChanged) {
             $this->assertUserCanManageBillRecord(
@@ -985,7 +1115,17 @@ final class OperationsApi extends BaseService
             );
         }
 
-        if ((($previousStatus !== 'On Hold' && $nextStatus === 'On Hold') && $nextStatus !== $previousStatus) || $cancelledChanged) {
+        if (($nextStatus !== $previousStatus && $nextStatus === 'Returned') || $returnedChanged) {
+            $this->assertUserCanManageBillRecord(
+                $user,
+                $existingRow,
+                'bills.markReceivedOwn',
+                'bills.markReceivedAny',
+                'You do not have permission to mark this bill as returned.'
+            );
+        }
+
+        if (($nextStatus !== $previousStatus && $nextStatus === 'Cancelled') || $cancelledChanged) {
             $this->assertUserCanManageBillRecord(
                 $user,
                 $existingRow,
@@ -997,6 +1137,7 @@ final class OperationsApi extends BaseService
 
         if (
             $paidChanged
+            || $refundChanged
             || (array_key_exists('paidAmount', $updates) && $this->formatMoney($updates['paidAmount']) !== $this->formatMoney($existingRow['paid_amount'] ?? 0))
             || (array_key_exists('paidAt', $updates) && trim((string) $updates['paidAt']) !== '')
             || ($nextStatus !== $previousStatus && $nextStatus === 'Paid')
@@ -1059,8 +1200,8 @@ final class OperationsApi extends BaseService
         }
         if (
             array_key_exists('history', $updates)
-            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'received', 'cancelled', 'paid']))
-            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'received', 'cancelled', 'paid']))
+            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'received', 'returned', 'cancelled', 'paid', 'refund']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'received', 'returned', 'cancelled', 'paid', 'refund']))
         ) {
             $businessChanged = true;
         }
@@ -1254,39 +1395,33 @@ final class OperationsApi extends BaseService
             $where .= ' AND status = :status';
             $bindings[':status'] = $status;
         }
+
         // Support exclusion filter from frontend: statusNot
         $statusNot = trim((string) ($filters['statusNot'] ?? ''));
         if ($statusNot !== '') {
             $where .= ' AND status <> :status_not';
             $bindings[':status_not'] = $statusNot;
         }
-        // Support payment status filters (Paid / Partially Paid / Unpaid)
+        // Keep the server-side filter mutually exclusive and aligned with the
+        // payment badges used by the list and detail screens.
+        $orderSettlementTotalSql = "(CASE WHEN status = 'Cancelled' THEN 0 ELSE total END)";
+        $paymentStatusSql = "(CASE
+            WHEN paidAmount > {$orderSettlementTotalSql} THEN 'Overpaid'
+            WHEN paidAmount <= 0 AND LOWER(COALESCE(history, '')) LIKE '%refund%' THEN 'Refunded'
+            WHEN {$orderSettlementTotalSql} <= 0 THEN 'Paid'
+            WHEN paidAmount <= 0 THEN 'Unpaid'
+            WHEN paidAmount < {$orderSettlementTotalSql} THEN 'Partially Paid'
+            ELSE 'Paid'
+        END)";
         $paymentStatus = trim((string) ($filters['paymentStatus'] ?? ''));
         if ($paymentStatus !== '') {
-            if ($paymentStatus === 'Paid') {
-                $where .= ' AND paidAmount >= total';
-            } elseif ($paymentStatus === 'Partially Paid') {
-                $where .= ' AND paidAmount > 0 AND paidAmount < total';
-            } elseif ($paymentStatus === 'Unpaid') {
-                $where .= ' AND paidAmount = 0';
-            } elseif ($paymentStatus === 'Refunded') {
-                // Treat 'Refunded' as orders with refund text in history
-                $where .= ' AND LOWER(COALESCE(history, "")) LIKE :refund_like';
-                $bindings[':refund_like'] = '%refund%';
-            }
+            $where .= " AND {$paymentStatusSql} = :payment_status";
+            $bindings[':payment_status'] = $paymentStatus;
         }
         $paymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
         if ($paymentStatusNot !== '') {
-            if ($paymentStatusNot === 'Paid') {
-                $where .= ' AND NOT (paidAmount >= total)';
-            } elseif ($paymentStatusNot === 'Partially Paid') {
-                $where .= ' AND NOT (paidAmount > 0 AND paidAmount < total)';
-            } elseif ($paymentStatusNot === 'Unpaid') {
-                $where .= ' AND NOT (paidAmount = 0)';
-            } elseif ($paymentStatusNot === 'Refunded') {
-                $where .= ' AND NOT (LOWER(COALESCE(history, "")) LIKE :refund_like_not)';
-                $bindings[':refund_like_not'] = '%refund%';
-            }
+            $where .= " AND {$paymentStatusSql} <> :payment_status_not";
+            $bindings[':payment_status_not'] = $paymentStatusNot;
         }
 
         $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
@@ -1296,66 +1431,29 @@ final class OperationsApi extends BaseService
         }
         $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
         if ($sourceAdNot !== '') {
-            $where .= ' AND sourceAd <> :source_ad_not';
+            $where .= " AND COALESCE(sourceAd, '') <> :source_ad_not";
             $bindings[':source_ad_not'] = $sourceAdNot;
         }
 
         $orderNumber = trim((string) ($filters['orderNumber'] ?? ''));
-        if ($orderNumber !== '') {
-            // Allow partial/order-id fragment searches: match anywhere inside orderNumber
-            $where .= ' AND orderNumber LIKE :order_number';
-            $bindings[':order_number'] = (strpos($orderNumber, '%') !== false) ? $orderNumber : '%' . $orderNumber . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'orderNumber', $orderNumber, 'order_number');
         $orderNumberNot = trim((string) ($filters['orderNumberNot'] ?? ''));
-        if ($orderNumberNot !== '') {
-            // Negation for partial matches
-            $where .= ' AND orderNumber NOT LIKE :order_number_not';
-            $bindings[':order_number_not'] = (strpos($orderNumberNot, '%') !== false) ? $orderNumberNot : '%' . $orderNumberNot . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'orderNumber', $orderNumberNot, 'order_number_not', true);
 
         $customerName = trim((string) ($filters['customerName'] ?? ''));
-        if ($customerName !== '') {
-            $where .= ' AND customerName LIKE :customer_name';
-            $bindings[':customer_name'] = (strpos($customerName, '%') !== false) ? $customerName : '%' . $customerName . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'customerName', $customerName, 'customer_name');
         $customerNameNot = trim((string) ($filters['customerNameNot'] ?? ''));
-        if ($customerNameNot !== '') {
-            $where .= ' AND customerName NOT LIKE :customer_name_not';
-            $bindings[':customer_name_not'] = (strpos($customerNameNot, '%') !== false) ? $customerNameNot : '%' . $customerNameNot . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'customerName', $customerNameNot, 'customer_name_not', true);
 
         $customerPhone = trim((string) ($filters['customerPhone'] ?? ''));
-        if ($customerPhone !== '') {
-            $where .= ' AND customerPhone LIKE :customer_phone';
-            $bindings[':customer_phone'] = (strpos($customerPhone, '%') !== false) ? $customerPhone : '%' . $customerPhone . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'customerPhone', $customerPhone, 'customer_phone');
         $customerPhoneNot = trim((string) ($filters['customerPhoneNot'] ?? ''));
-        if ($customerPhoneNot !== '') {
-            $where .= ' AND customerPhone NOT LIKE :customer_phone_not';
-            $bindings[':customer_phone_not'] = (strpos($customerPhoneNot, '%') !== false) ? $customerPhoneNot : '%' . $customerPhoneNot . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'customerPhone', $customerPhoneNot, 'customer_phone_not', true);
 
         $company = trim((string) ($filters['company'] ?? ''));
-        if ($company !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :company';
-            $bindings[':company'] = (strpos($company, '%') !== false) ? $company : '%' . $company . '%';
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name"))', $company, 'company');
         $companyNot = trim((string) ($filters['companyNot'] ?? ''));
-        if ($companyNot !== '') {
-            $where .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) NOT LIKE :company_not';
-            $bindings[':company_not'] = (strpos($companyNot, '%') !== false) ? $companyNot : '%' . $companyNot . '%';
-        }
-
-        $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
-        if ($sourceAd !== '') {
-            $where .= ' AND sourceAd = :source_ad';
-            $bindings[':source_ad'] = $sourceAd;
-        }
-        $sourceAdNot = trim((string) ($filters['sourceAdNot'] ?? ''));
-        if ($sourceAdNot !== '') {
-            $where .= ' AND sourceAd <> :source_ad_not';
-            $bindings[':source_ad_not'] = $sourceAdNot;
-        }
+        $this->appendEncodedTextFilter($where, $bindings, 'JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name"))', $companyNot, 'company_not', true);
 
         $courier = trim((string) ($filters['courier'] ?? ''));
         if ($courier !== '') {
@@ -1382,6 +1480,13 @@ final class OperationsApi extends BaseService
                     )';
                     $bindings[':courier_like'] = '%paperfly%';
                     break;
+                case 'pathao':
+                    $where .= ' AND (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like
+                        OR TRIM(COALESCE(pathaoConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_like'] = '%pathao%';
+                    break;
                 case 'manual':
                 case 'manual/other':
                 case 'manual-other':
@@ -1389,12 +1494,15 @@ final class OperationsApi extends BaseService
                         . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_steadfast'
                         . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_carrybee'
                         . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_paperfly'
+                        . ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) NOT LIKE :manual_avoid_pathao'
                         . ' AND TRIM(COALESCE(steadfastConsignmentId, "")) = ""'
                         . ' AND TRIM(COALESCE(carrybeeConsignmentId, "")) = ""'
-                        . ' AND TRIM(COALESCE(paperflyTrackingNumber, "")) = ""';
+                        . ' AND TRIM(COALESCE(paperflyTrackingNumber, "")) = ""'
+                        . ' AND TRIM(COALESCE(pathaoConsignmentId, "")) = ""';
                     $bindings[':manual_avoid_steadfast'] = '%steadfast%';
                     $bindings[':manual_avoid_carrybee'] = '%carrybee%';
                     $bindings[':manual_avoid_paperfly'] = '%paperfly%';
+                    $bindings[':manual_avoid_pathao'] = '%pathao%';
                     break;
                 default:
                     $where .= ' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_like';
@@ -1427,6 +1535,13 @@ final class OperationsApi extends BaseService
                     )';
                     $bindings[':courier_not_like'] = '%paperfly%';
                     break;
+                case 'pathao':
+                    $where .= ' AND NOT (
+                        LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like
+                        OR TRIM(COALESCE(pathaoConsignmentId, "")) <> ""
+                    )';
+                    $bindings[':courier_not_like'] = '%pathao%';
+                    break;
                 case 'manual':
                 case 'manual/other':
                 case 'manual-other':
@@ -1434,14 +1549,17 @@ final class OperationsApi extends BaseService
                         LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_steadfast
                         OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_carrybee
                         OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_paperfly
+                        OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :manual_not_match_pathao
                         OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) = ""
                         OR TRIM(COALESCE(steadfastConsignmentId, "")) <> ""
                         OR TRIM(COALESCE(carrybeeConsignmentId, "")) <> ""
                         OR TRIM(COALESCE(paperflyTrackingNumber, "")) <> ""
+                        OR TRIM(COALESCE(pathaoConsignmentId, "")) <> ""
                     )';
                     $bindings[':manual_not_match_steadfast'] = '%steadfast%';
                     $bindings[':manual_not_match_carrybee'] = '%carrybee%';
                     $bindings[':manual_not_match_paperfly'] = '%paperfly%';
+                    $bindings[':manual_not_match_pathao'] = '%pathao%';
                     break;
                 default:
                     $where .= ' AND NOT LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")), "")) LIKE :courier_not_like';
@@ -1467,10 +1585,12 @@ final class OperationsApi extends BaseService
             $bindings += $inBindings;
         }
 
-        $createdByNot = trim((string) ($filters['createdByNot'] ?? ''));
-        if ($createdByNot !== '') {
-            $where .= ' AND createdBy <> :created_by_not';
-            $bindings[':created_by_not'] = $createdByNot;
+        $createdByNotIds = is_array($filters['createdByNotIds'] ?? null) ? $filters['createdByNotIds'] : [];
+        $createdByNotIds = array_values(array_filter(array_map('strval', $createdByNotIds), static fn(string $id): bool => trim($id) !== ''));
+        if ($createdByNotIds !== []) {
+            [$placeholders, $notBindings] = $this->inClause($createdByNotIds, 'created_by_not');
+            $where .= ' AND createdBy NOT IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $notBindings;
         }
 
         $search = trim((string) ($filters['search'] ?? ''));
@@ -1558,7 +1678,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'courierNames') {
-            $result['courierNames'] = ['SteadFast', 'CarryBee', 'Paperfly', 'Manual/Other'];
+            $result['courierNames'] = ['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other'];
         }
 
         return $result;
@@ -1647,7 +1767,7 @@ final class OperationsApi extends BaseService
         $result = [];
 
         if ($field === '' || $field === 'accounts') {
-            $sql = 'SELECT DISTINCT accountName FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(accountName, "")) <> ""';
+            $sql = 'SELECT DISTINCT accountName FROM transactions_with_relations WHERE deletedAt IS NULL AND TRIM(COALESCE(accountName, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'accounts') { $sql .= ' AND accountName LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY accountName LIMIT ' . $limit;
@@ -1655,7 +1775,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'contacts') {
-            $sql = 'SELECT DISTINCT contactName FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(contactName, "")) <> ""';
+            $sql = 'SELECT DISTINCT contactName FROM transactions_with_relations WHERE deletedAt IS NULL AND TRIM(COALESCE(contactName, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'contacts') { $sql .= ' AND contactName LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY contactName LIMIT ' . $limit;
@@ -1663,7 +1783,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'paymentMethods') {
-            $sql = 'SELECT DISTINCT paymentMethod FROM transactions WHERE deleted_at IS NULL AND TRIM(COALESCE(paymentMethod, "")) <> ""';
+            $sql = 'SELECT DISTINCT paymentMethod FROM transactions_with_relations WHERE deletedAt IS NULL AND TRIM(COALESCE(paymentMethod, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'paymentMethods') { $sql .= ' AND paymentMethod LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY paymentMethod LIMIT ' . $limit;
@@ -1764,22 +1884,34 @@ final class OperationsApi extends BaseService
         $result = [];
 
         $tables = [
-            'orders' => ['title' => 'orderNumber', 'deleted_by' => 'deleted_by'],
-            'customers' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
-            'products' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
-            'vendors' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
-            'bills' => ['title' => 'bill_number', 'deleted_by' => 'deleted_by'],
-            'transactions' => ['title' => 'description', 'deleted_by' => 'deleted_by'],
-            'users' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
-            'accounts' => ['title' => 'name', 'deleted_by' => 'deleted_by'],
+            'orders' => 'order_number',
+            'customers' => 'name',
+            'products' => 'name',
+            'vendors' => 'name',
+            'bills' => 'bill_number',
+            'transactions' => 'description',
+            'users' => 'name',
+            'accounts' => 'name',
         ];
 
         $deletedByNames = [];
         $titles = [];
 
-        foreach ($tables as $table => $cols) {
-            if ($field === '' || $field === 'deletedByNames') {
-                $sql = "SELECT DISTINCT u.name AS deletedByName FROM `{$table}` t LEFT JOIN users u ON t.deleted_by = u.id WHERE t.deleted_at IS NULL = FALSE AND t.deleted_at IS NOT NULL AND t.deleted_by IS NOT NULL AND t.deleted_by <> ''";
+        foreach ($tables as $table => $titleCol) {
+            // Recycle-bin support is intentionally schema-driven. Older
+            // deployments can contain non-recyclable tables (such as accounts)
+            // without deleted_at/deleted_by columns. Those tables must not make
+            // the entire filter-options request fail.
+            if (
+                !$this->tableExists($table)
+                || !$this->columnExists($table, 'deleted_at')
+                || !$this->columnExists($table, $titleCol)
+            ) {
+                continue;
+            }
+
+            if (($field === '' || $field === 'deletedByNames') && $this->columnExists($table, 'deleted_by')) {
+                $sql = "SELECT DISTINCT u.name AS deletedByName FROM `{$table}` t LEFT JOIN users u ON t.deleted_by = u.id WHERE t.deleted_at IS NOT NULL AND t.deleted_by IS NOT NULL AND t.deleted_by <> ''";
                 $bindings = [];
                 if ($like) { $sql .= ' AND u.name LIKE :q'; $bindings[':q'] = $like; }
                 $sql .= ' LIMIT ' . $limit;
@@ -1791,7 +1923,6 @@ final class OperationsApi extends BaseService
             }
 
             if ($field === '' || $field === 'titles') {
-                $titleCol = $cols['title'];
                 $sql = "SELECT DISTINCT `{$titleCol}` AS title FROM `{$table}` WHERE deleted_at IS NOT NULL";
                 $bindings = [];
                 if ($like) { $sql .= " AND `{$titleCol}` LIKE :q"; $bindings[':q'] = $like; }
@@ -2176,7 +2307,7 @@ final class OperationsApi extends BaseService
      */
     private function buildUserActivityPerformanceUserWhere(string $search, string $roleFilter): array
     {
-        $conditions = ['WHERE 1=1'];
+        $conditions = ['WHERE COALESCE(u.is_system, 0) = 0'];
         $bindings = [];
 
         if ($roleFilter === 'Admins') {
@@ -3025,8 +3156,10 @@ final class OperationsApi extends BaseService
         $featureAccess = new FeatureAccess($this->database, $this->auth);
         $capabilities = $featureAccess->fetchCapabilities();
         $hasHR = !empty($capabilities['human_resources']);
+        $subCapabilities = is_array($capabilities['subCapabilities'] ?? null) ? $capabilities['subCapabilities'] : [];
+        $hasPayroll = $hasHR && (($subCapabilities['payroll'] ?? true) !== false);
         $walletBalance = 0.0;
-        if ($hasHR) {
+        if ($hasPayroll && $this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')) {
             $wallet = $this->fetchMyWallet();
             $walletBalance = (float) ($wallet['currentBalance'] ?? 0);
         }
@@ -3681,6 +3814,7 @@ final class OperationsApi extends BaseService
             $orderDate = $this->normalizeDateOnly((string) ($params['orderDate'] ?? '')) ?: gmdate('Y-m-d');
             $status = trim((string) ($params['status'] ?? 'On Hold'));
             $items = is_array($params['items'] ?? null) ? $params['items'] : [];
+            $this->validateDocumentAmounts($params, $items, 'Order');
             $pageSelection = $this->resolveOrderPageSelection($params);
             $stockUpdates = $this->applyOrderStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
@@ -3766,6 +3900,9 @@ final class OperationsApi extends BaseService
             $previousStatus = (string) ($existingRow['status'] ?? '');
             $previousItems = $this->jsonDecodeList($existingRow['items'] ?? []);
             $previousCustomerId = (string) ($existingRow['customer_id'] ?? '');
+            $previousPaidAmount = (float) ($existingRow['paid_amount'] ?? 0);
+            $orderTotal = (float) ($existingRow['total'] ?? 0);
+            $orderNumber = trim((string) ($existingRow['order_number'] ?? ''));
             $nextStatus = array_key_exists('status', $updates) ? trim((string) $updates['status']) : $previousStatus;
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
             $stockUpdates = [];
@@ -3822,14 +3959,55 @@ final class OperationsApi extends BaseService
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
 
-            $refundAmount = (float) ($updates['refundAmount'] ?? 0);
+            $paymentAmount = round((float) ($updates['paymentAmount'] ?? 0), 2);
+            if ($paymentAmount > 0) {
+                if ($previousStatus === 'Cancelled') {
+                    throw new RuntimeException('Payments cannot be added to a cancelled order.');
+                }
+                $paymentAccountId = trim((string) ($updates['paymentAccountId'] ?? ''));
+                if ($paymentAccountId === '') {
+                    throw new RuntimeException('Select an account for the order payment.');
+                }
+                $remainingDue = max(0.0, $orderTotal - $previousPaidAmount);
+                if ($paymentAmount > $remainingDue) {
+                    throw new RuntimeException('Order payment cannot exceed the remaining due amount.');
+                }
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT default_payment_method, income_category_id FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $paymentMethod = trim((string) ($updates['paymentMethod'] ?? ''))
+                    ?: (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
+                $paymentCategory = trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_sales';
+                $paymentDate = trim((string) ($updates['paymentDate'] ?? '')) ?: $this->database->nowUtc();
+                $this->createTransactionRecord([
+                    'date' => $paymentDate,
+                    'type' => 'Income',
+                    'category' => $paymentCategory,
+                    'accountId' => $paymentAccountId,
+                    'amount' => $paymentAmount,
+                    'description' => "Payment for Order #{$orderNumber}",
+                    'referenceId' => $id,
+                    'contactId' => $previousCustomerId,
+                    'paymentMethod' => $paymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+                $payload['paid_amount'] = $this->formatMoney($previousPaidAmount + $paymentAmount);
+            }
+
+            $refundAmount = round((float) ($updates['refundAmount'] ?? 0), 2);
             $refundAccountId = trim((string) ($updates['refundAccountId'] ?? ''));
             $refundPaymentMethod = trim((string) ($updates['refundPaymentMethod'] ?? ''));
             $refundCategoryId = trim((string) ($updates['refundCategoryId'] ?? ''));
+            if ($paymentAmount > 0 && $refundAmount > 0) {
+                throw new RuntimeException('Record either an order payment or a refund, not both.');
+            }
 
             if ($refundAmount > 0) {
                 if ($refundAccountId === '') {
                     throw new RuntimeException('Refund account is required when recording a refund transaction.');
+                }
+                if ($refundAmount > $previousPaidAmount) {
+                    throw new RuntimeException('Refund amount cannot exceed the amount received for this order.');
                 }
 
                 $systemDefaults = $this->database->fetchOne(
@@ -3851,6 +4029,7 @@ final class OperationsApi extends BaseService
                     'paymentMethod' => $refundPaymentMethod,
                     'history' => [],
                 ], (string) $actor['id'], $actor);
+                $payload['paid_amount'] = $this->formatMoney(max(0.0, $previousPaidAmount - $refundAmount));
             }
 
             if (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates)) {
@@ -3891,7 +4070,9 @@ final class OperationsApi extends BaseService
                 array_key_exists('customerId', $updates) ||
                 array_key_exists('status', $updates) ||
                 array_key_exists('total', $updates) ||
-                array_key_exists('paidAmount', $updates);
+                array_key_exists('paidAmount', $updates) ||
+                $paymentAmount > 0 ||
+                $refundAmount > 0;
 
             $this->touchUpdate('orders', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
@@ -3941,17 +4122,11 @@ final class OperationsApi extends BaseService
         $categoryId = trim((string) ($params['categoryId'] ?? ''));
 
         if ($outcome === 'Returned') {
-            if ($accountId === '') {
-                throw new RuntimeException('Account is required.');
+            if ($amount < 0) {
+                throw new RuntimeException('Return expense amount cannot be negative.');
             }
-            if ($amount <= 0) {
-                throw new RuntimeException('Return expense amount must be greater than zero.');
-            }
-            if ($paymentMethod === '') {
-                throw new RuntimeException('Payment method is required for returned orders.');
-            }
-            if ($categoryId === '') {
-                throw new RuntimeException('Expense category is required for returned orders.');
+            if ($amount > 0 && ($accountId === '' || $paymentMethod === '' || $categoryId === '')) {
+                throw new RuntimeException('Account, payment method, and expense category are required when a return expense is recorded.');
             }
         }
 
@@ -4029,6 +4204,35 @@ final class OperationsApi extends BaseService
             $createdTransactions = [];
 
             if ($outcome === 'Delivered') {
+                $effectivePayment = round(max(0.0, $amount), 2);
+                $remainingDue = max(0.0, $orderTotal - $paidAmount);
+                if ($effectivePayment > $remainingDue) {
+                    throw new RuntimeException('Delivery payment cannot exceed the remaining order due.');
+                }
+                if ($effectivePayment > 0) {
+                    if ($accountId === '') {
+                        throw new RuntimeException('Select the account that received the delivery payment.');
+                    }
+                    $effectiveMethod = $paymentMethod !== '' ? $paymentMethod : $defaultPaymentMethod;
+                    $effectiveCategory = $categoryId !== '' ? $categoryId : $incomeCategoryId;
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Income',
+                        'category' => $effectiveCategory,
+                        'accountId' => $accountId,
+                        'amount' => $effectivePayment,
+                        'description' => "Delivery payment for Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $effectiveMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $payload['paid_amount'] = $this->formatMoney($paidAmount + $effectivePayment);
+                    $history['payment'] = $this->appendHistoryText(
+                        (string) ($history['payment'] ?? ''),
+                        'Delivery payment recorded: ' . $this->formatMoney($effectivePayment) . '.'
+                    );
+                }
                 // When completing from exchange picked, set exchange delivered history
                 // but preserve the original delivery history
                 if ($previousStatus === 'Exchange picked') {
@@ -4050,18 +4254,20 @@ final class OperationsApi extends BaseService
                 }
                 $payload['history'] = $this->jsonEncode($history);
             } else {
-                $createdTransactions[] = $this->createTransactionRecord([
-                    'date' => $recordedAt,
-                    'type' => 'Expense',
-                    'category' => $categoryId,
-                    'accountId' => $accountId,
-                    'amount' => $amount,
-                    'description' => "Return expense for Order #{$orderNumber}",
-                    'referenceId' => $orderId,
-                    'contactId' => $customerId,
-                    'paymentMethod' => $paymentMethod,
-                    'history' => [],
-                ], (string) $actor['id'], $actor);
+                if ($amount > 0) {
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => $categoryId,
+                        'accountId' => $accountId,
+                        'amount' => $amount,
+                        'description' => "Return expense for Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $paymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                }
 
                 // Refund transaction for partially paid orders
                 if ($refundAmount > 0 && $refundAccountId !== '' && $paidAmount > 0) {
@@ -4219,6 +4425,23 @@ final class OperationsApi extends BaseService
             $returnedItemDescriptions = [];
             $exchangedItemDescriptions = [];
             $totalReturnValue = 0.0;
+            $discountEligibleReturnValue = 0.0;
+            $replacementValue = 0.0;
+            $stockDeltas = [];
+            $processedSelections = 0;
+            $discountEligibleSubtotal = 0.0;
+            foreach ($previousItems as $previousItem) {
+                $isDiscountEligible = !array_key_exists('discountEligible', $previousItem)
+                    || (bool) $previousItem['discountEligible'];
+                if (!$isDiscountEligible) continue;
+                $activeQty = max(
+                    0,
+                    (int) ($previousItem['quantity'] ?? 0)
+                    - (int) ($previousItem['returnedQty'] ?? 0)
+                    - (int) ($previousItem['exchangedQty'] ?? 0)
+                );
+                $discountEligibleSubtotal += max(0.0, (float) ($previousItem['rate'] ?? 0)) * $activeQty;
+            }
 
             foreach ($items as $itemSelection) {
                 $productId = trim((string) ($itemSelection['productId'] ?? ''));
@@ -4229,46 +4452,92 @@ final class OperationsApi extends BaseService
                 if ($itemAction === 'keep' || $returnQty <= 0) {
                     continue;
                 }
+                if ($action === 'partialReturn' && $itemAction !== 'return') {
+                    throw new RuntimeException('Partial returns may only contain return items.');
+                }
+                if ($action === 'exchange' && $itemAction !== 'exchange') {
+                    throw new RuntimeException('Exchanges may only contain exchange items.');
+                }
 
-                // Find the item in the order
-                $itemIndex = -1;
-                foreach ($updatedItems as $idx => $item) {
-                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
-                        $itemIndex = $idx;
-                        break;
+                // A product can appear on more than one line. Prefer the stable
+                // source line supplied by the UI and retain a safe legacy fallback.
+                $itemIndex = array_key_exists('lineIndex', $itemSelection) ? (int) $itemSelection['lineIndex'] : -1;
+                if (!isset($updatedItems[$itemIndex]) || trim((string) ($updatedItems[$itemIndex]['productId'] ?? '')) !== $productId) {
+                    $itemIndex = -1;
+                    foreach ($updatedItems as $idx => $item) {
+                        $activeQty = max(0, (int) ($item['quantity'] ?? 0) - (int) ($item['returnedQty'] ?? 0) - (int) ($item['exchangedQty'] ?? 0));
+                        if (trim((string) ($item['productId'] ?? '')) === $productId && $activeQty > 0) {
+                            $itemIndex = $idx;
+                            break;
+                        }
                     }
                 }
                 if ($itemIndex < 0) {
-                    continue;
+                    throw new RuntimeException('A selected order item is no longer available. Refresh and try again.');
                 }
 
                 $originalItem = $updatedItems[$itemIndex];
                 $originalQty = (int) ($originalItem['quantity'] ?? 0);
+                $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
+                $currentExchangedQty = (int) ($originalItem['exchangedQty'] ?? 0);
+                $activeQty = max(0, $originalQty - $currentReturnedQty - $currentExchangedQty);
                 $rate = (float) ($originalItem['rate'] ?? 0);
                 $productName = trim((string) ($originalItem['productName'] ?? 'Unknown'));
 
-                $effectiveReturnQty = min($returnQty, $originalQty);
+                if ($returnQty > $activeQty) {
+                    throw new RuntimeException("Only {$activeQty} unit(s) of {$productName} remain available to return or exchange.");
+                }
+                $effectiveReturnQty = $returnQty;
                 $returnValue = $rate * $effectiveReturnQty;
                 $totalReturnValue += $returnValue;
+                $isDiscountEligible = !array_key_exists('discountEligible', $originalItem)
+                    || (bool) $originalItem['discountEligible'];
+                if ($isDiscountEligible) {
+                    $discountEligibleReturnValue += $returnValue;
+                }
+                $stockDeltas[$productId] = ($stockDeltas[$productId] ?? 0) + $effectiveReturnQty;
+                $processedSelections++;
 
                 // Update the item with return/exchange tracking
                 if ($itemAction === 'return') {
-                    $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
                     $updatedItems[$itemIndex]['returnedQty'] = $currentReturnedQty + $effectiveReturnQty;
                     $returnedItemDescriptions[] = "{$productName} ×{$effectiveReturnQty}";
                 } elseif ($itemAction === 'exchange') {
-                    $currentExchangedQty = (int) ($originalItem['exchangedQty'] ?? 0);
                     $updatedItems[$itemIndex]['exchangedQty'] = $currentExchangedQty + $effectiveReturnQty;
+
+                    if ($replacementItems === []) {
+                        throw new RuntimeException("Choose at least one replacement item for {$productName}.");
+                    }
 
                     $existingExchanges = is_array($originalItem['exchangedWith'] ?? null) ? $originalItem['exchangedWith'] : [];
                     foreach ($replacementItems as $rep) {
-                        $existingExchanges[] = [
-                            'productId' => trim((string) ($rep['productId'] ?? '')),
-                            'productName' => trim((string) ($rep['productName'] ?? '')),
-                            'quantity' => (int) ($rep['quantity'] ?? 1),
-                            'rate' => (float) ($rep['rate'] ?? 0),
-                            'amount' => (float) ($rep['amount'] ?? 0),
+                        $repProductId = trim((string) ($rep['productId'] ?? ''));
+                        $repQty = (int) ($rep['quantity'] ?? 0);
+                        $repRate = round((float) ($rep['rate'] ?? 0), 2);
+                        if ($repProductId === '' || $repQty <= 0 || $repRate < 0) {
+                            throw new RuntimeException('Replacement items must have a valid product, quantity, and rate.');
+                        }
+                        $productRow = $this->database->fetchOne(
+                            'SELECT id, name FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                            [':id' => $repProductId]
+                        );
+                        if ($productRow === null) {
+                            throw new RuntimeException('A selected replacement product is no longer available.');
+                        }
+                        $repAmount = round($repRate * $repQty, 2);
+                        $normalizedReplacement = [
+                            'productId' => $repProductId,
+                            'productName' => trim((string) ($productRow['name'] ?? $repProductId)),
+                            'quantity' => $repQty,
+                            'rate' => $repRate,
+                            'amount' => $repAmount,
+                            'discountEligible' => false,
+                            'isExchangeReplacement' => true,
                         ];
+                        $existingExchanges[] = $normalizedReplacement;
+                        $updatedItems[] = $normalizedReplacement;
+                        $replacementValue += $repAmount;
+                        $stockDeltas[$repProductId] = ($stockDeltas[$repProductId] ?? 0) - $repQty;
                     }
                     $updatedItems[$itemIndex]['exchangedWith'] = $existingExchanges;
 
@@ -4279,96 +4548,84 @@ final class OperationsApi extends BaseService
                 }
             }
 
-            // Handle stock adjustments for returns (add back to stock)
-            $stockUpdates = [];
-            foreach ($items as $itemSelection) {
-                $itemAction = trim((string) ($itemSelection['action'] ?? 'keep'));
-                $returnQty = (int) ($itemSelection['returnQty'] ?? 0);
-                if ($itemAction === 'keep' || $returnQty <= 0) continue;
-
-                $productId = trim((string) ($itemSelection['productId'] ?? ''));
-                $stockUpdates[] = [
-                    'productId' => $productId,
-                    'delta' => $returnQty, // Add back to stock
-                ];
-            }
-            // Handle stock for exchange replacement items (deduct from stock)
-            if ($action === 'exchange') {
-                foreach ($items as $itemSelection) {
-                    $replacementItems = is_array($itemSelection['replacementItems'] ?? null) ? $itemSelection['replacementItems'] : [];
-                    foreach ($replacementItems as $rep) {
-                        $repProductId = trim((string) ($rep['productId'] ?? ''));
-                        $repQty = (int) ($rep['quantity'] ?? 1);
-                        if ($repProductId !== '' && $repQty > 0) {
-                            $stockUpdates[] = [
-                                'productId' => $repProductId,
-                                'delta' => -$repQty, // Deduct from stock
-                            ];
-                            // Also add replacement item to the order items
-                            $updatedItems[] = [
-                                'productId' => $repProductId,
-                                'productName' => trim((string) ($rep['productName'] ?? '')),
-                                'rate' => (float) ($rep['rate'] ?? 0),
-                                'quantity' => $repQty,
-                                'amount' => (float) ($rep['amount'] ?? 0),
-                            ];
-                        }
-                    }
-                }
+            if ($processedSelections === 0) {
+                throw new RuntimeException('No valid return or exchange quantity was selected.');
             }
 
-            // Apply stock updates
-            foreach ($stockUpdates as $su) {
-                $pid = trim((string) ($su['productId'] ?? ''));
-                $delta = (int) ($su['delta'] ?? 0);
-                if ($pid === '' || $delta === 0) continue;
-
-                $productRow = $this->database->fetchOne(
-                    'SELECT id, stock FROM products WHERE id = :id LIMIT 1 FOR UPDATE',
-                    [':id' => $pid]
-                );
-                if ($productRow === null) continue;
-
-                $newStock = max(0, (int) ($productRow['stock'] ?? 0) + $delta);
-                $this->database->execute(
-                    'UPDATE products SET stock = :stock, updated_at = :updated_at WHERE id = :id',
-                    [':stock' => $newStock, ':updated_at' => $this->database->nowUtc(), ':id' => $pid]
-                );
-            }
-
-            // Recalculate order totals — only count active (non-returned) items + replacements
-            $newSubtotal = 0.0;
-            foreach ($updatedItems as $item) {
-                $itemQty = (int) ($item['quantity'] ?? 0);
-                $returnedQty = (int) ($item['returnedQty'] ?? 0);
-                $exchangedQty = (int) ($item['exchangedQty'] ?? 0);
-                $activeQty = max(0, $itemQty - $returnedQty - $exchangedQty);
-                $rate = (float) ($item['rate'] ?? 0);
-                $newSubtotal += $rate * $activeQty;
-            }
-            // Add replacement items (already in updatedItems from exchange)
-            foreach ($updatedItems as $item) {
-                // Replacement items don't have returnedQty/exchangedQty and their amount is already correct
-                if (!isset($item['_isReplacement'])) continue;
-            }
+            // Resolve the net stock change atomically. Missing products and
+            // insufficient replacement stock are explicit errors.
+            $stockUpdates = $this->resolveProductStockUpdates(
+                array_filter($stockDeltas, static fn(int $delta): bool => $delta !== 0),
+                'order return/exchange'
+            );
+            $this->applyResolvedProductStockUpdates($stockUpdates);
 
             $originalSubtotal = (float) ($orderRow['subtotal'] ?? 0);
             $originalDiscount = (float) ($orderRow['discount'] ?? 0);
             $shipping = (float) ($orderRow['shipping'] ?? 0);
 
-            // Proportional discount: if returning X% of items, discount reduces by X%
-            $discountRatio = $originalSubtotal > 0 ? ($newSubtotal / $originalSubtotal) : 1;
-            $newDiscount = round($originalDiscount * $discountRatio, 2);
-            $newTotal = max(0, $newSubtotal - $newDiscount + $shipping);
+            $adjustment = $this->calculateReturnAdjustment(
+                $originalSubtotal,
+                $originalDiscount,
+                $shipping,
+                $previousPaidAmount,
+                $totalReturnValue,
+                $replacementValue,
+                $discountEligibleSubtotal,
+                $discountEligibleReturnValue
+            );
+            $newSubtotal = $adjustment['newSubtotal'];
+            $newDiscount = $adjustment['newDiscount'];
+            $newTotal = $adjustment['newTotal'];
 
-            // Calculate the actual return value (what the customer should get back)
-            $returnValueFromItems = $originalSubtotal - $newSubtotal;
-            $discountLost = $originalDiscount - $newDiscount;
-            $netReturnValue = max(0, $returnValueFromItems - $discountLost);
-
-            // Keep paid amount unchanged — financial flows (refunds/collections) are handled manually
-            $newPaidAmount = $previousPaidAmount;
+            $effectiveRefund = min(max(0.0, $refundAmount), $adjustment['maxRefund']);
+            $effectiveCollection = min(max(0.0, $extraCollectionAmount), $adjustment['maxCollection']);
+            if ($effectiveRefund > 0 && $effectiveCollection > 0) {
+                throw new RuntimeException('A return/exchange cannot record a refund and an extra collection at the same time.');
+            }
+            $newPaidAmount = max(0.0, $previousPaidAmount - $effectiveRefund + $effectiveCollection);
             $createdTransactions = [];
+
+            $systemDefaults = $this->database->fetchOne(
+                'SELECT default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
+            ) ?? [];
+            $effectivePaymentMethod = $paymentMethod !== ''
+                ? $paymentMethod
+                : (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
+            if ($effectiveRefund > 0) {
+                $refundCategory = $categoryId !== ''
+                    ? $categoryId
+                    : (trim((string) ($systemDefaults['expense_category_id'] ?? '')) ?: 'expense_other');
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Expense',
+                    'category' => $refundCategory,
+                    'accountId' => $accountId,
+                    'amount' => $effectiveRefund,
+                    'description' => "Return/exchange refund for Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $effectivePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+            if ($effectiveCollection > 0) {
+                $collectionCategory = $categoryId !== ''
+                    ? $categoryId
+                    : (trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_sales');
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Income',
+                    'category' => $collectionCategory,
+                    'accountId' => $accountId,
+                    'amount' => $effectiveCollection,
+                    'description' => "Exchange collection for Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $effectivePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
 
             // Build history entry
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
@@ -4379,15 +4636,11 @@ final class OperationsApi extends BaseService
             if ($exchangedItemDescriptions !== []) {
                 $historyLines[] = 'Exchanged: ' . implode(', ', $exchangedItemDescriptions);
             }
-            if ($refundAmount > 0) {
-                $maxRefund = max(0, $previousPaidAmount - $newTotal);
-                $effectiveRefund = min($refundAmount, $maxRefund);
-                if ($effectiveRefund > 0) {
-                    $historyLines[] = 'Refunded: ' . $this->formatMoney($effectiveRefund);
-                }
+            if ($effectiveRefund > 0) {
+                $historyLines[] = 'Refunded: ' . $this->formatMoney($effectiveRefund);
             }
-            if ($extraCollectionAmount > 0) {
-                $historyLines[] = 'Collected: ' . $this->formatMoney($extraCollectionAmount);
+            if ($effectiveCollection > 0) {
+                $historyLines[] = 'Collected: ' . $this->formatMoney($effectiveCollection);
             }
             if ($note !== '') {
                 $historyLines[] = 'Note: ' . $note;
@@ -4398,19 +4651,42 @@ final class OperationsApi extends BaseService
                 'exchange' => 'Exchange',
                 default => 'Return/Exchange',
             };
-            $history['returnExchange'] = trim(
+            $history['returnExchange'] = $this->appendHistoryText(
+                (string) ($history['returnExchange'] ?? ''),
+                trim(
                 "{$actionLabel} processed by {$actorName} on {$dateLabel} at {$timeLabel}. "
                 . implode('. ', $historyLines)
+                )
             );
 
             if ($action === 'exchange') {
-                $history['exchangeProcessing'] = "Exchange processing started by {$actorName} on {$dateLabel} at {$timeLabel}.";
+                $history['exchangeProcessing'] = $this->appendHistoryText(
+                    (string) ($history['exchangeProcessing'] ?? ''),
+                    "Exchange processing started by {$actorName} on {$dateLabel} at {$timeLabel}."
+                );
             }
 
             // Update the order — set status based on action and current status
             $isExchangeOrder = str_starts_with($currentStatus, 'Exchange ');
+            $hasActiveItems = false;
+            foreach ($updatedItems as $updatedItem) {
+                $activeQty = max(
+                    0,
+                    (int) ($updatedItem['quantity'] ?? 0)
+                    - (int) ($updatedItem['returnedQty'] ?? 0)
+                    - (int) ($updatedItem['exchangedQty'] ?? 0)
+                );
+                if ($activeQty > 0) {
+                    $hasActiveItems = true;
+                    break;
+                }
+            }
             if ($action === 'exchange') {
                 $nextStatus = 'Exchange processing';
+            } elseif (!$hasActiveItems) {
+                $nextStatus = $isExchangeOrder ? 'Exchange returned' : 'Returned';
+                $history[$isExchangeOrder ? 'exchangeReturned' : 'returned'] =
+                    "Fully returned by {$actorName} on {$dateLabel} at {$timeLabel}.";
             } elseif ($action === 'partialReturn' && $isExchangeOrder) {
                 $nextStatus = 'Exchange returned';
                 $history['exchangeReturned'] = "Exchange returned by {$actorName} on {$dateLabel} at {$timeLabel}.";
@@ -4526,6 +4802,54 @@ final class OperationsApi extends BaseService
             $where .= ' AND status = :status';
             $bindings[':status'] = $status;
         }
+        $this->appendEncodedTextFilter($where, $bindings, 'billNumber', trim((string) ($filters['billNumber'] ?? '')), 'bill_number');
+        $this->appendEncodedTextFilter($where, $bindings, 'billNumber', trim((string) ($filters['billNumberNot'] ?? '')), 'bill_number_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'vendorName', trim((string) ($filters['vendorName'] ?? '')), 'vendor_name');
+        $this->appendEncodedTextFilter($where, $bindings, 'vendorName', trim((string) ($filters['vendorNameNot'] ?? '')), 'vendor_name_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'vendorPhone', trim((string) ($filters['vendorPhone'] ?? '')), 'vendor_phone');
+        $this->appendEncodedTextFilter($where, $bindings, 'vendorPhone', trim((string) ($filters['vendorPhoneNot'] ?? '')), 'vendor_phone_not', true);
+
+        $finalStatusSql = "(CASE
+            WHEN status = 'Returned' OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, '$.returned')), '')) <> '' THEN 'Returned'
+            WHEN status = 'Cancelled' OR TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, '$.cancelled')), '')) <> '' THEN 'Cancelled'
+            WHEN status IN ('Received', 'Paid') THEN 'Received'
+            ELSE status
+        END)";
+        $billSettlementTotalSql = "(CASE
+            WHEN {$finalStatusSql} = 'Cancelled' THEN 0
+            WHEN {$finalStatusSql} = 'Returned'
+                AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(history, '$.return')), '')) = '' THEN 0
+            ELSE total
+        END)";
+        $billStatus = trim((string) ($filters['billStatus'] ?? ''));
+        if ($billStatus !== '') {
+            $where .= " AND {$finalStatusSql} = :bill_status";
+            $bindings[':bill_status'] = $billStatus;
+        }
+        $billStatusNot = trim((string) ($filters['billStatusNot'] ?? ''));
+        if ($billStatusNot !== '') {
+            $where .= " AND {$finalStatusSql} <> :bill_status_not";
+            $bindings[':bill_status_not'] = $billStatusNot;
+        }
+
+        $paymentStatusSql = "(CASE
+            WHEN paidAmount > {$billSettlementTotalSql} THEN 'Overpaid'
+            WHEN paidAmount <= 0 AND LOWER(COALESCE(history, '')) LIKE '%refund%' THEN 'Refunded'
+            WHEN {$billSettlementTotalSql} <= 0 THEN 'Paid'
+            WHEN paidAmount <= 0 THEN 'Unpaid'
+            WHEN paidAmount < {$billSettlementTotalSql} THEN 'Partially Paid'
+            ELSE 'Paid'
+        END)";
+        $billPaymentStatus = trim((string) ($filters['paymentStatus'] ?? ''));
+        if ($billPaymentStatus !== '') {
+            $where .= " AND {$paymentStatusSql} = :bill_payment_status";
+            $bindings[':bill_payment_status'] = $billPaymentStatus;
+        }
+        $billPaymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
+        if ($billPaymentStatusNot !== '') {
+            $where .= " AND {$paymentStatusSql} <> :bill_payment_status_not";
+            $bindings[':bill_payment_status_not'] = $billPaymentStatusNot;
+        }
         if (!empty($filters['from'])) {
             $where .= ' AND createdAt >= :from';
             $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
@@ -4549,6 +4873,14 @@ final class OperationsApi extends BaseService
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
             $where .= ' AND createdBy IN (' . implode(', ', $placeholders) . ')';
             $bindings += $inBindings;
+        }
+
+        $createdByNotIds = is_array($filters['createdByNotIds'] ?? null) ? $filters['createdByNotIds'] : [];
+        $createdByNotIds = array_values(array_filter(array_map('strval', $createdByNotIds), static fn(string $id): bool => trim($id) !== ''));
+        if ($createdByNotIds !== []) {
+            [$placeholders, $notBindings] = $this->inClause($createdByNotIds, 'bill_created_by_not');
+            $where .= ' AND createdBy NOT IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $notBindings;
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM bills_with_vendor_creator {$where}", $bindings);
@@ -4623,6 +4955,7 @@ final class OperationsApi extends BaseService
             $billDate = $this->normalizeDateOnly((string) ($params['billDate'] ?? '')) ?: gmdate('Y-m-d');
             $status = trim((string) ($params['status'] ?? 'On Hold'));
             $items = is_array($params['items'] ?? null) ? $params['items'] : [];
+            $this->validateDocumentAmounts($params, $items, 'Bill');
             $stockUpdates = $this->applyBillStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
 
@@ -4687,6 +5020,12 @@ final class OperationsApi extends BaseService
             $previousStatus = (string) ($existingRow['status'] ?? '');
             $previousItems = $this->jsonDecodeList($existingRow['items'] ?? []);
             $previousVendorId = (string) ($existingRow['vendor_id'] ?? '');
+            $previousPaidAmount = (float) ($existingRow['paid_amount'] ?? 0);
+            $billTotal = (float) ($existingRow['total'] ?? 0);
+            $existingHistory = $this->jsonDecodeAssoc($existingRow['history'] ?? []);
+            $isVoidedBeforeReceipt = $previousStatus === 'Cancelled'
+                || ($previousStatus === 'Returned' && trim((string) ($existingHistory['return'] ?? '')) === '');
+            $billSettlementTotal = $isVoidedBeforeReceipt ? 0.0 : $billTotal;
             $nextStatus = array_key_exists('status', $updates) ? trim((string) $updates['status']) : $previousStatus;
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
             $stockUpdates = [];
@@ -4731,6 +5070,73 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
+            }
+
+            $paymentAmount = round((float) ($updates['paymentAmount'] ?? 0), 2);
+            $refundAmount = round((float) ($updates['refundAmount'] ?? 0), 2);
+            if ($paymentAmount > 0 && $refundAmount > 0) {
+                throw new RuntimeException('Record either a bill payment or a vendor refund, not both.');
+            }
+            if ($paymentAmount > 0 || $refundAmount > 0) {
+                $this->assertUserCanManageBillRecord(
+                    $actor,
+                    $existingRow,
+                    'bills.markPaidOwn',
+                    'bills.markPaidAny',
+                    'You do not have permission to record bill payments or refunds.'
+                );
+                $accountId = trim((string) ($updates['accountId'] ?? ''));
+                if ($accountId === '') {
+                    throw new RuntimeException('Select an account for this bill transaction.');
+                }
+                $recordedAt = $this->normalizeDateTimeInput((string) ($updates['transactionDate'] ?? $this->database->nowUtc()));
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT default_payment_method, expense_category_id, income_category_id FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $paymentMethod = trim((string) ($updates['paymentMethod'] ?? ''))
+                    ?: (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
+                $billNumber = trim((string) ($existingRow['bill_number'] ?? ''));
+
+                if ($paymentAmount > 0) {
+                    if (in_array($previousStatus, ['Returned', 'Cancelled'], true)) {
+                        throw new RuntimeException('Payments cannot be added to a returned or cancelled bill.');
+                    }
+                    $remainingDue = max(0.0, $billSettlementTotal - $previousPaidAmount);
+                    if ($paymentAmount > $remainingDue) {
+                        throw new RuntimeException('Bill payment cannot exceed the remaining due amount.');
+                    }
+                    $transaction = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => trim((string) ($systemDefaults['expense_category_id'] ?? '')) ?: 'expense_purchases',
+                        'accountId' => $accountId,
+                        'amount' => $paymentAmount,
+                        'description' => "Payment for Bill #{$billNumber}",
+                        'referenceId' => $id,
+                        'contactId' => $previousVendorId,
+                        'paymentMethod' => $paymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $payload['paid_amount'] = $this->formatMoney($previousPaidAmount + $paymentAmount);
+                } else {
+                    $maxRefund = max(0.0, $previousPaidAmount - $billSettlementTotal);
+                    if ($refundAmount > $maxRefund) {
+                        throw new RuntimeException('Vendor refund cannot exceed the bill overpayment.');
+                    }
+                    $transaction = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Income',
+                        'category' => trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_other',
+                        'accountId' => $accountId,
+                        'amount' => $refundAmount,
+                        'description' => "Vendor refund for Bill #{$billNumber}",
+                        'referenceId' => $id,
+                        'contactId' => $previousVendorId,
+                        'paymentMethod' => $paymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $payload['paid_amount'] = $this->formatMoney(max(0.0, $previousPaidAmount - $refundAmount));
+                }
             }
 
             $this->touchUpdate('bills', $id, $payload);
@@ -4843,8 +5249,8 @@ final class OperationsApi extends BaseService
             }
 
             $currentStatus = trim((string) ($billRow['status'] ?? ''));
-            if (!in_array($currentStatus, ['Received', 'Paid', 'Processing'], true)) {
-                throw new RuntimeException('Returns can only be processed on Received, Paid, or Processing bills.');
+            if (!in_array($currentStatus, ['Received', 'Paid'], true)) {
+                throw new RuntimeException('Receive the bill before returning stocked items to the vendor.');
             }
 
             $billNumber = trim((string) ($billRow['bill_number'] ?? ''));
@@ -4862,74 +5268,75 @@ final class OperationsApi extends BaseService
             // Build updated items with return tracking
             $updatedItems = $previousItems;
             $returnedItemDescriptions = [];
+            $totalReturnValue = 0.0;
+            $stockDeltas = [];
+            $processedSelections = 0;
 
             foreach ($items as $itemSelection) {
                 $productId = trim((string) ($itemSelection['productId'] ?? ''));
                 $returnQty = (int) ($itemSelection['returnQty'] ?? 0);
                 if ($returnQty <= 0) continue;
 
-                $itemIndex = -1;
-                foreach ($updatedItems as $idx => $item) {
-                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
-                        $itemIndex = $idx;
-                        break;
+                $itemIndex = array_key_exists('lineIndex', $itemSelection) ? (int) $itemSelection['lineIndex'] : -1;
+                if (!isset($updatedItems[$itemIndex]) || trim((string) ($updatedItems[$itemIndex]['productId'] ?? '')) !== $productId) {
+                    $itemIndex = -1;
+                    foreach ($updatedItems as $idx => $item) {
+                        $activeQty = max(0, (int) ($item['quantity'] ?? 0) - (int) ($item['returnedQty'] ?? 0));
+                        if (trim((string) ($item['productId'] ?? '')) === $productId && $activeQty > 0) {
+                            $itemIndex = $idx;
+                            break;
+                        }
                     }
                 }
-                if ($itemIndex < 0) continue;
+                if ($itemIndex < 0) {
+                    throw new RuntimeException('A selected bill item is no longer available. Refresh and try again.');
+                }
 
                 $originalItem = $updatedItems[$itemIndex];
                 $originalQty = (int) ($originalItem['quantity'] ?? 0);
+                $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
+                $activeQty = max(0, $originalQty - $currentReturnedQty);
                 $rate = (float) ($originalItem['rate'] ?? 0);
                 $productName = trim((string) ($originalItem['productName'] ?? 'Unknown'));
 
-                $effectiveReturnQty = min($returnQty, $originalQty);
+                if ($returnQty > $activeQty) {
+                    throw new RuntimeException("Only {$activeQty} unit(s) of {$productName} remain available to return.");
+                }
+                $effectiveReturnQty = $returnQty;
 
                 // Update item with return tracking
-                $currentReturnedQty = (int) ($originalItem['returnedQty'] ?? 0);
                 $updatedItems[$itemIndex]['returnedQty'] = $currentReturnedQty + $effectiveReturnQty;
 
                 $returnedItemDescriptions[] = "{$productName} ×{$effectiveReturnQty}";
-
-                // Reverse stock (deduct from stock since bill adds stock)
-                $productRow = $this->database->fetchOne(
-                    'SELECT id, stock FROM products WHERE id = :id LIMIT 1 FOR UPDATE',
-                    [':id' => $productId]
-                );
-                if ($productRow !== null) {
-                    $newStock = max(0, (int) ($productRow['stock'] ?? 0) - $effectiveReturnQty);
-                    $this->database->execute(
-                        'UPDATE products SET stock = :stock, updated_at = :updated_at WHERE id = :id',
-                        [':stock' => $newStock, ':updated_at' => $this->database->nowUtc(), ':id' => $productId]
-                    );
-                }
+                $totalReturnValue += $rate * $effectiveReturnQty;
+                $stockDeltas[$productId] = ($stockDeltas[$productId] ?? 0) - $effectiveReturnQty;
+                $processedSelections++;
             }
 
-            // Recalculate bill totals — only count active (non-returned) items
-            $newSubtotal = 0.0;
-            foreach ($updatedItems as $item) {
-                $itemQty = (int) ($item['quantity'] ?? 0);
-                $returnedQty = (int) ($item['returnedQty'] ?? 0);
-                $activeQty = max(0, $itemQty - $returnedQty);
-                $rate = (float) ($item['rate'] ?? 0);
-                $newSubtotal += $rate * $activeQty;
+            if ($processedSelections === 0) {
+                throw new RuntimeException('No valid return quantity was selected.');
             }
+            $stockUpdates = $this->resolveProductStockUpdates($stockDeltas, 'bill return');
+            $this->applyResolvedProductStockUpdates($stockUpdates);
+
             $originalSubtotal = (float) ($billRow['subtotal'] ?? 0);
             $originalDiscount = (float) ($billRow['discount'] ?? 0);
             $shipping = (float) ($billRow['shipping'] ?? 0);
-
-            // Proportional discount
-            $discountRatio = $originalSubtotal > 0 ? ($newSubtotal / $originalSubtotal) : 1;
-            $newDiscount = round($originalDiscount * $discountRatio, 2);
-            $newTotal = max(0, $newSubtotal - $newDiscount + $shipping);
-
-            // Adjust paid amount — cap refund at overpayment
-            $newPaidAmount = $previousPaidAmount;
-            if ($refundAmount > 0) {
-                $maxRefund = max(0, $previousPaidAmount - $newTotal);
-                $effectiveRefund = min($refundAmount, $maxRefund);
-                $newPaidAmount = max(0, $previousPaidAmount - $effectiveRefund);
+            $adjustment = $this->calculateReturnAdjustment(
+                $originalSubtotal,
+                $originalDiscount,
+                $shipping,
+                $previousPaidAmount,
+                $totalReturnValue
+            );
+            $newSubtotal = $adjustment['newSubtotal'];
+            $newDiscount = $adjustment['newDiscount'];
+            $newTotal = $adjustment['newTotal'];
+            $effectiveRefund = min(max(0.0, $refundAmount), $adjustment['maxRefund']);
+            if ($effectiveRefund > 0 && $accountId === '') {
+                throw new RuntimeException('Select the account that received the vendor refund.');
             }
-            $newPaidAmount = min($newPaidAmount, $newTotal);
+            $newPaidAmount = max(0.0, $previousPaidAmount - $effectiveRefund);
 
             // Create refund transaction (income - vendor refunding us)
             $systemDefaults = $this->database->fetchOne(
@@ -4939,10 +5346,7 @@ final class OperationsApi extends BaseService
             $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
             $effectivePaymentMethod = $paymentMethod ?: $defaultPaymentMethod;
 
-            if ($refundAmount > 0 && $accountId !== '') {
-                $maxRefund = max(0, $previousPaidAmount - $newTotal);
-                $effectiveRefund = min($refundAmount, $maxRefund);
-                if ($effectiveRefund > 0) {
+            if ($effectiveRefund > 0) {
                     $this->createTransactionRecord([
                         'date' => $recordedAt,
                         'type' => 'Income',
@@ -4955,7 +5359,6 @@ final class OperationsApi extends BaseService
                         'paymentMethod' => $effectivePaymentMethod,
                         'history' => [],
                     ], (string) $actor['id'], $actor);
-                }
             }
 
             // Build history
@@ -4964,15 +5367,18 @@ final class OperationsApi extends BaseService
             if ($returnedItemDescriptions !== []) {
                 $historyLines[] = 'Returned: ' . implode(', ', $returnedItemDescriptions);
             }
-            if ($refundAmount > 0) {
-                $historyLines[] = 'Refunded: ' . $this->formatMoney($refundAmount);
+            if ($effectiveRefund > 0) {
+                $historyLines[] = 'Refunded: ' . $this->formatMoney($effectiveRefund);
             }
             if ($note !== '') {
                 $historyLines[] = 'Note: ' . $note;
             }
-            $history['return'] = trim(
-                "Return processed by {$actorName} on {$dateLabel} at {$timeLabel}. "
-                . implode('. ', $historyLines)
+            $history['return'] = $this->appendHistoryText(
+                (string) ($history['return'] ?? ''),
+                trim(
+                    "Return processed by {$actorName} on {$dateLabel} at {$timeLabel}. "
+                    . implode('. ', $historyLines)
+                )
             );
 
             // Update bill
@@ -4984,6 +5390,18 @@ final class OperationsApi extends BaseService
                 'paid_amount' => $this->formatMoney($newPaidAmount),
                 'history' => $this->jsonEncode($history),
             ];
+            $hasActiveItems = false;
+            foreach ($updatedItems as $updatedItem) {
+                if ((int) ($updatedItem['quantity'] ?? 0) - (int) ($updatedItem['returnedQty'] ?? 0) > 0) {
+                    $hasActiveItems = true;
+                    break;
+                }
+            }
+            if (!$hasActiveItems) {
+                $payload['status'] = 'Returned';
+                $history['returned'] = "Fully returned to vendor by {$actorName} on {$dateLabel} at {$timeLabel}.";
+                $payload['history'] = $this->jsonEncode($history);
+            }
             $this->touchUpdate('bills', $billId, $payload);
 
             // Sync vendor summary
@@ -5016,9 +5434,33 @@ final class OperationsApi extends BaseService
             $where .= ' AND twr.type = :type';
             $bindings[':type'] = trim((string) $filters['type']);
         }
+        if (!empty($filters['typeNot'])) {
+            $where .= ' AND twr.type <> :type_not';
+            $bindings[':type_not'] = trim((string) $filters['typeNot']);
+        }
         if (!empty($filters['category'])) {
             $where .= ' AND twr.category = :category';
             $bindings[':category'] = trim((string) $filters['category']);
+        }
+        if (!empty($filters['categoryNot'])) {
+            $where .= ' AND twr.category <> :category_not';
+            $bindings[':category_not'] = trim((string) $filters['categoryNot']);
+        }
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.accountName', trim((string) ($filters['account'] ?? '')), 'transaction_account');
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.accountName', trim((string) ($filters['accountNot'] ?? '')), 'transaction_account_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.contactName', trim((string) ($filters['contact'] ?? '')), 'transaction_contact');
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.contactName', trim((string) ($filters['contactNot'] ?? '')), 'transaction_contact_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.paymentMethod', trim((string) ($filters['paymentMethod'] ?? '')), 'transaction_method');
+        $this->appendEncodedTextFilter($where, $bindings, 'twr.paymentMethod', trim((string) ($filters['paymentMethodNot'] ?? '')), 'transaction_method_not', true);
+        $approvalStatus = trim((string) ($filters['approvalStatus'] ?? ''));
+        if ($approvalStatus !== '') {
+            $where .= ' AND COALESCE(twr.approvalStatus, "approved") = :approval_status';
+            $bindings[':approval_status'] = $approvalStatus;
+        }
+        $approvalStatusNot = trim((string) ($filters['approvalStatusNot'] ?? ''));
+        if ($approvalStatusNot !== '') {
+            $where .= ' AND COALESCE(twr.approvalStatus, "approved") <> :approval_status_not';
+            $bindings[':approval_status_not'] = $approvalStatusNot;
         }
         if (!empty($filters['from'])) {
             $where .= ' AND twr.date >= :from';
@@ -5063,8 +5505,22 @@ final class OperationsApi extends BaseService
             $where .= ' AND twr.createdBy IN (' . implode(', ', $placeholders) . ')';
             $bindings += $inBindings;
         }
+        $createdByNotIds = is_array($filters['createdByNotIds'] ?? null) ? array_values(array_filter(array_map('strval', $filters['createdByNotIds']))) : [];
+        if ($createdByNotIds !== []) {
+            [$placeholders, $notBindings] = $this->inClause($createdByNotIds, 'transaction_created_by_not');
+            $where .= ' AND twr.createdBy NOT IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $notBindings;
+        }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM transactions_with_relations twr {$where}", $bindings);
+        $summaryRow = $this->database->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN twr.type = 'Income' THEN twr.amount ELSE 0 END), 0) AS income,
+                COALESCE(SUM(CASE WHEN twr.type = 'Expense' THEN twr.amount ELSE 0 END), 0) AS expense,
+                COALESCE(SUM(CASE WHEN twr.type = 'Transfer' THEN twr.amount ELSE 0 END), 0) AS transfer
+             FROM transactions_with_relations twr {$where}",
+            $bindings
+        ) ?? [];
         $rows = $this->database->fetchAll(
             "SELECT
                 twr.id,
@@ -5104,6 +5560,11 @@ final class OperationsApi extends BaseService
         return [
             'data' => array_map(fn(array $row): array => $this->mapTransaction($row), $rows),
             'count' => (int) ($countRow['count'] ?? 0),
+            'summary' => [
+                'income' => (float) ($summaryRow['income'] ?? 0),
+                'expense' => (float) ($summaryRow['expense'] ?? 0),
+                'transfer' => (float) ($summaryRow['transfer'] ?? 0),
+            ],
         ];
     }
 
@@ -5217,6 +5678,12 @@ final class OperationsApi extends BaseService
 
             if ($existingRow === null) {
                 throw new RuntimeException('Transaction not found.');
+            }
+            if ($this->database->fetchOne(
+                'SELECT id FROM wallet_payouts WHERE transaction_id = :transaction_id LIMIT 1',
+                [':transaction_id' => $id]
+            ) !== null) {
+                throw new RuntimeException('Payroll transactions must be changed or removed from the payroll page.');
             }
 
             $payload = [];
@@ -5470,6 +5937,12 @@ final class OperationsApi extends BaseService
             if ($row === null) {
                 throw new RuntimeException('Transaction was not found or is already deleted.');
             }
+            if ($this->database->fetchOne(
+                'SELECT id FROM wallet_payouts WHERE transaction_id = :transaction_id LIMIT 1',
+                [':transaction_id' => $id]
+            ) !== null) {
+                throw new RuntimeException('Payroll transactions must be removed from the payroll page so wallet and ledger balances stay synchronized.');
+            }
 
             $deletedAt = $this->database->nowUtc();
             $this->applyTransactionAccountEffect([$row], 'revert');
@@ -5535,10 +6008,10 @@ final class OperationsApi extends BaseService
             $this->database->execute(
                 'INSERT INTO wallet_entries (
                     id, employee_id, entry_type, amount_delta, unit_amount_snapshot, source_order_id,
-                    source_order_number, wallet_payout_id, note, created_at, created_by
+                    source_order_number, wallet_payout_id, payroll_payment_id, note, created_at, created_by
                 ) VALUES (
                     :id, :employee_id, :entry_type, :amount_delta, :unit_amount_snapshot, :source_order_id,
-                    :source_order_number, :wallet_payout_id, :note, :created_at, :created_by
+                    :source_order_number, :wallet_payout_id, :payroll_payment_id, :note, :created_at, :created_by
                 )',
                 [
                     ':id' => $id,
@@ -5551,12 +6024,30 @@ final class OperationsApi extends BaseService
                     ':source_order_id' => $this->nullableString($row['source_order_id'] ?? null),
                     ':source_order_number' => $this->nullableString($row['source_order_number'] ?? null),
                     ':wallet_payout_id' => $this->nullableString($row['wallet_payout_id'] ?? null),
+                    ':payroll_payment_id' => $this->nullableString($row['payroll_payment_id'] ?? null),
                     ':note' => $this->nullableString($row['note'] ?? null),
                     ':created_at' => $this->normalizeDateTimeInput((string) ($row['created_at'] ?? $this->database->nowUtc())),
                     ':created_by' => $this->nullableString($row['created_by'] ?? null),
                 ]
             );
         }
+    }
+
+    /** @return array{entryType: string, amountDelta: float}|null */
+    private function walletOrderTransition(float $activeAmount, bool $isPayable, float $unitAmount): ?array
+    {
+        $activeAmount = round($activeAmount, 2);
+        $unitAmount = round(max(0.0, $unitAmount), 2);
+        if ($isPayable) {
+            if ($unitAmount <= 0 || $activeAmount > 0) {
+                return null;
+            }
+            return ['entryType' => 'order_credit', 'amountDelta' => round($unitAmount - $activeAmount, 2)];
+        }
+        if ($activeAmount <= 0) {
+            return null;
+        }
+        return ['entryType' => 'order_reversal', 'amountDelta' => -$activeAmount];
     }
 
     /**
@@ -5568,6 +6059,17 @@ final class OperationsApi extends BaseService
         $orderId = trim((string) ($order['id'] ?? ''));
         $createdBy = trim((string) ($order['createdBy'] ?? ''));
         if ($orderId === '' || $createdBy === '') {
+            return;
+        }
+
+        // Serialize status transitions and credit/reversal evaluation for one
+        // order. This is especially important now that re-eligibility appends
+        // a new credit event instead of deleting reversal history.
+        $lockedOrder = $this->database->fetchOne(
+            'SELECT id FROM orders WHERE id = :id LIMIT 1 FOR UPDATE',
+            [':id' => $orderId]
+        );
+        if ($lockedOrder === null) {
             return;
         }
 
@@ -5583,10 +6085,13 @@ final class OperationsApi extends BaseService
             return;
         }
 
-        // Skip wallet credits for fixed salary employees - they get paid via fixed salary, not per order
-        $isCommissionBased = !empty($creator['is_commission_based'] ?? false);
-        $fixedSalary = isset($creator['fixed_salary']) ? (float) $creator['fixed_salary'] : null;
-        if (!$isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+        // Legacy employee rows have false + no salary. They remain commission
+        // based until a positive fixed salary is deliberately configured.
+        $fixedSalary = ($creator['fixed_salary'] ?? null) !== null ? (float) $creator['fixed_salary'] : null;
+        $isCommissionBased = !empty($creator['is_commission_based'] ?? false)
+            || $fixedSalary === null
+            || $fixedSalary <= 0;
+        if (!$isCommissionBased) {
             return;
         }
 
@@ -5600,63 +6105,57 @@ final class OperationsApi extends BaseService
         $actorId = trim((string) (($actor['id'] ?? null) ?? $createdBy));
 
         $entries = $this->fetchWalletEntriesForOrder($orderId);
-        $creditEntry = null;
-        $reversalEntries = [];
+        $activeAmount = 0.0;
+        $lastUnitSnapshot = null;
         foreach ($entries as $entry) {
-            if (($entry['entry_type'] ?? '') === 'order_credit' && $creditEntry === null) {
-                $creditEntry = $entry;
-                continue;
-            }
-            if (($entry['entry_type'] ?? '') === 'order_reversal') {
-                $reversalEntries[] = $entry;
+            $activeAmount += (float) ($entry['amount_delta'] ?? 0);
+            if (($entry['entry_type'] ?? '') === 'order_credit' && ($entry['unit_amount_snapshot'] ?? null) !== null) {
+                $lastUnitSnapshot = (float) $entry['unit_amount_snapshot'];
             }
         }
-
-        if ($creditEntry === null && $reversalEntries !== []) {
-            $this->deleteWalletEntryRows(array_map(static fn(array $entry): string => (string) $entry['id'], $reversalEntries));
+        $activeAmount = round($activeAmount, 2);
+        $isPayable = $this->isWalletStatusPayable($status, $countedStatuses);
+        $unitAmount = round((float) ($effectiveSettings['unitAmount'] ?? 0), 2);
+        $transition = $this->walletOrderTransition($activeAmount, $isPayable, $unitAmount);
+        if ($transition === null) {
+            return;
         }
 
-        if ($this->isWalletStatusPayable($status, $countedStatuses)) {
-            if ($reversalEntries !== []) {
-                $this->deleteWalletEntryRows(array_map(static fn(array $entry): string => (string) $entry['id'], $reversalEntries));
-            }
-
-            if ($creditEntry === null && (float) ($effectiveSettings['unitAmount'] ?? 0) > 0) {
-                $unitAmount = (float) ($effectiveSettings['unitAmount'] ?? 0);
+        if ($transition['entryType'] === 'order_credit') {
+                // Append a new event instead of deleting reversal history. This
+                // gives late/re-eligible work a new accrual date and preserves
+                // the exact credit -> reversal -> re-credit audit trail.
                 $this->insertWalletEntryRows([
                     [
                         'employee_id' => $createdBy,
                         'entry_type' => 'order_credit',
-                        'amount_delta' => $unitAmount,
+                        'amount_delta' => $transition['amountDelta'],
                         'unit_amount_snapshot' => $unitAmount,
                         'source_order_id' => $orderId,
                         'source_order_number' => $order['orderNumber'] ?? null,
-                        'note' => 'Wallet credit added because the order is in a payable status.',
+                        'note' => $entries === []
+                            ? 'Wallet credit added because the order entered a payable status.'
+                            : 'Wallet credit re-accrued because the order returned to a payable status.',
                         'created_at' => $now,
                         'created_by' => $actorId !== '' ? $actorId : $createdBy,
                     ]
                 ]);
-            }
-
             return;
         }
 
-        if ($creditEntry !== null && $reversalEntries === []) {
-            $creditAmount = abs((float) ($creditEntry['amount_delta'] ?? 0));
-            $this->insertWalletEntryRows([
+        $this->insertWalletEntryRows([
                 [
                     'employee_id' => $createdBy,
                     'entry_type' => 'order_reversal',
-                    'amount_delta' => -$creditAmount,
-                    'unit_amount_snapshot' => $creditEntry['unit_amount_snapshot'] ?? $creditAmount,
+                    'amount_delta' => $transition['amountDelta'],
+                    'unit_amount_snapshot' => $lastUnitSnapshot ?? $activeAmount,
                     'source_order_id' => $orderId,
-                    'source_order_number' => $order['orderNumber'] ?? ($creditEntry['source_order_number'] ?? null),
+                    'source_order_number' => $order['orderNumber'] ?? null,
                     'note' => 'Wallet credit reversed because the order is not in a payable status.',
                     'created_at' => $now,
                     'created_by' => $actorId !== '' ? $actorId : $createdBy,
                 ]
             ]);
-        }
     }
 
     /**
@@ -5668,37 +6167,25 @@ final class OperationsApi extends BaseService
             return;
         }
 
-        $creditRow = $this->database->fetchOne(
-            "SELECT id, amount_delta, unit_amount_snapshot
+        $walletState = $this->database->fetchOne(
+            "SELECT COALESCE(SUM(amount_delta), 0) AS active_amount,
+                    MAX(CASE WHEN entry_type = 'order_credit' THEN unit_amount_snapshot ELSE NULL END) AS unit_snapshot
              FROM wallet_entries
-             WHERE source_order_id = :source_order_id AND entry_type = 'order_credit'
-             ORDER BY created_at ASC
-             LIMIT 1",
+             WHERE source_order_id = :source_order_id
+               AND entry_type IN ('order_credit', 'order_reversal')",
             [':source_order_id' => trim((string) ($params['id'] ?? ''))]
         );
 
-        if ($creditRow === null) {
+        $activeAmount = round((float) ($walletState['active_amount'] ?? 0), 2);
+        if ($activeAmount <= 0) {
             return;
         }
-
-        $reversalRow = $this->database->fetchOne(
-            "SELECT id FROM wallet_entries
-             WHERE source_order_id = :source_order_id AND entry_type = 'order_reversal'
-             LIMIT 1",
-            [':source_order_id' => trim((string) ($params['id'] ?? ''))]
-        );
-
-        if ($reversalRow !== null) {
-            return;
-        }
-
-        $creditAmount = abs((float) ($creditRow['amount_delta'] ?? 0));
         $this->insertWalletEntryRows([
             [
                 'employee_id' => (string) ($params['createdBy'] ?? ''),
                 'entry_type' => 'order_reversal',
-                'amount_delta' => -$creditAmount,
-                'unit_amount_snapshot' => $creditRow['unit_amount_snapshot'] ?? $creditAmount,
+                'amount_delta' => -$activeAmount,
+                'unit_amount_snapshot' => $walletState['unit_snapshot'] ?? $activeAmount,
                 'source_order_id' => (string) ($params['id'] ?? ''),
                 'source_order_number' => $params['orderNumber'] ?? null,
                 'note' => 'Wallet credit reversed because the order was moved to the recycle bin.',
@@ -5727,8 +6214,10 @@ final class OperationsApi extends BaseService
         $orders = $this->database->fetchAll(
             'SELECT id, created_by, status, order_number, order_date, created_at
              FROM orders
-             WHERE deleted_at IS NULL AND created_by IN (' . implode(', ', $placeholders) . ')',
-            $bindings
+             WHERE deleted_at IS NULL
+               AND created_at >= :wallet_cutoff_at
+               AND created_by IN (' . implode(', ', $placeholders) . ')',
+            $bindings + [':wallet_cutoff_at' => $this->walletCutoffAtUtc()]
         );
 
         foreach ($orders as $order) {
@@ -5799,6 +6288,295 @@ final class OperationsApi extends BaseService
     }
 
     /**
+     * @param array<string, mixed> $params
+     * @return array{0: string, 1: string}
+     */
+    private function requirePayrollPeriod(array $params): array
+    {
+        $periodStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
+        $periodEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
+        foreach ([$periodStart, $periodEnd] as $date) {
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
+            if (!$parsed instanceof \DateTimeImmutable || $parsed->format('Y-m-d') !== $date) {
+                throw new RuntimeException('A valid payroll start and end date are required.');
+            }
+        }
+        if ($periodStart > $periodEnd) {
+            throw new RuntimeException('Payroll period start cannot be after its end date.');
+        }
+
+        return [$periodStart, $periodEnd];
+    }
+
+    private function calculateFixedSalaryForPeriod(float $monthlySalary, string $periodStart, string $periodEnd): float
+    {
+        if ($monthlySalary <= 0 || $periodStart === '' || $periodEnd === '' || $periodStart > $periodEnd) {
+            return 0.0;
+        }
+
+        $timezone = new \DateTimeZone('UTC');
+        $cursor = new \DateTimeImmutable($periodStart . ' 00:00:00', $timezone);
+        $end = new \DateTimeImmutable($periodEnd . ' 00:00:00', $timezone);
+        $amount = 0.0;
+
+        while ($cursor <= $end) {
+            $monthEnd = $cursor->modify('last day of this month');
+            $segmentEnd = $monthEnd < $end ? $monthEnd : $end;
+            $coveredDays = (int) $cursor->diff($segmentEnd)->format('%a') + 1;
+            $amount += $monthlySalary * ($coveredDays / (int) $cursor->format('t'));
+            $cursor = $segmentEnd->modify('+1 day');
+        }
+
+        return round($amount, 2);
+    }
+
+    /**
+     * @param array<int, array{accrualDate: string, grossAmount: float, remainingAmount: float}> $buckets
+     * @param array<int, array{amount: float, periodStart: string, periodEnd: string}> $periodSettlements
+     * @param array<int, float> $fifoSettlements
+     * @return array{buckets: array<int, array{accrualDate: string, grossAmount: float, remainingAmount: float}>, carry: float}
+     */
+    private function allocateCommissionSettlementBuckets(
+        array $buckets,
+        array $periodSettlements,
+        array $fifoSettlements
+    ): array {
+        $allocate = static function (array &$targetBuckets, float $amount, ?callable $accept = null): float {
+            $remaining = round(max(0.0, $amount), 2);
+            foreach ($targetBuckets as &$bucket) {
+                if ($remaining <= 0) {
+                    break;
+                }
+                if ($accept !== null && !$accept($bucket)) {
+                    continue;
+                }
+                $available = max(0.0, (float) ($bucket['remainingAmount'] ?? 0));
+                if ($available <= 0) {
+                    continue;
+                }
+                $applied = min($available, $remaining);
+                $bucket['remainingAmount'] = round($available - $applied, 2);
+                $remaining = round($remaining - $applied, 2);
+            }
+            unset($bucket);
+            return $remaining;
+        };
+
+        $carry = 0.0;
+        foreach ($periodSettlements as $settlement) {
+            $periodStart = (string) ($settlement['periodStart'] ?? '');
+            $periodEnd = (string) ($settlement['periodEnd'] ?? '');
+            $carry += $allocate(
+                $buckets,
+                (float) ($settlement['amount'] ?? 0),
+                static fn(array $bucket): bool =>
+                    (string) $bucket['accrualDate'] >= $periodStart && (string) $bucket['accrualDate'] <= $periodEnd
+            );
+        }
+        foreach ($fifoSettlements as $amount) {
+            $carry += max(0.0, (float) $amount);
+        }
+        $carry = $allocate($buckets, $carry);
+
+        return ['buckets' => $buckets, 'carry' => round($carry, 2)];
+    }
+
+    /**
+     * Commission payroll must use immutable wallet credit snapshots, not the
+     * current global rate, otherwise changing settings rewrites old earnings.
+     *
+     * @param array<int, string> $employeeIds
+     * @return array<string, array{orderCount: int, baseAmount: float}>
+     */
+    private function fetchCommissionPayrollMetricsByEmployeeIds(
+        array $employeeIds,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        $employeeIds = array_values(array_unique(array_filter(
+            array_map(static fn($id): string => trim((string) $id), $employeeIds),
+            static fn(string $id): bool => $id !== ''
+        )));
+        if ($employeeIds === []) {
+            return [];
+        }
+
+        [$placeholders, $bindings] = $this->inClause($employeeIds, 'commission_employee');
+        $rows = $this->database->fetchAll(
+            "SELECT we.employee_id, we.source_order_id, we.entry_type, we.amount_delta,
+                    we.created_at AS entry_created_at, o.deleted_at AS order_deleted_at
+             FROM wallet_entries we
+             INNER JOIN orders o ON o.id = we.source_order_id
+             WHERE we.employee_id IN (" . implode(', ', $placeholders) . ")
+               AND we.entry_type IN ('order_credit', 'order_reversal')",
+            $bindings
+        );
+
+        $orders = [];
+        foreach ($rows as $row) {
+            $employeeId = trim((string) ($row['employee_id'] ?? ''));
+            $orderId = trim((string) ($row['source_order_id'] ?? ''));
+            if ($employeeId === '' || $orderId === '' || ($row['order_deleted_at'] ?? null) !== null) {
+                continue;
+            }
+            $key = $employeeId . "\0" . $orderId;
+            if (!isset($orders[$key])) {
+                $orders[$key] = ['employeeId' => $employeeId, 'amount' => 0.0, 'accrualDate' => ''];
+            }
+            $orders[$key]['amount'] += (float) ($row['amount_delta'] ?? 0);
+            if ((string) ($row['entry_type'] ?? '') === 'order_credit') {
+                $entryAt = $this->toIso($row['entry_created_at'] ?? null) ?? (string) ($row['entry_created_at'] ?? '');
+                $accrualDate = $this->localDateFromUtc($entryAt);
+                if ($accrualDate > (string) $orders[$key]['accrualDate']) {
+                    $orders[$key]['accrualDate'] = $accrualDate;
+                }
+            }
+        }
+
+        $buckets = [];
+        foreach ($orders as $order) {
+            $amount = round((float) ($order['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                continue;
+            }
+            $accrualDate = (string) ($order['accrualDate'] ?? '');
+            if ($accrualDate === '') {
+                continue;
+            }
+            $employeeId = (string) $order['employeeId'];
+            $buckets[$employeeId][] = [
+                'accrualDate' => $accrualDate,
+                'grossAmount' => $amount,
+                'remainingAmount' => $amount,
+            ];
+        }
+        foreach ($buckets as &$employeeBuckets) {
+            usort($employeeBuckets, static fn(array $left, array $right): int =>
+                strcmp((string) $left['accrualDate'], (string) $right['accrualDate'])
+            );
+        }
+        unset($employeeBuckets);
+
+        $paymentRows = $this->database->fetchAll(
+            "SELECT employee_id, period_start, period_end, base_amount_snapshot,
+                    bonus_amount, deduction_amount, amount_snapshot,
+                    wallet_payout_id, transaction_id, paid_at
+             FROM payroll_payments
+             WHERE compensation_type = 'commission'
+               AND employee_id IN (" . implode(', ', $placeholders) . ")
+             ORDER BY paid_at ASC",
+            $bindings
+        );
+        $legacyPayoutRows = $this->database->fetchAll(
+            "SELECT employee_id, amount, paid_at
+             FROM wallet_payouts
+             WHERE payroll_payment_id IS NULL
+               AND employee_id IN (" . implode(', ', $placeholders) . ")
+             ORDER BY paid_at ASC",
+            $bindings
+        );
+
+        $settlementCarry = [];
+        $basePaid = [];
+        $unlinkedPayrollPaid = [];
+        $unlinkedPayrollBonuses = [];
+        $unlinkedPayrollDeductions = [];
+        $periodSettlements = [];
+        $fifoSettlements = [];
+
+        // Period-linked payroll settlements take precedence over legacy FIFO
+        // payouts. Any excess becomes carry and offsets later outstanding work.
+        foreach ($paymentRows as $payment) {
+            $employeeId = (string) ($payment['employee_id'] ?? '');
+            $base = max(0.0, (float) ($payment['base_amount_snapshot'] ?? 0));
+            $isLegacySnapshot = $base === 0.0
+                && (float) ($payment['amount_snapshot'] ?? 0) > 0
+                && (float) ($payment['bonus_amount'] ?? 0) === 0.0
+                && (float) ($payment['deduction_amount'] ?? 0) === 0.0
+                && trim((string) ($payment['wallet_payout_id'] ?? '')) === ''
+                && trim((string) ($payment['transaction_id'] ?? '')) === '';
+            if ($isLegacySnapshot) {
+                $base = (float) $payment['amount_snapshot'];
+            }
+            if ($employeeId === '' || $base <= 0) {
+                continue;
+            }
+            $basePaid[$employeeId] = ($basePaid[$employeeId] ?? 0.0) + $base;
+            $rowStart = (string) ($payment['period_start'] ?? '');
+            $rowEnd = (string) ($payment['period_end'] ?? '');
+            $periodSettlements[$employeeId][] = [
+                'amount' => $base,
+                'periodStart' => $rowStart,
+                'periodEnd' => $rowEnd,
+            ];
+            if (trim((string) ($payment['wallet_payout_id'] ?? '')) === '') {
+                $unlinkedPayrollPaid[$employeeId] = ($unlinkedPayrollPaid[$employeeId] ?? 0.0)
+                    + max(0.0, (float) ($payment['amount_snapshot'] ?? 0));
+                $unlinkedPayrollBonuses[$employeeId] = ($unlinkedPayrollBonuses[$employeeId] ?? 0.0)
+                    + max(0.0, (float) ($payment['bonus_amount'] ?? 0));
+                $unlinkedPayrollDeductions[$employeeId] = ($unlinkedPayrollDeductions[$employeeId] ?? 0.0)
+                    + max(0.0, (float) ($payment['deduction_amount'] ?? 0));
+            }
+        }
+        foreach ($legacyPayoutRows as $payout) {
+            $employeeId = (string) ($payout['employee_id'] ?? '');
+            $amount = max(0.0, (float) ($payout['amount'] ?? 0));
+            if ($employeeId === '' || $amount <= 0) {
+                continue;
+            }
+            $basePaid[$employeeId] = ($basePaid[$employeeId] ?? 0.0) + $amount;
+            $fifoSettlements[$employeeId][] = $amount;
+        }
+
+        foreach ($employeeIds as $employeeId) {
+            $allocation = $this->allocateCommissionSettlementBuckets(
+                $buckets[$employeeId] ?? [],
+                $periodSettlements[$employeeId] ?? [],
+                $fifoSettlements[$employeeId] ?? []
+            );
+            $buckets[$employeeId] = $allocation['buckets'];
+            $settlementCarry[$employeeId] = (float) $allocation['carry'];
+        }
+
+        $metrics = [];
+        foreach ($employeeIds as $employeeId) {
+            $employeeBuckets = $buckets[$employeeId] ?? [];
+            $selectedCount = 0;
+            $selectedGross = 0.0;
+            $selectedOutstanding = 0.0;
+            $totalGross = 0.0;
+            $totalOutstanding = 0.0;
+            foreach ($employeeBuckets as $bucket) {
+                $gross = max(0.0, (float) ($bucket['grossAmount'] ?? 0));
+                $remaining = max(0.0, (float) ($bucket['remainingAmount'] ?? 0));
+                $totalGross += $gross;
+                $totalOutstanding += $remaining;
+                $date = (string) ($bucket['accrualDate'] ?? '');
+                if ($date >= $periodStart && $date <= $periodEnd) {
+                    $selectedCount++;
+                    $selectedGross += $gross;
+                    $selectedOutstanding += $remaining;
+                }
+            }
+            $carry = max(0.0, (float) ($settlementCarry[$employeeId] ?? 0));
+            $metrics[$employeeId] = [
+                'orderCount' => $selectedCount,
+                'baseAmount' => round($selectedOutstanding, 2),
+                'grossBaseAmount' => round($selectedGross, 2),
+                'baseEarned' => round($totalGross, 2),
+                'basePaid' => round((float) ($basePaid[$employeeId] ?? 0), 2),
+                'totalOutstanding' => round($totalOutstanding - $carry, 2),
+                'settlementCarry' => round($carry, 2),
+                'unlinkedPayrollPaid' => round((float) ($unlinkedPayrollPaid[$employeeId] ?? 0), 2),
+                'unlinkedPayrollBonuses' => round((float) ($unlinkedPayrollBonuses[$employeeId] ?? 0), 2),
+                'unlinkedPayrollDeductions' => round((float) ($unlinkedPayrollDeductions[$employeeId] ?? 0), 2),
+            ];
+        }
+
+        return $metrics;
+    }
+
+    /**
      * @param array<int, string> $employeeIds
      * @return array<string, array<string, mixed>>
      */
@@ -5846,16 +6624,25 @@ final class OperationsApi extends BaseService
             if (!isset($aggregates[$employeeId])) {
                 $aggregates[$employeeId] = [
                     'currentBalance' => 0.0,
+                    'baseEarned' => 0.0,
                     'totalEarned' => 0.0,
                     'totalPaid' => 0.0,
+                    'totalBonuses' => 0.0,
+                    'totalDeductions' => 0.0,
                     'lastActivityAt' => null,
                 ];
             }
 
             $amount = (float) ($row['amount_delta'] ?? 0);
             $aggregates[$employeeId]['currentBalance'] += $amount;
-            if ($entryType === 'order_credit') {
-                $aggregates[$employeeId]['totalEarned'] += $amount;
+            if (in_array($entryType, ['order_credit', 'order_reversal'], true)) {
+                $aggregates[$employeeId]['baseEarned'] += $amount;
+            }
+            if ($entryType === 'payroll_bonus') {
+                $aggregates[$employeeId]['totalBonuses'] += max(0.0, $amount);
+            }
+            if ($entryType === 'payroll_deduction') {
+                $aggregates[$employeeId]['totalDeductions'] += abs($amount);
             }
             if ($entryType === 'payout') {
                 $aggregates[$employeeId]['totalPaid'] += abs($amount);
@@ -5875,11 +6662,162 @@ final class OperationsApi extends BaseService
 
         foreach ($aggregates as $employeeId => $aggregate) {
             $aggregates[$employeeId]['currentBalance'] = round((float) ($aggregate['currentBalance'] ?? 0), 2);
-            $aggregates[$employeeId]['totalEarned'] = round((float) ($aggregate['totalEarned'] ?? 0), 2);
+            $aggregates[$employeeId]['baseEarned'] = round((float) ($aggregate['baseEarned'] ?? 0), 2);
+            $aggregates[$employeeId]['totalBonuses'] = round((float) ($aggregate['totalBonuses'] ?? 0), 2);
+            $aggregates[$employeeId]['totalDeductions'] = round((float) ($aggregate['totalDeductions'] ?? 0), 2);
+            $aggregates[$employeeId]['totalEarned'] = round(
+                (float) $aggregates[$employeeId]['baseEarned'] + (float) $aggregates[$employeeId]['totalBonuses'],
+                2
+            );
             $aggregates[$employeeId]['totalPaid'] = round((float) ($aggregate['totalPaid'] ?? 0), 2);
         }
 
         return $aggregates;
+    }
+
+    /**
+     * @param array<int, string> $employeeIds
+     * @return array<string, float>
+     */
+    private function fetchCommissionBasePaidByEmployeeIds(array $employeeIds): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+        [$placeholders, $bindings] = $this->inClause($employeeIds, 'commission_paid_employee');
+        $rows = $this->database->fetchAll(
+            "SELECT employee_id,
+                    COALESCE(SUM(CASE
+                        WHEN base_amount_snapshot = 0
+                         AND amount_snapshot > 0
+                         AND bonus_amount = 0
+                         AND deduction_amount = 0
+                         AND wallet_payout_id IS NULL
+                         AND transaction_id IS NULL
+                        THEN amount_snapshot
+                        ELSE base_amount_snapshot
+                    END), 0) AS base_paid
+             FROM payroll_payments
+             WHERE compensation_type = 'commission'
+               AND employee_id IN (" . implode(', ', $placeholders) . ")
+             GROUP BY employee_id",
+            $bindings
+        );
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[(string) $row['employee_id']] = round((float) ($row['base_paid'] ?? 0), 2);
+        }
+        return $result;
+    }
+
+    /**
+     * @param array<int, string> $employeeIds
+     * @return array<string, array{basePaid: float, totalBonuses: float, totalDeductions: float, totalPaid: float, lastActivityAt: ?string}>
+     */
+    private function fetchFixedPayrollWalletMetricsByEmployeeIds(
+        array $employeeIds,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        if ($employeeIds === []) {
+            return [];
+        }
+        [$placeholders, $bindings] = $this->inClause($employeeIds, 'fixed_metric_employee');
+        $bindings[':fixed_period_start'] = $periodStart;
+        $bindings[':fixed_period_end'] = $periodEnd;
+        $rows = $this->database->fetchAll(
+            "SELECT employee_id, period_start, period_end, fixed_salary_snapshot,
+                    base_amount_snapshot, bonus_amount, deduction_amount, amount_snapshot, paid_at
+             FROM payroll_payments
+             WHERE compensation_type = 'fixed'
+               AND employee_id IN (" . implode(', ', $placeholders) . ")
+               AND period_start <= :fixed_period_end
+               AND period_end >= :fixed_period_start",
+            $bindings
+        );
+
+        $metrics = [];
+        $ensure = static function (array &$target, string $employeeId): void {
+            if (!isset($target[$employeeId])) {
+                $target[$employeeId] = [
+                    'basePaid' => 0.0,
+                    'totalBonuses' => 0.0,
+                    'totalDeductions' => 0.0,
+                    'totalPaid' => 0.0,
+                    'lastActivityAt' => null,
+                ];
+            }
+        };
+
+        foreach ($rows as $row) {
+            $employeeId = trim((string) ($row['employee_id'] ?? ''));
+            if ($employeeId === '') {
+                continue;
+            }
+            $rowStart = (string) ($row['period_start'] ?? '');
+            $rowEnd = (string) ($row['period_end'] ?? '');
+            $intersectionStart = max($periodStart, $rowStart);
+            $intersectionEnd = min($periodEnd, $rowEnd);
+            if ($intersectionStart > $intersectionEnd) {
+                continue;
+            }
+
+            $fullBase = max(0.0, (float) ($row['base_amount_snapshot'] ?? 0));
+            $salarySnapshot = max(0.0, (float) ($row['fixed_salary_snapshot'] ?? 0));
+            if ($salarySnapshot > 0) {
+                $calculatedFullBase = $this->calculateFixedSalaryForPeriod($salarySnapshot, $rowStart, $rowEnd);
+                $calculatedIntersection = $this->calculateFixedSalaryForPeriod($salarySnapshot, $intersectionStart, $intersectionEnd);
+                $ratio = $calculatedFullBase > 0 ? min(1.0, $calculatedIntersection / $calculatedFullBase) : 0.0;
+            } else {
+                $fullDays = (new \DateTimeImmutable($rowStart))->diff(new \DateTimeImmutable($rowEnd))->days + 1;
+                $intersectionDays = (new \DateTimeImmutable($intersectionStart))->diff(new \DateTimeImmutable($intersectionEnd))->days + 1;
+                $ratio = $fullDays > 0 ? min(1.0, $intersectionDays / $fullDays) : 0.0;
+            }
+
+            $ensure($metrics, $employeeId);
+            $metrics[$employeeId]['basePaid'] += $fullBase * $ratio;
+            $metrics[$employeeId]['totalBonuses'] += max(0.0, (float) ($row['bonus_amount'] ?? 0)) * $ratio;
+            $metrics[$employeeId]['totalDeductions'] += max(0.0, (float) ($row['deduction_amount'] ?? 0)) * $ratio;
+            $metrics[$employeeId]['totalPaid'] += max(0.0, (float) ($row['amount_snapshot'] ?? 0)) * $ratio;
+            $paidAt = $this->toIso($row['paid_at'] ?? null);
+            if ($paidAt !== null && ($metrics[$employeeId]['lastActivityAt'] === null || $paidAt > $metrics[$employeeId]['lastActivityAt'])) {
+                $metrics[$employeeId]['lastActivityAt'] = $paidAt;
+            }
+        }
+
+        // Legacy wallet payouts had no payroll period. Assign them to the local
+        // month in which they were paid so upgrades do not resurrect salary due.
+        $legacyRows = $this->database->fetchAll(
+            "SELECT employee_id, amount, paid_at
+             FROM wallet_payouts
+             WHERE payroll_payment_id IS NULL
+               AND employee_id IN (" . implode(', ', $placeholders) . ")",
+            array_filter($bindings, static fn($key): bool => !in_array($key, [':fixed_period_start', ':fixed_period_end'], true), ARRAY_FILTER_USE_KEY)
+        );
+        foreach ($legacyRows as $row) {
+            $employeeId = trim((string) ($row['employee_id'] ?? ''));
+            $paidAt = $this->toIso($row['paid_at'] ?? null);
+            $localPaidDate = $this->localDateFromUtc($paidAt);
+            if ($employeeId === '' || $localPaidDate < $periodStart || $localPaidDate > $periodEnd) {
+                continue;
+            }
+            $ensure($metrics, $employeeId);
+            $legacyAmount = max(0.0, (float) ($row['amount'] ?? 0));
+            $metrics[$employeeId]['basePaid'] += $legacyAmount;
+            $metrics[$employeeId]['totalPaid'] += $legacyAmount;
+            if ($paidAt !== null && ($metrics[$employeeId]['lastActivityAt'] === null || $paidAt > $metrics[$employeeId]['lastActivityAt'])) {
+                $metrics[$employeeId]['lastActivityAt'] = $paidAt;
+            }
+        }
+
+        foreach ($metrics as &$metric) {
+            foreach (['basePaid', 'totalBonuses', 'totalDeductions', 'totalPaid'] as $key) {
+                $metric[$key] = round((float) $metric[$key], 2);
+            }
+        }
+        unset($metric);
+        return $metrics;
     }
 
     /**
@@ -5898,15 +6836,17 @@ final class OperationsApi extends BaseService
             ? $effectiveSettings['countedStatuses']
             : [];
         $employeeIds = array_map(static fn(array $employee): string => (string) ($employee['id'] ?? ''), $employees);
-        $orderCounts = $this->fetchEligibleOrderCountsByEmployeeIds($employeeIds, $countedStatuses);
         $walletAmounts = $this->fetchLiveWalletAmountsByEmployeeIds($employeeIds);
-
-        // Fetch current month payouts for fixed salary employees
-        $fixedSalaryEmployeeIds = array_values(array_filter($employeeIds, function (string $id) use ($employees): bool {
-            $employee = $this->findEmployeeById($employees, $id);
-            return !empty($employee['isCommissionBased'] ?? false) === false && ($employee['fixedSalary'] ?? null) !== null;
-        }));
-        $monthlyPayouts = $fixedSalaryEmployeeIds !== [] ? $this->fetchCurrentMonthPayoutsByEmployeeIds($fixedSalaryEmployeeIds) : [];
+        $localNow = new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone()));
+        $currentLocalDate = $localNow->format('Y-m-d');
+        $monthStart = $localNow->modify('first day of this month')->format('Y-m-d');
+        $monthEnd = $localNow->modify('last day of this month')->format('Y-m-d');
+        $commissionMetrics = $this->fetchCommissionPayrollMetricsByEmployeeIds(
+            $employeeIds,
+            $this->walletCutoffDate(),
+            $currentLocalDate
+        );
+        $fixedMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds($employeeIds, $monthStart, $monthEnd);
 
         $cards = [];
         foreach ($employees as $employee) {
@@ -5919,19 +6859,35 @@ final class OperationsApi extends BaseService
             $fixedSalary = isset($employee['fixedSalary']) ? (float) $employee['fixedSalary'] : null;
             $walletAmount = $walletAmounts[$employeeId] ?? [];
 
-            if (!$isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
-                // Fixed salary employee: balance = fixed salary - payouts this month
-                $paidThisMonth = (float) ($monthlyPayouts[$employeeId] ?? 0);
-                $currentBalance = max(0, $fixedSalary - $paidThisMonth);
-                $totalEarned = $fixedSalary;
-                $totalPaid = $paidThisMonth;
-                $creditedOrders = 0; // Fixed salary employees don't earn per order
+            if (!$isCommissionBased) {
+                $periodMetrics = $fixedMetrics[$employeeId] ?? [];
+                $baseEarned = max(0.0, (float) ($fixedSalary ?? 0));
+                $basePaid = max(0.0, (float) ($periodMetrics['basePaid'] ?? 0));
+                $totalBonuses = max(0.0, (float) ($periodMetrics['totalBonuses'] ?? 0));
+                $totalDeductions = max(0.0, (float) ($periodMetrics['totalDeductions'] ?? 0));
+                $totalPaid = max(0.0, (float) ($periodMetrics['totalPaid'] ?? 0));
+                $totalEarned = $baseEarned + $totalBonuses;
+                $currentBalance = max(0.0, $baseEarned + $totalBonuses - $totalDeductions - $totalPaid);
+                $creditedOrders = 0;
+                $balancePeriodStart = $monthStart;
+                $balancePeriodEnd = $monthEnd;
+                $lastActivityAt = $periodMetrics['lastActivityAt'] ?? ($walletAmount['lastActivityAt'] ?? null);
             } else {
-                // Commission-based employee: use existing wallet balance
-                $currentBalance = (float) ($walletAmount['currentBalance'] ?? 0);
-                $totalEarned = (float) ($walletAmount['totalEarned'] ?? 0);
-                $totalPaid = (float) ($walletAmount['totalPaid'] ?? 0);
-                $creditedOrders = (int) ($orderCounts[$employeeId] ?? 0);
+                $periodMetrics = $commissionMetrics[$employeeId] ?? [];
+                $baseEarned = max(0.0, (float) ($periodMetrics['baseEarned'] ?? 0));
+                $basePaid = max(0.0, (float) ($periodMetrics['basePaid'] ?? 0));
+                $totalBonuses = max(0.0, (float) ($walletAmount['totalBonuses'] ?? 0))
+                    + max(0.0, (float) ($periodMetrics['unlinkedPayrollBonuses'] ?? 0));
+                $totalDeductions = max(0.0, (float) ($walletAmount['totalDeductions'] ?? 0))
+                    + max(0.0, (float) ($periodMetrics['unlinkedPayrollDeductions'] ?? 0));
+                $currentBalance = (float) ($periodMetrics['totalOutstanding'] ?? 0);
+                $totalEarned = $baseEarned + $totalBonuses;
+                $totalPaid = (float) ($walletAmount['totalPaid'] ?? 0)
+                    + max(0.0, (float) ($periodMetrics['unlinkedPayrollPaid'] ?? 0));
+                $creditedOrders = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $balancePeriodStart = $this->walletCutoffDate();
+                $balancePeriodEnd = $currentLocalDate;
+                $lastActivityAt = $walletAmount['lastActivityAt'] ?? null;
             }
 
             $cards[] = [
@@ -5939,12 +6895,20 @@ final class OperationsApi extends BaseService
                 'employeeName' => (string) ($employee['name'] ?? 'Unknown Employee'),
                 'employeeRole' => (string) ($employee['role'] ?? 'Employee'),
                 'isCommissionBased' => $isCommissionBased,
+                'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
                 'fixedSalary' => $fixedSalary,
+                'balancePeriodStart' => $balancePeriodStart,
+                'balancePeriodEnd' => $balancePeriodEnd,
+                'baseEarned' => round($baseEarned, 2),
+                'basePaid' => round($basePaid, 2),
+                'totalBonuses' => round($totalBonuses, 2),
+                'totalDeductions' => round($totalDeductions, 2),
+                'carryAdjustment' => round(min(0.0, $currentBalance), 2),
                 'currentBalance' => round($currentBalance, 2),
                 'totalEarned' => round($totalEarned, 2),
                 'totalPaid' => round($totalPaid, 2),
                 'creditedOrders' => $creditedOrders,
-                'lastActivityAt' => $walletAmount['lastActivityAt'] ?? null,
+                'lastActivityAt' => $lastActivityAt,
             ];
         }
 
@@ -5973,37 +6937,6 @@ final class OperationsApi extends BaseService
     }
 
     /**
-     * Fetch total payouts for the current month grouped by employee ID.
-     * @return array<string, float> employeeId => totalPaidThisMonth
-     */
-    private function fetchCurrentMonthPayoutsByEmployeeIds(array $employeeIds): array
-    {
-        if ($employeeIds === []) {
-            return [];
-        }
-
-        $monthStart = date('Y-m-01');
-        $monthEnd = date('Y-m-t');
-
-        [$placeholders, $bindings] = $this->inClause($employeeIds, 'payout_employee');
-        $bindings[':month_start'] = $monthStart;
-        $bindings[':month_end'] = $monthEnd;
-
-        $sql = "SELECT employee_id, SUM(amount) as total_paid
-                FROM wallet_payouts
-                WHERE employee_id IN (" . implode(', ', $placeholders) . ")
-                AND paid_at >= :month_start AND paid_at <= :month_end
-                GROUP BY employee_id";
-
-        $rows = $this->database->fetchAll($sql, $bindings);
-        $result = [];
-        foreach ($rows as $row) {
-            $result[(string) $row['employee_id']] = (float) ($row['total_paid'] ?? 0);
-        }
-        return $result;
-    }
-
-    /**
      * @param array<int, array<string, mixed>> $cards
      * @return array<string, float|int>
      */
@@ -6012,13 +6945,18 @@ final class OperationsApi extends BaseService
         return array_reduce(
             $cards,
             static function (array $summary, array $card): array {
-                $summary['totalBalance'] += (float) ($card['currentBalance'] ?? 0);
+                $summary['totalBalance'] += max(0.0, (float) ($card['currentBalance'] ?? 0));
+                $summary['totalCarryAdjustments'] += min(0.0, (float) ($card['currentBalance'] ?? 0));
                 $summary['totalEarned'] += (float) ($card['totalEarned'] ?? 0);
                 $summary['totalPaid'] += (float) ($card['totalPaid'] ?? 0);
+                $summary['totalBaseEarned'] += (float) ($card['baseEarned'] ?? 0);
+                $summary['totalBasePaid'] += (float) ($card['basePaid'] ?? 0);
+                $summary['totalBonuses'] += (float) ($card['totalBonuses'] ?? 0);
+                $summary['totalDeductions'] += (float) ($card['totalDeductions'] ?? 0);
                 if ((float) ($card['currentBalance'] ?? 0) > 0) {
                     $summary['employeesDue'] += 1;
                 }
-                if (!empty($card['isCommissionBased'] ?? false) === false && ($card['fixedSalary'] ?? null) !== null) {
+                if (empty($card['isCommissionBased'] ?? false)) {
                     $summary['fixedSalaryEmployees'] += 1;
                     $summary['totalFixedSalaryDue'] += (float) ($card['currentBalance'] ?? 0);
                 }
@@ -6029,6 +6967,11 @@ final class OperationsApi extends BaseService
                 'totalBalance' => 0.0,
                 'totalEarned' => 0.0,
                 'totalPaid' => 0.0,
+                'totalBaseEarned' => 0.0,
+                'totalBasePaid' => 0.0,
+                'totalBonuses' => 0.0,
+                'totalDeductions' => 0.0,
+                'totalCarryAdjustments' => 0.0,
                 'employeesDue' => 0,
                 'fixedSalaryEmployees' => 0,
                 'totalFixedSalaryDue' => 0.0,
@@ -6060,8 +7003,24 @@ final class OperationsApi extends BaseService
 
     public function updatePayrollSettings(array $params): array
     {
+        $currentUser = $this->currentUser();
+        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? '')) && !$this->currentUserHasPermission('settings.editWallet')) {
+            throw new RuntimeException('You do not have permission to update payroll settings.');
+        }
         $current = $this->fetchPayrollSettingsInternal();
-        return $this->saveSingleton(
+        if (array_key_exists('unitAmount', $params)) {
+            $unitAmount = (float) $params['unitAmount'];
+            if (!is_finite($unitAmount) || $unitAmount < 0) {
+                throw new RuntimeException('Commission amount per eligible order must be a valid non-negative value.');
+            }
+        }
+        if (array_key_exists('countedStatuses', $params)) {
+            $submittedStatuses = is_array($params['countedStatuses']) ? $params['countedStatuses'] : [];
+            if ($this->normalizePayrollStatuses($submittedStatuses, false) === []) {
+                throw new RuntimeException('Select at least one valid order status for commission payroll.');
+            }
+        }
+        $updated = $this->saveSingleton(
             'payroll_settings',
             'payroll-default',
             [
@@ -6076,11 +7035,18 @@ final class OperationsApi extends BaseService
             ],
             fn(): array => $this->fetchPayrollSettingsInternal()
         );
+        if (json_encode($current['countedStatuses']) !== json_encode($updated['countedStatuses'])) {
+            $this->database->transaction(fn() => $this->syncWalletCreditsForPayableStatuses([
+                'unitAmount' => (float) $updated['unitAmount'],
+                'countedStatuses' => $updated['countedStatuses'],
+            ]));
+        }
+        return $updated;
     }
 
     public function fetchPayrollEmployees(array $params = []): array
     {
-        $currentUser = $this->auth->userFromToken(Http::bearerToken());
+        $currentUser = $this->currentUser();
         $rows = $this->database->fetchAll(
             "SELECT * FROM users
              WHERE deleted_at IS NULL AND role IN ('Employee')
@@ -6088,12 +7054,19 @@ final class OperationsApi extends BaseService
         );
         $employees = array_map(fn(array $row): array => $this->mapUser($row), $rows);
 
-        if ($currentUser === null || $this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
+        if ($this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
             return $employees;
         }
 
         if ($this->isEmployeeRole((string) ($currentUser['role'] ?? ''))) {
+            if (!$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')) {
+                throw new RuntimeException('You do not have permission to view wallet or payroll information.');
+            }
             return array_values(array_filter($employees, fn(array $employee): bool => $employee['id'] === (string) $currentUser['id']));
+        }
+
+        if ($this->currentUserHasPermission('payroll.view') || $this->currentUserHasPermission('payroll.pay')) {
+            return $employees;
         }
 
         return [];
@@ -6102,50 +7075,121 @@ final class OperationsApi extends BaseService
     public function fetchPayrollHistory(array $params = []): array
     {
         $currentUser = $this->currentUser();
-        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
-            throw new RuntimeException('Payroll history is available to admins only.');
+        $isEmployee = $this->isEmployeeRole((string) ($currentUser['role'] ?? ''));
+        if ($isEmployee && !$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')) {
+            throw new RuntimeException('You do not have permission to view wallet or payroll information.');
+        }
+        if (
+            !$isEmployee
+            && !$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
+            && !$this->currentUserHasPermission('payroll.view')
+            && !$this->currentUserHasPermission('payroll.pay')
+        ) {
+            throw new RuntimeException('You do not have permission to view payroll history.');
         }
 
-        $sql = 'SELECT * FROM payroll_payments WHERE 1=1';
+        $sql = 'SELECT pp.*, a.name AS account_name, c.name AS category_name
+                FROM payroll_payments pp
+                LEFT JOIN accounts a ON a.id = pp.account_id
+                LEFT JOIN categories c ON c.id = pp.category_id
+                WHERE 1=1';
         $bindings = [];
-        if (!empty($params['employeeId'])) {
-            $sql .= ' AND employee_id = :employee_id';
+        if ($isEmployee) {
+            $sql .= ' AND pp.employee_id = :employee_id';
+            $bindings[':employee_id'] = (string) $currentUser['id'];
+        } elseif (!empty($params['employeeId'])) {
+            $sql .= ' AND pp.employee_id = :employee_id';
             $bindings[':employee_id'] = trim((string) $params['employeeId']);
         }
         if (!empty($params['periodStart']) && !empty($params['periodEnd'])) {
-            $sql .= ' AND period_start <= :period_end AND period_end >= :period_start';
+            $sql .= ' AND pp.period_start <= :period_end AND pp.period_end >= :period_start';
             $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
             $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
         } elseif (!empty($params['periodStart'])) {
-            $sql .= ' AND period_end >= :period_start';
+            $sql .= ' AND pp.period_end >= :period_start';
             $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
         } elseif (!empty($params['periodEnd'])) {
-            $sql .= ' AND period_start <= :period_end';
+            $sql .= ' AND pp.period_start <= :period_end';
             $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
         }
-        $sql .= ' ORDER BY paid_at DESC';
+        $sql .= ' ORDER BY pp.paid_at DESC';
 
         $rows = $this->database->fetchAll($sql, $bindings);
-        $users = $this->database->fetchAll('SELECT id, name, role FROM users WHERE deleted_at IS NULL');
+        $users = $this->database->fetchAll('SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE deleted_at IS NULL');
         $userMap = $this->keyBy($users, 'id');
+        $history = array_map(fn(array $row): array => $this->mapPayrollPayment($row, $userMap), $rows);
 
-        return array_map(fn(array $row): array => $this->mapPayrollPayment($row, $userMap), $rows);
+        $legacySql = 'SELECT wp.*, a.name AS account_name, c.name AS category_name
+                      FROM wallet_payouts wp
+                      LEFT JOIN accounts a ON a.id = wp.account_id
+                      LEFT JOIN categories c ON c.id = wp.category_id
+                      WHERE wp.payroll_payment_id IS NULL';
+        $legacyBindings = [];
+        $legacyEmployeeId = $isEmployee
+            ? (string) $currentUser['id']
+            : trim((string) ($params['employeeId'] ?? ''));
+        if ($legacyEmployeeId !== '') {
+            $legacySql .= ' AND wp.employee_id = :employee_id';
+            $legacyBindings[':employee_id'] = $legacyEmployeeId;
+        }
+        foreach ($this->database->fetchAll($legacySql . ' ORDER BY wp.paid_at DESC', $legacyBindings) as $legacy) {
+            $paidAtIso = $this->toIso($legacy['paid_at'] ?? null);
+            $localPaidDate = $this->localDateFromUtc($paidAtIso);
+            $filterStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
+            $filterEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
+            if (($filterStart !== '' && $localPaidDate < $filterStart) || ($filterEnd !== '' && $localPaidDate > $filterEnd)) {
+                continue;
+            }
+            $history[] = $this->mapPayrollPayment(array_merge($legacy, [
+                'employee_name' => $userMap[(string) ($legacy['employee_id'] ?? '')]['name'] ?? null,
+                'employee_role' => $userMap[(string) ($legacy['employee_id'] ?? '')]['role'] ?? null,
+                'period_start' => $localPaidDate,
+                'period_end' => $localPaidDate,
+                'period_kind' => 'legacy',
+                'period_label' => 'Legacy wallet payout',
+                'unit_amount_snapshot' => 0,
+                'counted_statuses_snapshot' => '[]',
+                'order_count_snapshot' => 0,
+                'base_amount_snapshot' => (float) ($legacy['amount'] ?? 0),
+                'bonus_amount' => 0,
+                'deduction_amount' => 0,
+                'amount_snapshot' => (float) ($legacy['amount'] ?? 0),
+                'wallet_payout_id' => (string) ($legacy['id'] ?? ''),
+                'transaction_id' => $legacy['transaction_id'] ?? null,
+                'account_id' => $legacy['account_id'] ?? null,
+                'payment_method' => $legacy['payment_method'] ?? null,
+                'category_id' => $legacy['category_id'] ?? null,
+                'paid_by_name' => $userMap[(string) ($legacy['paid_by'] ?? '')]['name'] ?? null,
+                'created_at' => $legacy['created_at'] ?? $legacy['paid_at'] ?? null,
+            ]), $userMap);
+        }
+        usort($history, static fn(array $left, array $right): int => strcmp(
+            (string) ($right['paidAt'] ?? ''),
+            (string) ($left['paidAt'] ?? '')
+        ));
+        return $history;
     }
 
     public function fetchPayrollSummaries(array $params): array
     {
         $currentUser = $this->currentUser();
-        $periodStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
-        $periodEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
-        if ($periodStart === '' || $periodEnd === '') {
+        if (
+            $this->isEmployeeRole((string) ($currentUser['role'] ?? ''))
+            && !$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')
+        ) {
+            throw new RuntimeException('You do not have permission to view wallet or payroll information.');
+        }
+        if (trim((string) ($params['periodStart'] ?? '')) === '' || trim((string) ($params['periodEnd'] ?? '')) === '') {
             return [];
         }
+        [$periodStart, $periodEnd] = $this->requirePayrollPeriod($params);
 
         $settings = $this->fetchPayrollSettingsInternal();
-        $countedStatuses = is_array($settings['countedStatuses'] ?? null) ? $settings['countedStatuses'] : [];
-        $targetEmployeeId = $this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
-            ? trim((string) ($params['employeeId'] ?? ''))
-            : (string) $currentUser['id'];
+        $targetEmployeeId = $this->isEmployeeRole((string) ($currentUser['role'] ?? ''))
+            ? (string) $currentUser['id']
+            : (($this->hasAdminAccess((string) ($currentUser['role'] ?? '')) || $this->currentUserHasPermission('payroll.view') || $this->currentUserHasPermission('payroll.pay'))
+                ? trim((string) ($params['employeeId'] ?? ''))
+                : (string) $currentUser['id']);
 
         $employees = $this->fetchPayrollEmployees();
         if ($targetEmployeeId !== '') {
@@ -6156,7 +7200,13 @@ final class OperationsApi extends BaseService
         }
 
         $employeeIds = array_map(static fn(array $employee): string => (string) $employee['id'], $employees);
-        $orderCounts = $this->fetchEligibleOrderCountsByEmployeeIds($employeeIds, $countedStatuses, $periodStart, $periodEnd);
+        $commissionEmployeeIds = array_values(array_filter($employeeIds, function (string $employeeId) use ($employees): bool {
+            $employee = $this->findEmployeeById($employees, $employeeId);
+            return !empty($employee['isCommissionBased'] ?? false);
+        }));
+        $fixedEmployeeIds = array_values(array_diff($employeeIds, $commissionEmployeeIds));
+        $commissionMetrics = $this->fetchCommissionPayrollMetricsByEmployeeIds($commissionEmployeeIds, $periodStart, $periodEnd);
+        $fixedMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds($fixedEmployeeIds, $periodStart, $periodEnd);
 
         $paymentBindings = [
             ':period_start' => $periodStart,
@@ -6171,29 +7221,100 @@ final class OperationsApi extends BaseService
             $paymentSql .= ' AND employee_id IN (' . implode(', ', $paymentPlaceholders) . ')';
             $paymentBindings += $paymentInBindings;
         }
+        $paymentSql .= ' ORDER BY paid_at DESC';
         $paymentRows = $this->database->fetchAll($paymentSql, $paymentBindings);
         $employeeMap = $this->keyBy($employees, 'id');
         $paymentByEmployee = [];
+        $paymentTotalsByEmployee = [];
+        $nonExactOverlapByEmployee = [];
         foreach ($paymentRows as $row) {
-            $paymentByEmployee[(string) $row['employee_id']] = $this->mapPayrollPayment($row, $employeeMap);
+            $employeeId = (string) $row['employee_id'];
+            $isExactSelectedPeriod = (string) ($row['period_start'] ?? '') === $periodStart
+                && (string) ($row['period_end'] ?? '') === $periodEnd;
+            if (!$isExactSelectedPeriod) {
+                $nonExactOverlapByEmployee[$employeeId] = true;
+                continue;
+            }
+            $mappedPayment = $this->mapPayrollPayment($row, $employeeMap);
+            // A period should normally have one payment. Keep the latest row
+            // as the detail snapshot while aggregating every exact-period
+            // commission top-up for the period KPIs and payment card.
+            if (!isset($paymentByEmployee[$employeeId])) {
+                $paymentByEmployee[$employeeId] = $mappedPayment;
+            }
+            if (!isset($paymentTotalsByEmployee[$employeeId])) {
+                $paymentTotalsByEmployee[$employeeId] = [
+                    'paymentCount' => 0,
+                    'paidBaseAmount' => 0.0,
+                    'paidNetAmount' => 0.0,
+                    'paidBonusAmount' => 0.0,
+                    'paidDeductionAmount' => 0.0,
+                ];
+            }
+            $paymentTotalsByEmployee[$employeeId]['paymentCount']++;
+            $paymentTotalsByEmployee[$employeeId]['paidBaseAmount'] += (float) ($mappedPayment['baseAmountSnapshot'] ?? 0);
+            $paymentTotalsByEmployee[$employeeId]['paidNetAmount'] += (float) ($mappedPayment['netAmount'] ?? $mappedPayment['amountSnapshot'] ?? 0);
+            $paymentTotalsByEmployee[$employeeId]['paidBonusAmount'] += (float) ($mappedPayment['bonusAmount'] ?? 0);
+            $paymentTotalsByEmployee[$employeeId]['paidDeductionAmount'] += (float) ($mappedPayment['deductionAmount'] ?? 0);
         }
 
         $summaries = [];
         foreach ($employees as $employee) {
             $employeeId = (string) $employee['id'];
-            $count = (int) ($orderCounts[$employeeId] ?? 0);
-            $estimatedAmount = $count * (float) $settings['unitAmount'];
+            $isCommissionBased = !empty($employee['isCommissionBased'] ?? false);
+            $fixedSalary = isset($employee['fixedSalary']) ? (float) $employee['fixedSalary'] : null;
+            if ($isCommissionBased) {
+                $count = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $grossBaseAmount = (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0);
+                $estimatedAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
+                $balancePeriodStart = $this->walletCutoffDate();
+                $balancePeriodEnd = (new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone())))->format('Y-m-d');
+            } else {
+                $count = 0;
+                $grossBaseAmount = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
+                $paidMetrics = $fixedMetrics[$employeeId] ?? [];
+                $estimatedAmount = max(0.0, $grossBaseAmount - (float) ($paidMetrics['basePaid'] ?? 0));
+                $balancePeriodStart = $periodStart;
+                $balancePeriodEnd = $periodEnd;
+            }
             $paymentSnapshot = $paymentByEmployee[$employeeId] ?? null;
+            $paymentTotals = $paymentTotalsByEmployee[$employeeId] ?? [
+                'paymentCount' => 0,
+                'paidBaseAmount' => 0.0,
+                'paidNetAmount' => 0.0,
+                'paidBonusAmount' => 0.0,
+                'paidDeductionAmount' => 0.0,
+            ];
+            foreach (['paidBaseAmount', 'paidNetAmount', 'paidBonusAmount', 'paidDeductionAmount'] as $moneyKey) {
+                $paymentTotals[$moneyKey] = round((float) $paymentTotals[$moneyKey], 2);
+            }
+            $hasOutstandingTopUp = $isCommissionBased && $paymentSnapshot !== null && $estimatedAmount > 0;
+            $hasBlockingPeriodOverlap = !empty($nonExactOverlapByEmployee[$employeeId]);
             $summaries[] = [
                 'employeeId' => $employeeId,
                 'employeeName' => $employee['name'],
                 'employeeRole' => $employee['role'],
+                'isCommissionBased' => $isCommissionBased,
+                'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
+                'fixedSalary' => $fixedSalary,
                 'countedOrderCount' => $count,
                 'unitAmount' => (float) $settings['unitAmount'],
                 'estimatedAmount' => $estimatedAmount,
+                'baseAmount' => $estimatedAmount,
+                'grossBaseAmount' => $grossBaseAmount,
+                'balancePeriodStart' => $balancePeriodStart,
+                'balancePeriodEnd' => $balancePeriodEnd,
                 'paymentStatus' => $paymentSnapshot ? 'paid' : 'unpaid',
                 'paymentSnapshot' => $paymentSnapshot,
-                'liveAmountDelta' => $paymentSnapshot ? $estimatedAmount - (float) ($paymentSnapshot['amountSnapshot'] ?? 0) : 0,
+                'paymentCount' => (int) $paymentTotals['paymentCount'],
+                'paidBaseAmount' => $paymentTotals['paidBaseAmount'],
+                'paidNetAmount' => $paymentTotals['paidNetAmount'],
+                'paidBonusAmount' => $paymentTotals['paidBonusAmount'],
+                'paidDeductionAmount' => $paymentTotals['paidDeductionAmount'],
+                'periodBaseAmount' => round((float) $paymentTotals['paidBaseAmount'] + $estimatedAmount, 2),
+                'hasOutstandingTopUp' => $hasOutstandingTopUp,
+                'hasBlockingPeriodOverlap' => $hasBlockingPeriodOverlap,
+                'liveAmountDelta' => $paymentSnapshot ? $estimatedAmount : 0,
                 'liveOrderCountDelta' => $paymentSnapshot ? $count - (int) ($paymentSnapshot['orderCountSnapshot'] ?? 0) : 0,
             ];
         }
@@ -6213,68 +7334,15 @@ final class OperationsApi extends BaseService
 
     public function markPayrollPaid(array $params): array
     {
-        $currentUser = $this->currentUser();
-        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
-            throw new RuntimeException('Only admins can mark payroll as paid.');
+        // Retained as a compatibility alias, but there is only one canonical
+        // payment path. It requires account details and atomically updates the
+        // payroll ledger, wallet, expense transaction, and account balance.
+        $payout = $this->payEmployeeWallet($params);
+        $payment = $payout['payrollPayment'] ?? null;
+        if (!is_array($payment)) {
+            throw new RuntimeException('Payroll payment could not be recorded.');
         }
-
-        $employeeId = trim((string) ($params['employeeId'] ?? ''));
-        $periodStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
-        $periodEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
-
-        $overlap = $this->database->fetchOne(
-            'SELECT id FROM payroll_payments
-             WHERE employee_id = :employee_id AND period_start <= :period_end AND period_end >= :period_start
-             LIMIT 1',
-            [
-                ':employee_id' => $employeeId,
-                ':period_start' => $periodStart,
-                ':period_end' => $periodEnd,
-            ]
-        );
-        if ($overlap !== null) {
-            throw new RuntimeException('This employee already has payroll recorded for an overlapping period.');
-        }
-
-        $id = $this->uuid4();
-        $now = $this->database->nowUtc();
-        $this->database->execute(
-            'INSERT INTO payroll_payments (
-                id, employee_id, period_start, period_end, period_kind, period_label,
-                unit_amount_snapshot, counted_statuses_snapshot, order_count_snapshot, amount_snapshot,
-                paid_at, paid_by, note, created_at, updated_at
-            ) VALUES (
-                :id, :employee_id, :period_start, :period_end, :period_kind, :period_label,
-                :unit_amount_snapshot, :counted_statuses_snapshot, :order_count_snapshot, :amount_snapshot,
-                :paid_at, :paid_by, :note, :created_at, :updated_at
-            )',
-            [
-                ':id' => $id,
-                ':employee_id' => $employeeId,
-                ':period_start' => $periodStart,
-                ':period_end' => $periodEnd,
-                ':period_kind' => trim((string) ($params['periodKind'] ?? 'custom')),
-                ':period_label' => trim((string) ($params['periodLabel'] ?? ($periodStart . ' - ' . $periodEnd))),
-                ':unit_amount_snapshot' => $this->formatMoney($params['unitAmountSnapshot'] ?? 0),
-                ':counted_statuses_snapshot' => $this->jsonEncode(
-                    $this->normalizePayrollStatuses(
-                        is_array($params['countedStatusesSnapshot'] ?? null) ? $params['countedStatusesSnapshot'] : [],
-                        true
-                    )
-                ),
-                ':order_count_snapshot' => (int) ($params['orderCountSnapshot'] ?? 0),
-                ':amount_snapshot' => $this->formatMoney($params['amountSnapshot'] ?? 0),
-                ':paid_at' => $now,
-                ':paid_by' => (string) $currentUser['id'],
-                ':note' => $this->nullableString($params['note'] ?? null),
-                ':created_at' => $now,
-                ':updated_at' => $now,
-            ]
-        );
-
-        $row = $this->database->fetchOne('SELECT * FROM payroll_payments WHERE id = :id LIMIT 1', [':id' => $id]);
-        $userMap = $this->keyBy([$currentUser], 'id');
-        return $this->mapPayrollPayment($row ?? [], $userMap);
+        return $payment;
     }
 
     public function fetchWalletSettings(array $params = []): array
@@ -6288,12 +7356,14 @@ final class OperationsApi extends BaseService
 
     public function updateWalletSettings(array $params): array
     {
+        $currentUser = $this->currentUser();
+        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? '')) && !$this->currentUserHasPermission('settings.editWallet')) {
+            throw new RuntimeException('You do not have permission to update wallet settings.');
+        }
         $current = $this->fetchWalletSettings();
         $nextStatuses = array_key_exists('countedStatuses', $params)
             ? $this->normalizePayrollStatuses(is_array($params['countedStatuses']) ? $params['countedStatuses'] : [], true)
             : $current['countedStatuses'];
-        $shouldSync = json_encode($current['countedStatuses']) !== json_encode($nextStatuses);
-
         $updated = $this->updatePayrollSettings([
             'unitAmount' => $params['unitAmount'] ?? $current['unitAmount'],
             'countedStatuses' => $nextStatuses,
@@ -6303,10 +7373,6 @@ final class OperationsApi extends BaseService
             'unitAmount' => (float) $updated['unitAmount'],
             'countedStatuses' => $updated['countedStatuses'],
         ];
-
-        if ($shouldSync) {
-            $this->syncWalletCreditsForPayableStatuses($wallet);
-        }
 
         return $wallet;
     }
@@ -6362,6 +7428,12 @@ final class OperationsApi extends BaseService
     public function fetchMyWallet(array $params = []): ?array
     {
         $currentUser = $this->currentUser();
+        if (
+            $this->isEmployeeRole((string) ($currentUser['role'] ?? ''))
+            && !$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')
+        ) {
+            throw new RuntimeException('You do not have permission to view your wallet.');
+        }
         if (!$this->isEmployeeRole((string) ($currentUser['role'] ?? ''))) {
             return [
                 'employeeId' => (string) $currentUser['id'],
@@ -6414,9 +7486,23 @@ final class OperationsApi extends BaseService
     public function fetchWalletActivity(array $params = []): array
     {
         $currentUser = $this->currentUser();
-        $targetEmployeeId = $this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
-            ? trim((string) ($params['employeeId'] ?? ''))
-            : (string) $currentUser['id'];
+        $isEmployee = $this->isEmployeeRole((string) ($currentUser['role'] ?? ''));
+        if ($isEmployee && !$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')) {
+            throw new RuntimeException('You do not have permission to view your wallet.');
+        }
+        if (
+            !$isEmployee
+            && !$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
+            && !$this->currentUserHasPermission('payroll.view')
+            && !$this->currentUserHasPermission('payroll.pay')
+        ) {
+            throw new RuntimeException('You do not have permission to view wallet activity.');
+        }
+        $targetEmployeeId = $isEmployee
+            ? (string) $currentUser['id']
+            : (($this->hasAdminAccess((string) ($currentUser['role'] ?? '')) || $this->currentUserHasPermission('payroll.view') || $this->currentUserHasPermission('payroll.pay'))
+                ? trim((string) ($params['employeeId'] ?? ''))
+                : (string) $currentUser['id']);
         $entryTypes = is_array($params['entryTypes'] ?? null) ? $params['entryTypes'] : [];
         $where = 'WHERE 1=1';
         $bindings = [];
@@ -6440,11 +7526,25 @@ final class OperationsApi extends BaseService
     public function fetchWalletActivityPage(array $params): array
     {
         $currentUser = $this->currentUser();
+        $isEmployee = $this->isEmployeeRole((string) ($currentUser['role'] ?? ''));
+        if ($isEmployee && !$this->roleHasPermission((string) ($currentUser['role'] ?? ''), 'wallet.view')) {
+            throw new RuntimeException('You do not have permission to view your wallet.');
+        }
+        if (
+            !$isEmployee
+            && !$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
+            && !$this->currentUserHasPermission('payroll.view')
+            && !$this->currentUserHasPermission('payroll.pay')
+        ) {
+            throw new RuntimeException('You do not have permission to view wallet activity.');
+        }
         $pageSize = $this->pageSize($params);
         $offset = $this->pageOffset($params);
-        $targetEmployeeId = $this->hasAdminAccess((string) ($currentUser['role'] ?? ''))
-            ? trim((string) ($params['employeeId'] ?? ''))
-            : (string) $currentUser['id'];
+        $targetEmployeeId = $isEmployee
+            ? (string) $currentUser['id']
+            : (($this->hasAdminAccess((string) ($currentUser['role'] ?? '')) || $this->currentUserHasPermission('payroll.view') || $this->currentUserHasPermission('payroll.pay'))
+                ? trim((string) ($params['employeeId'] ?? ''))
+                : (string) $currentUser['id']);
         $entryTypes = is_array($params['entryTypes'] ?? null) ? $params['entryTypes'] : [];
         $where = 'WHERE 1=1';
         $bindings = [];
@@ -6470,202 +7570,456 @@ final class OperationsApi extends BaseService
         ];
     }
 
+    /** @param array<string, mixed> $payment */
+    private function buildPayrollPayoutResponse(array $payment): array
+    {
+        $payoutId = trim((string) ($payment['wallet_payout_id'] ?? ''));
+        if ($payoutId === '') {
+            throw new RuntimeException('The overlapping payroll record is not linked to a payout.');
+        }
+        $payout = $this->database->fetchOne(
+            'SELECT wp.*, a.name AS account_name, c.name AS category_name
+             FROM wallet_payouts wp
+             LEFT JOIN accounts a ON a.id = wp.account_id
+             LEFT JOIN categories c ON c.id = wp.category_id
+             WHERE wp.id = :id LIMIT 1',
+            [':id' => $payoutId]
+        );
+        if ($payout === null) {
+            throw new RuntimeException('The payroll payout record could not be found.');
+        }
+        $users = $this->keyBy($this->database->fetchAll(
+            'SELECT id, name, role, is_commission_based, fixed_salary FROM users
+             WHERE id IN (:employee_id, :paid_by)',
+            [
+                ':employee_id' => (string) ($payment['employee_id'] ?? ''),
+                ':paid_by' => (string) ($payment['paid_by'] ?? ''),
+            ]
+        ), 'id');
+        $mappedPayment = $this->mapPayrollPayment(array_merge($payment, [
+            'account_name' => $payout['account_name'] ?? null,
+            'category_name' => $payout['category_name'] ?? null,
+        ]), $users);
+        $response = $this->mapWalletPayout(array_merge($payout, [
+            'payroll_payment_id' => $payment['id'] ?? null,
+            'compensation_type' => $payment['compensation_type'] ?? null,
+            'base_amount' => $payment['base_amount_snapshot'] ?? 0,
+            'bonus_amount' => $payment['bonus_amount'] ?? 0,
+            'deduction_amount' => $payment['deduction_amount'] ?? 0,
+            'net_amount' => $payment['amount_snapshot'] ?? $payout['amount'] ?? 0,
+            'period_start' => $payment['period_start'] ?? null,
+            'period_end' => $payment['period_end'] ?? null,
+            'paid_by_name' => $users[(string) ($payment['paid_by'] ?? '')]['name'] ?? null,
+        ]));
+        $response['payrollPayment'] = $mappedPayment;
+        return $response;
+    }
+
     public function payEmployeeWallet(array $params): array
     {
         $currentUser = $this->currentUser();
-        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
-            throw new RuntimeException('Only admins can pay employee wallets.');
+        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? '')) && !$this->currentUserHasPermission('payroll.pay')) {
+            throw new RuntimeException('You do not have permission to pay employee payroll.');
         }
 
         $employeeId = trim((string) ($params['employeeId'] ?? ''));
-        $amount = (float) ($params['amount'] ?? 0);
-        if ($amount <= 0) {
-            throw new RuntimeException('Payout amount must be greater than zero.');
+        if ($employeeId === '') {
+            throw new RuntimeException('Select an employee to pay.');
+        }
+        [$periodStart, $periodEnd] = $this->requirePayrollPeriod($params);
+        $bonusAmount = round((float) ($params['bonusAmount'] ?? 0), 2);
+        $deductionAmount = round((float) ($params['deductionAmount'] ?? 0), 2);
+        if (!is_finite($bonusAmount) || !is_finite($deductionAmount) || $bonusAmount < 0 || $deductionAmount < 0) {
+            throw new RuntimeException('Bonus and deduction amounts must be valid non-negative values.');
         }
 
-        return $this->database->transaction(function () use ($currentUser, $employeeId, $amount, $params): array {
-            $employee = $this->database->fetchOne('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => $employeeId]);
-            if ($employee === null) {
-                throw new RuntimeException('Employee not found.');
-            }
-            if (!$this->isEmployeeRole((string) ($employee['role'] ?? ''))) {
-                throw new RuntimeException('Wallet payouts can only be created for employee accounts.');
+        return $this->database->transaction(function () use (
+            $currentUser,
+            $employeeId,
+            $periodStart,
+            $periodEnd,
+            $bonusAmount,
+            $deductionAmount,
+            $params
+        ): array {
+            // This row lock serializes overlap/balance checks for one employee,
+            // preventing two concurrent requests from paying the same period.
+            $employee = $this->database->fetchOne(
+                'SELECT * FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $employeeId]
+            );
+            if ($employee === null || !$this->isEmployeeRole((string) ($employee['role'] ?? ''))) {
+                throw new RuntimeException('A valid employee account is required for payroll.');
             }
 
-            $walletSettings = $this->fetchWalletSettings();
-            $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
+            $overlap = $this->database->fetchOne(
+                'SELECT * FROM payroll_payments
+                 WHERE employee_id = :employee_id AND period_start <= :period_end AND period_end >= :period_start
+                 ORDER BY paid_at DESC LIMIT 1 FOR UPDATE',
+                [
+                    ':employee_id' => $employeeId,
+                    ':period_start' => $periodStart,
+                    ':period_end' => $periodEnd,
+                ]
+            );
+            $isExactPeriod = $overlap !== null
+                && (string) ($overlap['period_start'] ?? '') === $periodStart
+                && (string) ($overlap['period_end'] ?? '') === $periodEnd;
+            $isMatchingRetry = false;
+            if ($overlap !== null && $isExactPeriod) {
+                $isMatchingRetry = abs((float) ($overlap['bonus_amount'] ?? 0) - $bonusAmount) < 0.005
+                    && abs((float) ($overlap['deduction_amount'] ?? 0) - $deductionAmount) < 0.005
+                    && trim((string) ($overlap['account_id'] ?? '')) === trim((string) ($params['accountId'] ?? ''))
+                    && trim((string) ($overlap['payment_method'] ?? '')) === trim((string) ($params['paymentMethod'] ?? ''))
+                    && trim((string) ($overlap['category_id'] ?? '')) === trim((string) ($params['categoryId'] ?? ''));
+            }
+
             $mappedEmployee = $this->mapUser($employee);
-            $walletCards = $this->buildWalletCardsForEmployees([$mappedEmployee], $walletSettings);
-            $walletBalance = (float) (($walletCards[0]['currentBalance'] ?? 0));
-            if ($amount > $walletBalance) {
-                throw new RuntimeException('Payout amount exceeds the current wallet balance.');
+            $isCommissionBased = !empty($mappedEmployee['isCommissionBased'] ?? false);
+            $compensationType = $isCommissionBased ? 'commission' : 'fixed';
+            $fixedSalary = isset($mappedEmployee['fixedSalary']) ? (float) $mappedEmployee['fixedSalary'] : null;
+            $walletSettings = $this->fetchWalletSettings();
+            if ($isCommissionBased) {
+                $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
+                $commissionMetrics = $this->fetchCommissionPayrollMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
+                $grossBaseAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0));
+                $orderCount = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $baseAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
+            } else {
+                $grossBaseAmount = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
+                $legacyMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
+                $baseAmount = max(0.0, $grossBaseAmount - (float) ($legacyMetrics[$employeeId]['basePaid'] ?? 0));
+                $orderCount = 0;
+            }
+            $baseAmount = round($baseAmount, 2);
+            if ($overlap !== null) {
+                if ($baseAmount <= 0 && $isMatchingRetry && trim((string) ($overlap['wallet_payout_id'] ?? '')) !== '') {
+                    return $this->buildPayrollPayoutResponse($overlap);
+                }
+                // Commission credits may legitimately accrue after an earlier
+                // payout for the exact same period. Permit only that positive
+                // top-up; fixed salary and partial-overlap duplicates stay blocked.
+                if (!$isCommissionBased || !$isExactPeriod || $baseAmount <= 0) {
+                    throw new RuntimeException('This employee already has payroll recorded for an overlapping period.');
+                }
+            }
+            if ($baseAmount <= 0 && $bonusAmount <= 0) {
+                throw new RuntimeException('There is no unpaid base amount or bonus for this employee in the selected period.');
+            }
+            if ($deductionAmount > round($baseAmount + $bonusAmount, 2)) {
+                throw new RuntimeException('Deduction cannot exceed base pay plus bonus.');
+            }
+            $netAmount = round($baseAmount + $bonusAmount - $deductionAmount, 2);
+            if ($netAmount <= 0) {
+                throw new RuntimeException('Net payroll payout must be greater than zero.');
+            }
+            if (array_key_exists('amount', $params) && abs((float) $params['amount'] - $netAmount) > 0.01) {
+                throw new RuntimeException('Payroll changed while this form was open. Refresh and review the recalculated net amount.');
             }
 
+            $accountId = trim((string) ($params['accountId'] ?? ''));
+            $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+            $categoryId = trim((string) ($params['categoryId'] ?? ''));
+            if ($accountId === '' || $paymentMethod === '' || $categoryId === '') {
+                throw new RuntimeException('Payment account, method, and payroll expense category are required.');
+            }
             $account = $this->database->fetchOne(
                 'SELECT id, current_balance FROM accounts WHERE id = :id LIMIT 1 FOR UPDATE',
-                [':id' => trim((string) ($params['accountId'] ?? ''))]
+                [':id' => $accountId]
             );
             if ($account === null) {
                 throw new RuntimeException('Selected payment account was not found.');
             }
-            if ($amount > (float) ($account['current_balance'] ?? 0)) {
+            if ($netAmount > (float) ($account['current_balance'] ?? 0)) {
                 throw new RuntimeException('Selected account does not have enough balance.');
             }
+            if ($this->database->fetchOne(
+                "SELECT id FROM categories WHERE id = :id AND LOWER(type) = 'expense' LIMIT 1",
+                [':id' => $categoryId]
+            ) === null) {
+                throw new RuntimeException('Select a valid expense category for payroll.');
+            }
+            if ($this->database->fetchOne(
+                'SELECT id FROM payment_methods WHERE name = :name AND is_active = 1 LIMIT 1',
+                [':name' => $paymentMethod]
+            ) === null) {
+                throw new RuntimeException('Select an active payment method.');
+            }
 
+            $payrollPaymentId = $this->uuid4();
             $payoutId = $this->uuid4();
             $transactionId = $this->uuid4();
             $createdAt = $this->database->nowUtc();
             $paidAt = $this->normalizeDateTimeInputWithCurrentLocalTime((string) ($params['paidAt'] ?? $createdAt));
-            $description = 'Wallet payout to ' . (string) ($employee['name'] ?? 'Employee');
+            $periodKind = in_array((string) ($params['periodKind'] ?? ''), ['month', 'custom'], true)
+                ? (string) $params['periodKind']
+                : 'custom';
+            $periodLabel = trim((string) ($params['periodLabel'] ?? '')) ?: ($periodStart . ' - ' . $periodEnd);
+            $note = $this->nullableString($params['note'] ?? null);
+            $description = 'Payroll payout to ' . (string) ($employee['name'] ?? 'Employee')
+                . ' (' . $periodLabel . '; base ' . $this->formatMoney($baseAmount)
+                . ', bonus ' . $this->formatMoney($bonusAmount)
+                . ', deduction ' . $this->formatMoney($deductionAmount) . ')';
+
+            $transactionRecord = $this->createTransactionRecord([
+                'id' => $transactionId,
+                'date' => $paidAt,
+                'type' => 'Expense',
+                'category' => $categoryId,
+                'accountId' => $accountId,
+                'amount' => $netAmount,
+                'description' => $description,
+                'referenceId' => $payoutId,
+                'paymentMethod' => $paymentMethod,
+                'history' => [],
+            ], (string) $currentUser['id'], $currentUser);
+            if ((string) ($transactionRecord['approvalStatus'] ?? 'approved') !== 'approved') {
+                throw new RuntimeException('Payroll payouts require an immediately approved expense transaction.');
+            }
 
             $this->database->execute(
-                'INSERT INTO transactions (
-                    id, date, type, category, account_id, amount, description, reference_id,
-                    payment_method, created_by, created_at, updated_at
+                'INSERT INTO payroll_payments (
+                    id, employee_id, period_start, period_end, period_kind, period_label,
+                    unit_amount_snapshot, counted_statuses_snapshot, order_count_snapshot,
+                    compensation_type, fixed_salary_snapshot, base_amount_snapshot,
+                    bonus_amount, deduction_amount, amount_snapshot, wallet_payout_id,
+                    transaction_id, account_id, payment_method, category_id,
+                    paid_at, paid_by, note, created_at, updated_at
                 ) VALUES (
-                    :id, :date, :type, :category, :account_id, :amount, :description, :reference_id,
-                    :payment_method, :created_by, :created_at, :updated_at
+                    :id, :employee_id, :period_start, :period_end, :period_kind, :period_label,
+                    :unit_amount_snapshot, :counted_statuses_snapshot, :order_count_snapshot,
+                    :compensation_type, :fixed_salary_snapshot, :base_amount_snapshot,
+                    :bonus_amount, :deduction_amount, :amount_snapshot, :wallet_payout_id,
+                    :transaction_id, :account_id, :payment_method, :category_id,
+                    :paid_at, :paid_by, :note, :created_at, :updated_at
                 )',
                 [
-                    ':id' => $transactionId,
-                    ':date' => $paidAt,
-                    ':type' => 'Expense',
-                    ':category' => trim((string) ($params['categoryId'] ?? '')),
-                    ':account_id' => trim((string) ($params['accountId'] ?? '')),
-                    ':amount' => $this->formatMoney($amount),
-                    ':description' => $description,
-                    ':reference_id' => $payoutId,
-                    ':payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
-                    ':created_by' => (string) $currentUser['id'],
+                    ':id' => $payrollPaymentId,
+                    ':employee_id' => $employeeId,
+                    ':period_start' => $periodStart,
+                    ':period_end' => $periodEnd,
+                    ':period_kind' => $periodKind,
+                    ':period_label' => $periodLabel,
+                    ':unit_amount_snapshot' => $this->formatMoney($walletSettings['unitAmount'] ?? 0),
+                    ':counted_statuses_snapshot' => $this->jsonEncode($walletSettings['countedStatuses'] ?? []),
+                    ':order_count_snapshot' => $orderCount,
+                    ':compensation_type' => $compensationType,
+                    ':fixed_salary_snapshot' => $isCommissionBased ? null : $this->formatMoney($fixedSalary ?? 0),
+                    ':base_amount_snapshot' => $this->formatMoney($baseAmount),
+                    ':bonus_amount' => $this->formatMoney($bonusAmount),
+                    ':deduction_amount' => $this->formatMoney($deductionAmount),
+                    ':amount_snapshot' => $this->formatMoney($netAmount),
+                    ':wallet_payout_id' => $payoutId,
+                    ':transaction_id' => $transactionId,
+                    ':account_id' => $accountId,
+                    ':payment_method' => $paymentMethod,
+                    ':category_id' => $categoryId,
+                    ':paid_at' => $paidAt,
+                    ':paid_by' => (string) $currentUser['id'],
+                    ':note' => $note,
                     ':created_at' => $createdAt,
                     ':updated_at' => $createdAt,
-                ]
-            );
-
-            $this->database->execute(
-                'UPDATE accounts SET current_balance = current_balance - :amount, updated_at = :updated_at WHERE id = :id',
-                [
-                    ':amount' => $this->formatMoney($amount),
-                    ':updated_at' => $this->database->nowUtc(),
-                    ':id' => trim((string) ($params['accountId'] ?? '')),
                 ]
             );
 
             $this->database->execute(
                 'INSERT INTO wallet_payouts (
                     id, employee_id, amount, account_id, payment_method, category_id, transaction_id,
-                    paid_at, paid_by, note, created_at, updated_at
+                    payroll_payment_id, paid_at, paid_by, note, created_at, updated_at
                 ) VALUES (
                     :id, :employee_id, :amount, :account_id, :payment_method, :category_id, :transaction_id,
-                    :paid_at, :paid_by, :note, :created_at, :updated_at
+                    :payroll_payment_id, :paid_at, :paid_by, :note, :created_at, :updated_at
                 )',
                 [
                     ':id' => $payoutId,
                     ':employee_id' => $employeeId,
-                    ':amount' => $this->formatMoney($amount),
-                    ':account_id' => trim((string) ($params['accountId'] ?? '')),
-                    ':payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
-                    ':category_id' => trim((string) ($params['categoryId'] ?? '')),
+                    ':amount' => $this->formatMoney($netAmount),
+                    ':account_id' => $accountId,
+                    ':payment_method' => $paymentMethod,
+                    ':category_id' => $categoryId,
                     ':transaction_id' => $transactionId,
+                    ':payroll_payment_id' => $payrollPaymentId,
                     ':paid_at' => $paidAt,
                     ':paid_by' => (string) $currentUser['id'],
-                    ':note' => $this->nullableString($params['note'] ?? null),
+                    ':note' => $note,
                     ':created_at' => $createdAt,
                     ':updated_at' => $createdAt,
                 ]
             );
 
-            $this->insertWalletEntryRows([
-                [
+            $walletEntries = [];
+            if ($bonusAmount > 0) {
+                $walletEntries[] = [
                     'employee_id' => $employeeId,
-                    'entry_type' => 'payout',
-                    'amount_delta' => -abs($amount),
-                    'wallet_payout_id' => $payoutId,
-                    'note' => $this->nullableString($params['note'] ?? null) ?? $description,
+                    'entry_type' => 'payroll_bonus',
+                    'amount_delta' => $bonusAmount,
+                    'payroll_payment_id' => $payrollPaymentId,
+                    'note' => 'Payroll bonus for ' . $periodLabel . '.',
                     'created_at' => $createdAt,
                     'created_by' => (string) $currentUser['id'],
-                ]
-            ]);
-
-            return $this->mapWalletPayout([
-                'id' => $payoutId,
+                ];
+            }
+            if ($deductionAmount > 0) {
+                $walletEntries[] = [
+                    'employee_id' => $employeeId,
+                    'entry_type' => 'payroll_deduction',
+                    'amount_delta' => -$deductionAmount,
+                    'payroll_payment_id' => $payrollPaymentId,
+                    'note' => 'Payroll deduction for ' . $periodLabel . '.',
+                    'created_at' => $createdAt,
+                    'created_by' => (string) $currentUser['id'],
+                ];
+            }
+            $walletEntries[] = [
                 'employee_id' => $employeeId,
-                'amount' => $amount,
-                'account_id' => trim((string) ($params['accountId'] ?? '')),
-                'payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
-                'category_id' => trim((string) ($params['categoryId'] ?? '')),
-                'transaction_id' => $transactionId,
-                'paid_at' => $paidAt,
-                'paid_by' => (string) $currentUser['id'],
-                'paid_by_name' => (string) ($currentUser['name'] ?? ''),
-                'note' => $this->nullableString($params['note'] ?? null),
-            ]);
+                'entry_type' => 'payout',
+                'amount_delta' => -$netAmount,
+                'wallet_payout_id' => $payoutId,
+                'payroll_payment_id' => $payrollPaymentId,
+                'note' => $note ?? $description,
+                'created_at' => $createdAt,
+                'created_by' => (string) $currentUser['id'],
+            ];
+            $this->insertWalletEntryRows($walletEntries);
+
+            $payment = $this->database->fetchOne(
+                'SELECT * FROM payroll_payments WHERE id = :id LIMIT 1',
+                [':id' => $payrollPaymentId]
+            );
+            return $this->buildPayrollPayoutResponse($payment ?? throw new RuntimeException('Payroll payment was not saved.'));
         });
     }
 
     public function deleteEmployeeWalletPayout(array $params): array
     {
         $currentUser = $this->currentUser();
-        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
-            throw new RuntimeException('Only admins can delete employee payouts.');
+        if (!$this->hasAdminAccess((string) ($currentUser['role'] ?? '')) && !$this->currentUserHasPermission('payroll.deletePayments')) {
+            throw new RuntimeException('You do not have permission to delete payroll payments.');
         }
 
-        $walletEntryId = trim((string) ($params['id'] ?? ''));
-        if ($walletEntryId === '') {
-            throw new RuntimeException('Missing entry ID.');
+        $requestedId = trim((string) ($params['id'] ?? ''));
+        if ($requestedId === '') {
+            throw new RuntimeException('Missing payout or payroll payment ID.');
         }
 
-        return $this->database->transaction(function () use ($walletEntryId, $currentUser): array {
-            $entry = $this->database->fetchOne(
-                'SELECT * FROM wallet_entries WHERE id = :id FOR UPDATE',
-                [':id' => $walletEntryId]
+        return $this->database->transaction(function () use ($requestedId): array {
+            // The UI historically sent either wallet-entry ID or payout ID;
+            // payroll history now sends payroll-payment ID. Resolve all three.
+            $payout = $this->database->fetchOne(
+                'SELECT * FROM wallet_payouts
+                 WHERE id = :payout_id OR payroll_payment_id = :payroll_payment_id
+                 LIMIT 1 FOR UPDATE',
+                [':payout_id' => $requestedId, ':payroll_payment_id' => $requestedId]
             );
-
-            if ($entry === null) {
+            $entry = null;
+            if ($payout === null) {
+                $entry = $this->database->fetchOne(
+                    'SELECT * FROM wallet_entries
+                      WHERE (id = :entry_id OR wallet_payout_id = :entry_payout_id OR payroll_payment_id = :entry_payroll_id)
+                        AND entry_type = \'payout\'
+                      ORDER BY CASE WHEN id = :preferred_entry_id THEN 0 ELSE 1 END
+                      LIMIT 1 FOR UPDATE',
+                    [
+                        ':entry_id' => $requestedId,
+                        ':entry_payout_id' => $requestedId,
+                        ':entry_payroll_id' => $requestedId,
+                        ':preferred_entry_id' => $requestedId,
+                    ]
+                );
+                $resolvedPayoutId = trim((string) ($entry['wallet_payout_id'] ?? ''));
+                if ($resolvedPayoutId !== '') {
+                    $payout = $this->database->fetchOne(
+                        'SELECT * FROM wallet_payouts WHERE id = :id LIMIT 1 FOR UPDATE',
+                        [':id' => $resolvedPayoutId]
+                    );
+                }
+            }
+            $payrollPaymentId = trim((string) ($payout['payroll_payment_id'] ?? $entry['payroll_payment_id'] ?? ''));
+            $payment = null;
+            if ($payrollPaymentId !== '') {
+                $payment = $this->database->fetchOne(
+                    'SELECT * FROM payroll_payments WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $payrollPaymentId]
+                );
+            } elseif ($payout !== null) {
+                $payment = $this->database->fetchOne(
+                    'SELECT * FROM payroll_payments WHERE wallet_payout_id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => (string) $payout['id']]
+                );
+                $payrollPaymentId = trim((string) ($payment['id'] ?? ''));
+            } else {
+                $payment = $this->database->fetchOne(
+                    'SELECT * FROM payroll_payments WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $requestedId]
+                );
+                $payrollPaymentId = trim((string) ($payment['id'] ?? ''));
+                $resolvedPayoutId = trim((string) ($payment['wallet_payout_id'] ?? ''));
+                if ($resolvedPayoutId !== '') {
+                    $payout = $this->database->fetchOne(
+                        'SELECT * FROM wallet_payouts WHERE id = :id LIMIT 1 FOR UPDATE',
+                        [':id' => $resolvedPayoutId]
+                    );
+                }
+            }
+            if ($payout === null && $payment !== null) {
+                $resolvedPayoutId = trim((string) ($payment['wallet_payout_id'] ?? ''));
+                if ($resolvedPayoutId !== '') {
+                    $payout = $this->database->fetchOne(
+                        'SELECT * FROM wallet_payouts WHERE id = :id LIMIT 1 FOR UPDATE',
+                        [':id' => $resolvedPayoutId]
+                    );
+                }
+            }
+            if ($payout === null && $payment === null && $entry === null) {
+                $nonPayoutEntry = $this->database->fetchOne(
+                    'SELECT entry_type FROM wallet_entries WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $requestedId]
+                );
+                if ($nonPayoutEntry !== null) {
+                    throw new RuntimeException('Only payroll payout entries can be deleted from the payroll page.');
+                }
                 return ['success' => true];
             }
 
-            if ($entry['entry_type'] !== 'payout') {
-                throw new RuntimeException('Only payouts can be deleted this way.');
-            }
-
-            $payoutId = $entry['wallet_payout_id'] ?? null;
-            $transactionId = null;
-            $accountId = null;
-            $amount = null;
-
-            if ($payoutId !== null) {
-                $payout = $this->database->fetchOne(
-                    'SELECT * FROM wallet_payouts WHERE id = :id FOR UPDATE',
-                    [':id' => $payoutId]
+            $payoutId = trim((string) ($payout['id'] ?? ''));
+            $transactionId = trim((string) ($payout['transaction_id'] ?? $payment['transaction_id'] ?? ''));
+            $transaction = null;
+            if ($transactionId !== '') {
+                $transaction = $this->database->fetchOne(
+                    'SELECT id, type, account_id, to_account_id, amount, account_effect_applied
+                     FROM transactions WHERE id = :id LIMIT 1 FOR UPDATE',
+                    [':id' => $transactionId]
                 );
-                if ($payout !== null) {
-                    $transactionId = $payout['transaction_id'] ?? null;
-                    $accountId = $payout['account_id'] ?? null;
-                    $amount = $payout['amount'] ?? null;
-                }
             }
 
-            if ($transactionId !== null) {
-                if ($accountId !== null && $amount !== null) {
-                    $this->database->execute(
-                        'UPDATE accounts SET current_balance = current_balance + :amount, updated_at = :updated_at WHERE id = :id',
-                        [
-                            ':amount' => $amount,
-                            ':updated_at' => $this->database->nowUtc(),
-                            ':id' => $accountId,
-                        ]
-                    );
+            if ($payoutId !== '' || $payrollPaymentId !== '') {
+                $whereParts = [];
+                $bindings = [];
+                if ($payoutId !== '') {
+                    $whereParts[] = 'wallet_payout_id = :wallet_payout_id';
+                    $bindings[':wallet_payout_id'] = $payoutId;
                 }
-
-                $this->database->execute('DELETE FROM transactions WHERE id = :id', [':id' => $transactionId]);
+                if ($payrollPaymentId !== '') {
+                    $whereParts[] = 'payroll_payment_id = :payroll_payment_id';
+                    $bindings[':payroll_payment_id'] = $payrollPaymentId;
+                }
+                $this->database->execute('DELETE FROM wallet_entries WHERE ' . implode(' OR ', $whereParts), $bindings);
+            } elseif ($entry !== null) {
+                $this->database->execute('DELETE FROM wallet_entries WHERE id = :id', [':id' => (string) $entry['id']]);
             }
 
-            if ($payoutId !== null) {
+            if ($payrollPaymentId !== '') {
+                $this->database->execute('DELETE FROM payroll_payments WHERE id = :id', [':id' => $payrollPaymentId]);
+            }
+            // wallet_payouts has a restrictive FK to transactions, so delete it
+            // before reverting/removing the linked transaction.
+            if ($payoutId !== '') {
                 $this->database->execute('DELETE FROM wallet_payouts WHERE id = :id', [':id' => $payoutId]);
             }
-
-            $this->database->execute('DELETE FROM wallet_entries WHERE id = :id', [':id' => $walletEntryId]);
+            if ($transaction !== null) {
+                $this->applyTransactionAccountEffect([$transaction], 'revert');
+                $this->database->execute('DELETE FROM transactions WHERE id = :id', [':id' => $transactionId]);
+            }
 
             return ['success' => true];
         });
@@ -6905,6 +8259,36 @@ final class OperationsApi extends BaseService
         $search = $this->normalizeReportSearchTerm((string) ($params['search'] ?? ''));
         $entityType = trim((string) ($params['entityType'] ?? 'all'));
         $items = $this->filterRecycleBinItems($this->buildRecycleBinItems(), $search, $entityType);
+        $entityTypeNot = trim((string) ($params['entityTypeNot'] ?? ''));
+        $deletedBy = trim((string) ($params['deletedBy'] ?? ''));
+        $deletedByNot = trim((string) ($params['deletedByNot'] ?? ''));
+        $title = trim((string) ($params['title'] ?? ''));
+        $titleNot = trim((string) ($params['titleNot'] ?? ''));
+        $deletedDate = is_array($params['deletedDate'] ?? null) ? $params['deletedDate'] : [];
+        $items = array_values(array_filter($items, function (array $item) use ($entityTypeNot, $deletedBy, $deletedByNot, $title, $titleNot, $deletedDate): bool {
+            if ($entityTypeNot !== '' && (string) ($item['entityType'] ?? '') === $entityTypeNot) return false;
+            $deletedByName = mb_strtolower(trim((string) ($item['deletedByName'] ?? '')));
+            if ($deletedBy !== '' && $deletedByName !== mb_strtolower($deletedBy)) return false;
+            if ($deletedByNot !== '' && $deletedByName === mb_strtolower($deletedByNot)) return false;
+            $itemTitle = mb_strtolower(trim((string) ($item['title'] ?? '')));
+            foreach ([[$title, false], [$titleNot, true]] as [$encoded, $negative]) {
+                if ($encoded === '') continue;
+                [$expectedValue, $contains] = $this->decodeEncodedTextFilterValue($encoded);
+                $expected = mb_strtolower($expectedValue);
+                $match = $contains ? str_contains($itemTitle, $expected) : $itemTitle === $expected;
+                if ((!$negative && !$match) || ($negative && $match)) return false;
+            }
+            $dateValue = trim((string) ($deletedDate['value'] ?? ''));
+            $dateOperator = (string) ($deletedDate['operator'] ?? '');
+            if ($dateValue !== '' && in_array($dateOperator, ['on', 'before', 'after'], true)) {
+                $itemDate = substr((string) ($item['deletedAt'] ?? ''), 0, 10);
+                if ($itemDate === '') return false;
+                if ($dateOperator === 'on' && $itemDate !== $dateValue) return false;
+                if ($dateOperator === 'before' && $itemDate >= $dateValue) return false;
+                if ($dateOperator === 'after' && $itemDate <= $dateValue) return false;
+            }
+            return true;
+        }));
 
         return [
             'data' => array_slice($items, $offset, $pageSize),
@@ -7143,23 +8527,39 @@ final class OperationsApi extends BaseService
             }
 
             // "Returned", "Exchange returned", and "Cancelled" are terminal; allow reverting to anything before them.
-            if ($currentStatus === 'Returned' || $currentStatus === 'Exchange returned' || $currentStatus === 'Cancelled') {
-                // These are terminal statuses – allow reverting to anything before them
-            } elseif ($targetIndex >= $currentIndex) {
+            if ($targetIndex >= $currentIndex) {
                 throw new RuntimeException('Target status must be prior to the current status.');
             }
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
             $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
+            $hasReturnExchangeAdjustments = array_reduce(
+                $previousItems,
+                static fn(bool $found, array $item): bool => $found
+                    || (int) ($item['returnedQty'] ?? 0) > 0
+                    || (int) ($item['exchangedQty'] ?? 0) > 0,
+                false
+            );
+            if ($hasReturnExchangeAdjustments) {
+                throw new RuntimeException('This order contains item-level return/exchange adjustments and cannot be safely reverted with the status undo tool.');
+            }
 
             // ─── 1. Reverse linked transactions (soft-delete + revert account balances) ───
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
-            if ($linkedTransactions !== []) {
-                $this->applyTransactionAccountEffect($linkedTransactions, 'revert');
+            $transitionTransactions = array_values(array_filter($linkedTransactions, static function (array $transaction): bool {
+                $description = strtolower(trim((string) ($transaction['description'] ?? '')));
+                return str_starts_with($description, 'delivery payment for order #')
+                    || str_starts_with($description, 'return expense for order #')
+                    || str_starts_with($description, 'refund for order #')
+                    || str_starts_with($description, 'return/exchange refund for order #')
+                    || str_starts_with($description, 'exchange collection for order #');
+            }));
+            if ($transitionTransactions !== []) {
+                $this->applyTransactionAccountEffect($transitionTransactions, 'revert');
                 $deletedAt = $this->database->nowUtc();
                 $this->softDeleteTransactionRowsByIds(
-                    array_map(static fn(array $row): string => (string) $row['id'], $linkedTransactions),
+                    array_map(static fn(array $row): string => (string) $row['id'], $transitionTransactions),
                     $deletedAt,
                     (string) $actor['id']
                 );
@@ -7178,7 +8578,7 @@ final class OperationsApi extends BaseService
             // Remove history keys that were set during completion/return
             $keysToRemove = [];
             if (in_array($currentStatus, ['Completed', 'Returned', 'Exchange returned'], true)) {
-                $keysToRemove = array_merge($keysToRemove, ['completed', 'payment', 'returned', 'exchangeReturned']);
+                $keysToRemove = array_merge($keysToRemove, ['completed', 'returned', 'exchangeReturned']);
             }
             if (in_array($currentStatus, ['Exchange delivered', 'Exchange returned'], true)) {
                 $keysToRemove = array_merge($keysToRemove, ['exchangeDelivered']);
@@ -7216,9 +8616,22 @@ final class OperationsApi extends BaseService
                 'history' => $this->jsonEncode($history),
             ];
 
-            // Reset paid_amount if we're reverting away from Completed/Returned
+            // Reverse only payment/refund amounts created by the status
+            // transition; ordinary advance payments remain intact.
             if (in_array($currentStatus, ['Completed', 'Returned', 'Exchange returned'], true)) {
-                $payload['paid_amount'] = $this->formatMoney(0);
+                $revertedPaidAmount = (float) ($orderRow['paid_amount'] ?? 0);
+                foreach ($transitionTransactions as $transaction) {
+                    $amount = (float) ($transaction['amount'] ?? 0);
+                    if ((string) ($transaction['type'] ?? '') === 'Income') {
+                        $revertedPaidAmount -= $amount;
+                    } elseif (
+                        (string) ($transaction['type'] ?? '') === 'Expense'
+                        && str_contains(strtolower((string) ($transaction['description'] ?? '')), 'refund')
+                    ) {
+                        $revertedPaidAmount += $amount;
+                    }
+                }
+                $payload['paid_amount'] = $this->formatMoney(max(0.0, $revertedPaidAmount));
             }
 
             $this->touchUpdate('orders', $orderId, $payload);

@@ -14,6 +14,7 @@ import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { DEFAULT_PAGE_SIZE, fetchUserById } from '../src/services/supabaseQueries';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 type RoleFilter = 'All' | string;
 
@@ -42,12 +43,36 @@ const Users: React.FC = () => {
   const previousRoleFilterRef = React.useRef(roleFilter);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
   const { data: allUsers = [] } = useUsers();
+  const [roleNotFilter, setRoleNotFilter] = React.useState<string>('');
+  const [nameFilter, setNameFilter] = React.useState<string>('');
+  const [nameNotFilter, setNameNotFilter] = React.useState<string>('');
+  const [phoneFilter, setPhoneFilter] = React.useState<string>('');
+  const [phoneNotFilter, setPhoneNotFilter] = React.useState<string>('');
+  const [joinedFilter, setJoinedFilter] = React.useState<{ operator: string; value: string } | null>(null);
+  const [genderFilter, setGenderFilter] = React.useState<string>('');
+  const [genderNotFilter, setGenderNotFilter] = React.useState<string>('');
+  const [nationalityFilter, setNationalityFilter] = React.useState<string>('');
+  const [nationalityNotFilter, setNationalityNotFilter] = React.useState<string>('');
+  const [bloodGroupFilter, setBloodGroupFilter] = React.useState<string>('');
+  const [bloodGroupNotFilter, setBloodGroupNotFilter] = React.useState<string>('');
   const { data: usersPage, isFetching: loading } = useUsersPage(
     effectivePage,
     pageSize,
     {
       search: searchQuery || undefined,
       role: roleFilter !== 'All' ? roleFilter : undefined,
+      roleNot: roleNotFilter || undefined,
+      name: nameFilter || undefined,
+      nameNot: nameNotFilter || undefined,
+      phone: phoneFilter || undefined,
+      phoneNot: phoneNotFilter || undefined,
+      joined: joinedFilter || undefined,
+      gender: genderFilter || undefined,
+      genderNot: genderNotFilter || undefined,
+      nationality: nationalityFilter || undefined,
+      nationalityNot: nationalityNotFilter || undefined,
+      bloodGroup: bloodGroupFilter || undefined,
+      bloodGroupNot: bloodGroupNotFilter || undefined,
     },
     { enabled: canLoadUsers },
   );
@@ -138,18 +163,6 @@ const Users: React.FC = () => {
     [usersPage?.roles],
   );
 
-  const [nameFilter, setNameFilter] = React.useState<string>('');
-  const [nameNotFilter, setNameNotFilter] = React.useState<string>('');
-  const [phoneFilter, setPhoneFilter] = React.useState<string>('');
-  const [phoneNotFilter, setPhoneNotFilter] = React.useState<string>('');
-  const [joinedFilter, setJoinedFilter] = React.useState<{ operator: string; value: string } | null>(null);
-  const [genderFilter, setGenderFilter] = React.useState<string>('');
-  const [genderNotFilter, setGenderNotFilter] = React.useState<string>('');
-  const [nationalityFilter, setNationalityFilter] = React.useState<string>('');
-  const [nationalityNotFilter, setNationalityNotFilter] = React.useState<string>('');
-  const [bloodGroupFilter, setBloodGroupFilter] = React.useState<string>('');
-  const [bloodGroupNotFilter, setBloodGroupNotFilter] = React.useState<string>('');
-
   const nameOptions = useMemo(() => {
     return Array.from(new Set(allUsers.map((u) => u.name).filter(Boolean))) as string[];
   }, [allUsers]);
@@ -160,7 +173,11 @@ const Users: React.FC = () => {
 
   const genderOptions = useMemo(() => {
     const fromData = Array.from(new Set(allUsers.map((u) => u.gender).filter(Boolean))) as string[];
-    return fromData.length > 0 ? fromData : ['Male', 'Female', 'Other', 'Not Specified'];
+    const values = fromData.length > 0 ? fromData : ['Male', 'Female', 'Other'];
+    return [
+      ...values.map((value) => ({ value, label: value })),
+      { value: '__not_specified__', label: 'Not Specified' },
+    ];
   }, [allUsers]);
 
   const nationalityOptions = useMemo(() => {
@@ -169,7 +186,11 @@ const Users: React.FC = () => {
 
   const bloodGroupOptions = useMemo(() => {
     const fromData = Array.from(new Set(allUsers.map((u) => u.bloodGroup).filter(Boolean))) as string[];
-    return fromData.length > 0 ? fromData : ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Not Specified'];
+    const values = fromData.length > 0 ? fromData : ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    return [
+      ...values.map((value) => ({ value, label: value })),
+      { value: '__not_specified__', label: 'Not Specified' },
+    ];
   }, [allUsers]);
 
   const userFilterDefinitions = useMemo(() => {
@@ -183,7 +204,7 @@ const Users: React.FC = () => {
       },
       {
         type: 'Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -194,7 +215,7 @@ const Users: React.FC = () => {
       },
       {
         type: 'Phone',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -215,7 +236,7 @@ const Users: React.FC = () => {
       },
       {
         type: 'Nationality',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -234,107 +255,51 @@ const Users: React.FC = () => {
 
   const initialFilters = useMemo(() => {
     const filters = [];
+    const decodeText = (encoded: string, negative = false) => {
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      return { operator: contains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '='), value };
+    };
     if (roleFilter !== 'All') {
       filters.push({ id: 'role', type: 'Role', operator: '=' as const, value: roleFilter });
     }
+    if (roleNotFilter) filters.push({ id: 'role-not', type: 'Role', operator: '≠' as const, value: roleNotFilter });
     if (nameFilter) {
-      filters.push({ id: 'name', type: 'Name', operator: '=' as const, value: nameFilter });
+      filters.push({ id: 'name', type: 'Name', ...decodeText(nameFilter) });
     }
     if (nameNotFilter) {
-      filters.push({ id: 'name-not', type: 'Name', operator: '≠' as const, value: nameNotFilter });
+      filters.push({ id: 'name-not', type: 'Name', ...decodeText(nameNotFilter, true) });
     }
     if (phoneFilter) {
-      filters.push({ id: 'phone', type: 'Phone', operator: '=' as const, value: phoneFilter });
+      filters.push({ id: 'phone', type: 'Phone', ...decodeText(phoneFilter) });
     }
     if (phoneNotFilter) {
-      filters.push({ id: 'phone-not', type: 'Phone', operator: '≠' as const, value: phoneNotFilter });
+      filters.push({ id: 'phone-not', type: 'Phone', ...decodeText(phoneNotFilter, true) });
     }
     if (joinedFilter) {
       filters.push({ id: 'joined', type: 'Joined', operator: joinedFilter.operator as any, value: joinedFilter.value, display: formatDateDisplay(joinedFilter.value) });
     }
     if (genderFilter) {
-      filters.push({ id: 'gender', type: 'Gender', operator: '=' as const, value: genderFilter });
+      filters.push({ id: 'gender', type: 'Gender', operator: '=' as const, value: genderFilter, display: genderFilter === '__not_specified__' ? 'Not Specified' : genderFilter });
     }
     if (genderNotFilter) {
-      filters.push({ id: 'gender-not', type: 'Gender', operator: '≠' as const, value: genderNotFilter });
+      filters.push({ id: 'gender-not', type: 'Gender', operator: '≠' as const, value: genderNotFilter, display: genderNotFilter === '__not_specified__' ? 'Not Specified' : genderNotFilter });
     }
     if (nationalityFilter) {
-      filters.push({ id: 'nationality', type: 'Nationality', operator: '=' as const, value: nationalityFilter });
+      filters.push({ id: 'nationality', type: 'Nationality', ...decodeText(nationalityFilter) });
     }
     if (nationalityNotFilter) {
-      filters.push({ id: 'nationality-not', type: 'Nationality', operator: '≠' as const, value: nationalityNotFilter });
+      filters.push({ id: 'nationality-not', type: 'Nationality', ...decodeText(nationalityNotFilter, true) });
     }
     if (bloodGroupFilter) {
-      filters.push({ id: 'blood-group', type: 'Blood Group', operator: '=' as const, value: bloodGroupFilter });
+      filters.push({ id: 'blood-group', type: 'Blood Group', operator: '=' as const, value: bloodGroupFilter, display: bloodGroupFilter === '__not_specified__' ? 'Not Specified' : bloodGroupFilter });
     }
     if (bloodGroupNotFilter) {
-      filters.push({ id: 'blood-group-not', type: 'Blood Group', operator: '≠' as const, value: bloodGroupNotFilter });
+      filters.push({ id: 'blood-group-not', type: 'Blood Group', operator: '≠' as const, value: bloodGroupNotFilter, display: bloodGroupNotFilter === '__not_specified__' ? 'Not Specified' : bloodGroupNotFilter });
     }
     return filters;
-  }, [roleFilter, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, joinedFilter, genderFilter, genderNotFilter, nationalityFilter, nationalityNotFilter, bloodGroupFilter, bloodGroupNotFilter]);
+  }, [roleFilter, roleNotFilter, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, joinedFilter, genderFilter, genderNotFilter, nationalityFilter, nationalityNotFilter, bloodGroupFilter, bloodGroupNotFilter]);
 
-  // Client-side filters for Name, Phone, and other fields
-  const displayedUsers = useMemo(() => {
-    let filtered = users;
-
-    if (nameFilter) {
-      filtered = filtered.filter((u) => u.name?.toLowerCase().includes(nameFilter.toLowerCase()));
-    }
-    if (nameNotFilter) {
-      filtered = filtered.filter((u) => !u.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
-    }
-    if (phoneFilter) {
-      filtered = filtered.filter((u) => u.phone?.toLowerCase().includes(phoneFilter.toLowerCase()));
-    }
-    if (phoneNotFilter) {
-      filtered = filtered.filter((u) => !u.phone?.toLowerCase().includes(phoneNotFilter.toLowerCase()));
-    }
-
-    // Date filter for Joined
-    if (joinedFilter) {
-      const filterDate = new Date(joinedFilter.value);
-      if (!isNaN(filterDate.getTime())) {
-        filtered = filtered.filter((u) => {
-          if (!u.createdAt) return false;
-          const userDate = new Date(u.createdAt);
-          const filterDateStr = joinedFilter.value;
-          const userDateStr = userDate.toISOString().split('T')[0];
-          switch (joinedFilter.operator) {
-            case 'on': return userDateStr === filterDateStr;
-            case 'before': return userDateStr < filterDateStr;
-            case 'after': return userDateStr > filterDateStr;
-            default: return true;
-          }
-        });
-      }
-    }
-
-    // Gender filter
-    if (genderFilter) {
-      filtered = filtered.filter((u) => u.gender?.toLowerCase() === genderFilter.toLowerCase());
-    }
-    if (genderNotFilter) {
-      filtered = filtered.filter((u) => u.gender?.toLowerCase() !== genderNotFilter.toLowerCase());
-    }
-
-    // Nationality filter
-    if (nationalityFilter) {
-      filtered = filtered.filter((u) => u.nationality?.toLowerCase().includes(nationalityFilter.toLowerCase()));
-    }
-    if (nationalityNotFilter) {
-      filtered = filtered.filter((u) => !u.nationality?.toLowerCase().includes(nationalityNotFilter.toLowerCase()));
-    }
-
-    // Blood Group filter
-    if (bloodGroupFilter) {
-      filtered = filtered.filter((u) => u.bloodGroup?.toLowerCase() === bloodGroupFilter.toLowerCase());
-    }
-    if (bloodGroupNotFilter) {
-      filtered = filtered.filter((u) => u.bloodGroup?.toLowerCase() !== bloodGroupNotFilter.toLowerCase());
-    }
-
-    return filtered;
-  }, [users, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, joinedFilter, genderFilter, genderNotFilter, nationalityFilter, nationalityNotFilter, bloodGroupFilter, bloodGroupNotFilter]);
+  const displayedUsers = users;
 
   return (
     <div className="space-y-6">
@@ -345,6 +310,7 @@ const Users: React.FC = () => {
             initialFilters={initialFilters}
             onApply={(appliedFilters) => {
               setPage(1);
+              const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
 
               const roleEqFilter = appliedFilters.find((f) => f.type === 'Role' && f.operator === '=');
               const roleNeFilter = appliedFilters.find((f) => f.type === 'Role' && f.operator === '≠');
@@ -352,19 +318,22 @@ const Users: React.FC = () => {
                 handleRoleFilterChange(roleEqFilter.value);
               } else if (roleNeFilter) {
                 handleRoleFilterChange('All');
+                setRoleNotFilter(roleNeFilter.value);
               } else {
                 handleRoleFilterChange('All');
+                setRoleNotFilter('');
               }
+              if (roleEqFilter) setRoleNotFilter('');
 
-              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
-              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
-              setNameFilter(nameFilter?.value ?? '');
-              setNameNotFilter(nameNotFilter?.value ?? '');
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '=' || f.operator === 'contains'));
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setNameFilter(nameFilter ? encodeTextValue(nameFilter) : '');
+              setNameNotFilter(nameNotFilter ? encodeTextValue(nameNotFilter) : '');
 
-              const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '=');
-              const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '≠');
-              setPhoneFilter(phoneFilter?.value ?? '');
-              setPhoneNotFilter(phoneNotFilter?.value ?? '');
+              const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '=' || f.operator === 'contains'));
+              const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setPhoneFilter(phoneFilter ? encodeTextValue(phoneFilter) : '');
+              setPhoneNotFilter(phoneNotFilter ? encodeTextValue(phoneNotFilter) : '');
 
               const joinedFilter = appliedFilters.find((f) => f.type === 'Joined');
               setJoinedFilter(joinedFilter ? { operator: joinedFilter.operator, value: joinedFilter.value } : null);
@@ -374,10 +343,10 @@ const Users: React.FC = () => {
               setGenderFilter(genderFilter?.value ?? '');
               setGenderNotFilter(genderNotFilter?.value ?? '');
 
-              const nationalityFilter = appliedFilters.find((f) => f.type === 'Nationality' && f.operator === '=');
-              const nationalityNotFilter = appliedFilters.find((f) => f.type === 'Nationality' && f.operator === '≠');
-              setNationalityFilter(nationalityFilter?.value ?? '');
-              setNationalityNotFilter(nationalityNotFilter?.value ?? '');
+              const nationalityFilter = appliedFilters.find((f) => f.type === 'Nationality' && (f.operator === '=' || f.operator === 'contains'));
+              const nationalityNotFilter = appliedFilters.find((f) => f.type === 'Nationality' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setNationalityFilter(nationalityFilter ? encodeTextValue(nationalityFilter) : '');
+              setNationalityNotFilter(nationalityNotFilter ? encodeTextValue(nationalityNotFilter) : '');
 
               const bloodGroupFilter = appliedFilters.find((f) => f.type === 'Blood Group' && f.operator === '=');
               const bloodGroupNotFilter = appliedFilters.find((f) => f.type === 'Blood Group' && f.operator === '≠');

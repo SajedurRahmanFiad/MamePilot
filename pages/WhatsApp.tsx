@@ -1,565 +1,426 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Search,
-  MoreVertical,
-  Edit3,
-  Filter,
-  Phone,
-  Video,
+  AlertCircle,
   ArrowLeft,
-  Paperclip,
-  Smile,
-  Mic,
-  Send,
-  Image as ImageIcon,
-  FileText,
   Check,
   CheckCheck,
-  Users,
-  Camera,
+  ChevronDown,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
   MessageSquare,
+  Paperclip,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Settings,
+  Smile,
+  X,
 } from 'lucide-react';
+import type { WhatsAppContact, WhatsAppMessage } from '../types';
+import { useWhatsAppContacts, useWhatsAppMessages, useWhatsAppTemplates } from '../src/hooks/useQueries';
+import {
+  useCreateWhatsAppConversation,
+  useMarkWhatsAppConversationRead,
+  useSendWhatsAppMediaMessage,
+  useSendWhatsAppMessage,
+  useSendWhatsAppTemplate,
+} from '../src/hooks/useMutations';
+import { useToastNotifications } from '../src/contexts/ToastContext';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type ContactFilter = 'all' | 'unread';
+type WhatsAppTemplate = { id: string; name: string; language: string; status: string; category: string; components?: any[] };
 
-interface ChatMessage {
-  id: string;
-  text?: string;
-  time: string;
-  sent: boolean;
-  read?: boolean;
-  type: 'text' | 'image' | 'document' | 'voice';
-  imageUrl?: string;
-  fileName?: string;
-  fileSize?: string;
-  voiceDuration?: string;
+const EMOJIS = ['😀', '😂', '😍', '🙏', '👍', '❤️', '🎉', '✅', '📦', '🚚', '💳', '☎️'];
+
+function formatTime(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('en-BD', { hour: 'numeric', minute: '2-digit' });
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric' });
 }
 
-interface ChatContact {
-  id: string;
-  name: string;
-  avatar?: string;
-  initials?: string;
-  isGroup?: boolean;
-  lastMessage: string;
-  lastTime: string;
-  unread: number;
-  online?: boolean;
-  typing?: boolean;
-  messages: ChatMessage[];
+function messageDateLabel(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return 'TODAY';
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'YESTERDAY';
+  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
 }
 
-// ─── Demo Data ────────────────────────────────────────────────────────────────
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'WA';
+}
 
-const demoContacts: ChatContact[] = [
-  {
-    id: '1',
-    name: 'Alexander Sterling',
-    avatar: '',
-    initials: 'AS',
-    lastMessage: 'The quarterly review documents are ready...',
-    lastTime: '10:42 AM',
-    unread: 2,
-    online: true,
-    typing: false,
-    messages: [
-      { id: 'm1', text: 'Hi, did you get a chance to review the Q3 numbers?', time: '10:30 AM', sent: false, type: 'text' },
-      { id: 'm2', text: 'Yes, looking good! Revenue is up 12%.', time: '10:35 AM', sent: true, read: true, type: 'text' },
-      { id: 'm3', text: 'The quarterly review documents are ready for your final approval. Please check the shared folder.', time: '10:42 AM', sent: false, type: 'text' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Design Synergies',
-    avatar: '',
-    initials: 'DS',
-    isGroup: true,
-    lastMessage: 'Marcus: I\'ve updated the Figma prototypes...',
-    lastTime: 'Yesterday',
-    unread: 0,
-    online: false,
-    messages: [
-      { id: 'm1', text: 'Hey team, the new brand guidelines are finalized.', time: '3:15 PM', sent: false, type: 'text' },
-      { id: 'm2', text: 'Great work! I\'ll start implementing them in the UI kit.', time: '3:20 PM', sent: true, read: true, type: 'text' },
-      { id: 'm3', text: 'I\'ve updated the Figma prototypes with the new Veridian palette.', time: '4:05 PM', sent: false, type: 'text' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Elena Rodriguez',
-    avatar: '',
-    initials: 'ER',
-    lastMessage: 'Let\'s schedule the sync for tomorrow at 9 AM.',
-    lastTime: 'Yesterday',
-    unread: 0,
-    online: false,
-    messages: [
-      { id: 'm1', text: 'Can we move our meeting to Thursday?', time: '2:00 PM', sent: false, type: 'text' },
-      { id: 'm2', text: 'Thursday works for me. Morning or afternoon?', time: '2:15 PM', sent: true, read: true, type: 'text' },
-      { id: 'm3', text: 'Let\'s schedule the sync for tomorrow at 9 AM.', time: '2:30 PM', sent: false, type: 'text' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Tech Innovations HQ',
-    avatar: '',
-    initials: 'TI',
-    isGroup: true,
-    lastMessage: 'Sarah invited you to the "Spring Launch" sub-group.',
-    lastTime: 'Monday',
-    unread: 0,
-    online: false,
-    messages: [
-      { id: 'm1', text: 'Sarah invited you to the "Spring Launch" sub-group.', time: '11:00 AM', sent: false, type: 'text' },
-    ],
-  },
-  {
-    id: '5',
-    name: 'Jonathan Thorne',
-    avatar: '',
-    initials: 'JT',
-    lastMessage: 'Voice message (0:45)',
-    lastTime: 'Oct 24',
-    unread: 0,
-    online: true,
-    messages: [
-      { id: 'm1', text: 'Hey, just following up on the API integration.', time: '9:00 AM', sent: false, type: 'text' },
-      { id: 'm2', type: 'voice', voiceDuration: '0:45', time: '9:05 AM', sent: false, text: 'Voice message' },
-      { id: 'm3', text: 'I\'ll check it out and get back to you.', time: '9:30 AM', sent: true, read: false, type: 'text' },
-    ],
-  },
-  {
-    id: '6',
-    name: 'Fatima Al-Rashid',
-    avatar: '',
-    initials: 'FA',
-    lastMessage: 'Sent a photo',
-    lastTime: 'Oct 22',
-    unread: 0,
-    online: false,
-    messages: [
-      { id: 'm1', type: 'image', imageUrl: '', time: '4:30 PM', sent: false, text: 'Here\'s the new storefront design' },
-      { id: 'm2', text: 'Looks amazing! Love the color scheme.', time: '4:45 PM', sent: true, read: true, type: 'text' },
-    ],
-  },
-  {
-    id: '7',
-    name: 'Marcus Chen',
-    avatar: '',
-    initials: 'MC',
-    lastMessage: 'The sprint demo went really well!',
-    lastTime: '12:45',
-    unread: 0,
-    online: true,
-    messages: [
-      { id: 'm1', text: 'The sprint demo went really well! Stakeholders loved the new features.', time: '12:45 PM', sent: false, type: 'text' },
-      { id: 'm2', text: 'That\'s fantastic news! Great job team.', time: '12:50 PM', sent: true, read: true, type: 'text' },
-    ],
-  },
-];
+function friendlySavedMessageName(name: string): string {
+  const value = name.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return value ? value.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Saved message';
+}
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function friendlyError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : '';
+  return message && !/api|webhook|credential|token|configured|curl|http|meta|business account|graph/i.test(message) ? message : fallback;
+}
 
-const AvatarCircle: React.FC<{ name: string; initials?: string; online?: boolean; size?: 'sm' | 'md' | 'lg' }> = ({
-  name,
-  initials,
-  online,
-  size = 'md',
-}) => {
-  const sizeClasses = size === 'sm' ? 'w-8 h-8 text-xs' : size === 'lg' ? 'w-14 h-14 text-base' : 'w-12 h-12 text-sm';
-  const dotSize = size === 'lg' ? 'w-3.5 h-3.5' : 'w-3 h-3';
-  const colors = [
-    'bg-emerald-100 text-emerald-700',
-    'bg-blue-100 text-blue-700',
-    'bg-purple-100 text-purple-700',
-    'bg-amber-100 text-amber-700',
-    'bg-rose-100 text-rose-700',
-    'bg-cyan-100 text-cyan-700',
-  ];
-  const colorIndex = name.charCodeAt(0) % colors.length;
-
-  return (
-    <div className="relative shrink-0">
-      <div
-        className={`${sizeClasses} ${colors[colorIndex]} rounded-full flex items-center justify-center font-semibold`}
-      >
-        {initials || name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-      </div>
-      {online && (
-        <div
-          className={`absolute bottom-0 right-0 ${dotSize} bg-green-500 rounded-full border-2 border-white`}
-        />
-      )}
-    </div>
-  );
-};
-
-const TypingDots: React.FC = () => (
-  <div className="flex gap-[3px] items-center">
-    {[0, 1, 2].map((i) => (
-      <div
-        key={i}
-        className="w-[5px] h-[5px] bg-emerald-500 rounded-full animate-bounce"
-        style={{ animationDelay: `${i * 0.15}s`, animationDuration: '1s' }}
-      />
-    ))}
+const ContactAvatar: React.FC<{ contact: Pick<WhatsAppContact, 'name'>; small?: boolean }> = ({ contact, small }) => (
+  <div className={`${small ? 'h-9 w-9 text-xs' : 'h-11 w-11 text-sm'} flex shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700`}>
+    {initials(contact.name)}
   </div>
 );
 
-const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
-  const isSent = message.sent;
+const MessageStatus: React.FC<{ message: WhatsAppMessage }> = ({ message }) => {
+  if (message.direction !== 'outbound') return null;
+  if (message.status === 'failed') return <AlertCircle size={13} className="text-red-500" aria-label="Failed" />;
+  if (message.status === 'read') return <CheckCheck size={14} className="text-sky-500" aria-label="Read" />;
+  if (message.status === 'delivered') return <CheckCheck size={14} className="text-gray-400" aria-label="Delivered" />;
+  return <Check size={14} className="text-gray-400" aria-label={message.status || 'Sent'} />;
+};
 
+const MessageContent: React.FC<{ message: WhatsAppMessage }> = ({ message }) => {
+  const type = message.type;
+  if ((type === 'image' || type === 'sticker') && message.mediaUrl) {
+    return (
+      <>
+        <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg bg-gray-100">
+          <img src={message.mediaUrl} alt={message.caption || 'WhatsApp image'} className="max-h-80 w-full object-contain" />
+        </a>
+        {(message.caption || message.text) && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{message.caption || message.text}</p>}
+      </>
+    );
+  }
+  if (type === 'video' && message.mediaUrl) {
+    return (
+      <>
+        <video src={message.mediaUrl} controls className="max-h-80 w-full rounded-lg bg-black" />
+        {(message.caption || message.text) && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{message.caption || message.text}</p>}
+      </>
+    );
+  }
+  if (type === 'audio' && message.mediaUrl) return <audio src={message.mediaUrl} controls className="max-w-full" />;
+  if (type === 'document') {
+    return (
+      <a href={message.mediaUrl || '#'} target={message.mediaUrl ? '_blank' : undefined} rel="noreferrer" className="flex min-w-0 items-center gap-3 rounded-lg bg-black/5 p-3">
+        <FileText size={24} className="shrink-0 text-blue-600" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold">{message.fileName || 'Document'}</p>
+          {message.caption && <p className="mt-0.5 truncate text-xs opacity-70">{message.caption}</p>}
+        </div>
+      </a>
+    );
+  }
+  if (type === 'template') return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">Saved message</p>;
+  return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text || message.caption || `[${type}]`}</p>;
+};
+
+const MessageBubble: React.FC<{ message: WhatsAppMessage }> = ({ message }) => {
+  const outgoing = message.direction === 'outbound';
   return (
-    <div className={`flex ${isSent ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-      <div
-        className={`max-w-[75%] md:max-w-[65%] px-3 py-2 rounded-2xl shadow-sm ${
-          isSent
-            ? 'bg-emerald-600 text-white rounded-br-sm'
-            : 'bg-white text-gray-900 border border-gray-100 rounded-bl-sm'
-        }`}
-      >
-        {message.type === 'text' && (
+    <div className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm sm:max-w-[72%] lg:max-w-[65%] ${outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-gray-900' : 'rounded-bl-sm border border-gray-100 bg-white text-gray-900'}`}>
+        <MessageContent message={message} />
+        <div className="mt-1 flex items-center justify-end gap-1">
+          <span className="text-[10px] text-gray-500">{formatTime(message.messageAt)}</span>
+          <MessageStatus message={message} />
+        </div>
+        {message.errorMessage && <p className="mt-1 max-w-sm text-[11px] font-medium text-red-600">{message.errorMessage}</p>}
+      </div>
+    </div>
+  );
+};
+
+const NewConversationModal: React.FC<{
+  open: boolean;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (phoneNumber: string, name: string) => void;
+}> = ({ open, pending, onClose, onSubmit }) => {
+  const [phone, setPhone] = useState('');
+  const [name, setName] = useState('');
+  useEffect(() => { if (!open) { setPhone(''); setName(''); } }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-gray-950/40 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <form className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onSubmit={(event) => { event.preventDefault(); onSubmit(phone, name); }}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-black text-gray-900">New WhatsApp chat</h3>
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><X size={18} /></button>
+        </div>
+        <p className="mt-2 text-sm text-gray-500">Use the full number with country code and no leading plus sign.</p>
+        <label className="mt-5 block space-y-2 text-sm font-bold text-gray-700">
+          <span>WhatsApp number</span>
+          <input autoFocus value={phone} onChange={(event) => setPhone(event.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-emerald-500" placeholder="8801XXXXXXXXX" required />
+        </label>
+        <label className="mt-4 block space-y-2 text-sm font-bold text-gray-700">
+          <span>Name <span className="font-normal text-gray-400">(optional)</span></span>
+          <input value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-emerald-500" placeholder="Customer name" />
+        </label>
+        <button type="submit" disabled={pending || !phone.trim()} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+          {pending && <Loader2 size={17} className="animate-spin" />} Start conversation
+        </button>
+      </form>
+    </div>
+  );
+};
+
+function templateVariableFields(template: WhatsAppTemplate | undefined): Array<{ key: string; label: string; componentIndex: number; componentType: string; placeholder: string }> {
+  const fields: Array<{ key: string; label: string; componentIndex: number; componentType: string; placeholder: string }> = [];
+  (template?.components || []).forEach((component, componentIndex) => {
+    const componentType = String(component?.type || '').toLowerCase();
+    const text = String(component?.text || '');
+    const placeholders = Array.from(new Set(Array.from(text.matchAll(/\{\{(\d+)\}\}/g), (match) => match[1]))).sort((a, b) => Number(a) - Number(b));
+    placeholders.forEach((placeholder) => fields.push({ key: `${componentIndex}:${placeholder}`, label: `Message detail ${fields.length + 1}`, componentIndex, componentType, placeholder }));
+  });
+  return fields;
+}
+
+const TemplateModal: React.FC<{
+  open: boolean;
+  templates: WhatsAppTemplate[];
+  loading: boolean;
+  error?: string;
+  pending: boolean;
+  onClose: () => void;
+  onSend: (template: WhatsAppTemplate, values: Record<string, string>) => void;
+}> = ({ open, templates, loading, error, pending, onClose, onSend }) => {
+  const [selection, setSelection] = useState('');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const selected = templates.find((template) => `${template.name}:${template.language}` === selection);
+  const fields = useMemo(() => templateVariableFields(selected), [selected]);
+  useEffect(() => { if (!open) { setSelection(''); setValues({}); } }, [open]);
+  if (!open) return null;
+  const hasMediaHeader = (selected?.components || []).some((component) => String(component?.type || '').toLowerCase() === 'header' && String(component?.format || 'text').toLowerCase() !== 'text');
+  const missingValue = fields.some((field) => !values[field.key]?.trim());
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-gray-950/40 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black text-gray-900">Send a saved message</h3><button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100"><X size={18} /></button></div>
+        <p className="mt-2 text-sm text-gray-500">Choose a ready-made message and fill in the requested details.</p>
+        {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-emerald-600" /></div> : error ? (
+          <div className="mt-5 rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">Saved messages could not be loaded. Please try again or ask an administrator for help.</div>
+        ) : (
           <>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
-            <div className={`flex items-center justify-end gap-1 mt-1 ${isSent ? 'opacity-70' : ''}`}>
-              <span className={`text-[10px] ${isSent ? 'text-emerald-100' : 'text-gray-400'}`}>{message.time}</span>
-              {isSent && (
-                message.read ? (
-                  <CheckCheck size={14} className="text-emerald-200" />
-                ) : (
-                  <Check size={14} className="text-emerald-200" />
-                )
-              )}
-            </div>
-          </>
-        )}
-
-        {message.type === 'image' && (
-          <>
-            <div className="rounded-lg overflow-hidden mb-2 bg-gray-100 aspect-video flex items-center justify-center">
-              <ImageIcon size={32} className="text-gray-300" />
-            </div>
-            {message.text && <p className="text-sm leading-relaxed">{message.text}</p>}
-            <div className={`flex items-center justify-end gap-1 mt-1 ${isSent ? 'opacity-70' : ''}`}>
-              <span className={`text-[10px] ${isSent ? 'text-emerald-100' : 'text-gray-400'}`}>{message.time}</span>
-              {isSent && (message.read ? <CheckCheck size={14} className="text-emerald-200" /> : <Check size={14} className="text-emerald-200" />)}
-            </div>
-          </>
-        )}
-
-        {message.type === 'document' && (
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center text-red-500">
-              <FileText size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{message.fileName}</p>
-              <p className={`text-[11px] ${isSent ? 'text-emerald-100' : 'text-gray-400'}`}>{message.fileSize}</p>
-            </div>
-            <div className={`flex items-center gap-1 ${isSent ? 'opacity-70' : ''}`}>
-              <span className={`text-[10px] ${isSent ? 'text-emerald-100' : 'text-gray-400'}`}>{message.time}</span>
-            </div>
-          </div>
-        )}
-
-        {message.type === 'voice' && (
-          <div className="flex items-center gap-3 min-w-[220px]">
-            <button
-              className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
-                isSent ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-600'
-              }`}
-            >
-              <Mic size={16} />
+            <label className="mt-5 block space-y-2 text-sm font-bold text-gray-700">
+              <span>Saved message</span>
+              <div className="relative">
+                <select value={selection} onChange={(event) => { setSelection(event.target.value); setValues({}); }} className="w-full appearance-none rounded-xl border border-gray-200 bg-white px-4 py-3 pr-10 outline-none focus:border-emerald-500">
+                  <option value="">Choose a saved message</option>
+                  {templates.map((template) => <option key={`${template.id}:${template.language}`} value={`${template.name}:${template.language}`}>{friendlySavedMessageName(template.name)}</option>)}
+                </select>
+                <ChevronDown size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              </div>
+            </label>
+            {fields.map((field) => (
+              <label key={field.key} className="mt-4 block space-y-2 text-sm font-bold text-gray-700">
+                <span>{field.label}</span>
+                <input value={values[field.key] || ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-emerald-500" />
+              </label>
+            ))}
+            {hasMediaHeader && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">This saved message needs a photo or video that cannot be added here. Please choose another one.</p>}
+            {!loading && templates.length === 0 && <p className="mt-5 rounded-xl bg-gray-50 p-4 text-sm text-gray-500">No saved messages are available yet.</p>}
+            <button type="button" disabled={!selected || missingValue || hasMediaHeader || pending} onClick={() => selected && onSend(selected, values)} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {pending && <Loader2 size={17} className="animate-spin" />} Send saved message
             </button>
-            <div className="flex-1 flex items-center gap-[2px] h-6">
-              {Array.from({ length: 14 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-[3px] rounded-full ${isSent ? 'bg-emerald-200' : 'bg-gray-300'}`}
-                  style={{ height: `${Math.random() * 16 + 4}px` }}
-                />
-              ))}
-            </div>
-            <span className={`text-[11px] shrink-0 ${isSent ? 'text-emerald-100' : 'text-gray-400'}`}>
-              {message.voiceDuration}
-            </span>
-          </div>
+          </>
         )}
       </div>
     </div>
   );
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-
 const WhatsApp: React.FC = () => {
-  const [contacts] = useState<ChatContact[]>(demoContacts);
+  const toast = useToastNotifications();
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [inputValue, setInputValue] = useState('');
-  const [showAttachMenu, setShowAttachMenu] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filter, setFilter] = useState<ContactFilter>('all');
+  const [text, setText] = useState('');
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showEmojiMenu, setShowEmojiMenu] = useState(false);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const shouldStickToBottom = useRef(true);
+  const previousContactId = useRef<string | null>(null);
 
-  const selectedContact = contacts.find((c) => c.id === selectedContactId) || null;
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
 
-  const filteredContacts = contacts.filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const contactsQuery = useWhatsAppContacts({ search: debouncedSearch, filter }, true);
+  const contacts = contactsQuery.data?.data || [];
+  const configured = contactsQuery.data?.configured ?? true;
+  const selectedContact = contacts.find((contact) => contact.id === selectedContactId) || null;
+  const messagesQuery = useWhatsAppMessages(selectedContactId, Boolean(selectedContactId));
+  const messages = messagesQuery.data?.data || [];
+  const templatesQuery = useWhatsAppTemplates(showTemplates);
+  const createConversation = useCreateWhatsAppConversation();
+  const markRead = useMarkWhatsAppConversationRead();
+  const sendText = useSendWhatsAppMessage();
+  const sendMedia = useSendWhatsAppMediaMessage();
+  const sendTemplate = useSendWhatsAppTemplate();
+  const sending = sendText.isPending || sendMedia.isPending || sendTemplate.isPending;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedContactId]);
+    const container = messagesRef.current;
+    if (!container) return;
+    const contactChanged = previousContactId.current !== selectedContactId;
+    if (contactChanged || shouldStickToBottom.current) container.scrollTop = container.scrollHeight;
+    previousContactId.current = selectedContactId;
+  }, [selectedContactId, messages.length, messages[messages.length - 1]?.status]);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 128)}px`;
+    if (selectedContact && selectedContact.unreadCount > 0 && !markRead.isPending) markRead.mutate(selectedContact.id);
+  }, [selectedContact?.id, selectedContact?.unreadCount]);
+
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+  }, [text]);
+
+  const submitText = async () => {
+    const body = text.trim();
+    if (!selectedContactId || !body || sendText.isPending) return;
+    try {
+      await sendText.mutateAsync({ contactId: selectedContactId, text: body });
+      setText(''); shouldStickToBottom.current = true;
+    } catch (error) {
+      toast.error(friendlyError(error, 'Could not send the message. Please try again.'));
     }
-  }, [inputValue]);
-
-  const openChat = (id: string) => {
-    setSelectedContactId(id);
   };
 
-  const closeChat = () => {
-    setSelectedContactId(null);
+  const selectFile = async (file: File | undefined) => {
+    setShowAttachmentMenu(false);
+    if (!file || !selectedContactId) return;
+    if (file.size > 16 * 1024 * 1024) { toast.error('Select a file smaller than 16 MB.'); return; }
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
+      await sendMedia.mutateAsync({ contactId: selectedContactId, dataUrl, fileName: file.name, mimeType: file.type || 'application/octet-stream' });
+      shouldStickToBottom.current = true;
+    } catch (error) {
+      toast.error(friendlyError(error, 'Could not send the attachment. Please try again.'));
+    } finally {
+      if (imageInputRef.current) imageInputRef.current.value = '';
+      if (documentInputRef.current) documentInputRef.current.value = '';
+    }
   };
 
-  // ─── Chat List Panel ──────────────────────────────────────────────────────
+  const startConversation = async (phoneNumber: string, name: string) => {
+    try {
+      const contact = await createConversation.mutateAsync({ phoneNumber, name: name.trim() || undefined });
+      setSelectedContactId(contact.id); setShowNewChat(false); shouldStickToBottom.current = true;
+    } catch (error) { toast.error(friendlyError(error, 'Could not start the conversation. Please try again.')); }
+  };
 
-  const chatListPanel = (
-    <div className="flex flex-col h-full bg-white">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-emerald-700 text-white px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-bold">Chats</h1>
+  const submitTemplate = async (template: WhatsAppTemplate, values: Record<string, string>) => {
+    if (!selectedContactId) return;
+    const fields = templateVariableFields(template);
+    const grouped = new Map<number, { type: string; parameters: Array<{ type: 'text'; text: string }> }>();
+    fields.forEach((field) => {
+      const group = grouped.get(field.componentIndex) || { type: field.componentType, parameters: [] };
+      group.parameters.push({ type: 'text', text: values[field.key].trim() }); grouped.set(field.componentIndex, group);
+    });
+    try {
+      await sendTemplate.mutateAsync({ contactId: selectedContactId, templateName: template.name, languageCode: template.language, components: Array.from(grouped.values()) });
+      setShowTemplates(false); shouldStickToBottom.current = true;
+    } catch (error) { toast.error(friendlyError(error, 'Could not send the saved message. Please try again.')); }
+  };
+
+  const listPanel = (
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      <div className="shrink-0 bg-emerald-700 px-4 pb-3 pt-4 text-white">
+        <div className="mb-3 flex items-center justify-between">
+          <div><h1 className="text-lg font-black">WhatsApp</h1><p className="text-[11px] font-medium text-emerald-100">Customer conversations</p></div>
           <div className="flex items-center gap-1">
-            <button className="p-2 hover:bg-emerald-600 rounded-full transition-colors">
-              <Edit3 size={18} />
-            </button>
-            <button className="p-2 hover:bg-emerald-600 rounded-full transition-colors">
-              <MoreVertical size={18} />
-            </button>
+            <button onClick={() => contactsQuery.refetch()} className="rounded-full p-2 hover:bg-emerald-600" aria-label="Refresh chats"><RefreshCw size={18} className={contactsQuery.isFetching ? 'animate-spin' : ''} /></button>
+            <button onClick={() => setShowNewChat(true)} className="rounded-full p-2 hover:bg-emerald-600" aria-label="New chat"><Plus size={20} /></button>
           </div>
         </div>
-        {/* Search */}
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-300" />
-          <input
-            type="text"
-            placeholder="Search or start a new chat"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-emerald-600/60 text-white placeholder-emerald-300 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:bg-emerald-600 transition-colors"
-          />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-200" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats or numbers" className="w-full rounded-lg bg-emerald-600/70 py-2 pl-10 pr-4 text-sm text-white outline-none placeholder:text-emerald-200 focus:bg-emerald-600" />
         </div>
       </div>
-
-      {/* Filter chips */}
-      <div className="flex gap-2 px-4 py-2 border-b border-gray-100">
-        <button className="px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-full">
-          All
-        </button>
-        <button className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
-          Unread
-        </button>
-        <button className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
-          Groups
-        </button>
+      <div className="flex shrink-0 gap-2 border-b border-gray-100 px-4 py-2">
+        {(['all', 'unread'] as ContactFilter[]).map((value) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${filter === value ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{value}</button>)}
       </div>
-
-      {/* Contact list */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredContacts.map((contact) => {
-          const isActive = contact.id === selectedContactId;
-          return (
-            <button
-              key={contact.id}
-              onClick={() => openChat(contact.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
-                isActive ? 'bg-emerald-50 border-l-4 border-emerald-600' : ''
-              }`}
-            >
-              <AvatarCircle name={contact.name} initials={contact.initials} online={contact.online} />
-              <div className="flex-1 min-w-0 border-b border-gray-50 pb-3">
-                <div className="flex items-center justify-between mb-0.5">
-                  <h3 className="text-sm font-semibold text-gray-900 truncate">{contact.name}</h3>
-                  <span className={`text-[11px] shrink-0 ${contact.unread > 0 ? 'text-emerald-600 font-bold' : 'text-gray-400'}`}>
-                    {contact.lastTime}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 min-w-0 flex-1">
-                    {contact.typing ? (
-                      <span className="text-sm text-emerald-600 font-medium flex items-center gap-1">
-                        typing <TypingDots />
-                      </span>
-                    ) : (
-                      <p className="text-sm text-gray-500 truncate">{contact.lastMessage}</p>
-                    )}
-                  </div>
-                  {contact.unread > 0 && (
-                    <span className="ml-2 w-5 h-5 bg-emerald-600 text-white text-[11px] font-bold rounded-full flex items-center justify-center shrink-0">
-                      {contact.unread}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {contactsQuery.isPending ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="flex animate-pulse gap-3 px-4 py-3"><div className="h-11 w-11 rounded-full bg-gray-100" /><div className="flex-1"><div className="mt-1 h-3 w-1/2 rounded bg-gray-100" /><div className="mt-3 h-3 w-4/5 rounded bg-gray-100" /></div></div>) : contactsQuery.isError ? (
+          <div className="p-6 text-center"><AlertCircle className="mx-auto text-red-400" /><p className="mt-3 text-sm font-bold text-gray-700">Could not load chats</p><p className="mt-1 text-xs text-red-600">Please try again. If it still does not work, ask an administrator for help.</p></div>
+        ) : contacts.length === 0 ? (
+          <div className="flex h-full min-h-56 flex-col items-center justify-center px-8 text-center"><MessageSquare size={36} className="text-gray-200" /><p className="mt-4 text-sm font-bold text-gray-700">No conversations yet</p><p className="mt-1 text-xs leading-relaxed text-gray-400">New messages will appear here. You can also start a chat with a customer.</p></div>
+        ) : contacts.map((contact) => (
+          <button key={contact.id} onClick={() => { setSelectedContactId(contact.id); shouldStickToBottom.current = true; }} className={`flex w-full items-center gap-3 border-b border-gray-50 px-4 py-3 text-left hover:bg-gray-50 ${selectedContactId === contact.id ? 'bg-emerald-50' : ''}`}>
+            <ContactAvatar contact={contact} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-gray-900">{contact.name}</h3><span className={`shrink-0 text-[10px] ${contact.unreadCount ? 'font-bold text-emerald-600' : 'text-gray-400'}`}>{formatTime(contact.lastMessageAt)}</span></div>
+              <div className="mt-1 flex items-center justify-between gap-2"><p className="truncate text-xs text-gray-500">{contact.lastMessageType === 'template' ? 'Saved message' : (contact.lastMessagePreview || contact.phoneNumber)}</p>{contact.unreadCount > 0 && <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white">{contact.unreadCount > 99 ? '99+' : contact.unreadCount}</span>}</div>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
 
-  // ─── Chat Area ────────────────────────────────────────────────────────────
-
-  const chatArea = selectedContact ? (
-    <div className="flex flex-col h-full bg-gray-50">
-      {/* Chat header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-3 py-2 flex items-center gap-3 shadow-sm">
-        {/* Back button - mobile only */}
-        <button
-          onClick={closeChat}
-          className="md:hidden p-1.5 hover:bg-gray-100 rounded-full transition-colors text-emerald-700"
-        >
-          <ArrowLeft size={20} />
-        </button>
-
-        <AvatarCircle name={selectedContact.name} initials={selectedContact.initials} online={selectedContact.online} />
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-bold text-gray-900 truncate">{selectedContact.name}</h2>
-          <p className="text-[11px] text-emerald-600 font-medium">
-            {selectedContact.online ? 'online' : 'offline'}
-          </p>
-        </div>
-        <div className="flex items-center gap-1">
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
-            <Video size={18} />
-          </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
-            <Phone size={18} />
-          </button>
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
-            <MoreVertical size={18} />
-          </button>
-        </div>
+  const chatPanel = selectedContactId ? (
+    <div className="flex h-full min-h-0 flex-col bg-[#efeae2]">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm">
+        <button onClick={() => setSelectedContactId(null)} className="rounded-full p-2 text-emerald-700 hover:bg-gray-100 md:hidden"><ArrowLeft size={20} /></button>
+        {selectedContact ? <ContactAvatar contact={selectedContact} small /> : <div className="h-9 w-9 animate-pulse rounded-full bg-gray-100" />}
+        <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900">{selectedContact?.name || messagesQuery.data?.contact.name || 'WhatsApp contact'}</h2><p className="truncate text-[11px] text-gray-500">+{selectedContact?.phoneNumber || messagesQuery.data?.contact.phoneNumber || ''}</p></div>
+        <button onClick={() => setShowTemplates(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">Saved message</button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {/* Date divider */}
-        <div className="flex justify-center my-2">
-          <span className="px-3 py-1 bg-white text-gray-500 text-[11px] font-medium rounded-full shadow-sm border border-gray-100">
-            TODAY
-          </span>
-        </div>
-        {selectedContact.messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-        <div ref={messagesEndRef} />
+      <div ref={messagesRef} onScroll={(event) => { const element = event.currentTarget; shouldStickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120; }} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
+        {messagesQuery.isPending ? <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-emerald-600" /></div> : messagesQuery.isError ? <div className="mx-auto mt-8 max-w-md rounded-xl bg-white p-5 text-center shadow-sm"><AlertCircle className="mx-auto text-red-400" /><p className="mt-2 text-sm font-bold text-red-700">Messages could not be loaded. Please try again.</p></div> : messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center"><div className="max-w-sm rounded-xl bg-white/90 p-5 text-center shadow-sm"><p className="text-sm font-bold text-gray-800">No messages in this conversation</p><p className="mt-1 text-xs leading-relaxed text-gray-500">Send a message to start the conversation.</p></div></div>
+        ) : (
+          <div className="space-y-2">
+            {messages.map((message, index) => {
+              const label = messageDateLabel(message.messageAt);
+              const previousLabel = index > 0 ? messageDateLabel(messages[index - 1].messageAt) : '';
+              return <React.Fragment key={message.id}>{label !== previousLabel && <div className="flex justify-center py-2"><span className="rounded-lg bg-white/90 px-3 py-1 text-[10px] font-bold text-gray-500 shadow-sm">{label}</span></div>}<MessageBubble message={message} /></React.Fragment>;
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Input bar */}
-      <div className="bg-white border-t border-gray-100 p-3">
+      <div className="relative shrink-0 border-t border-gray-200 bg-white px-3 py-2">
+        <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={(event) => selectFile(event.target.files?.[0])} />
+        <input ref={documentInputRef} type="file" className="hidden" onChange={(event) => selectFile(event.target.files?.[0])} />
+        {showAttachmentMenu && <div className="absolute bottom-16 left-3 z-20 w-48 rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl"><button onClick={() => imageInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"><ImageIcon size={17} className="text-purple-500" />Photo, video or audio</button><button onClick={() => documentInputRef.current?.click()} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"><FileText size={17} className="text-blue-500" />Document</button></div>}
+        {showEmojiMenu && <div className="absolute bottom-16 left-12 z-20 grid w-64 grid-cols-6 gap-1 rounded-xl border border-gray-100 bg-white p-3 shadow-xl">{EMOJIS.map((emoji) => <button key={emoji} onClick={() => { setText((current) => current + emoji); setShowEmojiMenu(false); textareaRef.current?.focus(); }} className="rounded p-1 text-xl hover:bg-gray-100">{emoji}</button>)}</div>}
         <div className="flex items-end gap-2">
-          {/* Attachment menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShowAttachMenu(!showAttachMenu)}
-              className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
-            >
-              <Paperclip size={18} />
-            </button>
-            {showAttachMenu && (
-              <div className="absolute bottom-14 left-0 bg-white border border-gray-100 shadow-lg rounded-xl p-1.5 w-44 z-20">
-                <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm text-gray-700 transition-colors">
-                  <ImageIcon size={16} className="text-purple-500" />
-                  Photos & Videos
-                </button>
-                <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm text-gray-700 transition-colors">
-                  <Camera size={16} className="text-pink-500" />
-                  Camera
-                </button>
-                <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm text-gray-700 transition-colors">
-                  <FileText size={16} className="text-blue-500" />
-                  Document
-                </button>
-                <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 rounded-lg text-sm text-gray-700 transition-colors">
-                  <Users size={16} className="text-emerald-500" />
-                  Contact
-                </button>
-              </div>
-            )}
+          <button disabled={sending} onClick={() => { setShowAttachmentMenu((value) => !value); setShowEmojiMenu(false); }} className="rounded-full p-2.5 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><Paperclip size={19} /></button>
+          <button disabled={sending} onClick={() => { setShowEmojiMenu((value) => !value); setShowAttachmentMenu(false); }} className="rounded-full p-2.5 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><Smile size={19} /></button>
+          <div className="flex min-h-10 min-w-0 flex-1 items-end rounded-2xl bg-gray-50 px-3 py-2 ring-1 ring-gray-100 focus-within:ring-emerald-300">
+            <textarea ref={textareaRef} rows={1} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitText(); } }} disabled={sending} placeholder="Type a message" className="max-h-[120px] min-h-5 w-full resize-none bg-transparent text-sm leading-5 outline-none disabled:opacity-50" />
           </div>
-
-          {/* Input field */}
-          <div className="flex-1 bg-gray-50 rounded-2xl flex items-end px-3 py-2 border border-transparent focus-within:border-emerald-300 transition-colors">
-            <button className="p-1 text-gray-400 hover:text-emerald-600 transition-colors shrink-0 mb-0.5">
-              <Smile size={18} />
-            </button>
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Type a message..."
-              rows={1}
-              className="flex-1 bg-transparent border-none focus:ring-0 text-sm resize-none py-1 px-2 max-h-32 outline-none"
-            />
-          </div>
-
-          {/* Send / Mic button */}
-          <button
-            className={`p-2.5 rounded-full transition-all ${
-              inputValue.trim()
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
-                : 'bg-emerald-600 text-white hover:bg-emerald-700'
-            }`}
-          >
-            {inputValue.trim() ? <Send size={18} /> : <Mic size={18} />}
-          </button>
+          <button onClick={submitText} disabled={!text.trim() || sending} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}</button>
         </div>
       </div>
     </div>
   ) : (
-    /* Empty state when no chat selected - desktop only */
-    <div className="hidden md:flex flex-col items-center justify-center h-full bg-gray-50 text-center px-8">
-      <div className="w-64 h-64 rounded-full bg-emerald-50 flex items-center justify-center mb-6">
-        <div className="w-40 h-40 rounded-full bg-emerald-100 flex items-center justify-center">
-          <MessageSquare size={64} className="text-emerald-300" />
-        </div>
-      </div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-2">WhatsApp Web</h2>
-      <p className="text-sm text-gray-500 max-w-md">
-        Send and receive messages without keeping your phone online.
-        Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
-      </p>
+    <div className="hidden h-full flex-col items-center justify-center bg-gray-50 px-8 text-center md:flex">
+      {!configured ? <><div className="flex h-28 w-28 items-center justify-center rounded-full bg-amber-50"><Settings size={42} className="text-amber-400" /></div><h2 className="mt-6 text-xl font-black text-gray-800">Set up WhatsApp</h2><p className="mt-2 max-w-md text-sm leading-relaxed text-gray-500">WhatsApp is not ready yet. Open settings to finish the setup.</p><Link to="/settings?tab=whatsapp" className="mt-5 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700">Open settings</Link></> : <><div className="flex h-32 w-32 items-center justify-center rounded-full bg-emerald-50"><MessageSquare size={52} className="text-emerald-300" /></div><h2 className="mt-6 text-xl font-black text-gray-800">WhatsApp conversations</h2><p className="mt-2 max-w-md text-sm leading-relaxed text-gray-500">Choose a conversation or start a new chat with a customer.</p></>}
     </div>
   );
 
-  // ─── Layout ───────────────────────────────────────────────────────────────
-
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-white overflow-hidden">
-      {/* Desktop: side-by-side layout */}
-      {/* Chat list - always visible on desktop, toggled on mobile */}
-      <div
-        className={`${
-          selectedContactId ? 'hidden md:flex' : 'flex'
-        } w-full md:w-[360px] md:min-w-[360px] md:max-w-[360px] border-r border-gray-100 flex-col shrink-0`}
-      >
-        {chatListPanel}
-      </div>
-
-      {/* Chat area - full width on mobile when chat selected, flex-1 on desktop */}
-      <div
-        className={`${
-          selectedContactId ? 'flex' : 'hidden md:flex'
-        } flex-1 flex-col min-w-0`}
-      >
-        {chatArea}
-      </div>
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-white">
+      <div className={`${selectedContactId ? 'hidden md:flex' : 'flex'} h-full min-h-0 w-full shrink-0 flex-col border-r border-gray-100 md:w-[360px] md:min-w-[360px]`}>{listPanel}</div>
+      <div className={`${selectedContactId ? 'flex' : 'hidden md:flex'} h-full min-h-0 min-w-0 flex-1 flex-col`}>{chatPanel}</div>
+      <NewConversationModal open={showNewChat} pending={createConversation.isPending} onClose={() => setShowNewChat(false)} onSubmit={startConversation} />
+      <TemplateModal open={showTemplates} templates={(templatesQuery.data?.data || []) as WhatsAppTemplate[]} loading={templatesQuery.isPending} error={templatesQuery.error?.message} pending={sendTemplate.isPending} onClose={() => setShowTemplates(false)} onSend={submitTemplate} />
     </div>
   );
 };

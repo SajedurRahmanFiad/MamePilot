@@ -39,13 +39,19 @@ const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({
   const { data: settings, isPending: settingsLoading } = useMetaAdsSettings(true);
 
   if (settingsLoading && !settings) {
-    const numericOnly = new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-    return <span className={className}>{numericOnly}</span>;
+    const loadingCode = unit === 'bdt' ? 'BDT' : (nativeCode || 'BDT');
+    return <span className={className}>{formatMetaAdsCurrency(amount, loadingCode)}</span>;
   }
 
   const adsCode = (nativeCode || settings?.displayCurrencyCode || 'BDT').toUpperCase();
-  // Prefer resolvedRateToBdt (computed from real-time rate + VAT when mode is vat_based)
-  const rateToBdt = settings?.resolvedRateToBdt ?? settings?.displayCurrencyRateToBdt ?? null;
+  const configuredCode = (settings?.displayCurrencyCode || 'BDT').toUpperCase();
+  // A saved rate belongs to the configured currency only. Applying it to a
+  // different account currency would display a plausible but false BDT value.
+  const rateToBdt = adsCode === 'BDT'
+    ? 1
+    : configuredCode === adsCode
+      ? settings?.resolvedRateToBdt ?? settings?.displayCurrencyRateToBdt ?? null
+      : null;
 
   let bdtAmount: number | null;
   let adsAmount: number | null;
@@ -77,6 +83,10 @@ const MetaAdsMoney: React.FC<MetaAdsMoneyProps> = ({
       className={`relative inline-block ${className}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
+      tabIndex={0}
+      aria-label={`${primaryText}${adsAmount != null && !missingRate ? `; ${formatMetaAdsCurrency(adsAmount, adsCode)}` : ''}`}
     >
       <span className={`cursor-help border-b border-dotted border-gray-300 ${missingRate && bdtAmount == null ? 'text-amber-700' : ''}`}>
         {primaryText}

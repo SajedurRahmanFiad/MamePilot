@@ -9,13 +9,14 @@ import { Button, Table, TableCell, IconButton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useVendorsPage, useSystemDefaults } from '../src/hooks/useQueries';
+import { useVendorsPage, useSystemDefaults, useVendorFilterOptions } from '../src/hooks/useQueries';
 import { useDeleteVendor } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { DEFAULT_PAGE_SIZE, fetchVendorById, getErrorMessage } from '../src/services/supabaseQueries';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const Vendors: React.FC = () => {
   const navigate = useNavigate();
@@ -48,8 +49,15 @@ const Vendors: React.FC = () => {
   const previousSearchQueryRef = React.useRef(searchQuery);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
   const { data: vendorsPage = { data: [], count: 0 }, isFetching } = useVendorsPage(effectivePage, pageSize, searchQuery, {
-    enabled: canLoadVendors,
-  });
+    name: nameFilter || undefined,
+    nameNot: nameNotFilter || undefined,
+    phone: phoneFilter || undefined,
+    phoneNot: phoneNotFilter || undefined,
+    address: addressFilter || undefined,
+    addressNot: addressNotFilter || undefined,
+    purchases: purchasesFilter || undefined,
+    payable: payableFilter || undefined,
+  }, { enabled: canLoadVendors });
   const handleRefreshVendors = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['vendors'], exact: false, type: 'active' });
   }, [queryClient]);
@@ -57,6 +65,10 @@ const Vendors: React.FC = () => {
   const total = vendorsPage.count || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const deleteVendorMutation = useDeleteVendor();
+  const { data: vendorFilterOpts } = useVendorFilterOptions();
+  const vendorNameOptions = useMemo(() => vendorFilterOpts?.names || [], [vendorFilterOpts]);
+  const vendorPhoneOptions = useMemo(() => vendorFilterOpts?.phones || [], [vendorFilterOpts]);
+  const vendorAddressOptions = useMemo(() => vendorFilterOpts?.addresses || [], [vendorFilterOpts]);
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;
@@ -89,60 +101,7 @@ const Vendors: React.FC = () => {
     }
   }, [shouldHydrateFromUrl, effectivePage, searchQuery, currentSearchParams, setSearchParams]);
 
-  const filteredVendors = useMemo(() => {
-    let filtered = vendors;
-
-    if (nameFilter) {
-      filtered = filtered.filter((v) => v.name?.toLowerCase().includes(nameFilter.toLowerCase()));
-    }
-    if (nameNotFilter) {
-      filtered = filtered.filter((v) => !v.name?.toLowerCase().includes(nameNotFilter.toLowerCase()));
-    }
-    if (phoneFilter) {
-      filtered = filtered.filter((v) => v.phone?.toLowerCase().includes(phoneFilter.toLowerCase()));
-    }
-    if (phoneNotFilter) {
-      filtered = filtered.filter((v) => !v.phone?.toLowerCase().includes(phoneNotFilter.toLowerCase()));
-    }
-    if (addressFilter) {
-      filtered = filtered.filter((v) => v.address?.toLowerCase().includes(addressFilter.toLowerCase()));
-    }
-    if (addressNotFilter) {
-      filtered = filtered.filter((v) => !v.address?.toLowerCase().includes(addressNotFilter.toLowerCase()));
-    }
-
-    // Numeric filters
-    if (purchasesFilter) {
-      const val = Number(purchasesFilter.value);
-      if (!isNaN(val)) {
-        filtered = filtered.filter((v) => {
-          switch (purchasesFilter.operator) {
-            case '=': return v.totalPurchases === val;
-            case '≠': return v.totalPurchases !== val;
-            case '<': return v.totalPurchases < val;
-            case '>': return v.totalPurchases > val;
-            default: return true;
-          }
-        });
-      }
-    }
-    if (payableFilter) {
-      const val = Number(payableFilter.value);
-      if (!isNaN(val)) {
-        filtered = filtered.filter((v) => {
-          switch (payableFilter.operator) {
-            case '=': return v.dueAmount === val;
-            case '≠': return v.dueAmount !== val;
-            case '<': return v.dueAmount < val;
-            case '>': return v.dueAmount > val;
-            default: return true;
-          }
-        });
-      }
-    }
-
-    return filtered;
-  }, [vendors, nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, purchasesFilter, payableFilter]);
+  const filteredVendors = vendors;
 
   const handleDelete = async (vendorId: string) => {
     if (!confirm('Move this vendor to the recycle bin? You can restore it later.')) return;
@@ -165,18 +124,21 @@ const Vendors: React.FC = () => {
     return [
       {
         type: 'Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
+        values: vendorNameOptions,
       },
       {
         type: 'Phone',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
+        values: vendorPhoneOptions,
       },
       {
         type: 'Address',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
+        values: vendorAddressOptions,
       },
       {
         type: 'Purchases',
@@ -191,9 +153,25 @@ const Vendors: React.FC = () => {
         allowCustomValue: true,
       },
     ];
-  }, []);
+  }, [vendorNameOptions, vendorPhoneOptions, vendorAddressOptions]);
 
-  const initialFilters = useMemo(() => [], []);
+  const initialFilters = useMemo(() => {
+    const filters: any[] = [];
+    const addText = (id: string, type: string, encoded: string, negative = false) => {
+      if (!encoded) return;
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      filters.push({ id, type, operator: contains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '='), value });
+    };
+    addText('name', 'Name', nameFilter);
+    addText('name-not', 'Name', nameNotFilter, true);
+    addText('phone', 'Phone', phoneFilter);
+    addText('phone-not', 'Phone', phoneNotFilter, true);
+    addText('address', 'Address', addressFilter);
+    addText('address-not', 'Address', addressNotFilter, true);
+    if (purchasesFilter) filters.push({ id: 'purchases', type: 'Purchases', ...purchasesFilter });
+    if (payableFilter) filters.push({ id: 'payable', type: 'Payable', ...payableFilter });
+    return filters;
+  }, [nameFilter, nameNotFilter, phoneFilter, phoneNotFilter, addressFilter, addressNotFilter, purchasesFilter, payableFilter]);
 
   return (
     <div className="space-y-6">
@@ -204,21 +182,22 @@ const Vendors: React.FC = () => {
             initialFilters={initialFilters}
             onApply={(appliedFilters) => {
               setPage(1);
+              const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
 
-              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '=');
-              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && f.operator === '≠');
-              setNameFilter(nameFilter?.value ?? '');
-              setNameNotFilter(nameNotFilter?.value ?? '');
+              const nameFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '=' || f.operator === 'contains'));
+              const nameNotFilter = appliedFilters.find((f) => f.type === 'Name' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setNameFilter(nameFilter ? encodeTextValue(nameFilter) : '');
+              setNameNotFilter(nameNotFilter ? encodeTextValue(nameNotFilter) : '');
 
-              const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '=');
-              const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && f.operator === '≠');
-              setPhoneFilter(phoneFilter?.value ?? '');
-              setPhoneNotFilter(phoneNotFilter?.value ?? '');
+              const phoneFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '=' || f.operator === 'contains'));
+              const phoneNotFilter = appliedFilters.find((f) => f.type === 'Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setPhoneFilter(phoneFilter ? encodeTextValue(phoneFilter) : '');
+              setPhoneNotFilter(phoneNotFilter ? encodeTextValue(phoneNotFilter) : '');
 
-              const addressFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '=');
-              const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && f.operator === '≠');
-              setAddressFilter(addressFilter?.value ?? '');
-              setAddressNotFilter(addressNotFilter?.value ?? '');
+              const addressFilter = appliedFilters.find((f) => f.type === 'Address' && (f.operator === '=' || f.operator === 'contains'));
+              const addressNotFilter = appliedFilters.find((f) => f.type === 'Address' && (f.operator === '≠' || f.operator === 'does not contain'));
+              setAddressFilter(addressFilter ? encodeTextValue(addressFilter) : '');
+              setAddressNotFilter(addressNotFilter ? encodeTextValue(addressNotFilter) : '');
 
               const purchasesFilter = appliedFilters.find((f) => f.type === 'Purchases');
               setPurchasesFilter(purchasesFilter ? { operator: purchasesFilter.operator, value: purchasesFilter.value } : null);

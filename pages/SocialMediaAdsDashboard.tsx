@@ -49,8 +49,9 @@ const MARKETING_RANGES: FilterRange[] = [
 
 const formatNumber = (value?: number | null) =>
   new Intl.NumberFormat('en-BD').format(Number(value || 0));
-const formatMetric = (value: number, digits: number = 2) =>
-  Number.isFinite(value) ? value.toFixed(digits) : '0.00';
+const formatMetric = (value?: number | null, digits: number = 2) =>
+  value != null && Number.isFinite(value) ? value.toFixed(digits) : '—';
+const formatRoas = (value?: number | null) => value == null ? '—' : `${formatMetric(value, 2)}x`;
 const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 
 const toDateOnly = (value?: string | null) => {
@@ -132,8 +133,8 @@ const toRangeWindow = (filterRange: FilterRange, customDates: { from: string; to
   return { from: toLocalDate(start), to: toLocalDate(end) };
 };
 
-const pctChange = (current: number, previous: number) =>
-  previous > 0 ? ((current - previous) / previous) * 100 : 0;
+const pctChange = (current: number, previous: number): number | null =>
+  previous > 0 ? ((current - previous) / previous) * 100 : null;
 
 const SocialMediaAdsDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -141,6 +142,13 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const toast = useToastNotifications();
   const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
+  const handleFilterRangeChange = (nextRange: FilterRange) => {
+    if (nextRange === 'Custom' && !customDates.from && !customDates.to) {
+      const today = toLocalDate(new Date());
+      setCustomDates({ from: today, to: today });
+    }
+    setFilterRange(nextRange);
+  };
 
   const { from, to } = useMemo(() => toRangeWindow(filterRange, customDates), [filterRange, customDates]);
   const { data, isPending, isFetching, error, refetch } = useMarketingDashboard({ from, to });
@@ -202,54 +210,59 @@ const SocialMediaAdsDashboard: React.FC = () => {
 
   const handleSync = useCallback(async () => {
     if (cooldownRemaining > 0 || syncMutation.isPending) return;
-    const toastId = toast.loading('Starting Meta Ads sync...');
+    const toastId = toast.loading('Refreshing Meta Ads...');
     try {
       const result = await syncMutation.mutateAsync();
       if (result?.ok === false && result?.cooldownRemainingSeconds > 0) {
         applyCooldown(result.cooldownRemainingSeconds);
-        toast.update(toastId, 'Sync rate-limited. Please wait ' + result.cooldownRemainingSeconds + 's.', 'error');
+        toast.update(toastId, 'Please wait ' + result.cooldownRemainingSeconds + ' seconds before refreshing again.', 'error');
       } else if (result?.started) {
         applyCooldown(120);
-        toast.update(toastId, 'Sync started. Data will refresh automatically when ready.', 'success');
+        toast.update(toastId, 'Your latest Meta Ads results will appear here shortly.', 'success');
       } else {
         applyCooldown(120);
-        toast.update(toastId, 'Meta Ads synced successfully.', 'success');
+        toast.update(toastId, 'Meta Ads results are up to date.', 'success');
         await queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
         await refetch();
         await refetchSyncStatus();
       }
     } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to sync Meta Ads.', 'error');
+      toast.update(toastId, err instanceof Error ? err.message : 'Could not refresh Meta Ads results. Please try again.', 'error');
     }
   }, [cooldownRemaining, syncMutation, toast, refetch, refetchSyncStatus, applyCooldown, queryClient]);
 
   const adsCode = data?.currency?.adsCode || 'BDT';
   const rateToBdt = data?.currency?.rateToBdt ?? null;
+  const monetaryComparable = data?.currency?.comparable ?? (
+    !data?.currency?.mixedCurrencies && (adsCode === 'BDT' || (rateToBdt != null && rateToBdt > 0))
+  );
 
   const toBdt = (adsAmount: number) => convertAdsAmountToBdt(adsAmount, adsCode, rateToBdt);
-  const spendBdt = toBdt(data?.kpis?.spend ?? 0);
-  const prevSpendBdt = toBdt(data?.previousKpis?.spend ?? 0);
+  const spendBdt = monetaryComparable ? toBdt(data?.kpis?.spend ?? 0) : null;
+  const prevSpendBdt = monetaryComparable && data?.currency?.previousComparable !== false
+    ? toBdt(data?.previousKpis?.spend ?? 0)
+    : null;
   const bookedRevenue = data?.kpis?.bookedRevenue ?? 0;
   const prevBooked = data?.previousKpis?.bookedRevenue ?? 0;
   const realizedRevenue = data?.kpis?.deliveredRevenue ?? 0;
   const prevRealized = data?.previousKpis?.deliveredRevenue ?? 0;
 
-  const bookedRoas = spendBdt != null && spendBdt > 0 ? bookedRevenue / spendBdt : 0;
-  const realizedRoas = spendBdt != null && spendBdt > 0 ? realizedRevenue / spendBdt : 0;
+  const bookedRoas = spendBdt != null && spendBdt > 0 ? bookedRevenue / spendBdt : null;
+  const realizedRoas = spendBdt != null && spendBdt > 0 ? realizedRevenue / spendBdt : null;
   const prevBookedRoas =
-    prevSpendBdt != null && prevSpendBdt > 0 ? prevBooked / prevSpendBdt : 0;
+    prevSpendBdt != null && prevSpendBdt > 0 ? prevBooked / prevSpendBdt : null;
   const cpaBdt =
     spendBdt != null && (data?.kpis?.purchases ?? 0) > 0
       ? spendBdt / (data?.kpis?.purchases ?? 1)
-      : 0;
+      : null;
   const costPerDeliveredBdt =
     spendBdt != null && (data?.kpis?.deliveredCount ?? 0) > 0
       ? spendBdt / (data?.kpis?.deliveredCount ?? 1)
-      : 0;
-  const cpcBdt = toBdt(data?.kpis?.cpc ?? 0);
-  const cpmBdt = toBdt(data?.kpis?.cpm ?? 0);
+      : null;
+  const cpcBdt = monetaryComparable && (data?.kpis?.clicks ?? 0) > 0 ? toBdt(data?.kpis?.cpc ?? 0) : null;
+  const cpmBdt = monetaryComparable && (data?.kpis?.impressions ?? 0) > 0 ? toBdt(data?.kpis?.cpm ?? 0) : null;
 
-  const spendChange = pctChange(spendBdt ?? 0, prevSpendBdt ?? 0);
+  const spendChange = spendBdt != null && prevSpendBdt != null ? pctChange(spendBdt, prevSpendBdt) : null;
   const revenueChange = pctChange(bookedRevenue, prevBooked);
   const comparisonLabel =
     filterRange === 'Today'
@@ -266,34 +279,38 @@ const SocialMediaAdsDashboard: React.FC = () => {
 
   const chartData = useMemo(() => {
     return (data?.series || []).map((point) => {
-      const daySpendBdt = convertAdsAmountToBdt(point.spend, adsCode, rateToBdt) ?? 0;
+      const daySpendBdt = monetaryComparable ? convertAdsAmountToBdt(point.spend, adsCode, rateToBdt) : null;
       return {
         ...point,
         day: point.date,
         spendBdt: daySpendBdt,
-        bookedRoas: daySpendBdt > 0 ? point.bookedRevenue / daySpendBdt : 0,
-        realizedRoas: daySpendBdt > 0 ? point.deliveredRevenue / daySpendBdt : 0,
+        bookedRoas: daySpendBdt != null && daySpendBdt > 0 ? point.bookedRevenue / daySpendBdt : null,
+        realizedRoas: daySpendBdt != null && daySpendBdt > 0 ? point.deliveredRevenue / daySpendBdt : null,
       };
     });
-  }, [data?.series, adsCode, rateToBdt]);
+  }, [data?.series, adsCode, rateToBdt, monetaryComparable]);
 
   const campaigns = useMemo(() => {
     return (data?.campaigns || []).map((row) => {
-      const rowSpendBdt = convertAdsAmountToBdt(row.spend, adsCode, rateToBdt) ?? 0;
+      const campaignCurrency = row.currency || adsCode;
+      const rowSpendBdt = !row.mixedCurrencies && campaignCurrency === adsCode && monetaryComparable
+        ? convertAdsAmountToBdt(row.spend, campaignCurrency, rateToBdt)
+        : null;
       return {
         ...row,
+        campaignCurrency,
         spendBdt: rowSpendBdt,
-        bookedRoas: rowSpendBdt > 0 ? row.bookedRevenue / rowSpendBdt : 0,
-        realizedRoas: rowSpendBdt > 0 ? row.deliveredRevenue / rowSpendBdt : 0,
+        bookedRoas: rowSpendBdt != null && rowSpendBdt > 0 ? row.bookedRevenue / rowSpendBdt : null,
+        realizedRoas: rowSpendBdt != null && rowSpendBdt > 0 ? row.deliveredRevenue / rowSpendBdt : null,
         ctr: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
-        cpaBdt: row.purchases > 0 && rowSpendBdt > 0 ? rowSpendBdt / row.purchases : 0,
+        cpaBdt: row.purchases > 0 && rowSpendBdt != null && rowSpendBdt > 0 ? rowSpendBdt / row.purchases : null,
         deliveryRate:
-          row.purchases - row.cancelledCount > 0
-            ? (row.deliveredCount / (row.purchases - row.cancelledCount)) * 100
+          row.deliveredCount + row.returnedCount > 0
+            ? (row.deliveredCount / (row.deliveredCount + row.returnedCount)) * 100
             : 0,
       };
     });
-  }, [data?.campaigns, adsCode, rateToBdt]);
+  }, [data?.campaigns, adsCode, rateToBdt, monetaryComparable]);
 
   const bestCampaigns = useMemo(
     () => [...campaigns].sort((a, b) => b.bookedRevenue - a.bookedRevenue).slice(0, 5),
@@ -302,8 +319,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const worstCampaigns = useMemo(() => {
     const minSpendBdt = 1; // ignore near-zero spend noise
     return [...campaigns]
-      .filter((c) => c.spendBdt >= minSpendBdt)
-      .sort((a, b) => a.bookedRoas - b.bookedRoas || b.spendBdt - a.spendBdt)
+      .filter((c) => c.spendBdt != null && c.spendBdt >= minSpendBdt && c.bookedRoas != null)
+      .sort((a, b) => (a.bookedRoas ?? 0) - (b.bookedRoas ?? 0) || (b.spendBdt ?? 0) - (a.spendBdt ?? 0))
       .slice(0, 5);
   }, [campaigns]);
 
@@ -311,21 +328,22 @@ const SocialMediaAdsDashboard: React.FC = () => {
     const k = data?.kpis;
     if (!k) return [];
     return [
-      { stage: 'Placed', count: k.purchases, value: k.bookedRevenue },
-      { stage: 'In pipeline', count: k.pipelineCount, value: k.pipelineValue },
+      { stage: 'Attributed', count: k.purchases, value: 0 },
+      { stage: 'Open', count: k.pipelineCount, value: k.pipelineValue },
       { stage: 'Delivered', count: k.deliveredCount, value: k.deliveredRevenue },
       { stage: 'Returned', count: k.returnedCount, value: k.returnedRevenue },
       { stage: 'Cancelled', count: k.cancelledCount, value: 0 },
     ];
   }, [data?.kpis]);
+  const hasRoasTrend = chartData.some((point) => point.bookedRoas != null || point.realizedRoas != null);
 
   const moneyTooltipFormatter = (value: number, dataKey?: string) => {
     const key = String(dataKey || '');
     if (key === 'purchases' || key === 'deliveredCount' || key === 'count') {
-      return [formatNumber(value), key === 'purchases' ? 'Purchases' : key];
+      return [formatNumber(value), key === 'purchases' ? 'Attributed orders' : key];
     }
     if (key === 'bookedRoas' || key === 'realizedRoas') {
-      return [`${formatMetric(Number(value), 2)}x`, key === 'bookedRoas' ? 'Booked ROAS' : 'Realized ROAS'];
+      return [`${formatMetric(Number(value), 2)}x`, key === 'bookedRoas' ? 'Order Value ROAS' : 'Realized ROAS'];
     }
     return [formatMetaAdsCurrency(Number(value), 'BDT'), key];
   };
@@ -347,22 +365,26 @@ const SocialMediaAdsDashboard: React.FC = () => {
         <div className="space-y-2">
           <FilterBar
             filterRange={filterRange}
-            setFilterRange={setFilterRange}
+            setFilterRange={handleFilterRangeChange}
             customDates={customDates}
             setCustomDates={setCustomDates}
             compact
             ranges={MARKETING_RANGES}
           />
           <p className="max-w-3xl text-xs font-medium text-gray-500">
-            Money is shown in <span className="font-bold text-gray-700">৳ BDT</span>
-            {adsCode !== 'BDT' ? (
+            {data?.currency?.mixedCurrencies ? (
               <>
-                {' '}
-                — hover amounts for <span className="font-bold text-gray-700">{adsCode}</span> (ads currency).
+                Spend spans <span className="font-bold text-gray-700">{data.currency.currencies.join(', ')}</span>, so combined cost and ROAS are hidden.
               </>
-            ) : null}{' '}
-            Purchases &amp; revenue come from app orders with a source ad. ROAS needs multi-day windows;
-            same-day is directional only because delivery lags spend.
+            ) : (
+              <>
+                Money is shown in <span className="font-bold text-gray-700">৳ BDT</span>
+                {adsCode !== 'BDT' ? (
+                  <> — hover amounts for <span className="font-bold text-gray-700">{adsCode}</span> (ads currency).</>
+                ) : null}
+              </>
+            )}{' '}
+            Attributed order value uses current statuses and excludes cancelled/returned orders. Same-day ROAS is directional because delivery lags spend.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -421,8 +443,16 @@ const SocialMediaAdsDashboard: React.FC = () => {
       )}
 
       {isPending && !data ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-10 text-center text-sm font-semibold text-gray-500">
-          Loading marketing metrics…
+        <div className="space-y-4" aria-label="Loading marketing metrics">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="h-32 animate-pulse rounded-xl border border-gray-100 bg-white" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="h-80 animate-pulse rounded-xl border border-gray-100 bg-white" />
+            <div className="h-80 animate-pulse rounded-xl border border-gray-100 bg-white" />
+          </div>
         </div>
       ) : (
         <>
@@ -431,56 +461,58 @@ const SocialMediaAdsDashboard: React.FC = () => {
             <StatCard
               title="Ad Spend"
               value={
-                <MetaAdsMoney amount={data?.kpis?.spend ?? 0} nativeCode={adsCode} unit="ads" />
+                monetaryComparable
+                  ? <MetaAdsMoney amount={data?.kpis?.spend ?? 0} nativeCode={adsCode} unit="ads" />
+                  : '—'
               }
               icon={<BarChart3 size={18} />}
               variant="primary"
               subtitle={
-                prevSpendBdt != null && prevSpendBdt > 0
+                spendChange != null
                   ? `${formatPercent(spendChange)} vs ${comparisonLabel}`
-                  : 'No previous data'
+                  : 'No comparable previous data'
               }
-              subtitleTone={spendChange >= 0 ? 'positive' : 'negative'}
+              subtitleTone={spendChange == null ? 'neutral' : spendChange >= 0 ? 'positive' : 'negative'}
             />
             <StatCard
-              title="Booked Revenue"
+              title="Attributed Order Value"
               value={<MetaAdsMoney amount={bookedRevenue} unit="bdt" nativeCode={adsCode} />}
               icon={<TrendingUp size={18} />}
               variant="success"
-              subtitle={`Orders placed · ${formatPercent(revenueChange)} vs ${comparisonLabel}`}
-              subtitleTone={revenueChange >= 0 ? 'positive' : 'negative'}
+              subtitle={revenueChange == null ? 'Open + delivered · no previous data' : `Open + delivered · ${formatPercent(revenueChange)} vs ${comparisonLabel}`}
+              subtitleTone={revenueChange == null ? 'neutral' : revenueChange >= 0 ? 'positive' : 'negative'}
             />
             <StatCard
-              title="Booked ROAS"
-              value={`${formatMetric(bookedRoas, 2)}x`}
-              icon={bookedRoas >= 2 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-              variant={bookedRoas >= 1 ? 'success' : 'warning'}
-              subtitle={`Prev ${formatMetric(prevBookedRoas, 2)}x · orders / spend`}
+              title="Order Value ROAS"
+              value={formatRoas(bookedRoas)}
+              icon={bookedRoas != null && bookedRoas >= 2 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+              variant="neutral"
+              subtitle={`Prev ${formatRoas(prevBookedRoas)} · non-failed order value ÷ spend`}
             />
             <StatCard
               title="Realized Revenue"
               value={<MetaAdsMoney amount={realizedRevenue} unit="bdt" nativeCode={adsCode} />}
               icon={<Package size={18} />}
               variant="info"
-              subtitle={`${formatNumber(data?.kpis?.deliveredCount)} delivered · ROAS ${formatMetric(realizedRoas, 2)}x`}
+              subtitle={`${formatNumber(data?.kpis?.deliveredCount)} delivered · ROAS ${formatRoas(realizedRoas)}`}
             />
             <StatCard
               title="Realized ROAS"
-              value={`${formatMetric(realizedRoas, 2)}x`}
+              value={formatRoas(realizedRoas)}
               icon={<Trophy size={18} />}
               variant="neutral"
               subtitle="Delivered value ÷ spend (matures over time)"
             />
             <StatCard
               title="Cost / Order"
-              value={<MetaAdsMoney amount={cpaBdt} unit="bdt" nativeCode={adsCode} />}
+              value={cpaBdt == null ? '—' : <MetaAdsMoney amount={cpaBdt} unit="bdt" nativeCode={adsCode} />}
               icon={<BarChart3 size={18} />}
               variant="neutral"
-              subtitle={`${formatNumber(data?.kpis?.purchases)} purchases`}
+              subtitle={`${formatNumber(data?.kpis?.purchases)} attributed orders`}
             />
             <StatCard
               title="Cost / Delivered"
-              value={<MetaAdsMoney amount={costPerDeliveredBdt} unit="bdt" nativeCode={adsCode} />}
+              value={costPerDeliveredBdt == null ? '—' : <MetaAdsMoney amount={costPerDeliveredBdt} unit="bdt" nativeCode={adsCode} />}
               icon={<Truck size={18} />}
               variant="neutral"
               subtitle={`Delivery rate ${formatMetric(data?.kpis?.deliveryRate ?? 0, 1)}%`}
@@ -501,18 +533,18 @@ const SocialMediaAdsDashboard: React.FC = () => {
           {/* Volume & Meta engagement */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              title="Purchases"
+              title="Attributed Orders"
               value={formatNumber(data?.kpis?.purchases)}
               icon={<Trophy size={18} />}
               variant="info"
               subtitle={`${formatNumber(data?.kpis?.returnedCount)} returned · ${formatNumber(data?.kpis?.cancelledCount)} cancelled`}
             />
             <StatCard
-              title="Link Clicks"
+              title="Meta Clicks"
               value={formatNumber(data?.kpis?.clicks)}
               icon={<MousePointerClick size={18} />}
               variant="secondary"
-              subtitle={`CTR ${formatMetric(data?.kpis?.ctr ?? 0)}%`}
+              subtitle={`All clicks reported by Meta · CTR ${formatMetric(data?.kpis?.ctr ?? 0)}%`}
             />
             <StatCard
               title="Impressions"
@@ -540,7 +572,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
               }
               icon={<MousePointerClick size={18} />}
               variant="neutral"
-              subtitle={`Meta results ${formatNumber(data?.kpis?.metaConversions)} (pixel/leads)`}
+              subtitle={`Meta-reported purchase/lead actions: ${formatNumber(data?.kpis?.metaConversions)}`}
             />
           </div>
 
@@ -548,7 +580,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card elevated className="p-4 pt-5 pb-0">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">
-                Spend, booked revenue & purchases
+                Spend, attributed order value & orders
               </p>
               <h2 className="mt-1 text-lg font-black text-gray-900">Performance trend</h2>
               <div className="mt-5 h-80">
@@ -592,9 +624,9 @@ const SocialMediaAdsDashboard: React.FC = () => {
                       />
                       <Legend />
                       <Line yAxisId="left" type="monotone" dataKey="spendBdt" name="Spend" stroke="#2563eb" strokeWidth={2} dot={false} />
-                      <Line yAxisId="left" type="monotone" dataKey="bookedRevenue" name="Booked revenue" stroke="#16a34a" strokeWidth={2} dot={false} />
+                      <Line yAxisId="left" type="monotone" dataKey="bookedRevenue" name="Order value" stroke="#16a34a" strokeWidth={2} dot={false} />
                       <Line yAxisId="left" type="monotone" dataKey="deliveredRevenue" name="Realized revenue" stroke="#0d9488" strokeWidth={2} strokeDasharray="4 4" dot={false} />
-                      <Bar yAxisId="right" dataKey="purchases" name="Purchases" fill="#f59e0b" opacity={0.55} />
+                      <Bar yAxisId="right" dataKey="purchases" name="Attributed orders" fill="#f59e0b" opacity={0.55} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 )}
@@ -605,11 +637,11 @@ const SocialMediaAdsDashboard: React.FC = () => {
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Lag-aware efficiency</p>
               <h2 className="mt-1 text-lg font-black text-gray-900">ROAS trend</h2>
               <p className="mt-2 text-sm text-gray-500">
-                Booked {formatMetric(bookedRoas, 2)}x · Realized {formatMetric(realizedRoas, 2)}x in this window.
+                Order value {formatRoas(bookedRoas)} · Realized {formatRoas(realizedRoas)} in this window.
                 Realized rises as pipeline orders deliver.
               </p>
               <div className="mt-4 h-72">
-                {chartData.length === 0 ? (
+                {!hasRoasTrend ? (
                   <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 text-sm font-semibold text-gray-500">
                     No ROAS data for this window.
                   </div>
@@ -642,7 +674,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         }
                       />
                       <Legend />
-                      <Line type="monotone" dataKey="bookedRoas" name="Booked ROAS" stroke="#16a34a" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="bookedRoas" name="Order Value ROAS" stroke="#16a34a" strokeWidth={2} dot={false} />
                       <Line type="monotone" dataKey="realizedRoas" name="Realized ROAS" stroke="#2563eb" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -655,22 +687,19 @@ const SocialMediaAdsDashboard: React.FC = () => {
             <Card elevated className="p-4 pt-5">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Fulfillment funnel</p>
               <h2 className="mt-1 text-lg font-black text-gray-900">Ad order pipeline</h2>
-              <div className="mt-4 h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={pipelineChartData} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                    <CartesianGrid stroke="#f3f4f6" strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="stage" width={90} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value: any, _name: any, item: any) =>
-                        moneyTooltipFormatter(Number(value), item?.dataKey)
-                      }
-                    />
-                    <Legend />
-                    <Bar dataKey="count" name="Orders" fill="#3b82f6" radius={[0, 6, 6, 0]} />
-                    <Bar dataKey="value" name="Value (৳)" fill="#86efac" radius={[0, 6, 6, 0]} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+              <p className="mt-2 text-sm text-gray-500">Current status of attributed orders placed in this date range.</p>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                {pipelineChartData.map((stage) => (
+                  <div key={stage.stage} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">{stage.stage}</p>
+                    <p className="mt-1 text-xl font-black text-gray-900">{formatNumber(stage.count)}</p>
+                    {stage.value > 0 && (
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        <MetaAdsMoney amount={stage.value} unit="bdt" nativeCode={adsCode} />
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
               {(data?.pipeline?.length ?? 0) > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -686,8 +715,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
             <Card elevated className="p-5">
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Attribution</p>
               <h2 className="mt-1 text-lg font-black text-gray-900">Recent ad orders</h2>
-              <div className="mt-4 overflow-hidden rounded-xl border border-gray-100">
-                <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
+              <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
+                <table className="min-w-[640px] divide-y divide-gray-100 text-left text-sm">
                   <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
                     <tr>
                       <th className="px-3 py-3">Order</th>
@@ -754,13 +783,13 @@ const SocialMediaAdsDashboard: React.FC = () => {
                   <tr>
                     <th className="px-3 py-3">Campaign</th>
                     <th className="px-3 py-3">Spend</th>
-                    <th className="px-3 py-3">Purchases</th>
-                    <th className="px-3 py-3">Booked rev</th>
+                    <th className="px-3 py-3">Orders</th>
+                    <th className="px-3 py-3">Order value</th>
                     <th className="px-3 py-3">Realized</th>
-                    <th className="px-3 py-3">Booked ROAS</th>
+                    <th className="px-3 py-3">Order ROAS</th>
                     <th className="px-3 py-3">Realized ROAS</th>
                     <th className="px-3 py-3">CTR</th>
-                    <th className="px-3 py-3">Delivery %</th>
+                    <th className="px-3 py-3" title="Delivered ÷ (delivered + returned); open and cancelled orders excluded">Settled delivery %</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -775,7 +804,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                       <tr key={`${campaign.id}-${campaign.name}`}>
                         <td className="px-3 py-3 font-bold text-gray-900">{campaign.name}</td>
                         <td className="px-3 py-3">
-                          <MetaAdsMoney amount={campaign.spend} nativeCode={adsCode} unit="ads" />
+                          <MetaAdsMoney amount={campaign.spend} nativeCode={campaign.campaignCurrency} unit="ads" />
                         </td>
                         <td className="px-3 py-3 text-gray-700">{formatNumber(campaign.purchases)}</td>
                         <td className="px-3 py-3">
@@ -784,8 +813,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         <td className="px-3 py-3">
                           <MetaAdsMoney amount={campaign.deliveredRevenue} unit="bdt" nativeCode={adsCode} />
                         </td>
-                        <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.bookedRoas, 2)}x</td>
-                        <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.realizedRoas, 2)}x</td>
+                        <td className="px-3 py-3 text-gray-700">{formatRoas(campaign.bookedRoas)}</td>
+                        <td className="px-3 py-3 text-gray-700">{formatRoas(campaign.realizedRoas)}</td>
                         <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.ctr)}%</td>
                         <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.deliveryRate, 1)}%</td>
                       </tr>
@@ -802,7 +831,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                 <Trophy size={16} className="text-amber-500" />
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Best campaigns</p>
               </div>
-              <h2 className="mt-2 text-lg font-black text-gray-900">Top 5 by booked revenue</h2>
+              <h2 className="mt-2 text-lg font-black text-gray-900">Top 5 by attributed order value</h2>
               <div className="mt-4 overflow-hidden rounded-xl border border-gray-100">
                 <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                   <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -818,12 +847,12 @@ const SocialMediaAdsDashboard: React.FC = () => {
                       <tr key={`best-${campaign.id}-${campaign.name}`}>
                         <td className="px-3 py-3 font-bold text-gray-900">{campaign.name}</td>
                         <td className="px-3 py-3">
-                          <MetaAdsMoney amount={campaign.spend} nativeCode={adsCode} unit="ads" />
+                          <MetaAdsMoney amount={campaign.spend} nativeCode={campaign.campaignCurrency} unit="ads" />
                         </td>
                         <td className="px-3 py-3">
                           <MetaAdsMoney amount={campaign.bookedRevenue} unit="bdt" nativeCode={adsCode} />
                         </td>
-                        <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.bookedRoas, 2)}x</td>
+                        <td className="px-3 py-3 text-gray-700">{formatRoas(campaign.bookedRoas)}</td>
                       </tr>
                     ))}
                     {bestCampaigns.length === 0 && (
@@ -841,9 +870,9 @@ const SocialMediaAdsDashboard: React.FC = () => {
             <Card elevated className="p-5">
               <div className="flex items-center gap-2">
                 <AlertTriangle size={16} className="text-red-500" />
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Worst campaigns</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-400">Needs attention</p>
               </div>
-              <h2 className="mt-2 text-lg font-black text-gray-900">High spend, low booked ROAS</h2>
+              <h2 className="mt-2 text-lg font-black text-gray-900">Lowest order-value ROAS with spend</h2>
               <div className="mt-4 overflow-hidden rounded-xl border border-gray-100">
                 <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                   <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -859,18 +888,18 @@ const SocialMediaAdsDashboard: React.FC = () => {
                       <tr key={`worst-${campaign.id}-${campaign.name}`}>
                         <td className="px-3 py-3 font-bold text-gray-900">{campaign.name}</td>
                         <td className="px-3 py-3">
-                          <MetaAdsMoney amount={campaign.spend} nativeCode={adsCode} unit="ads" />
+                          <MetaAdsMoney amount={campaign.spend} nativeCode={campaign.campaignCurrency} unit="ads" />
                         </td>
                         <td className="px-3 py-3">
                           <MetaAdsMoney amount={campaign.bookedRevenue} unit="bdt" nativeCode={adsCode} />
                         </td>
-                        <td className="px-3 py-3 text-gray-700">{formatMetric(campaign.bookedRoas, 2)}x</td>
+                        <td className="px-3 py-3 text-gray-700">{formatRoas(campaign.bookedRoas)}</td>
                       </tr>
                     ))}
                     {worstCampaigns.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-3 py-6 text-center text-sm font-semibold text-gray-500">
-                          No qualifying campaigns (min spend filter).
+                          No campaigns with comparable spend and ROAS.
                         </td>
                       </tr>
                     )}

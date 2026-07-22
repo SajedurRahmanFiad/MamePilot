@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { toastMessage } from '../utils/userFacingMessages';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -23,7 +24,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const showToast = useCallback((message: string, type: ToastType, duration: number = 3500) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
-    const toast: Toast = { id, message, type, duration };
+    const toast: Toast = { id, message: toastMessage(message, type), type, duration };
 
     setToasts((prev) => [...prev, toast]);
 
@@ -44,7 +45,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateToast = useCallback((id: string, message: string, type: ToastType, duration: number = 3500) => {
     setToasts((prev) => {
       const updated = prev.map((t) => 
-        t.id === id ? { ...t, message, type, duration } : t
+        t.id === id ? { ...t, message: toastMessage(message, type), type, duration } : t
       );
       
       // Auto dismiss after duration if it's being updated

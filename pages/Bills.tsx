@@ -18,9 +18,15 @@ import { DEFAULT_PAGE_SIZE, fetchBillById } from '../src/services/supabaseQuerie
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { formatDate, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDate, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
 
-const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid'];
+const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'];
+
+const getBillSettlementTotal = (bill: Bill): number => {
+  const isVoidedBeforeReceipt = bill.status === BillStatus.CANCELLED
+    || (bill.status === BillStatus.RETURNED && !String(bill.history?.return || '').trim());
+  return isVoidedBeforeReceipt ? 0 : bill.total;
+};
 
 const Bills: React.FC = () => {
   const navigate = useNavigate();
@@ -47,6 +53,7 @@ const Bills: React.FC = () => {
   };
   const urlStatusTab = (searchParams.get('status') as BillStatus | null) || 'All';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
+  const urlCreatedByNotFilter = searchParams.get('createdByNot') || '';
   const urlBillStatusFilter = searchParams.get('billStatus') || 'all';
   const urlBillStatusNotFilter = searchParams.get('billStatusNot') || '';
   const urlPaymentStatusFilter = searchParams.get('paymentStatus') || 'all';
@@ -65,6 +72,7 @@ const Bills: React.FC = () => {
   const [customDates, setCustomDates] = useState(urlCustomDates);
   const [statusTab, setStatusTab] = useState<BillStatus | 'All'>(urlStatusTab);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
+  const [createdByNotFilter, setCreatedByNotFilter] = useState<string>(urlCreatedByNotFilter);
   const [billIdFilter, setBillIdFilter] = useState('');
   const [billIdNotFilter, setBillIdNotFilter] = useState('');
   const [vendorNameFilter, setVendorNameFilter] = useState('');
@@ -87,6 +95,7 @@ const Bills: React.FC = () => {
     setCustomDates(urlCustomDates);
     setStatusTab(urlStatusTab);
     setCreatedByFilter(urlCreatedByFilter);
+    setCreatedByNotFilter(urlCreatedByNotFilter);
     setBillIdFilter(urlBillIdFilter);
     setBillIdNotFilter(urlBillIdNotFilter);
     setVendorNameFilter(urlVendorNameFilter);
@@ -105,6 +114,7 @@ const Bills: React.FC = () => {
     urlCustomDates,
     urlStatusTab,
     urlCreatedByFilter,
+    urlCreatedByNotFilter,
     urlBillIdFilter,
     urlBillIdNotFilter,
     urlVendorNameFilter,
@@ -135,6 +145,7 @@ const Bills: React.FC = () => {
   const effectiveCustomDates = shouldHydrateFromUrl ? urlCustomDates : customDates;
   const effectiveStatusTab = shouldHydrateFromUrl ? urlStatusTab : statusTab;
   const effectiveCreatedByFilter = shouldHydrateFromUrl ? urlCreatedByFilter : createdByFilter;
+  const effectiveCreatedByNotFilter = shouldHydrateFromUrl ? urlCreatedByNotFilter : createdByNotFilter;
   const effectiveBillIdFilter = shouldHydrateFromUrl ? urlBillIdFilter : billIdFilter;
   const effectiveBillIdNotFilter = shouldHydrateFromUrl ? urlBillIdNotFilter : billIdNotFilter;
   const effectiveVendorNameFilter = shouldHydrateFromUrl ? urlVendorNameFilter : vendorNameFilter;
@@ -152,18 +163,27 @@ const Bills: React.FC = () => {
   );
 
   const createdByIds = useMemo(() => {
+    const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
     if (effectiveCreatedByFilter === 'all') return undefined;
     if (effectiveCreatedByFilter === 'admins') {
-      return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+      return requireMatch(users.filter((u) => u.role === 'Admin').map((u) => u.id));
     }
     if (effectiveCreatedByFilter === 'employees') {
-      return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+      return requireMatch(users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id));
     }
     if (effectiveCreatedByFilter === 'developers') {
-      return users.filter((u) => u.role === 'Developer').map((u) => u.id);
+      return requireMatch(users.filter((u) => u.role === 'Developer').map((u) => u.id));
     }
     return [effectiveCreatedByFilter];
   }, [effectiveCreatedByFilter, users]);
+
+  const createdByNotIds = useMemo(() => {
+    if (!effectiveCreatedByNotFilter) return undefined;
+    if (effectiveCreatedByNotFilter === 'admins') return users.filter((u) => u.role === 'Admin').map((u) => u.id);
+    if (effectiveCreatedByNotFilter === 'employees') return users.filter((u) => isEmployeeRole(u.role)).map((u) => u.id);
+    if (effectiveCreatedByNotFilter === 'developers') return users.filter((u) => u.role === 'Developer').map((u) => u.id);
+    return [effectiveCreatedByNotFilter];
+  }, [effectiveCreatedByNotFilter, users]);
 
   const handleRefreshBills = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['bills'], exact: false, type: 'active' });
@@ -175,6 +195,17 @@ const Bills: React.FC = () => {
     to: timeFilters.to,
     search: searchQuery,
     createdByIds,
+    createdByNotIds,
+    billNumber: effectiveBillIdFilter || undefined,
+    billNumberNot: effectiveBillIdNotFilter || undefined,
+    vendorName: effectiveVendorNameFilter || undefined,
+    vendorNameNot: effectiveVendorNameNotFilter || undefined,
+    vendorPhone: effectiveVendorPhoneFilter || undefined,
+    vendorPhoneNot: effectiveVendorPhoneNotFilter || undefined,
+    billStatus: effectiveBillStatusFilter === 'all' ? undefined : effectiveBillStatusFilter,
+    billStatusNot: effectiveBillStatusNotFilter || undefined,
+    paymentStatus: effectivePaymentStatusFilter === 'all' ? undefined : effectivePaymentStatusFilter,
+    paymentStatusNot: effectivePaymentStatusNotFilter || undefined,
   }, {
     enabled: canLoadBills,
   });
@@ -194,6 +225,7 @@ const Bills: React.FC = () => {
   );
 
   const getFinalBillStatus = (bill: Bill) => {
+    if (bill.status === BillStatus.RETURNED || bill.status === BillStatus.CANCELLED) return bill.status;
     const history = bill.history as Record<string, string | undefined> | undefined;
     if (history?.returned) return 'Returned';
     if (history?.cancelled) return 'Cancelled';
@@ -219,7 +251,7 @@ const Bills: React.FC = () => {
     return [
       {
         type: 'Created by',
-        operators: ['='] as const,
+        operators: ['=', '≠'] as const,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
           return normalized
@@ -229,7 +261,7 @@ const Bills: React.FC = () => {
       },
       {
         type: 'Bill ID',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -240,7 +272,7 @@ const Bills: React.FC = () => {
       },
       {
         type: 'Vendor Name',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -251,7 +283,7 @@ const Bills: React.FC = () => {
       },
       {
         type: 'Vendor Phone',
-        operators: ['=', '≠'] as const,
+        operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
         renderOptions: (query: string) => {
           const normalized = query.trim().toLowerCase();
@@ -273,6 +305,37 @@ const Bills: React.FC = () => {
     ];
   }, [users, billIdOptions, vendorNameOptions, vendorPhoneOptions]);
 
+  const initialFilters = useMemo(() => {
+    const filters: Array<any> = [];
+    const getCreatorFilterLabel = (value: string) => value === 'admins' ? 'Admins'
+      : value === 'employees' ? 'Employees'
+        : value === 'developers' ? 'Developers'
+          : users.find((user) => user.id === value)?.name || value;
+    const addTextFilter = (id: string, type: string, encoded: string, negative = false) => {
+      if (!encoded) return;
+      const { contains, value } = decodeDynamicTextFilterValue(encoded);
+      filters.push({
+        id,
+        type,
+        operator: contains ? (negative ? 'does not contain' : 'contains') : (negative ? '≠' : '='),
+        value,
+      });
+    };
+    if (effectiveCreatedByFilter !== 'all') filters.push({ id: 'created-by', type: 'Created by', operator: '=', value: effectiveCreatedByFilter, display: getCreatorFilterLabel(effectiveCreatedByFilter) });
+    if (effectiveCreatedByNotFilter) filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠', value: effectiveCreatedByNotFilter, display: getCreatorFilterLabel(effectiveCreatedByNotFilter) });
+    addTextFilter('bill-id', 'Bill ID', effectiveBillIdFilter);
+    addTextFilter('bill-id-not', 'Bill ID', effectiveBillIdNotFilter, true);
+    addTextFilter('vendor-name', 'Vendor Name', effectiveVendorNameFilter);
+    addTextFilter('vendor-name-not', 'Vendor Name', effectiveVendorNameNotFilter, true);
+    addTextFilter('vendor-phone', 'Vendor Phone', effectiveVendorPhoneFilter);
+    addTextFilter('vendor-phone-not', 'Vendor Phone', effectiveVendorPhoneNotFilter, true);
+    if (effectiveBillStatusFilter !== 'all') filters.push({ id: 'bill-status', type: 'Bill Status', operator: '=', value: effectiveBillStatusFilter });
+    if (effectiveBillStatusNotFilter) filters.push({ id: 'bill-status-not', type: 'Bill Status', operator: '≠', value: effectiveBillStatusNotFilter });
+    if (effectivePaymentStatusFilter !== 'all') filters.push({ id: 'payment-status', type: 'Payment Status', operator: '=', value: effectivePaymentStatusFilter });
+    if (effectivePaymentStatusNotFilter) filters.push({ id: 'payment-status-not', type: 'Payment Status', operator: '≠', value: effectivePaymentStatusNotFilter });
+    return filters;
+  }, [effectiveCreatedByFilter, effectiveCreatedByNotFilter, effectiveBillIdFilter, effectiveBillIdNotFilter, effectiveVendorNameFilter, effectiveVendorNameNotFilter, effectiveVendorPhoneFilter, effectiveVendorPhoneNotFilter, effectiveBillStatusFilter, effectiveBillStatusNotFilter, effectivePaymentStatusFilter, effectivePaymentStatusNotFilter, users]);
+
   const showBillsTableLoading = !canLoadBills || billsLoading;
   const total = billsPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -285,6 +348,7 @@ const Bills: React.FC = () => {
     setCustomDates(urlCustomDates);
     setStatusTab(urlStatusTab);
     setCreatedByFilter(urlCreatedByFilter);
+    setCreatedByNotFilter(urlCreatedByNotFilter);
     setBillIdFilter(urlBillIdFilter);
     setBillIdNotFilter(urlBillIdNotFilter);
     setVendorNameFilter(urlVendorNameFilter);
@@ -303,6 +367,7 @@ const Bills: React.FC = () => {
     urlCustomDates,
     urlStatusTab,
     urlCreatedByFilter,
+    urlCreatedByNotFilter,
     urlBillIdFilter,
     urlBillIdNotFilter,
     urlVendorNameFilter,
@@ -326,6 +391,7 @@ const Bills: React.FC = () => {
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
     if (effectiveStatusTab !== 'All') params.status = effectiveStatusTab;
     if (effectiveCreatedByFilter !== 'all') params.createdBy = effectiveCreatedByFilter;
+    if (effectiveCreatedByNotFilter) params.createdByNot = effectiveCreatedByNotFilter;
     if (effectiveBillStatusFilter !== 'all') params.billStatus = effectiveBillStatusFilter;
     if (effectiveBillStatusNotFilter) params.billStatusNot = effectiveBillStatusNotFilter;
     if (effectivePaymentStatusFilter !== 'all') params.paymentStatus = effectivePaymentStatusFilter;
@@ -349,6 +415,7 @@ const Bills: React.FC = () => {
     effectiveCustomDates.to,
     effectiveStatusTab,
     effectiveCreatedByFilter,
+    effectiveCreatedByNotFilter,
     effectiveBillStatusFilter,
     effectiveBillStatusNotFilter,
     effectivePaymentStatusFilter,
@@ -419,63 +486,9 @@ const Bills: React.FC = () => {
     return null;
   };
 
-  const filteredBills = useMemo(() => {
-    return bills.filter((bill) => {
-      const finalStatus = getFinalBillStatus(bill);
-      if (effectiveBillStatusFilter !== 'all' && finalStatus !== effectiveBillStatusFilter) {
-        return false;
-      }
-      if (effectiveBillStatusNotFilter && finalStatus === effectiveBillStatusNotFilter) {
-        return false;
-      }
-      const paymentStatus = getPaymentStatusLabel(bill.paidAmount, bill.total);
-      if (effectivePaymentStatusFilter !== 'all' && paymentStatus !== effectivePaymentStatusFilter) {
-        return false;
-      }
-      if (effectivePaymentStatusNotFilter && paymentStatus === effectivePaymentStatusNotFilter) {
-        return false;
-      }
-      if (effectiveBillIdFilter) {
-        const normalized = effectiveBillIdFilter.toLowerCase();
-        const matches = bill.billNumber.toLowerCase().includes(normalized);
-        if (!matches) return false;
-      }
-      if (effectiveBillIdNotFilter) {
-        const normalized = effectiveBillIdNotFilter.toLowerCase();
-        const matches = bill.billNumber.toLowerCase().includes(normalized);
-        if (matches) return false;
-      }
-      if (effectiveVendorNameFilter) {
-        const normalized = effectiveVendorNameFilter.toLowerCase();
-        if (!bill.vendorName?.toLowerCase().includes(normalized)) return false;
-      }
-      if (effectiveVendorNameNotFilter) {
-        const normalized = effectiveVendorNameNotFilter.toLowerCase();
-        if (bill.vendorName?.toLowerCase().includes(normalized)) return false;
-      }
-      if (effectiveVendorPhoneFilter) {
-        const normalized = effectiveVendorPhoneFilter.toLowerCase();
-        if (!bill.vendorPhone?.toLowerCase().includes(normalized)) return false;
-      }
-      if (effectiveVendorPhoneNotFilter) {
-        const normalized = effectiveVendorPhoneNotFilter.toLowerCase();
-        if (bill.vendorPhone?.toLowerCase().includes(normalized)) return false;
-      }
-      return true;
-    });
-  }, [
-    bills,
-    effectiveBillIdFilter,
-    effectiveBillIdNotFilter,
-    effectiveVendorNameFilter,
-    effectiveVendorNameNotFilter,
-    effectiveVendorPhoneFilter,
-    effectiveVendorPhoneNotFilter,
-    effectiveBillStatusFilter,
-    effectiveBillStatusNotFilter,
-    effectivePaymentStatusFilter,
-    effectivePaymentStatusNotFilter,
-  ]);
+  // Every dynamic filter is included in the server query so pagination and
+  // total counts describe the same dataset as the visible rows.
+  const filteredBills = bills;
 
   const handleDuplicate = async (bill: Bill) => {
     try {
@@ -575,30 +588,43 @@ const Bills: React.FC = () => {
 
       <DynamicFilterBar
         filterDefinitions={billFilterDefinitions}
+        initialFilters={initialFilters}
         users={users}
         onApply={(appliedFilters) => {
           setPage(1);
+          const encodeTextValue = (filter: { operator: string; value: string }) =>
+            encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
 
-          const createdByFilter = appliedFilters.find((f) => f.type === 'Created by');
-          setCreatedByFilter(createdByFilter?.value ?? 'all');
+          const createdByFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '=');
+          const createdByNotFilter = appliedFilters.find((f) => f.type === 'Created by' && f.operator === '≠');
+          if (createdByFilter) {
+            setCreatedByFilter(createdByFilter.value);
+            setCreatedByNotFilter('');
+          } else if (createdByNotFilter) {
+            setCreatedByFilter('all');
+            setCreatedByNotFilter(createdByNotFilter.value);
+          } else {
+            setCreatedByFilter('all');
+            setCreatedByNotFilter('');
+          }
 
-          const billIdFilter = appliedFilters.find((f) => f.type === 'Bill ID' && f.operator === '=');
-          const billIdNotFilter = appliedFilters.find((f) => f.type === 'Bill ID' && f.operator === '≠');
-          const vendorNameFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && f.operator === '=');
-          const vendorNameNotFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && f.operator === '≠');
-          const vendorPhoneFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && f.operator === '=');
-          const vendorPhoneNotFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && f.operator === '≠');
+          const billIdFilter = appliedFilters.find((f) => f.type === 'Bill ID' && (f.operator === '=' || f.operator === 'contains'));
+          const billIdNotFilter = appliedFilters.find((f) => f.type === 'Bill ID' && (f.operator === '≠' || f.operator === 'does not contain'));
+          const vendorNameFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && (f.operator === '=' || f.operator === 'contains'));
+          const vendorNameNotFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && (f.operator === '≠' || f.operator === 'does not contain'));
+          const vendorPhoneFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && (f.operator === '=' || f.operator === 'contains'));
+          const vendorPhoneNotFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
           const billStatusFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '=');
           const billStatusNotFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '≠');
           const paymentStatusFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '=');
           const paymentStatusNotFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '≠');
 
-          setBillIdFilter(billIdFilter?.value ?? '');
-          setBillIdNotFilter(billIdNotFilter?.value ?? '');
-          setVendorNameFilter(vendorNameFilter?.value ?? '');
-          setVendorNameNotFilter(vendorNameNotFilter?.value ?? '');
-          setVendorPhoneFilter(vendorPhoneFilter?.value ?? '');
-          setVendorPhoneNotFilter(vendorPhoneNotFilter?.value ?? '');
+          setBillIdFilter(billIdFilter ? encodeTextValue(billIdFilter) : '');
+          setBillIdNotFilter(billIdNotFilter ? encodeTextValue(billIdNotFilter) : '');
+          setVendorNameFilter(vendorNameFilter ? encodeTextValue(vendorNameFilter) : '');
+          setVendorNameNotFilter(vendorNameNotFilter ? encodeTextValue(vendorNameNotFilter) : '');
+          setVendorPhoneFilter(vendorPhoneFilter ? encodeTextValue(vendorPhoneFilter) : '');
+          setVendorPhoneNotFilter(vendorPhoneNotFilter ? encodeTextValue(vendorPhoneNotFilter) : '');
           setBillStatusFilter(billStatusFilter?.value ?? 'all');
           setBillStatusNotFilter(billStatusNotFilter?.value ?? '');
           setPaymentStatusFilter(paymentStatusFilter?.value ?? 'all');
@@ -629,12 +655,14 @@ const Bills: React.FC = () => {
                 const canDeleteSelectedBill = canDeleteBill(bill);
                 const hasRowActions = canEditSelectedBill || canDeleteSelectedBill;
 
-                const paymentStatusLabel = getPaymentStatusLabel(bill.paidAmount, bill.total, bill.history);
+                const settlementTotal = getBillSettlementTotal(bill);
+                const paymentStatusLabel = getPaymentStatusLabel(bill.paidAmount, settlementTotal, bill.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
                 const isRefunded = paymentStatusLabel === 'Refunded';
-                const isFullyPaid = !isPartiallyPaid && !isUnpaid && !isRefunded && bill.paidAmount >= bill.total;
-                const paidAmountTextColor = isPartiallyPaid ? 'text-amber-500' : isRefunded ? 'text-orange-500' : isUnpaid ? 'text-red-500' : 'text-green-500';
+                const isOverpaid = paymentStatusLabel === 'Overpaid';
+                const isFullyPaid = !isPartiallyPaid && !isUnpaid && !isRefunded && !isOverpaid && bill.paidAmount >= settlementTotal;
+                const paidAmountTextColor = isPartiallyPaid ? 'text-amber-500' : (isRefunded || isOverpaid) ? 'text-orange-500' : isUnpaid ? 'text-red-500' : 'text-green-500';
 
                 return (
                 <tr 
@@ -665,7 +693,11 @@ const Bills: React.FC = () => {
                   </td>
                   <td className="px-6 py-5 text-right">
                     <span className="font-black text-gray-900 text-base">{formatCurrency(bill.total)}</span>
-                    {isRefunded ? (
+                    {isOverpaid ? (
+                      <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
+                        Overpaid · refund due {formatCurrency(Math.max(bill.paidAmount - settlementTotal, 0))}
+                      </p>
+                    ) : isRefunded ? (
                       <p className={`text-[10px] font-black uppercase tracking-tighter mt-1 ${paidAmountTextColor}`}>
                         Refunded
                       </p>

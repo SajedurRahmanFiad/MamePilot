@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $deployRoot = Join-Path $repoRoot 'deploy'
-$templatePath = Join-Path $deployRoot 'central-license-api-template.php'
+$templatePath = Join-Path $deployRoot 'Central Server\api.php'
 $packageRoot = Join-Path $deployRoot $OutputFolder
 $apiPath = Join-Path $packageRoot 'api.php'
 $zipPath = Join-Path $deployRoot ($OutputFolder + '.zip')
