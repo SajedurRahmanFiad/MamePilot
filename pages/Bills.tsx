@@ -18,7 +18,7 @@ import { DEFAULT_PAGE_SIZE, fetchBillById } from '../src/services/supabaseQuerie
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDate, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDate, formatDateTimeParts, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
 
 const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'];
 
@@ -499,8 +499,7 @@ const Bills: React.FC = () => {
       }
 
       const now = new Date();
-      const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+      const { date: dateStr, time: timeStr } = formatDateTimeParts(now);
       
       const newBillData: Omit<Bill, 'id'> = {
         billNumber: `PUR-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -634,7 +633,7 @@ const Bills: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
         <div className="overflow-x-auto overflow-y-visible">
-          <table className="w-full text-left">
+          <table className="w-full whitespace-nowrap text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Bill Details</th>
@@ -680,7 +679,7 @@ const Bills: React.FC = () => {
                   className="group relative hover:bg-[#ebf4ff]/20 cursor-pointer transition-all"
                 >
                   <td className="px-6 py-5">
-                    <span className="font-black text-gray-900">#{bill.billNumber}</span>
+                    <span className="whitespace-nowrap font-black text-gray-900">#{bill.billNumber}</span>
                     <p className="text-[10px] text-gray-400 font-bold mt-1 tracking-tight">{formatDate(getBillActivityDate(bill))}</p>
                   </td>
                   <td className="px-6 py-5">

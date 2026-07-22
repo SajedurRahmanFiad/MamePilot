@@ -240,7 +240,7 @@ const TransactionForm: React.FC = () => {
         return;
       }
 
-      const dateStr = formatDate(form.date, 'en-US');
+      const dateStr = formatDate(form.date);
       const timeStr = form.time;
       const isoDatetime = localDateTime.toISOString();
 

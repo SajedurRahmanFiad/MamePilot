@@ -311,62 +311,58 @@ export const isWithinDateRange = (
   return true;
 };
 
-/**
- * Format a date string to readable format
- */
-export const formatDate = (dateStr: string, locale: string = 'en-BD'): string => {
-  const raw = String(dateStr || '').trim();
-  if (!raw) return '';
+export type DateDisplayValue = string | Date | null | undefined;
 
-  const normalized = raw.length > 10 ? normalizeUtcTimestamp(raw) || raw : raw;
+const parseDisplayDate = (value: DateDisplayValue): { date: Date; hasTime: boolean; fallback: string } | null => {
+  if (value instanceof Date) {
+    return isValidDate(value) ? { date: value, hasTime: true, fallback: '' } : null;
+  }
+
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const hasTime = raw.length > 10;
+  const normalized = hasTime ? normalizeUtcTimestamp(raw) || raw : raw;
   const date = parseDateInput(normalized);
+  return date ? { date, hasTime, fallback: raw } : null;
+};
 
-  if (!date) return raw;
+/**
+ * Canonical user-facing date format: 26 Jul 2025.
+ * Date-only inputs are interpreted as calendar dates; timestamps are shown in Asia/Dhaka.
+ */
+export const formatDate = (value: DateDisplayValue): string => {
+  const parsed = parseDisplayDate(value);
+  if (!parsed) return value instanceof Date ? '' : String(value || '').trim();
 
-  return date.toLocaleDateString(locale, {
+  return new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    ...(raw.length > 10 ? { timeZone: APP_TIME_ZONE } : {}),
-  });
+    ...(parsed.hasTime ? { timeZone: APP_TIME_ZONE } : {}),
+  }).format(parsed.date);
 };
 
 export const formatDateTimeParts = (
-  value?: string | null,
-  locale: string = 'en-BD'
+  value?: DateDisplayValue
 ): { date: string; time: string } => {
-  const raw = String(value || '').trim();
-  if (!raw) return { date: '', time: '' };
-
-  const normalized = raw.length > 10 ? normalizeUtcTimestamp(raw) || raw : raw;
-  const date = parseDateInput(normalized);
-  if (!date) return { date: raw, time: '' };
-
-  if (raw.length <= 10) {
-    return {
-      date: date.toLocaleDateString(locale, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }),
-      time: '',
-    };
-  }
+  const parsed = parseDisplayDate(value);
+  if (!parsed) return { date: value instanceof Date ? '' : String(value || '').trim(), time: '' };
 
   return {
-    date: date.toLocaleDateString(locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: APP_TIME_ZONE,
-    }),
-    time: date.toLocaleTimeString(locale, {
+    date: formatDate(value),
+    time: parsed.hasTime ? parsed.date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
       timeZone: APP_TIME_ZONE,
-    }),
+    }) : '',
   };
+};
+
+/** Canonical user-facing timestamp format: 26 Jul 2025, 04:30 PM. */
+export const formatDateTime = (value?: DateDisplayValue): string => {
+  const { date, time } = formatDateTimeParts(value);
+  return date && time ? `${date}, ${time}` : date;
 };
 
 export const openAttachmentPreview = (attachmentUrl?: string | null): boolean => {

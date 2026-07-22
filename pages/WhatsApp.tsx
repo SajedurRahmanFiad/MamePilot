@@ -29,6 +29,7 @@ import {
   useSendWhatsAppTemplate,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
 type WhatsAppTemplate = { id: string; name: string; language: string; status: string; category: string; components?: any[] };
@@ -43,7 +44,7 @@ function formatTime(value?: string | null): string {
   if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('en-BD', { hour: 'numeric', minute: '2-digit' });
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric' });
+  return formatDate(date);
 }
 
 function messageDateLabel(value?: string | null): string {
@@ -53,7 +54,7 @@ function messageDateLabel(value?: string | null): string {
   if (date.toDateString() === now.toDateString()) return 'TODAY';
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return 'YESTERDAY';
-  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  return formatDate(date).toUpperCase();
 }
 
 function initials(name: string): string {

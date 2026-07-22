@@ -8,6 +8,7 @@ import { useMarkNotificationRead, useRespondToNotification } from '../src/hooks/
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { cacheReadReceipt, applyCachedReadState } from '../src/utils/readReceiptCache';
+import { formatDate } from '../utils';
 
 const formatNotificationTime = (value?: string | null): string => {
   if (!value) return 'Just now';
@@ -25,11 +26,7 @@ const formatNotificationTime = (value?: string | null): string => {
   if (diffMinutes < 60) return `${diffMinutes}m ago`;
   if (diffMinutes < 1440) return `${Math.round(diffMinutes / 60)}h ago`;
 
-  return date.toLocaleDateString('en-BD', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  return formatDate(date);
 };
 
 const haveSameNotificationSnapshot = (left: AppNotification[], right: AppNotification[]): boolean => {

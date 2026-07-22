@@ -114,6 +114,28 @@ php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php
 
 The update agent applies `backend/database/schema-only.sql` automatically and does not run `seed.sql` unless `UPDATE_RUN_SEED=1`.
 
+### Automatic calling schedule
+
+Setup and automatic updates now register the minute schedule automatically on
+compatible Linux hosting. The next eligible order also repairs a missing entry,
+so installations receiving this change through the older updater become
+self-healing without a second release. Each installation uses a path-specific
+schedule marker, so multiple domains under one hosting account keep independent
+workers and do not replace each other's entries.
+
+If the host blocks application-managed schedules, add this cPanel cron job with
+the real account name and backend path:
+
+```text
+* * * * * /usr/local/bin/php /home/your-cpanel-user/mamepilot_backend/backend/bin/process_survey_queue.php --once >> /home/your-cpanel-user/mamepilot-auto-call.log 2>&1
+```
+
+Run it every minute. The post-order background process is the immediate
+fast-path; the recurring schedule reliably handles longer delays and retries.
+Set `AUTO_CALL_MANAGE_CRON=0` only when the host manages this entry separately.
+The Auto Calling page shows whether delivery is running and whether calls are
+overdue.
+
 ---
 
 ## 5. Optional Automatic Updates

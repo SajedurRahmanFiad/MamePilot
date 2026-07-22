@@ -15,7 +15,7 @@ import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { getTodayDate, sanitizePhoneInput } from '../utils';
+import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { buildOrderPageSnapshot, getGlobalCompanyPage, normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 
 type CustomerSearchOption = Pick<Customer, 'id' | 'name'> & Partial<Customer>;
@@ -536,8 +536,7 @@ const OrderForm: React.FC = () => {
         const parsedShipping = parseFloat(shipping) || 0;
         const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
         const now = new Date();
-        const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-        const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+        const { date: dateStr, time: timeStr } = formatDateTimeParts(now);
         
         setPendingOrderData({
           orderNumber,
@@ -567,8 +566,7 @@ const OrderForm: React.FC = () => {
       const parsedShipping = parseFloat(shipping) || 0;
       const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
       const now = new Date();
-      const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+      const { date: dateStr, time: timeStr } = formatDateTimeParts(now);
 
       // Resolve temporary customer id (if any) to a real id before saving.
       let finalCustomerId = customerId;

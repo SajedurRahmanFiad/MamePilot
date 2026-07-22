@@ -66,18 +66,32 @@ reverse proxy so `X-Forwarded-Proto: https` is preserved.
 
 ## Queue operation
 
-`backend/bin/process_survey_queue.php` runs as a single MySQL advisory-locked
-worker for up to ten minutes. It processes delayed calls and due retries once
-per minute. Configure a cPanel cron entry to run it every minute so retries
-whose delay exceeds ten minutes are also delivered:
+`backend/bin/process_survey_queue.php` runs as a single, deployment-scoped
+MySQL advisory-locked worker for up to ten minutes. It processes delayed calls
+and due retries once per minute. Setup and updates use `AutoCallScheduler` to
+install the recurring entry idempotently on compatible Linux hosting. The next
+eligible order also repairs a missing entry for deployments receiving this
+change through an older updater. Its marker is derived from the installed worker
+path, which keeps schedules isolated when one hosting account serves multiple
+MamePilot domains.
 
 ```text
-* * * * * /usr/local/bin/php /home/ACCOUNT/mamepilot_backend/backend/bin/process_survey_queue.php --once
+* * * * * /usr/local/bin/php /home/ACCOUNT/mamepilot_backend/backend/bin/process_survey_queue.php --once >> /home/ACCOUNT/mamepilot-auto-call.log 2>&1
 ```
 
-The post-order background trigger starts the same worker without `--once`.
-If shell execution is disabled by the host, the cron entry remains the
-reliable queue trigger.
+The post-order background trigger starts the same worker as a fast-path and
+writes its output to `mamepilot-auto-call.log`. It watches for the configured
+initial delay and possible retry window (up to one day), which also makes local
+Windows development work without Unix cron. The recurring schedule remains the
+reliable production queue trigger. If the host blocks crontab access, add the
+entry manually or set `AUTO_CALL_MANAGE_CRON=0` when the hosting control panel
+manages it. The Auto Calling page reports the last run and pending or overdue
+counts in business-facing language.
+
+PDO native prepared statements require each named placeholder to be unique.
+The survey claim and retry updates therefore use separate timestamp bindings;
+reusing `:now` in the same statement causes `SQLSTATE[HY093]` before any
+AwajDigital request is sent.
 
 ## Order fields
 

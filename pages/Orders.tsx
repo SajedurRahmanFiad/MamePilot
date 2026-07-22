@@ -26,6 +26,7 @@ import {
   encodeDynamicTextFilterValue,
   extractSteadfastTrackingFromHistory,
   formatDate,
+  formatDateTimeParts,
   getDateTimeFilters,
   getOrderActivityDate,
   getPaperflyReferenceNumber,
@@ -1034,7 +1035,8 @@ const Orders: React.FC = () => {
       const isoDatetime = fullDatetime.toISOString();
       const selectedAccount = accounts.find((account) => account.id === paymentForm.accountId);
       const method = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
-      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user?.name || 'Unknown'} via ${method} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const { date: paymentDate, time: paymentTime } = formatDateTimeParts(fullDatetime);
+      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user?.name || 'Unknown'} via ${method} in ${selectedAccount?.name || 'Unknown account'} on ${paymentDate}, at ${paymentTime}`;
       const existingPaymentHistory = String(paymentOrder.history?.payment || '').trim();
       const updatedHistory = {
         ...paymentOrder.history,
@@ -1335,7 +1337,7 @@ const Orders: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full whitespace-nowrap text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-6 py-5 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Order Details</th>
@@ -1397,7 +1399,7 @@ const Orders: React.FC = () => {
                 >
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        <span className="font-black text-gray-900">#{order.orderNumber}</span>
+                        <span className="whitespace-nowrap font-black text-gray-900">#{order.orderNumber}</span>
                         <ConfirmationStatusDot status={order.confirmationStatus} size="sm" />
                       </div>
                       <p className="text-[10px] text-gray-400 font-bold mt-1 tracking-tight">{formatDate(getOrderActivityDate(order))}</p>

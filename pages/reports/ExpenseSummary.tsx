@@ -5,6 +5,7 @@ import { formatCurrency, ICONS } from '../../constants';
 import { Button, ReportPageSkeleton } from '../../components';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useExpenseSummaryCsv, useExpenseSummaryReport } from '../../src/hooks/useQueries';
+import { formatDate } from '../../utils';
 
 const ExpenseSummary: React.FC = () => {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ const ExpenseSummary: React.FC = () => {
     const rows = response.data || [];
     const headers = 'Date,Category,Contact,Account,Amount,Description\n';
     const csvContent = rows.map((row) => {
-      return `${row.date},"${row.categoryName}","${row.contactName}","${row.accountName}",${row.amount},"${row.description}"`;
+      return `${formatDate(row.date)},"${row.categoryName}","${row.contactName}","${row.accountName}",${row.amount},"${row.description}"`;
     }).join('\n');
     const blob = new Blob([headers + csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -122,7 +123,7 @@ const ExpenseSummary: React.FC = () => {
             <tbody className="divide-y divide-gray-50">
               {recentExpenses.map((e) => (
                 <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm text-gray-600">{e.date}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{formatDate(e.date)}</td>
                   <td className="px-6 py-4 text-sm font-bold text-gray-800">{e.categoryName}</td>
                   <td className="px-6 py-4 text-right font-black text-red-600">{formatCurrency(e.amount)}</td>
                 </tr>

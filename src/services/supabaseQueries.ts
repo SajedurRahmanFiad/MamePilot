@@ -53,7 +53,9 @@ import type {
   MetaAdsSettings,
   MarketingDashboardResponse,
   VoiceSurveySettings,
+  VoiceSurveyWorkerHealth,
   VoiceSurveyIntegrationSettings,
+  OrderSurveySnapshot,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -407,7 +409,7 @@ export async function updateVoiceSurveyIntegrationSettings(updates: Partial<Voic
 export async function triggerSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('triggerSurveyCall', { orderId }); }
 export async function retrySurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('retrySurveyCall', { orderId }); }
 export async function cancelSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('cancelSurveyCall', { orderId }); }
-export async function fetchOrderSurveyStatus(orderId: string): Promise<any> { return call<any>('fetchOrderSurveyStatus', { orderId }); }
+export async function fetchOrderSurveyStatus(orderId: string): Promise<OrderSurveySnapshot> { return call<OrderSurveySnapshot>('fetchOrderSurveyStatus', { orderId }); }
 export async function fetchDeveloperNotes(): Promise<{ content: string; updatedAt?: string }> { return call<any>('fetchDeveloperNotes'); }
 export async function updateDeveloperNotes(payload: { content: string }): Promise<{ success: boolean; updatedAt: string }> { return call<any>('updateDeveloperNotes', payload); }
 export async function fetchEmailSettings(): Promise<{ recipientEmail: string; smtpHost: string; smtpPort: number; smtpUsername: string; smtpPassword: string; smtpEncryption: 'tls' | 'ssl' | 'none'; senderEmail: string; senderName: string }> { return call<any>('fetchEmailSettings'); }
@@ -432,7 +434,7 @@ export type SurveyHistoryResponse = {
   message?: string;
 };
 export async function fetchSurveyHistory(params: { startDate?: string; endDate?: string; page?: number; pageSize?: number }): Promise<SurveyHistoryResponse> { return call<SurveyHistoryResponse>('fetchSurveyHistory', params); }
-export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string }> { return call<any>('fetchSurveySummary'); }
+export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string; workerHealth: VoiceSurveyWorkerHealth }> { return call<any>('fetchSurveySummary'); }
 export async function initiateRechargeCheckout(payload: { amount: number }): Promise<{ checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null }> { return call<any>('initiateRechargeCheckout', payload, { timeoutMs: 30000 }); }
 export async function fetchRechargeHistory(): Promise<Array<{ id: string; localReference: string; gatewayPaymentId: string; amount: number; status: string; submittedAt: string; processedAt: string; createdAt: string }>> { return call<any>('fetchRechargeHistory'); }
 

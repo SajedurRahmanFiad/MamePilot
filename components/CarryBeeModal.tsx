@@ -7,6 +7,7 @@ import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
 import { OrderStatus, type Order, type Customer } from '../types';
+import { formatDateTimeParts } from '../utils';
 
 interface CarryBeeModalProps {
   isOpen: boolean;
@@ -355,7 +356,8 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                         null
                       );
 
-                      const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to CarryBee by ${db.currentUser?.name || 'System'} on ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+                      const historyMoment = formatDateTimeParts(new Date());
+                      const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to CarryBee by ${db.currentUser?.name || 'System'} on ${historyMoment.date}, at ${historyMoment.time}`;
 
                       const updates: any = {
                         history: {

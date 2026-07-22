@@ -388,7 +388,7 @@ const HumanResourceDashboard: React.FC = () => {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-black text-gray-900">{employee.name}</p>
                   <p className="mt-0.5 text-xs font-medium text-gray-500">
-                    {upcoming.date.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}
+                    {formatDate(upcoming.date)}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-rose-700">

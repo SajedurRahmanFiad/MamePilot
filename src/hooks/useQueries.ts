@@ -102,6 +102,7 @@ import {
   fetchBusinessRecommendations,
   fetchVoiceSurveySettings,
   fetchVoiceSurveyIntegrationSettings,
+  fetchOrderSurveyStatus,
   fetchSurveyBalance,
   fetchSurveyHistory,
   fetchSurveySummary,
@@ -176,6 +177,7 @@ import type {
   LicenseTier,
   VoiceSurveySettings,
   VoiceSurveyIntegrationSettings,
+  OrderSurveySnapshot,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -1421,6 +1423,27 @@ export function useVoiceSurveyIntegrationSettings(enabled: boolean = true): UseQ
     queryFn: fetchVoiceSurveyIntegrationSettings,
     staleTime: 5 * 60 * 1000,
     enabled,
+  });
+}
+
+export function useOrderSurveyStatus(orderId: string | undefined, enabled: boolean = true): UseQueryResult<OrderSurveySnapshot, Error> {
+  const { isOnline } = useNetwork();
+  const isPageVisible = usePageVisibility();
+  const canPoll = enabled && !!orderId && isOnline && isPageVisible;
+
+  return useQuery({
+    queryKey: ['survey', 'order-status', orderId],
+    queryFn: () => fetchOrderSurveyStatus(orderId || ''),
+    enabled: enabled && !!orderId,
+    staleTime: 1000,
+    refetchInterval: (query) => {
+      if (!canPoll) return false;
+      const status = query.state.data?.surveyStatus || '';
+      return ['completed', 'failed', 'skipped'].includes(status) ? false : 3000;
+    },
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

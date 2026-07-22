@@ -7,6 +7,7 @@ import { theme } from '../theme';
 import { useVendor, useBillsByVendorId } from '../src/hooks/useQueries';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { formatDate } from '../utils';
 
 const VendorDetails: React.FC = () => {
   const { id } = useParams();
@@ -120,7 +121,7 @@ const VendorDetails: React.FC = () => {
                         <td className="px-6 py-4">
                           <span className="font-bold text-gray-900">#{bill.billNumber}</span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{bill.billDate}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{formatDate(bill.billDate)}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${getStatusColor(bill.status)}`}>
                             {bill.status}

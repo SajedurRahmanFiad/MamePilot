@@ -6,6 +6,7 @@ import { useServiceSubscriptionOverview } from '../src/hooks/useQueries';
 import { useSaveServiceSubscriptionSettings, useSubmitServiceSubscriptionPayment } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
+import { formatDate, formatDateTime } from '../utils';
 
 const RESET_DAY_OPTIONS = Array.from({ length: 31 }, (_, index) => index + 1);
 
@@ -103,13 +104,7 @@ const ServiceSubscriptionsPanel: React.FC = () => {
       <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Valid Till</p>
         <p className="mt-2 text-sm font-black text-gray-900">
-          {overview.dueAt
-            ? new Date(overview.dueAt).toLocaleDateString('en-BD', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })
-            : 'Not configured'}
+          {overview.dueAt ? formatDate(overview.dueAt) : 'Not configured'}
         </p>
       </div>
       <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4">
@@ -548,7 +543,7 @@ const ServiceSubscriptionsPanel: React.FC = () => {
                           <p className="mt-1 text-xs font-medium text-gray-500">Txn ID: {payment.transactionId}</p>
                           <p className="mt-1 text-xs font-medium text-gray-500">
                             Submitted by {payment.submittedByName || 'Unknown'} on{' '}
-                            {payment.submittedAt ? new Date(payment.submittedAt).toLocaleString('en-BD') : 'Unknown'}
+                            {payment.submittedAt ? formatDateTime(payment.submittedAt) : 'Unknown'}
                           </p>
                         </div>
                         <div className="text-right">

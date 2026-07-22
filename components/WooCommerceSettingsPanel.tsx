@@ -11,6 +11,7 @@ import {
   testWooCommerceStore,
 } from '../src/services/supabaseQueries';
 import type { CompanyPage, WooCommerceStore } from '../types';
+import { formatDateTime } from '../utils';
 
 type StoreDraft = WooCommerceStore & { isNew?: boolean };
 
@@ -89,13 +90,13 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
     operation: () => Promise<{ message?: string }>,
   ) => {
     if (draft.isNew) {
-      toast.warning('Save this website before testing, registering its webhook, or syncing orders.');
+      toast.warning('Save this website before testing automatic order delivery or syncing orders.');
       return;
     }
     setBusyAction(actionName + ':' + draft.id);
     const labels = {
       test: 'Testing WooCommerce connection...',
-      webhook: 'Registering the automatic order webhook...',
+      webhook: 'Turning on automatic order delivery...',
       sync: 'Syncing WooCommerce orders...',
     };
     const loadingId = toast.loading(labels[actionName]);
@@ -116,7 +117,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
       return;
     }
     const confirmation = window.prompt(
-      'This removes the connection and its registered webhook. Type "' + draft.storeName + '" to confirm.',
+      'This removes the website and its automatic order connection. Type "' + draft.storeName + '" to confirm.',
     );
     if (confirmation !== draft.storeName) {
       if (confirmation !== null) toast.warning('Website name did not match. Nothing was removed.');
@@ -160,7 +161,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
         <div>
           <h3 className="text-xl font-bold text-gray-800">WooCommerce Order Sync</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
-            Connect multiple WooCommerce websites. New orders arrive automatically through signed webhooks and are
+            Connect multiple WooCommerce websites. New orders arrive automatically through a secure connection and are
             assigned to the selected company so invoices use the correct branding.
           </p>
         </div>
@@ -173,7 +174,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
           <li>In WordPress, open WooCommerce → Settings → Advanced → REST API and choose Add key.</li>
           <li>Give the key Read/Write permission. Copy its consumer key and consumer secret into the website below.</li>
           <li>Set Public delivery base URL to your live MamePilot API folder, for example https://app.example.com/api. For local testing, use an HTTPS tunnel; WooCommerce cannot deliver to localhost.</li>
-          <li>Save the website, use Test Connection, then click Register Webhook. MamePilot creates one signed order-created webhook and removes duplicate MamePilot registrations.</li>
+          <li>Save the website, use Test Connection, then click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
           <li>Use Sync Existing Orders once if you also want older WooCommerce orders. Repeated syncs are safe and do not create duplicates.</li>
         </ol>
         <p className="mt-3 text-xs font-semibold text-blue-800">
@@ -232,7 +233,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                     </select>
                   </div>
                   <Input
-                    label="Webhook signing secret"
+                    label="Order connection security key"
                     type="password"
                     value={store.webhookSecret}
                     onChange={(event) => updateDraft(store.id, 'webhookSecret', event.target.value)}
@@ -252,18 +253,18 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
 
                 {!store.isNew && (
                   <div className="mt-4 rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs font-black uppercase tracking-wider text-gray-400">Webhook delivery URL</p>
+                    <p className="text-xs font-black uppercase tracking-wider text-gray-400">Order delivery address</p>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                       <code className="min-w-0 flex-1 break-all rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">{store.webhookUrl}</code>
                       <Button type="button" variant="secondary" size="sm" onClick={async () => {
                         await navigator.clipboard.writeText(store.webhookUrl);
-                        toast.success('Webhook URL copied.');
+                        toast.success('Order delivery address copied.');
                       }}>Copy</Button>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-gray-500">
-                      <span>Webhook: {store.webhookId ? 'registered (#' + store.webhookId + ')' : 'not registered'}</span>
+                      <span>Automatic orders: {store.webhookId ? 'connected' : 'not connected'}</span>
                       <span>Imported: {store.ordersSynced} orders</span>
-                      <span>Last sync: {store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleString('en-BD') : 'never'}</span>
+                      <span>Last sync: {store.lastSyncedAt ? formatDateTime(store.lastSyncedAt) : 'never'}</span>
                     </div>
                     {store.lastSyncMessage && (
                       <p className={'mt-3 text-xs font-semibold ' + (store.lastSyncStatus === 'error' ? 'text-red-600' : 'text-gray-600')}>{store.lastSyncMessage}</p>
@@ -279,11 +280,11 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                     variant="secondary"
                     onClick={() => runStoreAction(store, 'webhook', async () => {
                       await registerWooCommerceWebhook(store.id);
-                      return { message: 'Automatic order webhook registered.' };
+                      return { message: 'Automatic order delivery turned on.' };
                     })}
                     loading={busyAction === 'webhook:' + store.id}
                     disabled={anyBusy || store.isNew || !store.enabled}
-                  >Register Webhook</Button>
+                  >Turn On Automatic Orders</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'sync', () => syncWooCommerceOrders(store.id))} loading={busyAction === 'sync:' + store.id} disabled={anyBusy || store.isNew || !store.enabled}>Sync Existing Orders</Button>
                   <Button type="button" variant="danger" onClick={() => removeStore(store)} loading={busyAction === 'delete:' + store.id} disabled={anyBusy}>Remove</Button>
                 </div>

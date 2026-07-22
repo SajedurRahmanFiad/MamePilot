@@ -1,5 +1,6 @@
 import React from 'react';
 import type { FraudCheckCourierHistory, FraudCheckReport, FraudCheckResult } from '../types';
+import { formatDateTime } from '../utils';
 
 type FraudCheckResultsProps = {
   result: FraudCheckResult;
@@ -73,10 +74,7 @@ const CourierHistoryCard: React.FC<{ item: FraudCheckCourierHistory }> = ({ item
 };
 
 const ReportCard: React.FC<{ report: FraudCheckReport }> = ({ report }) => {
-  const parsedDate = report.createdAt ? new Date(report.createdAt) : null;
-  const createdAtLabel = parsedDate && !Number.isNaN(parsedDate.getTime())
-    ? parsedDate.toLocaleString('en-BD')
-    : 'Unknown report date';
+  const createdAtLabel = formatDateTime(report.createdAt) || 'Unknown report date';
 
   return (
     <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm">

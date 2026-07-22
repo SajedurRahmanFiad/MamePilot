@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMaintenanceStatus } from '../src/hooks/useQueries';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
+import { formatDateTime } from '../utils';
 
 const Maintenance: React.FC = () => {
   const { data: maintenanceStatus, refetch } = useMaintenanceStatus(true);
@@ -61,7 +62,7 @@ const Maintenance: React.FC = () => {
             <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-500">Estimated return</p>
             <p className="mt-2 font-mono text-2xl font-black tracking-wider text-blue-900">{remainingSeconds > 0 ? formatCountdown(remainingSeconds) : '00h 00m 00s'}</p>
             {maintenanceStatus?.endsAt && (
-              <p className="mt-2 text-xs font-medium text-blue-600">{new Date(maintenanceStatus.endsAt).toLocaleString()}</p>
+              <p className="mt-2 text-xs font-medium text-blue-600">{formatDateTime(maintenanceStatus.endsAt)}</p>
             )}
           </div>
         )}

@@ -37,6 +37,7 @@ import {
   YAxis,
 } from 'recharts';
 import { theme } from '../theme';
+import { formatDate, formatDateTime } from '../utils';
 
 const MARKETING_RANGES: FilterRange[] = [
   'Today',
@@ -54,29 +55,8 @@ const formatMetric = (value?: number | null, digits: number = 2) =>
 const formatRoas = (value?: number | null) => value == null ? '—' : `${formatMetric(value, 2)}x`;
 const formatPercent = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 
-const toDateOnly = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-};
-
-const getDaySuffix = (day: number) => {
-  if (day % 100 >= 11 && day % 100 <= 13) return 'th';
-  if (day % 10 === 1) return 'st';
-  if (day % 10 === 2) return 'nd';
-  if (day % 10 === 3) return 'rd';
-  return 'th';
-};
-
 const formatTooltipDate = (value?: string | null) => {
-  if (!value) return '';
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return String(value);
-  const day = date.getDate();
-  const month = date.toLocaleString(undefined, { month: 'long' });
-  const year = date.getFullYear();
-  return `${day}${getDaySuffix(day)} ${month}, ${year}`;
+  return formatDate(value);
 };
 
 // Use local date (not UTC) so "Today" matches the user's calendar,
@@ -396,7 +376,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
           {data?.meta?.lastSyncedAt && (
             <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-[11px] font-bold text-gray-600">
               <RefreshCw size={12} className={isFetching ? 'animate-spin' : ''} />
-              Synced {new Date(data.meta.lastSyncedAt).toLocaleString()}
+              Synced {formatDateTime(data.meta.lastSyncedAt)}
             </span>
           )}
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700">
@@ -604,9 +584,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         angle={-45}
                         textAnchor="end"
                         tickFormatter={(val: string) => {
-                          const d = new Date(String(val));
-                          if (Number.isNaN(d.getTime())) return val;
-                          return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                          return formatDate(String(val));
                         }}
                       />
                       <YAxis
@@ -661,9 +639,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                         angle={-45}
                         textAnchor="end"
                         tickFormatter={(val: string) => {
-                          const d = new Date(String(val));
-                          if (Number.isNaN(d.getTime())) return val;
-                          return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                          return formatDate(String(val));
                         }}
                       />
                       <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => `${Number(value).toFixed(1)}x`} />
@@ -743,7 +719,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                             >
                               {order.orderNumber}
                             </button>
-                            <p className="text-[11px] text-gray-400">{toDateOnly(order.orderDate)}</p>
+                            <p className="text-[11px] text-gray-400">{formatDate(order.orderDate)}</p>
                           </td>
                           <td className="px-3 py-3 text-gray-700">{getStatusDisplayName(order.status)}</td>
                           <td className="px-3 py-3 text-gray-700">

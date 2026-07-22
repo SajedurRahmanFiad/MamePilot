@@ -8,6 +8,7 @@ import { submitPathaoOrder, generatePathaoToken, refreshPathaoToken, fetchPathao
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
+import { formatDateTimeParts } from '../utils';
 
 interface PathaoModalProps {
   isOpen: boolean;
@@ -18,9 +19,7 @@ interface PathaoModalProps {
 }
 
 function formatHistoryMoment(): string {
-  const now = new Date();
-  const date = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const { date, time } = formatDateTimeParts(new Date());
   return `${date}, at ${time}`;
 }
 

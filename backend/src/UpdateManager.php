@@ -104,6 +104,7 @@ final class UpdateManager
             } else {
                 $databaseResult = ['message' => 'Database update step skipped.'];
             }
+            $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -114,6 +115,7 @@ final class UpdateManager
                 'publicRoot' => $publicRoot === '' ? null : $publicRoot,
                 'backupRoot' => $actualBackupRoot,
                 'database' => $databaseResult,
+                'automaticCallingSchedule' => $autoCallSchedule,
                 'updatedAt' => gmdate('c'),
             ];
             (new AuditLog($this->config))->append('update.success', $result);
@@ -166,6 +168,7 @@ final class UpdateManager
             } else {
                 $databaseResult = ['message' => 'Schema update skipped by UPDATE_RUN_SCHEMA=0.'];
             }
+            $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -177,6 +180,7 @@ final class UpdateManager
                 'backendRoot' => $backendRoot,
                 'backupRoot' => $actualBackupRoot,
                 'database' => $databaseResult,
+                'automaticCallingSchedule' => $autoCallSchedule,
                 'updatedAt' => gmdate('c'),
             ];
             (new AuditLog($this->config))->append('update.git_success', $result);

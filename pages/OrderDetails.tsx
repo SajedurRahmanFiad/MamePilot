@@ -7,7 +7,7 @@ import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type Confir
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
-import { useAccounts, useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -19,6 +19,9 @@ import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   buildLocalDateTime,
   extractSteadfastTrackingFromHistory,
+  formatDate,
+  formatDateTime,
+  formatDateTimeParts,
   getPaperflyReferenceNumber,
   getPreferredCourierFromHistory,
   getTodayDate,
@@ -51,7 +54,12 @@ const OrderDetails: React.FC = () => {
   });
   
   // Query data
-  const { data: order, isPending: orderLoading, error: orderError } = useOrder(id || '');
+  const { data: storedOrder, isPending: orderLoading, error: orderError } = useOrder(id || '');
+  const hasSurvey = Boolean(storedOrder?.surveyStatus || storedOrder?.surveyEvents?.length);
+  const { data: liveSurvey } = useOrderSurveyStatus(id || '', hasSurvey);
+  const order = useMemo(() => (
+    storedOrder && liveSurvey ? { ...storedOrder, ...liveSurvey } : storedOrder
+  ), [storedOrder, liveSurvey]);
   const { data: customer } = useCustomer(order ? order.customerId : undefined);
   const { data: createdByUser } = useUser(order?.createdBy);
   const orderItemProductIds = useMemo(
@@ -66,6 +74,16 @@ const OrderDetails: React.FC = () => {
     const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
     return resolveThemeColorPalette(tc).primary;
   }, [systemDefaults?.themeColor]);
+  const invoiceLogoWidth = Math.max(0, Number(invoiceSettings?.logoWidth || db.settings.invoice.logoWidth));
+  const invoiceLogoHeight = Math.max(0, Number(invoiceSettings?.logoHeight || db.settings.invoice.logoHeight));
+  const invoiceLogoStyle = {
+    '--details-logo-mobile-width': `${Math.round(invoiceLogoWidth * 0.6)}px`,
+    '--details-logo-mobile-height': `${Math.round(invoiceLogoHeight * 0.6)}px`,
+    '--details-logo-tablet-width': `${Math.round(invoiceLogoWidth * 0.8)}px`,
+    '--details-logo-tablet-height': `${Math.round(invoiceLogoHeight * 0.8)}px`,
+    '--details-logo-width': `${invoiceLogoWidth}px`,
+    '--details-logo-height': `${invoiceLogoHeight}px`,
+  } as React.CSSProperties;
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: metaAdsData } = useMetaAds({}, true);
@@ -165,6 +183,14 @@ const OrderDetails: React.FC = () => {
     historyKey: keyof Order['history'];
     description: string;
   };
+  type ActivityTimelineEntry = {
+    key: string;
+    label: string;
+    icon: React.ReactNode;
+    text: string;
+    parsedAt: Date | null;
+    children?: ActivityTimelineEntry[];
+  };
   const [pendingStatusTransition, setPendingStatusTransition] = useState<OrderStatusTransition | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     date: getTodayDate(),
@@ -180,7 +206,11 @@ const OrderDetails: React.FC = () => {
     amount: 0,
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
   });
-  const [expandedSection, setExpandedSection] = useState<Record<string, boolean>>({ status: true });
+  const [expandedSection, setExpandedSection] = useState<Record<string, boolean>>({
+    status: true,
+    survey: true,
+    activitySurvey: false,
+  });
 
   const hasExchangedItems = (o?: Order | null) =>
     Boolean(o?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
@@ -271,16 +301,7 @@ const OrderDetails: React.FC = () => {
         const parsed = parseHistoryTimestamp(line);
         if (!parsed) return line;
 
-        const formattedDate = parsed.toLocaleDateString('en-BD', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        });
-        const formattedTime = parsed.toLocaleTimeString('en-BD', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
+        const { date: formattedDate, time: formattedTime } = formatDateTimeParts(parsed);
 
         const onAtRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
         const match = line.match(onAtRegex);
@@ -290,8 +311,9 @@ const OrderDetails: React.FC = () => {
           return `${prefix}${match[1]}${formattedDate}${match[3]}${formattedTime}${suffix}`;
         }
 
-        if (/^\d{4}-\d{2}-\d{2}T/.test(line)) {
-          return `${formattedDate}, at ${formattedTime}`;
+        const isoTimestampRegex = /\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/;
+        if (isoTimestampRegex.test(line)) {
+          return line.replace(isoTimestampRegex, `${formattedDate}, at ${formattedTime}`);
         }
 
         return line;
@@ -308,16 +330,17 @@ const OrderDetails: React.FC = () => {
     yesterday.setDate(now.getDate() - 1);
     const isYesterday = local.toDateString() === yesterday.toDateString();
 
-    const time = local.toLocaleTimeString('en-BD', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+    const { time } = formatDateTimeParts(local);
 
     if (isToday) return time;
     if (isYesterday) return `Yesterday, ${time}`;
 
-    return `${local.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}, ${time}`;
+    return `${formatDate(local)}, ${time}`;
+  };
+
+  const formatHistoryMoment = (value: Date | string) => {
+    const { date, time } = formatDateTimeParts(value);
+    return `${date}, at ${time}`;
   };
 
   const getStatusDisplayName = (status: OrderStatus) => {
@@ -494,20 +517,12 @@ const OrderDetails: React.FC = () => {
   
   // Get customer and created by user from query results
   // `customer` is obtained via `useCustomer` above
-  const activityTimelineEntries = React.useMemo(() => {
+  const activityTimelineEntries = React.useMemo<ActivityTimelineEntry[]>(() => {
     if (!order) return [];
 
     const history: Partial<Order['history']> = order.history || {};
     const defaultCreated = order.createdAt
-      ? `Created by ${createdByUser?.name || order.createdBy} on ${new Date(order.createdAt).toLocaleDateString('en-BD', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        })}, at ${new Date(order.createdAt).toLocaleTimeString('en-BD', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        })}`
+      ? `Created by ${createdByUser?.name || order.createdBy} on ${formatHistoryMoment(order.createdAt)}`
       : '';
 
     // Build timeline entries, expanding multi-line payment history into separate events
@@ -536,56 +551,100 @@ const OrderDetails: React.FC = () => {
       text: line,
     }));
 
-    const surveyEntries = (order.surveyEvents || []).map((event) => {
-      const labels: Record<string, string> = {
-        queued: 'Auto call queued',
-        initiated: 'Auto call initiated',
-        result_received: 'Survey response',
-        retry_scheduled: 'Retry scheduled',
-        retry_initiated: 'Retry initiated',
-        failed: 'Auto call failed',
-        cancelled: 'Auto call cancelled',
-      };
-      const eventDate = event.createdAt ? new Date(event.createdAt) : null;
-      const timestamp = eventDate && !Number.isNaN(eventDate.getTime())
-        ? eventDate.toLocaleString('en-BD', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : '';
-      return {
-        key: `survey-${event.id}`,
-        label: labels[event.eventType] || 'Voice survey update',
-        icon: event.eventType === 'failed' || event.eventType === 'cancelled' ? ICONS.Close : ICONS.Bell,
-        text: `${event.details || labels[event.eventType] || 'Voice survey updated.'}${timestamp ? ` · ${timestamp}` : ''}`,
-        parsedAt: eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null,
-        branch: !['queued', 'initiated'].includes(event.eventType),
-      };
-    });
+    const surveyEvents = order.surveyEvents || [];
+    const firstQueuedIndex = surveyEvents.findIndex((event) => event.eventType === 'queued');
+    const queuedEvent = firstQueuedIndex >= 0 ? surveyEvents[firstQueuedIndex] : null;
+    const parentTimestamp = queuedEvent?.createdAt || order.surveyTriggeredAt || surveyEvents[0]?.createdAt;
+    const parentEventDate = parentTimestamp ? new Date(parentTimestamp) : null;
+    const parentParsedAt = parentEventDate && !Number.isNaN(parentEventDate.getTime())
+      ? parentEventDate
+      : null;
 
-    if (surveyEntries.length === 0 && order.surveyTriggeredAt) {
-      const initiatedAt = new Date(order.surveyTriggeredAt);
-      surveyEntries.push({
-        key: 'survey-legacy-initiated',
-        label: 'Auto call initiated',
-        icon: ICONS.Bell,
-        text: `Voice survey initiated · ${initiatedAt.toLocaleString('en-BD')}`,
-        parsedAt: initiatedAt,
-        branch: false,
+    const surveyChildren = surveyEvents
+      .filter((_, index) => firstQueuedIndex < 0 || index !== firstQueuedIndex)
+      .map<ActivityTimelineEntry>((event) => {
+        const eventDate = event.createdAt ? new Date(event.createdAt) : null;
+        const parsedAt = eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null;
+        const eventTimestamp = parsedAt ? formatDateTime(parsedAt) : '';
+        const labels: Record<string, string> = {
+          queued: 'Survey queued again',
+          initiated: 'Call started',
+          result_received: 'Customer response',
+          retry_scheduled: 'Retry scheduled',
+          retry_initiated: 'Retry started',
+          failed: 'Call could not be completed',
+          cancelled: 'Survey cancelled',
+        };
+
+        let message = 'Automatic survey updated.';
+        if (event.eventType === 'queued') {
+          message = 'A new automatic survey attempt was queued.';
+        } else if (event.eventType === 'initiated') {
+          message = 'The automatic survey call started.';
+        } else if (event.eventType === 'result_received') {
+          if (event.callStatus === 'not_answered') {
+            message = 'The customer did not answer.';
+          } else if (event.response === '1') {
+            message = 'The customer confirmed the order.';
+          } else if (event.response === '2') {
+            message = 'The customer cancelled the order.';
+          } else if (event.response) {
+            message = 'The customer requested a follow-up.';
+          } else {
+            message = 'The call result was received.';
+          }
+        } else if (event.eventType === 'retry_scheduled') {
+          const scheduledMatch = String(event.details || '').match(/Retry scheduled for\s+(.+?)\.?$/i);
+          const scheduledAt = scheduledMatch?.[1] ? new Date(scheduledMatch[1]) : null;
+          message = scheduledAt && !Number.isNaN(scheduledAt.getTime())
+            ? `Next attempt: ${formatDateTime(scheduledAt)}`
+            : 'Another attempt was scheduled.';
+        } else if (event.eventType === 'retry_initiated') {
+          message = 'Another automatic survey call started.';
+        } else if (event.eventType === 'failed') {
+          message = 'The automatic survey could not be completed.';
+        } else if (event.eventType === 'cancelled') {
+          message = 'The automatic survey was cancelled.';
+        }
+
+        return {
+          key: `survey-${event.id}`,
+          label: labels[event.eventType] || 'Survey update',
+          icon: event.eventType === 'failed' || event.eventType === 'cancelled' ? ICONS.Close : ICONS.Bell,
+          text: event.eventType === 'retry_scheduled' || !eventTimestamp
+            ? message
+            : `${message} · ${eventTimestamp}`,
+          parsedAt,
+        };
       });
-    }
 
-    const entries = [...baseEntries, ...paymentEntries]
+    const surveyGroup: ActivityTimelineEntry | null = surveyEvents.length > 0 || order.surveyTriggeredAt
+      ? {
+          key: 'automatic-survey',
+          label: 'Automatic survey queued',
+          icon: ICONS.Bell,
+          text: parentParsedAt && !Number.isNaN(parentParsedAt.getTime())
+            ? `Queued ${formatDateTime(parentParsedAt)}`
+            : 'The automatic survey was queued.',
+          parsedAt: parentParsedAt && !Number.isNaN(parentParsedAt.getTime()) ? parentParsedAt : null,
+          children: surveyChildren,
+        }
+      : null;
+
+    const entries: ActivityTimelineEntry[] = [...baseEntries, ...paymentEntries]
       .map((entry) => ({
         ...entry,
         text: formatHistoryTextForTimeline(entry.text),
         parsedAt: parseHistoryTimestamp(entry.text),
-        branch: false,
-      }))
-      .concat(surveyEntries)
-      .sort((a, b) => {
-        if (a.parsedAt && b.parsedAt) return a.parsedAt.getTime() - b.parsedAt.getTime();
-        if (a.parsedAt) return -1;
-        if (b.parsedAt) return 1;
-        return 0;
-      });
+      }));
+
+    if (surveyGroup) entries.push(surveyGroup);
+    entries.sort((a, b) => {
+      if (a.parsedAt && b.parsedAt) return a.parsedAt.getTime() - b.parsedAt.getTime();
+      if (a.parsedAt) return -1;
+      if (b.parsedAt) return 1;
+      return 0;
+    });
 
     return entries;
   }, [order, createdByUser]);
@@ -869,7 +928,7 @@ const OrderDetails: React.FC = () => {
       toast.error('You do not have permission to confirm this order.');
       return;
     }
-    const historyText = `Confirmed by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    const historyText = `Confirmed by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(order.status, 'payment', historyText);
   };
 
@@ -878,7 +937,7 @@ const OrderDetails: React.FC = () => {
       toast.error('You do not have permission to move orders to processing.');
       return;
     }
-    const historyText = `Marked as processing by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    const historyText = `Marked as processing by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(OrderStatus.PROCESSING, 'processing', historyText);
   };
 
@@ -887,7 +946,7 @@ const OrderDetails: React.FC = () => {
       toast.error('You do not have permission to mark this order packed.');
       return;
     }
-    const historyText = `Marked as packed by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    const historyText = `Marked as packed by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(order.status, 'packed', historyText);
   };
 
@@ -895,7 +954,7 @@ const OrderDetails: React.FC = () => {
     if (isExchangeConsignment) {
       // Exchange consignment — don't change status, write to exchangeCourier history
       const noteText = details ? ` ${details.trim()}` : '';
-      const historyText = `Exchange courier assigned by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}.${noteText}`;
+      const historyText = `Exchange courier assigned by ${user.name}, on ${formatHistoryMoment(new Date())}.${noteText}`;
       await updateMutation.mutateAsync({
         id: order!.id,
         updates: {
@@ -911,7 +970,7 @@ const OrderDetails: React.FC = () => {
       return;
     }
     const noteText = details ? ` ${details.trim()}` : '';
-    const historyText = `Courier assigned by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}.${noteText}`;
+    const historyText = `Courier assigned by ${user.name}, on ${formatHistoryMoment(new Date())}.${noteText}`;
     await updateStatus(OrderStatus.COURIER_ASSIGNED, 'courier', historyText);
   };
 
@@ -975,7 +1034,7 @@ const OrderDetails: React.FC = () => {
       toast.error('You do not have permission to mark orders as picked.');
       return;
     }
-    const historyText = `Marked as picked by courier, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    const historyText = `Marked as picked by courier, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(OrderStatus.PICKED, 'picked', historyText);
   };
 
@@ -993,7 +1052,7 @@ const OrderDetails: React.FC = () => {
     } else if (pendingStatusTransition.action === 'pick') {
       await markPicked();
     } else if (pendingStatusTransition.action === 'exchangePick') {
-      const historyText = `Exchange picked up by courier, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const historyText = `Exchange picked up by courier, on ${formatHistoryMoment(new Date())}`;
       await updateStatus(OrderStatus.EXCHANGE_PICKED, 'exchangePicked', historyText);
     } else if (pendingStatusTransition.action === 'complete') {
       setShowCompletionModal(true);
@@ -1217,7 +1276,7 @@ const OrderDetails: React.FC = () => {
       const isoDatetime = fullDatetime.toISOString();
       const selectedAccount = accounts.find((account) => account.id === paymentForm.accountId);
       const paymentMethod = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
-      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${formatHistoryMoment(fullDatetime)}`;
 
       const updates: any = {
         history: appendHistoryEntry(order.history, historyText) as any,
@@ -1257,7 +1316,7 @@ const OrderDetails: React.FC = () => {
       const isoDatetime = fullDatetime.toISOString();
       const selectedAccount = accounts.find((account) => account.id === refundForm.accountId);
       const paymentMethod = refundForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
-      const historyText = `Refund of ${formatCurrency(refundForm.amount)} issued by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+      const historyText = `Refund of ${formatCurrency(refundForm.amount)} issued by ${user.name} via ${paymentMethod} in ${selectedAccount?.name || 'Unknown account'} on ${formatHistoryMoment(fullDatetime)}`;
       const updates: any = {
         paidAt: isoDatetime,
         history: appendHistoryEntry(order.history, historyText) as any,
@@ -1416,7 +1475,7 @@ const OrderDetails: React.FC = () => {
         total: order.total,
         notes: order.notes,
         paidAmount: 0,
-        history: { created: `${user.name} created this order as duplicate on ${new Date().toLocaleDateString('en-BD')}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: true })}` }
+        history: { created: `${user.name} created this order as duplicate on ${formatHistoryMoment(new Date())}` }
       };
       await createOrderMutation.mutateAsync(duplicateOrder as any);
       navigate('/orders');
@@ -1643,13 +1702,10 @@ const OrderDetails: React.FC = () => {
                 {(orderBranding?.logo || db.settings.company.logo) && (
                   <img 
                     src={orderBranding?.logo || db.settings.company.logo} 
-                    className="rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
-                    width={invoiceSettings?.logoWidth || db.settings.invoice.logoWidth}
-                    height={invoiceSettings?.logoHeight || db.settings.invoice.logoHeight}
-                    style={{
-                      width: invoiceSettings?.logoWidth || db.settings.invoice.logoWidth,
-                      height: invoiceSettings?.logoHeight || db.settings.invoice.logoHeight,
-                    }}
+                    className="details-invoice-logo rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
+                    width={invoiceLogoWidth}
+                    height={invoiceLogoHeight}
+                    style={invoiceLogoStyle}
                     alt="Company Logo"
                   />
                 )}
@@ -1663,7 +1719,7 @@ const OrderDetails: React.FC = () => {
                 <h2 className="text-sm sm:text-2xl lg:text-3xl font-black text-gray-300 uppercase leading-none mb-1 sm:mb-2 break-words">{invoiceSettings?.title || db.settings.invoice.title}</h2>
                 <div className="space-y-0.5 sm:space-y-1 lg:space-y-1.5 text-[9px] sm:text-sm">
                   <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Order No:&nbsp;&nbsp;</span> <span className="break-all">{order.orderNumber}</span></p>
-                  <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span> {order.orderDate}</p>
+                  <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span> {formatDate(order.orderDate)}</p>
                 </div>
               </div>
             </div>
@@ -1854,106 +1910,6 @@ const OrderDetails: React.FC = () => {
             )}
           </div>
 
-          {/* Voice Survey Status Section */}
-          {order.surveyStatus && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest">Voice Survey</h3>
-                {order.confirmationStatus ? <ConfirmationStatusDot status={order.confirmationStatus} size="md" showLabel /> : (
-                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">In progress</span>
-                )}
-              </div>
-
-              {order.confirmationStatus === 'confirmed' && (
-                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
-                  <p className="text-sm font-bold text-emerald-800">Confirmed by customer</p>
-                  <p className="mt-1 text-xs text-emerald-700">The customer pressed 1. This order is ready to process.</p>
-                </div>
-              )}
-              {order.confirmationStatus === 'cancelled' && (
-                <div className="rounded-xl bg-red-50 border border-red-100 p-4">
-                  <p className="text-sm font-bold text-red-800">Cancelled by customer</p>
-                  <p className="mt-1 text-xs text-red-700">The customer pressed 2. Do not dispatch this parcel.</p>
-                </div>
-              )}
-              {order.confirmationStatus === 'on_hold' && (
-                <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
-                  <p className="text-sm font-bold text-amber-800">Follow-up required</p>
-                  <p className="mt-1 text-xs text-amber-700">The customer pressed {order.surveyResponse || '3'}. Contact them before dispatch.</p>
-                </div>
-              )}
-              {(!order.confirmationStatus || order.confirmationStatus === 'waiting') && (
-                <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
-                  <p className="text-sm font-bold text-gray-700">{order.surveyCallStatus === 'not_answered' ? 'Customer did not pick up' : 'Waiting for webhook result'}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {order.surveyNextRetryAt ? `Retry scheduled for ${new Date(order.surveyNextRetryAt).toLocaleString('en-BD')}.` : 'This updates automatically when AwajDigital sends the webhook.'}
-                  </p>
-                  {order.surveyRetryCount > 0 ? <p className="mt-1 text-xs font-semibold text-gray-500">Retry attempt {order.surveyRetryCount}</p> : null}
-                </div>
-              )}
-
-              <div className="mt-3 flex gap-2">
-                {!order.surveyStatus || order.surveyStatus === 'skipped' || order.surveyStatus === 'failed' ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await triggerSurveyCallMutation.mutateAsync(order.id);
-                        toast.success('Survey call started.');
-                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : 'Failed to trigger call');
-                      }
-                    }}
-                    loading={triggerSurveyCallMutation.isPending}
-                  >
-                    Trigger Call
-                  </Button>
-                ) : null}
-                {order.surveyStatus === 'completed' && order.confirmationStatus === 'waiting' ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await retrySurveyCallMutation.mutateAsync(order.id);
-                        toast.success('Survey call started again.');
-                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : 'Could not start the survey call again. Please try again.');
-                      }
-                    }}
-                    loading={retrySurveyCallMutation.isPending}
-                  >
-                    Retry Call
-                  </Button>
-                ) : null}
-                {order.surveyStatus && !['completed', 'skipped', 'failed'].includes(order.surveyStatus) ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await cancelSurveyCallMutation.mutateAsync(order.id);
-                        toast.success('Survey call cancelled');
-                        queryClient.invalidateQueries({ queryKey: ['order', order.id] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : 'Failed to cancel call');
-                      }
-                    }}
-                    loading={cancelSurveyCallMutation.isPending}
-                  >
-                    Cancel Survey
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          )}
-
           {/* Order Progress Section */}
           {order ? (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
@@ -2035,6 +1991,125 @@ const OrderDetails: React.FC = () => {
               )}
             </div>
           ) : null}
+
+          {/* Automatic Survey Section */}
+          {order.surveyStatus && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+              <button
+                type="button"
+                className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center gap-3 text-left"
+                onClick={() => toggleSection('survey')}
+                aria-expanded={isSectionExpanded('survey')}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-black text-black uppercase tracking-widest">Automatic Survey</h3>
+                  {order.confirmationStatus ? (
+                    <ConfirmationStatusDot status={order.confirmationStatus} size="md" showLabel />
+                  ) : (
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">In progress</span>
+                  )}
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <div className={`p-1 rounded-full ${theme.colors.primary[50]} ${theme.colors.primary.text}`}>{ICONS.Bell}</div>
+                  <div className={`transition-transform duration-200 ${isSectionExpanded('survey') ? 'rotate-90' : ''}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                </div>
+              </button>
+
+              {isSectionExpanded('survey') && (
+                <div className="p-5">
+                  {order.confirmationStatus === 'confirmed' && (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                      <p className="text-sm font-bold text-emerald-800">Confirmed by customer</p>
+                      <p className="mt-1 text-xs text-emerald-700">The customer pressed 1. This order is ready to process.</p>
+                    </div>
+                  )}
+                  {order.confirmationStatus === 'cancelled' && (
+                    <div className="rounded-xl bg-red-50 border border-red-100 p-4">
+                      <p className="text-sm font-bold text-red-800">Cancelled by customer</p>
+                      <p className="mt-1 text-xs text-red-700">The customer pressed 2. Do not dispatch this parcel.</p>
+                    </div>
+                  )}
+                  {order.confirmationStatus === 'on_hold' && (
+                    <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
+                      <p className="text-sm font-bold text-amber-800">Follow-up required</p>
+                      <p className="mt-1 text-xs text-amber-700">The customer pressed {order.surveyResponse || '3'}. Contact them before dispatch.</p>
+                    </div>
+                  )}
+                  {(!order.confirmationStatus || order.confirmationStatus === 'waiting') && (
+                    <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
+                      <p className="text-sm font-bold text-gray-700">{order.surveyCallStatus === 'not_answered' ? 'Customer did not pick up' : 'Waiting for the call result'}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {order.surveyNextRetryAt ? `Retry scheduled for ${formatDateTime(order.surveyNextRetryAt)}.` : 'The status will update automatically.'}
+                      </p>
+                      {order.surveyRetryCount > 0 ? <p className="mt-1 text-xs font-semibold text-gray-500">Retry attempt {order.surveyRetryCount}</p> : null}
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {!order.surveyStatus || order.surveyStatus === 'skipped' || order.surveyStatus === 'failed' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await triggerSurveyCallMutation.mutateAsync(order.id);
+                            toast.success('Survey call started.');
+                            queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                          } catch {
+                            toast.error('Could not start the survey call. Ask a developer if the problem continues.');
+                          }
+                        }}
+                        loading={triggerSurveyCallMutation.isPending}
+                      >
+                        Trigger Call
+                      </Button>
+                    ) : null}
+                    {order.surveyStatus === 'completed' && order.confirmationStatus === 'waiting' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await retrySurveyCallMutation.mutateAsync(order.id);
+                            toast.success('Survey call started again.');
+                            queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                          } catch {
+                            toast.error('Could not start the survey call again. Ask a developer if the problem continues.');
+                          }
+                        }}
+                        loading={retrySurveyCallMutation.isPending}
+                      >
+                        Retry Call
+                      </Button>
+                    ) : null}
+                    {order.surveyStatus && !['completed', 'skipped', 'failed'].includes(order.surveyStatus) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await cancelSurveyCallMutation.mutateAsync(order.id);
+                            toast.success('Survey call cancelled.');
+                            queryClient.invalidateQueries({ queryKey: ['order', order.id] });
+                          } catch {
+                            toast.error('Could not cancel the survey call. Please try again.');
+                          }
+                        }}
+                        loading={cancelSurveyCallMutation.isPending}
+                      >
+                        Cancel Survey
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Metadata Section */}
           {order ? (
@@ -2177,16 +2252,51 @@ const OrderDetails: React.FC = () => {
         </div>
         <div className="p-5 space-y-4">
           {activityTimelineEntries.length > 0 ? (
-            activityTimelineEntries.map((entry) => (
-              <div key={entry.key} className={`relative flex gap-3 pb-4 border-b border-gray-100 last:border-b-0 last:pb-0 items-center ${entry.branch ? 'ml-5 border-l-2 border-l-blue-100 pl-4' : ''}`}>
+            activityTimelineEntries.map((entry) => entry.children ? (
+              <div key={entry.key} className="border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl text-left transition-colors hover:bg-gray-50"
+                  onClick={() => toggleSection('activitySurvey')}
+                  aria-expanded={isSectionExpanded('activitySurvey')}
+                >
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                    {entry.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-500">{entry.label}</p>
+                    <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
+                  </div>
+                  <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('activitySurvey') ? 'rotate-90' : ''}`}>
+                    {ICONS.ChevronRight}
+                  </div>
+                </button>
+                {isSectionExpanded('activitySurvey') && (
+                  <div className="ml-4 mt-4 space-y-4 border-l-2 border-blue-100 pl-6">
+                    {entry.children.map((child) => (
+                      <div key={child.key} className="relative flex items-center gap-3">
+                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                          {child.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{child.label}</p>
+                          <p className="text-xs font-medium leading-relaxed text-gray-700">{child.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div key={entry.key} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
                 <div className="flex-shrink-0">
-                  <div className="flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600">
                     {entry.icon}
                   </div>
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{entry.label}</p>
-                  <p className="text-xs text-gray-700 leading-relaxed font-medium">{entry.text}</p>
+                  <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
                 </div>
               </div>
             ))

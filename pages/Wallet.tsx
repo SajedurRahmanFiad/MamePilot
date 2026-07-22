@@ -7,7 +7,7 @@ import Pagination from '../src/components/Pagination';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useMyWallet, useSystemDefaults, useWalletActivityPage, useWalletSettings } from '../src/hooks/useQueries';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
-import { formatDateTimeParts } from '../utils';
+import { formatDate, formatDateTimeParts } from '../utils';
 
 const formatTimestamp = (value?: string): string => {
   const { date, time } = formatDateTimeParts(value);
@@ -16,11 +16,7 @@ const formatTimestamp = (value?: string): string => {
 };
 
 const formatPeriodDate = (value?: string | null): string => {
-  if (!value) return '';
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return value;
-  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return parsed.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
+  return formatDate(value);
 };
 
 const getEntryLabel = (entryType: WalletActivityEntry['entryType']): string => {

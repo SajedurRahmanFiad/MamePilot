@@ -33,6 +33,7 @@ import {
   useSendMessengerSenderAction,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
 
@@ -47,7 +48,7 @@ function formatTime(value?: string | null): string {
   if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('en-BD', { hour: 'numeric', minute: '2-digit' });
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric' });
+  return formatDate(date);
 }
 
 function dateLabel(value?: string | null): string {
@@ -57,7 +58,7 @@ function dateLabel(value?: string | null): string {
   if (date.toDateString() === now.toDateString()) return 'Today';
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString('en-BD', { month: 'short', day: 'numeric', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  return formatDate(date);
 }
 
 function initials(name: string): string {

@@ -8,6 +8,7 @@ import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { getPositivePageParam } from '../src/utils/navigation';
 import { ICONS } from '../constants';
+import { formatDateTime } from '../utils';
 
 type LeadStatus = 'New' | 'Follow-up' | 'Qualified' | 'Converted' | 'Lost';
 
@@ -93,18 +94,7 @@ const statusStyles: Record<LeadStatus, string> = {
   Lost: 'bg-rose-50 text-rose-700',
 };
 
-const formatDate = (value: string) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('en', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-};
+const formatLeadDate = (value: string) => formatDateTime(value) || '—';
 
 const isWithinRange = (value: string, filterRange: FilterRange, customDates: { from: string; to: string }, includeTime: boolean) => {
   if (!value) return true;
@@ -261,7 +251,7 @@ const Leads: React.FC = () => {
           {
             key: 'nextFollowUp',
             label: 'Next Follow-up',
-            render: (value) => <span className="text-sm font-medium text-gray-700">{formatDate(value)}</span>,
+            render: (value) => <span className="text-sm font-medium text-gray-700">{formatLeadDate(value)}</span>,
           },
           {
             key: 'source',
@@ -271,7 +261,7 @@ const Leads: React.FC = () => {
           {
             key: 'createdAt',
             label: 'Created',
-            render: (value) => <span className="text-sm font-medium text-gray-500">{formatDate(value)}</span>,
+            render: (value) => <span className="text-sm font-medium text-gray-500">{formatLeadDate(value)}</span>,
           },
         ]}
         data={paginatedLeads}

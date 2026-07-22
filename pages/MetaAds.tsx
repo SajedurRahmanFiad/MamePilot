@@ -7,7 +7,7 @@ import { Card, Button, MetaAdsMoney } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { type FilterRange } from '../components/FilterBar';
 import { ICONS } from '../constants';
-import { formatDate, formatDateTimeParts } from '../utils';
+import { formatDate, formatDateTime, formatDateTimeParts } from '../utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMetaAd, useMetaAds, useMetaAdsSyncStatus, useMetaAdsSettings, useMetaAdInsightsDaily, useMetaAdInsightsDemographics, useMetaAdInsightsPlacements, useMetaAdInsightsDevices } from '../src/hooks/useQueries';
 import { useSyncMetaAds } from '../src/hooks/useMutations';
@@ -356,9 +356,7 @@ const MetaAdsList: React.FC = () => {
   const summaryCurrency = String(summary.currency || metaAdsSettings?.displayCurrencyCode || 'BDT').toUpperCase();
   const mixedCurrencies = Boolean(summary.mixedCurrencies);
   const metricWindowLabel = summary.metricsWindow === 'lifetime' ? 'lifetime' : 'selected date range';
-  const lastSyncedLabel = syncStatus?.lastSyncedAt
-    ? new Date(syncStatus.lastSyncedAt).toLocaleString()
-    : null;
+  const lastSyncedLabel = syncStatus?.lastSyncedAt ? formatDateTime(syncStatus.lastSyncedAt) : null;
 
   if (settingsPending && !metaAdsSettings) {
     return <div className="h-64 animate-pulse rounded-xl border border-gray-100 bg-white" aria-label="Loading Meta Ads settings" />;
@@ -1068,10 +1066,10 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={filteredDailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => { const d = new Date(val); return Number.isNaN(d.getTime()) ? val : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => formatDate(val)} />
                       <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(v: number) => Number(v / 1000).toFixed(0) + 'k'} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#6b7280' }} />
-                      <Tooltip labelFormatter={(label: any) => { const d = new Date(String(label)); return Number.isNaN(d.getTime()) ? String(label) : d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); }} formatter={(value: any, name?: string) => { if (name === 'impressions' || name === 'clicks' || name === 'reach') return [formatNumber(Number(value)), prettyStatus(String(name || ''))]; return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), prettyStatus(String(name || ''))]; }} />
+                      <Tooltip labelFormatter={(label: any) => formatDate(String(label))} formatter={(value: any, name?: string) => { if (name === 'impressions' || name === 'clicks' || name === 'reach') return [formatNumber(Number(value)), prettyStatus(String(name || ''))]; return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), prettyStatus(String(name || ''))]; }} />
                       <Legend />
                       <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#2563eb" strokeWidth={2} dot={false} />
                       <Line yAxisId="right" type="monotone" dataKey="impressions" name="Impressions" stroke="#16a34a" strokeWidth={2} dot={false} />
@@ -1089,10 +1087,10 @@ const MetaAdDetails: React.FC<{ id: string }> = ({ id }) => {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={filteredDailyInsights} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => { const d = new Date(val); return Number.isNaN(d.getTime()) ? val : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(val: string) => formatDate(val)} />
                       <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={(v: number) => v + '%'} />
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#6b7280' }} />
-                      <Tooltip labelFormatter={(label: any) => { const d = new Date(String(label)); return Number.isNaN(d.getTime()) ? String(label) : d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); }} formatter={(value: any, name?: string) => { if (name === 'ctr') return [`${Number(value).toFixed(2)}%`, 'CTR (Click-Through Rate)']; if (name === 'cpc') return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), 'CPC (Cost Per Click)']; return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), prettyStatus(String(name || ''))]; }} />
+                      <Tooltip labelFormatter={(label: any) => formatDate(String(label))} formatter={(value: any, name?: string) => { if (name === 'ctr') return [`${Number(value).toFixed(2)}%`, 'CTR (Click-Through Rate)']; if (name === 'cpc') return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), 'CPC (Cost Per Click)']; return [formatMetaAdsCurrency(Number(value), ad.adAccountCurrency || 'USD'), prettyStatus(String(name || ''))]; }} />
                       <Legend />
                       <Line yAxisId="left" type="monotone" dataKey="ctr" name="CTR" stroke="#8b5cf6" strokeWidth={2} dot={false} />
                       <Line yAxisId="right" type="monotone" dataKey="cpc" name="CPC" stroke="#ef4444" strokeWidth={2} dot={false} />

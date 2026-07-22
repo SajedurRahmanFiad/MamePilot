@@ -7,7 +7,7 @@ import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenan
 import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings } from '../src/hooks/useMutations';
 import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
 import { theme } from '../theme';
-import { compressImage } from '../utils';
+import { compressImage, formatDateTime } from '../utils';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
@@ -450,7 +450,7 @@ const DeveloperSettings: React.FC = () => {
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
                 <p><span className="font-black text-gray-900">Plan:</span> {capabilitySettings?.planName || 'Local/manual'}</p>
                 <p><span className="font-black text-gray-900">Status:</span> {capabilitySettings?.licenseStatus || 'local'}</p>
-                <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? new Date(capabilitySettings.lastSyncedAt).toLocaleString() : 'Never'}</p>
+                <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? formatDateTime(capabilitySettings.lastSyncedAt) : 'Never'}</p>
                 {capabilitySettings?.lastSyncMessage && <p className="mt-1">{capabilitySettings.lastSyncMessage}</p>}
               </div>
             </section>

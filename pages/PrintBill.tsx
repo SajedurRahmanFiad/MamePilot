@@ -6,6 +6,7 @@ import { triggerPrintDialog } from '../src/utils/printUtils';
 import { useBill, useVendor, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { resolveThemeColorPalette } from '../theme';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { formatDate } from '../utils';
 
 interface BillInvoiceContentProps {
   bill: any;
@@ -15,21 +16,6 @@ interface BillInvoiceContentProps {
   invoiceSettings: any;
   themeColorHex: string;
 }
-
-const formatDisplayDate = (value?: string) => {
-  if (!value) return '';
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return parsed.toLocaleDateString('en-BD', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-};
 
 const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
   bill,
@@ -76,7 +62,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
             </p>
             <p className="text-sm font-bold text-gray-900 print:text-gray-800">
               <span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span>
-              {formatDisplayDate(bill.billDate)}
+              {formatDate(bill.billDate)}
             </p>
           </div>
         </div>

@@ -10,6 +10,7 @@ export interface TableColumn {
   label: string;
   align?: 'left' | 'center' | 'right';
   width?: string;
+  nowrap?: boolean;
   render?: (value: any, item: any, index: number) => ReactNode;
 }
 
@@ -56,7 +57,7 @@ export const Table: React.FC<TableProps> = ({
   return (
     <div className={`${theme.card.base} overflow-visible`}>
       <div className="overflow-x-auto">
-        <table className="w-full text-left">
+        <table className="w-full whitespace-nowrap text-left">
           <thead>
             <tr className={theme.table.header}>
               {columns.map((column) => (
@@ -110,7 +111,7 @@ export const Table: React.FC<TableProps> = ({
                           : column.align === 'right'
                             ? 'text-right'
                             : ''
-                      }`}
+                      } ${column.nowrap ? 'whitespace-nowrap' : ''}`}
                     >
                       {column.render
                         ? column.render(item[column.key], item, index)

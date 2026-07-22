@@ -7,6 +7,7 @@ import { useOrder, useCustomer, useProductImagesByIds, useCompanySettings, useIn
 import { resolveThemeColorPalette } from '../theme';
 import { getOrderCompanyPage } from '../src/utils/companyPages';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { formatDate } from '../utils';
 
 interface InvoiceContentProps {
   order: any;
@@ -63,11 +64,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
                 </p>
                 <p className="text-sm font-bold text-gray-900 print:text-gray-800">
                   <span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span>
-                  {new Date(order.orderDate).toLocaleDateString('en-BD', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
+                  {formatDate(order.orderDate)}
                 </p>
               </div>
             </div>

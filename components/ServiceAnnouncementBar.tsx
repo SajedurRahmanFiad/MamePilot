@@ -4,6 +4,7 @@ import { ICONS } from '../constants';
 import { hasAdminAccess } from '../types';
 import { useServiceSubscriptionOverview } from '../src/hooks/useQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
+import { formatDate } from '../utils';
 
 const ServiceAnnouncementBar: React.FC = () => {
   const navigate = useNavigate();
@@ -12,13 +13,7 @@ const ServiceAnnouncementBar: React.FC = () => {
   const { data: overview } = useServiceSubscriptionOverview(!!user);
 
   if (!overview) return null;
-  const dueAt = overview.dueAt
-    ? new Date(overview.dueAt).toLocaleDateString('en-BD', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    })
-    : '';
+  const dueAt = overview.dueAt ? formatDate(overview.dueAt) : '';
 
   let message = '';
   let barClassName = 'bg-red-600';

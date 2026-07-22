@@ -35,6 +35,7 @@ import {
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import {
   buildPayrollPeriodFromSelection,
+  formatPayrollDateRange,
   getCurrentMonthValue,
   type PayrollPeriodSelection,
 } from '../src/utils/payroll';
@@ -593,7 +594,7 @@ const Payroll: React.FC = () => {
       label: 'Pay Period',
       render: (value: string, item: PayrollPayment) => (
         <div>
-          <p className="text-sm font-bold text-gray-800">{value || `${item.periodStart} - ${item.periodEnd}`}</p>
+          <p className="text-sm font-bold text-gray-800">{value || formatPayrollDateRange(item.periodStart, item.periodEnd)}</p>
           <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
             getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot) === 'fixed'
               ? 'bg-violet-100 text-violet-700'

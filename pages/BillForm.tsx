@@ -12,7 +12,7 @@ import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage } from '../src
 import { useCreateBill, useUpdateBill } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { getTodayDate, sanitizePhoneInput } from '../utils';
+import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { getNextBillNumber } from '../src/services/supabaseQueries';
 
 const BillForm: React.FC = () => {
@@ -216,8 +216,7 @@ const BillForm: React.FC = () => {
     try {
       const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
       const total = Math.max(0, subtotal - discount + shipping);
-      const dateStr = new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-      const timeStr = new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+      const { date: dateStr, time: timeStr } = formatDateTimeParts(new Date());
 
       const billData = {
         billNumber,

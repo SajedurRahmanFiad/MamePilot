@@ -6,6 +6,7 @@ import { useRefreshBusinessRecommendations } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import type { BusinessRecommendation } from '../types';
 import { theme } from '../theme';
+import { formatDateTime } from '../utils';
 
 const BADGE_STYLES: Record<string, { bg: string; border: string; text: string; icon: React.ReactNode }> = {
   green: {
@@ -176,7 +177,7 @@ const GrowYourBusiness: React.FC = () => {
             <div className="flex items-center gap-3">
               {generatedAt && (
                 <span className="text-xs text-gray-400">
-                  {isCached ? 'Cached' : 'Generated'} {new Date(generatedAt).toLocaleString()}
+                  {isCached ? 'Cached' : 'Generated'} {formatDateTime(generatedAt)}
                 </span>
               )}
               <ChevronDown

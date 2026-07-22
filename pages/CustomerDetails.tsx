@@ -10,7 +10,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { getTodayDate } from '../utils';
+import { formatDate, formatDateTimeParts, getTodayDate } from '../utils';
 
 const CustomerDetails: React.FC = () => {
   const { id } = useParams();
@@ -79,8 +79,7 @@ const CustomerDetails: React.FC = () => {
 
       const newOrderNumber = `${orderSettings.prefix}${orderSettings.nextNumber}`;
       const now = new Date();
-      const dateStr = now.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' });
+      const { date: dateStr, time: timeStr } = formatDateTimeParts(now);
 
       const newOrder = {
         orderNumber: newOrderNumber,
@@ -228,7 +227,7 @@ const CustomerDetails: React.FC = () => {
 
           <div className="bg-[var(--primary-color,#0f2f57)] p-6 rounded-lg shadow-lg shadow-[var(--primary-color,#0f2f57)]/20 border border-[var(--primary-color,#0f2f57)] text-white">
             <p className="text-[var(--primary-soft,#ebf4ff)] text-[10px] font-bold uppercase tracking-wider mb-1">Customer Since</p>
-            <h4 className="text-lg font-black">{customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('en-BD', { month: 'short', year: 'numeric' }) : 'N/A'}</h4>
+            <h4 className="text-lg font-black">{customer.createdAt ? formatDate(customer.createdAt) : 'N/A'}</h4>
           </div>
         </div>
 
@@ -275,7 +274,7 @@ const CustomerDetails: React.FC = () => {
                             <td className="px-6 py-4">
                               <span className="font-bold text-gray-900">#{order.orderNumber}</span>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-600">{order.orderDate}</td>
+                            <td className="px-6 py-4 text-sm text-gray-600">{formatDate(order.orderDate)}</td>
                             <td className="px-6 py-4 text-sm font-semibold text-gray-600">{creatorName}</td>
                             <td className="px-6 py-4">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${getStatusColor(order.status)}`}>

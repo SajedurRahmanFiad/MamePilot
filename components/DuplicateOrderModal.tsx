@@ -1,6 +1,7 @@
 import React from 'react';
 import { Order } from '../types';
 import { formatCurrency, ICONS } from '../constants';
+import { formatDate } from '../utils';
 import { Modal } from './Modal';
 
 interface DuplicateOrderModalProps {
@@ -60,14 +61,20 @@ export const DuplicateOrderModal: React.FC<DuplicateOrderModalProps> = ({
         <div className="overflow-y-auto p-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <div className="space-y-6">
-              <div className="flex items-start justify-between gap-6">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
                 <div>
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Order Number</p>
                   <p className="text-lg font-black text-gray-900 mt-1">#{duplicateOrder.orderNumber}</p>
                 </div>
-                <div className="text-right">
+                <div className="sm:text-center">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Current Status</p>
+                  <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                    {duplicateOrder.status || 'Unknown'}
+                  </span>
+                </div>
+                <div className="sm:text-right">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Order Date</p>
-                  <p className="text-sm font-semibold text-gray-700 mt-1">{duplicateOrder.orderDate}</p>
+                  <p className="text-sm font-semibold text-gray-700 mt-1">{formatDate(duplicateOrder.orderDate) || '—'}</p>
                 </div>
               </div>
 

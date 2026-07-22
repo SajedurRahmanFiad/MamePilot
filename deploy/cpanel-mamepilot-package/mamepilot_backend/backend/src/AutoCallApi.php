@@ -32,6 +32,7 @@ final class AutoCallApi extends BaseService
             'noKeyRetryMinutes' => (int) ($row['no_key_retry_minutes'] ?? 10),
             'noKeyRetryCount' => (int) ($row['no_key_retry_count'] ?? 2),
             'triggerStatuses' => $triggerStatuses,
+            'workerHealth' => $this->buildWorkerHealth($row ?? []),
         ];
     }
 
@@ -255,6 +256,26 @@ final class AutoCallApi extends BaseService
             throw new RuntimeException('Order not found.');
         }
 
+        $events = [];
+        if ($this->tableExists('voice_survey_events')) {
+            $rows = $this->database->fetchAll(
+                'SELECT id, survey_id, event_type, call_status, response, details, created_at
+                 FROM voice_survey_events
+                 WHERE order_id = :order_id
+                 ORDER BY created_at ASC, id ASC',
+                [':order_id' => $orderId]
+            );
+            $events = array_map(fn (array $event): array => [
+                'id' => (string) $event['id'],
+                'surveyId' => $this->nullableString($event['survey_id'] ?? null),
+                'eventType' => (string) ($event['event_type'] ?? ''),
+                'callStatus' => $this->nullableString($event['call_status'] ?? null),
+                'response' => $this->nullableString($event['response'] ?? null),
+                'details' => $this->nullableString($event['details'] ?? null),
+                'createdAt' => $this->toIso($event['created_at'] ?? null) ?? '',
+            ], $rows);
+        }
+
         return [
             'surveyId' => $order['survey_id'] ?? null,
             'surveyStatus' => $order['survey_status'] ?? null,
@@ -264,6 +285,9 @@ final class AutoCallApi extends BaseService
             'surveyRetryCount' => (int) ($order['survey_retry_count'] ?? 0),
             'surveyNextRetryAt' => $this->toIso($order['survey_next_retry_at'] ?? null),
             'surveyTriggeredAt' => $this->toIso($order['survey_triggered_at'] ?? null),
+            'surveyLastRetryReason' => $order['survey_last_retry_reason'] ?? null,
+            'surveyLastRetryAt' => $this->toIso($order['survey_last_retry_at'] ?? null),
+            'surveyEvents' => $events,
         ];
     }
 
@@ -275,7 +299,7 @@ final class AutoCallApi extends BaseService
         $settings = $this->fetchSettingsRow();
         $token = (string) ($settings['api_token'] ?? '');
         if ($token === '') {
-            return ['success' => false, 'balance' => 0, 'message' => 'API token not configured.'];
+            return ['success' => false, 'balance' => 0, 'message' => 'Balance is unavailable until automatic calling is set up.'];
         }
 
         $ch = curl_init('https://api.awajdigital.com/api/balance');
@@ -293,12 +317,12 @@ final class AutoCallApi extends BaseService
         curl_close($ch);
 
         if ($response === false || $httpCode >= 400) {
-            return ['success' => false, 'balance' => 0, 'message' => $error ?: "HTTP {$httpCode}"];
+            return ['success' => false, 'balance' => 0, 'message' => 'Balance is temporarily unavailable.'];
         }
 
         $decoded = json_decode((string) $response, true);
         if (!is_array($decoded)) {
-            return ['success' => false, 'balance' => 0, 'message' => 'Invalid JSON response.'];
+            return ['success' => false, 'balance' => 0, 'message' => 'Balance is temporarily unavailable.'];
         }
 
         return [
@@ -426,6 +450,7 @@ final class AutoCallApi extends BaseService
                 'totalCalls' => 0,
                 'pendingCalls' => 0,
                 'sender' => (string) ($settings['sender'] ?? ''),
+                'workerHealth' => $this->buildWorkerHealth($settings),
             ];
         }
 
@@ -445,6 +470,7 @@ final class AutoCallApi extends BaseService
             'totalCalls' => $totalCalls,
             'pendingCalls' => $pendingCalls,
             'sender' => $sender,
+            'workerHealth' => $this->buildWorkerHealth($settings),
         ];
     }
 
@@ -518,8 +544,18 @@ final class AutoCallApi extends BaseService
         $now = $this->database->nowUtc();
         $this->ensureRechargeTable();
         $this->database->execute(
-            'INSERT INTO auto_calling_recharges (id, local_reference, gateway_payment_id, amount, status, submitted_by, submitted_at, created_at, updated_at) VALUES (:id, :ref, :gw_id, :amount, :status, :user_id, :now, :now, :now)',
-            [':id' => $id, ':ref' => $reference, ':gw_id' => $gatewayPaymentId ?: null, ':amount' => $this->formatMoney($amount), ':status' => 'processing', ':user_id' => (string) ($user['id'] ?? ''), ':now' => $now]
+            'INSERT INTO auto_calling_recharges (id, local_reference, gateway_payment_id, amount, status, submitted_by, submitted_at, created_at, updated_at) VALUES (:id, :ref, :gw_id, :amount, :status, :user_id, :submitted_at, :created_at, :updated_at)',
+            [
+                ':id' => $id,
+                ':ref' => $reference,
+                ':gw_id' => $gatewayPaymentId ?: null,
+                ':amount' => $this->formatMoney($amount),
+                ':status' => 'processing',
+                ':user_id' => (string) ($user['id'] ?? ''),
+                ':submitted_at' => $now,
+                ':created_at' => $now,
+                ':updated_at' => $now,
+            ]
         );
 
         return [
@@ -605,38 +641,46 @@ final class AutoCallApi extends BaseService
 
     public function processSurveyQueue(array $params = []): array
     {
+        if (PHP_SAPI !== 'cli') {
+            $this->requireAdmin();
+        }
+
         $settings = $this->fetchSettingsRow();
         if (!($settings['enabled'] ?? false)) {
             return ['processed' => 0, 'message' => 'Voice survey is disabled.'];
         }
 
-        $lastRun = $settings['cron_last_run'] ?? null;
         $now = $this->database->nowUtc();
-        if ($lastRun !== null) {
-            $lastRunTs = strtotime($lastRun);
-            if ($lastRunTs !== false && (time() - $lastRunTs) < 60) {
-                return ['processed' => 0, 'message' => 'Rate limited.'];
-            }
+        $this->recordWorkerRuntime($settings, ['cron_last_run' => $now]);
+
+        try {
+            $this->assertSurveyEnabled($settings);
+
+            $processed = 0;
+            $processed += $this->processPendingCalls($settings);
+            $processed += $this->processDueRetries($settings);
+            $processed += $this->recoverStuckOrders();
+
+            $this->recordWorkerRuntime($settings, [
+                'cron_last_success_at' => $this->database->nowUtc(),
+                'cron_last_error' => null,
+                'cron_last_processed_count' => $processed,
+            ]);
+
+            return ['processed' => $processed];
+        } catch (\Throwable $exception) {
+            $this->recordWorkerRuntime($settings, [
+                'cron_last_error' => mb_substr($exception->getMessage(), 0, 1000),
+                'cron_last_processed_count' => 0,
+            ]);
+            throw $exception;
         }
-
-        $this->database->execute(
-            'UPDATE voice_survey_settings SET cron_last_run = :now WHERE id = :id',
-            [':now' => $now, ':id' => $settings['id']]
-        );
-
-        $processed = 0;
-        $processed += $this->processPendingCalls($settings);
-        $processed += $this->processDueRetries($settings);
-        $processed += $this->recoverStuckOrders();
-
-        return ['processed' => $processed];
     }
 
     // ── Webhook Handler ───────────────────────────────────────────────
 
     /**
-     * Trigger background survey processing.
-     * Rate-limited to once per minute. Called after order creation.
+     * Trigger background survey processing after order creation.
      * Spawns process_survey_queue.php as a background process.
      */
     public function triggerSurveyBackgroundProcess(array $params = []): array
@@ -654,20 +698,58 @@ final class AutoCallApi extends BaseService
             }
         }
 
-        // Spawn background process
+        // Existing installations can receive this worker through an update before
+        // their updater knows how to register the recurring schedule. Self-heal
+        // when the next eligible order is created; detached execution remains the
+        // immediate fast path even if the host does not expose user crontabs.
+        (new AutoCallScheduler($this->config))->ensureInstalled();
+
         $script = dirname(__DIR__) . '/bin/process_survey_queue.php';
         if (!is_file($script)) {
             return ['triggered' => false, 'reason' => 'script_not_found'];
         }
 
         $phpBinary = PHP_BINARY ?: 'php';
-        $cmd = sprintf('%s %s > /dev/null 2>&1 &', escapeshellarg($phpBinary), escapeshellarg($script));
+        $logPath = (string) ($this->config->get(
+            'AUTO_CALL_WORKER_LOG',
+            dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot-auto-call.log'
+        ) ?? '');
+        $watchArgument = '--watch-seconds=' . $this->backgroundWorkerLifetimeSeconds($settings);
 
-        if (function_exists('shell_exec')) {
-            @shell_exec($cmd);
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $cmd = 'cmd /c start "" /B ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($script)
+                . ' ' . $watchArgument
+                . ' >> ' . escapeshellarg($logPath) . ' 2>&1';
+        } else {
+            $cmd = 'nohup ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($script)
+                . ' ' . $watchArgument
+                . ' >> ' . escapeshellarg($logPath) . ' 2>&1 < /dev/null &';
         }
 
-        return ['triggered' => true];
+        if (function_exists('popen')) {
+            $process = @popen($cmd, 'r');
+            if (is_resource($process)) {
+                @pclose($process);
+                return ['triggered' => true];
+            }
+        } elseif (function_exists('shell_exec')) {
+            @shell_exec($cmd);
+            return ['triggered' => true];
+        }
+
+        return ['triggered' => false, 'reason' => 'process_launch_unavailable'];
+    }
+
+    private function backgroundWorkerLifetimeSeconds(array $settings): int
+    {
+        $delayMinutes = max(0, (int) ($settings['delay_minutes'] ?? 5));
+        $missedRetryWindow = max(0, (int) ($settings['missed_call_retry_minutes'] ?? 30))
+            * max(0, (int) ($settings['missed_call_retry_count'] ?? 3));
+        $noKeyRetryWindow = max(0, (int) ($settings['no_key_retry_minutes'] ?? 10))
+            * max(0, (int) ($settings['no_key_retry_count'] ?? 2));
+        $watchMinutes = $delayMinutes + max($missedRetryWindow, $noKeyRetryWindow) + 5;
+
+        return max(600, min(86400, $watchMinutes * 60));
     }
 
     public function handleWebhookCallback(array $payload): array
@@ -794,9 +876,10 @@ final class AutoCallApi extends BaseService
             'webhook_url' => $webhookUrl,
         ];
 
+        $claimedAt = $this->database->nowUtc();
         $claimed = $this->database->execute(
-            "UPDATE orders SET survey_status = 'triggered', survey_triggered_at = :now, updated_at = :now WHERE id = :id AND survey_status = 'pending'",
-            [':now' => $this->database->nowUtc(), ':id' => $orderId]
+            "UPDATE orders SET survey_status = 'triggered', survey_triggered_at = :triggered_at, updated_at = :updated_at WHERE id = :id AND survey_status = 'pending'",
+            [':triggered_at' => $claimedAt, ':updated_at' => $claimedAt, ':id' => $orderId]
         );
         if ($claimed !== 1) {
             return false;
@@ -900,6 +983,109 @@ final class AutoCallApi extends BaseService
         );
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildWorkerHealth(array $settings): array
+    {
+        $enabled = !empty($settings['enabled']);
+        $pendingCount = 0;
+        $overdueCount = 0;
+
+        if ($this->columnExists('orders', 'survey_status')) {
+            $pendingCount = (int) ($this->database->fetchOne(
+                "SELECT COUNT(*) AS cnt FROM orders WHERE survey_status IN ('pending', 'triggered', 'initiated') AND deleted_at IS NULL"
+            )['cnt'] ?? 0);
+
+            if ($enabled) {
+                $statusPlaceholders = $this->buildStatusInClause($settings);
+                $overdueCount = (int) ($this->database->fetchOne(
+                    "SELECT COUNT(*) AS cnt
+                     FROM orders
+                     WHERE status IN ({$statusPlaceholders})
+                       AND survey_status = 'pending'
+                       AND deleted_at IS NULL
+                       AND (
+                         (survey_next_retry_at IS NULL AND created_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :worker_delay MINUTE))
+                         OR (survey_next_retry_at IS NOT NULL AND survey_next_retry_at <= UTC_TIMESTAMP())
+                       )",
+                    array_merge($this->statusBindings($settings), [
+                        ':worker_delay' => max(0, (int) ($settings['delay_minutes'] ?? 5)),
+                    ])
+                )['cnt'] ?? 0);
+            }
+        }
+
+        $lastRun = trim((string) ($settings['cron_last_run'] ?? ''));
+        $lastSuccess = trim((string) ($settings['cron_last_success_at'] ?? ''));
+        $lastError = trim((string) ($settings['cron_last_error'] ?? ''));
+        $lastRunTimestamp = $lastRun !== '' ? strtotime($lastRun . ' UTC') : false;
+        $secondsSinceLastRun = $lastRunTimestamp !== false ? max(0, time() - $lastRunTimestamp) : null;
+
+        $missingConfiguration = [];
+        foreach (['api_token', 'sender', 'template_name', 'webhook_secret', 'webhook_url'] as $field) {
+            if (trim((string) ($settings[$field] ?? '')) === '') {
+                $missingConfiguration[] = $field;
+            }
+        }
+
+        if (!$enabled) {
+            $status = 'disabled';
+            $message = 'Auto-calling is disabled.';
+        } elseif ($missingConfiguration !== []) {
+            $status = 'configuration_error';
+            $message = 'Automatic calling needs setup. Ask a developer to review the connection.';
+        } elseif ($lastError !== '') {
+            $status = 'error';
+            $message = 'Automatic calling needs attention. Ask a developer to review the connection.';
+        } elseif ($secondsSinceLastRun === null || $secondsSinceLastRun > 180) {
+            $status = 'stopped';
+            $message = $overdueCount > 0
+                ? sprintf('%d overdue call%s waiting. Automatic calling needs attention.', $overdueCount, $overdueCount === 1 ? ' is' : 's are')
+                : 'Automatic calling is temporarily unavailable. Ask a developer to review the service.';
+        } else {
+            $status = 'healthy';
+            $message = $overdueCount > 0
+                ? sprintf('%d due call%s will be processed shortly.', $overdueCount, $overdueCount === 1 ? '' : 's')
+                : 'Automatic calling is running normally.';
+        }
+
+        return [
+            'status' => $status,
+            'message' => $message,
+            'lastRunAt' => $this->toIso($lastRun !== '' ? $lastRun : null),
+            'lastSuccessAt' => $this->toIso($lastSuccess !== '' ? $lastSuccess : null),
+            'lastProcessedCount' => (int) ($settings['cron_last_processed_count'] ?? 0),
+            'pendingCount' => $pendingCount,
+            'overdueCount' => $overdueCount,
+        ];
+    }
+
+    /** @param array<string, mixed> $values */
+    private function recordWorkerRuntime(array $settings, array $values): void
+    {
+        $settingsId = trim((string) ($settings['id'] ?? ''));
+        if ($settingsId === '') {
+            return;
+        }
+
+        $available = [];
+        foreach ($values as $column => $value) {
+            if ($this->columnExists('voice_survey_settings', (string) $column)) {
+                $available[(string) $column] = $value;
+            }
+        }
+        if ($available === []) {
+            return;
+        }
+
+        [$setClause, $bindings] = $this->database->buildSetClause($available);
+        $this->database->execute(
+            "UPDATE voice_survey_settings SET {$setClause} WHERE id = :worker_settings_id",
+            array_merge($bindings, [':worker_settings_id' => $settingsId])
+        );
+    }
+
     private function recoverStuckOrders(): int
     {
         return $this->database->execute(
@@ -933,9 +1119,16 @@ final class AutoCallApi extends BaseService
         }
 
         $nextRetry = gmdate('Y-m-d H:i:s', time() + ($retryMinutes * 60));
+        $retriedAt = $this->database->nowUtc();
         $this->database->execute(
-            "UPDATE orders SET survey_status = 'pending', survey_id = NULL, survey_next_retry_at = :next_retry, survey_retry_count = survey_retry_count + 1, survey_last_retry_reason = :reason, survey_last_retry_at = :now, confirmation_status = NULL, updated_at = :now WHERE id = :id",
-            [':next_retry' => $nextRetry, ':reason' => $reason, ':now' => $this->database->nowUtc(), ':id' => $orderId]
+            "UPDATE orders SET survey_status = 'pending', survey_id = NULL, survey_next_retry_at = :next_retry, survey_retry_count = survey_retry_count + 1, survey_last_retry_reason = :reason, survey_last_retry_at = :last_retry_at, confirmation_status = NULL, updated_at = :updated_at WHERE id = :id",
+            [
+                ':next_retry' => $nextRetry,
+                ':reason' => $reason,
+                ':last_retry_at' => $retriedAt,
+                ':updated_at' => $retriedAt,
+                ':id' => $orderId,
+            ]
         );
         $this->logSurveyEvent(
             $orderId,
@@ -1026,6 +1219,9 @@ final class AutoCallApi extends BaseService
                 no_key_retry_count INT NOT NULL DEFAULT 2,
                 trigger_statuses TEXT NULL,
                 cron_last_run DATETIME NULL,
+                cron_last_success_at DATETIME NULL,
+                cron_last_error TEXT NULL,
+                cron_last_processed_count INT NOT NULL DEFAULT 0,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
@@ -1152,20 +1348,14 @@ final class AutoCallApi extends BaseService
         if ($settings === null || !($settings['enabled'] ?? false)) {
             throw new RuntimeException('Voice survey is not enabled. Enable it in Settings → Voice Survey.');
         }
-        if (empty($settings['api_token'])) {
-            throw new RuntimeException('AwajDigital API token is not configured in Developer Settings.');
-        }
-        if (empty($settings['template_name'])) {
-            throw new RuntimeException('Survey template name is not configured.');
-        }
-        if (empty($settings['sender'])) {
-            throw new RuntimeException('Survey sender is not configured.');
-        }
-        if (empty($settings['webhook_secret'])) {
-            throw new RuntimeException('Survey webhook secret is not configured in Developer Settings.');
-        }
-        if (empty($settings['webhook_url']) && PHP_SAPI === 'cli') {
-            throw new RuntimeException('Survey webhook URL is not configured in Developer Settings.');
+        if (
+            empty($settings['api_token'])
+            || empty($settings['template_name'])
+            || empty($settings['sender'])
+            || empty($settings['webhook_secret'])
+            || (empty($settings['webhook_url']) && PHP_SAPI === 'cli')
+        ) {
+            throw new RuntimeException('Automatic calling is not ready. Ask a developer to review the connection settings.');
         }
         if (!empty($settings['webhook_url'])) {
             $this->assertWebhookUrlValid((string) $settings['webhook_url'], (string) $settings['webhook_secret']);

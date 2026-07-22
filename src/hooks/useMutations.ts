@@ -2595,8 +2595,10 @@ export function useTriggerSurveyCall(): UseMutationResult<any, Error, string, un
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (orderId: string) => triggerSurveyCall(orderId),
-    onSuccess: () => {
+    onSuccess: (_, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['survey', 'order-status', orderId] });
     },
   });
 }
@@ -2605,8 +2607,10 @@ export function useRetrySurveyCall(): UseMutationResult<any, Error, string, unkn
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (orderId: string) => retrySurveyCall(orderId),
-    onSuccess: () => {
+    onSuccess: (_, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['survey', 'order-status', orderId] });
     },
   });
 }
@@ -2615,8 +2619,10 @@ export function useCancelSurveyCall(): UseMutationResult<any, Error, string, unk
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (orderId: string) => cancelSurveyCall(orderId),
-    onSuccess: () => {
+    onSuccess: (_, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['survey', 'order-status', orderId] });
     },
   });
 }

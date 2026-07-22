@@ -26,7 +26,7 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
 import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
-import { compressImage } from '../utils';
+import { compressImage, formatDateTime } from '../utils';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -1703,7 +1703,7 @@ const SettingsPage: React.FC = () => {
                           </p>
                           {metaAdsSettings.realtimeRateUpdatedAt && (
                             <p className="mt-1 text-blue-500">
-                              Last updated: {new Date(metaAdsSettings.realtimeRateUpdatedAt).toLocaleString()}
+                              Last updated: {formatDateTime(metaAdsSettings.realtimeRateUpdatedAt)}
                             </p>
                           )}
                         </div>
@@ -1756,7 +1756,7 @@ const SettingsPage: React.FC = () => {
                           <div>
                             <p className="text-sm font-black text-gray-900">{connection.metaUserName || connection.metaUserId || 'Meta Account'}</p>
                             <p className="mt-1 text-xs font-semibold text-gray-500">
-                              Last synced: {connection.lastSyncedAt ? new Date(connection.lastSyncedAt).toLocaleString('en-BD') : 'Not synced yet'}
+                              Last synced: {connection.lastSyncedAt ? formatDateTime(connection.lastSyncedAt) : 'Not synced yet'}
                             </p>
                           </div>
                           <span className={`inline-flex max-w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${connection.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -1814,6 +1814,38 @@ const SettingsPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                {voiceSurveySettingsData?.workerHealth && voiceSurveySettingsData.workerHealth.status !== 'disabled' && (
+                  <div className={`rounded-xl border p-5 ${
+                    voiceSurveySettingsData.workerHealth.status === 'healthy'
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : voiceSurveySettingsData.workerHealth.status === 'stopped'
+                        ? 'border-amber-200 bg-amber-50'
+                        : 'border-red-200 bg-red-50'
+                  }`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-base font-black text-gray-900">Queue delivery</h4>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${
+                        voiceSurveySettingsData.workerHealth.status === 'healthy'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : voiceSurveySettingsData.workerHealth.status === 'stopped'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700'
+                      }`}>
+                        {voiceSurveySettingsData.workerHealth.status === 'healthy' ? 'Running' : 'Needs attention'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-gray-700">{voiceSurveySettingsData.workerHealth.message}</p>
+                    <p className="mt-2 text-xs font-medium text-gray-500">
+                      Last check: {voiceSurveySettingsData.workerHealth.lastRunAt ? formatDateTime(voiceSurveySettingsData.workerHealth.lastRunAt) : 'Never'}
+                      {' · '}Pending: {voiceSurveySettingsData.workerHealth.pendingCount}
+                      {' · '}Overdue: {voiceSurveySettingsData.workerHealth.overdueCount}
+                    </p>
+                    {voiceSurveySettingsData.workerHealth.status !== 'healthy' && (
+                      <p className="mt-2 text-xs font-semibold text-gray-600">Ask a developer to review the automatic calling setup.</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Call Timing */}
                 <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
@@ -2333,7 +2365,7 @@ const SettingsPage: React.FC = () => {
                       <p className="text-xs font-semibold text-blue-700">
                         Token Status:{' '}
                         {new Date(courierSettings.pathao.tokenExpiresAt).getTime() > Date.now()
-                          ? <span className="text-green-700">Active (expires {new Date(courierSettings.pathao.tokenExpiresAt).toLocaleString()})</span>
+                          ? <span className="text-green-700">Active (expires {formatDateTime(courierSettings.pathao.tokenExpiresAt)})</span>
                           : <span className="text-red-700">Expired</span>
                         }
                       </p>

@@ -7,6 +7,7 @@ import { theme } from '../theme';
 import type { Order } from '../types';
 import { RotateCcw, Search, AlertTriangle, CheckCircle2, Package, User, Calendar, Hash, ChevronDown, ShieldAlert, Loader2 } from 'lucide-react';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { formatDate } from '../utils';
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   'On Hold': <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />,
@@ -241,9 +242,7 @@ const Undoer: React.FC = () => {
                   Order Date
                 </p>
                 <p className="text-sm font-bold text-gray-900">
-                  {order.orderDate
-                    ? new Date(order.orderDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                    : 'N/A'}
+                  {order.orderDate ? formatDate(order.orderDate) : 'N/A'}
                 </p>
               </div>
               <div className="space-y-1.5">

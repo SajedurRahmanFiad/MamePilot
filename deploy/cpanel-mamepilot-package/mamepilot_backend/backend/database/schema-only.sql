@@ -864,6 +864,9 @@ CREATE TABLE IF NOT EXISTS voice_survey_settings (
   no_key_retry_count INT NOT NULL DEFAULT 2,
   trigger_statuses TEXT NULL,
   cron_last_run DATETIME NULL,
+  cron_last_success_at DATETIME NULL,
+  cron_last_error TEXT NULL,
+  cron_last_processed_count INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
@@ -2208,6 +2211,11 @@ CREATE TABLE IF NOT EXISTS be_smart_settings (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-23_auto_calling_worker_health.sql
+CALL sp_add_col('voice_survey_settings', 'cron_last_success_at', 'DATETIME NULL AFTER cron_last_run');
+CALL sp_add_col('voice_survey_settings', 'cron_last_error', 'TEXT NULL AFTER cron_last_success_at');
+CALL sp_add_col('voice_survey_settings', 'cron_last_processed_count', 'INT NOT NULL DEFAULT 0 AFTER cron_last_error');
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

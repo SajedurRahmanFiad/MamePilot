@@ -9,7 +9,7 @@ import { useToastNotifications } from '../../src/contexts/ToastContext';
 import { useCapabilities } from '../../src/hooks/useCapabilities';
 import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage } from '../../src/hooks/useQueries';
 import { UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
-import { FilterRange, formatDate } from '../../utils';
+import { FilterRange, formatDate, formatDateTime as formatDisplayDateTime } from '../../utils';
 import Pagination from '../../src/components/Pagination';
 
 type RoleFilter = 'All Users' | 'Admins' | 'Employees';
@@ -17,26 +17,8 @@ type RoleFilter = 'All Users' | 'Admins' | 'Employees';
 const FILTERS: FilterRange[] = ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom'];
 const ROLE_FILTERS: RoleFilter[] = ['All Users', 'Admins', 'Employees'];
 
-const toDate = (value?: string | null): Date | null => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
 const formatDateTime = (value?: string | null): string => {
-  if (!value) return 'N/A';
-  const date = toDate(value);
-  if (!date) return value;
-  if (value.length <= 10) {
-    return date.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' });
-  }
-  return date.toLocaleString('en-BD', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDisplayDateTime(value) || 'N/A';
 };
 
 const formatCount = (value: number): string => new Intl.NumberFormat('en-BD').format(value);
@@ -858,17 +840,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 10;
 
-  const generatedAt = useMemo(
-    () =>
-      new Date().toLocaleString('en-BD', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    []
-  );
+  const generatedAt = useMemo(() => formatDisplayDateTime(new Date()), []);
   const companyName = companySettings?.name || db.settings.company.name || 'Mame Pilot';
   const companyLogo = companySettings?.logo || db.settings.company.logo || '';
   const selectedPeriod = useMemo(() => periodLabel(filterRange, customDates), [filterRange, customDates]);

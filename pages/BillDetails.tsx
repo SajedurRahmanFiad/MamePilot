@@ -12,7 +12,7 @@ import { LoadingOverlay, CommonPaymentModal, Modal, BillReturnModal } from '../c
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { buildLocalDateTime, getTodayDate } from '../utils';
+import { buildLocalDateTime, formatDate, formatDateTimeParts, getTodayDate } from '../utils';
 
 const BillDetails: React.FC = () => {
   const { id } = useParams();
@@ -38,6 +38,16 @@ const BillDetails: React.FC = () => {
     const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
     return resolveThemeColorPalette(tc).primary;
   }, [systemDefaults?.themeColor]);
+  const invoiceLogoWidth = Math.max(0, Number(invoiceSettings?.logoWidth || db.settings.invoice.logoWidth));
+  const invoiceLogoHeight = Math.max(0, Number(invoiceSettings?.logoHeight || db.settings.invoice.logoHeight));
+  const invoiceLogoStyle = {
+    '--details-logo-mobile-width': `${Math.round(invoiceLogoWidth * 0.6)}px`,
+    '--details-logo-mobile-height': `${Math.round(invoiceLogoHeight * 0.6)}px`,
+    '--details-logo-tablet-width': `${Math.round(invoiceLogoWidth * 0.8)}px`,
+    '--details-logo-tablet-height': `${Math.round(invoiceLogoHeight * 0.8)}px`,
+    '--details-logo-width': `${invoiceLogoWidth}px`,
+    '--details-logo-height': `${invoiceLogoHeight}px`,
+  } as React.CSSProperties;
   
   // Mutations
   const updateMutation = useUpdateBill();
@@ -196,15 +206,16 @@ const BillDetails: React.FC = () => {
     yesterday.setDate(now.getDate() - 1);
     const isYesterday = local.toDateString() === yesterday.toDateString();
 
-    const time = local.toLocaleTimeString('en-BD', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+    const { time } = formatDateTimeParts(local);
 
     if (isToday) return time;
     if (isYesterday) return `Yesterday, ${time}`;
-    return `${local.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}, ${time}`;
+    return `${formatDate(local)}, ${time}`;
+  };
+
+  const formatHistoryMoment = (value: Date | string) => {
+    const { date, time } = formatDateTimeParts(value);
+    return `${date}, at ${time}`;
   };
 
   const getTimelineLabel = (item: BillTimelineItem, index: number) => {
@@ -378,7 +389,7 @@ const BillDetails: React.FC = () => {
       toast.error('You do not have permission to move bills to processing.');
       return;
     }
-    const historyText = `Marked as processing by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    const historyText = `Marked as processing by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(BillStatus.PROCESSING, 'processing', historyText);
   };
 
@@ -388,7 +399,7 @@ const BillDetails: React.FC = () => {
       return;
     }
 
-    const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     const newStatus = completionOutcome === 'Returned' ? BillStatus.RETURNED : BillStatus.RECEIVED;
     const historyKey = completionOutcome === 'Returned' ? 'returned' : 'received';
 
@@ -401,7 +412,7 @@ const BillDetails: React.FC = () => {
       toast.error('You do not have permission to cancel bills.');
       return;
     }
-    const historyText = `Reverted/cancelled by ${user.name}, on ${new Date().toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    const historyText = `Reverted/cancelled by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(BillStatus.CANCELLED, 'cancelled', historyText);
   };
 
@@ -433,7 +444,7 @@ const BillDetails: React.FC = () => {
         return;
       }
       const isoDatetime = fullDatetime.toISOString();
-      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user.name} on ${formatHistoryMoment(fullDatetime)}`;
       
       const updatedBill: any = {
         history: appendBillHistory('paid', historyText),
@@ -500,7 +511,7 @@ const BillDetails: React.FC = () => {
       toast.error('Please enter a valid refund date and time');
       return;
     }
-    const historyText = `Vendor refund of ${formatCurrency(refundForm.amount)} recorded by ${user.name} on ${fullDatetime.toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}, at ${fullDatetime.toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}`;
+    const historyText = `Vendor refund of ${formatCurrency(refundForm.amount)} recorded by ${user.name} on ${formatHistoryMoment(fullDatetime)}`;
     try {
       await updateMutation.mutateAsync({
         id: id!,
@@ -600,13 +611,10 @@ const BillDetails: React.FC = () => {
                 {(companySettings?.logo || db.settings.company.logo) && (
                   <img 
                     src={companySettings?.logo || db.settings.company.logo} 
-                    className="rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
-                    width={invoiceSettings?.logoWidth || db.settings.invoice.logoWidth}
-                    height={invoiceSettings?.logoHeight || db.settings.invoice.logoHeight}
-                    style={{
-                      width: invoiceSettings?.logoWidth || db.settings.invoice.logoWidth,
-                      height: invoiceSettings?.logoHeight || db.settings.invoice.logoHeight,
-                    }}
+                    className="details-invoice-logo rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
+                    width={invoiceLogoWidth}
+                    height={invoiceLogoHeight}
+                    style={invoiceLogoStyle}
                     alt="Company Logo"
                   />
                 )}
@@ -620,7 +628,7 @@ const BillDetails: React.FC = () => {
                 <h2 className="text-sm sm:text-2xl lg:text-3xl font-black text-gray-300 uppercase leading-none mb-1 sm:mb-2 break-words">{invoiceSettings?.title || db.settings.invoice.title}</h2>
                 <div className="space-y-0.5 sm:space-y-1 lg:space-y-1.5 text-[9px] sm:text-sm">
                   <p className="text-[9px] sm:text-sm font-bold text-gray-900 break-words">Bill No: #{bill.billNumber}</p>
-                  <p className="text-[9px] sm:text-sm text-gray-500">{bill.billDate}</p>
+                  <p className="text-[9px] sm:text-sm text-gray-500">{formatDate(bill.billDate)}</p>
                 </div>
               </div>
             </div>

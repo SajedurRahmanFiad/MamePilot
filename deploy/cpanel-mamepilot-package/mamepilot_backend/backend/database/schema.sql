@@ -758,6 +758,9 @@ CREATE TABLE IF NOT EXISTS voice_survey_settings (
   no_key_retry_count INT NOT NULL DEFAULT 2,
   trigger_statuses TEXT NULL,
   cron_last_run DATETIME NULL,
+  cron_last_success_at DATETIME NULL,
+  cron_last_error TEXT NULL,
+  cron_last_processed_count INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)

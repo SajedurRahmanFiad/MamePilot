@@ -3,7 +3,7 @@ import { Button } from './Button';
 import { Modal } from './Modal';
 import { FraudCheckResults } from './FraudCheckResults';
 import type { FraudCheckResult } from '../types';
-import { normalizePhoneSearchValue } from '../utils';
+import { formatDateTime, normalizePhoneSearchValue } from '../utils';
 
 type FraudCheckModalProps = {
   isOpen: boolean;
@@ -64,7 +64,7 @@ export const FraudCheckModal: React.FC<FraudCheckModalProps> = ({
         ) : null}
         {validPhone && result ? (
           <>
-            {checkedAt ? <p className="text-xs font-medium text-gray-400">Last checked {new Date(checkedAt).toLocaleString('en-BD')}</p> : null}
+            {checkedAt ? <p className="text-xs font-medium text-gray-400">Last checked {formatDateTime(checkedAt)}</p> : null}
             <FraudCheckResults result={result} />
           </>
         ) : null}

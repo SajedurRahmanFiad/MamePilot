@@ -232,13 +232,14 @@ const Vendors: React.FC = () => {
           {
             key: 'name',
             label: 'Vendor Name',
+            nowrap: true,
             render: (_, vendor) => (
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-max items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-blue-400 text-white flex items-center justify-center font-bold">
                   {vendor.name.charAt(0)}
                 </div>
                 <div>
-                  <span className="font-bold text-gray-900 block">{vendor.name}</span>
+                  <span className="block whitespace-nowrap font-bold text-gray-900">{vendor.name}</span>
                   <p className="text-xs text-gray-400 truncate max-w-[200px]">{vendor.address}</p>
                 </div>
               </div>
@@ -247,12 +248,14 @@ const Vendors: React.FC = () => {
           {
             key: 'phone',
             label: 'Contact',
-            render: (phone) => <span className="text-sm font-medium text-gray-700">{phone}</span>,
+            nowrap: true,
+            render: (phone) => <span className="whitespace-nowrap text-sm font-medium text-gray-700">{phone}</span>,
           },
           {
             key: 'totalPurchases',
             label: 'Purchases',
             align: 'center',
+            nowrap: true,
             render: (count) => (
               <span className="px-2 py-1 bg-gray-100 rounded-lg text-xs font-bold text-gray-600">
                 {count}
@@ -263,6 +266,7 @@ const Vendors: React.FC = () => {
             key: 'dueAmount',
             label: 'Balance Payable',
             align: 'right',
+            nowrap: true,
             render: (amount) => (
               <span className={`font-bold ${amount > 0 ? 'text-red-500' : 'text-green-500'}`}>
                 {formatCurrency(amount)}
@@ -273,6 +277,7 @@ const Vendors: React.FC = () => {
             key: 'id',
             label: 'Actions',
             align: 'right',
+            nowrap: true,
             render: (vendorId) => (
               <div className="justify-end flex items-center gap-2">
                 {canEditVendors && (

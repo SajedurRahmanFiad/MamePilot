@@ -10,6 +10,7 @@ import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
 import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import Pagination from '../src/components/Pagination';
+import { formatDateTime } from '../utils';
 
 const PAGE_SIZE = 25;
 
@@ -44,7 +45,7 @@ const formatStatus = (value: string) => {
 };
 
 const getCallOutcome = (status: string, callStatus: string, confirmationStatus: string) => {
-  if (callStatus.startsWith('api_error')) return 'API error';
+  if (callStatus.startsWith('api_error')) return 'Could not start';
   if (callStatus === 'api_success' && ['initiated', 'triggered'].includes(status)) return 'Awaiting result';
   if (callStatus) return formatStatus(callStatus);
   if (confirmationStatus) return formatStatus(confirmationStatus);
@@ -123,6 +124,7 @@ const AutoCalling: React.FC = () => {
 
   const history = historyData?.history || [];
   const totalPages = historyData?.pagination?.totalPages || 1;
+  const workerHealth = summaryData?.workerHealth;
   const historyErrorMessage = historyError instanceof Error
     ? historyError.message
     : historyData?.message || 'Please try again.';
@@ -214,18 +216,6 @@ const AutoCalling: React.FC = () => {
     }
   };
 
-  const formatDate = (iso: string) => {
-    if (!iso) return '—';
-    try {
-      return new Date(iso).toLocaleString('en-BD', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: true,
-      });
-    } catch {
-      return iso;
-    }
-  };
-
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Filter Bar + Action Buttons */}
@@ -308,6 +298,44 @@ const AutoCalling: React.FC = () => {
         </div>
       </div>
 
+      {workerHealth && workerHealth.status !== 'disabled' && (
+        <div className={`rounded-xl border p-4 ${
+          workerHealth.status === 'healthy'
+            ? 'border-emerald-200 bg-emerald-50'
+            : workerHealth.status === 'stopped'
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-red-200 bg-red-50'
+        }`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-black text-gray-900">Automatic call queue</p>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${
+                  workerHealth.status === 'healthy'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : workerHealth.status === 'stopped'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-red-100 text-red-700'
+                }`}>
+                  {workerHealth.status === 'healthy' ? 'Running' : 'Needs attention'}
+                </span>
+              </div>
+              <p className="mt-1 text-sm font-medium text-gray-700">{workerHealth.message}</p>
+              <p className="mt-2 text-xs font-medium text-gray-500">
+                Last check: {workerHealth.lastRunAt ? formatDateTime(workerHealth.lastRunAt) : 'Never'}
+                {' · '}Pending: {workerHealth.pendingCount}
+                {' · '}Overdue: {workerHealth.overdueCount}
+              </p>
+            </div>
+            {workerHealth.status !== 'healthy' && (
+              <Button variant="outline" size="sm" onClick={() => navigate('/settings?tab=voice-survey')}>
+                Review settings
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Table with Tab Swapper */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Tab Header */}
@@ -369,9 +397,9 @@ const AutoCalling: React.FC = () => {
                   <tbody className="divide-y divide-gray-50">
                     {history.map((entry) => (
                       <tr key={entry.orderId} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="max-w-[11rem] break-all px-5 py-4 font-mono text-xs font-semibold text-gray-700">{entry.id || '—'}</td>
+                        <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-gray-700">{entry.id || '—'}</td>
                         <td className="px-5 py-4">
-                          <button onClick={() => navigate(`/orders/${entry.orderId}`)} className="text-left text-sm font-bold text-[#0f2f57] hover:underline">
+                          <button onClick={() => navigate(`/orders/${entry.orderId}`)} className="whitespace-nowrap text-left text-sm font-bold text-[#0f2f57] hover:underline">
                             #{entry.orderNumber || entry.orderId}
                           </button>
                           {entry.customerName && <p className="mt-0.5 text-xs font-medium text-gray-500">{entry.customerName}</p>}
@@ -382,7 +410,7 @@ const AutoCalling: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-sm font-medium text-gray-600">{getCallOutcome(entry.status, entry.callStatus, entry.confirmationStatus)}</td>
-                        <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDate(entry.createdAt)}</td>
+                        <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDateTime(entry.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -421,7 +449,7 @@ const AutoCalling: React.FC = () => {
                           {recharge.status}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDate(recharge.submittedAt)}</td>
+                      <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDateTime(recharge.submittedAt)}</td>
                     </tr>
                   ))}
                 </tbody>

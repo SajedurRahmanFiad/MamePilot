@@ -16,6 +16,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
 import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
+import { formatDate } from '../utils';
 
 const AdminSubscriptions: React.FC = () => {
   const { data: overview, isPending: loadingOverview } = useServiceSubscriptionOverview(true);
@@ -199,7 +200,7 @@ const AdminSubscriptions: React.FC = () => {
           <div>
             <h1 className="text-3xl font-black">{overview?.planName || capabilitySettings?.planName || 'Local Plan'}</h1>
             <p className="mt-2 text-sm font-medium text-white/75">
-              Renewal: {renewalDate ? new Date(renewalDate).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not configured'}
+              Renewal: {renewalDate ? formatDate(renewalDate) : 'Not configured'}
             </p>
             {processingPayment && (
               <p className="mt-2 text-sm font-medium text-white/80">
@@ -309,7 +310,7 @@ const AdminSubscriptions: React.FC = () => {
                 <tr key={payment.id} className="border-t border-gray-100">
                   <td className="px-4 py-3 font-bold text-gray-800">{payment.gatewayPaymentId || payment.transactionId}</td>
                   <td className="px-4 py-3">{formatCurrency(payment.amount)}</td>
-                  <td className="px-4 py-3">{new Date(payment.submittedAt).toLocaleDateString('en-BD')}</td>
+                  <td className="px-4 py-3">{formatDate(payment.submittedAt)}</td>
                   <td className="px-4 py-3 capitalize">{payment.status}</td>
                   <td className="px-4 py-3">
                     {payment.invoiceUrl ? <a className="font-black text-[#0f2f57]" href={payment.invoiceUrl} target="_blank" rel="noreferrer">Download</a> : <span className="text-gray-400">-</span>}

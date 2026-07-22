@@ -745,7 +745,7 @@ const DataManagementSettingsPanel: React.FC = () => {
               </div>
             )}
             <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-800">
-              Settings exports can contain private provider tokens, webhook secrets, and passwords. Store the file securely and only import files you trust.
+              Settings exports can contain private connection keys and passwords. Store the file securely and only import files you trust.
             </div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-black uppercase tracking-widest text-gray-500">

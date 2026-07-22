@@ -364,6 +364,17 @@ export interface VoiceSurveySettings {
   noKeyRetryMinutes: number;
   noKeyRetryCount: number;
   triggerStatuses: string[];
+  workerHealth?: VoiceSurveyWorkerHealth;
+}
+
+export interface VoiceSurveyWorkerHealth {
+  status: 'healthy' | 'stopped' | 'error' | 'configuration_error' | 'disabled';
+  message: string;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  lastProcessedCount: number;
+  pendingCount: number;
+  overdueCount: number;
 }
 
 export interface WooCommerceStore {
@@ -1335,6 +1346,20 @@ export interface VoiceSurveyEvent {
   response?: string | null;
   details?: string | null;
   createdAt: string;
+}
+
+export interface OrderSurveySnapshot {
+  surveyId?: string | null;
+  surveyStatus?: SurveyStatus | null;
+  surveyResponse?: string | null;
+  surveyCallStatus?: string | null;
+  confirmationStatus?: ConfirmationStatus | null;
+  surveyRetryCount: number;
+  surveyNextRetryAt?: string | null;
+  surveyTriggeredAt?: string | null;
+  surveyLastRetryReason?: string | null;
+  surveyLastRetryAt?: string | null;
+  surveyEvents: VoiceSurveyEvent[];
 }
 
 export interface PayrollSettings {

@@ -5,18 +5,7 @@ import DynamicFilterBar, { type CombinedFilter } from '../components/DynamicFilt
 import type { NotificationActionConfig, NotificationDecisionScope, NotificationDeploymentRecipient, NotificationRecipient } from '../types';
 import { useNotificationById } from '../src/hooks/useQueries';
 import { getPreservedRouteState } from '../src/utils/navigation';
-
-const formatDateTime = (value?: string | null): string => {
-  if (!value) return 'Not set';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not set';
-
-  return date.toLocaleString('en-BD', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-};
+import { formatDateTime } from '../utils';
 
 const getActionLabel = (actionConfig?: NotificationActionConfig | null): string => {
   switch (actionConfig?.kind) {

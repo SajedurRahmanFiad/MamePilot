@@ -6,6 +6,7 @@ use App\Config;
 use App\Database;
 use App\MigrationManager;
 use App\SchemaManager;
+use App\AutoCallScheduler;
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
@@ -28,6 +29,9 @@ if (!$skipMigrations) {
     $migrationResult = $migrationManager->run();
     echo 'Migrations: ' . $migrationResult['message'] . "\n";
 }
+
+$autoCallSchedule = (new AutoCallScheduler($config))->ensureInstalled();
+echo 'Automatic calling schedule: ' . $autoCallSchedule['message'] . "\n";
 
 function getOption(string $name): ?string
 {

@@ -10,7 +10,7 @@ import { useRecycleBinPage, useSystemDefaults, useRecycleBinFilterOptions } from
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { RecycleBinEntityType, RecycleBinItem, hasAdminAccess } from '../types';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDateTime } from '../utils';
 
 const ENTITY_LABELS: Record<RecycleBinEntityType, string> = {
   customer: 'Customer',
@@ -33,14 +33,7 @@ const ENTITY_BADGES: Record<RecycleBinEntityType, string> = {
 };
 
 const formatTimestamp = (value?: string): string => {
-  if (!value) return '-';
-  return new Date(value).toLocaleString('en-BD', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTime(value) || '-';
 };
 
 const RecycleBin: React.FC = () => {

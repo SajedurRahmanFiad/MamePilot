@@ -9,20 +9,11 @@ import { useUser } from '../src/hooks/useQueries';
 import { useDeleteUser } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
-import { openAttachmentPreview } from '../utils';
+import { formatDate, openAttachmentPreview } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const formatDateValue = (value?: string | null) => {
-  if (!value) return 'Not provided';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not provided';
-
-  return date.toLocaleDateString('en-BD', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  return formatDate(value) || 'Not provided';
 };
 
 const formatTextValue = (value?: string | null) => {

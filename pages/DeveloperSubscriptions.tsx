@@ -13,6 +13,7 @@ import {
   normalizeSubCapabilities,
 } from '../src/utils/capabilities';
 import type { AppCapabilityKey, AppCapabilityMap, LicenseTier, SubCapabilityKey, SubCapabilityMap } from '../types';
+import { formatDate, formatDateTime } from '../utils';
 
 const StatCard: React.FC<{ label: string; value: string; hint?: string; valueColor?: string }> = ({ label, value, hint, valueColor }) => (
   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -36,14 +37,6 @@ const tierCapabilitiesToMap = (tier?: LicenseTier | null): AppCapabilityMap => {
     defaults[key] = Boolean(tier?.capabilities?.includes(key));
   });
   return defaults;
-};
-
-const formatDateWithOrdinal = (dateStr: string): string => {
-  const d = new Date(dateStr);
-  const day = d.getDate();
-  const suffix = (day % 100 >= 11 && day % 100 <= 13) ? 'th' : ['th', 'st', 'nd', 'rd'][day % 10] || 'th';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${day}${suffix} ${months[d.getMonth()]}, ${d.getFullYear()}`;
 };
 
 const DeveloperSubscriptions: React.FC = () => {
@@ -202,7 +195,7 @@ const DeveloperSubscriptions: React.FC = () => {
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="Current State" value={formatState(overview?.state || 'Unknown').label} valueColor={formatState(overview?.state || 'Unknown').color} hint={overview?.subscriptionStatus && overview.subscriptionStatus !== overview?.state ? overview.subscriptionStatus : undefined} />
-        <StatCard label="Valid Till" value={overview?.dueAt ? formatDateWithOrdinal(overview.dueAt) : 'Not set'} />
+        <StatCard label="Valid Till" value={overview?.dueAt ? formatDate(overview.dueAt) : 'Not set'} />
         <StatCard label="Monthly Price" value={formatCurrency(capabilitySettings?.pricingMetadata?.monthly ?? overview?.totalAmount ?? 0)} hint={capabilitySettings?.planName || overview?.planName || 'No tier'} />
       </div>
 
@@ -260,7 +253,7 @@ const DeveloperSubscriptions: React.FC = () => {
           <p><span className="font-black text-gray-900">Current tier:</span> {capabilitySettings?.planName || 'Not assigned'}</p>
           <p><span className="font-black text-gray-900">Status:</span> {capabilitySettings?.licenseStatus || 'local'}</p>
           <p><span className="font-black text-gray-900">Override:</span> {capabilitySettings?.overrideEnabled ? 'Enabled' : 'Using tier defaults'}</p>
-          <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? new Date(capabilitySettings.lastSyncedAt).toLocaleString() : 'Never'}</p>
+          <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? formatDateTime(capabilitySettings.lastSyncedAt) : 'Never'}</p>
         </div>
 
         <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-5">
@@ -424,7 +417,7 @@ const DeveloperSubscriptions: React.FC = () => {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-black text-gray-900">{payment.gatewayPaymentId || payment.transactionId}</p>
-                  <p className="text-xs font-medium text-gray-500">{new Date(payment.submittedAt).toLocaleString()}</p>
+                  <p className="text-xs font-medium text-gray-500">{formatDateTime(payment.submittedAt)}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-black text-[#0f2f57]">{formatCurrency(payment.amount)}</p>

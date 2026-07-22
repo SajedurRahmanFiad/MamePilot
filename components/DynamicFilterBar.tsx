@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ICONS } from '../constants';
+import { formatDate } from '../utils';
 
 export type FilterOperator = '=' | '≠' | 'contains' | 'does not contain' | '<' | '>' | 'on' | 'before' | 'after';
 
@@ -33,14 +34,7 @@ export interface CombinedFilter {
 }
 
 export const formatDateDisplay = (dateStr: string): string => {
-  if (!dateStr) return '';
-  const date = new Date(dateStr + 'T00:00:00');
-  if (isNaN(date.getTime())) return dateStr;
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const day = date.getDate();
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day} ${month}, ${year}`;
+  return formatDate(dateStr);
 };
 
 interface DynamicFilterBarProps {

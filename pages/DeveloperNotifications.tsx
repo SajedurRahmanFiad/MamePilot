@@ -6,6 +6,7 @@ import { useNotificationHistoryPage, usePermissionsSettings, useDeployments } fr
 import { useCreateNotification } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
+import { formatDateTime } from '../utils';
 
 const HISTORY_PAGE_SIZE = 12;
 
@@ -14,18 +15,6 @@ const toIsoString = (value: string): string | null => {
   if (!trimmed) return null;
   const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
-};
-
-const formatDateTime = (value?: string | null): string => {
-  if (!value) return 'Not set';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not set';
-
-  return date.toLocaleString('en-BD', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 };
 
 const stripHtml = (value: string): string =>
