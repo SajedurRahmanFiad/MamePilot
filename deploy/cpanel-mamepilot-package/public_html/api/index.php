@@ -8,10 +8,12 @@ use App\AutoCallApi;
 use App\BusinessGrowthApi;
 use App\Config;
 use App\CourierApi;
+use App\DataManagementApi;
 use App\Database;
 use App\FeatureAccess;
 use App\Http;
 use App\MasterDataApi;
+use App\MetaAdsApi;
 use App\MessengerApi;
 use App\OperationsApi;
 use App\OrderPostCreateEffects;
@@ -66,11 +68,13 @@ try {
     $master = new MasterDataApi($database, $auth, $config);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
-    $autoCall = new AutoCallApi($database, $auth, $config);
-    $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
-    $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
+    $dataManagement = new DataManagementApi($database, $auth, $config);
+    $metaAds = new MetaAdsApi($database, $auth, $config);
     $whatsapp = new WhatsAppApi($database, $auth, $config);
     $messenger = new MessengerApi($database, $auth, $config);
+    $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
+    $autoCall = new AutoCallApi($database, $auth, $config);
+    $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
 
     if ($action === 'health') {
@@ -80,6 +84,11 @@ try {
             'db' => $database->fetchOne('SELECT 1 AS ok'),
             'appRoot' => $appRoot,
         ], AppVersion::info($appRoot)));
+        exit;
+    }
+
+    if ($action === 'metaAdsOAuthCallback') {
+        $metaAds->redirectAfterOAuth($payload);
         exit;
     }
 
@@ -118,7 +127,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
