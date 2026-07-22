@@ -90,46 +90,29 @@ final class BusinessGrowthApi extends BaseService
      */
     private function generateRecommendations(array $settings): array
     {
-        $provider = trim((string) ($settings['provider'] ?? ''));
-        $apiKey = trim((string) ($settings[$provider . '_api_key'] ?? ''));
-        $model = trim((string) ($settings[$provider . '_model'] ?? ''));
-        $baseUrl = trim((string) ($settings[$provider . '_base_url'] ?? ''));
-
-        if ($apiKey === '' || $model === '') {
-            // Fall back to env-based keys
-            if ($provider === 'openrouter') {
-                $apiKey = $apiKey ?: trim((string) ($this->config->get('OPENROUTER_API_KEY') ?? ''));
-            } elseif ($provider === 'google') {
-                $apiKey = $apiKey ?: trim((string) ($this->config->get('GEMINI_API_KEY') ?? ''));
-            }
-        }
-
-        if ($apiKey === '') {
-            return [
-                'recommendations' => [],
-                'generatedAt' => null,
-                'expiresAt' => null,
-                'error' => 'No API key configured for the selected AI provider. Configure it in Developer Settings > Business Growth.',
-            ];
-        }
-
         // Step 1: Run aggregate analysis queries (small, bounded results)
         $summaries = $this->buildDataSummaries();
 
         // Step 2: Call LLM with compact summaries
-        $llmResponse = $this->callLLM($provider, $apiKey, $model, $baseUrl, $summaries);
-
-        if (isset($llmResponse['error'])) {
+        try {
+            $rawContent = (new LlmClient($this->database, $this->config))->generateForFeature(
+                'business_growth',
+                $this->buildSystemPrompt(),
+                "Based on the following real business data, generate 3-4 actionable product recommendations.\n\n" . $summaries,
+                [],
+                ['temperature' => 0.3, 'maxTokens' => 4096]
+            );
+            $llmResponse = ['content' => $rawContent];
+        } catch (\Throwable $exception) {
             return [
                 'recommendations' => [],
                 'generatedAt' => null,
                 'expiresAt' => null,
-                'error' => $llmResponse['error'],
+                'error' => $exception->getMessage(),
             ];
         }
 
         // Step 3: Parse LLM response into structured recommendations
-        $rawContent = $llmResponse['content'] ?? '';
         $recommendations = $this->parseRecommendations($rawContent);
 
         // If parsing produced nothing, surface the raw response for debugging

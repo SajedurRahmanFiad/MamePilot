@@ -138,7 +138,7 @@ const GrowYourBusiness: React.FC = () => {
             {typeof hasError === 'string' ? hasError : 'Unable to generate recommendations.'}
           </p>
           <p className="mt-1 text-xs text-red-600">
-            Make sure an AI provider is configured in Developer Settings &gt; Business Growth.
+            Make sure a model is assigned to Grow Your Business in Developer Settings &gt; LLMs.
           </p>
         </div>
       )}

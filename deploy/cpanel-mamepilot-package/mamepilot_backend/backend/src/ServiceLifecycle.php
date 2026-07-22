@@ -58,6 +58,8 @@ final class ServiceLifecycle
         'updateCustomer',
         'updateInvoiceSettings',
         'updateMetaAdsSettings',
+        'updateLlmSettings',
+        'updateBeSmartSettings',
         'updateOrder',
         'updateOrderSettings',
         'updatePaymentMethod',

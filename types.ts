@@ -209,6 +209,7 @@ export interface Customer {
   fraudCheckedAt?: string | null;
   deletedAt?: string;
   deletedBy?: string;
+  smartInput?: string;
 }
 
 export interface Vendor {
@@ -221,6 +222,7 @@ export interface Vendor {
   createdBy?: string;
   deletedAt?: string;
   deletedBy?: string;
+  smartInput?: string;
 }
 
 export interface Product {
@@ -1011,6 +1013,7 @@ export type AppCapabilityKey =
   | 'mamecx'
   | 'enterprise_ai_agent'
   | 'grow_your_business'
+  | 'be_smart'
   | 'whatsapp'
   | 'messenger'
   | 'auto_calling'
@@ -1073,25 +1076,8 @@ export interface PaymentGatewaySettings {
   piprapayReturnUrl: string;
 }
 
-export type AiMainProvider = 'anthropic' | 'openai' | 'google' | 'openrouter';
-
-export interface AiProviderConfig {
-  enabled: boolean;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  organization?: string;
-  project?: string;
-}
-
 export interface AgentSettings {
   enabled: boolean;
-  mainProvider: AiMainProvider;
-  anthropic: AiProviderConfig;
-  openai: AiProviderConfig;
-  google: AiProviderConfig;
-  openrouter: AiProviderConfig;
-  groq: AiProviderConfig;
   showReasoningSummaries: boolean;
   showToolActivity: boolean;
   maxReasoningSteps: number;
@@ -1100,16 +1086,36 @@ export interface AgentSettings {
   queryTimeoutMs: number;
 }
 
-export type BusinessGrowthProvider = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'groq';
-
 export interface BusinessGrowthSettings {
-  provider: BusinessGrowthProvider;
-  openai: { baseUrl: string; apiKey: string; model: string };
-  anthropic: { baseUrl: string; apiKey: string; model: string };
-  google: { baseUrl: string; apiKey: string; model: string };
-  openrouter: { baseUrl: string; apiKey: string; model: string };
-  groq: { baseUrl: string; apiKey: string; model: string };
   recommendationCacheHours: number;
+}
+
+export type LlmProvider = 'google' | 'openai' | 'openrouter' | 'groq' | 'anthropic' | 'deepseek';
+export type LlmFeatureKey = 'information_extraction' | 'mame_ai' | 'business_growth';
+
+export interface LlmConfiguration {
+  id: string;
+  label: string;
+  provider: LlmProvider;
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  organization?: string;
+  project?: string;
+  siteUrl?: string;
+  appName?: string;
+  anthropicVersion?: string;
+}
+
+export interface LlmSettings {
+  configurations: LlmConfiguration[];
+  assignments: Record<LlmFeatureKey, string | null>;
+}
+
+export interface BeSmartSettings {
+  smartCustomerAdding: boolean;
+  smartVendorAdding: boolean;
 }
 
 export interface BusinessRecommendation {

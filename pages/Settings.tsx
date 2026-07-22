@@ -5,12 +5,12 @@ import { db } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, hasAdminAccess, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
+import { OrderStatus, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
 import {
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings,
   useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus,
-  useVoiceSurveySettings
+  useVoiceSurveySettings, useBeSmartSettings
 } from '../src/hooks/useQueries';
 import {
   useCreateCategory, useDeleteCategory,
@@ -20,7 +20,7 @@ import {
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
-  useUpdateVoiceSurveySettings
+  useUpdateVoiceSurveySettings, useUpdateBeSmartSettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -58,6 +58,7 @@ const SettingsPage: React.FC = () => {
     canManagePermissions,
     canSyncAds,
   } = useRolePermissions();
+  const { hasCapability, capabilities } = useCapabilities(Boolean(user));
 
   // Query data from React Query hooks
   const { data: companySettingsData, isPending: companyLoading } = useCompanySettings();
@@ -71,6 +72,7 @@ const SettingsPage: React.FC = () => {
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
   const { data: voiceSurveySettingsData, isPending: voiceSurveyLoading } = useVoiceSurveySettings(activeTab === 'voice-survey');
+  const { data: beSmartSettingsData, isPending: beSmartLoading } = useBeSmartSettings(Boolean(capabilities.be_smart));
   const syncMetaAdsMutation = useSyncMetaAds();
   const META_COOLDOWN_KEY = 'metaAdsCooldownEndAt';
   const [metaAdsCooldown, setMetaAdsCooldown] = useState(() => {
@@ -103,6 +105,7 @@ const SettingsPage: React.FC = () => {
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
+  const updateBeSmartSettingsMutation = useUpdateBeSmartSettings();
   const toast = useToastNotifications();
 
   // Meta Ads sync cooldown timer
@@ -139,8 +142,6 @@ const SettingsPage: React.FC = () => {
       }
     };
   }, [metaAdsCooldown]);
-  const { hasCapability } = useCapabilities(Boolean(user));
-
   // Local state for forms (these need to be maintained locally until save)
   const [companySettings, setCompanySettings] = useState<Settings['company']>(() => normalizeCompanySettings(db.settings.company));
   const [expandedCompanyPages, setExpandedCompanyPages] = useState<Record<string, boolean>>(() =>
@@ -180,6 +181,7 @@ const SettingsPage: React.FC = () => {
     whiteLabel: false,
     themeColor: '#0f2f57',
   });
+  const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
   );
@@ -301,6 +303,10 @@ const SettingsPage: React.FC = () => {
   }, [voiceSurveySettingsData]);
 
   React.useEffect(() => {
+    if (beSmartSettingsData) setBeSmartSettings(beSmartSettingsData);
+  }, [beSmartSettingsData]);
+
+  React.useEffect(() => {
     if (urlTab !== activeTab) {
       setActiveTab(urlTab);
     }
@@ -394,7 +400,7 @@ const SettingsPage: React.FC = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams, toast, queryClient]);
 
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading);
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
     setCompanySettings((current) => normalizeCompanySettings({
       ...current,
@@ -562,6 +568,20 @@ const SettingsPage: React.FC = () => {
     } catch (err) {
       console.error('Failed to initiate settings save:', err);
       toast.error(err instanceof Error ? err.message : 'Could not save the settings. Please try again.');
+    }
+  };
+
+  const handleSaveBeSmart = async () => {
+    const toastId = toast.loading('Saving Be Smart settings...');
+    try {
+      const saved = await updateBeSmartSettingsMutation.mutateAsync({
+        smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
+        smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
+      });
+      setBeSmartSettings(saved);
+      toast.update(toastId, 'Be Smart settings saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save Be Smart settings.', 'error');
     }
   };
 
@@ -830,6 +850,7 @@ const SettingsPage: React.FC = () => {
     canEditCompanySettings ? { id: 'company', label: 'Company', icon: ICONS.Dashboard } : null,
     canEditOrderInvoiceSettings ? { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales } : null,
     canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
+    capabilities.be_smart && hasAdminAccess(user?.role) ? { id: 'be-smart', label: 'Be Smart', icon: ICONS.Bell } : null,
     hasCapability('human_resources') && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
     hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
     hasCapability('whatsapp') && hasAdminAccess(user?.role) ? { id: 'whatsapp', label: 'WhatsApp', icon: ICONS.WhatsApp } : null,
@@ -879,7 +900,15 @@ const SettingsPage: React.FC = () => {
       <LoadingOverlay isLoading={loading} message="Loading settings..." />
       <div className="flex items-center justify-between">
         <div />
-        {!['meta-ads', 'whatsapp', 'messenger', 'woocommerce', 'voice-survey', 'data-management'].includes(activeTab) && <Button
+        {activeTab === 'be-smart' && <Button
+          onClick={handleSaveBeSmart}
+          variant="primary"
+          size="md"
+          disabled={updateBeSmartSettingsMutation.isPending}
+        >
+          {updateBeSmartSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
+        </Button>}
+        {!['meta-ads', 'whatsapp', 'messenger', 'woocommerce', 'voice-survey', 'data-management', 'be-smart'].includes(activeTab) && <Button
           onClick={handleSave}
           variant="primary"
           size="md"
@@ -1223,6 +1252,53 @@ const SettingsPage: React.FC = () => {
                     Transactions above this amount will stay pending until an admin accepts or declines them.
                   </p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'be-smart' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="border-b border-gray-100 pb-4">
+                <h3 className="text-xl font-black text-gray-900">Be Smart</h3>
+                <p className="mt-1 text-sm font-medium text-gray-500">Replace separate contact fields with one friendly paste box. MamePilot extracts the values using the model assigned to Information extraction in Developer Settings &gt; LLMs.</p>
+              </div>
+
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-800">
+                The final phone number is normalized again on the server and is saved only when it is exactly 11 digits and starts with 0.
+              </div>
+
+              <div className="grid gap-4">
+                {capabilities.sales && (
+                  <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-[#3c5a82]/30">
+                    <input
+                      type="checkbox"
+                      checked={beSmartSettings.smartCustomerAdding}
+                      onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartCustomerAdding: event.target.checked }))}
+                      className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <div>
+                      <p className="font-black text-gray-900">Smart customer adding</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Use a single raw-details box on new and edit customer pages.</p>
+                    </div>
+                  </label>
+                )}
+                {capabilities.purchases && (
+                  <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-[#3c5a82]/30">
+                    <input
+                      type="checkbox"
+                      checked={beSmartSettings.smartVendorAdding}
+                      onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartVendorAdding: event.target.checked }))}
+                      className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <div>
+                      <p className="font-black text-gray-900">Smart vendor adding</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Use a single raw-details box on new and edit vendor pages.</p>
+                    </div>
+                  </label>
+                )}
+                {!capabilities.sales && !capabilities.purchases && (
+                  <p className="rounded-2xl border border-gray-200 bg-gray-50 p-5 text-sm font-semibold text-gray-500">Enable Sales &amp; Customer Management or Purchases &amp; Vendor Management to configure a smart contact form.</p>
+                )}
               </div>
             </div>
           )}

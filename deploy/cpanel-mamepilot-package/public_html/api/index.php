@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\AppVersion;
 use App\Auth;
 use App\AutoCallApi;
+use App\BusinessGrowthApi;
 use App\Config;
 use App\CourierApi;
 use App\Database;
@@ -66,6 +67,7 @@ try {
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
     $autoCall = new AutoCallApi($database, $auth, $config);
+    $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
     $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
     $whatsapp = new WhatsAppApi($database, $auth, $config);
     $messenger = new MessengerApi($database, $auth, $config);
@@ -116,7 +118,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $autoCall, $whatsapp, $messenger, $woocommerce];
+    $services = [$master, $operations, $courier, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

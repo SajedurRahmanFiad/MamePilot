@@ -97,6 +97,8 @@ import {
   fetchBillFilterOptions,
   fetchVendorFilterOptions,
   fetchBusinessGrowthSettings,
+  fetchLlmSettings,
+  fetchBeSmartSettings,
   fetchBusinessRecommendations,
   fetchVoiceSurveySettings,
   fetchVoiceSurveyIntegrationSettings,
@@ -181,6 +183,8 @@ import type {
   MessengerProfileSettings,
   MessengerContact,
   MessengerMessage,
+  LlmSettings,
+  BeSmartSettings,
 } from '../../types';
 import { db, saveDb } from '../../db';
 import { hasAdminAccess } from '../../types';
@@ -1034,6 +1038,24 @@ export function useBusinessGrowthSettings(enabled: boolean = true) {
     queryKey: ['settings', 'business-growth'],
     queryFn: fetchBusinessGrowthSettings,
     staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useLlmSettings(enabled: boolean = true): UseQueryResult<LlmSettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'llms'],
+    queryFn: fetchLlmSettings,
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useBeSmartSettings(enabled: boolean = true): UseQueryResult<BeSmartSettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'be-smart'],
+    queryFn: fetchBeSmartSettings,
+    staleTime: 5 * 60 * 1000,
     enabled,
   });
 }

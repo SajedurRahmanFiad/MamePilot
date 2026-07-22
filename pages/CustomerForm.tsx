@@ -5,39 +5,34 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Customer } from '../types';
 import { Button } from '../components';
 import { theme } from '../theme';
-import { useCustomer } from '../src/hooks/useQueries';
+import { useBeSmartSettings, useCustomer } from '../src/hooks/useQueries';
 import { useCreateCustomer, useUpdateCustomer } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { isTempId } from '../src/utils/optimisticIdMap';
 import { sanitizePhoneInput } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 
 const CustomerForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const isEdit = Boolean(id);
   const { canCreateCustomers, canEditCustomers } = useRolePermissions();
-  
-  const [form, setForm] = useState({ name: '', phone: '', address: '' });
-  const [error, setError] = useState<string | null>(null);
-  const initializedRef = useRef(false);
-
-  // Wait for auth to load
-  if (authLoading) {
-    return (
-      <div className="p-8 text-center">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading...</h2>
-        <p className="text-gray-500 mb-6">Authenticating session...</p>
-      </div>
-    );
-  }
-
+  const { capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const hasBeSmart = Boolean(capabilities.be_smart);
+  const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const { data: customer, isPending: loading, error: fetchError } = useCustomer(isEdit ? id : undefined);
   const createMutation = useCreateCustomer();
   const updateMutation = useUpdateCustomer();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const smartMode = hasBeSmart && Boolean(beSmartSettings?.smartCustomerAdding);
+  
+  const [form, setForm] = useState({ name: '', phone: '', address: '' });
+  const [smartInput, setSmartInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     initializedRef.current = false;
@@ -54,6 +49,7 @@ const CustomerForm: React.FC = () => {
         phone: customer.phone,
         address: customer.address,
       });
+      setSmartInput([customer.name, customer.phone, customer.address].filter(Boolean).join('\n'));
       initializedRef.current = true;
       return;
     }
@@ -64,6 +60,7 @@ const CustomerForm: React.FC = () => {
       const optimistic = cachedCustomers.find(c => c.id === id);
       if (optimistic) {
         setForm({ name: optimistic.name, phone: optimistic.phone, address: optimistic.address });
+        setSmartInput([optimistic.name, optimistic.phone, optimistic.address].filter(Boolean).join('\n'));
         initializedRef.current = true;
       }
       return;
@@ -80,16 +77,31 @@ const CustomerForm: React.FC = () => {
       phone: preFill?.phone || '',
       address: preFill?.address || '',
     });
+    setSmartInput([preFill?.name, preFill?.phone, preFill?.address].filter(Boolean).join('\n'));
     initializedRef.current = true;
   }, [customer, id, isEdit, location, location.key, queryClient]);
 
+  if (authLoading || capabilitiesLoading || (hasBeSmart && smartSettingsLoading)) {
+    return (
+      <div className="p-8 text-center">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading...</h2>
+        <p className="text-gray-500 mb-6">Preparing the customer form...</p>
+      </div>
+    );
+  }
+
   const handleSave = async () => {
-    if (!form.name || !form.phone) {
+    if (smartMode && !smartInput.trim()) {
+      setError('Paste the customer details before saving');
+      return;
+    }
+
+    if (!smartMode && (!form.name || !form.phone)) {
       setError('Name and phone are required');
       return;
     }
 
-    if (!/^0\d{10}$/.test(form.phone)) {
+    if (!smartMode && !/^0\d{10}$/.test(form.phone)) {
       setError('Phone number must be 11 digits and start with 0');
       return;
     }
@@ -98,20 +110,19 @@ const CustomerForm: React.FC = () => {
     
     try {
       if (isEdit) {
-        const updates: Partial<Customer> = {
-          name: form.name,
-          phone: form.phone,
-          address: form.address,
-        };
+        const updates: Partial<Customer> = smartMode
+          ? { smartInput: smartInput.trim() }
+          : { name: form.name, phone: form.phone, address: form.address };
         await updateMutation.mutateAsync({ id: id!, updates });
         navigate('/customers');
       } else {
         const newCustomer: Omit<Customer, 'id'> = {
-          name: form.name,
-          phone: form.phone,
-          address: form.address,
+          name: smartMode ? '' : form.name,
+          phone: smartMode ? '' : form.phone,
+          address: smartMode ? '' : form.address,
           totalOrders: 0,
           dueAmount: 0,
+          ...(smartMode ? { smartInput: smartInput.trim() } : {}),
         };
 
         // Await the mutation so we can catch AbortError and other failures
@@ -164,6 +175,26 @@ const CustomerForm: React.FC = () => {
                 <p className="text-sm font-bold text-red-600">{String(error)}</p>
               </div>
             )}
+            {smartMode ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
+                  <p className="text-sm font-black text-blue-900">Paste exactly what the customer sent you</p>
+                  <p className="mt-1 text-sm font-medium text-blue-700">Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-gray-400">Customer details</label>
+                  <textarea
+                    autoFocus
+                    className="min-h-[240px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5 font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
+                    value={smartInput}
+                    onChange={(event) => setSmartInput(event.target.value)}
+                    placeholder={'Example:\nRahim Ahmed\n+880 1712-345678\nHouse 12, Road 4, Mirpur, Dhaka'}
+                  />
+                  <p className="text-xs font-semibold text-gray-400">The phone is normalized to Bangladesh local format, such as 01712345678.</p>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="space-y-2">
               <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Full Name</label>
               <input 
@@ -198,6 +229,8 @@ const CustomerForm: React.FC = () => {
                 onChange={e => setForm({...form, address: e.target.value})}
               />
             </div>
+            </>
+            )}
             <Button 
               onClick={handleSave}
               variant="primary"

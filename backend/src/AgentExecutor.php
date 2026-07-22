@@ -36,8 +36,8 @@ final class AgentExecutor extends BaseService
                 ':status' => 'queued',
                 ':main_provider' => $settings['mainProvider'] ?? 'anthropic',
                 ':main_model' => $settings['mainModel'] ?? null,
-                ':deterministic_provider' => 'groq',
-                ':deterministic_model' => $settings['groq']['model'] ?? null,
+                ':deterministic_provider' => $settings['mainProvider'] ?? 'unconfigured',
+                ':deterministic_model' => $settings['mainModel'] ?? null,
                 ':current_step' => 0,
                 ':max_steps' => 4,
                 ':stream_token' => $streamToken,
@@ -355,20 +355,22 @@ final class AgentExecutor extends BaseService
         if ($row === null) {
             return [
                 'enabled' => false,
-                'mainProvider' => 'anthropic',
+                'mainProvider' => 'unconfigured',
                 'mainModel' => null,
-                'groq' => ['model' => null],
             ];
+        }
+
+        $configuration = null;
+        try {
+            $configuration = (new LlmClient($this->database, $this->config))->configurationForFeature('mame_ai');
+        } catch (\Throwable) {
+            $configuration = null;
         }
 
         return [
             'enabled' => !empty($row['enabled'] ?? 0),
-            'mainProvider' => (string) ($row['main_provider'] ?? 'anthropic'),
-            'mainModel' => (string) ($row['google_model'] ?? $row['anthropic_model'] ?? $row['openai_model'] ?? $row['groq_model'] ?? ''),
-            'groq' => ['model' => (string) ($row['groq_model'] ?? '')],
-            'google_api_key' => (string) ($row['google_api_key'] ?? ''),
-            'anthropic_api_key' => (string) ($row['anthropic_api_key'] ?? ''),
-            'openai_api_key' => (string) ($row['openai_api_key'] ?? ''),
+            'mainProvider' => (string) ($configuration['provider'] ?? 'unconfigured'),
+            'mainModel' => (string) ($configuration['model'] ?? ''),
             'max_tool_calls' => (int) ($row['max_tool_calls'] ?? 4),
             'query_row_limit' => (int) ($row['query_row_limit'] ?? 100),
         ];
@@ -544,7 +546,7 @@ final class AgentExecutor extends BaseService
 
     /**
      * Load previous conversation messages (excluding the current run) so the AI has context.
-     * Returns Gemini-compatible contents array with alternating user/model roles.
+     * Returns provider-neutral conversation messages.
      */
     private function loadConversationHistory(string $conversationId, string $currentRunId): array
     {
@@ -564,10 +566,9 @@ final class AgentExecutor extends BaseService
             if ($content === '') {
                 continue;
             }
-            $geminiRole = $role === 'user' ? 'user' : 'model';
             $history[] = [
-                'role' => $geminiRole,
-                'parts' => [['text' => $content]],
+                'role' => $role === 'user' ? 'user' : 'assistant',
+                'content' => $content,
             ];
         }
 
@@ -1176,7 +1177,7 @@ final class AgentExecutor extends BaseService
             return 'The request was filtered by content safety. Please rephrase your question.';
         }
         if (str_contains($lower, 'no llm api key')) {
-            return 'The AI service is not configured. Please set up an API key in agent settings.';
+            return 'Mame AI is not configured. Assign an enabled model in Developer Settings > LLMs.';
         }
         if (str_contains($lower, 'mysql') || str_contains($lower, 'sql') || str_contains($lower, 'database')) {
             return 'A database error occurred while processing your request. Please try again.';
@@ -1293,93 +1294,17 @@ final class AgentExecutor extends BaseService
      */
     private function callGeminiText(string $systemPrompt, array $history, string $userMessage, array $settings): array
     {
-        $apiKey = trim((string) ($settings['google_api_key'] ?? ''));
-        if ($apiKey === '') {
-            $apiKey = trim((string) ($this->config->get('GEMINI_API_KEY') ?? ''));
-        }
-        if ($apiKey === '') {
-            return ['error' => 'No LLM API key configured.'];
-        }
-
-        $model = trim((string) ($settings['mainModel'] ?? ''));
-        if ($model === '') {
-            $model = 'gemini-2.0-flash';
-        }
-        $endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
-
-        $contents = array_values($history);
-        if ($userMessage !== '') {
-            $contents[] = [
-                'role' => 'user',
-                'parts' => [['text' => $userMessage]],
-            ];
-        }
-
-        $requestBody = [
-            'systemInstruction' => [
-                'parts' => [['text' => $systemPrompt]],
-            ],
-            'contents' => $contents,
-            'generationConfig' => [
-                'temperature' => 0.1,
-                'topP' => 0.9,
-                'candidateCount' => 1,
-                'maxOutputTokens' => 2048,
-            ],
-        ];
-
-        $headers = ['Content-Type' => 'application/json'];
-        if (str_starts_with($apiKey, 'ya29.') || str_starts_with($apiKey, 'Bearer ')) {
-            $cleanKey = preg_replace('/^Bearer\s+/i', '', $apiKey);
-            $headers['Authorization'] = 'Bearer ' . $cleanKey;
-        } else {
-            $headers['x-goog-api-key'] = $apiKey;
-        }
-
         try {
-            $response = $this->httpJson('POST', $endpoint, $headers, $requestBody);
+            $text = (new LlmClient($this->database, $this->config))->generateForFeature(
+                'mame_ai',
+                $systemPrompt,
+                $userMessage,
+                $history,
+                ['temperature' => 0.1, 'maxTokens' => 4096]
+            );
         } catch (\Throwable $ex) {
-            return ['error' => 'LLM request failed: ' . $ex->getMessage()];
+            return ['error' => $ex->getMessage()];
         }
-
-        $json = $response['json'] ?? null;
-        $status = (int) ($response['status'] ?? 0);
-
-        if ($status !== 200) {
-            $msg = 'LLM HTTP ' . $status;
-            if (is_array($json) && isset($json['error']['message'])) {
-                $msg .= ': ' . $json['error']['message'];
-            }
-            return ['error' => $msg];
-        }
-
-        if (!is_array($json)) {
-            return ['error' => 'Invalid LLM response.'];
-        }
-
-        $candidate = $json['candidates'][0] ?? null;
-        if ($candidate === null) {
-            $blockReason = $json['promptFeedback']['blockReason'] ?? '';
-            return ['error' => $blockReason !== '' ? 'Request blocked: ' . $blockReason : 'No candidates in response.'];
-        }
-
-        $content = $candidate['content'] ?? null;
-        if ($content === null || !isset($content['parts'])) {
-            return ['error' => 'No content in response.'];
-        }
-
-        $textParts = [];
-        foreach ($content['parts'] as $part) {
-            if (isset($part['text'])) {
-                $textParts[] = $part['text'];
-            }
-        }
-
-        $text = trim(implode('', $textParts));
-        if ($text === '') {
-            return ['error' => 'Empty response from LLM.'];
-        }
-
         return ['text' => $text];
     }
 
@@ -1473,21 +1398,22 @@ final class AgentExecutor extends BaseService
 
     private function callGeminiAgent(string $systemPrompt, array $history, string $userMessage, array $settings, int $rowLimit): array
     {
-        $apiKey = trim((string) ($settings['google_api_key'] ?? ''));
-        if ($apiKey === '') {
-            $apiKey = trim((string) ($this->config->get('GEMINI_API_KEY') ?? ''));
+        try {
+            $configuration = (new LlmClient($this->database, $this->config))->configurationForFeature('mame_ai');
+        } catch (\Throwable $exception) {
+            return ['error' => $exception->getMessage()];
         }
-        if ($apiKey === '') {
-            return ['error' => 'No LLM API key configured. Set GEMINI_API_KEY in the backend .env file.'];
+        if (($configuration['provider'] ?? '') !== 'google') {
+            return ['error' => 'This legacy function-calling path requires a Google model.'];
         }
+        $apiKey = (string) $configuration['apiKey'];
+        $model = (string) $configuration['model'];
+        $endpoint = rtrim((string) $configuration['baseUrl'], '/') . '/v1beta/models/' . rawurlencode($model) . ':generateContent';
 
-        $model = trim((string) ($settings['mainModel'] ?? ''));
-        if ($model === '') {
-            $model = 'gemini-2.0-flash';
-        }
-        $endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
-
-        $contents = array_values($history);
+        $contents = array_map(static fn(array $item): array => [
+            'role' => ($item['role'] ?? '') === 'assistant' ? 'model' : 'user',
+            'parts' => [['text' => (string) ($item['content'] ?? '')]],
+        ], array_values($history));
         $contents[] = [
             'role' => 'user',
             'parts' => [['text' => $userMessage]],

@@ -9,8 +9,9 @@ import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type
 import { theme } from '../theme';
 import { compressImage } from '../utils';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
+import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
+type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
 type MaintenanceContentForm = {
   imageUrl: string;
   caption: string;
@@ -44,12 +45,6 @@ const emptyGateway: PaymentGatewaySettings = {
 
 const emptyAgentSettings: AgentSettings = {
   enabled: false,
-  mainProvider: 'anthropic',
-  anthropic: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
-  openai: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
-  google: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
-  openrouter: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
-  groq: { enabled: false, baseUrl: '', apiKey: '', model: '', organization: '', project: '' },
   showReasoningSummaries: true,
   showToolActivity: true,
   maxReasoningSteps: 5,
@@ -59,12 +54,6 @@ const emptyAgentSettings: AgentSettings = {
 };
 
 const emptyBusinessGrowthSettings: BusinessGrowthSettings = {
-  provider: 'openai',
-  openai: { baseUrl: '', apiKey: '', model: '' },
-  anthropic: { baseUrl: '', apiKey: '', model: '' },
-  google: { baseUrl: '', apiKey: '', model: '' },
-  openrouter: { baseUrl: '', apiKey: '', model: '' },
-  groq: { baseUrl: '', apiKey: '', model: '' },
   recommendationCacheHours: 6,
 };
 
@@ -111,7 +100,7 @@ const DeveloperSettings: React.FC = () => {
   const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'agent', 'business_growth', 'email', 'awajdigital'];
+  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -350,12 +339,12 @@ const DeveloperSettings: React.FC = () => {
   };
 
   const saveAgentSettings = async () => {
-    const toastId = toast.loading('Saving AI agent settings...');
+    const toastId = toast.loading('Saving Mame AI settings...');
     try {
       await updateAgent.mutateAsync(agentForm);
-      toast.update(toastId, 'AI agent settings saved.', 'success');
+      toast.update(toastId, 'Mame AI settings saved.', 'success');
     } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save AI agent settings.', 'error');
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to save Mame AI settings.', 'error');
     }
   };
 
@@ -395,7 +384,8 @@ const DeveloperSettings: React.FC = () => {
     { id: 'maintenance', label: 'Maintenance Mode' },
     { id: 'payment-gateway', label: 'Payment Gateway' },
     { id: 'fraud-checker', label: 'Fraud Checker' },
-    { id: 'agent', label: 'AI Agent' },
+    { id: 'llms', label: 'LLMs' },
+    { id: 'agent', label: 'Mame AI' },
     { id: 'business_growth', label: 'Business Growth' },
     { id: 'email', label: 'Email Config' },
     { id: 'awajdigital', label: 'AwajDigital' },
@@ -413,7 +403,7 @@ const DeveloperSettings: React.FC = () => {
         {activeTab === 'license' && <Button onClick={syncNow} variant="primary">Sync Now</Button>}
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
-        {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save AI Agent Settings</Button>}
+        {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save Mame AI Settings</Button>}
         {activeTab === 'business_growth' && <Button onClick={saveBusinessGrowthSettings} variant="primary">Save Business Growth Settings</Button>}
         {activeTab === 'email' && <Button onClick={saveEmailSettings} variant="primary">Save Email Settings</Button>}
         {activeTab === 'awajdigital' && <Button onClick={saveVoiceSurveyIntegration} variant="primary">Save AwajDigital</Button>}
@@ -723,27 +713,16 @@ const DeveloperSettings: React.FC = () => {
             </section>
           )}
 
+          {activeTab === 'llms' && <LlmSettingsPanel />}
+
           {activeTab === 'agent' && (
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div>
-                <h3 className="text-xl font-black text-gray-900">AI Agent Settings</h3>
-                <p className="mt-1 text-sm text-gray-500">Configure the enterprise AI agent runtime, providers, and tool behavior.</p>
+                <h3 className="text-xl font-black text-gray-900">Mame AI Settings</h3>
+                <p className="mt-1 text-sm text-gray-500">Control the Mame AI runtime and its safe read-only data tools. Select its provider and model in the LLMs tab.</p>
               </div>
 
               <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 md:col-span-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Main Provider</span>
-                  <select
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
-                    value={agentForm.mainProvider}
-                    onChange={(e) => setAgentForm({ ...agentForm, mainProvider: e.target.value as any })}
-                  >
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="google">Google</option>
-                  </select>
-                </label>
-
                 <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 md:col-span-2">
                   <input
                     type="checkbox"
@@ -752,98 +731,10 @@ const DeveloperSettings: React.FC = () => {
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
                   <div>
-                    <p className="text-sm font-black text-gray-900">Enable AI Agent Runtime</p>
-                    <p className="text-sm text-gray-500">Turn the enterprise agent on or off for this installation.</p>
+                    <p className="text-sm font-black text-gray-900">Enable Mame AI</p>
+                    <p className="text-sm text-gray-500">Turn Mame AI on or off for this installation.</p>
                   </div>
                 </label>
-
-                {(['anthropic', 'openai', 'google', 'openrouter', 'groq'] as const).map((provider) => {
-                  const providerConfig = agentForm[provider];
-                  const label = provider === 'groq' ? 'Deterministic Groq' : provider === 'openrouter' ? 'OpenRouter Provider' : `${provider.charAt(0).toUpperCase() + provider.slice(1)} Provider`;
-                  return (
-                    <div key={provider} className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4 md:col-span-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-black text-gray-900">{label}</p>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <input
-                            id={`agent-${provider}-enabled`}
-                            type="checkbox"
-                            checked={providerConfig.enabled}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, enabled: e.target.checked },
-                            })}
-                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          />
-                          <label htmlFor={`agent-${provider}-enabled`}>Enabled</label>
-                        </div>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Base URL</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.baseUrl}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, baseUrl: e.target.value },
-                            })}
-                            placeholder={provider === 'groq' ? 'https://api.groq.com' : 'https://api.your-provider.com'}
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Key</span>
-                          <input
-                            type="password"
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.apiKey}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, apiKey: e.target.value },
-                            })}
-                            placeholder="Paste API key"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Model</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.model}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, model: e.target.value },
-                            })}
-                            placeholder="e.g. gpt-4o-mini"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Organization</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.organization || ''}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, organization: e.target.value },
-                            })}
-                            placeholder="Optional organization id"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Project</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.project || ''}
-                            onChange={(e) => setAgentForm({
-                              ...agentForm,
-                              [provider]: { ...providerConfig, project: e.target.value },
-                            })}
-                            placeholder="Optional project id"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
 
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4 md:grid md:grid-cols-2 md:gap-4">
@@ -922,76 +813,11 @@ const DeveloperSettings: React.FC = () => {
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">Business Growth AI Settings</h3>
-                <p className="mt-1 text-sm text-gray-500">Configure the AI provider used to generate product recommendations and business insights.</p>
+                <p className="mt-1 text-sm text-gray-500">Control how long recommendations are cached. Select the provider and model for Grow Your Business in the LLMs tab.</p>
               </div>
 
-              <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 md:col-span-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Provider</span>
-                  <select
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3"
-                    value={businessGrowthForm.provider}
-                    onChange={(e) => setBusinessGrowthForm({ ...businessGrowthForm, provider: e.target.value as BusinessGrowthSettings['provider'] })}
-                  >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="google">Google</option>
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="groq">Groq</option>
-                  </select>
-                </label>
-
-                {(['openai', 'anthropic', 'google', 'openrouter', 'groq'] as const).map((provider) => {
-                  const providerConfig = businessGrowthForm[provider];
-                  const isActive = businessGrowthForm.provider === provider;
-                  return (
-                    <div key={provider} className={`rounded-2xl border p-5 space-y-4 md:col-span-2 ${isActive ? 'border-primary-200 bg-primary-50/30' : 'border-gray-100 bg-gray-50'}`}>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-black text-gray-900">{provider.charAt(0).toUpperCase() + provider.slice(1)}</p>
-                        {isActive && <span className="text-xs font-bold text-primary-600 bg-primary-100 px-2 py-1 rounded-full">Active</span>}
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Base URL</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.baseUrl}
-                            onChange={(e) => setBusinessGrowthForm({
-                              ...businessGrowthForm,
-                              [provider]: { ...providerConfig, baseUrl: e.target.value },
-                            })}
-                            placeholder="https://api.your-provider.com"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Key</span>
-                          <input
-                            type="password"
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.apiKey}
-                            onChange={(e) => setBusinessGrowthForm({
-                              ...businessGrowthForm,
-                              [provider]: { ...providerConfig, apiKey: e.target.value },
-                            })}
-                            placeholder="Paste API key"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-400">Model</span>
-                          <input
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3"
-                            value={providerConfig.model}
-                            onChange={(e) => setBusinessGrowthForm({
-                              ...businessGrowthForm,
-                              [provider]: { ...providerConfig, model: e.target.value },
-                            })}
-                            placeholder="e.g. gpt-4o-mini"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-semibold text-blue-800">
+                Credentials are managed once in Developer Settings &gt; LLMs, where Grow Your Business has its own model assignment.
               </div>
 
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 space-y-4">

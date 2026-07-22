@@ -632,6 +632,7 @@ final class MasterDataApi extends BaseService
 
     public function createCustomer(array $params): array
     {
+        $params = $this->resolveSmartContactInput($params, 'customer');
         $actor = $this->currentUser();
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
@@ -658,6 +659,7 @@ final class MasterDataApi extends BaseService
         $this->currentUser();
         $id = trim((string) ($params['id'] ?? ''));
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        $updates = $this->resolveSmartContactInput($updates, 'customer');
         $payload = [];
 
         if (array_key_exists('name', $updates)) {
@@ -766,6 +768,7 @@ final class MasterDataApi extends BaseService
 
     public function createVendor(array $params): array
     {
+        $params = $this->resolveSmartContactInput($params, 'vendor');
         $actor = $this->currentUser();
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
@@ -792,6 +795,7 @@ final class MasterDataApi extends BaseService
         $this->currentUser();
         $id = trim((string) ($params['id'] ?? ''));
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        $updates = $this->resolveSmartContactInput($updates, 'vendor');
         $payload = [];
 
         if (array_key_exists('name', $updates)) {
@@ -2330,6 +2334,174 @@ final class MasterDataApi extends BaseService
         ];
     }
 
+    public function fetchLlmSettings(array $params = []): array
+    {
+        $this->requireDeveloperUser();
+        $assignments = [
+            'information_extraction' => null,
+            'mame_ai' => null,
+            'business_growth' => null,
+        ];
+        if (!$this->tableExists('llm_configurations') || !$this->tableExists('llm_feature_assignments')) {
+            return ['configurations' => [], 'assignments' => $assignments];
+        }
+
+        $client = new LlmClient($this->database, $this->config);
+        $configurations = array_map(
+            static fn(array $row): array => $client->mapConfiguration($row),
+            $this->database->fetchAll('SELECT * FROM llm_configurations ORDER BY label ASC, created_at ASC')
+        );
+        foreach ($this->database->fetchAll('SELECT feature_key, configuration_id FROM llm_feature_assignments') as $row) {
+            $feature = (string) ($row['feature_key'] ?? '');
+            if (array_key_exists($feature, $assignments)) {
+                $value = trim((string) ($row['configuration_id'] ?? ''));
+                $assignments[$feature] = $value !== '' ? $value : null;
+            }
+        }
+
+        return ['configurations' => $configurations, 'assignments' => $assignments];
+    }
+
+    public function updateLlmSettings(array $params): array
+    {
+        $this->requireDeveloperUser();
+        if (!$this->tableExists('llm_configurations') || !$this->tableExists('llm_feature_assignments')) {
+            throw new RuntimeException('LLM settings tables are missing. Run the latest database update first.');
+        }
+
+        $rows = is_array($params['configurations'] ?? null) ? array_values($params['configurations']) : [];
+        if (count($rows) > 100) throw new ApiException('You can save up to 100 LLM configurations.', 422);
+        $client = new LlmClient($this->database, $this->config);
+        $configurations = [];
+        $ids = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $config = $client->normalizeConfiguration($row);
+            $id = trim((string) ($config['id'] ?? '')) ?: $this->uuid4();
+            if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $id)) throw new ApiException('An LLM configuration has an invalid id.', 422);
+            if (array_key_exists($id, $ids)) throw new ApiException('Duplicate LLM configuration id.', 422);
+            if ($config['label'] === '') throw new ApiException('Every LLM configuration needs a name.', 422);
+            if ($config['apiKey'] === '') throw new ApiException($config['label'] . ' needs an API key.', 422);
+            if ($config['model'] === '') throw new ApiException($config['label'] . ' needs a model.', 422);
+            $config['id'] = $id;
+            $configurations[] = $config;
+            $ids[$id] = (bool) $config['enabled'];
+        }
+
+        $submittedAssignments = is_array($params['assignments'] ?? null) ? $params['assignments'] : [];
+        $assignments = [];
+        foreach (LlmClient::features() as $feature) {
+            $configurationId = trim((string) ($submittedAssignments[$feature] ?? ''));
+            if ($configurationId !== '' && !array_key_exists($configurationId, $ids)) {
+                throw new ApiException('The selected model for ' . str_replace('_', ' ', $feature) . ' does not exist.', 422);
+            }
+            if ($configurationId !== '' && !$ids[$configurationId]) {
+                throw new ApiException('The selected model for ' . str_replace('_', ' ', $feature) . ' is disabled.', 422);
+            }
+            $assignments[$feature] = $configurationId !== '' ? $configurationId : null;
+        }
+
+        $this->database->transaction(function () use ($configurations, $ids, $assignments): void {
+            foreach ($configurations as $config) {
+                $this->database->execute(
+                    'INSERT INTO llm_configurations (
+                        id, label, provider, enabled, base_url, api_key, model, organization, project,
+                        site_url, app_name, anthropic_version, created_at, updated_at
+                     ) VALUES (
+                        :id, :label, :provider, :enabled, :base_url, :api_key, :model, :organization, :project,
+                        :site_url, :app_name, :anthropic_version, :created_at, :updated_at
+                     ) ON DUPLICATE KEY UPDATE
+                        label = VALUES(label), provider = VALUES(provider), enabled = VALUES(enabled),
+                        base_url = VALUES(base_url), api_key = VALUES(api_key), model = VALUES(model),
+                        organization = VALUES(organization), project = VALUES(project), site_url = VALUES(site_url),
+                        app_name = VALUES(app_name), anthropic_version = VALUES(anthropic_version), updated_at = VALUES(updated_at)',
+                    [
+                        ':id' => $config['id'],
+                        ':label' => $config['label'],
+                        ':provider' => $config['provider'],
+                        ':enabled' => $config['enabled'] ? 1 : 0,
+                        ':base_url' => $config['baseUrl'],
+                        ':api_key' => $config['apiKey'],
+                        ':model' => $config['model'],
+                        ':organization' => $this->nullableString($config['organization']),
+                        ':project' => $this->nullableString($config['project']),
+                        ':site_url' => $this->nullableString($config['siteUrl']),
+                        ':app_name' => $this->nullableString($config['appName']),
+                        ':anthropic_version' => $config['anthropicVersion'],
+                        ':created_at' => $this->database->nowUtc(),
+                        ':updated_at' => $this->database->nowUtc(),
+                    ]
+                );
+            }
+
+            if ($ids === []) {
+                $this->database->execute('DELETE FROM llm_configurations');
+            } else {
+                $bindings = [];
+                $placeholders = [];
+                foreach (array_keys($ids) as $index => $id) {
+                    $key = ':llm_keep_' . $index;
+                    $placeholders[] = $key;
+                    $bindings[$key] = $id;
+                }
+                $this->database->execute('DELETE FROM llm_configurations WHERE id NOT IN (' . implode(', ', $placeholders) . ')', $bindings);
+            }
+
+            foreach ($assignments as $feature => $configurationId) {
+                $this->database->execute(
+                    'INSERT INTO llm_feature_assignments (feature_key, configuration_id, created_at, updated_at)
+                     VALUES (:feature_key, :configuration_id, :created_at, :updated_at)
+                     ON DUPLICATE KEY UPDATE configuration_id = VALUES(configuration_id), updated_at = VALUES(updated_at)',
+                    [
+                        ':feature_key' => $feature,
+                        ':configuration_id' => $configurationId,
+                        ':created_at' => $this->database->nowUtc(),
+                        ':updated_at' => $this->database->nowUtc(),
+                    ]
+                );
+            }
+        });
+
+        return $this->fetchLlmSettings();
+    }
+
+    public function discoverLlmModels(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $configuration = is_array($params['configuration'] ?? null) ? $params['configuration'] : $params;
+        $models = (new LlmClient($this->database, $this->config))->discoverModels($configuration);
+        return ['models' => $models];
+    }
+
+    public function fetchBeSmartSettings(array $params = []): array
+    {
+        $this->currentUser();
+        $row = $this->tableExists('be_smart_settings')
+            ? $this->database->fetchOne('SELECT * FROM be_smart_settings LIMIT 1')
+            : null;
+        return [
+            'smartCustomerAdding' => !empty($row['smart_customer_adding'] ?? false),
+            'smartVendorAdding' => !empty($row['smart_vendor_adding'] ?? false),
+        ];
+    }
+
+    public function updateBeSmartSettings(array $params): array
+    {
+        $this->requireAdmin();
+        if (!$this->tableExists('be_smart_settings')) {
+            throw new RuntimeException('Be smart settings are missing. Run the latest database update first.');
+        }
+        return $this->saveSingleton(
+            'be_smart_settings',
+            'be-smart-default',
+            [
+                'smart_customer_adding' => !empty($params['smartCustomerAdding']) ? 1 : 0,
+                'smart_vendor_adding' => !empty($params['smartVendorAdding']) ? 1 : 0,
+            ],
+            fn(): array => $this->fetchBeSmartSettings()
+        );
+    }
+
     public function fetchAgentSettings(array $params = []): array
     {
         $this->requireDeveloperUser();
@@ -2339,47 +2511,6 @@ final class MasterDataApi extends BaseService
 
         return [
             'enabled' => !empty($row['enabled'] ?? 0),
-            'mainProvider' => (string) ($row['main_provider'] ?? 'anthropic'),
-            'anthropic' => [
-                'enabled' => !empty($row['anthropic_enabled'] ?? 0),
-                'baseUrl' => (string) ($row['anthropic_base_url'] ?? ''),
-                'apiKey' => (string) ($row['anthropic_api_key'] ?? ''),
-                'model' => (string) ($row['anthropic_model'] ?? ''),
-                'organization' => (string) ($row['anthropic_organization'] ?? ''),
-                'project' => (string) ($row['anthropic_project'] ?? ''),
-            ],
-            'openai' => [
-                'enabled' => !empty($row['openai_enabled'] ?? 0),
-                'baseUrl' => (string) ($row['openai_base_url'] ?? ''),
-                'apiKey' => (string) ($row['openai_api_key'] ?? ''),
-                'model' => (string) ($row['openai_model'] ?? ''),
-                'organization' => (string) ($row['openai_organization'] ?? ''),
-                'project' => (string) ($row['openai_project'] ?? ''),
-            ],
-            'google' => [
-                'enabled' => !empty($row['google_enabled'] ?? 0),
-                'baseUrl' => (string) ($row['google_base_url'] ?? ''),
-                'apiKey' => (string) ($row['google_api_key'] ?? ''),
-                'model' => (string) ($row['google_model'] ?? ''),
-                'organization' => (string) ($row['google_organization'] ?? ''),
-                'project' => (string) ($row['google_project'] ?? ''),
-            ],
-            'openrouter' => [
-                'enabled' => !empty($row['openrouter_enabled'] ?? 0),
-                'baseUrl' => (string) ($row['openrouter_base_url'] ?? ''),
-                'apiKey' => (string) ($row['openrouter_api_key'] ?? ''),
-                'model' => (string) ($row['openrouter_model'] ?? ''),
-                'organization' => '',
-                'project' => '',
-            ],
-            'groq' => [
-                'enabled' => !empty($row['groq_enabled'] ?? 0),
-                'baseUrl' => (string) ($row['groq_base_url'] ?? ''),
-                'apiKey' => (string) ($row['groq_api_key'] ?? ''),
-                'model' => (string) ($row['groq_model'] ?? ''),
-                'organization' => '',
-                'project' => '',
-            ],
             'showReasoningSummaries' => !empty($row['show_reasoning_summaries'] ?? 1),
             'showToolActivity' => !empty($row['show_tool_activity'] ?? 1),
             'maxReasoningSteps' => max(1, (int) ($row['max_reasoning_steps'] ?? 8)),
@@ -2396,41 +2527,8 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('Agent settings table is missing. Run the latest migration first.');
         }
 
-        $anthropic = is_array($params['anthropic'] ?? null) ? $params['anthropic'] : [];
-        $openai = is_array($params['openai'] ?? null) ? $params['openai'] : [];
-        $google = is_array($params['google'] ?? null) ? $params['google'] : [];
-        $openrouter = is_array($params['openrouter'] ?? null) ? $params['openrouter'] : [];
-        $groq = is_array($params['groq'] ?? null) ? $params['groq'] : [];
-
         $payload = [
             'enabled' => !empty($params['enabled'] ?? false) ? 1 : 0,
-            'main_provider' => trim((string) ($params['mainProvider'] ?? 'anthropic')) ?: 'anthropic',
-            'anthropic_enabled' => !empty($anthropic['enabled'] ?? false) ? 1 : 0,
-            'anthropic_base_url' => $this->nullableString($anthropic['baseUrl'] ?? null),
-            'anthropic_api_key' => $this->nullableString($anthropic['apiKey'] ?? null),
-            'anthropic_model' => $this->nullableString($anthropic['model'] ?? null),
-            'anthropic_organization' => $this->nullableString($anthropic['organization'] ?? null),
-            'anthropic_project' => $this->nullableString($anthropic['project'] ?? null),
-            'openai_enabled' => !empty($openai['enabled'] ?? false) ? 1 : 0,
-            'openai_base_url' => $this->nullableString($openai['baseUrl'] ?? null),
-            'openai_api_key' => $this->nullableString($openai['apiKey'] ?? null),
-            'openai_model' => $this->nullableString($openai['model'] ?? null),
-            'openai_organization' => $this->nullableString($openai['organization'] ?? null),
-            'openai_project' => $this->nullableString($openai['project'] ?? null),
-            'google_enabled' => !empty($google['enabled'] ?? false) ? 1 : 0,
-            'google_base_url' => $this->nullableString($google['baseUrl'] ?? null),
-            'google_api_key' => $this->nullableString($google['apiKey'] ?? null),
-            'google_model' => $this->nullableString($google['model'] ?? null),
-            'google_organization' => $this->nullableString($google['organization'] ?? null),
-            'google_project' => $this->nullableString($google['project'] ?? null),
-            'openrouter_enabled' => !empty($openrouter['enabled'] ?? false) ? 1 : 0,
-            'openrouter_base_url' => $this->nullableString($openrouter['baseUrl'] ?? null),
-            'openrouter_api_key' => $this->nullableString($openrouter['apiKey'] ?? null),
-            'openrouter_model' => $this->nullableString($openrouter['model'] ?? null),
-            'groq_enabled' => !empty($groq['enabled'] ?? false) ? 1 : 0,
-            'groq_base_url' => $this->nullableString($groq['baseUrl'] ?? null),
-            'groq_api_key' => $this->nullableString($groq['apiKey'] ?? null),
-            'groq_model' => $this->nullableString($groq['model'] ?? null),
             'show_reasoning_summaries' => !empty($params['showReasoningSummaries'] ?? true) ? 1 : 0,
             'show_tool_activity' => !empty($params['showToolActivity'] ?? true) ? 1 : 0,
             'max_reasoning_steps' => max(1, (int) ($params['maxReasoningSteps'] ?? 8)),
@@ -2451,32 +2549,6 @@ final class MasterDataApi extends BaseService
             : null;
 
         return [
-            'provider' => (string) ($row['provider'] ?? 'openai'),
-            'openai' => [
-                'baseUrl' => (string) ($row['openai_base_url'] ?? ''),
-                'apiKey' => (string) ($row['openai_api_key'] ?? ''),
-                'model' => (string) ($row['openai_model'] ?? ''),
-            ],
-            'anthropic' => [
-                'baseUrl' => (string) ($row['anthropic_base_url'] ?? ''),
-                'apiKey' => (string) ($row['anthropic_api_key'] ?? ''),
-                'model' => (string) ($row['anthropic_model'] ?? ''),
-            ],
-            'google' => [
-                'baseUrl' => (string) ($row['google_base_url'] ?? ''),
-                'apiKey' => (string) ($row['google_api_key'] ?? ''),
-                'model' => (string) ($row['google_model'] ?? ''),
-            ],
-            'openrouter' => [
-                'baseUrl' => (string) ($row['openrouter_base_url'] ?? ''),
-                'apiKey' => (string) ($row['openrouter_api_key'] ?? ''),
-                'model' => (string) ($row['openrouter_model'] ?? ''),
-            ],
-            'groq' => [
-                'baseUrl' => (string) ($row['groq_base_url'] ?? ''),
-                'apiKey' => (string) ($row['groq_api_key'] ?? ''),
-                'model' => (string) ($row['groq_model'] ?? ''),
-            ],
             'recommendationCacheHours' => max(1, (int) ($row['recommendation_cache_hours'] ?? 6)),
         ];
     }
@@ -2488,29 +2560,7 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('Business growth settings table is missing. Run the latest migration first.');
         }
 
-        $openai = is_array($params['openai'] ?? null) ? $params['openai'] : [];
-        $anthropic = is_array($params['anthropic'] ?? null) ? $params['anthropic'] : [];
-        $google = is_array($params['google'] ?? null) ? $params['google'] : [];
-        $openrouter = is_array($params['openrouter'] ?? null) ? $params['openrouter'] : [];
-        $groq = is_array($params['groq'] ?? null) ? $params['groq'] : [];
-
         $payload = [
-            'provider' => trim((string) ($params['provider'] ?? 'openai')) ?: 'openai',
-            'openai_base_url' => $this->nullableString($openai['baseUrl'] ?? null),
-            'openai_api_key' => $this->nullableString($openai['apiKey'] ?? null),
-            'openai_model' => $this->nullableString($openai['model'] ?? null),
-            'anthropic_base_url' => $this->nullableString($anthropic['baseUrl'] ?? null),
-            'anthropic_api_key' => $this->nullableString($anthropic['apiKey'] ?? null),
-            'anthropic_model' => $this->nullableString($anthropic['model'] ?? null),
-            'google_base_url' => $this->nullableString($google['baseUrl'] ?? null),
-            'google_api_key' => $this->nullableString($google['apiKey'] ?? null),
-            'google_model' => $this->nullableString($google['model'] ?? null),
-            'openrouter_base_url' => $this->nullableString($openrouter['baseUrl'] ?? null),
-            'openrouter_api_key' => $this->nullableString($openrouter['apiKey'] ?? null),
-            'openrouter_model' => $this->nullableString($openrouter['model'] ?? null),
-            'groq_base_url' => $this->nullableString($groq['baseUrl'] ?? null),
-            'groq_api_key' => $this->nullableString($groq['apiKey'] ?? null),
-            'groq_model' => $this->nullableString($groq['model'] ?? null),
             'recommendation_cache_hours' => max(1, (int) ($params['recommendationCacheHours'] ?? 6)),
         ];
 
@@ -3161,41 +3211,18 @@ TXT;
 
         $prompt .= "\n\nUser question:\n{$message}";
 
-        $payload = [
-            'messages' => [
-                ['role' => 'system', 'content' => $systemMessage],
-                ['role' => 'user', 'content' => $prompt],
-            ],
-            'temperature' => 0.3,
-        ];
-
-        $geminiKey = trim((string) ($this->config->get('GEMINI_API_KEY') ?? ''));
-        $openRouterKey = trim((string) ($this->config->get('OPENROUTER_API_KEY') ?? ''));
-        $errors = [];
-
-        if ($geminiKey !== '') {
-            try {
-                $answer = $this->callGeminiChat($payload, $geminiKey);
-                return ['answer' => $this->maybeExecuteMameToolResponse($answer, $message)];
-            } catch (\Throwable $exception) {
-                $errors[] = 'Gemini: ' . $exception->getMessage();
-            }
+        try {
+            $answer = (new LlmClient($this->database, $this->config))->generateForFeature(
+                'mame_ai',
+                $systemMessage,
+                $prompt,
+                [],
+                ['temperature' => 0.3, 'maxTokens' => 4096]
+            );
+            return ['answer' => $this->maybeExecuteMameToolResponse($answer, $message)];
+        } catch (\Throwable $exception) {
+            throw new ApiException('Failed to generate Mame response: ' . $exception->getMessage(), 502);
         }
-
-        if ($openRouterKey !== '') {
-            try {
-                $answer = $this->callOpenRouterChat($payload, $openRouterKey);
-                return ['answer' => $this->maybeExecuteMameToolResponse($answer, $message)];
-            } catch (\Throwable $exception) {
-                $errors[] = 'OpenRouter: ' . $exception->getMessage();
-            }
-        }
-
-        if (!empty($errors)) {
-            throw new ApiException('Failed to generate Mame response: ' . implode(' | ', $errors), 502);
-        }
-
-        throw new ApiException('Mame is not configured. Set GEMINI_API_KEY or OPENROUTER_API_KEY in backend config.', 500);
     }
 
     /**
@@ -4679,6 +4706,91 @@ TXT;
 
         $this->permissionsSettingsPayloadCache = null;
         return $this->fetchPermissionsSettings();
+    }
+
+    private function resolveSmartContactInput(array $params, string $contactType): array
+    {
+        if (!array_key_exists('smartInput', $params)) return $params;
+        $text = trim((string) ($params['smartInput'] ?? ''));
+        unset($params['smartInput']);
+        if ($text === '') throw new ApiException('Paste the raw name, phone, and address before saving.', 422, 'SMART_INPUT_REQUIRED');
+
+        $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
+        $settingColumn = $contactType === 'vendor' ? 'smart_vendor_adding' : 'smart_customer_adding';
+        $settings = $this->tableExists('be_smart_settings')
+            ? $this->database->fetchOne('SELECT smart_customer_adding, smart_vendor_adding FROM be_smart_settings LIMIT 1')
+            : null;
+        if (empty($capabilities['be_smart']) || empty($settings[$settingColumn] ?? false)) {
+            throw new ApiException('Smart ' . $contactType . ' adding is not enabled.', 403, 'SMART_ADDING_DISABLED');
+        }
+
+        $prompt = <<<'PROMPT'
+You're a very fast but extremely accurate information extractor.Extract from this text and return ONLY valid JSON (no markdown, no extra text):
+{
+  "name": "<provided full customer name (typically the first line) or 'N/A'>",
+  "phone": "<primary phone number or 'N/A'>",
+  "additionalPhone": "<comma-separated additional phones or empty string>",
+  "address": "<full address or 'N/A'>"
+}
+
+If there are multiple phone numbers, put the first in "phone" and rest in "additionalPhone" (comma-separated). If any field is missing, use 'N/A' for name and address, and 'N/A' for phone if no valid number is found.
+IMPORTANT:
+    1. For phone numbers only: Remove any whitespaces, convert Bengali digits to English. Keep Bangladesh local phone number format - MUST BE 11 DIGITS and START WITH 0. If a number starts with +880 or just 1, convert it to 0 format.
+    2. Do not translate or modify name and address text, just extract as-is (except trimming). If missing, use 'N/A'. IMPORTANT: ALWAYS MAKE SURE THE PHONE NUMBER IS CORRECT BY EVERY DIGIT
+    3. Remove labels like 'Name:', 'Phone:', 'Address:' if present.
+    4. Return only the JSON object. Ignore any irrelevant extra text.
+
+Text: 
+PROMPT;
+        $prompt .= $text;
+
+        $response = (new LlmClient($this->database, $this->config))->generateForFeature(
+            'information_extraction',
+            $prompt,
+            'Return the JSON object now.',
+            [],
+            ['temperature' => 0.0, 'maxTokens' => 1024]
+        );
+        $json = trim($response);
+        $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
+        $json = preg_replace('/\s*```$/', '', $json) ?? $json;
+        if (!str_starts_with($json, '{')) {
+            $start = strpos($json, '{');
+            $end = strrpos($json, '}');
+            if ($start !== false && $end !== false && $end > $start) $json = substr($json, $start, $end - $start + 1);
+        }
+        $extracted = json_decode($json, true);
+        if (!is_array($extracted)) {
+            throw new ApiException('The selected LLM did not return valid contact information. Please try again.', 422, 'SMART_EXTRACTION_INVALID_JSON');
+        }
+
+        $phone = $this->normalizeBangladeshPhone((string) ($extracted['phone'] ?? ''));
+        if ($phone === null) {
+            throw new ApiException('A valid 11-digit Bangladesh phone number could not be extracted. Check the pasted text and try again.', 422, 'SMART_EXTRACTION_INVALID_PHONE');
+        }
+        $name = trim((string) ($extracted['name'] ?? ''));
+        $address = trim((string) ($extracted['address'] ?? ''));
+        $params['name'] = $name !== '' ? $name : 'N/A';
+        $params['phone'] = $phone;
+        $params['address'] = $address !== '' ? $address : 'N/A';
+        return $params;
+    }
+
+    private function normalizeBangladeshPhone(string $value): ?string
+    {
+        $value = strtr($value, [
+            '০' => '0', '১' => '1', '২' => '2', '৩' => '3', '৪' => '4',
+            '৫' => '5', '৬' => '6', '৭' => '7', '৮' => '8', '৯' => '9',
+        ]);
+        $segments = preg_split('/[,;|\/\r\n]+/u', $value) ?: [$value];
+        foreach ($segments as $segment) {
+            $digits = preg_replace('/\D+/', '', $segment) ?? '';
+            if (str_starts_with($digits, '00880')) $digits = substr($digits, 5);
+            elseif (str_starts_with($digits, '880')) $digits = substr($digits, 3);
+            if (strlen($digits) === 10 && str_starts_with($digits, '1')) $digits = '0' . $digits;
+            if (preg_match('/^0\d{10}$/', $digits) === 1) return $digits;
+        }
+        return null;
     }
 
     private function requireDeveloperUser(): array

@@ -66,6 +66,9 @@ import type {
   AgentRunReceipt,
   BusinessGrowthSettings,
   BusinessRecommendation,
+  LlmConfiguration,
+  LlmSettings,
+  BeSmartSettings,
   ProcessOrderReturnExchangePayload,
   ProcessBillReturnPayload,
   WooCommerceStore,
@@ -316,6 +319,11 @@ export async function updateAgentSettings(updates: AgentSettings): Promise<Agent
 
 export async function fetchBusinessGrowthSettings(): Promise<BusinessGrowthSettings> { return call<BusinessGrowthSettings>('fetchBusinessGrowthSettings'); }
 export async function updateBusinessGrowthSettings(updates: BusinessGrowthSettings): Promise<BusinessGrowthSettings> { return call<BusinessGrowthSettings>('updateBusinessGrowthSettings', updates); }
+export async function fetchLlmSettings(): Promise<LlmSettings> { return call<LlmSettings>('fetchLlmSettings'); }
+export async function updateLlmSettings(settings: LlmSettings): Promise<LlmSettings> { return call<LlmSettings>('updateLlmSettings', settings); }
+export async function discoverLlmModels(configuration: LlmConfiguration): Promise<{ models: string[] }> { return call<{ models: string[] }>('discoverLlmModels', { configuration }, { timeoutMs: 30000 }); }
+export async function fetchBeSmartSettings(): Promise<BeSmartSettings> { return call<BeSmartSettings>('fetchBeSmartSettings'); }
+export async function updateBeSmartSettings(settings: BeSmartSettings): Promise<BeSmartSettings> { return call<BeSmartSettings>('updateBeSmartSettings', settings); }
 
 export async function fetchBusinessRecommendations(): Promise<{ recommendations: BusinessRecommendation[]; generatedAt: string | null; expiresAt: string | null; cached?: boolean; error?: string }> {
   return call('fetchBusinessRecommendations');

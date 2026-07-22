@@ -5,18 +5,24 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Vendor } from '../types';
 import { Button } from '../components';
 import { theme } from '../theme';
-import { useVendor } from '../src/hooks/useQueries';
+import { useBeSmartSettings, useVendor } from '../src/hooks/useQueries';
 import { useCreateVendor, useUpdateVendor } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { sanitizePhoneInput } from '../utils';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 
 const VendorForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const isEdit = Boolean(id);
+  const { capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const hasBeSmart = Boolean(capabilities.be_smart);
+  const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
+  const smartMode = hasBeSmart && Boolean(beSmartSettings?.smartVendorAdding);
   
   const [form, setForm] = useState({ name: '', phone: '', address: '' });
+  const [smartInput, setSmartInput] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const location = useLocation();
@@ -32,6 +38,7 @@ const VendorForm: React.FC = () => {
         phone: vendor.phone, 
         address: vendor.address 
       });
+      setSmartInput([vendor.name, vendor.phone, vendor.address].filter(Boolean).join('\n'));
       return;
     }
 
@@ -43,8 +50,18 @@ const VendorForm: React.FC = () => {
         phone: state.preFill.phone || '',
         address: state.preFill.address || '',
       });
+      setSmartInput([state.preFill.name, state.preFill.phone, state.preFill.address].filter(Boolean).join('\n'));
     }
   }, [vendor, location]);
+
+  if (authLoading || capabilitiesLoading || (hasBeSmart && smartSettingsLoading)) {
+    return (
+      <div className="p-8 text-center">
+        <h2 className="mb-4 text-2xl font-bold text-gray-900">Loading...</h2>
+        <p className="mb-6 text-gray-500">Preparing the vendor form...</p>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     if (authLoading) {
@@ -52,12 +69,17 @@ const VendorForm: React.FC = () => {
       return;
     }
     
-    if (!form.name || !form.phone) {
+    if (smartMode && !smartInput.trim()) {
+      setError('Paste the vendor details before saving');
+      return;
+    }
+
+    if (!smartMode && (!form.name || !form.phone)) {
       setError('Business name and phone are required');
       return;
     }
 
-    if (!/^0\d{10}$/.test(form.phone)) {
+    if (!smartMode && !/^0\d{10}$/.test(form.phone)) {
       setError('Phone number must be 11 digits and start with 0');
       return;
     }
@@ -66,20 +88,19 @@ const VendorForm: React.FC = () => {
     
     try {
       if (isEdit) {
-        const updates: Partial<Vendor> = {
-          name: form.name,
-          phone: form.phone,
-          address: form.address,
-        };
+        const updates: Partial<Vendor> = smartMode
+          ? { smartInput: smartInput.trim() }
+          : { name: form.name, phone: form.phone, address: form.address };
         await updateMutation.mutateAsync({ id: id!, updates });
         navigate('/vendors');
       } else {
         const newVendor: Omit<Vendor, 'id'> = {
-          name: form.name,
-          phone: form.phone,
-          address: form.address,
+          name: smartMode ? '' : form.name,
+          phone: smartMode ? '' : form.phone,
+          address: smartMode ? '' : form.address,
           totalPurchases: 0,
           dueAmount: 0,
+          ...(smartMode ? { smartInput: smartInput.trim() } : {}),
         };
 
         try {
@@ -121,6 +142,26 @@ const VendorForm: React.FC = () => {
                 <p className="text-sm font-bold text-red-600">{String(error)}</p>
               </div>
             )}
+            {smartMode ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
+                  <p className="text-sm font-black text-blue-900">Paste exactly what the vendor sent you</p>
+                  <p className="mt-1 text-sm font-medium text-blue-700">Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-widest text-gray-400">Vendor details</label>
+                  <textarea
+                    autoFocus
+                    className="min-h-[240px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5 font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
+                    value={smartInput}
+                    onChange={(event) => setSmartInput(event.target.value)}
+                    placeholder={'Example:\nKarim Traders\n০১৮১২ ৩৪৫৬৭৮\nChawkbazar, Chattogram'}
+                  />
+                  <p className="text-xs font-semibold text-gray-400">Bengali digits and +880 numbers are converted to an 11-digit local phone number.</p>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="space-y-2">
               <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Full Name</label>
               <input 
@@ -155,6 +196,8 @@ const VendorForm: React.FC = () => {
                 onChange={e => setForm({...form, address: e.target.value})}
               />
             </div>
+            </>
+            )}
             <Button 
               onClick={handleSave}
               variant="primary"

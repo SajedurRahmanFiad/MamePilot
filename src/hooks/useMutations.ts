@@ -75,6 +75,8 @@ import {
   unregisterWebhookFromCentral,
   updateAgentSettings,
   updateBusinessGrowthSettings,
+  updateLlmSettings,
+  updateBeSmartSettings,
   refreshBusinessRecommendations,
   initiatePipraPayCheckout,
   beginMetaAdsOAuth,
@@ -160,6 +162,8 @@ import type {
   MessengerSettings,
   MessengerProfileSettings,
   MessengerMessage,
+  LlmSettings,
+  BeSmartSettings,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -3174,6 +3178,28 @@ export function useRefreshBusinessRecommendations() {
     mutationFn: refreshBusinessRecommendations,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['business-recommendations'] });
+    },
+  });
+}
+
+export function useUpdateLlmSettings(): UseMutationResult<LlmSettings, Error, LlmSettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateLlmSettings,
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['settings', 'llms'], settings);
+      queryClient.invalidateQueries({ queryKey: ['settings', 'llms'] });
+    },
+  });
+}
+
+export function useUpdateBeSmartSettings(): UseMutationResult<BeSmartSettings, Error, BeSmartSettings, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateBeSmartSettings,
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['settings', 'be-smart'], settings);
+      queryClient.invalidateQueries({ queryKey: ['settings', 'be-smart'] });
     },
   });
 }
