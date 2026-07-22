@@ -374,9 +374,14 @@ final class AutoCallApi extends BaseService
     {
         $this->requireAdmin();
         $settings = $this->fetchSettingsRow();
-        $statuses = $this->getTriggerStatuses($settings);
-        $statusPlaceholders = $this->buildStatusInClause($settings);
-        $statusBindings = $this->statusBindings($settings);
+
+        if (!$this->columnExists('orders', 'survey_status')) {
+            return [
+                'totalCalls' => 0,
+                'pendingCalls' => 0,
+                'sender' => (string) ($settings['sender'] ?? ''),
+            ];
+        }
 
         $totalCalls = (int) $this->database->fetchOne(
             "SELECT COUNT(*) AS cnt FROM orders WHERE survey_status IS NOT NULL AND survey_status != '' AND deleted_at IS NULL",
@@ -937,7 +942,35 @@ final class AutoCallApi extends BaseService
 
     private function fetchSettingsRow(): ?array
     {
+        if (!$this->tableExists('voice_survey_settings')) {
+            $this->ensureSettingsTable();
+        }
         return $this->database->fetchOne('SELECT * FROM voice_survey_settings LIMIT 1');
+    }
+
+    private function ensureSettingsTable(): void
+    {
+        $this->database->execute(
+            "CREATE TABLE IF NOT EXISTS voice_survey_settings (
+                id VARCHAR(64) NOT NULL,
+                enabled TINYINT(1) NOT NULL DEFAULT 0,
+                delay_minutes INT NOT NULL DEFAULT 5,
+                api_token TEXT NULL,
+                sender VARCHAR(64) NULL,
+                template_name VARCHAR(191) NULL,
+                webhook_secret VARCHAR(255) NULL,
+                max_survey_time_seconds INT NOT NULL DEFAULT 120,
+                missed_call_retry_minutes INT NOT NULL DEFAULT 30,
+                missed_call_retry_count INT NOT NULL DEFAULT 3,
+                no_key_retry_minutes INT NOT NULL DEFAULT 10,
+                no_key_retry_count INT NOT NULL DEFAULT 2,
+                trigger_statuses TEXT NULL,
+                cron_last_run DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
     }
 
     private function logSurveyEvent(
