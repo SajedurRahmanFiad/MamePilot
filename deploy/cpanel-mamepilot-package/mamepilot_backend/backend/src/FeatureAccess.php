@@ -181,6 +181,7 @@ final class FeatureAccess
         'cancelSurveyCall' => 'auto_calling',
         'fetchOrderSurveyStatus' => 'auto_calling',
         'fetchSurveyBalance' => 'auto_calling',
+        'fetchSurveyHistory' => 'auto_calling',
         'fetchSurveyBroadcasts' => 'auto_calling',
         'fetchSurveySummary' => 'auto_calling',
         'initiateRechargeCheckout' => 'auto_calling',

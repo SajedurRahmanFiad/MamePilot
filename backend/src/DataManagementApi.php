@@ -19,7 +19,7 @@ final class DataManagementApi extends BaseService
         return [
             'orders' => [
                 'label' => 'Orders',
-                'description' => 'One row per order item. Reuse the same Order Number for additional items; missing customers and products are created automatically.',
+                'description' => 'One row per order item. Reuse the same Order Number for additional items; missing customers and products are created automatically. Existing orders are never changed.',
                 'fields' => [
                     $this->field('orderNumber', 'Order Number', true, ['order no', 'invoice number']),
                     $this->field('orderDate', 'Order Date', true, ['date'], 'date'),
@@ -49,7 +49,7 @@ final class DataManagementApi extends BaseService
             ],
             'products' => [
                 'label' => 'Products',
-                'description' => 'Product catalog with human-readable category and unit names.',
+                'description' => 'Product catalog with human-readable category and unit names. Existing products are skipped, not overwritten.',
                 'fields' => [
                     $this->field('name', 'Product Name', true, ['name', 'item name']),
                     $this->field('image', 'Image URL', false, ['image', 'photo']),
@@ -67,7 +67,7 @@ final class DataManagementApi extends BaseService
             ],
             'customers' => [
                 'label' => 'Customers',
-                'description' => 'Customer contact details. Order counts and due amounts are calculated by the app.',
+                'description' => 'Customer contact details. Existing phone numbers are skipped; order counts and due amounts are calculated by the app.',
                 'fields' => [
                     $this->field('name', 'Customer Name', true, ['name', 'client name']),
                     $this->field('phone', 'Customer Phone', true, ['phone', 'mobile', 'mobile number']),
@@ -77,7 +77,7 @@ final class DataManagementApi extends BaseService
             ],
             'bills' => [
                 'label' => 'Bills',
-                'description' => 'One row per bill item. Reuse the same Bill Number for additional items; missing vendors and products are created automatically.',
+                'description' => 'One row per bill item. Reuse the same Bill Number for additional items; missing vendors and products are created automatically. Existing bills are never changed.',
                 'fields' => [
                     $this->field('billNumber', 'Bill Number', true, ['bill no', 'invoice number']),
                     $this->field('billDate', 'Bill Date', true, ['date'], 'date'),
@@ -102,7 +102,7 @@ final class DataManagementApi extends BaseService
             ],
             'vendors' => [
                 'label' => 'Vendors',
-                'description' => 'Vendor contact details. Purchase counts and due amounts are calculated by the app.',
+                'description' => 'Vendor contact details. Existing phone numbers are skipped; purchase counts and due amounts are calculated by the app.',
                 'fields' => [
                     $this->field('name', 'Vendor Name', true, ['name', 'supplier name']),
                     $this->field('phone', 'Vendor Phone', true, ['phone', 'supplier phone', 'mobile']),
@@ -112,7 +112,7 @@ final class DataManagementApi extends BaseService
             ],
             'transactions' => [
                 'label' => 'Transactions',
-                'description' => 'Income, expenses, and transfers using account names. Missing accounts are created automatically.',
+                'description' => 'Income, expenses, and transfers using account names. Missing accounts are created automatically and existing transactions are never reapplied.',
                 'fields' => [
                     $this->field('transactionId', 'Transaction ID', false, ['reference number', 'transaction no']),
                     $this->field('date', 'Date', true, ['transaction date'], 'datetime'),
@@ -140,9 +140,22 @@ final class DataManagementApi extends BaseService
                     'attachmentUrl' => '', 'approvalStatus' => 'approved',
                 ],
             ],
+            'accounts' => [
+                'label' => 'Accounts',
+                'description' => 'Bank and cash accounts. Existing account names are skipped so their balances are never overwritten.',
+                'fields' => [
+                    $this->field('name', 'Account Name', true, ['name', 'bank name', 'cash account']),
+                    $this->field('type', 'Account Type', true, ['type']),
+                    $this->field('openingBalance', 'Opening Balance', false, ['starting balance'], 'number'),
+                    $this->field('currentBalance', 'Current Balance', false, ['balance'], 'number'),
+                ],
+                'sampleRow' => [
+                    'name' => 'Main Cash', 'type' => 'Cash', 'openingBalance' => '10000', 'currentBalance' => '12500',
+                ],
+            ],
             'users' => [
                 'label' => 'Users',
-                'description' => 'User profiles and roles. Passwords are never exported; a password is required only when importing a brand-new user.',
+                'description' => 'User profiles and roles. Existing phone numbers are skipped. Passwords are never exported; a password is required only for a brand-new user.',
                 'fields' => [
                     $this->field('name', 'User Name', true, ['name', 'employee name']),
                     $this->field('phone', 'Phone', true, ['mobile', 'mobile number']),
@@ -206,7 +219,18 @@ final class DataManagementApi extends BaseService
             ];
         }
 
-        return ['schemaVersion' => 2, 'datasets' => $datasets];
+        return [
+            'schemaVersion' => 3,
+            'datasets' => $datasets,
+            'settingsTabs' => array_values(array_map(
+                static fn(array $definition): array => [
+                    'key' => $definition['key'],
+                    'label' => $definition['label'],
+                    'description' => $definition['description'],
+                ],
+                $this->settingsTabDefinitions()
+            )),
+        ];
     }
 
     public function exportDataRecords(array $params): array
@@ -220,13 +244,14 @@ final class DataManagementApi extends BaseService
             'bills' => $this->exportBills(),
             'vendors' => $this->exportVendors(),
             'transactions' => $this->exportTransactions(),
+            'accounts' => $this->exportAccounts(),
             'users' => $this->exportUsers(),
         };
         $definition = $this->datasetDefinitions()[$entity];
 
         return [
             'app' => 'MamePilot',
-            'schemaVersion' => 2,
+            'schemaVersion' => 3,
             'entity' => $entity,
             'exportedAt' => gmdate('c'),
             'filename' => sprintf('mamepilot-%s-%s.csv', $entity, gmdate('Y-m-d-His')),
@@ -251,7 +276,7 @@ final class DataManagementApi extends BaseService
             'entity' => $entity,
             'processed' => count($rows),
             'created' => 0,
-            'updated' => 0,
+            'skipped' => 0,
             'failed' => 0,
             'errors' => [],
         ];
@@ -273,6 +298,7 @@ final class DataManagementApi extends BaseService
                         'bills' => $this->importBill($rawRow, $actor),
                         'vendors' => $this->importVendor($rawRow, $actor),
                         'transactions' => $this->importTransaction($rawRow, $actor),
+                        'accounts' => $this->importAccount($rawRow),
                         'users' => $this->importUser($rawRow),
                     };
                     $this->database->execute('RELEASE SAVEPOINT data_import_row');
@@ -297,6 +323,602 @@ final class DataManagementApi extends BaseService
 
             return $result;
         });
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function settingsTabDefinitions(): array
+    {
+        return [
+            'company' => [
+                'key' => 'company', 'label' => 'Company',
+                'description' => 'Company pages, branding, contact details, and logos.',
+                'tables' => ['company_settings'],
+            ],
+            'order' => [
+                'key' => 'order', 'label' => 'Order & Invoice',
+                'description' => 'Order numbering and invoice layout settings.',
+                'tables' => ['order_settings', 'invoice_settings'],
+            ],
+            'defaults' => [
+                'key' => 'defaults', 'label' => 'Defaults',
+                'description' => 'Default account, payment, categories, paging, and display preferences.',
+                'tables' => ['system_defaults'],
+            ],
+            'be-smart' => [
+                'key' => 'be-smart', 'label' => 'Be Smart',
+                'description' => 'Smart customer and vendor entry preferences.',
+                'tables' => ['be_smart_settings'],
+            ],
+            'wallet' => [
+                'key' => 'wallet', 'label' => 'Wallet',
+                'description' => 'Employee wallet amount and payable order statuses.',
+                'tables' => ['payroll_settings'],
+            ],
+            'meta-ads' => [
+                'key' => 'meta-ads', 'label' => 'Meta Ads',
+                'description' => 'Meta Ads application, OAuth, currency, and reporting settings.',
+                'tables' => ['meta_ads_settings'],
+            ],
+            'whatsapp' => [
+                'key' => 'whatsapp', 'label' => 'WhatsApp',
+                'description' => 'WhatsApp Cloud API credentials and profile settings.',
+                'tables' => ['whatsapp_settings'],
+            ],
+            'messenger' => [
+                'key' => 'messenger', 'label' => 'Messenger',
+                'description' => 'Facebook Page Messenger credentials, profile, and welcome settings.',
+                'tables' => ['messenger_settings'],
+            ],
+            'woocommerce' => [
+                'key' => 'woocommerce', 'label' => 'WooCommerce',
+                'description' => 'Configured WooCommerce stores and webhook settings.',
+                'tables' => ['woocommerce_stores'],
+            ],
+            'permissions' => [
+                'key' => 'permissions', 'label' => 'Permissions',
+                'description' => 'Built-in and custom role permission settings.',
+                'tables' => ['role_permissions'],
+            ],
+            'categories' => [
+                'key' => 'categories', 'label' => 'Categories',
+                'description' => 'Income and expense categories, including parent relationships.',
+                'tables' => ['categories'],
+            ],
+            'payments' => [
+                'key' => 'payments', 'label' => 'Payment Methods',
+                'description' => 'Payment methods and their active state.',
+                'tables' => ['payment_methods'],
+            ],
+            'units' => [
+                'key' => 'units', 'label' => 'Units',
+                'description' => 'Product units and fractional quantity settings.',
+                'tables' => ['units'],
+            ],
+            'courier' => [
+                'key' => 'courier', 'label' => 'Courier',
+                'description' => 'Courier providers, Fraud Checker, and provider credentials.',
+                'tables' => ['courier_settings'],
+            ],
+            'voice-survey' => [
+                'key' => 'voice-survey', 'label' => 'Voice Survey',
+                'description' => 'Automatic calling, retry, trigger, and integration settings.',
+                'tables' => ['voice_survey_settings'],
+            ],
+        ];
+    }
+
+    /** @return array<int, string> */
+    private function requireSettingsTabs($value): array
+    {
+        $requested = is_array($value) ? array_values($value) : [];
+        $definitions = $this->settingsTabDefinitions();
+        $selected = [];
+        foreach ($requested as $key) {
+            $key = trim((string) $key);
+            if (isset($definitions[$key]) && !in_array($key, $selected, true)) {
+                $selected[] = $key;
+            }
+        }
+        if ($selected === []) {
+            throw new RuntimeException('Select at least one Settings tab.');
+        }
+        return $selected;
+    }
+
+    /** @return array<string, mixed> */
+    public function exportSettingsPackage(array $params): array
+    {
+        $this->requireAdmin();
+        $selected = $this->requireSettingsTabs($params['tabs'] ?? []);
+        $definitions = $this->settingsTabDefinitions();
+        $tabs = [];
+        foreach ($selected as $key) {
+            $definition = $definitions[$key];
+            $tables = [];
+            foreach ($definition['tables'] as $table) {
+                if (!$this->tableExists($table)) {
+                    throw new RuntimeException($definition['label'] . ' settings are not available in this installation.');
+                }
+                $tables[$table] = $this->database->fetchAll("SELECT * FROM `{$table}` ORDER BY 1 ASC");
+            }
+            $tab = [
+                'label' => $definition['label'],
+                'tables' => $tables,
+            ];
+            if ($key === 'defaults') {
+                $tab['references'] = $this->exportDefaultSettingReferences($tables['system_defaults'][0] ?? []);
+            } elseif ($key === 'woocommerce') {
+                $tab['references'] = ['companyPages' => $this->companyPageNames()];
+            }
+            $tabs[$key] = $tab;
+        }
+
+        return [
+            'app' => 'MamePilot',
+            'schemaVersion' => 1,
+            'entity' => 'settings',
+            'exportedAt' => gmdate('c'),
+            'filename' => sprintf('mamepilot-settings-%s.json', gmdate('Y-m-d-His')),
+            'tabs' => $tabs,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function exportDefaultSettingReferences(array $row): array
+    {
+        $accountId = trim((string) ($row['default_account_id'] ?? ''));
+        $incomeCategoryId = trim((string) ($row['income_category_id'] ?? ''));
+        $expenseCategoryId = trim((string) ($row['expense_category_id'] ?? ''));
+        return [
+            'defaultAccount' => $accountId !== ''
+                ? $this->database->fetchOne('SELECT * FROM accounts WHERE id = :id LIMIT 1', [':id' => $accountId])
+                : null,
+            'incomeCategory' => $incomeCategoryId !== ''
+                ? $this->database->fetchOne('SELECT * FROM categories WHERE id = :id LIMIT 1', [':id' => $incomeCategoryId])
+                : null,
+            'expenseCategory' => $expenseCategoryId !== ''
+                ? $this->database->fetchOne('SELECT * FROM categories WHERE id = :id LIMIT 1', [':id' => $expenseCategoryId])
+                : null,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function importSettingsPackage(array $params): array
+    {
+        $this->requireAdmin();
+        $selected = $this->requireSettingsTabs($params['selectedTabs'] ?? []);
+        $package = is_array($params['package'] ?? null) ? $params['package'] : [];
+        if (($package['app'] ?? null) !== 'MamePilot' || ($package['entity'] ?? null) !== 'settings') {
+            throw new RuntimeException('Select a MamePilot Settings export file.');
+        }
+        $packageTabs = is_array($package['tabs'] ?? null) ? $package['tabs'] : [];
+        $definitions = $this->settingsTabDefinitions();
+        $result = [
+            'processed' => count($selected),
+            'imported' => 0,
+            'skipped' => 0,
+            'failed' => 0,
+            'recordsCreated' => 0,
+            'recordsSkipped' => 0,
+            'errors' => [],
+        ];
+
+        return $this->database->transaction(function () use ($selected, $packageTabs, $definitions, $result): array {
+            foreach ($selected as $key) {
+                $definition = $definitions[$key];
+                try {
+                    if (!isset($packageTabs[$key]) || !is_array($packageTabs[$key])) {
+                        throw new RuntimeException($definition['label'] . ' is not included in this Settings file.');
+                    }
+                    $this->database->execute('SAVEPOINT settings_import_tab');
+                    $counts = $this->importSettingsTab($key, $packageTabs[$key], $definition);
+                    $this->database->execute('RELEASE SAVEPOINT settings_import_tab');
+                    $result['recordsCreated'] += $counts['created'];
+                    $result['recordsSkipped'] += $counts['skipped'];
+                    if ($counts['created'] > 0) {
+                        $result['imported']++;
+                    } else {
+                        $result['skipped']++;
+                    }
+                } catch (Throwable $exception) {
+                    try {
+                        $this->database->execute('ROLLBACK TO SAVEPOINT settings_import_tab');
+                        $this->database->execute('RELEASE SAVEPOINT settings_import_tab');
+                    } catch (Throwable $ignored) {
+                        // Preserve the actionable tab error.
+                    }
+                    $result['failed']++;
+                    $result['errors'][] = [
+                        'tab' => $key,
+                        'label' => $definition['label'],
+                        'message' => $this->safeImportError($exception),
+                    ];
+                }
+            }
+            return $result;
+        });
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsTab(string $key, array $payload, array $definition): array
+    {
+        $tables = is_array($payload['tables'] ?? null) ? $payload['tables'] : [];
+        $counts = ['created' => 0, 'skipped' => 0];
+        foreach ($definition['tables'] as $table) {
+            if (!$this->tableExists($table)) {
+                throw new RuntimeException($definition['label'] . ' settings are not available in this installation.');
+            }
+            $rows = is_array($tables[$table] ?? null) ? array_values($tables[$table]) : [];
+            if ($table === 'categories') {
+                $tableCounts = $this->importSettingsCategories($rows);
+            } elseif ($table === 'payment_methods') {
+                $tableCounts = $this->importSettingsPaymentMethods($rows);
+            } elseif ($table === 'units') {
+                $tableCounts = $this->importSettingsUnits($rows);
+            } elseif ($table === 'role_permissions') {
+                $tableCounts = $this->importSettingsPermissions($rows);
+            } elseif ($table === 'woocommerce_stores') {
+                $references = is_array($payload['references'] ?? null) ? $payload['references'] : [];
+                $tableCounts = $this->importSettingsWooCommerceStores($rows, $references);
+            } else {
+                $row = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : [];
+                if ($table === 'system_defaults') {
+                    $references = is_array($payload['references'] ?? null) ? $payload['references'] : [];
+                    $row = $this->resolveImportedDefaultSettings($row, $references);
+                } elseif ($table === 'company_settings') {
+                    $row = $this->normalizeImportedCompanySettings($row);
+                }
+                $tableCounts = $row === [] ? ['created' => 0, 'skipped' => 1] : $this->mergeSettingsSingleton($table, $row);
+                if ($table === 'company_settings' && $tableCounts['created'] > 0) {
+                    $this->purgeImportedBrandingCache();
+                }
+            }
+            $counts['created'] += $tableCounts['created'];
+            $counts['skipped'] += $tableCounts['skipped'];
+        }
+        return $counts;
+    }
+
+    private function purgeImportedBrandingCache(): void
+    {
+        $cacheKey = 'mamepilot:global-branding:' . hash('sha256', __DIR__);
+        if (function_exists('apcu_delete')) {
+            @apcu_delete($cacheKey);
+        }
+        $cachePath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'mamepilot_global_branding_' . hash('sha256', __DIR__) . '.json';
+        if (is_file($cachePath)) {
+            @unlink($cachePath);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function normalizeImportedCompanySettings(array $row): array
+    {
+        if (isset($row['logo'])) {
+            $row['logo'] = $this->normalizeUploadedFileValue($this->nullableString($row['logo']), 'logos');
+        }
+        $pages = $this->jsonDecodeList($row['pages'] ?? []);
+        foreach ($pages as $index => $page) {
+            if (!is_array($page)) {
+                continue;
+            }
+            $page['logo'] = $this->normalizeUploadedFileValue($this->nullableString($page['logo'] ?? null), 'logos') ?? '';
+            $pages[$index] = $page;
+        }
+        if ($pages !== []) {
+            $row['pages'] = $this->jsonEncode($pages);
+        }
+        return $row;
+    }
+
+    /** @return array<string, mixed> */
+    private function resolveImportedDefaultSettings(array $row, array $references): array
+    {
+        $account = is_array($references['defaultAccount'] ?? null) ? $references['defaultAccount'] : null;
+        if ($account !== null) {
+            $accountRow = [
+                'name' => $account['name'] ?? '',
+                'type' => $account['type'] ?? 'Bank',
+                'openingBalance' => $account['opening_balance'] ?? 0,
+                'currentBalance' => $account['current_balance'] ?? ($account['opening_balance'] ?? 0),
+            ];
+            $this->importAccount($accountRow);
+            $matched = $this->database->fetchOne(
+                'SELECT id FROM accounts WHERE LOWER(name) = LOWER(:name) ORDER BY created_at ASC LIMIT 1',
+                [':name' => trim((string) $accountRow['name'])]
+            );
+            $row['default_account_id'] = $matched['id'] ?? null;
+        } else {
+            $row['default_account_id'] = null;
+        }
+        foreach (['incomeCategory' => 'income_category_id', 'expenseCategory' => 'expense_category_id'] as $referenceKey => $column) {
+            $category = is_array($references[$referenceKey] ?? null) ? $references[$referenceKey] : null;
+            if ($category === null) {
+                $row[$column] = null;
+                continue;
+            }
+            $row[$column] = $this->resolveOrCreateSettingsCategory($category)['id'];
+        }
+        $paymentMethod = trim((string) ($row['default_payment_method'] ?? ''));
+        if ($paymentMethod !== '' && $this->database->fetchOne(
+            'SELECT id FROM payment_methods WHERE LOWER(name) = LOWER(:name) LIMIT 1',
+            [':name' => $paymentMethod]
+        ) === null) {
+            $this->insertSettingsRow('payment_methods', [
+                'id' => $this->uuid4(), 'name' => $paymentMethod, 'description' => null, 'is_active' => 1,
+            ]);
+        }
+        return $row;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function mergeSettingsSingleton(string $table, array $source): array
+    {
+        $columns = $this->settingsTableColumns($table);
+        $data = [];
+        foreach ($columns as $column) {
+            if (in_array($column, ['id', 'created_at', 'updated_at'], true)) {
+                continue;
+            }
+            if (array_key_exists($column, $source)) {
+                $data[$column] = $source[$column];
+            }
+        }
+        if ($data === []) {
+            return ['created' => 0, 'skipped' => 1];
+        }
+        $existing = $this->database->fetchOne("SELECT id FROM `{$table}` LIMIT 1");
+        if ($existing === null) {
+            $this->insertSettingsRow($table, ['id' => $this->uuid4(), ...$data]);
+        } else {
+            $this->updateSettingsRow($table, (string) $existing['id'], $data);
+        }
+        return ['created' => 1, 'skipped' => 0];
+    }
+
+    /** @return array<int, string> */
+    private function settingsTableColumns(string $table): array
+    {
+        $this->assertSettingsTable($table);
+        return array_map(
+            static fn(array $row): string => (string) $row['COLUMN_NAME'],
+            $this->database->fetchAll(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table ORDER BY ORDINAL_POSITION',
+                [':table' => $table]
+            )
+        );
+    }
+
+    private function assertSettingsTable(string $table): void
+    {
+        $allowed = [];
+        foreach ($this->settingsTabDefinitions() as $definition) {
+            $allowed = array_merge($allowed, $definition['tables']);
+        }
+        if (!in_array($table, $allowed, true)) {
+            throw new RuntimeException('Unsupported Settings import table.');
+        }
+    }
+
+    /** @param array<string, mixed> $data */
+    private function insertSettingsRow(string $table, array $data): void
+    {
+        $this->assertSettingsTable($table);
+        $allowed = array_flip($this->settingsTableColumns($table));
+        $data = array_intersect_key($data, $allowed);
+        $columns = [];
+        $placeholders = [];
+        $bindings = [];
+        foreach ($data as $column => $value) {
+            $this->assertIdentifier((string) $column);
+            $columns[] = '`' . $column . '`';
+            $parameter = ':setting_insert_' . count($bindings);
+            $placeholders[] = $parameter;
+            $bindings[$parameter] = $value;
+        }
+        $this->database->execute(
+            "INSERT INTO `{$table}` (" . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')',
+            $bindings
+        );
+    }
+
+    /** @param array<string, mixed> $data */
+    private function updateSettingsRow(string $table, string $id, array $data): void
+    {
+        $this->assertSettingsTable($table);
+        $allowed = array_flip($this->settingsTableColumns($table));
+        $data = array_intersect_key($data, $allowed);
+        $parts = [];
+        $bindings = [':settings_row_id' => $id];
+        foreach ($data as $column => $value) {
+            $this->assertIdentifier((string) $column);
+            $parameter = ':setting_update_' . count($parts);
+            $parts[] = '`' . $column . '` = ' . $parameter;
+            $bindings[$parameter] = $value;
+        }
+        if ($parts !== []) {
+            $this->database->execute(
+                "UPDATE `{$table}` SET " . implode(', ', $parts) . ' WHERE id = :settings_row_id',
+                $bindings
+            );
+        }
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsCategories(array $rows): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        $idMap = [];
+        $createdIds = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $sourceId = trim((string) ($row['id'] ?? ''));
+            $resolved = $this->resolveOrCreateSettingsCategory($row);
+            if ($sourceId !== '') {
+                $idMap[$sourceId] = $resolved['id'];
+            }
+            $counts[$resolved['created'] ? 'created' : 'skipped']++;
+            if ($resolved['created']) {
+                $createdIds[$sourceId] = $resolved['id'];
+            }
+        }
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $sourceId = trim((string) ($row['id'] ?? ''));
+            $sourceParentId = trim((string) ($row['parent_id'] ?? ''));
+            if (isset($createdIds[$sourceId], $idMap[$sourceParentId])) {
+                $this->updateSettingsRow('categories', $createdIds[$sourceId], ['parent_id' => $idMap[$sourceParentId]]);
+            }
+        }
+        return $counts;
+    }
+
+    /** @return array{id: string, created: bool} */
+    private function resolveOrCreateSettingsCategory(array $row): array
+    {
+        $name = trim((string) ($row['name'] ?? ''));
+        $type = trim((string) ($row['type'] ?? ''));
+        if ($name === '' || $type === '') {
+            throw new RuntimeException('A Settings category is missing its name or type.');
+        }
+        $existing = $this->database->fetchOne(
+            'SELECT id FROM categories WHERE LOWER(name) = LOWER(:name) AND LOWER(type) = LOWER(:type) LIMIT 1',
+            [':name' => $name, ':type' => $type]
+        );
+        if ($existing !== null) {
+            return ['id' => (string) $existing['id'], 'created' => false];
+        }
+        $id = $this->uuid4();
+        $this->insertSettingsRow('categories', [
+            'id' => $id,
+            'name' => $name,
+            'type' => $type,
+            'color' => trim((string) ($row['color'] ?? '')) ?: '#3B82F6',
+            'parent_id' => null,
+            'is_system' => !empty($row['is_system']) ? 1 : 0,
+        ]);
+        return ['id' => $id, 'created' => true];
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsPaymentMethods(array $rows): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') {
+                throw new RuntimeException('A payment method is missing its name.');
+            }
+            if ($this->database->fetchOne('SELECT id FROM payment_methods WHERE LOWER(name) = LOWER(:name) LIMIT 1', [':name' => $name]) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            $this->insertSettingsRow('payment_methods', [
+                'id' => $this->uuid4(), 'name' => $name,
+                'description' => $row['description'] ?? null,
+                'is_active' => !empty($row['is_active']) ? 1 : 0,
+            ]);
+            $counts['created']++;
+        }
+        return $counts;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsUnits(array $rows): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            $name = trim((string) ($row['name'] ?? ''));
+            $shortName = trim((string) ($row['short_name'] ?? ''));
+            if ($name === '' || $shortName === '') {
+                throw new RuntimeException('A unit is missing its name or short name.');
+            }
+            if ($this->database->fetchOne('SELECT id FROM units WHERE LOWER(name) = LOWER(:name) LIMIT 1', [':name' => $name]) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            if ($this->database->fetchOne('SELECT id FROM units WHERE LOWER(short_name) = LOWER(:name) LIMIT 1', [':name' => $shortName]) !== null) {
+                $shortName = substr($shortName, 0, 24) . '-' . substr($this->uuid4(), 0, 6);
+            }
+            $this->insertSettingsRow('units', [
+                'id' => $this->uuid4(), 'name' => $name, 'short_name' => $shortName,
+                'description' => $row['description'] ?? null,
+                'is_fraction' => !empty($row['is_fraction']) ? 1 : 0,
+            ]);
+            $counts['created']++;
+        }
+        return $counts;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsPermissions(array $rows): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            $roleName = trim((string) ($row['role_name'] ?? ''));
+            if ($roleName === '') {
+                throw new RuntimeException('A permission role is missing its name.');
+            }
+            if ($this->database->fetchOne('SELECT role_name FROM role_permissions WHERE role_name = :name LIMIT 1', [':name' => $roleName]) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            $this->insertSettingsRow('role_permissions', [
+                'role_name' => $roleName,
+                'permissions' => $row['permissions'] ?? null,
+                'is_custom' => !empty($row['is_custom']) ? 1 : 0,
+            ]);
+            $counts['created']++;
+        }
+        return $counts;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsWooCommerceStores(array $rows, array $references): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        $sourcePages = is_array($references['companyPages'] ?? null) ? $references['companyPages'] : [];
+        $targetPages = $this->companyPageNames();
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            $storeUrl = rtrim(trim((string) ($row['store_url'] ?? '')), '/');
+            if ($storeUrl === '') {
+                throw new RuntimeException('A WooCommerce store is missing its URL.');
+            }
+            if ($this->database->fetchOne(
+                'SELECT id FROM woocommerce_stores WHERE LOWER(TRIM(TRAILING \'/\' FROM store_url)) = LOWER(:url) LIMIT 1',
+                [':url' => $storeUrl]
+            ) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            $sourcePageId = trim((string) ($row['company_page_id'] ?? ''));
+            $targetPageId = isset($targetPages[$sourcePageId]) ? $sourcePageId : null;
+            if ($targetPageId === null && isset($sourcePages[$sourcePageId])) {
+                foreach ($targetPages as $candidateId => $candidateName) {
+                    if (strcasecmp((string) $candidateName, (string) $sourcePages[$sourcePageId]) === 0) {
+                        $targetPageId = $candidateId;
+                        break;
+                    }
+                }
+            }
+            unset($row['id'], $row['created_at'], $row['updated_at']);
+            $row['id'] = $this->uuid4();
+            $row['store_url'] = $storeUrl;
+            $row['company_page_id'] = $targetPageId;
+            $this->insertSettingsRow('woocommerce_stores', $row);
+            $counts['created']++;
+        }
+        return $counts;
     }
 
     /**
@@ -561,6 +1183,19 @@ final class DataManagementApi extends BaseService
     }
 
     /** @return array<int, array<string, mixed>> */
+    private function exportAccounts(): array
+    {
+        return $this->database->fetchAll(
+            "SELECT a.name,
+                    a.type,
+                    a.opening_balance AS openingBalance,
+                    a.current_balance AS currentBalance
+             FROM accounts a
+             ORDER BY a.created_at ASC, a.id ASC"
+        );
+    }
+
+    /** @return array<int, array<string, mixed>> */
     private function exportUsers(): array
     {
         return $this->database->fetchAll(
@@ -737,11 +1372,6 @@ final class DataManagementApi extends BaseService
         $name = $this->requiredText($row, 'customerName', 'Customer Name');
         $found = $this->database->fetchOne('SELECT id FROM customers WHERE phone = :phone AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1', [':phone' => $phone]);
         if ($found !== null) {
-            $updates = ['name' => $name];
-            if ($this->text($row, 'customerAddress') !== '') {
-                $updates['address'] = $this->text($row, 'customerAddress');
-            }
-            $this->updateRow('customers', (string) $found['id'], $updates);
             return (string) $found['id'];
         }
         $customerId = $this->uuid4();
@@ -765,11 +1395,6 @@ final class DataManagementApi extends BaseService
         $name = $this->requiredText($row, 'vendorName', 'Vendor Name');
         $found = $this->database->fetchOne('SELECT id FROM vendors WHERE phone = :phone AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1', [':phone' => $phone]);
         if ($found !== null) {
-            $updates = ['name' => $name];
-            if ($this->text($row, 'vendorAddress') !== '') {
-                $updates['address'] = $this->text($row, 'vendorAddress');
-            }
-            $this->updateRow('vendors', (string) $found['id'], $updates);
             return (string) $found['id'];
         }
         $vendorId = $this->uuid4();
@@ -849,7 +1474,7 @@ final class DataManagementApi extends BaseService
 
     /**
      * @param array<string, mixed> $data
-     * @return 'created'|'updated'
+     * @return 'created'|'skipped'
      */
     private function saveByIdentity(string $table, string $requestedId, ?string $identityColumn, string $identityValue, array $data): string
     {
@@ -867,11 +1492,7 @@ final class DataManagementApi extends BaseService
         }
         $now = $this->database->nowUtc();
         if ($existing !== null) {
-            $data['deleted_at'] = null;
-            $data['deleted_by'] = null;
-            $data['updated_at'] = $now;
-            $this->updateRow($table, (string) $existing['id'], $data);
-            return 'updated';
+            return 'skipped';
         }
 
         $data['id'] = $requestedId !== '' ? $requestedId : $this->uuid4();
@@ -936,7 +1557,7 @@ final class DataManagementApi extends BaseService
         );
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importCustomer(array $row, array $actor): string
     {
         $name = $this->requiredText($row, 'name', 'Customer Name');
@@ -949,7 +1570,7 @@ final class DataManagementApi extends BaseService
         ]);
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importVendor(array $row, array $actor): string
     {
         $name = $this->requiredText($row, 'name', 'Vendor Name');
@@ -962,10 +1583,17 @@ final class DataManagementApi extends BaseService
         ]);
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importProduct(array $row, array $actor): string
     {
         $name = $this->requiredText($row, 'name', 'Product Name');
+        $existing = $this->database->fetchOne(
+            'SELECT id FROM products WHERE LOWER(name) = LOWER(:name) ORDER BY created_at ASC LIMIT 1',
+            [':name' => $name]
+        );
+        if ($existing !== null) {
+            return 'skipped';
+        }
         $dynamicPricing = $this->text($row, 'dynamicPricing');
         if ($dynamicPricing !== '') {
             $this->jsonValue($row, 'dynamicPricing', true);
@@ -1145,20 +1773,21 @@ final class DataManagementApi extends BaseService
         return ((int) ($row['max_seq'] ?? 0)) + 1;
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importOrder(array $row, array $actor): string
     {
         $orderNumber = $this->requiredText($row, 'orderNumber', 'Order Number');
+        if ($this->database->fetchOne('SELECT id FROM orders WHERE order_number = :number LIMIT 1', [':number' => $orderNumber]) !== null) {
+            return 'skipped';
+        }
         $row['itemsJson'] = $this->jsonEncode($this->resolveDocumentItems($row, $actor, 'Order', false));
         [$items, $subtotal, $total] = $this->documentAmounts($row, 'Order');
         $paidAmount = max(0, $this->number($row, 'paidAmount'));
         if ($paidAmount > $total) {
             throw new RuntimeException('Order Paid Amount cannot exceed Total.');
         }
-        $previous = $this->database->fetchOne('SELECT * FROM orders WHERE order_number = :number LIMIT 1', [':number' => $orderNumber]) ?? [];
-        $orderSequence = ($previous['order_seq'] ?? null) !== null
-            ? (int) $previous['order_seq']
-            : $this->nextImportDocumentSequence('orders', 'order_seq');
+        $previous = [];
+        $orderSequence = $this->nextImportDocumentSequence('orders', 'order_seq');
         $customerId = $this->resolveCustomerId($row, $actor);
         $companyPageName = $this->text($row, 'companyPage');
         [$pageId, $pageSnapshot] = $companyPageName !== ''
@@ -1194,20 +1823,21 @@ final class DataManagementApi extends BaseService
         return $operation;
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importBill(array $row, array $actor): string
     {
         $billNumber = $this->requiredText($row, 'billNumber', 'Bill Number');
+        if ($this->database->fetchOne('SELECT id FROM bills WHERE bill_number = :number LIMIT 1', [':number' => $billNumber]) !== null) {
+            return 'skipped';
+        }
         $row['itemsJson'] = $this->jsonEncode($this->resolveDocumentItems($row, $actor, 'Bill', true));
         [$items, $subtotal, $total] = $this->documentAmounts($row, 'Bill');
         $paidAmount = max(0, $this->number($row, 'paidAmount'));
         if ($paidAmount > $total) {
             throw new RuntimeException('Bill Paid Amount cannot exceed Total.');
         }
-        $previous = $this->database->fetchOne('SELECT * FROM bills WHERE bill_number = :number LIMIT 1', [':number' => $billNumber]) ?? [];
-        $billSequence = ($previous['bill_seq'] ?? null) !== null
-            ? (int) $previous['bill_seq']
-            : $this->nextImportDocumentSequence('bills', 'bill_seq');
+        $previous = [];
+        $billSequence = $this->nextImportDocumentSequence('bills', 'bill_seq');
         $vendorId = $this->resolveVendorId($row, $actor);
         $operation = $this->saveByIdentity('bills', '', 'bill_number', $billNumber, [
             'bill_number' => $billNumber,
@@ -1261,12 +1891,19 @@ final class DataManagementApi extends BaseService
         );
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importTransaction(array $row, array $actor): string
     {
         $type = $this->requiredText($row, 'type', 'Type');
         if (!in_array($type, ['Income', 'Expense', 'Transfer'], true)) {
             throw new RuntimeException('Type must be Income, Expense, or Transfer.');
+        }
+        $transactionId = $this->text($row, 'transactionId');
+        if ($transactionId !== '' && $this->database->fetchOne(
+            'SELECT id FROM transactions WHERE transaction_id = :transaction_id ORDER BY created_at ASC LIMIT 1',
+            [':transaction_id' => $transactionId]
+        ) !== null) {
+            return 'skipped';
         }
         $accountId = $this->resolveAccountId($this->text($row, 'accountName'), $this->text($row, 'accountType'), true);
         $toAccountId = $this->resolveAccountId($this->text($row, 'toAccountName'), $this->text($row, 'toAccountType'), $type === 'Transfer');
@@ -1285,10 +1922,9 @@ final class DataManagementApi extends BaseService
         $category = $this->requiredText($row, 'category', 'Category');
         $description = $this->requiredText($row, 'description', 'Description');
         $paymentMethod = $this->requiredText($row, 'paymentMethod', 'Payment Method');
-        $transactionId = $this->text($row, 'transactionId');
         $existing = $transactionId !== ''
             ? $this->database->fetchOne(
-                'SELECT id, type, account_id, to_account_id, amount, account_effect_applied, history FROM transactions WHERE transaction_id = :transaction_id AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1',
+                'SELECT id, type, account_id, to_account_id, amount, account_effect_applied, history FROM transactions WHERE transaction_id = :transaction_id ORDER BY created_at ASC LIMIT 1',
                 [':transaction_id' => $transactionId]
             )
             : $this->database->fetchOne(
@@ -1296,7 +1932,7 @@ final class DataManagementApi extends BaseService
                  FROM transactions
                  WHERE date = :date AND type = :type AND category = :category AND account_id = :account_id
                    AND COALESCE(to_account_id, \'\') = :to_account_id AND amount = :amount
-                   AND description = :description AND payment_method = :payment_method AND deleted_at IS NULL
+                   AND description = :description AND payment_method = :payment_method
                  ORDER BY created_at ASC LIMIT 1',
                 [
                     ':date' => $date,
@@ -1309,12 +1945,11 @@ final class DataManagementApi extends BaseService
                     ':payment_method' => $paymentMethod,
                 ]
             );
-        $requestedId = (string) ($existing['id'] ?? '');
-        if ($existing !== null && (int) ($existing['account_effect_applied'] ?? 0) === 1) {
-            $this->applyImportedTransactionAccountEffect($existing, -1);
+        if ($existing !== null) {
+            return 'skipped';
         }
         $accountEffectApplied = $approvalStatus === 'approved';
-        $operation = $this->saveByIdentity('transactions', $requestedId, null, '', [
+        $operation = $this->saveByIdentity('transactions', '', null, '', [
             'transaction_id' => $transactionId !== '' ? $transactionId : null,
             'date' => $date,
             'type' => $type,
@@ -1330,7 +1965,7 @@ final class DataManagementApi extends BaseService
             'attachment_name' => $this->nullableString($row['attachmentName'] ?? null),
             'attachment_url' => $this->nullableString($row['attachmentUrl'] ?? null),
             'created_by' => $this->resolveUserId($row, $actor),
-            'history' => $existing['history'] ?? $this->jsonEncode([]),
+            'history' => $this->jsonEncode([]),
             'approval_status' => $approvalStatus,
             'account_effect_applied' => $accountEffectApplied ? 1 : 0,
         ]);
@@ -1343,6 +1978,34 @@ final class DataManagementApi extends BaseService
             ], 1);
         }
         return $operation;
+    }
+
+    /** @return 'created'|'skipped' */
+    private function importAccount(array $row): string
+    {
+        $name = $this->requiredText($row, 'name', 'Account Name');
+        if ($this->database->fetchOne(
+            'SELECT id FROM accounts WHERE LOWER(name) = LOWER(:name) ORDER BY created_at ASC LIMIT 1',
+            [':name' => $name]
+        ) !== null) {
+            return 'skipped';
+        }
+
+        $type = $this->requiredText($row, 'type', 'Account Type');
+        if (!in_array($type, ['Bank', 'Cash'], true)) {
+            throw new RuntimeException('Account Type must be Bank or Cash.');
+        }
+        $openingBalance = $this->number($row, 'openingBalance');
+        $currentBalance = $this->text($row, '_dependencyMode') === 'transactions'
+            ? $openingBalance
+            : $this->number($row, 'currentBalance', $openingBalance);
+
+        return $this->saveByIdentity('accounts', '', 'name', $name, [
+            'name' => $name,
+            'type' => $type,
+            'opening_balance' => $this->formatMoney($openingBalance),
+            'current_balance' => $this->formatMoney($currentBalance),
+        ]);
     }
 
     private function resolveReferenceNumber(string $number): ?string
@@ -1399,17 +2062,18 @@ final class DataManagementApi extends BaseService
         }
     }
 
-    /** @return 'created'|'updated' */
+    /** @return 'created'|'skipped' */
     private function importUser(array $row): string
     {
         $name = $this->requiredText($row, 'name', 'User Name');
         $phone = $this->requiredText($row, 'phone', 'Phone');
         $requestedId = '';
         $existing = $this->database->fetchOne('SELECT id, role FROM users WHERE phone = :phone LIMIT 1', [':phone' => $phone]);
+        if ($existing !== null) {
+            return 'skipped';
+        }
         $role = $this->requiredText($row, 'role', 'Role');
-        if ($existing !== null && (string) ($existing['role'] ?? '') === 'Developer') {
-            $role = 'Developer';
-        } elseif ($role === 'Developer') {
+        if ($role === 'Developer') {
             throw new RuntimeException('New Developer users cannot be created through CSV import.');
         }
         $password = $this->text($row, 'password');

@@ -26,6 +26,7 @@ final class ServiceLifecycle
         'createUser',
         'createVendor',
         'importDataRecords',
+        'importSettingsPackage',
         'deleteAccount',
         'deleteBill',
         'deleteCategory',

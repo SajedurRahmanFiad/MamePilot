@@ -414,7 +414,24 @@ export async function fetchEmailSettings(): Promise<{ recipientEmail: string; sm
 export async function updateEmailSettings(payload: { recipientEmail?: string; smtpHost?: string; smtpPort?: number; smtpUsername?: string; smtpPassword?: string; smtpEncryption?: 'tls' | 'ssl' | 'none'; senderEmail?: string; senderName?: string }): Promise<{ success: boolean }> { return call<any>('updateEmailSettings', payload); }
 
 export async function fetchSurveyBalance(): Promise<{ success: boolean; balance: number; message?: string }> { return call<any>('fetchSurveyBalance'); }
-export async function fetchSurveyBroadcasts(params: { startDate?: string; endDate?: string }): Promise<{ success: boolean; broadcasts: Array<{ id: number; name: string; status: string; createdAt: string }>; dateRange?: { startDate: string; endDate: string }; message?: string }> { return call<any>('fetchSurveyBroadcasts', params); }
+export type SurveyHistoryEntry = {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  status: string;
+  callStatus: string;
+  confirmationStatus: string;
+  createdAt: string;
+};
+export type SurveyHistoryResponse = {
+  success: boolean;
+  history: SurveyHistoryEntry[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  dateRange?: { startDate: string; endDate: string };
+  message?: string;
+};
+export async function fetchSurveyHistory(params: { startDate?: string; endDate?: string; page?: number; pageSize?: number }): Promise<SurveyHistoryResponse> { return call<SurveyHistoryResponse>('fetchSurveyHistory', params); }
 export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string }> { return call<any>('fetchSurveySummary'); }
 export async function initiateRechargeCheckout(payload: { amount: number }): Promise<{ checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null }> { return call<any>('initiateRechargeCheckout', payload, { timeoutMs: 30000 }); }
 export async function fetchRechargeHistory(): Promise<Array<{ id: string; localReference: string; gatewayPaymentId: string; amount: number; status: string; submittedAt: string; processedAt: string; createdAt: string }>> { return call<any>('fetchRechargeHistory'); }

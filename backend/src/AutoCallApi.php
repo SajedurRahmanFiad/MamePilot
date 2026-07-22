@@ -307,69 +307,113 @@ final class AutoCallApi extends BaseService
         ];
     }
 
-    public function fetchSurveyBroadcasts(array $params): array
+    public function fetchSurveyHistory(array $params): array
     {
         $this->requireAdmin();
-        $settings = $this->fetchSettingsRow();
-        $token = (string) ($settings['api_token'] ?? '');
-        if ($token === '') {
-            return ['success' => false, 'broadcasts' => [], 'message' => 'API token not configured.'];
-        }
-
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $pageSize = min(100, max(1, (int) ($params['pageSize'] ?? 25)));
         $startDate = trim((string) ($params['startDate'] ?? ''));
         $endDate = trim((string) ($params['endDate'] ?? ''));
-        if ($startDate === '' || $endDate === '') {
-            $endDate = gmdate('Y-m-d');
-            $startDate = gmdate('Y-m-d', strtotime('-30 days'));
-        }
 
-        // Enforce 90-day limit
-        $startTs = strtotime($startDate);
-        $endTs = strtotime($endDate);
-        if ($startTs !== false && $endTs !== false && ($endTs - $startTs) > (90 * 86400)) {
-            return ['success' => false, 'broadcasts' => [], 'message' => 'Date range cannot exceed 90 days.'];
-        }
-
-        $url = sprintf('https://api.awajdigital.com/api/broadcasts?start_date=%s&end_date=%s', urlencode($startDate), urlencode($endDate));
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $token,
-                'Accept: application/json',
-            ],
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($response === false || $httpCode >= 400) {
-            return ['success' => false, 'broadcasts' => [], 'message' => $error ?: "HTTP {$httpCode}"];
-        }
-
-        $decoded = json_decode((string) $response, true);
-        if (!is_array($decoded)) {
-            return ['success' => false, 'broadcasts' => [], 'message' => 'Invalid JSON response.'];
-        }
-
-        $broadcasts = [];
-        foreach (($decoded['broadcasts'] ?? []) as $b) {
-            $broadcasts[] = [
-                'id' => $b['id'] ?? 0,
-                'name' => (string) ($b['name'] ?? ''),
-                'status' => (string) ($b['status'] ?? ''),
-                'createdAt' => (string) ($b['createdAt'] ?? ''),
+        if (!$this->columnExists('orders', 'survey_status')) {
+            return [
+                'success' => true,
+                'history' => [],
+                'pagination' => ['page' => $page, 'pageSize' => $pageSize, 'total' => 0, 'totalPages' => 1],
+                'dateRange' => ['startDate' => $startDate, 'endDate' => $endDate],
             ];
         }
 
+        $localTimezone = new \DateTimeZone($this->config->timezone());
+        $parseDate = static function (string $value) use ($localTimezone): ?\DateTimeImmutable {
+            if ($value === '') {
+                return null;
+            }
+
+            $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value, $localTimezone);
+            return $date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value ? $date : null;
+        };
+
+        $start = $parseDate($startDate);
+        $end = $parseDate($endDate);
+        if (($startDate !== '' && $start === null) || ($endDate !== '' && $end === null)) {
+            throw new ApiException('Choose a valid date range.', 422, 'INVALID_SURVEY_HISTORY_DATE');
+        }
+        if ($start instanceof \DateTimeImmutable && $end instanceof \DateTimeImmutable && $start > $end) {
+            throw new ApiException('The start date cannot be after the end date.', 422, 'INVALID_SURVEY_HISTORY_RANGE');
+        }
+
+        $where = ["o.survey_status IS NOT NULL", "o.survey_status != ''", 'o.deleted_at IS NULL'];
+        $bindings = [];
+        $activityAt = 'COALESCE(o.survey_triggered_at, o.created_at)';
+        if ($start instanceof \DateTimeImmutable) {
+            $where[] = "{$activityAt} >= :history_start";
+            $bindings[':history_start'] = $start->setTimezone($this->utcTimezone())->format('Y-m-d H:i:s');
+        }
+        if ($end instanceof \DateTimeImmutable) {
+            $where[] = "{$activityAt} < :history_end";
+            $bindings[':history_end'] = $end->modify('+1 day')->setTimezone($this->utcTimezone())->format('Y-m-d H:i:s');
+        }
+
+        $whereSql = implode(' AND ', $where);
+        $countRow = $this->database->fetchOne("SELECT COUNT(*) AS total FROM orders o WHERE {$whereSql}", $bindings);
+        $total = (int) ($countRow['total'] ?? 0);
+        $totalPages = max(1, (int) ceil($total / $pageSize));
+        $offset = ($page - 1) * $pageSize;
+
+        $rows = $this->database->fetchAll(
+            "SELECT o.id AS order_id, o.order_number, o.survey_id, o.survey_status, o.survey_call_status,
+                    o.confirmation_status, o.survey_triggered_at, o.created_at, c.name AS customer_name
+             FROM orders o
+             LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE {$whereSql}
+             ORDER BY {$activityAt} DESC, o.created_at DESC
+             LIMIT {$pageSize} OFFSET {$offset}",
+            $bindings
+        );
+
+        $history = array_map(function (array $row): array {
+            return [
+                'id' => (string) ($row['survey_id'] ?? ''),
+                'orderId' => (string) ($row['order_id'] ?? ''),
+                'orderNumber' => (string) ($row['order_number'] ?? ''),
+                'customerName' => (string) ($row['customer_name'] ?? ''),
+                'status' => strtolower(trim((string) ($row['survey_status'] ?? ''))),
+                'callStatus' => strtolower(trim((string) ($row['survey_call_status'] ?? ''))),
+                'confirmationStatus' => strtolower(trim((string) ($row['confirmation_status'] ?? ''))),
+                'createdAt' => $this->toIso($row['survey_triggered_at'] ?? $row['created_at'] ?? null),
+            ];
+        }, $rows);
+
         return [
-            'success' => (bool) ($decoded['success'] ?? false),
-            'broadcasts' => $broadcasts,
-            'dateRange' => $decoded['dateRange'] ?? ['startDate' => $startDate, 'endDate' => $endDate],
+            'success' => true,
+            'history' => $history,
+            'pagination' => [
+                'page' => $page,
+                'pageSize' => $pageSize,
+                'total' => $total,
+                'totalPages' => $totalPages,
+            ],
+            'dateRange' => ['startDate' => $startDate, 'endDate' => $endDate],
         ];
+    }
+
+    /**
+     * @deprecated Kept for compatibility with clients deployed before call history became local-first.
+     */
+    public function fetchSurveyBroadcasts(array $params): array
+    {
+        $result = $this->fetchSurveyHistory($params);
+        $result['broadcasts'] = array_map(static function (array $entry): array {
+            return [
+                'id' => (string) ($entry['id'] ?? ''),
+                'name' => 'Order #' . (string) ($entry['orderNumber'] ?? ''),
+                'status' => (string) ($entry['status'] ?? ''),
+                'createdAt' => (string) ($entry['createdAt'] ?? ''),
+            ];
+        }, $result['history'] ?? []);
+
+        return $result;
     }
 
     public function fetchSurveySummary(array $params = []): array

@@ -50,6 +50,15 @@ optional `webhook_url` is called when the survey is complete. The callback has
 `survey_id`, `metadata`, and `results`; each result has `phone_number`,
 `status`, `duration`, `response`, and `responses`.
 
+AwajDigital's documented `GET /api/broadcasts` route lists ordinary voice
+broadcast campaigns, not surveys created through `POST /api/surveys`. The
+provider documents survey lookup only by id at
+`GET /api/surveys/:id/result`; it does not document a list-surveys route.
+Accordingly, the Auto Calling page reads its paginated call history from the
+orders and webhook results persisted by MamePilot. This keeps pending calls,
+completed outcomes, retries, and all-time date filtering aligned with the
+actual auto-calling workflow.
+
 The listener accepts only POST and requires HTTPS in production. API credentials,
 sender/template values, and the webhook secret/URL are managed in the
 developer-only AwajDigital settings tab. Configure the public URL behind the

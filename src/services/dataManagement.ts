@@ -22,6 +22,13 @@ export interface DataManagementDataset {
 export interface DataManagementSchemasResponse {
   schemaVersion: number;
   datasets: DataManagementDataset[];
+  settingsTabs: SettingsTransferTab[];
+}
+
+export interface SettingsTransferTab {
+  key: string;
+  label: string;
+  description: string;
 }
 
 export interface DataExportResponse {
@@ -43,9 +50,32 @@ export interface DataImportResponse {
   entity: string;
   processed: number;
   created: number;
-  updated: number;
+  skipped: number;
   failed: number;
   errors: DataImportError[];
+}
+
+export interface SettingsPackage {
+  app: 'MamePilot';
+  schemaVersion: number;
+  entity: 'settings';
+  exportedAt: string;
+  filename: string;
+  tabs: Record<string, {
+    label: string;
+    tables: Record<string, Array<Record<string, unknown>>>;
+    references?: Record<string, unknown>;
+  }>;
+}
+
+export interface SettingsImportResponse {
+  processed: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  recordsCreated: number;
+  recordsSkipped: number;
+  errors: Array<{ tab: string; label: string; message: string }>;
 }
 
 export function fetchDataManagementSchemas(): Promise<DataManagementSchemasResponse> {
@@ -62,4 +92,19 @@ export function importDataRecords(
   rowOffset: number,
 ): Promise<DataImportResponse> {
   return apiAction<DataImportResponse>('importDataRecords', { entity, rows, rowOffset }, { timeoutMs: 120_000 });
+}
+
+export function exportSettingsPackage(tabs: string[]): Promise<SettingsPackage> {
+  return apiAction<SettingsPackage>('exportSettingsPackage', { tabs }, { timeoutMs: 120_000 });
+}
+
+export function importSettingsPackage(
+  settingsPackage: SettingsPackage,
+  selectedTabs: string[],
+): Promise<SettingsImportResponse> {
+  return apiAction<SettingsImportResponse>(
+    'importSettingsPackage',
+    { package: settingsPackage, selectedTabs },
+    { timeoutMs: 120_000 },
+  );
 }

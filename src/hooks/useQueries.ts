@@ -103,7 +103,7 @@ import {
   fetchVoiceSurveySettings,
   fetchVoiceSurveyIntegrationSettings,
   fetchSurveyBalance,
-  fetchSurveyBroadcasts,
+  fetchSurveyHistory,
   fetchSurveySummary,
   fetchRechargeHistory,
   fetchDeveloperNotes,
@@ -1434,10 +1434,10 @@ export function useSurveyBalance(enabled: boolean = true) {
   });
 }
 
-export function useSurveyBroadcasts(params: { startDate?: string; endDate?: string }, enabled: boolean = true) {
+export function useSurveyHistory(params: { startDate?: string; endDate?: string; page?: number; pageSize?: number }, enabled: boolean = true) {
   return useQuery({
-    queryKey: ['survey', 'broadcasts', params.startDate, params.endDate],
-    queryFn: () => fetchSurveyBroadcasts(params),
+    queryKey: ['survey', 'history', params.startDate, params.endDate, params.page, params.pageSize],
+    queryFn: () => fetchSurveyHistory(params),
     staleTime: 30 * 1000,
     enabled,
   });

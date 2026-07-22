@@ -18,7 +18,7 @@ $api = $reflection->newInstanceWithoutConstructor();
 $definitionsMethod = $reflection->getMethod('datasetDefinitions');
 $definitions = $definitionsMethod->invoke($api);
 
-$expectedDatasets = ['orders', 'products', 'customers', 'bills', 'vendors', 'transactions', 'users'];
+$expectedDatasets = ['orders', 'products', 'customers', 'bills', 'vendors', 'transactions', 'accounts', 'users'];
 assertTrue(array_keys($definitions) === $expectedDatasets, 'The supported dataset order changed unexpectedly.');
 
 foreach ($definitions as $key => $definition) {
@@ -34,6 +34,19 @@ foreach ($definitions as $key => $definition) {
     foreach ($fieldKeys as $fieldKey) {
         assertTrue(array_key_exists($fieldKey, $definition['sampleRow']), "{$key} template is missing {$fieldKey}.");
     }
+}
+
+$settingsMethod = $reflection->getMethod('settingsTabDefinitions');
+$settingsTabs = $settingsMethod->invoke($api);
+$expectedSettingsTabs = [
+    'company', 'order', 'defaults', 'be-smart', 'wallet', 'meta-ads', 'whatsapp', 'messenger',
+    'woocommerce', 'permissions', 'categories', 'payments', 'units', 'courier', 'voice-survey',
+];
+assertTrue(array_keys($settingsTabs) === $expectedSettingsTabs, 'The supported Settings tabs changed unexpectedly.');
+foreach ($settingsTabs as $key => $definition) {
+    assertTrue(($definition['key'] ?? null) === $key, "{$key} needs a stable Settings transfer key.");
+    assertTrue(trim((string) ($definition['label'] ?? '')) !== '', "{$key} needs a Settings transfer label.");
+    assertTrue(is_array($definition['tables'] ?? null) && $definition['tables'] !== [], "{$key} needs at least one Settings table.");
 }
 
 $amountsMethod = $reflection->getMethod('documentAmounts');

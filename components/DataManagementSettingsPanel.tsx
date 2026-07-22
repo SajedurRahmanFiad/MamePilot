@@ -7,10 +7,14 @@ import { Modal } from './Modal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import {
   exportDataRecords,
+  exportSettingsPackage,
   fetchDataManagementSchemas,
   importDataRecords,
+  importSettingsPackage,
   type DataImportError,
   type DataManagementDataset,
+  type SettingsPackage,
+  type SettingsTransferTab,
 } from '../src/services/dataManagement';
 import { buildCsv, parseCsv } from '../src/utils/csv';
 import { createAutomaticDataMapping, createDataImportBatches, dataMappingErrors, isMamePilotDataExport } from '../src/utils/dataImportMapping';
@@ -22,6 +26,10 @@ interface ImportSession {
   rows: string[][];
   mapping: Record<string, string>;
   appGenerated: boolean;
+  dependencies: Array<{
+    dataset: DataManagementDataset;
+    records: Array<Record<string, string>>;
+  }>;
 }
 
 interface ImportSummary {
@@ -29,7 +37,7 @@ interface ImportSummary {
   fileName: string;
   processed: number;
   created: number;
-  updated: number;
+  skipped: number;
   failed: number;
   errors: DataImportError[];
   stoppedMessage?: string;
@@ -41,6 +49,15 @@ const PRODUCT_PACKAGE_BATCH_BYTES = 12 * 1024 * 1024;
 const MAX_CSV_SIZE = 25 * 1024 * 1024;
 const MAX_PRODUCT_PACKAGE_SIZE = 100 * 1024 * 1024;
 const MAX_PACKAGED_IMAGE_SIZE = 8 * 1024 * 1024;
+const FINANCIAL_DATASET_KEYS = new Set(['orders', 'bills', 'transactions']);
+const MAX_SETTINGS_PACKAGE_SIZE = 25 * 1024 * 1024;
+
+interface SettingsTransferSession {
+  mode: 'export' | 'import';
+  selectedTabs: string[];
+  settingsPackage?: SettingsPackage;
+  fileName?: string;
+}
 
 const imageExtension = (mimeType: string, fallbackPath = '') => {
   const byMime: Record<string, string> = {
@@ -88,6 +105,44 @@ const downloadBlob = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
+const portableImageValue = async (value: unknown) => {
+  const imageValue = String(value ?? '').trim();
+  if (!imageValue || imageValue.startsWith('data:')) return imageValue;
+  try {
+    const imageUrl = new URL(imageValue, window.location.origin);
+    const response = await fetch(imageUrl, { credentials: imageUrl.origin === window.location.origin ? 'same-origin' : 'omit' });
+    if (!response.ok) return imageValue;
+    const mimeType = (response.headers.get('content-type') || '').split(';')[0].trim().toLocaleLowerCase();
+    if (!mimeType.startsWith('image/')) return imageValue;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_PACKAGED_IMAGE_SIZE) return imageValue;
+    return bytesToDataUrl(bytes, mimeType);
+  } catch {
+    return imageValue;
+  }
+};
+
+const makeSettingsPackagePortable = async (settingsPackage: SettingsPackage) => {
+  const portable = JSON.parse(JSON.stringify(settingsPackage)) as SettingsPackage;
+  const companyRow = portable.tabs.company?.tables.company_settings?.[0];
+  if (!companyRow) return portable;
+  companyRow.logo = await portableImageValue(companyRow.logo);
+  try {
+    const pages = typeof companyRow.pages === 'string' ? JSON.parse(companyRow.pages) : companyRow.pages;
+    if (Array.isArray(pages)) {
+      for (const page of pages) {
+        if (page && typeof page === 'object') {
+          page.logo = await portableImageValue(page.logo);
+        }
+      }
+      companyRow.pages = JSON.stringify(pages);
+    }
+  } catch {
+    // Keep the backend-provided value when an older installation stores a non-JSON legacy value.
+  }
+  return portable;
+};
+
 const createProductPackageBatches = (records: Array<Record<string, string>>) => {
   const batches: Array<Array<Record<string, string>>> = [];
   let current: Array<Record<string, string>> = [];
@@ -110,7 +165,9 @@ const DataManagementSettingsPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const settingsFileInputRef = useRef<HTMLInputElement>(null);
   const [datasets, setDatasets] = useState<DataManagementDataset[]>([]);
+  const [settingsTabs, setSettingsTabs] = useState<SettingsTransferTab[]>([]);
   const [loadingSchemas, setLoadingSchemas] = useState(true);
   const [schemaError, setSchemaError] = useState('');
   const [selectedDatasetKey, setSelectedDatasetKey] = useState('');
@@ -119,6 +176,8 @@ const DataManagementSettingsPanel: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [settingsSession, setSettingsSession] = useState<SettingsTransferSession | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +186,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       .then((response) => {
         if (!cancelled) {
           setDatasets(response.datasets);
+          setSettingsTabs(response.settingsTabs || []);
           setSchemaError('');
         }
       })
@@ -156,6 +216,32 @@ const DataManagementSettingsPanel: React.FC = () => {
       const response = await exportDataRecords(dataset.key);
       const headers = response.fields.map((field) => field.label);
       const exportedRows = response.rows.map((row) => ({ ...row }));
+
+      if (FINANCIAL_DATASET_KEYS.has(dataset.key)) {
+        const accountsDataset = datasets.find((candidate) => candidate.key === 'accounts');
+        if (!accountsDataset) throw new Error('The Accounts export option is unavailable. Refresh the page and try again.');
+        const accountsResponse = await exportDataRecords('accounts');
+        const primaryRows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
+        const accountRows = accountsResponse.rows.map((row) => accountsResponse.fields.map((field) => row[field.key]));
+        const archive: Record<string, Uint8Array> = {
+          [response.filename]: strToU8(buildCsv(headers, primaryRows)),
+          [accountsResponse.filename]: strToU8(buildCsv(
+            accountsResponse.fields.map((field) => field.label),
+            accountRows,
+          )),
+          'README.txt': strToU8(
+            `MamePilot ${dataset.label} Package\n\nImport this ZIP from Settings > Import & Export > ${dataset.label}. `
+            + 'Accounts are included and will be imported automatically before the main records. Existing records and accounts are skipped, never overwritten.\n',
+          ),
+        };
+        const zipBytes = zipSync(archive, { level: 6 });
+        downloadBlob(
+          new Blob([zipBytes as BlobPart], { type: 'application/zip' }),
+          response.filename.replace(/\.csv$/i, '.zip'),
+        );
+        toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} and ${accountsResponse.rows.length} accounts exported.`);
+        return;
+      }
 
       if (dataset.key === 'products') {
         const archive: Record<string, Uint8Array> = {};
@@ -227,6 +313,89 @@ const DataManagementSettingsPanel: React.FC = () => {
     toast.success(`${dataset.label} template downloaded.`);
   };
 
+  const openSettingsExport = () => {
+    setSettingsSession({ mode: 'export', selectedTabs: settingsTabs.map((tab) => tab.key) });
+  };
+
+  const openSettingsImportPicker = () => {
+    if (settingsFileInputRef.current) {
+      settingsFileInputRef.current.value = '';
+      settingsFileInputRef.current.click();
+    }
+  };
+
+  const handleSettingsFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLocaleLowerCase().endsWith('.json')) {
+      toast.error('Select a MamePilot Settings .json file.');
+      return;
+    }
+    if (file.size > MAX_SETTINGS_PACKAGE_SIZE) {
+      toast.error('Settings files can be up to 25 MB.');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text()) as SettingsPackage;
+      if (parsed?.app !== 'MamePilot' || parsed?.entity !== 'settings' || !parsed.tabs || typeof parsed.tabs !== 'object') {
+        throw new Error('Select a MamePilot Settings export file.');
+      }
+      const availableTabs = settingsTabs.filter((tab) => parsed.tabs[tab.key]).map((tab) => tab.key);
+      if (availableTabs.length === 0) throw new Error('This Settings file does not contain any supported tabs.');
+      setSettingsSession({
+        mode: 'import',
+        selectedTabs: availableTabs,
+        settingsPackage: parsed,
+        fileName: file.name,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The Settings file could not be read.');
+    }
+  };
+
+  const toggleSettingsTab = (key: string) => {
+    setSettingsSession((current) => {
+      if (!current) return current;
+      const selectedTabs = current.selectedTabs.includes(key)
+        ? current.selectedTabs.filter((candidate) => candidate !== key)
+        : [...current.selectedTabs, key];
+      return { ...current, selectedTabs };
+    });
+  };
+
+  const runSettingsTransfer = async () => {
+    if (!settingsSession || settingsSession.selectedTabs.length === 0) return;
+    setSettingsBusy(true);
+    try {
+      if (settingsSession.mode === 'export') {
+        const response = await exportSettingsPackage(settingsSession.selectedTabs);
+        const portable = await makeSettingsPackagePortable(response);
+        downloadBlob(
+          new Blob([JSON.stringify(portable, null, 2)], { type: 'application/json;charset=utf-8' }),
+          response.filename,
+        );
+        toast.success(`${settingsSession.selectedTabs.length} Settings tabs exported.`);
+      } else if (settingsSession.settingsPackage) {
+        const response = await importSettingsPackage(settingsSession.settingsPackage, settingsSession.selectedTabs);
+        queryClient.invalidateQueries();
+        if (response.failed > 0) {
+          const firstError = response.errors[0];
+          toast.warning(
+            `${response.imported} tabs imported, ${response.skipped} skipped, and ${response.failed} failed.`
+            + (firstError ? ` ${firstError.label}: ${firstError.message}` : ''),
+          );
+        } else {
+          toast.success(`${response.imported} Settings tabs imported; ${response.recordsSkipped} existing list items were kept unchanged.`);
+        }
+      }
+      setSettingsSession(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not ${settingsSession.mode} Settings.`);
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
   const openFilePicker = (dataset: DataManagementDataset) => {
     setSelectedDatasetKey(dataset.key);
     if (fileInputRef.current) {
@@ -240,38 +409,69 @@ const DataManagementSettingsPanel: React.FC = () => {
     const dataset = datasets.find((candidate) => candidate.key === selectedDatasetKey);
     if (!file || !dataset) return;
     const lowerFileName = file.name.toLocaleLowerCase();
-    const isProductPackage = lowerFileName.endsWith('.zip');
-    if (!lowerFileName.endsWith('.csv') && !isProductPackage) {
-      toast.error(dataset.key === 'products' ? 'Select a product .zip package or .csv file.' : 'Select a .csv file.');
+    const isZipPackage = lowerFileName.endsWith('.zip');
+    const supportsPackage = dataset.key === 'products' || FINANCIAL_DATASET_KEYS.has(dataset.key);
+    const isProductPackage = isZipPackage && dataset.key === 'products';
+    const isFinancialPackage = isZipPackage && FINANCIAL_DATASET_KEYS.has(dataset.key);
+    if (!lowerFileName.endsWith('.csv') && !isZipPackage) {
+      toast.error(supportsPackage ? 'Select a MamePilot .zip package or .csv file.' : 'Select a .csv file.');
       return;
     }
-    if (isProductPackage && dataset.key !== 'products') {
-      toast.error('ZIP packages are only supported for Products.');
+    if (isZipPackage && !supportsPackage) {
+      toast.error('ZIP packages are supported for Products, Orders, Bills, and Transactions.');
       return;
     }
-    const maxFileSize = isProductPackage ? MAX_PRODUCT_PACKAGE_SIZE : MAX_CSV_SIZE;
+    const maxFileSize = isZipPackage ? MAX_PRODUCT_PACKAGE_SIZE : MAX_CSV_SIZE;
     if (file.size > maxFileSize) {
-      toast.error(isProductPackage ? 'Product packages can be up to 100 MB.' : 'CSV files can be up to 25 MB.');
+      toast.error(isZipPackage ? 'MamePilot packages can be up to 100 MB.' : 'CSV files can be up to 25 MB.');
       return;
     }
 
     try {
       let importFileName = file.name;
-      let csvText = isProductPackage ? '' : await file.text();
+      let csvText = isZipPackage ? '' : await file.text();
       let packageFiles: Record<string, Uint8Array> | null = null;
-      if (isProductPackage) {
+      const dependencies: ImportSession['dependencies'] = [];
+      if (isZipPackage) {
         packageFiles = unzipSync(new Uint8Array(await file.arrayBuffer()));
-        const csvNames = Object.keys(packageFiles).filter((name) => /(^|\/)mamepilot-products-[^/]*\.csv$/i.test(name));
+        const datasetPattern = new RegExp(`(^|/)mamepilot-${dataset.key}-[^/]*\\.csv$`, 'i');
+        const csvNames = Object.keys(packageFiles).filter((name) => datasetPattern.test(name));
         if (csvNames.length !== 1) {
-          throw new Error('The product package must contain exactly one MamePilot products CSV file.');
+          throw new Error(`The package must contain exactly one MamePilot ${dataset.label.toLocaleLowerCase()} CSV file.`);
         }
         importFileName = csvNames[0].split('/').pop() || csvNames[0];
         csvText = strFromU8(packageFiles[csvNames[0]]);
+
+        if (isFinancialPackage) {
+          const accountsDataset = datasets.find((candidate) => candidate.key === 'accounts');
+          if (!accountsDataset) throw new Error('The Accounts import option is unavailable. Refresh the page and try again.');
+          const accountNames = Object.keys(packageFiles).filter((name) => /(^|\/)mamepilot-accounts-[^/]*\.csv$/i.test(name));
+          if (accountNames.length !== 1) {
+            throw new Error('The financial package must contain exactly one MamePilot accounts CSV file.');
+          }
+          const parsedAccounts = parseCsv(strFromU8(packageFiles[accountNames[0]]));
+          const accountMapping = createAutomaticDataMapping(accountsDataset, parsedAccounts.headers);
+          const accountErrors = dataMappingErrors(accountsDataset, accountMapping);
+          if (accountErrors.length > 0) {
+            throw new Error(`The Accounts CSV is invalid: ${accountErrors.join(' ')}`);
+          }
+          dependencies.push({
+            dataset: accountsDataset,
+            records: parsedAccounts.rows.map((accountRow, rowIndex) => {
+              const record: Record<string, string> = { _csvRow: String(rowIndex + 2), _dependencyMode: dataset.key };
+              accountsDataset.fields.forEach((field) => {
+                const mappedColumn = accountMapping[field.key];
+                if (mappedColumn !== undefined) record[field.key] = accountRow[Number(mappedColumn)] ?? '';
+              });
+              return record;
+            }),
+          });
+        }
       }
 
       const parsed = parseCsv(csvText);
       const mapping = createAutomaticDataMapping(dataset, parsed.headers);
-      if (packageFiles) {
+      if (isProductPackage && packageFiles) {
         const imageColumn = mapping.image;
         if (imageColumn === undefined) throw new Error('The product package CSV is missing its Image URL column.');
         const packageEntries = new Map(
@@ -298,6 +498,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         rows: parsed.rows,
         mapping,
         appGenerated: isMamePilotDataExport(dataset, importFileName, parsed.headers),
+        dependencies,
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The CSV file could not be read.');
@@ -352,22 +553,36 @@ const DataManagementSettingsPanel: React.FC = () => {
       fileName: session.fileName,
       processed: 0,
       created: 0,
-      updated: 0,
+      skipped: 0,
       failed: 0,
       errors: [],
     };
 
     try {
       let completedRows = 0;
+      const totalRows = records.length + session.dependencies.reduce((sum, dependency) => sum + dependency.records.length, 0);
+      for (const dependency of session.dependencies) {
+        const dependencyBatches = createDataImportBatches(dependency.dataset.key, dependency.records, IMPORT_BATCH_SIZE);
+        for (const batch of dependencyBatches) {
+          const result = await importDataRecords(dependency.dataset.key, batch, 0);
+          aggregate.processed += result.processed;
+          aggregate.created += result.created;
+          aggregate.skipped += result.skipped;
+          aggregate.failed += result.failed;
+          aggregate.errors.push(...result.errors);
+          completedRows += batch.length;
+          setImportProgress(Math.round((completedRows / totalRows) * 100));
+        }
+      }
       for (const batch of batches) {
         const result = await importDataRecords(session.dataset.key, batch, 0);
         aggregate.processed += result.processed;
         aggregate.created += result.created;
-        aggregate.updated += result.updated;
+        aggregate.skipped += result.skipped;
         aggregate.failed += result.failed;
         aggregate.errors.push(...result.errors);
         completedRows += batch.length;
-        setImportProgress(Math.round((completedRows / records.length) * 100));
+        setImportProgress(Math.round((completedRows / totalRows) * 100));
       }
     } catch (error) {
       aggregate.stoppedMessage = error instanceof Error ? error.message : 'The import stopped unexpectedly.';
@@ -376,13 +591,13 @@ const DataManagementSettingsPanel: React.FC = () => {
       setImportProgress(0);
       setSession(null);
       setSummary(aggregate);
-      if (aggregate.created > 0 || aggregate.updated > 0) {
+      if (aggregate.created > 0) {
         queryClient.invalidateQueries();
       }
       if (aggregate.stoppedMessage || aggregate.failed > 0) {
-        toast.warning(`${aggregate.created + aggregate.updated} imported; ${aggregate.failed} rows failed${aggregate.stoppedMessage ? ' before the file finished' : ''}.`);
+        toast.warning(`${aggregate.created} added, ${aggregate.skipped} skipped, and ${aggregate.failed} rows failed${aggregate.stoppedMessage ? ' before the file finished' : ''}.`);
       } else {
-        toast.success(`${aggregate.created + aggregate.updated} ${aggregate.datasetLabel.toLocaleLowerCase()} imported successfully.`);
+        toast.success(`${aggregate.created} added and ${aggregate.skipped} existing records skipped.`);
       }
     }
   };
@@ -406,6 +621,7 @@ const DataManagementSettingsPanel: React.FC = () => {
   return (
     <div className="space-y-7 animate-in fade-in duration-300">
       <input ref={fileInputRef} type="file" accept=".csv,.zip,text/csv,application/zip" className="hidden" onChange={handleFileSelected} />
+      <input ref={settingsFileInputRef} type="file" accept=".json,application/json" className="hidden" onChange={handleSettingsFileSelected} />
 
       <div className="border-b border-gray-100 pb-5">
         <div className="flex items-start gap-3">
@@ -416,7 +632,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             <h3 className="text-xl font-bold text-gray-800">Import and Export Data</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
               Download a complete CSV for a data type, or upload a CSV and map its columns before anything is saved.
-              Existing matches are updated and new records are added—no database IDs are needed.
+              Imports only append new records: existing matches are skipped and never overwritten—no database IDs are needed.
             </p>
           </div>
         </div>
@@ -426,10 +642,32 @@ const DataManagementSettingsPanel: React.FC = () => {
         <p className="font-bold">Start with a template, or use any CSV.</p>
         <p className="mt-1 text-xs font-medium leading-5 text-blue-700">
           Each template contains the correct columns and one realistic sample row. Templates and exported files map automatically; other CSVs open with likely matches preselected.
+          Orders, bills, and transactions export with their accounts in one ZIP package and restore those accounts automatically.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="flex flex-col rounded-2xl border border-[#cfe0f2] bg-[#f8fbff] p-5 transition-shadow hover:shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl border border-blue-100 bg-white p-2.5 text-[#0f2f57]">
+              <Database size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h4 className="font-black text-gray-900">Settings</h4>
+              <p className="mt-1 text-xs font-medium leading-5 text-gray-500">
+                Transfer selected Settings tabs in one secure JSON file. List items are appended; existing categories, methods, units, roles, and stores stay unchanged.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" icon={<Download size={16} />} onClick={openSettingsExport}>
+              Export Settings
+            </Button>
+            <Button type="button" variant="primary" size="sm" icon={<Upload size={16} />} onClick={openSettingsImportPicker}>
+              Import Settings
+            </Button>
+          </div>
+        </section>
         {datasets.map((dataset) => (
           <section key={dataset.key} className="flex flex-col rounded-2xl border border-gray-100 bg-gray-50/50 p-5 transition-shadow hover:shadow-sm">
             <div className="flex items-start gap-3">
@@ -461,7 +699,7 @@ const DataManagementSettingsPanel: React.FC = () => {
                 disabled={Boolean(exportingKey)}
                 onClick={() => handleExport(dataset)}
               >
-                {dataset.key === 'products' ? 'Export Package' : 'Export CSV'}
+                {dataset.key === 'products' || FINANCIAL_DATASET_KEYS.has(dataset.key) ? 'Export Package' : 'Export CSV'}
               </Button>
               <Button
                 type="button"
@@ -471,12 +709,98 @@ const DataManagementSettingsPanel: React.FC = () => {
                 disabled={Boolean(exportingKey)}
                 onClick={() => openFilePicker(dataset)}
               >
-                {dataset.key === 'products' ? 'Import CSV / Package' : 'Import CSV'}
+                {dataset.key === 'products' || FINANCIAL_DATASET_KEYS.has(dataset.key) ? 'Import CSV / Package' : 'Import CSV'}
               </Button>
             </div>
           </section>
         ))}
       </div>
+
+      <Modal
+        isOpen={Boolean(settingsSession)}
+        onClose={() => {
+          if (!settingsBusy) setSettingsSession(null);
+        }}
+        title={settingsSession?.mode === 'import' ? 'Choose Settings tabs to import' : 'Choose Settings tabs to export'}
+        size="lg"
+        footer={settingsSession ? (
+          <>
+            <Button type="button" variant="outline" onClick={() => setSettingsSession(null)} disabled={settingsBusy}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={runSettingsTransfer}
+              loading={settingsBusy}
+              disabled={settingsSession.selectedTabs.length === 0}
+            >
+              {settingsSession.mode === 'import' ? 'Import selected tabs' : 'Export selected tabs'}
+            </Button>
+          </>
+        ) : undefined}
+      >
+        {settingsSession && (
+          <div className="space-y-5">
+            {settingsSession.fileName && (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-700">
+                {settingsSession.fileName}
+              </div>
+            )}
+            <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-800">
+              Settings exports can contain private provider tokens, webhook secrets, and passwords. Store the file securely and only import files you trust.
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                {settingsSession.selectedTabs.length} selected
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="text-xs font-bold text-[#0f2f57] hover:underline"
+                  onClick={() => setSettingsSession((current) => current ? {
+                    ...current,
+                    selectedTabs: settingsTabs
+                      .filter((tab) => current.mode === 'export' || current.settingsPackage?.tabs[tab.key])
+                      .map((tab) => tab.key),
+                  } : current)}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="text-xs font-bold text-gray-500 hover:underline"
+                  onClick={() => setSettingsSession((current) => current ? { ...current, selectedTabs: [] } : current)}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {settingsTabs
+                .filter((tab) => settingsSession.mode === 'export' || settingsSession.settingsPackage?.tabs[tab.key])
+                .map((tab) => {
+                  const checked = settingsSession.selectedTabs.includes(tab.key);
+                  return (
+                    <label
+                      key={tab.key}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${checked ? 'border-[#c7dff5] bg-[#f8fbff]' : 'border-gray-100 bg-gray-50'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSettingsTab(tab.key)}
+                        disabled={settingsBusy}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#0f2f57] focus:ring-[#3c5a82]"
+                      />
+                      <span>
+                        <span className="block text-sm font-black text-gray-900">{tab.label}</span>
+                        <span className="mt-1 block text-xs font-medium leading-5 text-gray-500">{tab.description}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={Boolean(session)}
@@ -512,6 +836,13 @@ const DataManagementSettingsPanel: React.FC = () => {
                 </span>
               )}
             </div>
+
+            {session.dependencies.length > 0 && (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-5 text-blue-800">
+                This package includes {session.dependencies.reduce((sum, dependency) => sum + dependency.records.length, 0)} account records.
+                They will be imported automatically before {session.dataset.label.toLocaleLowerCase()}; existing accounts will remain unchanged.
+              </div>
+            )}
 
             {validationErrors.length > 0 && (
               <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs font-semibold text-amber-800">
@@ -612,7 +943,7 @@ const DataManagementSettingsPanel: React.FC = () => {
               {[
                 ['Processed', summary.processed],
                 ['Created', summary.created],
-                ['Updated', summary.updated],
+                ['Skipped existing', summary.skipped],
                 ['Failed', summary.failed],
               ].map(([label, value]) => (
                 <div key={String(label)} className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-center">

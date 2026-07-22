@@ -24,22 +24,45 @@ $actor = $database->fetchOne(
 if ($actor === null) {
     throw new RuntimeException('Local integration actor is unavailable.');
 }
+$admin = $database->fetchOne(
+    "SELECT id, name, phone, role FROM users WHERE role IN ('Admin', 'Developer') AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1"
+);
+if ($admin === null) {
+    throw new RuntimeException('Local integration administrator is unavailable.');
+}
+$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $auth->issueToken($admin);
+$settingsDefinitions = $invoke('settingsTabDefinitions', []);
+$settingsExport = $api->exportSettingsPackage(['tabs' => array_keys($settingsDefinitions)]);
+if (array_keys($settingsExport['tabs'] ?? []) !== array_keys($settingsDefinitions)) {
+    throw new RuntimeException('The Settings package did not export every selected tab.');
+}
 
 $stamp = str_replace('.', '', uniqid('friendly-csv-', true));
 $phone = '01' . substr((string) preg_replace('/\D/', '', $stamp), -9);
 $customerPhone = $phone . '1';
 $vendorPhone = $phone . '2';
 $productName = 'Friendly Product ' . $stamp;
+$catalogProductName = 'Friendly Catalog Product ' . $stamp;
 $orderNumber = 'FRIENDLY-ORD-' . $stamp;
 $billNumber = 'FRIENDLY-BILL-' . $stamp;
 $transactionNumber = 'FRIENDLY-TXN-' . $stamp;
 $accountName = 'Friendly Account ' . $stamp;
 $unitName = 'Friendly Unit ' . substr($stamp, -8);
+$paymentMethodName = 'Friendly Payment ' . substr($stamp, -8);
 $createdImagePath = null;
 
 $pdo = $database->connect();
 $pdo->beginTransaction();
 try {
+    $settingsRoundTrip = $api->importSettingsPackage([
+        'package' => $settingsExport,
+        'selectedTabs' => array_keys($settingsDefinitions),
+    ]);
+    if (($settingsRoundTrip['failed'] ?? 0) !== 0) {
+        $firstSettingsError = $settingsRoundTrip['errors'][0]['message'] ?? 'Unknown Settings import error.';
+        throw new RuntimeException('Settings round-trip failed: ' . $firstSettingsError);
+    }
+
     if ($invoke('importUser', [[
         'name' => 'Friendly CSV User',
         'phone' => $phone,
@@ -48,6 +71,17 @@ try {
         'isCommissionBased' => 'yes',
     ]]) !== 'created') {
         throw new RuntimeException('User create failed.');
+    }
+    if ($invoke('importUser', [[
+        'name' => 'Should Not Replace Existing User',
+        'phone' => $phone,
+        'role' => 'Admin',
+    ]]) !== 'skipped') {
+        throw new RuntimeException('Existing user was not skipped.');
+    }
+    $preservedUser = $database->fetchOne('SELECT name, role FROM users WHERE phone = :phone', [':phone' => $phone]) ?? [];
+    if (($preservedUser['name'] ?? '') !== 'Friendly CSV User' || ($preservedUser['role'] ?? '') !== 'Employee') {
+        throw new RuntimeException('Skipped user data was overwritten.');
     }
 
     $orderRows = [
@@ -82,17 +116,29 @@ try {
         throw new RuntimeException('Order did not auto-create its product.');
     }
 
+    $changedOrderRows = $orderRows;
+    $changedOrderRows[0]['rate'] = '999';
+    $changedOrderRows[1]['rate'] = '999';
+    $changedOrderWork = $invoke('prepareImportWorkItems', ['orders', $changedOrderRows, 0]);
+    if ($invoke('importOrder', [$changedOrderWork[0]['row'], $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing order was not skipped.');
+    }
+    $preservedOrder = $database->fetchOne('SELECT total FROM orders WHERE order_number = :number', [':number' => $orderNumber]) ?? [];
+    if (abs((float) ($preservedOrder['total'] ?? 0) - 245) > 0.001) {
+        throw new RuntimeException('Skipped order data was overwritten.');
+    }
+
     if ($invoke('importCustomer', [[
         'name' => 'Friendly Customer Updated', 'phone' => $customerPhone, 'address' => 'Chattogram',
-    ], $actor]) !== 'updated') {
-        throw new RuntimeException('Customer natural-key update failed.');
+    ], $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing customer was not skipped.');
     }
     $customer = $database->fetchOne(
         'SELECT total_orders, due_amount, address FROM customers WHERE phone = :phone',
         [':phone' => $customerPhone]
     );
-    if ((int) $customer['total_orders'] !== 1 || abs((float) $customer['due_amount'] - 220) > 0.001 || $customer['address'] !== 'Chattogram') {
-        throw new RuntimeException('Customer update damaged calculated summaries.');
+    if ((int) $customer['total_orders'] !== 1 || abs((float) $customer['due_amount'] - 220) > 0.001 || $customer['address'] !== 'Dhaka') {
+        throw new RuntimeException('Skipped customer data or calculated summaries changed unexpectedly.');
     }
 
     $billRows = [[
@@ -112,10 +158,20 @@ try {
     if ($database->fetchOne('SELECT id FROM vendors WHERE phone = :phone', [':phone' => $vendorPhone]) === null) {
         throw new RuntimeException('Bill did not auto-create its vendor.');
     }
+    $changedBillRows = $billRows;
+    $changedBillRows[0]['rate'] = '999';
+    $changedBillWork = $invoke('prepareImportWorkItems', ['bills', $changedBillRows, 0]);
+    if ($invoke('importBill', [$changedBillWork[0]['row'], $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing bill was not skipped.');
+    }
     if ($invoke('importVendor', [[
         'name' => 'Friendly Vendor Updated', 'phone' => $vendorPhone, 'address' => 'Narayanganj',
-    ], $actor]) !== 'updated') {
-        throw new RuntimeException('Vendor natural-key update failed.');
+    ], $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing vendor was not skipped.');
+    }
+    $preservedVendor = $database->fetchOne('SELECT name, address FROM vendors WHERE phone = :phone', [':phone' => $vendorPhone]) ?? [];
+    if (($preservedVendor['name'] ?? '') !== 'Friendly Vendor' || ($preservedVendor['address'] ?? '') !== 'Dhaka') {
+        throw new RuntimeException('Skipped vendor data was overwritten.');
     }
 
     $operations = new OperationsApi($database, $auth, $config);
@@ -174,19 +230,29 @@ try {
     }
 
     if ($invoke('importProduct', [[
-        'name' => $productName, 'category' => 'Test', 'unitName' => $unitName,
+        'name' => $catalogProductName, 'category' => 'Test', 'unitName' => $unitName,
         'salePrice' => '120', 'purchasePrice' => '60', 'stock' => '20',
         'image' => 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#123456"/></svg>'),
-    ], $actor]) !== 'updated') {
-        throw new RuntimeException('Product natural-key update failed.');
+    ], $actor]) !== 'created') {
+        throw new RuntimeException('New catalog product import failed.');
     }
-    $importedProduct = $database->fetchOne('SELECT image FROM products WHERE name = :name', [':name' => $productName]) ?? [];
+    $importedProduct = $database->fetchOne('SELECT image FROM products WHERE name = :name', [':name' => $catalogProductName]) ?? [];
     $createdImagePath = trim((string) ($importedProduct['image'] ?? ''));
     if (!str_starts_with($createdImagePath, '/uploads/product-images/')) {
         throw new RuntimeException('Packaged product image was not saved into local uploads.');
     }
     if ($database->fetchOne('SELECT id FROM units WHERE name = :name', [':name' => $unitName]) === null) {
         throw new RuntimeException('Product import did not auto-create its unit.');
+    }
+    if ($invoke('importProduct', [[
+        'name' => $catalogProductName, 'category' => 'Should Not Replace', 'unitName' => $unitName,
+        'salePrice' => '999', 'purchasePrice' => '999', 'stock' => '999',
+    ], $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing product was not skipped.');
+    }
+    $preservedProduct = $database->fetchOne('SELECT category, sale_price, stock FROM products WHERE name = :name', [':name' => $catalogProductName]) ?? [];
+    if (($preservedProduct['category'] ?? '') !== 'Test' || abs((float) ($preservedProduct['sale_price'] ?? 0) - 120) > 0.001 || (int) ($preservedProduct['stock'] ?? 0) !== 20) {
+        throw new RuntimeException('Skipped product data was overwritten.');
     }
 
     $transaction = [
@@ -202,12 +268,21 @@ try {
     if ($account === null || abs((float) $account['current_balance'] - 25) > 0.001) {
         throw new RuntimeException('Transaction account auto-create or balance failed.');
     }
-    if ($invoke('importTransaction', [$transaction, $actor]) !== 'updated') {
-        throw new RuntimeException('Transaction natural-key update failed.');
+    if ($invoke('importTransaction', [$transaction, $actor]) !== 'skipped') {
+        throw new RuntimeException('Existing transaction was not skipped.');
     }
     $accountAfter = $database->fetchOne('SELECT current_balance FROM accounts WHERE id = :id', [':id' => $account['id']]);
     if (abs((float) $accountAfter['current_balance'] - 25) > 0.001) {
-        throw new RuntimeException('Transaction update double-applied the account balance.');
+        throw new RuntimeException('Skipped transaction changed the account balance.');
+    }
+    if ($invoke('importAccount', [[
+        'name' => $accountName, 'type' => 'Bank', 'openingBalance' => '999', 'currentBalance' => '999',
+    ]]) !== 'skipped') {
+        throw new RuntimeException('Existing transaction account was not skipped.');
+    }
+    $accountAfterAccountImport = $database->fetchOne('SELECT type, current_balance FROM accounts WHERE id = :id', [':id' => $account['id']]) ?? [];
+    if (($accountAfterAccountImport['type'] ?? '') !== 'Cash' || abs((float) ($accountAfterAccountImport['current_balance'] ?? 0) - 25) > 0.001) {
+        throw new RuntimeException('Skipped account data was overwritten.');
     }
     $linked = $database->fetchOne(
         'SELECT reference_id, contact_id FROM transactions WHERE transaction_id = :id',
@@ -217,7 +292,40 @@ try {
         throw new RuntimeException('Friendly transaction references were not resolved.');
     }
 
-    echo "Friendly no-ID import, grouping, auto-create, update, and balance checks passed.\n";
+    $settingsPaymentPackage = [
+        'app' => 'MamePilot',
+        'entity' => 'settings',
+        'tabs' => [
+            'payments' => [
+                'label' => 'Payment Methods',
+                'tables' => ['payment_methods' => [[
+                    'name' => $paymentMethodName, 'description' => 'Original description', 'is_active' => 1,
+                ]]],
+            ],
+        ],
+    ];
+    $settingsPaymentCounts = $api->importSettingsPackage([
+        'package' => $settingsPaymentPackage,
+        'selectedTabs' => ['payments'],
+    ]);
+    if (($settingsPaymentCounts['recordsCreated'] ?? 0) !== 1) {
+        throw new RuntimeException('New Settings payment method was not appended.');
+    }
+    $settingsPaymentPackage['tabs']['payments']['tables']['payment_methods'][0]['description'] = 'Should not replace';
+    $settingsPaymentPackage['tabs']['payments']['tables']['payment_methods'][0]['is_active'] = 0;
+    $settingsPaymentSkip = $api->importSettingsPackage([
+        'package' => $settingsPaymentPackage,
+        'selectedTabs' => ['payments'],
+    ]);
+    $preservedPaymentMethod = $database->fetchOne(
+        'SELECT description, is_active FROM payment_methods WHERE name = :name',
+        [':name' => $paymentMethodName]
+    ) ?? [];
+    if (($settingsPaymentSkip['recordsSkipped'] ?? 0) !== 1 || ($preservedPaymentMethod['description'] ?? '') !== 'Original description' || (int) ($preservedPaymentMethod['is_active'] ?? 0) !== 1) {
+        throw new RuntimeException('Settings list import overwrote an existing payment method.');
+    }
+
+    echo "Friendly no-ID import, grouping, append-only skip, auto-create, and balance checks passed.\n";
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
@@ -232,8 +340,9 @@ try {
 
 $checks = [
     ['users', 'phone', $phone], ['customers', 'phone', $customerPhone], ['vendors', 'phone', $vendorPhone],
-    ['products', 'name', $productName], ['orders', 'order_number', $orderNumber], ['bills', 'bill_number', $billNumber],
+    ['products', 'name', $productName], ['products', 'name', $catalogProductName], ['orders', 'order_number', $orderNumber], ['bills', 'bill_number', $billNumber],
     ['transactions', 'transaction_id', $transactionNumber], ['accounts', 'name', $accountName], ['units', 'name', $unitName],
+    ['payment_methods', 'name', $paymentMethodName],
 ];
 foreach ($checks as [$table, $column, $value]) {
     if ($database->fetchOne("SELECT id FROM `{$table}` WHERE `{$column}` = :value", [':value' => $value]) !== null) {
