@@ -959,6 +959,7 @@ final class AutoCallApi extends BaseService
                 sender VARCHAR(64) NULL,
                 template_name VARCHAR(191) NULL,
                 webhook_secret VARCHAR(255) NULL,
+                webhook_url VARCHAR(1000) NULL,
                 max_survey_time_seconds INT NOT NULL DEFAULT 120,
                 missed_call_retry_minutes INT NOT NULL DEFAULT 30,
                 missed_call_retry_count INT NOT NULL DEFAULT 3,
