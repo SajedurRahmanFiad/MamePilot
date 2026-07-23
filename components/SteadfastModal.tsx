@@ -9,6 +9,7 @@ import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
 import { formatDateTimeParts } from '../utils';
+import { ApiError } from '../src/services/apiClient';
 
 interface SteadfastModalProps {
   isOpen: boolean;
@@ -58,22 +59,23 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       return;
     }
 
-    if (!courierSettings?.steadfast) {
+    // Refetch courier settings to get the latest credentials
+    await queryClient.invalidateQueries({ queryKey: ['settings', 'courier'] });
+    const freshCourierSettings = queryClient.getQueryData<any>(['settings', 'courier']) || courierSettings;
+
+    if (!freshCourierSettings?.steadfast) {
       setError('No Steadfast credentials configured');
       console.error('[SteadfastModal] No Steadfast settings');
       return;
     }
 
-    const { baseUrl, apiKey, secretKey } = courierSettings.steadfast;
+    const { baseUrl, apiKey, secretKey } = freshCourierSettings.steadfast;
 
     // Detailed logging for debugging
     console.log('[SteadfastModal] ======== SUBMISSION DEBUG ========');
-    console.log('[SteadfastModal] courierSettings object:', courierSettings);
-    console.log('[SteadfastModal] steadfast object:', courierSettings.steadfast);
     console.log('[SteadfastModal] baseUrl:', baseUrl);
     console.log('[SteadfastModal] baseUrl type:', typeof baseUrl);
     console.log('[SteadfastModal] baseUrl empty?:', baseUrl === '' || !baseUrl);
-    console.log('[SteadfastModal] baseUrl trimmed empty?:', (baseUrl || '').trim() === '');
     console.log('[SteadfastModal] apiKey:', apiKey ? `${apiKey.substring(0, 5)}...` : 'EMPTY/NULL');
     console.log('[SteadfastModal] apiKey type:', typeof apiKey);
     console.log('[SteadfastModal] secretKey:', secretKey ? `${secretKey.substring(0, 5)}...` : 'EMPTY/NULL');
@@ -116,7 +118,11 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         let displayError = result.error;
         try {
           if (result.error.includes('Account is not active')) {
-            displayError = 'Something went wrong.';
+            displayError = 'Your Steadfast account is not active. Please contact Steadfast support or check your account status.';
+          } else if (result.error.includes('Invalid API key') || result.error.includes('Unauthorized') || result.error.includes('401')) {
+            displayError = 'Invalid Steadfast credentials. Please verify your API key and secret key in Settings → Courier.';
+          } else if (result.error.includes('limit') || result.error.includes('quota')) {
+            displayError = 'Steadfast API limit reached. Please try again later.';
           }
         } catch (e) {
           // Use original error if parsing fails
@@ -213,9 +219,23 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       void queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
       toast.success('Order sent to Steadfast successfully');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      let errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[SteadfastModal] Exception during submission:', err);
+
+      if (err instanceof ApiError) {
+        console.error('[SteadfastModal] ApiError status:', err.status, 'code:', err.code);
+        if (err.status === 401) {
+          errorMsg = 'Authentication failed. Please verify your Steadfast API key and secret key in Settings → Courier are correct and your account is active.';
+        } else if (err.status === 403) {
+          errorMsg = 'Access denied. Your Steadfast account may not have permission for this action.';
+        } else if (err.status === 422) {
+          errorMsg = 'Invalid request data. Please check the order details and try again.';
+        } else if (err.status && err.status >= 500) {
+          errorMsg = 'Steadfast server error. Please try again later.';
+        }
+      }
+
       setError(errorMsg);
-      console.error('[SteadfastModal] Exception during submission:', errorMsg);
     } finally {
       setSubmitting(false);
     }

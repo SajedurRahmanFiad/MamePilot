@@ -754,6 +754,7 @@ export function useUpdateOrder(): UseMutationResult<Order, Error, { id: string; 
       queryClient.invalidateQueries({ queryKey: ['employeeOrderCounts'] });
       queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateDashboardQueries(queryClient);
 
       // Stock can change when status/items change
@@ -1029,6 +1030,7 @@ export function useUpdateBill(): UseMutationResult<Bill, Error, { id: string; up
       queryClient.invalidateQueries({ queryKey: ['bill', data.id] });
       queryClient.invalidateQueries({ queryKey: ['vendors'] });
       queryClient.invalidateQueries({ queryKey: ['billsByVendorId'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateDashboardQueries(queryClient);
 
       // Stock can change when status/items change

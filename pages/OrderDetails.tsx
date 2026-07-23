@@ -1522,8 +1522,17 @@ const OrderDetails: React.FC = () => {
   })();
 
   const latestSurveyEvent = order.surveyEvents?.[order.surveyEvents.length - 1];
+  const SURVEY_INDICATOR_VISIBLE_STATUSES = new Set([
+    OrderStatus.CREATED,
+    OrderStatus.ON_HOLD,
+    OrderStatus.PROCESSING,
+    OrderStatus.COURIER_ASSIGNED,
+    OrderStatus.EXCHANGE_PROCESSING,
+    OrderStatus.EXCHANGE_PICKED,
+  ]);
   const surveyIndicator = (() => {
     if (!order.surveyStatus && !latestSurveyEvent) return null;
+    if (!SURVEY_INDICATOR_VISIBLE_STATUSES.has(order.status)) return null;
     const isAwaiting = ['queued', 'initiated', 'retry_initiated'].includes(latestSurveyEvent?.eventType || '')
       || ['pending', 'triggered', 'initiated'].includes(order.surveyStatus || '');
     if (isAwaiting && latestSurveyEvent?.eventType !== 'retry_scheduled') {

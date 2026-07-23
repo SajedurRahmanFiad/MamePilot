@@ -209,6 +209,23 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-1">
+                  <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Deduct From Account</label>
+                  <select
+                    value={form.accountId}
+                    onChange={(event) => setForm((current) => ({ ...current, accountId: event.target.value }))}
+                    disabled={isLoading}
+                    className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
+                  >
+                    <option value="">Select account...</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} ({formatCurrency(account.currentBalance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
                   <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Payment Method</label>
                   <select
                     value={form.paymentMethod}
@@ -224,23 +241,23 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                     ))}
                   </select>
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Expense Category</label>
-                  <select
-                    value={form.categoryId}
-                    onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
-                    disabled={isLoading}
-                    className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-                  >
-                    <option value="">Select an expense category...</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Expense Category</label>
+                <select
+                  value={form.categoryId}
+                  onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}
+                  disabled={isLoading}
+                  className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
+                >
+                  <option value="">Select an expense category...</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1">

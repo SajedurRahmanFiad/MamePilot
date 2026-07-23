@@ -534,6 +534,7 @@ export function useAccounts(options?: { enabled?: boolean }): UseQueryResult<Acc
     queryKey: ['accounts'],
     queryFn: fetchAccounts,
     staleTime: 15 * 60 * 1000, // 15 minutes for master accounts cache (prefetched on auth)
+    refetchOnMount: 'always', // Always refetch on mount to get latest balances
     enabled: options?.enabled ?? true,
   });
 }
@@ -544,6 +545,7 @@ export function useAccount(id: string | undefined): UseQueryResult<Account | nul
     queryFn: () => fetchAccountById(id || ''),
     enabled: !!id,
     staleTime: 15 * 60 * 1000,
+    refetchOnMount: 'always',
   });
 }
 

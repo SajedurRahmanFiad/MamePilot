@@ -5,10 +5,10 @@ import { db } from '../db';
 import { BillStatus, Bill, type ProcessBillReturnPayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor } from '../constants';
 import { theme, resolveThemeColorPalette } from '../theme';
-import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor, useSystemDefaults, usePaymentMethods, useCategories } from '../src/hooks/useQueries';
 import { useUpdateBill, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { LoadingOverlay, CommonPaymentModal, Modal, BillReturnModal } from '../components';
+import { LoadingOverlay, CommonPaymentModal, BillReturnModal } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -34,6 +34,8 @@ const BillDetails: React.FC = () => {
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
   const { data: systemDefaults } = useSystemDefaults();
+  const { data: paymentMethods = [] } = usePaymentMethods();
+  const { data: categories = [] } = useCategories('Income');
   const themeColorHex = useMemo(() => {
     const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
     return resolveThemeColorPalette(tc).primary;
@@ -82,6 +84,9 @@ const BillDetails: React.FC = () => {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [completionOutcome, setCompletionOutcome] = useState<'Received' | 'Returned'>('Received');
   const [completionNote, setCompletionNote] = useState('');
+  const [completionAccountId, setCompletionAccountId] = useState('');
+  const [completionPaymentMethod, setCompletionPaymentMethod] = useState('');
+  const [completionCategoryId, setCompletionCategoryId] = useState('');
 
   const isSectionExpanded = (section: string) => !!expandedSection[section];
 
@@ -95,6 +100,9 @@ const BillDetails: React.FC = () => {
   const openCompleteModal = () => {
     setCompletionOutcome('Received');
     setCompletionNote('');
+    setCompletionAccountId(systemDefaults?.defaultAccountId || accounts[0]?.id || '');
+    setCompletionPaymentMethod(systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '');
+    setCompletionCategoryId(categories[0]?.id || '');
     setShowCompleteModal(true);
   };
 
@@ -365,13 +373,14 @@ const BillDetails: React.FC = () => {
     };
   };
 
-  const updateStatus = async (newStatus: BillStatus, historyKey?: keyof Exclude<Bill['history'], undefined>, historyText?: string) => {
+  const updateStatus = async (newStatus: BillStatus, historyKey?: keyof Exclude<Bill['history'], undefined>, historyText?: string, extra?: Record<string, any>) => {
     if (!bill) return;
     try {
       const existingHistoryText = historyKey ? String(bill.history?.[historyKey] || '').trim() : '';
-      const updates = { 
-        ...bill, 
-        status: newStatus, 
+      const updates = {
+        ...bill,
+        ...extra,
+        status: newStatus,
         history: historyKey
           ? { ...bill.history, [historyKey]: existingHistoryText && historyText ? `${existingHistoryText}\n${historyText}` : historyText }
           : bill.history
@@ -399,11 +408,26 @@ const BillDetails: React.FC = () => {
       return;
     }
 
+    if (completionOutcome === 'Returned') {
+      if (completionAccountId && !completionPaymentMethod) {
+        toast.error('Please select a payment method');
+        return;
+      }
+    }
+
     const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     const newStatus = completionOutcome === 'Returned' ? BillStatus.RETURNED : BillStatus.RECEIVED;
     const historyKey = completionOutcome === 'Returned' ? 'returned' : 'received';
 
-    await updateStatus(newStatus, historyKey as keyof Exclude<Bill['history'], undefined>, historyText);
+    const extraUpdates: Record<string, any> = {};
+    if (completionOutcome === 'Returned') {
+      if (completionAccountId) extraUpdates.returnAccountId = completionAccountId;
+      if (completionPaymentMethod) extraUpdates.returnPaymentMethod = completionPaymentMethod;
+      if (completionCategoryId) extraUpdates.returnCategoryId = completionCategoryId;
+      if (completionNote.trim()) extraUpdates.returnNote = completionNote.trim();
+    }
+
+    await updateStatus(newStatus, historyKey as keyof Exclude<Bill['history'], undefined>, historyText, extraUpdates);
     closeCompleteModal();
   };
 
@@ -1011,57 +1035,141 @@ const BillDetails: React.FC = () => {
         buttonText="Record Refund"
       />
 
-      <Modal
-        isOpen={showCompleteModal}
-        onClose={closeCompleteModal}
-        title={`Complete bill #${bill.billNumber}`}
-        size="md"
-      >
-        <div className="space-y-6">
-          <p className="text-sm text-gray-600">Choose how to finalize this bill.</p>
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Outcome</label>
-            <select
-              value={completionOutcome}
-              onChange={(event) => setCompletionOutcome(event.target.value as 'Received' | 'Returned')}
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#3c5a82]"
-            >
-              <option value="Received">Received</option>
-              <option value="Returned">Returned</option>
-            </select>
-          </div>
-
-          {completionOutcome === 'Returned' && (
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Return note</label>
-              <textarea
-                value={completionNote}
-                onChange={(event) => setCompletionNote(event.target.value)}
-                rows={4}
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#3c5a82]"
-                placeholder="Enter a note for the returned bill"
-              />
-            </div>
-          )}
-
-          <div className="flex gap-3 justify-end pt-4">
+      {showCompleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={closeCompleteModal}></div>
+          <div className="relative z-[210] w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-10 animate-in zoom-in-95 duration-200" style={{ border: `1px solid ${themeColorHex}22` }}>
             <button
               type="button"
               onClick={closeCompleteModal}
-              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+              className="absolute right-6 top-6 rounded-full border border-gray-200 bg-white p-2 text-gray-500 transition hover:border-gray-300 hover:text-gray-900"
+              aria-label="Close"
             >
-              Cancel
+              ×
             </button>
-            <button
-              type="button"
-              onClick={completeBill}
-              className="rounded-lg bg-[#0f2f57] px-4 py-2 text-sm font-bold text-white hover:bg-[#112f60]"
-            >
-              {completionOutcome === 'Returned' ? 'Mark Returned' : 'Mark Received'}
-            </button>
+            <div className="mb-8">
+              <h3 className="mt-2 text-2xl font-black text-gray-900">Complete bill #{bill.billNumber}</h3>
+              <p className="mt-2 text-sm font-medium">
+                <span className="font-black text-gray-500">
+                  Total {formatCurrency(bill.total)}
+                  {bill.paidAmount > 0 && ` · Paid ${formatCurrency(bill.paidAmount)}`}
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                {(['Received', 'Returned'] as const).map((outcome) => (
+                  <button
+                    key={outcome}
+                    type="button"
+                    onClick={() => setCompletionOutcome(outcome)}
+                    disabled={updateMutation.isPending}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${
+                      completionOutcome === outcome
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    } disabled:opacity-50`}
+                  >
+                    {outcome === 'Received' ? ICONS.Check : ICONS.Return}
+                    <span className="hidden sm:inline">{outcome}</span>
+                  </button>
+                ))}
+              </div>
+
+              {completionOutcome === 'Returned' && (
+                <>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Refund Into Account</label>
+                      <select
+                        value={completionAccountId}
+                        onChange={(event) => setCompletionAccountId(event.target.value)}
+                        disabled={updateMutation.isPending}
+                        className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 disabled:opacity-50"
+                        style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
+                      >
+                        <option value="">Select account...</option>
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} ({formatCurrency(account.currentBalance)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Payment Method</label>
+                      <select
+                        value={completionPaymentMethod}
+                        onChange={(event) => setCompletionPaymentMethod(event.target.value)}
+                        disabled={updateMutation.isPending}
+                        className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 disabled:opacity-50"
+                        style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
+                      >
+                        <option value="">Select method...</option>
+                        {paymentMethods.map((pm) => (
+                          <option key={pm.id} value={pm.name}>{pm.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Income Category</label>
+                    <select
+                      value={completionCategoryId}
+                      onChange={(event) => setCompletionCategoryId(event.target.value)}
+                      disabled={updateMutation.isPending}
+                      className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 disabled:opacity-50"
+                      style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
+                    >
+                      <option value="">Select category...</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Return note</label>
+                    <textarea
+                      value={completionNote}
+                      onChange={(event) => setCompletionNote(event.target.value)}
+                      rows={3}
+                      placeholder="Enter a note for the returned bill..."
+                      className="min-h-[80px] w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-4 font-medium outline-none focus:ring-2 disabled:opacity-50"
+                      style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={closeCompleteModal}
+                  disabled={updateMutation.isPending}
+                  className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={completeBill}
+                  disabled={updateMutation.isPending}
+                  className="flex-1 rounded-lg px-5 py-2.5 text-sm font-bold text-white transition disabled:opacity-50"
+                  style={{ backgroundColor: themeColorHex }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                >
+                  {completionOutcome === 'Returned' ? 'Mark Returned' : 'Mark Received'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
 
       <BillReturnModal
         isOpen={showReturnModal}
