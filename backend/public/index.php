@@ -15,6 +15,7 @@ use App\Http;
 use App\MasterDataApi;
 use App\MetaAdsApi;
 use App\MessengerApi;
+use App\LeadApi;
 use App\OperationsApi;
 use App\OrderPostCreateEffects;
 use App\WhatsAppApi;
@@ -56,6 +57,7 @@ try {
     $metaAds = new MetaAdsApi($database, $auth, $config);
     $whatsapp = new WhatsAppApi($database, $auth, $config);
     $messenger = new MessengerApi($database, $auth, $config);
+    $leads = new LeadApi($database, $auth, $config, $master, $operations);
     $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
     $autoCall = new AutoCallApi($database, $auth, $config);
     $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
@@ -111,7 +113,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $leads, $woocommerce];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

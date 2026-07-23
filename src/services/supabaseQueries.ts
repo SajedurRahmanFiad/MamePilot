@@ -70,6 +70,8 @@ import type {
   BusinessRecommendation,
   LlmConfiguration,
   LlmSettings,
+  Lead,
+  LeadSuggestion,
   BeSmartSettings,
   ProcessOrderReturnExchangePayload,
   ProcessBillReturnPayload,
@@ -324,6 +326,13 @@ export async function updateBusinessGrowthSettings(updates: BusinessGrowthSettin
 export async function fetchLlmSettings(): Promise<LlmSettings> { return call<LlmSettings>('fetchLlmSettings'); }
 export async function updateLlmSettings(settings: LlmSettings): Promise<LlmSettings> { return call<LlmSettings>('updateLlmSettings', settings); }
 export async function discoverLlmModels(configuration: LlmConfiguration): Promise<{ models: string[] }> { return call<{ models: string[] }>('discoverLlmModels', { configuration }, { timeoutMs: 30000 }); }
+
+export async function fetchLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}): Promise<{ data: Lead[]; count: number }> { return call<{ data: Lead[]; count: number }>('fetchLeadsPage', params); }
+export async function fetchLeadById(leadId: string): Promise<Lead> { return call<Lead>('fetchLeadById', { leadId }); }
+export async function fetchLeadIntelligence(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('fetchLeadIntelligence', params, { timeoutMs: 90000 }); }
+export async function analyzeLead(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('analyzeLead', params, { timeoutMs: 90000 }); }
+export async function fetchLeadEvents(params: { since?: number; leadId?: string } = {}): Promise<{ cursor: number; events: Array<{ id: number; leadId: string; type: string; payload: Record<string, any>; createdAt?: string | null }> }> { return call<any>('fetchLeadEvents', params); }
+export async function markLeadSuggestionSent(suggestionId: string, messageId?: string): Promise<{ ok: boolean }> { return call<{ ok: boolean }>('markLeadSuggestionSent', { suggestionId, messageId }); }
 export async function fetchBeSmartSettings(): Promise<BeSmartSettings> { return call<BeSmartSettings>('fetchBeSmartSettings'); }
 export async function updateBeSmartSettings(settings: BeSmartSettings): Promise<BeSmartSettings> { return call<BeSmartSettings>('updateBeSmartSettings', settings); }
 

@@ -117,6 +117,9 @@ import {
   fetchMessengerProfile,
   fetchMessengerContacts,
   fetchMessengerMessages,
+  fetchLeadsPage,
+  fetchLeadById,
+  fetchLeadIntelligence,
 } from '../services/supabaseQueries';
 import {
   readNotificationFirstPageCache,
@@ -187,6 +190,7 @@ import type {
   MessengerMessage,
   LlmSettings,
   BeSmartSettings,
+  Lead,
 } from '../../types';
 import { db, saveDb } from '../../db';
 import { hasAdminAccess } from '../../types';
@@ -1053,6 +1057,19 @@ export function useLlmSettings(enabled: boolean = true): UseQueryResult<LlmSetti
     staleTime: 60 * 60 * 1000,
     enabled,
   });
+}
+
+export function useLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}, enabled: boolean = true): UseQueryResult<{ data: Lead[]; count: number }, Error> {
+  return useQuery({ queryKey: ['leads', params], queryFn: () => fetchLeadsPage(params), staleTime: 2_000, refetchInterval: enabled ? 5_000 : false, enabled });
+}
+
+export function useLead(leadId: string | null | undefined, enabled: boolean = true): UseQueryResult<Lead, Error> {
+  return useQuery({ queryKey: ['lead', leadId], queryFn: () => fetchLeadById(leadId || ''), enabled: enabled && Boolean(leadId), staleTime: 2_000 });
+}
+
+export function useLeadIntelligence(params: { leadId?: string; channel?: string; contactId?: string }, enabled: boolean = true): UseQueryResult<Lead, Error> {
+  const key = params.leadId || `${params.channel || ''}:${params.contactId || ''}`;
+  return useQuery({ queryKey: ['lead-intelligence', key], queryFn: () => fetchLeadIntelligence(params), enabled: enabled && Boolean(params.leadId || (params.channel && params.contactId)), staleTime: 1_000, refetchInterval: enabled ? 4_000 : false });
 }
 
 export function useBeSmartSettings(enabled: boolean = true): UseQueryResult<BeSmartSettings, Error> {

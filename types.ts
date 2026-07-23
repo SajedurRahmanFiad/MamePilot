@@ -1119,9 +1119,82 @@ export interface LlmConfiguration {
   anthropicVersion?: string;
 }
 
+export interface MultimodalLlmConfiguration extends LlmConfiguration {
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+  supportsVision?: boolean;
+  supportsAudio?: boolean;
+}
+
 export interface LlmSettings {
   configurations: LlmConfiguration[];
   assignments: Record<LlmFeatureKey, string | null>;
+  multimodalConfigurations: MultimodalLlmConfiguration[];
+  multimodalAssignment: string | null;
+}
+
+export type LeadStatus = 'new' | 'active' | 'needs_reply' | 'qualified' | 'high_intent' | 'order_pending' | 'converted' | 'lost' | 'paused';
+
+export interface LeadProfileField<T = string> {
+  value: T;
+  confidence?: number;
+  sourceMessageIds?: string[];
+  inferred?: boolean;
+}
+
+export interface LeadProfileJson {
+  schemaVersion: number;
+  identity?: {
+    name?: LeadProfileField;
+    phone?: LeadProfileField;
+    address?: LeadProfileField;
+    email?: LeadProfileField;
+  };
+  attribution?: Record<string, any>;
+  interest?: Array<{ productId?: string; productName?: string; quantity?: number; confidence?: number }>;
+  sales?: {
+    stage?: string;
+    orderProbability?: number;
+    buyingSignals?: string[];
+    objections?: string[];
+    sentiment?: string;
+    preferredTone?: string;
+  };
+  missingInformation?: string[];
+  recommendation?: { shouldContinue?: boolean; priority?: string; nextAction?: string; reason?: string };
+  orderConfirmation?: { status?: string; confidence?: number; evidenceMessageIds?: string[] };
+  analysis?: { notices?: string[]; mediaSummary?: string; updatedAt?: string };
+  [key: string]: any;
+}
+
+export interface Lead {
+  id: string;
+  sourceChannel: string;
+  messengerContactId?: string | null;
+  whatsappContactId?: string | null;
+  assignedModelId?: string | null;
+  status: LeadStatus | string;
+  stage: string;
+  score: number;
+  orderProbability: number;
+  profile: LeadProfileJson;
+  lastAnalyzedMessageId?: string | null;
+  lastMessageAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  suggestions?: LeadSuggestion[];
+}
+
+export interface LeadSuggestion {
+  id: string;
+  leadId: string;
+  suggestionType: string;
+  text: string;
+  reason?: string;
+  confidence: number;
+  status: string;
+  createdAt?: string | null;
 }
 
 export interface BeSmartSettings {

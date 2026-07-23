@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, LoadingOverlay } from '.';
-import type { LlmConfiguration, LlmFeatureKey, LlmProvider, LlmSettings } from '../types';
+import type { LlmConfiguration, LlmFeatureKey, LlmProvider, LlmSettings, MultimodalLlmConfiguration } from '../types';
 import { useLlmSettings } from '../src/hooks/useQueries';
 import { useUpdateLlmSettings } from '../src/hooks/useMutations';
 import { discoverLlmModels } from '../src/services/supabaseQueries';
@@ -24,6 +24,8 @@ const FEATURE_DETAILS: Array<{ key: LlmFeatureKey; label: string; description: s
 const EMPTY_SETTINGS: LlmSettings = {
   configurations: [],
   assignments: { information_extraction: null, mame_ai: null, business_growth: null },
+  multimodalConfigurations: [],
+  multimodalAssignment: null,
 };
 
 const createId = () => `llm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -43,6 +45,17 @@ const newConfiguration = (): LlmConfiguration => ({
   anthropicVersion: '2023-06-01',
 });
 
+const newMultimodalConfiguration = (): MultimodalLlmConfiguration => ({
+  ...newConfiguration(),
+  id: `mm-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  label: 'Lead analysis model',
+  systemPrompt: '',
+  temperature: 0.1,
+  maxTokens: 4096,
+  supportsVision: true,
+  supportsAudio: true,
+});
+
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800 outline-none transition focus:border-[#3c5a82] focus:bg-white focus:ring-2 focus:ring-[#3c5a82]/10';
 
 const LlmSettingsPanel: React.FC = () => {
@@ -55,7 +68,7 @@ const LlmSettingsPanel: React.FC = () => {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) setForm({ ...EMPTY_SETTINGS, ...data, multimodalConfigurations: data.multimodalConfigurations || [], multimodalAssignment: data.multimodalAssignment || null });
   }, [data]);
 
   const selectableConfigurations = useMemo(
@@ -67,6 +80,13 @@ const LlmSettingsPanel: React.FC = () => {
     setForm((current) => ({
       ...current,
       configurations: current.configurations.map((configuration) => configuration.id === id ? { ...configuration, ...updates } : configuration),
+    }));
+  };
+
+  const patchMultimodalConfiguration = (id: string, updates: Partial<MultimodalLlmConfiguration>) => {
+    setForm((current) => ({
+      ...current,
+      multimodalConfigurations: current.multimodalConfigurations.map((configuration) => configuration.id === id ? { ...configuration, ...updates } : configuration),
     }));
   };
 
@@ -91,6 +111,14 @@ const LlmSettingsPanel: React.FC = () => {
       assignments: Object.fromEntries(
         Object.entries(current.assignments).map(([feature, selected]) => [feature, selected === id ? null : selected]),
       ) as LlmSettings['assignments'],
+    }));
+  };
+
+  const removeMultimodalConfiguration = (id: string) => {
+    setForm((current) => ({
+      ...current,
+      multimodalConfigurations: current.multimodalConfigurations.filter((configuration) => configuration.id !== id),
+      multimodalAssignment: current.multimodalAssignment === id ? null : current.multimodalAssignment,
     }));
   };
 
@@ -247,6 +275,38 @@ const LlmSettingsPanel: React.FC = () => {
                 )}
               </article>
             );
+          })}
+        </div>
+      </section>
+
+      <section className="space-y-5">
+        <div className="flex flex-col gap-3 border-b border-gray-100 pb-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="text-xl font-black text-gray-900">Multimodal lead analysis profiles</h3>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-gray-500">Store separate vision/audio-capable API profiles for realtime lead analysis. The lead analyst uses database tools to search products and customer data only when needed.</p>
+          </div>
+          <Button onClick={() => setForm((current) => ({ ...current, multimodalConfigurations: [...current.multimodalConfigurations, newMultimodalConfiguration()] }))} variant="secondary">Add Multimodal API</Button>
+        </div>
+        <div className="grid gap-4 rounded-2xl border border-purple-100 bg-purple-50/60 p-5 md:grid-cols-[1fr_minmax(260px,420px)] md:items-center">
+          <div><p className="font-black text-gray-900">Active lead analysis profile</p><p className="mt-1 text-sm font-medium text-gray-500">This model analyzes new Messenger and WhatsApp messages.</p></div>
+          <select className={inputClass} value={form.multimodalAssignment || ''} onChange={(event) => setForm((current) => ({ ...current, multimodalAssignment: event.target.value || null }))}>
+            <option value="">Not assigned</option>
+            {form.multimodalConfigurations.filter((configuration) => configuration.enabled && configuration.model.trim()).map((configuration) => <option key={configuration.id} value={configuration.id}>{configuration.label || 'Unnamed profile'} — {configuration.provider} / {configuration.model}</option>)}
+          </select>
+        </div>
+        {form.multimodalConfigurations.length === 0 && <div className="rounded-2xl border-2 border-dashed border-purple-200 px-6 py-10 text-center"><p className="font-black text-gray-800">No multimodal profiles have been added.</p><p className="mt-1 text-sm font-medium text-gray-500">Add a vision/audio-capable model, then assign it above.</p></div>}
+        <div className="space-y-6">
+          {form.multimodalConfigurations.map((configuration, index) => {
+            const provider = PROVIDERS.find((item) => item.id === configuration.provider)!;
+            const modelOptions = modelsById[configuration.id] || [];
+            return <article key={configuration.id} className="space-y-5 rounded-2xl border border-purple-100 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-sm font-black text-purple-800">{index + 1}</span><div><p className="font-black text-gray-900">{configuration.label || 'New multimodal profile'}</p><p className="text-xs font-bold uppercase tracking-wider text-gray-400">{provider.label}</p></div></div><div className="flex items-center gap-3"><label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-gray-600"><input type="checkbox" checked={configuration.enabled} onChange={(event) => patchMultimodalConfiguration(configuration.id, { enabled: event.target.checked })} className="h-4 w-4 rounded text-purple-700" />Enabled</label><Button onClick={() => removeMultimodalConfiguration(configuration.id)} variant="danger" size="sm">Remove</Button></div></div>
+              <div className="grid gap-4 md:grid-cols-2"><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Profile name</span><input className={inputClass} value={configuration.label} onChange={(event) => patchMultimodalConfiguration(configuration.id, { label: event.target.value })} /></label><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Provider</span><select className={inputClass} value={configuration.provider} onChange={(event) => { const providerId = event.target.value as LlmProvider; patchMultimodalConfiguration(configuration.id, { provider: providerId, baseUrl: PROVIDERS.find((item) => item.id === providerId)?.baseUrl || '', model: '' }); setModelsById((current) => ({ ...current, [configuration.id]: [] })); }}>{PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div>
+              <div className="rounded-xl border border-purple-100 bg-purple-50 px-4 py-3 text-sm font-medium text-purple-800">{provider.note}</div>
+              <div className="grid gap-4 md:grid-cols-2"><label className="space-y-2 md:col-span-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Base URL</span><input className={inputClass} value={configuration.baseUrl} onChange={(event) => patchMultimodalConfiguration(configuration.id, { baseUrl: event.target.value })} /></label><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">API key</span><input className={inputClass} type="password" value={configuration.apiKey} onChange={(event) => patchMultimodalConfiguration(configuration.id, { apiKey: event.target.value })} autoComplete="new-password" /></label><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Model</span><div className="flex gap-2"><input className={inputClass} list={`models-${configuration.id}`} value={configuration.model} onChange={(event) => patchMultimodalConfiguration(configuration.id, { model: event.target.value })} placeholder="Enter or load a model id" /><button type="button" className="whitespace-nowrap rounded-xl border border-gray-200 px-4 text-xs font-black text-gray-600 hover:bg-gray-50 disabled:opacity-50" disabled={loadingModelsId === configuration.id || !configuration.apiKey.trim()} onClick={() => loadModels(configuration)}>{loadingModelsId === configuration.id ? 'Loading...' : 'Load models'}</button></div><datalist id={`models-${configuration.id}`}>{modelOptions.map((model) => <option key={model} value={model} />)}</datalist></label></div>
+              <div className="grid gap-4 md:grid-cols-4"><label className="space-y-2 md:col-span-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">System behavior</span><textarea className={`${inputClass} min-h-28`} value={configuration.systemPrompt || ''} onChange={(event) => patchMultimodalConfiguration(configuration.id, { systemPrompt: event.target.value })} placeholder="Describe the sales tone, language, and business rules." /></label><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Temperature</span><input className={inputClass} type="number" min="0" max="2" step="0.1" value={configuration.temperature ?? 0.1} onChange={(event) => patchMultimodalConfiguration(configuration.id, { temperature: Number(event.target.value) })} /></label><label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Max tokens</span><input className={inputClass} type="number" min="64" max="16384" value={configuration.maxTokens ?? 4096} onChange={(event) => patchMultimodalConfiguration(configuration.id, { maxTokens: Number(event.target.value) })} /></label></div>
+              <div className="flex flex-wrap gap-5 text-sm font-bold text-gray-600"><label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsVision !== false} onChange={(event) => patchMultimodalConfiguration(configuration.id, { supportsVision: event.target.checked })} />Analyze images</label><label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsAudio !== false} onChange={(event) => patchMultimodalConfiguration(configuration.id, { supportsAudio: event.target.checked })} />Analyze voice/audio</label></div>
+            </article>;
           })}
         </div>
       </section>

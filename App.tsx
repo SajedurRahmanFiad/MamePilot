@@ -83,6 +83,7 @@ const DeveloperSubscriptions = lazyPage(() => import('./pages/DeveloperSubscript
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
 const Leads = lazyPage(() => import('./pages/Leads'));
+const LeadDetails = lazyPage(() => import('./pages/LeadDetails'));
 const AutoCalling = lazyPage(() => import('./pages/AutoCalling'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
 const CustomerDetails = lazyPage(() => import('./pages/CustomerDetails'));
@@ -352,7 +353,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (hasCapability('messenger') ? <Layout><MessengerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/leads" element={
-        isAuthenticated ? (can('customers.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('leads.view') ? <Layout><Leads /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/leads/:id" element={
+        isAuthenticated ? (can('leads.view') ? <Layout><LeadDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/auto-calling" element={
         isAuthenticated ? (hasCapability('auto_calling') ? <Layout><AutoCalling /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

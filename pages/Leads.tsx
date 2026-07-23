@@ -1,278 +1,55 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { MessageCircle, Search, Smartphone } from 'lucide-react';
 import { Table } from '../components';
 import Pagination from '../src/components/Pagination';
-import FilterBar, { FilterRange } from '../components/FilterBar';
-import { useSystemDefaults } from '../src/hooks/useQueries';
+import { useLeadsPage, useSystemDefaults } from '../src/hooks/useQueries';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { getPositivePageParam } from '../src/utils/navigation';
-import { ICONS } from '../constants';
-import { formatDateTime } from '../utils';
+import type { Lead } from '../types';
 
-type LeadStatus = 'New' | 'Follow-up' | 'Qualified' | 'Converted' | 'Lost';
-
-interface Lead {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  status: LeadStatus;
-  source: string;
-  createdAt: string;
-  nextFollowUp: string;
-}
-
-const leadSeedData: Lead[] = [
-  {
-    id: 'lead-1',
-    name: 'Amina Hassan',
-    phone: '+255712345678',
-    address: 'Mbezi Beach, Dar es Salaam',
-    status: 'Follow-up',
-    source: 'Website',
-    createdAt: '2026-06-17T09:30:00',
-    nextFollowUp: '2026-06-28T10:00:00',
-  },
-  {
-    id: 'lead-2',
-    name: 'Brian Mwakalobo',
-    phone: '+255765432109',
-    address: 'Kijitonyama, Dar es Salaam',
-    status: 'Qualified',
-    source: 'Referral',
-    createdAt: '2026-06-16T14:40:00',
-    nextFollowUp: '2026-06-29T11:30:00',
-  },
-  {
-    id: 'lead-3',
-    name: 'Cynthia Kileo',
-    phone: '+255754321987',
-    address: 'Mwananyamala, Dar es Salaam',
-    status: 'New',
-    source: 'Instagram',
-    createdAt: '2026-06-20T08:15:00',
-    nextFollowUp: '2026-06-30T13:00:00',
-  },
-  {
-    id: 'lead-4',
-    name: 'Daniel Mrosso',
-    phone: '+255733456789',
-    address: 'Goba, Dodoma',
-    status: 'Lost',
-    source: 'Campaign',
-    createdAt: '2026-06-12T12:05:00',
-    nextFollowUp: '2026-06-25T09:00:00',
-  },
-  {
-    id: 'lead-5',
-    name: 'Evelyn Nyerere',
-    phone: '+255716789012',
-    address: 'Mlimani, Arusha',
-    status: 'Converted',
-    source: 'WhatsApp',
-    createdAt: '2026-06-18T16:20:00',
-    nextFollowUp: '2026-06-27T15:45:00',
-  },
-  {
-    id: 'lead-6',
-    name: 'Faraji Salum',
-    phone: '+255699876543',
-    address: 'Tabata, Dar es Salaam',
-    status: 'Follow-up',
-    source: 'Facebook',
-    createdAt: '2026-06-24T10:50:00',
-    nextFollowUp: '2026-07-01T09:00:00',
-  },
-];
-
-const statusStyles: Record<LeadStatus, string> = {
-  New: 'bg-blue-50 text-blue-700',
-  'Follow-up': 'bg-amber-50 text-amber-700',
-  Qualified: 'bg-emerald-50 text-emerald-700',
-  Converted: 'bg-purple-50 text-purple-700',
-  Lost: 'bg-rose-50 text-rose-700',
+const statusStyles: Record<string, string> = {
+  new: 'bg-blue-50 text-blue-700', active: 'bg-gray-100 text-gray-700', needs_reply: 'bg-amber-50 text-amber-700', qualified: 'bg-emerald-50 text-emerald-700', high_intent: 'bg-purple-50 text-purple-700', order_pending: 'bg-orange-50 text-orange-700', converted: 'bg-green-50 text-green-700', lost: 'bg-rose-50 text-rose-700', paused: 'bg-gray-100 text-gray-500',
 };
 
-const formatLeadDate = (value: string) => formatDateTime(value) || '—';
+const label = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const formatDate = (value?: string | null) => value ? new Date(value).toLocaleString('en-BD', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
-const isWithinRange = (value: string, filterRange: FilterRange, customDates: { from: string; to: string }, includeTime: boolean) => {
-  if (!value) return true;
-  const target = new Date(value);
-  if (Number.isNaN(target.getTime())) return true;
-
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-  switch (filterRange) {
-    case 'Today':
-      return target >= startOfToday && target <= endOfToday;
-    case 'This Week': {
-      const startOfWeek = new Date(startOfToday);
-      startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      endOfWeek.setHours(23, 59, 59, 999);
-      return target >= startOfWeek && target <= endOfWeek;
-    }
-    case 'This Month': {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      return target >= startOfMonth && target <= endOfMonth;
-    }
-    case 'This Year': {
-      const startOfYear = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-      const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-      return target >= startOfYear && target <= endOfYear;
-    }
-    case 'Custom': {
-      if (!customDates.from && !customDates.to) return true;
-      const from = customDates.from ? new Date(customDates.from) : null;
-      const to = customDates.to ? new Date(customDates.to) : null;
-      if (from && includeTime) from.setSeconds(0, 0);
-      if (to && includeTime) to.setSeconds(59, 999);
-      if (from && to) return target >= from && target <= to;
-      if (from) return target >= from;
-      if (to) return target <= to;
-      return true;
-    }
-    default:
-      return true;
-  }
-};
+const Score: React.FC<{ value: number }> = ({ value }) => <div className="relative flex h-12 w-12 items-center justify-center rounded-full" style={{ background: `conic-gradient(${value >= 75 ? '#7c3aed' : value >= 50 ? '#059669' : '#f59e0b'} ${value * 3.6}deg, #eef2f7 0deg)` }}><div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-xs font-black text-gray-800">{Math.round(value)}%</div></div>;
 
 const Leads: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: systemDefaults } = useSystemDefaults();
-  const pageSize = systemDefaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentSearchParams = searchParams.toString();
-  const urlPage = getPositivePageParam(searchParams.get('page'));
+  const { data: defaults } = useSystemDefaults();
+  const pageSize = defaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
   const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
-  const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
-  const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
-  const [page, setPage] = useState<number>(urlPage);
-  const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
-  const [customDates, setCustomDates] = useState({ from: '', to: '' });
-  const [includeTime, setIncludeTime] = useState(false);
+  const [page, setPage] = useState(getPositivePageParam(searchParams.get('page')));
+  const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [channel, setChannel] = useState(searchParams.get('channel') || '');
+  const query = useLeadsPage({ page, pageSize, search: searchQuery, status, channel }, true);
+  const leads = query.data?.data || [];
+  const totalPages = Math.max(1, Math.ceil((query.data?.count || 0) / pageSize));
 
-  useEffect(() => {
-    if (!shouldHydrateFromUrl) return;
-    setPage(urlPage);
-    setSyncedSearchParams(currentSearchParams);
-  }, [shouldHydrateFromUrl, urlPage, currentSearchParams]);
+  useEffect(() => { const params: Record<string, string> = {}; if (page > 1) params.page = String(page); if (searchQuery) params.search = searchQuery; if (status) params.status = status; if (channel) params.channel = channel; setSearchParams(params, { replace: true }); }, [page, searchQuery, status, channel, setSearchParams]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  useEffect(() => {
-    if (shouldHydrateFromUrl) return;
+  const columns = useMemo(() => [
+    { key: 'name', label: 'Lead', render: (_: unknown, lead: Lead) => <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 text-sm font-black text-indigo-700">{(lead.name || 'L').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div><div className="min-w-0"><span className="block truncate font-bold text-gray-900">{lead.name || 'Unknown lead'}</span><span className="block truncate text-xs text-gray-400">{lead.phone || 'Phone not captured'}</span></div></div> },
+    { key: 'sourceChannel', label: 'Channel', render: (value: string) => <span className="inline-flex items-center gap-1.5 text-sm font-bold text-gray-600">{value === 'whatsapp' ? <Smartphone size={15} className="text-emerald-600" /> : <MessageCircle size={15} className="text-blue-600" />}{label(value)}</span> },
+    { key: 'score', label: 'Order chance', render: (value: number) => <Score value={value} /> },
+    { key: 'status', label: 'Stage', render: (value: string) => <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusStyles[value] || statusStyles.active}`}>{label(value)}</span> },
+    { key: 'lastMessagePreview', label: 'Last message', render: (value: string) => <span className="block max-w-[260px] truncate text-sm text-gray-600">{value || 'No message preview'}</span> },
+    { key: 'updatedAt', label: 'Updated', render: (value: string) => <span className="text-sm text-gray-500">{formatDate(value)}</span> },
+  ], []);
 
-    const params: Record<string, string> = {};
-    if (page > 1) params.page = String(page);
-    if (searchQuery) params.search = searchQuery;
-
-    if (new URLSearchParams(params).toString() !== currentSearchParams) {
-      setSearchParams(params, { replace: true });
-    }
-  }, [shouldHydrateFromUrl, page, searchQuery, currentSearchParams, setSearchParams]);
-
-  const filteredLeads = useMemo(() => {
-    const loweredSearch = searchQuery.trim().toLowerCase();
-
-    return leadSeedData.filter((lead) => {
-      const matchesSearch = !loweredSearch || [lead.name, lead.phone, lead.address, lead.status, lead.source].some((value) => value.toLowerCase().includes(loweredSearch));
-      const matchesDate = isWithinRange(lead.createdAt, filterRange, customDates, includeTime);
-      return matchesSearch && matchesDate;
-    });
-  }, [searchQuery, filterRange, customDates, includeTime]);
-
-  const total = filteredLeads.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginatedLeads = useMemo(() => {
-    const start = (safePage - 1) * pageSize;
-    return filteredLeads.slice(start, start + pageSize);
-  }, [filteredLeads, safePage, pageSize]);
-
-  useEffect(() => {
-    if (page !== safePage) {
-      setPage(safePage);
-    }
-  }, [page, safePage]);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div />
-      </div>
-
-      <FilterBar
-        filterRange={filterRange}
-        setFilterRange={setFilterRange}
-        customDates={customDates}
-        setCustomDates={setCustomDates}
-        includeTime={includeTime}
-        setIncludeTime={setIncludeTime}
-        title="Leads"
-      />
-
-      <Table
-        columns={[
-          {
-            key: 'name',
-            label: 'Lead Name',
-            render: (_, lead) => (
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 font-semibold text-gray-700">
-                  {lead.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}
-                </div>
-                <div>
-                  <span className="font-bold text-gray-900 block">{lead.name}</span>
-                  <p className="text-xs text-gray-400 truncate max-w-[220px]">{lead.address}</p>
-                </div>
-              </div>
-            ),
-          },
-          {
-            key: 'phone',
-            label: 'Contact',
-            render: (phone) => <span className="text-sm font-medium text-gray-700">{phone}</span>,
-          },
-          {
-            key: 'status',
-            label: 'Status',
-            align: 'center' as const,
-            render: (status: LeadStatus) => (
-              <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${statusStyles[status]}`}>
-                {status}
-              </span>
-            ),
-          },
-          {
-            key: 'nextFollowUp',
-            label: 'Next Follow-up',
-            render: (value) => <span className="text-sm font-medium text-gray-700">{formatLeadDate(value)}</span>,
-          },
-          {
-            key: 'source',
-            label: 'Source',
-            render: (source) => <span className="text-sm font-medium text-gray-700">{source}</span>,
-          },
-          {
-            key: 'createdAt',
-            label: 'Created',
-            render: (value) => <span className="text-sm font-medium text-gray-500">{formatLeadDate(value)}</span>,
-          },
-        ]}
-        data={paginatedLeads}
-        loading={false}
-        emptyMessage="No leads found"
-        onRowClick={(lead) => navigate(`/leads/${lead.id}`, { state: { from: location.pathname } })}
-      />
-
-      <Pagination page={safePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} />
-    </div>
-  );
+  return <div className="space-y-6">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h1 className="text-2xl font-black text-gray-900">Leads</h1><p className="mt-1 text-sm font-medium text-gray-500">Analyze Messenger and WhatsApp conversations and prioritize the next best action.</p></div><div className="flex flex-wrap gap-2"><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-700"><option value="">All channels</option><option value="messenger">Messenger</option><option value="whatsapp">WhatsApp</option></select><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-700"><option value="">All stages</option>{Object.keys(statusStyles).map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></div></div>
+    <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"><Search size={18} className="text-gray-400" /><input value={searchParams.get('search') || ''} onChange={(event) => { const next = new URLSearchParams(searchParams); if (event.target.value) next.set('search', event.target.value); else next.delete('search'); next.delete('page'); setSearchParams(next, { replace: true }); setPage(1); }} placeholder="Search lead name or phone" className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" /></div>
+    <Table columns={columns} data={leads} loading={query.isPending} emptyMessage="No Messenger or WhatsApp leads found" onRowClick={(lead) => navigate(`/leads/${lead.id}`, { state: { from: location.pathname } })} />
+    <Pagination page={Math.min(page, totalPages)} totalPages={totalPages} onPageChange={setPage} />
+  </div>;
 };
 
 export default Leads;

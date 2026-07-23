@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App;
 
+use RuntimeException;
+
 final class LlmClient
 {
     private const PROVIDERS = ['google', 'openai', 'openrouter', 'groq', 'anthropic', 'deepseek'];
@@ -95,6 +97,32 @@ final class LlmClient
         };
     }
 
+    /**
+     * Generate using optional image/audio inputs. Text-only providers keep the
+     * same API contract and simply receive a compact media description.
+     * @param array<int, array{type:string,url?:string,mimeType?:string,base64?:string}> $media
+     */
+    public function generateMultimodal(
+        array $configuration,
+        string $systemPrompt,
+        string $userMessage,
+        array $history = [],
+        array $media = [],
+        array $options = []
+    ): string {
+        $config = $this->normalizeConfiguration($configuration);
+        if ($media === []) {
+            return $this->generate($config, $systemPrompt, $userMessage, $history, $options);
+        }
+
+        return match ($config['provider']) {
+            'google' => $this->generateGoogleMultimodal($config, $systemPrompt, $userMessage, $history, $media, $options),
+            'anthropic' => $this->generateAnthropicMultimodal($config, $systemPrompt, $userMessage, $history, $media, $options),
+            'openai', 'openrouter', 'groq', 'deepseek' => $this->generateOpenAiCompatibleMultimodal($config, $systemPrompt, $userMessage, $history, $media, $options),
+            default => $this->generate($config, $systemPrompt, $userMessage, $history, $options),
+        };
+    }
+
     public function discoverModels(array $configuration): array
     {
         $config = $this->normalizeConfiguration($configuration);
@@ -149,6 +177,17 @@ final class LlmClient
             'appName' => (string) ($row['app_name'] ?? ''),
             'anthropicVersion' => (string) ($row['anthropic_version'] ?? ''),
         ]);
+    }
+
+    public function mapMultimodalConfiguration(array $row): array
+    {
+        $config = $this->mapConfiguration($row);
+        $config['systemPrompt'] = (string) ($row['system_prompt'] ?? '');
+        $config['temperature'] = (float) ($row['temperature'] ?? 0.1);
+        $config['maxTokens'] = max(64, min(16384, (int) ($row['max_tokens'] ?? 4096)));
+        $config['supportsVision'] = !empty($row['supports_vision']);
+        $config['supportsAudio'] = !empty($row['supports_audio']);
+        return $config;
     }
 
     public function normalizeConfiguration(array $config): array
@@ -212,6 +251,100 @@ final class LlmClient
             $content = implode('', array_map(static fn($part): string => is_array($part) ? (string) ($part['text'] ?? '') : '', $content));
         }
         $text = trim((string) $content);
+        if ($text === '') throw new RuntimeException('The selected LLM returned an empty response.');
+        return $text;
+    }
+
+    private function generateOpenAiCompatibleMultimodal(array $config, string $systemPrompt, string $userMessage, array $history, array $media, array $options): string
+    {
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+        foreach ($history as $item) {
+            if (!is_array($item)) continue;
+            $role = ($item['role'] ?? '') === 'assistant' ? 'assistant' : 'user';
+            $content = trim((string) ($item['content'] ?? ''));
+            if ($content !== '') $messages[] = ['role' => $role, 'content' => $content];
+        }
+        $content = [['type' => 'text', 'text' => $userMessage]];
+        foreach ($media as $item) {
+            $type = strtolower(trim((string) ($item['type'] ?? '')));
+            $url = trim((string) ($item['url'] ?? ''));
+            $base64 = trim((string) ($item['base64'] ?? ''));
+            $mime = trim((string) ($item['mimeType'] ?? 'application/octet-stream'));
+            if ($type === 'image' && ($url !== '' || $base64 !== '')) {
+                $content[] = ['type' => 'image_url', 'image_url' => ['url' => $base64 !== '' ? 'data:' . $mime . ';base64,' . $base64 : $url]];
+            } elseif ($type === 'audio' && $base64 !== '') {
+                $content[] = ['type' => 'input_audio', 'input_audio' => ['data' => $base64, 'format' => preg_replace('/^audio\//', '', $mime) ?: 'wav']];
+            } elseif ($url !== '') {
+                $content[] = ['type' => 'text', 'text' => 'Media attachment (' . $type . '): ' . $url];
+            }
+        }
+        $messages[] = ['role' => 'user', 'content' => $content];
+        $body = ['model' => $config['model'], 'messages' => $messages];
+        $maxTokens = max(64, min(16384, (int) ($options['maxTokens'] ?? 4096)));
+        if ($config['provider'] === 'openai') $body['max_completion_tokens'] = $maxTokens;
+        else { $body['max_tokens'] = $maxTokens; $body['temperature'] = (float) ($options['temperature'] ?? 0.1); }
+        $response = $this->httpJson('POST', rtrim($config['baseUrl'], '/') . '/chat/completions', $this->openAiHeaders($config), $body);
+        $this->assertSuccess($response, ucfirst($config['provider']) . ' multimodal generation');
+        $content = $response['json']['choices'][0]['message']['content'] ?? '';
+        if (is_array($content)) $content = implode('', array_map(static fn($part): string => is_array($part) ? (string) ($part['text'] ?? '') : '', $content));
+        $text = trim((string) $content);
+        if ($text === '') throw new RuntimeException('The selected LLM returned an empty response.');
+        return $text;
+    }
+
+    private function generateAnthropicMultimodal(array $config, string $systemPrompt, string $userMessage, array $history, array $media, array $options): string
+    {
+        $messages = [];
+        foreach ($history as $item) {
+            if (!is_array($item)) continue;
+            $role = ($item['role'] ?? '') === 'assistant' ? 'assistant' : 'user';
+            $content = trim((string) ($item['content'] ?? ''));
+            if ($content !== '') $messages[] = ['role' => $role, 'content' => $content];
+        }
+        $content = [['type' => 'text', 'text' => $userMessage]];
+        foreach ($media as $item) {
+            $type = strtolower(trim((string) ($item['type'] ?? '')));
+            $url = trim((string) ($item['url'] ?? ''));
+            $base64 = trim((string) ($item['base64'] ?? ''));
+            $mime = trim((string) ($item['mimeType'] ?? 'application/octet-stream'));
+            if ($type === 'image' && $base64 !== '') $content[] = ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $base64]];
+            elseif ($url !== '') $content[] = ['type' => 'text', 'text' => 'Media attachment (' . $type . '): ' . $url];
+        }
+        $messages[] = ['role' => 'user', 'content' => $content];
+        $response = $this->httpJson('POST', rtrim($config['baseUrl'], '/') . '/v1/messages', ['x-api-key' => $config['apiKey'], 'anthropic-version' => $config['anthropicVersion']], [
+            'model' => $config['model'], 'system' => $systemPrompt, 'messages' => $messages,
+            'max_tokens' => max(64, min(16384, (int) ($options['maxTokens'] ?? 4096))), 'temperature' => (float) ($options['temperature'] ?? 0.1),
+        ]);
+        $this->assertSuccess($response, 'Anthropic multimodal generation');
+        $parts = [];
+        foreach (($response['json']['content'] ?? []) as $part) if (is_array($part) && ($part['type'] ?? '') === 'text') $parts[] = (string) ($part['text'] ?? '');
+        $text = trim(implode('', $parts));
+        if ($text === '') throw new RuntimeException('The selected LLM returned an empty response.');
+        return $text;
+    }
+
+    private function generateGoogleMultimodal(array $config, string $systemPrompt, string $userMessage, array $history, array $media, array $options): string
+    {
+        $contents = [];
+        foreach ($history as $item) {
+            if (!is_array($item)) continue;
+            $content = trim((string) ($item['content'] ?? ''));
+            if ($content !== '') $contents[] = ['role' => ($item['role'] ?? '') === 'assistant' ? 'model' : 'user', 'parts' => [['text' => $content]]];
+        }
+        $parts = [['text' => $userMessage]];
+        foreach ($media as $item) {
+            $base64 = trim((string) ($item['base64'] ?? ''));
+            $mime = trim((string) ($item['mimeType'] ?? 'application/octet-stream'));
+            $url = trim((string) ($item['url'] ?? ''));
+            if ($base64 !== '') $parts[] = ['inline_data' => ['mime_type' => $mime, 'data' => $base64]];
+            elseif ($url !== '') $parts[] = ['text' => 'Media attachment (' . ($item['type'] ?? 'file') . '): ' . $url];
+        }
+        $contents[] = ['role' => 'user', 'parts' => $parts];
+        $endpoint = rtrim($config['baseUrl'], '/') . '/v1beta/models/' . rawurlencode($config['model']) . ':generateContent';
+        $response = $this->httpJson('POST', $endpoint, ['x-goog-api-key' => $config['apiKey']], ['systemInstruction' => ['parts' => [['text' => $systemPrompt]]], 'contents' => $contents, 'generationConfig' => ['temperature' => (float) ($options['temperature'] ?? 0.1), 'maxOutputTokens' => max(64, min(16384, (int) ($options['maxTokens'] ?? 4096)))] ]);
+        $this->assertSuccess($response, 'Google multimodal generation');
+        $parts = $response['json']['candidates'][0]['content']['parts'] ?? [];
+        $text = trim(implode('', array_map(static fn($part): string => is_array($part) ? (string) ($part['text'] ?? '') : '', $parts)));
         if ($text === '') throw new RuntimeException('The selected LLM returned an empty response.');
         return $text;
     }

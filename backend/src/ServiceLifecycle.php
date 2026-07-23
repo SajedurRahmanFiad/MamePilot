@@ -61,6 +61,8 @@ final class ServiceLifecycle
         'updateInvoiceSettings',
         'updateMetaAdsSettings',
         'updateLlmSettings',
+        'analyzeLead',
+        'markLeadSuggestionSent',
         'updateBeSmartSettings',
         'updateOrder',
         'updateOrderSettings',

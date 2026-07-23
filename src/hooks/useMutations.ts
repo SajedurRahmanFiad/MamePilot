@@ -76,6 +76,8 @@ import {
   updateAgentSettings,
   updateBusinessGrowthSettings,
   updateLlmSettings,
+  analyzeLead,
+  markLeadSuggestionSent,
   updateBeSmartSettings,
   refreshBusinessRecommendations,
   initiatePipraPayCheckout,
@@ -164,6 +166,7 @@ import type {
   MessengerMessage,
   LlmSettings,
   BeSmartSettings,
+  Lead,
 } from '../../types';
 
 const NOTIFICATIONS_UPDATED_STORAGE_KEY = 'app:notifications-updated-at';
@@ -3199,6 +3202,16 @@ export function useUpdateLlmSettings(): UseMutationResult<LlmSettings, Error, Ll
       queryClient.invalidateQueries({ queryKey: ['settings', 'llms'] });
     },
   });
+}
+
+export function useAnalyzeLead(): UseMutationResult<Lead, Error, { leadId?: string; channel?: string; contactId?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: analyzeLead, onSuccess: (lead) => { queryClient.setQueryData(['lead', lead.id], lead); queryClient.setQueryData(['lead-intelligence', lead.id], lead); queryClient.invalidateQueries({ queryKey: ['leads'] }); } });
+}
+
+export function useMarkLeadSuggestionSent(): UseMutationResult<{ ok: boolean }, Error, { suggestionId: string; messageId?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: ({ suggestionId, messageId }) => markLeadSuggestionSent(suggestionId, messageId), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lead-intelligence'] }) });
 }
 
 export function useUpdateBeSmartSettings(): UseMutationResult<BeSmartSettings, Error, BeSmartSettings, unknown> {

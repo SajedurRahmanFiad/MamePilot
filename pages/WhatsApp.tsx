@@ -8,6 +8,7 @@ import {
   ChevronDown,
   FileText,
   Image as ImageIcon,
+  Info,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -20,13 +21,16 @@ import {
   X,
 } from 'lucide-react';
 import type { WhatsAppContact, WhatsAppMessage } from '../types';
+import LeadIntelligencePanel from '../components/LeadIntelligencePanel';
 import { useWhatsAppContacts, useWhatsAppMessages, useWhatsAppTemplates } from '../src/hooks/useQueries';
+import { useLeadIntelligence } from '../src/hooks/useQueries';
 import {
   useCreateWhatsAppConversation,
   useMarkWhatsAppConversationRead,
   useSendWhatsAppMediaMessage,
   useSendWhatsAppMessage,
   useSendWhatsAppTemplate,
+  useMarkLeadSuggestionSent,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { formatDate } from '../utils';
@@ -247,6 +251,7 @@ const WhatsApp: React.FC = () => {
   const [showEmojiMenu, setShowEmojiMenu] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showLeadPanel, setShowLeadPanel] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -261,6 +266,7 @@ const WhatsApp: React.FC = () => {
   const configured = contactsQuery.data?.configured ?? true;
   const selectedContact = contacts.find((contact) => contact.id === selectedContactId) || null;
   const messagesQuery = useWhatsAppMessages(selectedContactId, Boolean(selectedContactId));
+  const leadIntelligence = useLeadIntelligence({ channel: 'whatsapp', contactId: selectedContactId || undefined }, showLeadPanel && Boolean(selectedContactId));
   const messages = messagesQuery.data?.data || [];
   const templatesQuery = useWhatsAppTemplates(showTemplates);
   const createConversation = useCreateWhatsAppConversation();
@@ -268,6 +274,7 @@ const WhatsApp: React.FC = () => {
   const sendText = useSendWhatsAppMessage();
   const sendMedia = useSendWhatsAppMediaMessage();
   const sendTemplate = useSendWhatsAppTemplate();
+  const markSuggestionSent = useMarkLeadSuggestionSent();
   const sending = sendText.isPending || sendMedia.isPending || sendTemplate.isPending;
 
   useEffect(() => {
@@ -297,6 +304,11 @@ const WhatsApp: React.FC = () => {
     } catch (error) {
       toast.error(friendlyError(error, 'Could not send the message. Please try again.'));
     }
+  };
+  const sendSuggestedReply = async (suggestion: { id: string; text: string }) => {
+    if (!selectedContactId) return;
+    await sendText.mutateAsync({ contactId: selectedContactId, text: suggestion.text });
+    await markSuggestionSent.mutateAsync({ suggestionId: suggestion.id });
   };
 
   const selectFile = async (file: File | undefined) => {
@@ -378,7 +390,7 @@ const WhatsApp: React.FC = () => {
         <button onClick={() => setSelectedContactId(null)} className="rounded-full p-2 text-emerald-700 hover:bg-gray-100 md:hidden"><ArrowLeft size={20} /></button>
         {selectedContact ? <ContactAvatar contact={selectedContact} small /> : <div className="h-9 w-9 animate-pulse rounded-full bg-gray-100" />}
         <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-black text-gray-900">{selectedContact?.name || messagesQuery.data?.contact.name || 'WhatsApp contact'}</h2><p className="truncate text-[11px] text-gray-500">+{selectedContact?.phoneNumber || messagesQuery.data?.contact.phoneNumber || ''}</p></div>
-        <button onClick={() => setShowTemplates(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">Saved message</button>
+        <button onClick={() => setShowLeadPanel((value) => !value)} className={`rounded-lg border px-3 py-2 text-xs font-bold ${showLeadPanel ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}><Info size={15} className="mr-1 inline" /> Lead AI</button><button onClick={() => setShowTemplates(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">Saved message</button>
       </div>
 
       <div ref={messagesRef} onScroll={(event) => { const element = event.currentTarget; shouldStickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120; }} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
@@ -417,8 +429,9 @@ const WhatsApp: React.FC = () => {
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-white">
+    <div className="relative flex h-full min-h-0 w-full overflow-hidden bg-white">
       <div className={`${selectedContactId ? 'hidden md:flex' : 'flex'} h-full min-h-0 w-full shrink-0 flex-col border-r border-gray-100 md:w-[360px] md:min-w-[360px]`}>{listPanel}</div>
+      {selectedContactId && showLeadPanel && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} onClose={() => setShowLeadPanel(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
       <div className={`${selectedContactId ? 'flex' : 'hidden md:flex'} h-full min-h-0 min-w-0 flex-1 flex-col`}>{chatPanel}</div>
       <NewConversationModal open={showNewChat} pending={createConversation.isPending} onClose={() => setShowNewChat(false)} onSubmit={startConversation} />
       <TemplateModal open={showTemplates} templates={(templatesQuery.data?.data || []) as WhatsAppTemplate[]} loading={templatesQuery.isPending} error={templatesQuery.error?.message} pending={sendTemplate.isPending} onClose={() => setShowTemplates(false)} onSend={submitTemplate} />

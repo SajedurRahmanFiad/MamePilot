@@ -2342,8 +2342,10 @@ final class MasterDataApi extends BaseService
             'mame_ai' => null,
             'business_growth' => null,
         ];
+        $multimodalConfigurations = [];
+        $multimodalAssignment = null;
         if (!$this->tableExists('llm_configurations') || !$this->tableExists('llm_feature_assignments')) {
-            return ['configurations' => [], 'assignments' => $assignments];
+            return ['configurations' => [], 'assignments' => $assignments, 'multimodalConfigurations' => [], 'multimodalAssignment' => null];
         }
 
         $client = new LlmClient($this->database, $this->config);
@@ -2359,7 +2361,17 @@ final class MasterDataApi extends BaseService
             }
         }
 
-        return ['configurations' => $configurations, 'assignments' => $assignments];
+        if ($this->tableExists('multimodal_llm_configurations')) {
+            $multimodalConfigurations = array_map(
+                static fn(array $row): array => $client->mapMultimodalConfiguration($row),
+                $this->database->fetchAll('SELECT * FROM multimodal_llm_configurations ORDER BY label ASC, created_at ASC')
+            );
+            $selected = $this->tableExists('multimodal_llm_assignments') ? $this->database->fetchOne("SELECT a.configuration_id AS id FROM multimodal_llm_assignments a INNER JOIN multimodal_llm_configurations c ON c.id = a.configuration_id WHERE a.id = 'default' AND c.enabled = 1 LIMIT 1") : null;
+            if ($selected === null) $selected = $this->database->fetchOne('SELECT id FROM multimodal_llm_configurations WHERE enabled = 1 ORDER BY updated_at DESC LIMIT 1');
+            $multimodalAssignment = $selected ? (string) $selected['id'] : null;
+        }
+
+        return ['configurations' => $configurations, 'assignments' => $assignments, 'multimodalConfigurations' => $multimodalConfigurations, 'multimodalAssignment' => $multimodalAssignment];
     }
 
     public function updateLlmSettings(array $params): array
@@ -2388,6 +2400,32 @@ final class MasterDataApi extends BaseService
             $ids[$id] = (bool) $config['enabled'];
         }
 
+        $multimodalRows = is_array($params['multimodalConfigurations'] ?? null) ? array_values($params['multimodalConfigurations']) : [];
+        if (count($multimodalRows) > 100) throw new ApiException('You can save up to 100 multimodal model configurations.', 422);
+        $multimodalConfigurations = [];
+        $multimodalIds = [];
+        foreach ($multimodalRows as $row) {
+            if (!is_array($row)) continue;
+            $config = $client->normalizeConfiguration($row);
+            $id = trim((string) ($config['id'] ?? '')) ?: $this->uuid4();
+            if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $id)) throw new ApiException('A multimodal configuration has an invalid id.', 422);
+            if (array_key_exists($id, $multimodalIds)) throw new ApiException('Duplicate multimodal configuration id.', 422);
+            if ($config['label'] === '') throw new ApiException('Every multimodal configuration needs a name.', 422);
+            if ($config['apiKey'] === '') throw new ApiException($config['label'] . ' needs an API key.', 422);
+            if ($config['model'] === '') throw new ApiException($config['label'] . ' needs a model.', 422);
+            $config['id'] = $id;
+            $config['systemPrompt'] = trim((string) ($row['systemPrompt'] ?? ''));
+            $config['temperature'] = max(0, min(2, (float) ($row['temperature'] ?? 0.1)));
+            $config['maxTokens'] = max(64, min(16384, (int) ($row['maxTokens'] ?? 4096)));
+            $config['supportsVision'] = !array_key_exists('supportsVision', $row) || !empty($row['supportsVision']);
+            $config['supportsAudio'] = !array_key_exists('supportsAudio', $row) || !empty($row['supportsAudio']);
+            $multimodalConfigurations[] = $config;
+            $multimodalIds[$id] = (bool) $config['enabled'];
+        }
+        $selectedMultimodal = trim((string) ($params['multimodalAssignment'] ?? ''));
+        if ($selectedMultimodal !== '' && !array_key_exists($selectedMultimodal, $multimodalIds)) throw new ApiException('The selected multimodal model does not exist.', 422);
+        if ($selectedMultimodal !== '' && !$multimodalIds[$selectedMultimodal]) throw new ApiException('The selected multimodal model is disabled.', 422);
+
         $submittedAssignments = is_array($params['assignments'] ?? null) ? $params['assignments'] : [];
         $assignments = [];
         foreach (LlmClient::features() as $feature) {
@@ -2401,7 +2439,7 @@ final class MasterDataApi extends BaseService
             $assignments[$feature] = $configurationId !== '' ? $configurationId : null;
         }
 
-        $this->database->transaction(function () use ($configurations, $ids, $assignments): void {
+        $this->database->transaction(function () use ($configurations, $ids, $assignments, $multimodalConfigurations, $multimodalIds, $selectedMultimodal): void {
             foreach ($configurations as $config) {
                 $this->database->execute(
                     'INSERT INTO llm_configurations (
@@ -2459,6 +2497,25 @@ final class MasterDataApi extends BaseService
                         ':updated_at' => $this->database->nowUtc(),
                     ]
                 );
+            }
+
+            if ($this->tableExists('multimodal_llm_configurations')) {
+                foreach ($multimodalConfigurations as $config) {
+                    $this->database->execute(
+                        'INSERT INTO multimodal_llm_configurations (id, label, provider, enabled, base_url, api_key, model, organization, project, site_url, app_name, anthropic_version, system_prompt, temperature, max_tokens, supports_vision, supports_audio, created_at, updated_at)
+                         VALUES (:id, :label, :provider, :enabled, :base_url, :api_key, :model, :organization, :project, :site_url, :app_name, :anthropic_version, :system_prompt, :temperature, :max_tokens, :supports_vision, :supports_audio, :created_at, :updated_at)
+                         ON DUPLICATE KEY UPDATE label = VALUES(label), provider = VALUES(provider), enabled = VALUES(enabled), base_url = VALUES(base_url), api_key = VALUES(api_key), model = VALUES(model), organization = VALUES(organization), project = VALUES(project), site_url = VALUES(site_url), app_name = VALUES(app_name), anthropic_version = VALUES(anthropic_version), system_prompt = VALUES(system_prompt), temperature = VALUES(temperature), max_tokens = VALUES(max_tokens), supports_vision = VALUES(supports_vision), supports_audio = VALUES(supports_audio), updated_at = VALUES(updated_at)',
+                        [':id' => $config['id'], ':label' => $config['label'], ':provider' => $config['provider'], ':enabled' => $config['enabled'] ? 1 : 0, ':base_url' => $config['baseUrl'], ':api_key' => $config['apiKey'], ':model' => $config['model'], ':organization' => $this->nullableString($config['organization']), ':project' => $this->nullableString($config['project']), ':site_url' => $this->nullableString($config['siteUrl']), ':app_name' => $this->nullableString($config['appName']), ':anthropic_version' => $config['anthropicVersion'], ':system_prompt' => $config['systemPrompt'], ':temperature' => $config['temperature'], ':max_tokens' => $config['maxTokens'], ':supports_vision' => $config['supportsVision'] ? 1 : 0, ':supports_audio' => $config['supportsAudio'] ? 1 : 0, ':created_at' => $this->database->nowUtc(), ':updated_at' => $this->database->nowUtc()]
+                    );
+                }
+                if ($multimodalIds === []) $this->database->execute('DELETE FROM multimodal_llm_configurations');
+                else {
+                    [$placeholders, $bindings] = $this->inClause(array_keys($multimodalIds), 'multimodal_keep');
+                    $this->database->execute('DELETE FROM multimodal_llm_configurations WHERE id NOT IN (' . implode(', ', $placeholders) . ')', $bindings);
+                }
+                if ($this->tableExists('multimodal_llm_assignments')) {
+                    $this->database->execute('INSERT INTO multimodal_llm_assignments (id, configuration_id, updated_at) VALUES (\'default\', :configuration, :updated) ON DUPLICATE KEY UPDATE configuration_id = VALUES(configuration_id), updated_at = VALUES(updated_at)', [':configuration' => $selectedMultimodal !== '' ? $selectedMultimodal : null, ':updated' => $this->database->nowUtc()]);
+                }
             }
         });
 

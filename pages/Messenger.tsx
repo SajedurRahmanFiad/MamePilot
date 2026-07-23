@@ -22,7 +22,9 @@ import {
   X,
 } from 'lucide-react';
 import type { MessengerContact, MessengerMessage } from '../types';
+import LeadIntelligencePanel from '../components/LeadIntelligencePanel';
 import { useMessengerContacts, useMessengerMessages } from '../src/hooks/useQueries';
+import { useLeadIntelligence } from '../src/hooks/useQueries';
 import {
   useMarkMessengerConversationRead,
   useSendMessengerCard,
@@ -31,6 +33,7 @@ import {
   useSendMessengerQuickReplies,
   useSendMessengerReaction,
   useSendMessengerSenderAction,
+  useMarkLeadSuggestionSent,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { formatDate } from '../utils';
@@ -165,6 +168,7 @@ const MessengerPage: React.FC = () => {
   const contactsQuery = useMessengerContacts({ search: debouncedSearch, filter }, true);
   const contacts = contactsQuery.data?.data || [];
   const messagesQuery = useMessengerMessages(selectedId, Boolean(selectedId));
+  const leadIntelligence = useLeadIntelligence({ channel: 'messenger', contactId: selectedId || undefined }, infoOpen && Boolean(selectedId));
   const messages = messagesQuery.data?.data || [];
   const selectedContact = messagesQuery.data?.contact || contacts.find((contact) => contact.id === selectedId) || null;
   const markRead = useMarkMessengerConversationRead();
@@ -174,6 +178,7 @@ const MessengerPage: React.FC = () => {
   const sendCard = useSendMessengerCard();
   const sendReaction = useSendMessengerReaction();
   const senderAction = useSendMessengerSenderAction();
+  const markSuggestionSent = useMarkLeadSuggestionSent();
   const busy = sendText.isPending || sendMedia.isPending || sendChoices.isPending || sendCard.isPending;
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
@@ -209,6 +214,15 @@ const MessengerPage: React.FC = () => {
     try { await sendText.mutateAsync({ contactId: selectedId, text: text.trim(), replyToMid: replyingTo?.mid || undefined }); setDraft(''); setReplyingTo(null); setEmojiOpen(false); }
     catch (error) { toast.error(friendlyError(error, 'Message could not be sent. Please try again.')); }
   };
+  const sendSuggestedReply = async (suggestion: { id: string; text: string }) => {
+    if (!selectedId || busy) return;
+    try {
+      await sendText.mutateAsync({ contactId: selectedId, text: suggestion.text });
+      await markSuggestionSent.mutateAsync({ suggestionId: suggestion.id });
+    } catch (error) {
+      toast.error(friendlyError(error, 'Suggested reply could not be sent. Please try again.'));
+    }
+  };
   const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(new Error('Could not read the selected file.')); reader.readAsDataURL(file); });
   const sendFile = async (file: File) => {
     if (!selectedId) return;
@@ -243,6 +257,8 @@ const MessengerPage: React.FC = () => {
         </div>
       </aside>
 
+      {selectedContact && infoOpen && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} onClose={() => setInfoOpen(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
+
       <main className={`${mobileChatOpen ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-white`}>
         {!selectedContact ? <div className="flex flex-1 items-center justify-center bg-white p-6 text-center"><div><div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#0a7cff] to-[#8b5cf6] text-white shadow-xl"><Send size={42} /></div><h2 className="mt-6 text-2xl font-black">Messenger conversations</h2><p className="mt-2 text-sm text-gray-500">Choose a conversation to start replying.</p></div></div> : <>
           <header className="flex h-[65px] shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-4"><button type="button" onClick={() => setMobileChatOpen(false)} className="rounded-full p-2 text-[#0866ff] hover:bg-blue-50 md:hidden"><ArrowLeft size={21} /></button><ContactAvatar contact={selectedContact} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-[15px] font-black">{selectedContact.name}</p><p className={`text-xs font-medium ${selectedContact.canReply ? 'text-gray-500' : 'text-amber-600'}`}>{selectedContact.canReply ? 'You can reply' : 'Waiting for a new message'}</p></div><button type="button" onClick={() => setInfoOpen((value) => !value)} className={`rounded-full p-2.5 ${infoOpen ? 'bg-blue-50 text-[#0866ff]' : 'text-[#0866ff] hover:bg-blue-50'}`}><Info size={21} /></button></header>
@@ -263,10 +279,6 @@ const MessengerPage: React.FC = () => {
           </footer>
         </>}
       </main>
-
-      {selectedContact && infoOpen && <aside className="hidden w-[300px] shrink-0 flex-col border-l border-gray-200 bg-white xl:flex"><div className="flex flex-col items-center px-6 pb-6 pt-8"><ContactAvatar contact={selectedContact} size="lg" /><h2 className="mt-3 text-center text-lg font-black">{selectedContact.name}</h2><p className="mt-1 text-sm text-gray-500">Facebook Messenger</p></div><div className="border-t border-gray-100 px-5 py-5"><p className="text-xs font-black uppercase tracking-wider text-gray-400">Conversation</p><div className={`mt-3 rounded-2xl p-4 ${selectedContact.canReply ? 'bg-blue-50 text-blue-900' : 'bg-amber-50 text-amber-900'}`}><p className="text-sm font-black">{selectedContact.canReply ? 'You can reply' : 'Waiting for customer'}</p><p className="mt-1 text-xs leading-relaxed opacity-75">{selectedContact.canReply ? 'You can continue helping this customer here.' : 'They need to send a new message before you can reply.'}</p></div></div><div className="mt-auto border-t border-gray-100 p-5"><Link to="/settings?tab=messenger" className="flex items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-3 text-sm font-black text-gray-700 hover:bg-gray-200"><Settings size={16} /> Messenger settings</Link></div></aside>}
-
-      {selectedContact && infoOpen && <div className="absolute inset-0 z-50 flex flex-col bg-white xl:hidden"><header className="flex h-16 items-center gap-3 border-b border-gray-200 px-4"><button type="button" onClick={() => setInfoOpen(false)} className="rounded-full p-2 text-[#0866ff] hover:bg-blue-50"><ArrowLeft size={21} /></button><p className="font-black">Conversation details</p></header><div className="flex flex-1 flex-col overflow-y-auto"><div className="flex flex-col items-center px-6 pb-8 pt-10"><ContactAvatar contact={selectedContact} size="lg" /><h2 className="mt-3 text-center text-xl font-black">{selectedContact.name}</h2><p className="mt-1 text-sm text-gray-500">Facebook Messenger</p></div><div className="border-t border-gray-100 px-6 py-6"><div className={`rounded-2xl p-4 ${selectedContact.canReply ? 'bg-blue-50 text-blue-900' : 'bg-amber-50 text-amber-900'}`}><p className="font-black">{selectedContact.canReply ? 'You can reply' : 'Waiting for customer'}</p><p className="mt-1 text-sm leading-relaxed opacity-75">{selectedContact.canReply ? 'You can continue helping this customer here.' : 'They need to send a new message before you can reply.'}</p></div><Link to="/settings?tab=messenger" className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-3 text-sm font-black text-gray-700"><Settings size={16} /> Messenger settings</Link></div></div></div>}
 
       <ChoicesModal open={choicesOpen} pending={sendChoices.isPending} onClose={() => setChoicesOpen(false)} onSend={async (text, options) => { if (!selectedId) return; try { await sendChoices.mutateAsync({ contactId: selectedId, text, options: options.map((title) => ({ title })), replyToMid: replyingTo?.mid || undefined }); setChoicesOpen(false); setReplyingTo(null); } catch (error) { toast.error(friendlyError(error, 'Choices could not be sent. Please try again.')); } }} />
       <CardModal open={cardOpen} pending={sendCard.isPending} onClose={() => setCardOpen(false)} onSend={async (card) => { if (!selectedId) return; try { await sendCard.mutateAsync({ contactId: selectedId, ...card, replyToMid: replyingTo?.mid || undefined }); setCardOpen(false); setReplyingTo(null); } catch (error) { toast.error(friendlyError(error, 'Card could not be sent. Please try again.')); } }} />
