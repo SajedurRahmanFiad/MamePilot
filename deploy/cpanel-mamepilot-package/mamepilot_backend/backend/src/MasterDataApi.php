@@ -399,7 +399,7 @@ final class MasterDataApi extends BaseService
                 ':name' => trim((string) ($params['name'] ?? '')),
                 ':phone' => trim((string) ($params['phone'] ?? '')),
                 ':role' => $requestedRole,
-                ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'profile-pictures', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
+                ':image' => $this->normalizeUploadedWebpValue($params['image'] ?? null, 'profile-pictures', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
                 ':email' => $this->nullableString($params['email'] ?? null),
                 ':address' => $this->nullableString($params['address'] ?? null),
                 ':birthday' => $this->nullableString($this->normalizeDateOnly((string) ($params['birthday'] ?? ''))),
@@ -456,7 +456,7 @@ final class MasterDataApi extends BaseService
             $payload['role'] = $requestedRole;
         }
         if (array_key_exists('image', $updates)) {
-            $payload['image'] = $this->normalizeUploadedFileValue($updates['image'] ?? null, 'profile-pictures', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
+            $payload['image'] = $this->normalizeUploadedWebpValue($updates['image'] ?? null, 'profile-pictures', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
         }
         if (array_key_exists('email', $updates)) {
             $payload['email'] = $this->nullableString($updates['email']);

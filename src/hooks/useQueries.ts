@@ -625,12 +625,26 @@ export function useUsersPage(
 export function useUserActivityPerformanceReportPage(
   page: number = 1,
   pageSize: number = 10,
-  filters?: { search?: string; roleFilter?: string; filterRange?: string; customDates?: { from?: string; to?: string }; onlyActive?: boolean },
+  filters?: {
+    search?: string;
+    searchOperator?: string;
+    roleFilter?: string;
+    roleOperator?: string;
+    activityFilter?: string;
+    activityOperator?: string;
+    filterRange?: string;
+    customDates?: { from?: string; to?: string };
+    onlyActive?: boolean;
+  },
   options?: { enabled?: boolean }
 ): UseQueryResult<UserActivityPerformanceReportPage, Error> {
   const normalizedFilters = {
     search: String(filters?.search || '').trim(),
+    searchOperator: String(filters?.searchOperator || 'contains'),
     roleFilter: String(filters?.roleFilter || 'All Users'),
+    roleOperator: String(filters?.roleOperator || '='),
+    activityFilter: String(filters?.activityFilter || (filters?.onlyActive ? 'active' : 'all')),
+    activityOperator: String(filters?.activityOperator || '='),
     filterRange: String(filters?.filterRange || 'All Time'),
     customDates: {
       from: String(filters?.customDates?.from || ''),

@@ -175,11 +175,21 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
           <li>Give the key Read/Write permission. Copy its consumer key and consumer secret into the website below.</li>
           <li>Set Public delivery base URL to your live MamePilot API folder, for example https://app.example.com/api. For local testing, use an HTTPS tunnel; WooCommerce cannot deliver to localhost.</li>
           <li>Save the website, use Test Connection, then click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
-          <li>Use Sync Existing Orders once if you also want older WooCommerce orders. Repeated syncs are safe and do not create duplicates.</li>
+          <li>Recent orders are synced automatically every 5 minutes. Use Sync Existing Orders to pull a larger batch of older orders on demand. Repeated syncs are safe and do not create duplicates.</li>
         </ol>
         <p className="mt-3 text-xs font-semibold text-blue-800">
           Customer matching uses the normalized billing phone. A match keeps the same customer record but replaces its
           name and address with the WooCommerce values; otherwise a new customer is created.
+        </p>
+      </section>
+
+      <section className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-5 py-3">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+        </span>
+        <p className="text-sm font-semibold text-emerald-800">
+          Auto-sync is active — new WooCommerce orders are pulled every 5 minutes in the background.
         </p>
       </section>
 

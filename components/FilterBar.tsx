@@ -33,6 +33,8 @@ interface FilterBarProps {
   onRefresh?: () => void;
   /** Whether the refresh action is in progress. */
   isRefreshing?: boolean;
+  /** Keep the range controls available on small screens using horizontal scrolling. */
+  showOnMobile?: boolean;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({
@@ -50,6 +52,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   , ranges: rangesProp
   , onRefresh
   , isRefreshing = false
+  , showOnMobile = false
 }) => {
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const { searchQuery, setSearchQuery } = useSearch();
@@ -62,8 +65,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
     <>
       <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${compact ? '' : 'mb-6'}`}>
         {/* Desktop Filter Bar */}
-        <div className="hidden sm:flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-gray-100 shadow-sm">
+        <div className={`${showOnMobile ? 'flex max-w-full overflow-x-auto pb-1' : 'hidden sm:flex'} flex-wrap items-center gap-3`}>
+          <div className="flex min-w-max items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-gray-100 shadow-sm">
             {ranges.map(range => (
               <button
                 key={range}

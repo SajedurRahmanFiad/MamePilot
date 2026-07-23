@@ -16,7 +16,7 @@ import {
 import { Card, FilterBar, MetaAdsMoney, StatCard } from '../components';
 import type { FilterRange } from '../components/FilterBar';
 import { getStatusDisplayName } from '../constants';
-import { useMarketingDashboard, useMetaAdsSyncStatus } from '../src/hooks/useQueries';
+import { useMarketingDashboard, useMetaAdsSettings, useMetaAdsSyncStatus } from '../src/hooks/useQueries';
 import { useSyncMetaAds } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import {
@@ -120,6 +120,8 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { data: metaAdsSettings, isPending: settingsPending } = useMetaAdsSettings();
+  const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
   const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const handleFilterRangeChange = (nextRange: FilterRange) => {
@@ -327,6 +329,27 @@ const SocialMediaAdsDashboard: React.FC = () => {
     }
     return [formatMetaAdsCurrency(Number(value), 'BDT'), key];
   };
+
+  if (settingsPending && !metaAdsSettings) {
+    return <div className="h-64 animate-pulse rounded-xl border border-gray-100 bg-white" aria-label="Loading Meta Ads settings" />;
+  }
+
+  if (!isMetaAdsConfigured) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
+            <svg className="h-7 w-7 text-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8.25h3.75M3 12h3.75m-3.75 3.75h3.75m4.5-10.5h5.25m-5.25 3.75h5.25m-5.25 3.75h5.25M3.75 6H20.25M3.75 18H20.25" /></svg>
+          </div>
+          <h2 className="text-lg font-black text-gray-900">Meta Ads Not Configured</h2>
+          <p className="mt-2 text-sm text-gray-500">Set up your Meta App ID and credentials in Settings before using the Marketing Dashboard.</p>
+          <button onClick={() => navigate('/settings?tab=meta-ads')} className={`mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white ${theme.buttons.primary}`}>
+            Open Settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

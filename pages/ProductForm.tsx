@@ -275,7 +275,6 @@ const ProductForm: React.FC = () => {
             }}
             placeholder="auto-generated-from-name"
           />
-          <p className="text-[10px] text-gray-400 mt-1 font-medium">Used to match products during WooCommerce import. Auto-generated from name if left empty.</p>
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">

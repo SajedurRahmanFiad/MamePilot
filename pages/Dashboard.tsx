@@ -479,10 +479,10 @@ const Dashboard: React.FC = () => {
                     <Tooltip
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                       cursor={{ fill: '#f8fafc' }}
-                      formatter={(value: number | string | undefined, name: string | undefined) => [
+                      formatter={((value: any, name: any) => [
                         formatCurrency(Math.abs(roundDashboardValue(Number(value || 0)))),
                         CASH_FLOW_LABELS[String(name || '')] || String(name || ''),
-                      ]}
+                      ]) as any}
                     />
                     <Bar dataKey="income" fill="#059669" radius={[4, 4, 0, 0]} barSize={40} />
                     <Bar dataKey="expense" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={40} />
@@ -496,10 +496,10 @@ const Dashboard: React.FC = () => {
                     <Tooltip
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
                       cursor={{ fill: '#f8fafc' }}
-                      formatter={(value: number | string | undefined, name: string | undefined) => [
+                      formatter={((value: any, name: any) => [
                         formatCurrency(Math.abs(roundDashboardValue(Number(value || 0)))),
                         CASH_FLOW_LABELS[String(name || '')] || String(name || ''),
-                      ]}
+                      ]) as any}
                     />
                     <Bar dataKey="income" fill="#059669" radius={[4, 4, 0, 0]} barSize={40} />
                     <Bar dataKey="expense" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={40} />
@@ -560,13 +560,7 @@ const Dashboard: React.FC = () => {
                   adminSnapshot.topCustomers.map((customer, index) => (
                     <div key={`${customer.name}-${index}`} className="flex items-center justify-between border-b border-gray-50 pb-2 last:border-b-0 last:pb-0">
                       <div className="flex min-w-0 items-center gap-3">
-                        {customer.image ? (
-                          <img src={customer.image} alt={customer.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
-                        ) : (
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-black text-gray-400">
-                            {customer.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        <img src={customer.image || '/uploads/Empty_avatar.png'} alt={customer.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
                         <div className="min-w-0">
                           <span className="block truncate text-sm font-bold text-gray-900">{customer.name}</span>
                           <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{customer.orders} orders</span>
@@ -614,7 +608,7 @@ const Dashboard: React.FC = () => {
                     <Pie data={expenseByCategory} innerRadius={0} outerRadius={100} dataKey="value">
                       {expenseByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                     </Pie>
-                    <Tooltip formatter={(value: number | string | undefined) => formatCurrency(roundDashboardValue(Number(value || 0)))} />
+                    <Tooltip formatter={((value: any) => formatCurrency(roundDashboardValue(Number(value || 0)))) as any} />
                     {isMobile ? (
                       <Legend verticalAlign="bottom" align="center" layout="horizontal" wrapperStyle={{ paddingTop: '20px' }} />
                     ) : (

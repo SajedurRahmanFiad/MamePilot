@@ -2058,10 +2058,14 @@ final class OperationsApi extends BaseService
         $offset = ($page - 1) * $pageSize;
         $filters = $this->buildDashboardDateFilters($params);
         $search = trim((string) ($params['search'] ?? ''));
+        $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
         $roleFilter = trim((string) ($params['roleFilter'] ?? 'All Users'));
+        $roleOperator = trim((string) ($params['roleOperator'] ?? '='));
+        $activityFilter = trim((string) ($params['activityFilter'] ?? 'all'));
+        $activityOperator = trim((string) ($params['activityOperator'] ?? '='));
         $onlyActive = filter_var($params['onlyActive'] ?? false, FILTER_VALIDATE_BOOL);
 
-        [$userWhereSql, $bindings] = $this->buildUserActivityPerformanceUserWhere($search, $roleFilter);
+        [$userWhereSql, $bindings] = $this->buildUserActivityPerformanceUserWhere($search, $searchOperator, $roleFilter, $roleOperator);
         $activityExpression = '(COALESCE(oa.ordersCreated, 0) + COALESCE(ba.billsCreated, 0) + COALESCE(ta.transactionsCreated, 0))';
         $ordersDateSql = $this->buildUserActivityPerformanceDateBoundsSql('o.created_at', $filters, $bindings, 'report_orders');
         $billsDateSql = $this->buildUserActivityPerformanceDateBoundsSql('b.created_at', $filters, $bindings, 'report_bills');
@@ -2116,8 +2120,16 @@ final class OperationsApi extends BaseService
 
         $baseSql .= " AND (u.deleted_at IS NULL OR {$activityExpression} > 0)";
 
-        if ($onlyActive) {
+        if ($activityFilter === 'all' && $onlyActive) {
+            $activityFilter = 'active';
+        }
+        if (in_array($activityOperator, ['≠', '!=', '<>'], true)) {
+            $activityFilter = $activityFilter === 'active' ? 'inactive' : ($activityFilter === 'inactive' ? 'active' : 'all');
+        }
+        if ($activityFilter === 'active') {
             $baseSql .= " AND {$activityExpression} > 0";
+        } elseif ($activityFilter === 'inactive') {
+            $baseSql .= " AND {$activityExpression} = 0";
         }
 
         $countRow = $this->database->fetchOne(
@@ -2331,22 +2343,39 @@ final class OperationsApi extends BaseService
     /**
      * @return array{0: string, 1: array<string, mixed>}
      */
-    private function buildUserActivityPerformanceUserWhere(string $search, string $roleFilter): array
+    private function buildUserActivityPerformanceUserWhere(
+        string $search,
+        string $searchOperator,
+        string $roleFilter,
+        string $roleOperator
+    ): array
     {
         $conditions = ['WHERE COALESCE(u.is_system, 0) = 0'];
         $bindings = [];
+        $negativeRole = in_array($roleOperator, ['≠', '!=', '<>'], true);
 
         if ($roleFilter === 'Admins') {
-            $conditions[] = "u.role IN ('Admin', 'Developer')";
+            $conditions[] = $negativeRole ? "u.role NOT IN ('Admin', 'Developer')" : "u.role IN ('Admin', 'Developer')";
         } elseif ($roleFilter === 'Employees') {
-            $conditions[] = "u.role IN ('Employee')";
+            $conditions[] = $negativeRole ? "u.role NOT IN ('Employee')" : "u.role IN ('Employee')";
         }
 
         if ($search !== '') {
-            $bindings[':user_activity_search_name'] = '%' . $search . '%';
-            $bindings[':user_activity_search_phone'] = '%' . $search . '%';
-            $bindings[':user_activity_search_role'] = '%' . $search . '%';
-            $conditions[] = '(u.name LIKE :user_activity_search_name OR u.phone LIKE :user_activity_search_phone OR u.role LIKE :user_activity_search_role)';
+            $contains = in_array($searchOperator, ['contains', 'does not contain'], true);
+            $negativeSearch = in_array($searchOperator, ['≠', '!=', '<>', 'does not contain'], true);
+            $comparison = $contains
+                ? ($negativeSearch ? 'NOT LIKE' : 'LIKE')
+                : ($negativeSearch ? '<>' : '=');
+            $bindingValue = $contains ? '%' . $search . '%' : $search;
+            $bindings[':user_activity_search_name'] = $bindingValue;
+            $bindings[':user_activity_search_phone'] = $bindingValue;
+            $bindings[':user_activity_search_role'] = $bindingValue;
+            $joiner = $negativeSearch ? ' AND ' : ' OR ';
+            $conditions[] = '(' . implode($joiner, [
+                "u.name {$comparison} :user_activity_search_name",
+                "u.phone {$comparison} :user_activity_search_phone",
+                "u.role {$comparison} :user_activity_search_role",
+            ]) . ')';
         }
 
         return [implode(' AND ', $conditions), $bindings];

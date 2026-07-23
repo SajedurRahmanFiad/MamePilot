@@ -38,6 +38,7 @@ const UserForm: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [profileImageName, setProfileImageName] = useState('');
   const [form, setForm] = useState<Partial<User>>({
     name: '',
     phone: '',
@@ -93,8 +94,14 @@ const UserForm: React.FC = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.warning('Please select an image file for the profile picture.');
+      e.target.value = '';
+      return;
+    }
+    setProfileImageName(file.name);
     try {
-      const compressed = await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.82 });
+      const compressed = await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.82, force: true });
       setForm((prev) => ({ ...prev, image: compressed }));
     } catch {
       const reader = new FileReader();
@@ -151,12 +158,13 @@ const UserForm: React.FC = () => {
     setSaving(true);
     try {
       if (isEdit && id) {
-        const updates: Partial<User> = {
+        const updates: Partial<User> & { imageName?: string } = {
           name: form.name,
           phone: form.phone,
           image: form.image,
           ...extendedFields,
         };
+        if (profileImageName) updates.imageName = profileImageName;
 
         if (isAdmin) {
           if (form.password) updates.password = form.password;
@@ -180,6 +188,7 @@ const UserForm: React.FC = () => {
           password: form.password || '',
           role: form.role || UserRole.EMPLOYEE,
           image: form.image || '',
+          ...(profileImageName ? { imageName: profileImageName } : {}),
           ...extendedFields,
         } as any);
       }
@@ -241,7 +250,7 @@ const UserForm: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <p className="text-xs font-bold text-gray-400 uppercase mb-2">Profile Photo</p>
-                <input type="file" id="user-pfp" className="hidden" onChange={handleImageUpload} />
+                <input type="file" id="user-pfp" accept="image/*" className="hidden" onChange={handleImageUpload} />
                 <label htmlFor="user-pfp" className={`cursor-pointer px-4 py-2 ${theme.colors.primary[600]} text-white text-xs font-bold rounded-lg hover:${theme.colors.primary[700]}`}>Upload Picture</label>
               </div>
             </div>

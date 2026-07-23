@@ -256,6 +256,69 @@ abstract class BaseService
         return $this->saveUploadedFileFromDataUrl($trimmed, $category, $originalFileName);
     }
 
+    protected function normalizeUploadedWebpValue(?string $value, string $category, ?string $originalFileName = null): ?string
+    {
+        $trimmed = trim((string) ($value ?? ''));
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (!$this->isDataUrl($trimmed)) {
+            return $trimmed;
+        }
+
+        $decoded = $this->decodeDataUrl($trimmed);
+        if ($decoded === null || !$this->isImageMimeType((string) ($decoded[0] ?? ''))) {
+            throw new \RuntimeException('The uploaded profile picture is not a valid image.');
+        }
+
+        [, $data] = $decoded;
+        $uploadDir = $this->uploadPublicPath($category);
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            throw new \RuntimeException(sprintf('Failed to create upload directory: %s', $uploadDir));
+        }
+
+        $webpFileName = $this->uniqueUploadFilename('webp', $originalFileName);
+        $webpTargetPath = $uploadDir . DIRECTORY_SEPARATOR . $webpFileName;
+        if (!$this->saveImageAsWebp($data, $webpTargetPath)) {
+            throw new \RuntimeException('Profile pictures require WebP support on the server.');
+        }
+
+        return '/uploads/' . trim($category, '/') . '/' . $webpFileName;
+    }
+
+    protected function normalizeUserProfileImageValue(?string $value, ?string $userId = null, ?string $originalFileName = null): string
+    {
+        $trimmed = trim((string) ($value ?? ''));
+        if ($trimmed === '') {
+            return '';
+        }
+
+        if (!$this->isDataUrl($trimmed)) {
+            return $this->ensurePublicUploadedFileValue($trimmed);
+        }
+
+        try {
+            $normalized = $this->normalizeUploadedWebpValue($trimmed, 'profile-pictures', $originalFileName) ?? '';
+            if ($normalized !== '' && $userId !== null && trim($userId) !== '') {
+                $this->database->execute(
+                    'UPDATE users SET image = :normalized_image WHERE id = :user_id AND image = :legacy_image',
+                    [
+                        ':normalized_image' => $normalized,
+                        ':user_id' => trim($userId),
+                        ':legacy_image' => $trimmed,
+                    ]
+                );
+            }
+            return $normalized;
+        } catch (\Throwable) {
+            // Never return a persisted base64 payload to the frontend. Existing
+            // legacy data remains untouched so it can be migrated once WebP
+            // support and the public upload directory are available.
+            return '';
+        }
+    }
+
     protected function isDataUrl(string $value): bool
     {
         return preg_match('/^\s*data:[^;]+;base64,/', $value) === 1;
@@ -972,7 +1035,10 @@ abstract class BaseService
             'name' => (string) ($row['name'] ?? ''),
             'phone' => (string) ($row['phone'] ?? ''),
             'role' => (string) ($row['role'] ?? ''),
-            'image' => (string) ($row['image'] ?? ''),
+            'image' => $this->normalizeUserProfileImageValue(
+                (string) ($row['image'] ?? ''),
+                isset($row['id']) ? (string) $row['id'] : null
+            ),
             'email' => $this->nullableString($row['email'] ?? null),
             'address' => $this->nullableString($row['address'] ?? null),
             'birthday' => $this->nullableString($row['birthday'] ?? null),

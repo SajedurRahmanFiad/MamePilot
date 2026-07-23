@@ -201,6 +201,66 @@ final class WooCommerceApi extends BaseService
         }
 
         $maxOrders = max(1, min(1000, (int) ($params['maxOrders'] ?? self::DEFAULT_SYNC_LIMIT)));
+        return $this->syncStoreOrders($store, $maxOrders);
+    }
+
+    /**
+     * Background sync: pull recent orders from all enabled WooCommerce stores.
+     * Does not require admin auth — intended for CLI / background endpoint use.
+     */
+    public function syncAllStoresBackground(array $params = []): array
+    {
+        $this->assertSchema();
+        $stores = $this->database->fetchAll('SELECT * FROM woocommerce_stores WHERE enabled = 1');
+        if ($stores === []) {
+            return ['success' => true, 'message' => 'No enabled WooCommerce stores.', 'stores' => 0, 'results' => []];
+        }
+
+        $maxOrders = max(1, min(100, (int) ($params['maxOrders'] ?? 50)));
+        $results = [];
+        $totalImported = 0;
+        $totalFailed = 0;
+
+        foreach ($stores as $store) {
+            try {
+                $result = $this->syncStoreOrders($store, $maxOrders);
+                $results[] = ['storeId' => (string) $store['id'], 'storeName' => (string) $store['store_name'], ...$result];
+                $totalImported += (int) ($result['imported'] ?? 0);
+                $totalFailed += (int) ($result['failed'] ?? 0);
+            } catch (\Throwable $exception) {
+                $results[] = [
+                    'storeId' => (string) $store['id'],
+                    'storeName' => (string) $store['store_name'],
+                    'success' => false,
+                    'message' => $exception->getMessage(),
+                    'imported' => 0, 'skipped' => 0, 'failed' => 0,
+                ];
+                $totalFailed++;
+                error_log('WooCommerce background sync failed for store ' . (string) $store['store_name'] . ': ' . $exception->getMessage());
+            }
+        }
+
+        $message = sprintf('Background sync complete: %d store(s), %d new order(s), %d failure(s).', count($stores), $totalImported, $totalFailed);
+        return [
+            'success' => $totalFailed === 0,
+            'message' => $message,
+            'stores' => count($stores),
+            'imported' => $totalImported,
+            'failed' => $totalFailed,
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Shared order-sync logic used by both manual and background sync.
+     * Fetches recent orders for a single store and imports them.
+     */
+    private function syncStoreOrders(array $store, int $maxOrders): array
+    {
+        if (empty($store['enabled'])) {
+            return ['success' => true, 'message' => 'Store is disabled.', 'processed' => 0, 'imported' => 0, 'skipped' => 0, 'failed' => 0, 'errors' => []];
+        }
+
         $page = 1;
         $processed = 0;
         $imported = 0;

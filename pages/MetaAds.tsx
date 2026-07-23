@@ -371,8 +371,8 @@ const MetaAdsList: React.FC = () => {
           </div>
           <h2 className="text-lg font-black text-gray-900">Meta Ads Not Configured</h2>
           <p className="mt-2 text-sm text-gray-500">Set up your Meta App ID and credentials in Settings before using Meta Ads.</p>
-          <button onClick={() => navigate('/settings?tab=meta-ads')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0f2f57] px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-[#143b6d] transition-colors">
-            Go to Settings
+          <button onClick={() => navigate('/settings?tab=meta-ads')} className={`mt-5 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white ${theme.buttons.primary}`}>
+            Open Settings
           </button>
         </div>
       </div>

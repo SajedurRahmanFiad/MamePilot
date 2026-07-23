@@ -1,21 +1,25 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components';
+import DynamicFilterBar, { type CombinedFilter, type FilterDefinition, type FilterOperator } from '../../components/DynamicFilterBar';
+import FilterBar, { FilterRange } from '../../components/FilterBar';
 import { db } from '../../db';
 import { formatCurrency, getStatusColor, ICONS } from '../../constants';
 import { theme } from '../../theme';
 import { useAuth } from '../../src/contexts/AuthProvider';
 import { useToastNotifications } from '../../src/contexts/ToastContext';
 import { useCapabilities } from '../../src/hooks/useCapabilities';
-import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage } from '../../src/hooks/useQueries';
+import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage, useUsers } from '../../src/hooks/useQueries';
 import { UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
-import { FilterRange, formatDate, formatDateTime as formatDisplayDateTime } from '../../utils';
+import { formatDate, formatDateTime as formatDisplayDateTime } from '../../utils';
 import Pagination from '../../src/components/Pagination';
 
 type RoleFilter = 'All Users' | 'Admins' | 'Employees';
+type ActivityFilter = 'active' | 'inactive';
+type ReportFilterSelection = { operator: FilterOperator; value: string; display?: string };
 
 const FILTERS: FilterRange[] = ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom'];
-const ROLE_FILTERS: RoleFilter[] = ['All Users', 'Admins', 'Employees'];
+const EMPTY_AVATAR_PATH = '/uploads/Empty_avatar.png';
 
 const formatDateTime = (value?: string | null): string => {
   return formatDisplayDateTime(value) || 'N/A';
@@ -30,11 +34,15 @@ const statusBadge = (status: string) => {
   return getStatusColor(status);
 };
 
+const formatPeriodBoundary = (value: string): string => {
+  return value.includes('T') || /\d{2}:\d{2}/.test(value) ? formatDateTime(value) : formatDate(value);
+};
+
 const periodLabel = (filterRange: FilterRange, customDates: { from: string; to: string }) => {
   if (filterRange !== 'Custom') return filterRange;
-  if (customDates.from && customDates.to) return `${formatDate(customDates.from)} to ${formatDate(customDates.to)}`;
-  if (customDates.from) return `From ${formatDate(customDates.from)}`;
-  if (customDates.to) return `Until ${formatDate(customDates.to)}`;
+  if (customDates.from && customDates.to) return `${formatPeriodBoundary(customDates.from)} to ${formatPeriodBoundary(customDates.to)}`;
+  if (customDates.from) return `From ${formatPeriodBoundary(customDates.from)}`;
+  if (customDates.to) return `Until ${formatPeriodBoundary(customDates.to)}`;
   return 'Custom Range';
 };
 const escapeHtml = (value: string): string =>
@@ -57,20 +65,38 @@ const toAbsoluteAssetUrl = (value?: string | null): string => {
   }
 };
 
+const getCurrentThemeColors = () => {
+  const defaults = { primary: '#0f2f57', medium: '#3c5a82', dark: '#0c203b', soft: '#ebf4ff' };
+  if (typeof window === 'undefined') return defaults;
+
+  const styles = window.getComputedStyle(document.documentElement);
+  const readHex = (property: string, fallback: string) => {
+    const value = styles.getPropertyValue(property).trim();
+    return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+  };
+
+  return {
+    primary: readHex('--primary-color', defaults.primary),
+    medium: readHex('--primary-medium', defaults.medium),
+    dark: readHex('--primary-dark', defaults.dark),
+    soft: readHex('--primary-soft', defaults.soft),
+  };
+};
+
 const buildUserReportPdfHtml = (params: {
   report: UserActivityPerformanceSummary;
   companyName: string;
   companyLogo: string;
   generatedAt: string;
   selectedPeriod: string;
+  themeColors: { primary: string; medium: string; dark: string; soft: string };
 }) => {
-  const { report, companyName, companyLogo, generatedAt, selectedPeriod } = params;
+  const { report, companyName, companyLogo, generatedAt, selectedPeriod, themeColors } = params;
   const roleTone = hasAdminAccess(report.user.role) ? 'role-admin' : 'role-employee';
-  const userImageSrc = toAbsoluteAssetUrl(report.user.image);
+  const userImageSrc = toAbsoluteAssetUrl(report.user.image || EMPTY_AVATAR_PATH);
+  const emptyAvatarSrc = toAbsoluteAssetUrl(EMPTY_AVATAR_PATH);
   const companyLogoSrc = toAbsoluteAssetUrl(companyLogo);
-  const userAvatar = userImageSrc
-    ? `<img src="${escapeHtml(userImageSrc)}" alt="${escapeHtml(report.user.name)}" class="avatar-image" />`
-    : `<div class="avatar-fallback">${escapeHtml(report.user.name.slice(0, 1).toUpperCase())}</div>`;
+  const userAvatar = `<img src="${escapeHtml(userImageSrc)}" alt="${escapeHtml(report.user.name)}" class="avatar-image" onerror="this.onerror=null;this.src='${escapeHtml(emptyAvatarSrc)}';" />`;
 
   const summaryCards = [
     {
@@ -181,7 +207,7 @@ const buildUserReportPdfHtml = (params: {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(sanitizeFileName(`${report.user.name} Activity Performance Report`))}</title>
     <style>
-      @page { size: A4; margin: 12mm; }
+      @page { size: A4; margin: 9mm; }
       * {
         box-sizing: border-box;
         -webkit-print-color-adjust: exact;
@@ -189,10 +215,11 @@ const buildUserReportPdfHtml = (params: {
       }
       body {
         margin: 0;
-        background: #f2efe8;
+        background: #ffffff;
+        color: #111827;
         font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-        font-size: 13px;
-        line-height: 1.55;
+        font-size: 10.5px;
+        line-height: 1.35;
       }
       .page {
         width: 100%;
@@ -202,58 +229,46 @@ const buildUserReportPdfHtml = (params: {
       .header {
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 8px;
       }
       .user-card {
         display: flex;
-        gap: 14px;
+        gap: 10px;
         align-items: center;
-        padding: 18px;
-        border-radius: 14px;
+        padding: 10px 12px;
+        border-radius: 8px;
         background-color: #f8fafc;
-        border: 1px solid #d6dde5;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        border: 1px solid #dbe3ec;
       }
-      .avatar-image,
-      .avatar-fallback {
-        width: 72px;
-        height: 72px;
-        border-radius: 16px;
-        flex: 0 0 72px;
+      .avatar-image {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        flex: 0 0 52px;
       }
       .avatar-image {
         object-fit: cover;
         border: 1px solid #d8e0e8;
       }
-      .avatar-fallback {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #243a57;
-        color: #ffffff;
-        font-size: 28px;
-        font-weight: 700;
-      }
       .user-meta h1 {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
-        font-size: 26px;
+        font-size: 18px;
         font-weight: 700;
         line-height: 1.2;
       }
       .meta-line {
-        margin-top: 8px;
+        margin-top: 5px;
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
-        font-size: 12.5px;
+        font-size: 10.5px;
         color: #526173;
       }
       .role-badge {
         display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 9.5px;
+        padding: 4px 7px;
+        border-radius: 4px;
+        font-size: 8px;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
@@ -263,55 +278,56 @@ const buildUserReportPdfHtml = (params: {
         color: #6a4f8d;
       }
       .role-employee {
-        background: #e7eef8;
-        color: #365f8d;
+        background: ${escapeHtml(themeColors.soft)};
+        color: ${escapeHtml(themeColors.primary)};
       }
       .report-meta {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        gap: 18px;
-        padding: 24px;
-        border-radius: 16px;
-        background-color: #f7f9fa;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background-color: ${escapeHtml(themeColors.primary)};
+        color: #ffffff;
       }
       .report-meta-top {
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
-        gap: 18px;
+        gap: 12px;
       }
       .report-meta-copy {
-        max-width: 72%;
+        min-width: 0;
       }
       .report-kicker {
         margin: 0;
-        font-size: 9.5px;
+        font-size: 8px;
         font-weight: 700;
         letter-spacing: 0.16em;
         text-transform: uppercase;
       }
       .report-title {
-        margin: 8px 0 6px;
-        font-family: Georgia, "Times New Roman", serif;
-        font-size: 26px;
+        margin: 0 0 2px;
+        font-size: 18px;
         font-weight: 700;
         letter-spacing: 0.01em;
       }
       .report-subtitle {
         margin: 0;
-        font-size: 12.5px;
-        line-height: 1.5;
+        font-size: 10.5px;
+        line-height: 1.35;
       }
       .company-lockup {
         display: flex;
-        align-items: flex-start;
-        gap: 14px;
+        align-items: center;
+        gap: 10px;
       }
       .company-logo {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border-radius: 8px;
         object-fit: cover;
         background-color: rgba(255, 255, 255, 0.14);
       }
@@ -324,82 +340,79 @@ const buildUserReportPdfHtml = (params: {
       }
       .meta-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
-        font-size: 12.5px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        font-size: 10.5px;
       }
       .meta-item {
-        padding: 12px 14px;
-        border-radius: 12px;
+        padding: 7px 9px;
+        border-radius: 6px;
         border: 1px solid rgba(255, 255, 255, 0.16);
         background-color: rgba(255, 255, 255, 0.08);
       }
       .meta-item span {
         display: block;
-        font-size: 9.5px;
+        font-size: 8px;
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         margin-bottom: 4px;
       }
       .section {
-        margin-top: 16px;
+        margin-top: 10px;
       }
       .section-panel {
         border: 1px solid #d9e0e7;
-        border-radius: 16px;
+        border-radius: 8px;
         background-color: #ffffff;
-        padding: 20px;
+        padding: 12px;
       }
       .section-title {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
-        font-size: 19px;
+        font-size: 15px;
         font-weight: 700;
       }
       .section-subtitle {
-        margin: 5px 0 0;
-        font-size: 12.5px;
+        margin: 3px 0 0;
+        font-size: 10.5px;
         color: #677487;
         line-height: 1.5;
       }
       .summary-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-        margin-top: 16px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
       }
       .summary-card {
-        border-radius: 14px;
-        padding: 16px;
+        border-radius: 8px;
+        padding: 9px 10px;
         border: 1px solid;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       }
       .summary-label {
         margin: 0;
-        font-size: 9.5px;
+        font-size: 7.5px;
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         color: #5c6978;
       }
       .summary-value {
-        margin: 8px 0 5px;
-        font-family: Georgia, "Times New Roman", serif;
-        font-size: 25px;
+        margin: 5px 0 3px;
+        font-size: 16px;
         font-weight: 700;
         line-height: 1.2;
       }
       .summary-hint {
         margin: 0;
-        font-size: 12px;
+        font-size: 9.5px;
         color: #5d6875;
         line-height: 1.45;
       }
       .card-blue {
-        background-color: #f5f9ff;
-        border-color: #d8e4f2;
-        color: #20344f;
+        background-color: ${escapeHtml(themeColors.soft)};
+        border-color: ${escapeHtml(themeColors.medium)};
+        color: ${escapeHtml(themeColors.dark)};
       }
       .card-green {
         background-color: #f7fbf7;
@@ -419,24 +432,23 @@ const buildUserReportPdfHtml = (params: {
       .detail-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-        margin-top: 16px;
+        gap: 10px;
+        margin-top: 10px;
       }
       .sub-panel {
         border: 1px solid #dde4ea;
-        border-radius: 14px;
-        padding: 18px;
+        border-radius: 8px;
+        padding: 12px;
         background-color: #fcfdff;
       }
       .sub-title {
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
-        font-size: 16.5px;
+        font-size: 14px;
         font-weight: 700;
       }
       .sub-copy {
-        margin: 6px 0 0;
-        font-size: 12.5px;
+        margin: 3px 0 0;
+        font-size: 10.5px;
         color: #677487;
         line-height: 1.5;
       }
@@ -444,12 +456,12 @@ const buildUserReportPdfHtml = (params: {
       table.status-table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 16px;
+        margin-top: 8px;
       }
       table.info-table td,
       table.status-table td,
       table.status-table th {
-        padding: 10px 0;
+        padding: 6px 0;
         border-bottom: 1px solid #e3e8ee;
         vertical-align: top;
       }
@@ -458,18 +470,18 @@ const buildUserReportPdfHtml = (params: {
         border-bottom: none;
       }
       table.info-table td:first-child {
-        font-size: 12.5px;
+        font-size: 10.5px;
         color: #5d6b7a;
         padding-right: 12px;
       }
       table.info-table td:last-child {
         text-align: right;
-        font-size: 12.5px;
+        font-size: 10.5px;
         font-weight: 600;
         color: #203040;
       }
       table.status-table th {
-        font-size: 9.5px;
+        font-size: 8px;
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
@@ -483,28 +495,26 @@ const buildUserReportPdfHtml = (params: {
         text-align: right;
       }
       table.status-table td {
-        font-size: 12.5px;
+        font-size: 10.5px;
         color: #2a3747;
       }
-      .note {
-        margin-top: 16px;
-        padding: 13px 15px;
-        border-radius: 14px;
-        border: 1px solid #d9e0e7;
-        background-color: #fafcfe;
-        font-size: 12.5px;
-        color: #5a6776;
-        line-height: 1.6;
-      }
       .footer {
-        margin-top: 18px;
-        font-size: 11px;
+        margin-top: 10px;
+        padding-top: 7px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 9px;
         color: #808b98;
         text-align: center;
       }
-      @media (max-width: 900px) {
-        .report-meta-top,
-        .company-lockup {
+      .report-meta,
+      .user-card,
+      .summary-card,
+      .sub-panel {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      @media (max-width: 600px) {
+        .report-meta-top {
           flex-direction: column;
         }
         .report-meta-copy {
@@ -522,7 +532,6 @@ const buildUserReportPdfHtml = (params: {
         .user-card,
         .summary-card,
         .sub-panel,
-        .note,
         .meta-item {
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -539,7 +548,7 @@ const buildUserReportPdfHtml = (params: {
               ${logoMarkup}
               <div class="report-meta-copy">
                 <h2 class="report-title">${escapeHtml(companyName)}</h2>
-                <p class="report-subtitle">User activity, performance review, and compensation support summary</p>
+                <p class="report-subtitle">User activity and performance report</p>
               </div>
             </div>
           </div>
@@ -563,7 +572,7 @@ const buildUserReportPdfHtml = (params: {
 
       <section class="section section-panel">
         <h3 class="section-title">Performance Snapshot</h3>
-        <p class="section-subtitle">All headline figures currently shown on the user activity and performance page, prepared for formal review.</p>
+        <p class="section-subtitle">Summary for the selected reporting period.</p>
         <div class="summary-grid">
           ${renderSummaryCards}
         </div>
@@ -571,8 +580,8 @@ const buildUserReportPdfHtml = (params: {
 
       <section class="section detail-grid">
         <div class="sub-panel">
-          <h4 class="sub-title">Salary Analysis Inputs</h4>
-          <p class="sub-copy">Tracked inputs that support salary, commission, and performance-based compensation decisions.</p>
+          <h4 class="sub-title">Performance Indicators</h4>
+          <p class="sub-copy">Key activity and value measures for performance, salary, commission, and incentive review.</p>
           <table class="info-table">
             ${renderStatRows(salaryRowsLeft)}
           </table>
@@ -602,10 +611,6 @@ const buildUserReportPdfHtml = (params: {
         </div>
       </section>
 
-      <div class="note">
-        Detailed activity log entries remain available on-screen for analysis and are intentionally excluded from this PDF export.
-      </div>
-
       <div class="footer">
         Generated by ${escapeHtml(companyName)} | User Activity & Performance
       </div>
@@ -631,7 +636,7 @@ const buildUserReportPdfHtml = (params: {
 };
 
 const MetricCard: React.FC<{ label: string; value: string; hint: string; tone: string }> = ({ label, value, hint, tone }) => (
-  <div className={`rounded-2xl border p-4 ${tone}`}>
+  <div className={`rounded-xl border p-4 ${tone}`}>
     <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">{label}</p>
     <h4 className="mt-3 text-lg font-black">{value}</h4>
     <p className="mt-2 text-xs font-semibold opacity-80">{hint}</p>
@@ -646,7 +651,7 @@ const StatRow: React.FC<{ label: string; value: string; accent?: boolean }> = ({
 );
 
 const SkeletonBlock: React.FC<{ className: string }> = ({ className }) => (
-  <div className={`animate-pulse rounded-2xl bg-gray-200/80 ${className}`} />
+  <div className={`animate-pulse rounded-lg bg-gray-200/80 ${className}`} />
 );
 
 const ActivityLogSkeleton: React.FC = () => (
@@ -664,8 +669,8 @@ const ActivityLogSkeleton: React.FC = () => (
 
 const UserActivityReportSkeleton: React.FC = () => (
   <div className="space-y-6">
-    <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-      <div className="bg-gradient-to-r from-[#0f2f57] via-[#153867] to-[#1f4b85] px-6 py-6">
+    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+      <div className={`${theme.colors.primary[600]} px-6 py-6`}>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-center gap-4">
             <SkeletonBlock className="h-14 w-14 bg-white/20" />
@@ -675,7 +680,7 @@ const UserActivityReportSkeleton: React.FC = () => (
               <SkeletonBlock className="h-4 w-64 bg-white/20" />
             </div>
           </div>
-          <div className="space-y-2 rounded-2xl border border-white/15 bg-white/10 px-5 py-4">
+          <div className="space-y-2 rounded-lg border border-white/15 bg-white/10 px-5 py-4">
             <SkeletonBlock className="h-4 w-48 bg-white/20" />
             <SkeletonBlock className="h-4 w-40 bg-white/20" />
           </div>
@@ -683,7 +688,7 @@ const UserActivityReportSkeleton: React.FC = () => (
       </div>
       <div className="grid grid-cols-1 gap-4 px-6 py-6 md:grid-cols-2 xl:grid-cols-5">
         {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="rounded-2xl border border-gray-100 p-4">
+          <div key={index} className="rounded-xl border border-gray-100 p-4">
             <SkeletonBlock className="h-3 w-24" />
             <SkeletonBlock className="mt-4 h-7 w-28" />
             <SkeletonBlock className="mt-3 h-4 w-36" />
@@ -693,11 +698,11 @@ const UserActivityReportSkeleton: React.FC = () => (
     </div>
 
     {Array.from({ length: 3 }).map((_, index) => (
-      <section key={index} className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+      <section key={index} className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 bg-gradient-to-r from-white via-[#f8fbff] to-white px-6 py-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
-              <SkeletonBlock className="h-16 w-16 rounded-2xl" />
+              <SkeletonBlock className="h-16 w-16 rounded-lg" />
               <div className="space-y-3">
                 <SkeletonBlock className="h-6 w-40" />
                 <SkeletonBlock className="h-4 w-32" />
@@ -709,7 +714,7 @@ const UserActivityReportSkeleton: React.FC = () => (
         <div className="space-y-6 px-6 py-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((__, cardIndex) => (
-              <div key={cardIndex} className="rounded-2xl border border-gray-100 p-4">
+              <div key={cardIndex} className="rounded-xl border border-gray-100 p-4">
                 <SkeletonBlock className="h-3 w-24" />
                 <SkeletonBlock className="mt-4 h-7 w-28" />
                 <SkeletonBlock className="mt-3 h-4 w-32" />
@@ -717,7 +722,7 @@ const UserActivityReportSkeleton: React.FC = () => (
             ))}
           </div>
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-3xl border border-gray-100 p-6">
+            <div className="rounded-xl border border-gray-100 p-6">
               {Array.from({ length: 6 }).map((__, rowIndex) => (
                 <div key={rowIndex} className="flex items-center justify-between border-b border-gray-100 py-3 last:border-b-0">
                   <SkeletonBlock className="h-4 w-32" />
@@ -725,7 +730,7 @@ const UserActivityReportSkeleton: React.FC = () => (
                 </div>
               ))}
             </div>
-            <div className="rounded-3xl border border-gray-100 p-6">
+            <div className="rounded-xl border border-gray-100 p-6">
               {Array.from({ length: 5 }).map((__, rowIndex) => (
                 <div key={rowIndex} className="space-y-2 py-2">
                   <div className="flex items-center justify-between">
@@ -827,15 +832,17 @@ const UserActivityPerformanceReport: React.FC = () => {
   const toast = useToastNotifications();
   const { hasCapability } = useCapabilities();
   const { data: companySettings } = useCompanySettings();
+  const { data: allUsers = [] } = useUsers();
   const hasSales = hasCapability('sales');
   const hasPurchases = hasCapability('purchases');
   const hasBanking = hasCapability('banking');
 
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('All Users');
-  const [onlyActive, setOnlyActive] = useState(false);
+  const [includeTime, setIncludeTime] = useState(false);
+  const [userFilter, setUserFilter] = useState<ReportFilterSelection | null>(null);
+  const [roleFilter, setRoleFilter] = useState<ReportFilterSelection | null>(null);
+  const [activityFilter, setActivityFilter] = useState<ReportFilterSelection | null>(null);
   const [expandedLogUserIds, setExpandedLogUserIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 10;
@@ -844,15 +851,83 @@ const UserActivityPerformanceReport: React.FC = () => {
   const companyName = companySettings?.name || db.settings.company.name || 'Mame Pilot';
   const companyLogo = companySettings?.logo || db.settings.company.logo || '';
   const selectedPeriod = useMemo(() => periodLabel(filterRange, customDates), [filterRange, customDates]);
+  const reportFilterDefinitions = useMemo<FilterDefinition[]>(() => [
+    {
+      type: 'User',
+      label: 'User name, phone, or role',
+      operators: ['=', '≠', 'contains', 'does not contain'],
+      allowCustomValue: true,
+      customValuePlaceholder: 'Search users',
+      renderOptions: (query: string) => {
+        const normalized = query.trim().toLowerCase();
+        return allUsers
+          .filter((candidate) => {
+            const label = `${candidate.name} ${candidate.phone || ''} ${candidate.role || ''}`.toLowerCase();
+            return !normalized || label.includes(normalized);
+          })
+          .map((candidate) => ({
+            value: String(candidate.phone || candidate.name).trim(),
+            label: [candidate.name, candidate.phone, candidate.role].filter(Boolean).join(' · '),
+          }));
+      },
+    },
+    {
+      type: 'Role',
+      operators: ['=', '≠'],
+      values: [
+        { value: 'Admins', label: 'Admins' },
+        { value: 'Employees', label: 'Employees' },
+      ],
+    },
+    {
+      type: 'Activity',
+      operators: ['=', '≠'],
+      values: [
+        { value: 'active', label: 'Has activity' },
+        { value: 'inactive', label: 'No activity' },
+      ],
+    },
+  ], [allUsers]);
+  const initialReportFilters = useMemo<CombinedFilter[]>(() => {
+    const filters: CombinedFilter[] = [];
+    if (userFilter) {
+      filters.push({ id: 'user-search', type: 'User', operator: userFilter.operator, value: userFilter.value, display: userFilter.display });
+    }
+    if (roleFilter) {
+      filters.push({ id: 'role', type: 'Role', operator: roleFilter.operator, value: roleFilter.value });
+    }
+    if (activityFilter) {
+      filters.push({
+        id: 'activity',
+        type: 'Activity',
+        operator: activityFilter.operator,
+        value: activityFilter.value,
+        display: activityFilter.value === 'active' ? 'Has activity' : 'No activity',
+      });
+    }
+    return filters;
+  }, [activityFilter, roleFilter, userFilter]);
+  const handleApplyReportFilters = (filters: CombinedFilter[]) => {
+    const userFilter = filters.find((filter) => filter.type === 'User');
+    const role = filters.find((filter) => filter.type === 'Role');
+    const activity = filters.find((filter) => filter.type === 'Activity');
+
+    setUserFilter(userFilter ? { operator: userFilter.operator, value: userFilter.value.trim(), display: userFilter.display } : null);
+    setRoleFilter(role && (role.value === 'Admins' || role.value === 'Employees') ? { operator: role.operator, value: role.value, display: role.display } : null);
+    setActivityFilter(activity && (activity.value === 'active' || activity.value === 'inactive') ? { operator: activity.operator, value: activity.value, display: activity.display } : null);
+  };
   const reportFilters = useMemo(
     () => ({
-      search: searchQuery,
-      roleFilter,
+      search: userFilter?.value || '',
+      searchOperator: userFilter?.operator || 'contains',
+      roleFilter: (roleFilter?.value as RoleFilter | undefined) || 'All Users',
+      roleOperator: roleFilter?.operator || '=',
       filterRange,
       customDates,
-      onlyActive,
+      activityFilter: (activityFilter?.value as ActivityFilter | undefined) || 'all',
+      activityOperator: activityFilter?.operator || '=',
     }),
-    [searchQuery, roleFilter, filterRange, customDates, onlyActive]
+    [activityFilter, customDates, filterRange, roleFilter, userFilter]
   );
   const canLoadReport = !!user && hasAdminAccess(user.role);
   const { data: reportPage, isPending: reportLoading, isFetching: reportFetching } = useUserActivityPerformanceReportPage(
@@ -869,7 +944,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   React.useEffect(() => {
     setCurrentPage(1);
     setExpandedLogUserIds([]);
-  }, [searchQuery, roleFilter, filterRange, customDates.from, customDates.to, onlyActive]);
+  }, [userFilter, roleFilter, activityFilter, filterRange, customDates.from, customDates.to]);
 
   React.useEffect(() => {
     setExpandedLogUserIds([]);
@@ -896,6 +971,7 @@ const UserActivityPerformanceReport: React.FC = () => {
         companyLogo,
         generatedAt,
         selectedPeriod,
+        themeColors: getCurrentThemeColors(),
       });
 
       printWindow.document.open();
@@ -923,68 +999,72 @@ const UserActivityPerformanceReport: React.FC = () => {
           </button>
           <div>
             <h2 className="text-2xl font-bold text-gray-900">User Activity & Performance</h2>
+            <p className="mt-1 text-sm text-gray-500">Compare activity, output, and financial contribution by user.</p>
           </div>
         </div>
-        
       </div>
 
-      <div className="report-cover overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-        <div className="bg-gradient-to-r from-[#0f2f57] via-[#153867] to-[#1f4b85] px-6 py-6 text-white">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+      <div className="report-cover overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className={`${theme.colors.primary[600]} px-5 py-5 text-white sm:px-6`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
-              {companyLogo ? <img src={companyLogo} alt={companyName} className="h-14 w-14 rounded-2xl object-cover bg-white/10 p-1" /> : <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-2xl font-black">{companyName.slice(0, 1).toUpperCase()}</div>}
+              {companyLogo ? <img src={companyLogo} alt={companyName} className="h-12 w-12 rounded-lg bg-white/10 object-cover p-1" /> : <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10 text-xl font-black">{companyName.slice(0, 1).toUpperCase()}</div>}
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#c7dff5]">Admin Report</p>
-                <h3 className="mt-2 text-2xl font-black">{companyName}</h3>
-                <p className="mt-1 text-sm text-[#d7e8fb]">Built from tracked orders, bills, and transactions by user.</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">Admin Report</p>
+                <h3 className="mt-1 text-xl font-black">{companyName}</h3>
+                <p className="mt-1 text-sm text-white/80">Orders, bills, and finance activity attributed to each user.</p>
               </div>
             </div>
-            <div className="rounded-2xl border border-white/15 bg-white/10 px-5 py-4 text-sm font-medium">
-              <p><span className="text-[#c7dff5]">Period:</span> {selectedPeriod}</p>
-              <p className="mt-1"><span className="text-[#c7dff5]">Generated:</span> {generatedAt}</p>
+            <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium">
+              <p><span className="text-white/70">Period:</span> {selectedPeriod}</p>
+              <p className="mt-1"><span className="text-white/70">Generated:</span> {generatedAt}</p>
             </div>
           </div>
         </div>
 
-        <div className="no-print border-b border-gray-100 px-6 py-6">
-          <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-            <div className="space-y-4">
-              <div className="relative">
-                <input type="text" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by name, phone, or role" className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 pl-11 text-sm font-medium outline-none focus:ring-2 focus:ring-[#3c5a82]" />
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">{ICONS.Search}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 p-2">
-                {FILTERS.map((range) => (
-                  <button key={range} onClick={() => setFilterRange(range)} className={`rounded-xl px-4 py-2 text-xs font-black transition-all ${filterRange === range ? `${theme.colors.primary[600]} text-white` : 'text-gray-500 hover:bg-white'}`}>{range}</button>
-                ))}
-                {filterRange === 'Custom' && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-                    <input type="date" value={customDates.from} onChange={(event) => setCustomDates((current) => ({ ...current, from: event.target.value }))} className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold outline-none focus:ring-2 focus:ring-[#3c5a82]" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-300">To</span>
-                    <input type="date" value={customDates.to} onChange={(event) => setCustomDates((current) => ({ ...current, to: event.target.value }))} className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold outline-none focus:ring-2 focus:ring-[#3c5a82]" />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {ROLE_FILTERS.map((filter) => (
-                  <button key={filter} onClick={() => setRoleFilter(filter)} className={`rounded-xl border px-4 py-2 text-xs font-black transition-all ${roleFilter === filter ? 'border-[#0f2f57] bg-[#0f2f57] text-white' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}>{filter}</button>
-                ))}
-              </div>
-              <label className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3">
-                <input type="checkbox" checked={onlyActive} onChange={(event) => setOnlyActive(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0f2f57] focus:ring-[#3c5a82]" />
+        <div className="no-print border-b border-gray-100 bg-gray-50/60 px-5 py-5 sm:px-6">
+          <div className="space-y-5">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-black text-gray-900">Only show users with activity</p>
-                  <p className="text-xs font-medium text-gray-500">Hide empty users for the selected period.</p>
+                  <p className="text-sm font-black text-gray-900">Date and time</p>
+                  <p className="text-xs text-gray-500">Choose the activity period included in every total below.</p>
                 </div>
-              </label>
+              </div>
+              <div className="[&_.rounded-2xl]:!rounded-xl">
+                <FilterBar
+                  filterRange={filterRange}
+                  setFilterRange={setFilterRange}
+                  customDates={customDates}
+                  setCustomDates={setCustomDates}
+                  includeTime={includeTime}
+                  setIncludeTime={setIncludeTime}
+                  ranges={FILTERS}
+                  compact
+                  showOnMobile
+                />
+              </div>
+            </div>
+            <div>
+              <div className="mb-2">
+                <p className="text-sm font-black text-gray-900">User filters</p>
+                <p className="text-xs text-gray-500">Filter by a user detail, role group, or whether activity exists.</p>
+              </div>
+              <DynamicFilterBar
+                filterDefinitions={reportFilterDefinitions}
+                initialFilters={initialReportFilters}
+                onApply={handleApplyReportFilters}
+                className="[&>div>div]:!rounded-xl"
+              />
             </div>
           </div>
         </div>
 
-        <div className={`grid grid-cols-1 gap-4 px-6 py-6 md:grid-cols-2 ${hasSales && hasBanking ? 'xl:grid-cols-5' : hasSales || hasBanking ? 'xl:grid-cols-4' : 'xl:grid-cols-2'}`}>
+        <div className="border-b border-gray-100 px-5 pt-5 sm:px-6">
+          <h3 className="text-base font-black text-gray-900">Report overview</h3>
+          <p className="mt-1 text-sm text-gray-500">A quick reading of the users and activity included by the filters.</p>
+        </div>
+        <div className={`grid grid-cols-1 gap-3 px-5 py-5 sm:px-6 md:grid-cols-2 ${hasSales && hasBanking ? 'xl:grid-cols-5' : hasSales || hasBanking ? 'xl:grid-cols-4' : 'xl:grid-cols-2'}`}>
           <MetricCard label="Users Included" value={formatCount(totals.users)} hint={`${formatCount(totals.activeUsers)} active users`} tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />
           {hasSales && <MetricCard label="Orders Captured" value={formatCount(totals.orders)} hint="User-created orders in this view" tone="bg-emerald-50 border-emerald-100 text-emerald-700" />}
           {hasPurchases && <MetricCard label="Bills Captured" value={formatCount(totals.bills)} hint="User-created bills in this view" tone="bg-amber-50 border-amber-100 text-amber-700" />}
@@ -994,7 +1074,7 @@ const UserActivityPerformanceReport: React.FC = () => {
       </div>
 
       {reports.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-gray-200 bg-white p-16 text-center text-gray-500">No users matched the current filters.</div>
+        <div className="rounded-xl border border-dashed border-gray-200 bg-white p-16 text-center text-gray-500">No users matched the current filters.</div>
       ) : (
         <>
           <div className="space-y-6">
@@ -1010,40 +1090,45 @@ const UserActivityPerformanceReport: React.FC = () => {
               const maxStatus = Math.max(1, ...statusRows.map((row) => row.value));
 
               return (
-                <section key={report.user.id} className="user-report-card overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm" data-user-id={report.user.id}>
-                  <div className="border-b border-gray-100 bg-gradient-to-r from-white via-[#f8fbff] to-white px-6 py-6">
-                    <div className="rounded-3xl">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div className="rounded-2xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
-                          <div className="flex items-center gap-4">
-                            {report.user.image ? <img src={report.user.image} alt={report.user.name} className="h-16 w-16 rounded-2xl object-cover ring-1 ring-[#dce6f2]" /> : <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0f2f57] text-2xl font-black text-white">{report.user.name.slice(0, 1).toUpperCase()}</div>}
-                            <div className="min-w-0">
-                              <h3 className="mt-2 truncate text-xl font-black text-gray-900">{report.user.name}</h3>
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-gray-500">
-                                <span>{report.user.phone || 'No phone'}</span>
-                                <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${hasAdminAccess(report.user.role) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{report.user.role}</span>
-                              </div>
-                            </div>
+                <section key={report.user.id} className="user-report-card overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm" data-user-id={report.user.id}>
+                  <div className="border-b border-gray-100 bg-[#f8fbff] px-5 py-5 sm:px-6">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <img
+                          src={report.user.image || EMPTY_AVATAR_PATH}
+                          alt={report.user.name}
+                          onError={(event) => {
+                            event.currentTarget.onerror = null;
+                            event.currentTarget.src = EMPTY_AVATAR_PATH;
+                          }}
+                          className="h-16 w-16 rounded-lg object-cover ring-1 ring-[#dce6f2]"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#3c5a82]">User performance</p>
+                          <h3 className="mt-1 truncate text-xl font-black text-gray-900">{report.user.name}</h3>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium text-gray-500">
+                            <span>{report.user.phone || 'No phone'}</span>
+                            <span className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${hasAdminAccess(report.user.role) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{report.user.role}</span>
                           </div>
                         </div>
-                        <div className="no-print md:ml-auto">
-                          <Button onClick={() => handleExportUserPdf(report)} variant="primary" size="md" icon={ICONS.Download}>Export PDF</Button>
-                        </div>
                       </div>
-                      <div className="mt-4 grid gap-3 text-sm font-medium text-gray-600 sm:grid-cols-2">
-                        <div className="rounded-2xl bg-white px-4 py-3 border border-[#d6e3f0]">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Period</p>
-                          <p className="mt-1 text-sm font-bold text-gray-900">{selectedPeriod}</p>
-                        </div>
-                        <div className="rounded-2xl bg-white px-4 py-3 border border-[#d6e3f0]">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Generated</p>
-                          <p className="mt-1 text-sm font-bold text-gray-900">{generatedAt}</p>
-                        </div>
+                      <div className="no-print md:ml-auto">
+                        <Button onClick={() => handleExportUserPdf(report)} variant="primary" size="md" icon={ICONS.Download}>Export PDF</Button>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 text-sm font-medium text-gray-600 sm:grid-cols-2">
+                      <div className="rounded-lg border border-[#d6e3f0] bg-white px-4 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Period</p>
+                        <p className="mt-1 text-sm font-bold text-gray-900">{selectedPeriod}</p>
+                      </div>
+                      <div className="rounded-lg border border-[#d6e3f0] bg-white px-4 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Generated</p>
+                        <p className="mt-1 text-sm font-bold text-gray-900">{generatedAt}</p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-8 px-6 py-6">
+                  <div className="space-y-6 px-5 py-5 sm:px-6">
                     <div className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${hasSales && hasPurchases && hasBanking ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
                       {hasSales && <MetricCard label="Orders Created" value={formatCount(report.metrics.ordersCreated)} hint={`${formatCount(report.metrics.completedOrders)} completed | ${formatCount(report.metrics.cancelledOrders)} cancelled`} tone="bg-[#ebf4ff] border-[#c7dff5] text-[#0f2f57]" />}
                       {hasSales && <MetricCard label="Order Value" value={formatCurrency(report.metrics.orderValue)} hint={`${formatCurrency(report.metrics.orderPaidAmount)} collected`} tone="bg-emerald-50 border-emerald-100 text-emerald-700" />}
@@ -1052,9 +1137,9 @@ const UserActivityPerformanceReport: React.FC = () => {
                     </div>
 
                     <div className={`grid gap-6 ${hasSales ? 'xl:grid-cols-[1.15fr_0.85fr]' : ''}`}>
-                      <div className="rounded-3xl border border-gray-100 bg-white p-6">
-                        <h4 className="text-lg font-black text-gray-900">Salary Analysis Inputs</h4>
-                        <p className="text-sm text-gray-500">Tracked inputs admins can use for salary and incentive decisions.</p>
+                      <div className="rounded-xl border border-gray-100 bg-white p-5">
+                        <h4 className="text-lg font-black text-gray-900">Performance indicators</h4>
+                        <p className="text-sm text-gray-500">Key activity and value measures for performance, salary, and incentive review.</p>
                         <div className="mt-4 grid gap-1 md:grid-cols-2 md:gap-x-8">
                           <div>
                             <StatRow label="Active days" value={formatCount(report.metrics.activeDays)} accent />
@@ -1076,7 +1161,7 @@ const UserActivityPerformanceReport: React.FC = () => {
                       </div>
 
                       {hasSales && (
-                      <div className="rounded-3xl border border-gray-100 bg-white p-6">
+                      <div className="rounded-xl border border-gray-100 bg-white p-5">
                         <h4 className="text-lg font-black text-gray-900">Order Status Breakdown</h4>
                         <p className="mt-1 text-sm text-gray-500">Snapshot of all orders created by this user.</p>
                         <div className="mt-6 space-y-4">
@@ -1103,18 +1188,18 @@ const UserActivityPerformanceReport: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="exclude-from-user-pdf overflow-hidden rounded-3xl border border-gray-100 bg-white">
+                    <div className="exclude-from-user-pdf overflow-hidden rounded-xl border border-gray-100 bg-white">
                       <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-5 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h4 className="text-lg font-black text-gray-900">Detailed Activity Log</h4>
                           <p className="text-sm text-gray-500">Every filtered order, bill, and transaction linked to this user.</p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <div className="rounded-2xl bg-gray-50 px-3 py-2 text-sm font-bold text-gray-600">{formatCount(report.metrics.totalActivities)} entries</div>
+                          <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm font-bold text-gray-600">{formatCount(report.metrics.totalActivities)} entries</div>
                           <button
                             type="button"
                             onClick={() => toggleActivityLog(report.user.id)}
-                            className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-black text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-black text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
                             aria-expanded={isLogExpanded}
                           >
                             {isLogExpanded ? 'Hide Log' : 'Show Log'}
