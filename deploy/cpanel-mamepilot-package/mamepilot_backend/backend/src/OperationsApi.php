@@ -2974,24 +2974,45 @@ final class OperationsApi extends BaseService
         $topCustomerBindings = [':dashboard_completed_status' => 'Completed'];
         $this->applyDashboardDateBounds('o.order_date', $filters, $topCustomerConditions, $topCustomerBindings, 'dashboard_top_customer');
 
-        $topCustomerRows = $this->database->fetchAll(
-            'SELECT
-                o.customer_id AS customerId,
-                COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
-                COUNT(*) AS orderCount,
-                COALESCE(SUM(o.total), 0) AS totalAmount
-             FROM orders o
-             LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE ' . implode(' AND ', $topCustomerConditions) . '
-             GROUP BY o.customer_id, c.name
-             ORDER BY totalAmount DESC
-             LIMIT 5',
-            $topCustomerBindings
-        );
+        try {
+            $topCustomerRows = $this->database->fetchAll(
+                'SELECT
+                    o.customer_id AS customerId,
+                    COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
+                    c.profile_image AS profileImage,
+                    COUNT(*) AS orderCount,
+                    COALESCE(SUM(o.total), 0) AS totalAmount
+                 FROM orders o
+                 LEFT JOIN customers c ON c.id = o.customer_id
+                 WHERE ' . implode(' AND ', $topCustomerConditions) . '
+                 GROUP BY o.customer_id, c.name, c.profile_image
+                 ORDER BY totalAmount DESC
+                 LIMIT 5',
+                $topCustomerBindings
+            );
+            $hasProfileImage = true;
+        } catch (\Throwable $e) {
+            $topCustomerRows = $this->database->fetchAll(
+                'SELECT
+                    o.customer_id AS customerId,
+                    COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
+                    COUNT(*) AS orderCount,
+                    COALESCE(SUM(o.total), 0) AS totalAmount
+                 FROM orders o
+                 LEFT JOIN customers c ON c.id = o.customer_id
+                 WHERE ' . implode(' AND ', $topCustomerConditions) . '
+                 GROUP BY o.customer_id, c.name
+                 ORDER BY totalAmount DESC
+                 LIMIT 5',
+                $topCustomerBindings
+            );
+            $hasProfileImage = false;
+        }
 
         $topCustomers = array_map(
             static fn(array $row): array => [
                 'name' => (string) ($row['customerName'] ?? 'Unknown Customer'),
+                'image' => $hasProfileImage ? (string) ($row['profileImage'] ?? '') : '',
                 'orders' => (int) ($row['orderCount'] ?? 0),
                 'amount' => (float) ($row['totalAmount'] ?? 0),
             ],
@@ -3029,6 +3050,7 @@ final class OperationsApi extends BaseService
 
                 if (!isset($productMap[$key])) {
                     $productMap[$key] = [
+                        'productId' => trim((string) ($item['productId'] ?? '')),
                         'name' => $productName,
                         'qty' => 0,
                     ];
@@ -3047,6 +3069,31 @@ final class OperationsApi extends BaseService
             return strcmp((string) $left['name'], (string) $right['name']);
         });
         $topSoldProducts = array_slice($topSoldProducts, 0, 5);
+
+        $productIds = array_filter(array_column($topSoldProducts, 'productId'));
+        if ($productIds) {
+            [$placeholders, $bindings] = $this->inClause($productIds, 'top_product_image');
+            $imageRows = $this->database->fetchAll(
+                'SELECT id, image FROM products WHERE id IN (' . implode(', ', $placeholders) . ')',
+                $bindings
+            );
+            $imageMap = [];
+            foreach ($imageRows as $imgRow) {
+                $imageMap[(string) $imgRow['id']] = (string) ($imgRow['image'] ?? '');
+            }
+            foreach ($topSoldProducts as &$product) {
+                $pid = $product['productId'] ?? '';
+                $product['image'] = ($pid !== '' && isset($imageMap[$pid])) ? $imageMap[$pid] : '';
+                unset($product['productId']);
+            }
+            unset($product);
+        } else {
+            foreach ($topSoldProducts as &$product) {
+                $product['image'] = '';
+                unset($product['productId']);
+            }
+            unset($product);
+        }
 
         return [
             'totalSales' => $totalSales,

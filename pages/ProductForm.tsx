@@ -10,6 +10,14 @@ import { useProduct, useCategories, useUnits } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 const ProductForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -62,6 +70,7 @@ const ProductForm: React.FC = () => {
   // Form state
   const [form, setForm] = useState<Partial<Product>>({
     name: '',
+    slug: '',
     category: '',
     image: '',
     unitId: undefined,
@@ -71,6 +80,7 @@ const ProductForm: React.FC = () => {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slugTouched, setSlugTouched] = useState(false);
 
   // Dynamic pricing state
   const [dynamicPricingEnabled, setDynamicPricingEnabled] = useState(false);
@@ -115,6 +125,9 @@ const ProductForm: React.FC = () => {
   React.useEffect(() => {
     if (existingProduct) {
       setForm(existingProduct);
+      if (existingProduct.slug) {
+        setSlugTouched(true);
+      }
       // Parse dynamic pricing if exists
       if (existingProduct.dynamicPricing) {
         try {
@@ -155,6 +168,7 @@ const ProductForm: React.FC = () => {
     try {
       const productData: Omit<Product, 'id'> = {
         name: form.name || '',
+        slug: form.slug ? slugify(form.slug) : undefined,
         category: form.category || '',
         image: form.image || '/uploads/Empty_product.png',
         unitId: form.unitId || undefined,
@@ -222,11 +236,16 @@ const ProductForm: React.FC = () => {
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Product Name</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`}
               value={form.name}
               onChange={e => setForm({...form, name: e.target.value})}
+              onBlur={() => {
+                if (!slugTouched && form.name) {
+                  setForm(prev => ({ ...prev, slug: slugify(prev.name || '') }));
+                }
+              }}
               placeholder="e.g. Cotton Polo T-Shirt"
             />
           </div>
@@ -242,6 +261,21 @@ const ProductForm: React.FC = () => {
               {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Slug</label>
+          <input
+            type="text"
+            className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]"
+            value={form.slug || ''}
+            onChange={e => {
+              setSlugTouched(true);
+              setForm({...form, slug: e.target.value});
+            }}
+            placeholder="auto-generated-from-name"
+          />
+          <p className="text-[10px] text-gray-400 mt-1 font-medium">Used to match products during WooCommerce import. Auto-generated from name if left empty.</p>
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">

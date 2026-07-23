@@ -527,7 +527,16 @@ const Dashboard: React.FC = () => {
                 ) : (
                   adminSnapshot.topSoldProducts.map((product, index) => (
                     <div key={`${product.name}-${index}`} className="flex items-center justify-between border-b border-gray-50 pb-2 last:border-b-0 last:pb-0">
-                      <span className="text-sm font-bold text-gray-900">{product.name}</span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        {product.image ? (
+                          <img src={product.image} alt={product.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                        ) : (
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[10px] font-black text-gray-400">
+                            {product.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="truncate text-sm font-bold text-gray-900">{product.name}</span>
+                      </div>
                       <span className="text-sm font-black text-emerald-600">{product.qty}</span>
                     </div>
                   ))
@@ -550,9 +559,18 @@ const Dashboard: React.FC = () => {
                 ) : (
                   adminSnapshot.topCustomers.map((customer, index) => (
                     <div key={`${customer.name}-${index}`} className="flex items-center justify-between border-b border-gray-50 pb-2 last:border-b-0 last:pb-0">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-gray-900">{customer.name}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{customer.orders} orders</span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        {customer.image ? (
+                          <img src={customer.image} alt={customer.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                        ) : (
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[10px] font-black text-gray-400">
+                            {customer.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm font-bold text-gray-900">{customer.name}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{customer.orders} orders</span>
+                        </div>
                       </div>
                       <span className="text-sm font-black text-emerald-600">{formatCurrency(customer.amount)}</span>
                     </div>

@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS units (
 CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) NULL,
   image LONGTEXT NULL,
   category VARCHAR(255) NULL,
   unit_id VARCHAR(64) NULL,
@@ -182,6 +183,7 @@ CREATE TABLE IF NOT EXISTS products (
   deleted_at DATETIME NULL,
   deleted_by VARCHAR(64) NULL,
   PRIMARY KEY (id),
+  UNIQUE KEY uq_products_slug (slug),
   KEY idx_products_name (name),
   KEY idx_products_category (category),
   KEY idx_products_created_by (created_by),

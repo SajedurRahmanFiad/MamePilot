@@ -228,6 +228,7 @@ export interface Vendor {
 export interface Product {
   id: string;
   name: string;
+  slug?: string;
   image: string;
   category: string;
   unitId?: string;
@@ -810,11 +811,13 @@ export interface DashboardExpenseCategory {
 
 export interface DashboardTopProduct {
   name: string;
+  image?: string;
   qty: number;
 }
 
 export interface DashboardTopCustomer {
   name: string;
+  image?: string;
   orders: number;
   amount: number;
 }

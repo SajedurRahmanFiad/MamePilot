@@ -493,6 +493,121 @@ final class WooCommerceApi extends BaseService
         return $result;
     }
 
+    private function fetchWcProduct(array $store, int $wcProductId): ?array
+    {
+        if ($wcProductId <= 0) {
+            return null;
+        }
+        try {
+            $response = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/products/' . $wcProductId);
+            $product = $response['json'] ?? null;
+            return is_array($product) ? $product : null;
+        } catch (\Throwable $exception) {
+            error_log('WooCommerce: Could not fetch product #' . $wcProductId . ': ' . $exception->getMessage());
+            return null;
+        }
+    }
+
+    private function downloadAndSaveImage(string $imageUrl, string $category = 'product-images'): ?string
+    {
+        $url = trim($imageUrl);
+        if ($url === '') {
+            return null;
+        }
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return null;
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+        $data = curl_exec($ch);
+        $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+
+        if ($data === false || strlen($data) === 0) {
+            return null;
+        }
+
+        $uploadDir = $this->uploadPublicPath($category);
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            return null;
+        }
+
+        $mimeType = strtolower(trim(explode(';', $contentType)[0] ?? ''));
+        $extension = $this->extensionFromMimeType($mimeType, null);
+
+        // Try WebP conversion for images
+        if ($this->isImageMimeType($mimeType)) {
+            $webpFileName = $this->uniqueUploadFilename('webp');
+            $webpTargetPath = $uploadDir . DIRECTORY_SEPARATOR . $webpFileName;
+            if ($this->saveImageAsWebp($data, $webpTargetPath)) {
+                return '/uploads/' . trim($category, '/') . '/' . $webpFileName;
+            }
+        }
+
+        $fileName = $this->uniqueUploadFilename($extension);
+        $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $fileName;
+        if (file_put_contents($targetPath, $data) === false) {
+            return null;
+        }
+
+        return '/uploads/' . trim($category, '/') . '/' . $fileName;
+    }
+
+    private function resolveCategoryFromWc(array $wcCategories, string $systemUserId): string
+    {
+        if (empty($wcCategories) || !is_array($wcCategories)) {
+            return 'WooCommerce';
+        }
+
+        // Try to match the first WC category by name against local categories
+        foreach ($wcCategories as $wcCat) {
+            if (!is_array($wcCat)) {
+                continue;
+            }
+            $catName = trim((string) ($wcCat['name'] ?? ''));
+            if ($catName === '') {
+                continue;
+            }
+
+            $existing = $this->database->fetchOne(
+                'SELECT name FROM categories WHERE name = :name AND type = :type LIMIT 1',
+                [':name' => $catName, ':type' => 'Product']
+            );
+            if ($existing !== null) {
+                return (string) $existing['name'];
+            }
+
+            // Category doesn't exist locally — create it
+            $catId = $this->uuid4();
+            try {
+                $this->database->execute(
+                    'INSERT INTO categories (id, name, type, color, is_system, created_at, updated_at)
+                     VALUES (:id, :name, :type, :color, 0, :created_at, :updated_at)',
+                    [
+                        ':id' => $catId, ':name' => $catName, ':type' => 'Product', ':color' => '#3B82F6',
+                        ':created_at' => $this->database->nowUtc(), ':updated_at' => $this->database->nowUtc(),
+                    ]
+                );
+                return $catName;
+            } catch (\Throwable $exception) {
+                // Likely a duplicate key race — just use the name
+                error_log('WooCommerce: Could not create category "' . $catName . '": ' . $exception->getMessage());
+                return $catName;
+            }
+        }
+
+        return 'WooCommerce';
+    }
+
     private function resolveProduct(array $store, array $line, string $systemUserId, int $orderedQuantity): array
     {
         $wcProductId = (int) ($line['product_id'] ?? 0);
@@ -500,6 +615,8 @@ final class WooCommerceApi extends BaseService
         if ($wcProductId <= 0) {
             $wcProductId = -max(1, (int) ($line['id'] ?? random_int(1, PHP_INT_MAX)));
         }
+
+        // Step 1: Check for existing product link
         $link = $this->database->fetchOne(
             'SELECT p.id, p.name, p.stock, l.auto_created
              FROM woocommerce_product_links l
@@ -519,22 +636,69 @@ final class WooCommerceApi extends BaseService
             return $link;
         }
 
+        // Step 2: Fetch full product data from WooCommerce API
+        $wcProduct = $this->fetchWcProduct($store, $wcProductId);
         $name = trim((string) ($line['name'] ?? '')) ?: 'WooCommerce Product ' . abs($wcProductId);
-        $product = $this->database->fetchOne(
-            'SELECT id, name, stock FROM products WHERE deleted_at IS NULL AND name = :name ORDER BY created_at ASC LIMIT 1',
-            [':name' => $name]
-        );
+        $slug = '';
+        $imageUrl = null;
+        $wcCategories = [];
+
+        if ($wcProduct !== null) {
+            $slug = trim((string) ($wcProduct['slug'] ?? ''));
+            $wcImages = is_array($wcProduct['images'] ?? null) ? $wcProduct['images'] : [];
+            if (!empty($wcImages[0]['src'])) {
+                $imageUrl = (string) $wcImages[0]['src'];
+            }
+            $wcCategories = is_array($wcProduct['categories'] ?? null) ? $wcProduct['categories'] : [];
+        }
+
+        // Generate slug from name if not available from WC
+        if ($slug === '') {
+            $slug = strtolower(trim($name));
+            $slug = preg_replace('/[^a-z0-9]+/', '-', $slug) ?? '';
+            $slug = trim($slug, '-');
+        }
+
+        // Step 3: Match by slug
+        $product = null;
+        if ($slug !== '') {
+            $product = $this->database->fetchOne(
+                'SELECT id, name, stock FROM products WHERE deleted_at IS NULL AND slug = :slug ORDER BY created_at ASC LIMIT 1',
+                [':slug' => $slug]
+            );
+        }
+
+        // Step 4: If no slug match, fall back to name match
+        if ($product === null) {
+            $product = $this->database->fetchOne(
+                'SELECT id, name, stock FROM products WHERE deleted_at IS NULL AND name = :name ORDER BY created_at ASC LIMIT 1',
+                [':name' => $name]
+            );
+        }
+
+        // Step 5: Create new product if no match found
         $autoCreated = false;
         if ($product === null) {
             $autoCreated = true;
             $productId = $this->uuid4();
             $now = $this->database->nowUtc();
             $salePrice = max(0.0, round((float) ($line['price'] ?? 0), 2));
+
+            // Download and save product image
+            $imagePath = null;
+            if ($imageUrl !== null) {
+                $imagePath = $this->downloadAndSaveImage($imageUrl);
+            }
+
+            // Resolve category from WooCommerce categories
+            $category = $this->resolveCategoryFromWc($wcCategories, $systemUserId);
+
             $this->database->execute(
-                'INSERT INTO products (id, name, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at)
-                 VALUES (:id, :name, NULL, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)',
+                'INSERT INTO products (id, name, slug, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at)
+                 VALUES (:id, :name, :slug, :image, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)',
                 [
-                    ':id' => $productId, ':name' => $name, ':category' => 'WooCommerce', ':sale_price' => $salePrice,
+                    ':id' => $productId, ':name' => $name, ':slug' => $slug !== '' ? $slug : null,
+                    ':image' => $imagePath, ':category' => $category, ':sale_price' => $salePrice,
                     ':stock' => $orderedQuantity, ':created_by' => $systemUserId, ':created_at' => $now, ':updated_at' => $now,
                 ]
             );

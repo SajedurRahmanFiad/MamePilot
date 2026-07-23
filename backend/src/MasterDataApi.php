@@ -966,12 +966,15 @@ final class MasterDataApi extends BaseService
     {
         $actor = $this->currentUser();
         $id = $this->stringId($params['id'] ?? null);
+        $name = trim((string) ($params['name'] ?? ''));
+        $slug = $this->generateProductSlug($params['slug'] ?? null, $name);
         $this->database->execute(
-            'INSERT INTO products (id, name, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
-             VALUES (:id, :name, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
+            'INSERT INTO products (id, name, slug, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
-                ':name' => trim((string) ($params['name'] ?? '')),
+                ':name' => $name,
+                ':slug' => $slug,
                 ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'product-images', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
                 ':category' => $this->nullableString($params['category'] ?? null),
                 ':unit_id' => $this->nullableString($params['unitId'] ?? null),
@@ -997,6 +1000,10 @@ final class MasterDataApi extends BaseService
 
         if (array_key_exists('name', $updates)) {
             $payload['name'] = trim((string) $updates['name']);
+        }
+        if (array_key_exists('slug', $updates)) {
+            $slugValue = trim((string) ($updates['slug'] ?? ''));
+            $payload['slug'] = $slugValue !== '' ? $this->slugify($slugValue) : null;
         }
         if (array_key_exists('image', $updates)) {
             $payload['image'] = $this->normalizeUploadedFileValue($updates['image'] ?? null, 'product-images', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
@@ -7451,5 +7458,22 @@ PROMPT;
             $safeResponse = trim(preg_replace('/[\r\n]+/', ' ', $response) ?? '');
             throw new RuntimeException('SMTP server rejected the request (' . $code . '): ' . mb_substr($safeResponse, 0, 200));
         }
+    }
+
+    private function slugify(string $text): string
+    {
+        $slug = strtolower(trim($text));
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug) ?? '';
+        return trim($slug, '-');
+    }
+
+    private function generateProductSlug(?string $slug, string $name): ?string
+    {
+        $normalized = trim((string) ($slug ?? ''));
+        if ($normalized !== '') {
+            return $this->slugify($normalized);
+        }
+        $fromName = $this->slugify($name);
+        return $fromName !== '' ? $fromName : null;
     }
 }

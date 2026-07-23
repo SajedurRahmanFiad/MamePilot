@@ -494,7 +494,6 @@ const DeveloperSettings: React.FC = () => {
                     >
                       {maintenanceContent.imageUrl === DEFAULT_MAINTENANCE_CONTENT.imageUrl ? 'Upload Image' : 'Change Image'}
                     </Button>
-                    <p className="text-xs text-gray-400">Compressed before upload. Stored in the public uploads folder, never in the database as base64.</p>
                   </div>
                 </div>
 
