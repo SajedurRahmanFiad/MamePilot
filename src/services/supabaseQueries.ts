@@ -409,17 +409,8 @@ export async function deleteWooCommerceStore(id: string): Promise<{ success: boo
 export async function testWooCommerceStore(id: string): Promise<{ success: boolean; message: string; ordersVisible: boolean }> { return call<any>('testWooCommerceStore', { id }, { timeoutMs: 60000 }); }
 export async function registerWooCommerceWebhook(id: string): Promise<WooCommerceStore> { return call<WooCommerceStore>('registerWooCommerceWebhook', { id }, { timeoutMs: 60000 }); }
 export async function syncWooCommerceOrders(id: string, maxOrders: number = 250): Promise<WooCommerceSyncResult> { return call<WooCommerceSyncResult>('syncWooCommerceOrders', { id, maxOrders }, { timeoutMs: 180000 }); }
-export async function syncWooCommerceBackground(): Promise<WooCommerceSyncResult & { status?: string }> {
-  const rawBase = import.meta.env.VITE_API_BASE_URL || '/api/';
-  const normalizedBase = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;
-  const response = await fetch(`${normalizedBase}/sync-woocommerce-background.php`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-  });
-  if (!response.ok) throw new Error('WooCommerce background sync returned HTTP ' + response.status);
-  return response.json();
-}
+export async function checkWooCommerceWebhookHealth(id: string): Promise<{ healthy: boolean; status: string; message: string; deliveryUrl?: string; expectedUrl?: string }> { return call<any>('checkWebhookHealth', { id }); }
+export async function repairWooCommerceWebhook(id: string): Promise<{ success: boolean; message: string }> { return call<any>('repairWebhook', { id }, { timeoutMs: 60000 }); }
 export async function fetchMarketingDashboard(filters?: { from?: string; to?: string }): Promise<MarketingDashboardResponse> {
   return call<MarketingDashboardResponse>('fetchMarketingDashboard', filters || {}, { timeoutMs: 60000 });
 }

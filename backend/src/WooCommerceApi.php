@@ -140,10 +140,186 @@ final class WooCommerceApi extends BaseService
         $this->requireAdmin();
         $store = $this->requireStore((string) ($params['id'] ?? $params['storeId'] ?? ''));
         $result = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/orders', ['per_page' => 1]);
-        return [
+        $response = [
             'success' => true,
             'message' => 'Connected to ' . (string) $store['store_name'] . ' successfully.',
             'ordersVisible' => is_array($result['json']),
+        ];
+
+        // Also verify webhook health if a webhook is registered
+        if ((int) ($store['webhook_id'] ?? 0) > 0) {
+            $health = $this->checkWebhookHealthInternal($store);
+            $response['webhookHealth'] = $health;
+            if (!$health['healthy']) {
+                $response['message'] .= ' Warning: ' . $health['message'];
+            }
+        }
+
+        return $response;
+    }
+
+    /**
+     * Check if the registered webhook is still active on WooCommerce's side.
+     * WooCommerce silently disables webhooks after repeated delivery failures.
+     */
+    public function checkWebhookHealth(array $params): array
+    {
+        $this->requireAdmin();
+        $store = $this->requireStore((string) ($params['id'] ?? $params['storeId'] ?? ''));
+        return $this->checkWebhookHealthInternal($store);
+    }
+
+    private function checkWebhookHealthInternal(array $store): array
+    {
+        $webhookId = (int) ($store['webhook_id'] ?? 0);
+        if ($webhookId <= 0) {
+            return ['healthy' => false, 'status' => 'not_registered', 'message' => 'No webhook is registered for this store.'];
+        }
+
+        try {
+            $response = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/webhooks/' . $webhookId);
+            $webhook = $response['json'] ?? null;
+            if (!is_array($webhook)) {
+                return ['healthy' => false, 'status' => 'not_found', 'message' => 'WooCommerce webhook not found. It may have been deleted.'];
+            }
+
+            $wcStatus = trim((string) ($webhook['status'] ?? ''));
+            $deliveryUrl = trim((string) ($webhook['delivery_url'] ?? ''));
+            $expectedUrl = $this->webhookUrl((string) $store['id'], (string) ($store['webhook_base_url'] ?? ''));
+
+            if ($wcStatus === 'disabled') {
+                return [
+                    'healthy' => false,
+                    'status' => 'disabled',
+                    'message' => 'WooCommerce disabled the webhook after repeated delivery failures. Click "Repair Webhook" to re-enable it.',
+                    'deliveryUrl' => $deliveryUrl,
+                ];
+            }
+
+            if ($wcStatus !== 'active') {
+                return [
+                    'healthy' => false,
+                    'status' => $wcStatus ?: 'unknown',
+                    'message' => 'Webhook status is "' . $wcStatus . '". Expected "active".',
+                    'deliveryUrl' => $deliveryUrl,
+                ];
+            }
+
+            // Verify the delivery URL matches
+            if (rtrim($deliveryUrl, '/') !== rtrim($expectedUrl, '/')) {
+                return [
+                    'healthy' => false,
+                    'status' => 'url_mismatch',
+                    'message' => 'Webhook delivery URL does not match the configured URL. Click "Repair Webhook" to fix.',
+                    'deliveryUrl' => $deliveryUrl,
+                    'expectedUrl' => $expectedUrl,
+                ];
+            }
+
+            return [
+                'healthy' => true,
+                'status' => 'active',
+                'message' => 'Webhook is active and delivering to the correct URL.',
+                'deliveryUrl' => $deliveryUrl,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'healthy' => false,
+                'status' => 'check_failed',
+                'message' => 'Could not verify webhook: ' . $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Repair a broken webhook: re-enable it on WooCommerce if disabled,
+     * or re-register if missing or URL mismatched.
+     */
+    public function repairWebhook(array $params): array
+    {
+        $this->requireAdmin();
+        $store = $this->requireStore((string) ($params['id'] ?? $params['storeId'] ?? ''));
+        $webhookId = (int) ($store['webhook_id'] ?? 0);
+        $deliveryUrl = $this->webhookUrl((string) $store['id'], (string) ($store['webhook_base_url'] ?? ''));
+        $this->assertPublicWebhookUrl($deliveryUrl);
+
+        $repaired = false;
+        $message = '';
+
+        // Try to re-enable the existing webhook if it's disabled
+        if ($webhookId > 0) {
+            try {
+                $response = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/webhooks/' . $webhookId);
+                $webhook = $response['json'] ?? null;
+                if (is_array($webhook)) {
+                    $wcStatus = trim((string) ($webhook['status'] ?? ''));
+                    $currentUrl = trim((string) ($webhook['delivery_url'] ?? ''));
+
+                    if ($wcStatus === 'disabled' || rtrim($currentUrl, '/') !== rtrim($deliveryUrl, '/')) {
+                        // Re-enable and update the delivery URL
+                        $this->storeRequest($store, 'PUT', '/wp-json/wc/v3/webhooks/' . $webhookId, [], [
+                            'status' => 'active',
+                            'delivery_url' => $deliveryUrl,
+                            'secret' => (string) $store['webhook_secret'],
+                        ]);
+                        $repaired = true;
+                        $message = 'Webhook re-enabled and delivery URL updated.';
+                    }
+                }
+            } catch (\Throwable $exception) {
+                // Webhook may have been deleted on WooCommerce's side — fall through to re-register
+                error_log('WooCommerce webhook repair (re-enable) failed: ' . $exception->getMessage());
+            }
+        }
+
+        // If we couldn't repair the existing webhook, re-register from scratch
+        if (!$repaired) {
+            $body = [
+                'name' => 'MamePilot order sync',
+                'topic' => 'order.created',
+                'delivery_url' => $deliveryUrl,
+                'secret' => (string) $store['webhook_secret'],
+                'status' => 'active',
+            ];
+
+            $remoteWebhooks = [];
+            try {
+                $remoteWebhooks = $this->fetchRemoteWebhooks($store);
+            } catch (\Throwable $exception) {
+                error_log('WooCommerce: Could not fetch remote webhooks during repair: ' . $exception->getMessage());
+            }
+
+            // Remove old webhook if it exists
+            if ($webhookId > 0) {
+                try {
+                    $this->storeRequest($store, 'DELETE', '/wp-json/wc/v3/webhooks/' . $webhookId, ['force' => true]);
+                } catch (\Throwable $exception) {
+                    error_log('WooCommerce: Could not delete old webhook during repair: ' . $exception->getMessage());
+                }
+            }
+
+            // Register fresh webhook
+            $result = $this->storeRequest($store, 'POST', '/wp-json/wc/v3/webhooks', [], $body);
+            $createdId = (int) (($result['json']['id'] ?? null) ?: 0);
+            if ($createdId <= 0) {
+                throw new RuntimeException('WooCommerce did not return a webhook id during repair.');
+            }
+
+            $this->removeDuplicateRemoteWebhooks($store, $remoteWebhooks, $createdId);
+
+            $this->database->execute(
+                'UPDATE woocommerce_stores SET webhook_id = :webhook_id, updated_at = :updated_at WHERE id = :id',
+                [':webhook_id' => $createdId, ':updated_at' => $this->database->nowUtc(), ':id' => $store['id']]
+            );
+            $repaired = true;
+            $message = 'Webhook re-registered successfully.';
+        }
+
+        $this->updateStoreSyncState((string) $store['id'], 'success', $message);
+        return [
+            'success' => true,
+            'message' => $message,
+            'webhookHealth' => $this->checkWebhookHealthInternal($this->fetchStoreForResponse((string) $store['id'])),
         ];
     }
 
@@ -201,66 +377,6 @@ final class WooCommerceApi extends BaseService
         }
 
         $maxOrders = max(1, min(1000, (int) ($params['maxOrders'] ?? self::DEFAULT_SYNC_LIMIT)));
-        return $this->syncStoreOrders($store, $maxOrders);
-    }
-
-    /**
-     * Background sync: pull recent orders from all enabled WooCommerce stores.
-     * Does not require admin auth — intended for CLI / background endpoint use.
-     */
-    public function syncAllStoresBackground(array $params = []): array
-    {
-        $this->assertSchema();
-        $stores = $this->database->fetchAll('SELECT * FROM woocommerce_stores WHERE enabled = 1');
-        if ($stores === []) {
-            return ['success' => true, 'message' => 'No enabled WooCommerce stores.', 'stores' => 0, 'results' => []];
-        }
-
-        $maxOrders = max(1, min(100, (int) ($params['maxOrders'] ?? 50)));
-        $results = [];
-        $totalImported = 0;
-        $totalFailed = 0;
-
-        foreach ($stores as $store) {
-            try {
-                $result = $this->syncStoreOrders($store, $maxOrders);
-                $results[] = ['storeId' => (string) $store['id'], 'storeName' => (string) $store['store_name'], ...$result];
-                $totalImported += (int) ($result['imported'] ?? 0);
-                $totalFailed += (int) ($result['failed'] ?? 0);
-            } catch (\Throwable $exception) {
-                $results[] = [
-                    'storeId' => (string) $store['id'],
-                    'storeName' => (string) $store['store_name'],
-                    'success' => false,
-                    'message' => $exception->getMessage(),
-                    'imported' => 0, 'skipped' => 0, 'failed' => 0,
-                ];
-                $totalFailed++;
-                error_log('WooCommerce background sync failed for store ' . (string) $store['store_name'] . ': ' . $exception->getMessage());
-            }
-        }
-
-        $message = sprintf('Background sync complete: %d store(s), %d new order(s), %d failure(s).', count($stores), $totalImported, $totalFailed);
-        return [
-            'success' => $totalFailed === 0,
-            'message' => $message,
-            'stores' => count($stores),
-            'imported' => $totalImported,
-            'failed' => $totalFailed,
-            'results' => $results,
-        ];
-    }
-
-    /**
-     * Shared order-sync logic used by both manual and background sync.
-     * Fetches recent orders for a single store and imports them.
-     */
-    private function syncStoreOrders(array $store, int $maxOrders): array
-    {
-        if (empty($store['enabled'])) {
-            return ['success' => true, 'message' => 'Store is disabled.', 'processed' => 0, 'imported' => 0, 'skipped' => 0, 'failed' => 0, 'errors' => []];
-        }
-
         $page = 1;
         $processed = 0;
         $imported = 0;

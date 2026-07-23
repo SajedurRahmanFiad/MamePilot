@@ -225,6 +225,8 @@ final class FeatureAccess
         'testWooCommerceStore' => 'woocommerce',
         'registerWooCommerceWebhook' => 'woocommerce',
         'syncWooCommerceOrders' => 'woocommerce',
+        'checkWebhookHealth' => 'woocommerce',
+        'repairWebhook' => 'woocommerce',
     ];
 
     private Database $database;

@@ -99,6 +99,8 @@ final class ServiceLifecycle
         'deleteWooCommerceStore',
         'registerWooCommerceWebhook',
         'syncWooCommerceOrders',
+        'checkWebhookHealth',
+        'repairWebhook',
     ];
 
     private Database $database;

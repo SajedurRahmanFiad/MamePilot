@@ -1,17 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Input } from './index';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import {
+  checkWooCommerceWebhookHealth,
   deleteWooCommerceStore,
   fetchWooCommerceStores,
   registerWooCommerceWebhook,
+  repairWooCommerceWebhook,
   saveWooCommerceStore,
   syncWooCommerceOrders,
   testWooCommerceStore,
 } from '../src/services/supabaseQueries';
 import type { CompanyPage, WooCommerceStore } from '../types';
 import { formatDateTime } from '../utils';
+
+interface WebhookHealth {
+  healthy: boolean;
+  status: string;
+  message: string;
+}
 
 type StoreDraft = WooCommerceStore & { isNew?: boolean };
 
@@ -40,10 +48,30 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
   });
   const [drafts, setDrafts] = useState<StoreDraft[]>([]);
   const [busyAction, setBusyAction] = useState('');
+  const [webhookHealth, setWebhookHealth] = useState<Record<string, WebhookHealth>>({});
 
   useEffect(() => {
     if (storesQuery.data) setDrafts(storesQuery.data);
   }, [storesQuery.data]);
+
+  const checkHealth = useCallback(async (storeId: string) => {
+    try {
+      const result = await checkWooCommerceWebhookHealth(storeId);
+      setWebhookHealth((prev) => ({ ...prev, [storeId]: result }));
+    } catch {
+      setWebhookHealth((prev) => ({ ...prev, [storeId]: { healthy: false, status: 'check_failed', message: 'Could not check webhook health.' } }));
+    }
+  }, []);
+
+  // Auto-check webhook health for stores that have a webhook registered
+  useEffect(() => {
+    if (!storesQuery.data) return;
+    for (const store of storesQuery.data) {
+      if (store.webhookId && store.webhookId > 0) {
+        checkHealth(store.id);
+      }
+    }
+  }, [storesQuery.data, checkHealth]);
 
   const pageOptions = useMemo(
     () => companyPages.map((page) => ({ value: page.id, label: page.name || 'Unnamed company' })),
@@ -86,7 +114,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
 
   const runStoreAction = async (
     draft: StoreDraft,
-    actionName: 'test' | 'webhook' | 'sync',
+    actionName: 'test' | 'webhook' | 'sync' | 'repair',
     operation: () => Promise<{ message?: string }>,
   ) => {
     if (draft.isNew) {
@@ -98,11 +126,16 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
       test: 'Testing WooCommerce connection...',
       webhook: 'Turning on automatic order delivery...',
       sync: 'Syncing WooCommerce orders...',
+      repair: 'Repairing webhook connection...',
     };
     const loadingId = toast.loading(labels[actionName]);
     try {
       const result = await operation();
       await reload();
+      // Re-check health after repair or webhook registration
+      if (actionName === 'repair' || actionName === 'webhook') {
+        checkHealth(draft.id);
+      }
       toast.update(loadingId, result.message || 'WooCommerce action completed.', 'success');
     } catch (error) {
       toast.update(loadingId, error instanceof Error ? error.message : 'WooCommerce action failed.', 'error');
@@ -175,21 +208,11 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
           <li>Give the key Read/Write permission. Copy its consumer key and consumer secret into the website below.</li>
           <li>Set Public delivery base URL to your live MamePilot API folder, for example https://app.example.com/api. For local testing, use an HTTPS tunnel; WooCommerce cannot deliver to localhost.</li>
           <li>Save the website, use Test Connection, then click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
-          <li>Recent orders are synced automatically every 5 minutes. Use Sync Existing Orders to pull a larger batch of older orders on demand. Repeated syncs are safe and do not create duplicates.</li>
+          <li>Use Sync Existing Orders once if you also want older WooCommerce orders. Repeated syncs are safe and do not create duplicates.</li>
         </ol>
         <p className="mt-3 text-xs font-semibold text-blue-800">
           Customer matching uses the normalized billing phone. A match keeps the same customer record but replaces its
           name and address with the WooCommerce values; otherwise a new customer is created.
-        </p>
-      </section>
-
-      <section className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-5 py-3">
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-        </span>
-        <p className="text-sm font-semibold text-emerald-800">
-          Auto-sync is active — new WooCommerce orders are pulled every 5 minutes in the background.
         </p>
       </section>
 
@@ -276,6 +299,12 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                       <span>Imported: {store.ordersSynced} orders</span>
                       <span>Last sync: {store.lastSyncedAt ? formatDateTime(store.lastSyncedAt) : 'never'}</span>
                     </div>
+                    {store.webhookId && store.webhookId > 0 && webhookHealth[store.id] && (
+                      <div className={'mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ' + (webhookHealth[store.id].healthy ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
+                        <span className={'inline-block h-2 w-2 rounded-full ' + (webhookHealth[store.id].healthy ? 'bg-emerald-500' : 'bg-red-500')} />
+                        {webhookHealth[store.id].message}
+                      </div>
+                    )}
                     {store.lastSyncMessage && (
                       <p className={'mt-3 text-xs font-semibold ' + (store.lastSyncStatus === 'error' ? 'text-red-600' : 'text-gray-600')}>{store.lastSyncMessage}</p>
                     )}
@@ -295,6 +324,15 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                     loading={busyAction === 'webhook:' + store.id}
                     disabled={anyBusy || store.isNew || !store.enabled}
                   >Turn On Automatic Orders</Button>
+                  {store.webhookId && store.webhookId > 0 && webhookHealth[store.id] && !webhookHealth[store.id].healthy && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => runStoreAction(store, 'repair', () => repairWooCommerceWebhook(store.id))}
+                      loading={busyAction === 'repair:' + store.id}
+                      disabled={anyBusy}
+                    >Repair Webhook</Button>
+                  )}
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'sync', () => syncWooCommerceOrders(store.id))} loading={busyAction === 'sync:' + store.id} disabled={anyBusy || store.isNew || !store.enabled}>Sync Existing Orders</Button>
                   <Button type="button" variant="danger" onClick={() => removeStore(store)} loading={busyAction === 'delete:' + store.id} disabled={anyBusy}>Remove</Button>
                 </div>
