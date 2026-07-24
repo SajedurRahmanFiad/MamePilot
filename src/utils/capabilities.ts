@@ -25,6 +25,31 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   woocommerce: 'WooCommerce Order Sync',
 };
 
+export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
+  dashboard: 'Central hub showing revenue, expenses, profit charts, order stats, and employee performance comparisons with date range filtering.',
+  inventory: 'Product catalog management — create, edit, and search products with pricing, stock quantities, categories, and images.',
+  sales: 'Full sales pipeline — create and manage orders with line items, discounts, shipping, and track customer profiles with order history.',
+  recycle_bin_undoer: 'Restore soft-deleted records (orders, customers, products) or revert an order to a previous status via timeline history.',
+  purchases: 'Vendor and bill management — create purchase orders, track incoming stock, manage vendor contacts and payment records.',
+  banking: 'Financial account management — track bank accounts, record income and expense transactions, and transfer funds between accounts.',
+  human_resources: 'Employee management — HR dashboard with attendance, employee profiles, role assignment, salary processing, and per-order payroll calculations.',
+  advanced_reports: 'Analytics hub with expense, income, profit & loss, product sales, customer sales, and employee performance reports with charts.',
+  fraud_checker: 'Check courier delivery history for any phone number to identify patterns of refused deliveries or fraudulent customers.',
+  whitelabel: 'Replace Mame Pilot branding with your own company logo, name, and favicon across the app and login page.',
+  custom_roles: 'Define custom roles with granular permission toggles across orders, customers, inventory, banking, reports, and settings.',
+  courier_automation: 'Configure and dispatch shipments directly from orders via Steadfast, CarryBee, Paperfly, or Pathao with tracking IDs.',
+  marketing: 'Connect Meta Ads account to view campaign performance — spend, impressions, clicks, conversions, and ROAS with demographic breakdowns.',
+  automatic_leads: 'Leads auto-captured from WhatsApp and Messenger conversations with AI scoring, stage tracking, and conversation history.',
+  mamecx: 'Customer experience suite for feedback collection, support management, and customer engagement. Coming soon.',
+  enterprise_ai_agent: 'Floating AI assistant on every page — ask business questions, get insights, and execute multi-step actions via chat.',
+  grow_your_business: 'AI-generated business recommendations for restocking, pricing, ad spend, and product opportunities with actionable cards.',
+  be_smart: 'AI-powered smart forms — paste unstructured text (name, phone, address) and let the system extract structured customer or vendor fields automatically.',
+  whatsapp: 'Full WhatsApp Business chat interface — send and receive messages, manage conversations, view lead intelligence alongside chats.',
+  messenger: 'Facebook Messenger chat interface — message customers, send images and files, manage quick replies, with lead insights on the side.',
+  auto_calling: 'Automated voice calls to customers for order confirmation and follow-up, with call history, success rates, and prepaid balance.',
+  woocommerce: 'Connect WooCommerce stores to sync orders automatically, manage webhooks, and test connection health from Settings.',
+};
+
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   dashboard: true,
   inventory: true,

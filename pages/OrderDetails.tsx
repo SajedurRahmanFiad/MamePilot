@@ -1687,7 +1687,7 @@ const OrderDetails: React.FC = () => {
 
       {isBusinessGrowthEnabled && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
-          <p className="text-sm font-black">{customerTrust.label} · {Math.round(fraudPercentage)}% delivered</p>
+          <p className="text-sm font-black">{customerTrust.label} · {Math.round(fraudPercentage ?? 0)}% delivered</p>
           <p className="text-sm font-bold">{customerTrust.message}</p>
         </div>
       ) : null}
@@ -2042,7 +2042,7 @@ const OrderDetails: React.FC = () => {
                       <p className="mt-1 text-xs text-gray-500">
                         {order.surveyNextRetryAt ? `Retry scheduled for ${formatDateTime(order.surveyNextRetryAt)}.` : 'The status will update automatically.'}
                       </p>
-                      {order.surveyRetryCount > 0 ? <p className="mt-1 text-xs font-semibold text-gray-500">Retry attempt {order.surveyRetryCount}</p> : null}
+                      {(order.surveyRetryCount ?? 0) > 0 ? <p className="mt-1 text-xs font-semibold text-gray-500">Retry attempt {order.surveyRetryCount}</p> : null}
                     </div>
                   )}
 
