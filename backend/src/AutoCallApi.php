@@ -1273,10 +1273,13 @@ final class AutoCallApi extends BaseService
      */
     private function normalizeTriggerStatuses(mixed $statuses): array
     {
-        $allowed = ['On Hold', 'Processing', 'Created'];
+        $allowed = ['On Hold', 'Processing'];
         if (is_array($statuses)) {
             foreach ($statuses as $status) {
                 $normalized = trim((string) $status);
+                if ($normalized === 'Created') {
+                    return ['On Hold'];
+                }
                 if (in_array($normalized, $allowed, true)) {
                     return [$normalized];
                 }

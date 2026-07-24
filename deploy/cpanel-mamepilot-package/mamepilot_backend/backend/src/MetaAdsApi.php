@@ -238,7 +238,8 @@ final class MetaAdsApi extends BaseService
     public function fetchMetaAdsSyncCache(array $params = []): array
     {
         $this->currentUser();
-        $cached = $this->getCachedSyncResults();
+        $ensureSchema = empty($params['skipSchemaEnsure']);
+        $cached = $this->getCachedSyncResults($ensureSchema);
         if ($cached === null) {
             return [
                 'ok' => false,
@@ -253,15 +254,16 @@ final class MetaAdsApi extends BaseService
             'lastSyncedAt' => $cached['lastSyncedAt'],
             'lastManualSyncAt' => $cached['lastManualSyncAt'] ?? null,
             'syncDurationMs' => $cached['syncDurationMs'] ?? null,
-            'cooldownRemainingSeconds' => $this->manualSyncCooldownRemaining(),
+            'cooldownRemainingSeconds' => $this->manualSyncCooldownRemaining($ensureSchema),
         ];
     }
 
     public function fetchMetaAdsSyncStatus(array $params = []): array
     {
         $this->currentUser();
-        $cached = $this->getCachedSyncResults();
-        $cooldown = $this->manualSyncCooldownRemaining();
+        $ensureSchema = empty($params['skipSchemaEnsure']);
+        $cached = $this->getCachedSyncResults($ensureSchema);
+        $cooldown = $this->manualSyncCooldownRemaining($ensureSchema);
         return [
             'lastSyncedAt' => $cached['lastSyncedAt'] ?? null,
             'lastManualSyncAt' => $cached['lastManualSyncAt'] ?? null,
@@ -273,9 +275,13 @@ final class MetaAdsApi extends BaseService
     public function fetchMetaAds(array $params = []): array
     {
         $this->currentUser();
-        $this->ensureMetaAdsInsightsDailyTable();
-        // Auto-sync stale data in background (non-blocking)
-        $this->autoSyncIfNeeded();
+        if (empty($params['skipSchemaEnsure'])) $this->ensureMetaAdsInsightsDailyTable();
+        // Agent reads set skipAutoSync so data inspection cannot silently
+        // start an external synchronization. The agent exposes syncMetaAds as
+        // a separate confirmed action.
+        if (empty($params['skipAutoSync'])) {
+            $this->autoSyncIfNeeded();
+        }
         $businessId = trim((string) ($params['businessId'] ?? ''));
         $businessOperator = trim((string) ($params['businessOperator'] ?? '='));
         $accountId = trim((string) ($params['adAccountId'] ?? ''));
@@ -1598,9 +1604,13 @@ final class MetaAdsApi extends BaseService
         }
     }
 
-    private function getCachedSyncResults(): ?array
+    private function getCachedSyncResults(bool $ensureSchema = true): ?array
     {
-        $this->ensureMetaAdsSyncCacheTable();
+        if ($ensureSchema) {
+            $this->ensureMetaAdsSyncCacheTable();
+        } elseif (!$this->tableExists('meta_ads_sync_cache')) {
+            return null;
+        }
         
         $row = $this->database->fetchOne('SELECT sync_data, last_synced_at, last_manual_sync_at, sync_duration_ms FROM meta_ads_sync_cache WHERE id = :id LIMIT 1', [':id' => 'meta-ads-sync-default']);
         if ($row === null) {
@@ -1616,9 +1626,13 @@ final class MetaAdsApi extends BaseService
         ];
     }
 
-    private function manualSyncCooldownRemaining(): int
+    private function manualSyncCooldownRemaining(bool $ensureSchema = true): int
     {
-        $this->ensureMetaAdsSyncCacheTable();
+        if ($ensureSchema) {
+            $this->ensureMetaAdsSyncCacheTable();
+        } elseif (!$this->tableExists('meta_ads_sync_cache')) {
+            return 0;
+        }
         $row = $this->database->fetchOne(
             'SELECT last_manual_sync_at FROM meta_ads_sync_cache WHERE id = :id LIMIT 1',
             [':id' => 'meta-ads-sync-default']
@@ -1661,9 +1675,13 @@ final class MetaAdsApi extends BaseService
         return (string) $row['access_token'];
     }
 
-    private function getCachedInsights(string $adId, string $category, int $ttlHours = 6): ?array
+    private function getCachedInsights(string $adId, string $category, int $ttlHours = 6, bool $ensureSchema = true): ?array
     {
-        $this->ensureMetaAdsInsightsCacheTable();
+        if ($ensureSchema) {
+            $this->ensureMetaAdsInsightsCacheTable();
+        } elseif (!$this->tableExists('meta_ads_insights_cache')) {
+            return null;
+        }
         $row = $this->database->fetchOne('SELECT data_json, last_synced_at FROM meta_ads_insights_cache WHERE ad_id = :ad_id AND category = :category LIMIT 1', [':ad_id' => $adId, ':category' => $category]);
         if ($row === null) return null;
         $lastSynced = $row['last_synced_at'] ? strtotime((string) $row['last_synced_at']) : 0;
@@ -1701,8 +1719,9 @@ final class MetaAdsApi extends BaseService
         if ($adRow === null) return ['data' => []];
         $metaAdId = (string) $adRow['meta_ad_id'];
         $currency = $this->nullableString($adRow['currency'] ?? null);
-        $cached = $this->getCachedInsights($id, 'daily');
+        $cached = $this->getCachedInsights($id, 'daily', 6, empty($params['skipSchemaEnsure']));
         if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        if (!empty($params['skipRemoteFetch'])) return ['data' => [], 'currency' => $currency, 'refreshRequired' => true];
         try {
             $accessToken = $this->getActiveMetaAccessToken();
             $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
@@ -1746,8 +1765,9 @@ final class MetaAdsApi extends BaseService
         if ($adRow === null) return ['data' => []];
         $metaAdId = (string) $adRow['meta_ad_id'];
         $currency = $this->nullableString($adRow['currency'] ?? null);
-        $cached = $this->getCachedInsights($id, 'demographics');
+        $cached = $this->getCachedInsights($id, 'demographics', 6, empty($params['skipSchemaEnsure']));
         if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        if (!empty($params['skipRemoteFetch'])) return ['data' => [], 'currency' => $currency, 'refreshRequired' => true];
         try {
             $accessToken = $this->getActiveMetaAccessToken();
             $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
@@ -1781,8 +1801,9 @@ final class MetaAdsApi extends BaseService
         if ($adRow === null) return ['data' => []];
         $metaAdId = (string) $adRow['meta_ad_id'];
         $currency = $this->nullableString($adRow['currency'] ?? null);
-        $cached = $this->getCachedInsights($id, 'placements');
+        $cached = $this->getCachedInsights($id, 'placements', 6, empty($params['skipSchemaEnsure']));
         if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        if (!empty($params['skipRemoteFetch'])) return ['data' => [], 'currency' => $currency, 'refreshRequired' => true];
         try {
             $accessToken = $this->getActiveMetaAccessToken();
             $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
@@ -1815,8 +1836,9 @@ final class MetaAdsApi extends BaseService
         if ($adRow === null) return ['data' => []];
         $metaAdId = (string) $adRow['meta_ad_id'];
         $currency = $this->nullableString($adRow['currency'] ?? null);
-        $cached = $this->getCachedInsights($id, 'devices');
+        $cached = $this->getCachedInsights($id, 'devices', 6, empty($params['skipSchemaEnsure']));
         if ($cached !== null) return ['data' => $cached, 'currency' => $currency];
+        if (!empty($params['skipRemoteFetch'])) return ['data' => [], 'currency' => $currency, 'refreshRequired' => true];
         try {
             $accessToken = $this->getActiveMetaAccessToken();
             $rows = $this->graphGetAll('/' . $metaAdId . '/insights', $accessToken, [
@@ -1946,8 +1968,8 @@ final class MetaAdsApi extends BaseService
     public function fetchMarketingDashboard(array $params = []): array
     {
         $this->currentUser();
-        $this->autoSyncIfNeeded();
-        $this->ensureMetaAdsInsightsDailyTable();
+        if (empty($params['skipAutoSync'])) $this->autoSyncIfNeeded();
+        if (empty($params['skipSchemaEnsure'])) $this->ensureMetaAdsInsightsDailyTable();
 
         $from = $this->normalizeDateOnly((string) ($params['from'] ?? ''));
         $to = $this->normalizeDateOnly((string) ($params['to'] ?? ''));

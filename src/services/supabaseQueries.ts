@@ -10,6 +10,8 @@ import type {
   Customer,
   CustomerSalesReportData,
   Order,
+  OrderUndoPlan,
+  OrderUndoResult,
   PayrollPayment,
   PayrollSettings,
   PayrollSummaryRow,
@@ -154,7 +156,8 @@ export async function updateOrder(id: string, updates: Partial<Order>) { return 
 export async function deleteOrder(id: string) { await remove('deleteOrder', id); }
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
 export async function fetchOrderByNumber(orderNumber: string) { return call<Order | null>('fetchOrderByNumber', { orderNumber }); }
-export async function revertOrderStatus(payload: { orderId: string; targetStatus: string }) { return call<Order>('revertOrderStatus', payload); }
+export async function fetchOrderUndoPlan(orderId: string) { return call<OrderUndoPlan>('fetchOrderUndoPlan', { orderId }); }
+export async function revertOrderStatus(payload: { orderId: string; restorePointId: string; targetStatus: string }) { return call<OrderUndoResult>('revertOrderStatus', payload); }
 export async function processOrderReturnExchange(payload: ProcessOrderReturnExchangePayload) { return call<Order>('processOrderReturnExchange', payload); }
 
 export async function fetchAccounts() { return call<Account[]>('fetchAccounts'); }

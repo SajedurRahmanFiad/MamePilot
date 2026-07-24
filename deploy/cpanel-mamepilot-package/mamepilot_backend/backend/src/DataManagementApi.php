@@ -1803,7 +1803,7 @@ final class DataManagementApi extends BaseService
             'customer_id' => $customerId,
             'page_id' => $pageId,
             'created_by' => $this->resolveUserId($row, $actor),
-            'status' => $this->requiredText($row, 'status', 'Status'),
+            'status' => $this->canonicalOrderStatus($this->requiredText($row, 'status', 'Status')),
             'items' => $this->jsonEncode($items),
             'subtotal' => $this->formatMoney($subtotal),
             'discount' => $this->formatMoney(max(0, $this->number($row, 'discount'))),

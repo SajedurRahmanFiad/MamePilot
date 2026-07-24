@@ -45,12 +45,20 @@ const emptyGateway: PaymentGatewaySettings = {
 
 const emptyAgentSettings: AgentSettings = {
   enabled: false,
-  showReasoningSummaries: true,
+  showPlanActivity: true,
   showToolActivity: true,
-  maxReasoningSteps: 5,
-  maxToolCalls: 10,
-  queryRowLimit: 1000,
-  queryTimeoutMs: 30000,
+  maxReasoningSteps: 8,
+  maxToolCalls: 12,
+  queryRowLimit: 100,
+  queryTimeoutMs: 15000,
+  queryMaxColumns: 30,
+  queryMaxBytes: 100000,
+  runTimeoutSeconds: 240,
+  contextBudgetTokens: 12000,
+  maxOutputTokens: 4096,
+  retryLimit: 2,
+  confirmationExpiryMinutes: 15,
+  leaseSeconds: 90,
 };
 
 const emptyBusinessGrowthSettings: BusinessGrowthSettings = {
@@ -718,7 +726,16 @@ const DeveloperSettings: React.FC = () => {
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">Mame AI Settings</h3>
-                <p className="mt-1 text-sm text-gray-500">Control the Mame AI runtime and its safe read-only data tools. Select its provider and model in the LLMs tab.</p>
+                <p className="mt-1 text-sm text-gray-500">Control the durable Mame AI queue, safe business tools, confirmation expiry, and runtime budgets. Assign fast, reasoning, and multimodal roles in the LLMs tab.</p>
+              </div>
+
+              <div className={`rounded-2xl border p-5 ${agentForm.workerReady ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><p className="text-sm font-black text-gray-900">Worker {agentForm.workerReady ? 'ready' : 'heartbeat not detected'}</p><p className="mt-1 text-sm text-gray-600">Queue depth: {agentForm.queueDepth ?? 0} · Last heartbeat: {agentForm.workerLastHeartbeat || 'Never'}</p></div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${agentForm.workerReady ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{agentForm.workerReady ? 'Ready' : 'Check cron'}</span>
+                </div>
+                {agentForm.workerLastSuccessAt && <p className="mt-2 text-xs font-semibold text-gray-500">Last success: {agentForm.workerLastSuccessAt}</p>}
+                {agentForm.workerLastError && <p className="mt-2 text-sm font-semibold text-red-700">Last error: {agentForm.workerLastError}</p>}
               </div>
 
               <div className="grid gap-5 md:grid-cols-2">
@@ -777,19 +794,27 @@ const DeveloperSettings: React.FC = () => {
                     onChange={(e) => setAgentForm({ ...agentForm, queryTimeoutMs: Number(e.target.value) * 1000 })}
                   />
                 </label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Run Timeout (sec)</span><input type="number" min={30} max={900} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.runTimeoutSeconds} onChange={(e) => setAgentForm({ ...agentForm, runTimeoutSeconds: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Context Budget (tokens)</span><input type="number" min={1000} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.contextBudgetTokens} onChange={(e) => setAgentForm({ ...agentForm, contextBudgetTokens: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Output Limit (tokens)</span><input type="number" min={64} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.maxOutputTokens} onChange={(e) => setAgentForm({ ...agentForm, maxOutputTokens: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Transient Retry Limit</span><input type="number" min={0} max={5} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.retryLimit} onChange={(e) => setAgentForm({ ...agentForm, retryLimit: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Confirmation Expiry (min)</span><input type="number" min={1} max={120} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.confirmationExpiryMinutes} onChange={(e) => setAgentForm({ ...agentForm, confirmationExpiryMinutes: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Worker Lease (sec)</span><input type="number" min={30} max={300} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.leaseSeconds} onChange={(e) => setAgentForm({ ...agentForm, leaseSeconds: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Max Query Columns</span><input type="number" min={1} max={100} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.queryMaxColumns} onChange={(e) => setAgentForm({ ...agentForm, queryMaxColumns: Number(e.target.value) })} /></label>
+                <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Max Query Bytes</span><input type="number" min={10000} max={1000000} className="w-full rounded-xl border border-gray-200 px-4 py-3" value={agentForm.queryMaxBytes} onChange={(e) => setAgentForm({ ...agentForm, queryMaxBytes: Number(e.target.value) })} /></label>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4">
                   <input
                     type="checkbox"
-                    checked={agentForm.showReasoningSummaries}
-                    onChange={(e) => setAgentForm({ ...agentForm, showReasoningSummaries: e.target.checked })}
+                    checked={agentForm.showPlanActivity}
+                    onChange={(e) => setAgentForm({ ...agentForm, showPlanActivity: e.target.checked })}
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
                   <div>
-                    <p className="text-sm font-black text-gray-900">Show reasoning summaries</p>
-                    <p className="text-sm text-gray-500">Display structured reasoning output in the agent chat widget.</p>
+                    <p className="text-sm font-black text-gray-900">Show plan/activity summaries</p>
+                    <p className="text-sm text-gray-500">Display truthful public runtime activity without exposing private model reasoning.</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4">
@@ -801,7 +826,7 @@ const DeveloperSettings: React.FC = () => {
                   />
                   <div>
                     <p className="text-sm font-black text-gray-900">Show tool activity</p>
-                    <p className="text-sm text-gray-500">Expose structured tool execution and query details in the UI.</p>
+                    <p className="text-sm text-gray-500">Show sanitized tool labels and completion status, never raw credentials or unrestricted results.</p>
                   </div>
                 </label>
               </div>

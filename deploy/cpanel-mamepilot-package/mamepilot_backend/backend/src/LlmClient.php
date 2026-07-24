@@ -9,7 +9,14 @@ use RuntimeException;
 final class LlmClient
 {
     private const PROVIDERS = ['google', 'openai', 'openrouter', 'groq', 'anthropic', 'deepseek'];
-    private const FEATURES = ['information_extraction', 'mame_ai', 'business_growth'];
+    private const FEATURES = [
+        'information_extraction',
+        'mame_ai',
+        'mame_ai_fast',
+        'mame_ai_reasoning',
+        'mame_ai_multimodal',
+        'business_growth',
+    ];
 
     public function __construct(
         private Database $database,
@@ -57,6 +64,16 @@ final class LlmClient
              LIMIT 1',
             [':feature' => $feature]
         );
+        if ($row === null && in_array($feature, ['mame_ai_fast', 'mame_ai_reasoning', 'mame_ai_multimodal'], true)) {
+            $row = $this->database->fetchOne(
+                'SELECT c.*
+                 FROM llm_feature_assignments a
+                 INNER JOIN llm_configurations c ON c.id = a.configuration_id
+                 WHERE a.feature_key = :feature AND c.enabled = 1
+                 LIMIT 1',
+                [':feature' => 'mame_ai']
+            );
+        }
         if ($row === null) {
             throw new RuntimeException('No enabled LLM model is assigned to ' . $this->featureLabel($feature) . '. Configure it in Developer Settings > LLMs.');
         }
@@ -95,6 +112,66 @@ final class LlmClient
             'openai', 'openrouter', 'groq', 'deepseek' => $this->generateOpenAiCompatible($config, $systemPrompt, $userMessage, $history, $options),
             default => throw new RuntimeException('Unsupported LLM provider.'),
         };
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $messages
+     * @param array<int, array<string, mixed>> $tools
+     * @return array<string, mixed>
+     */
+    public function agentTurnForFeature(
+        string $feature,
+        string $systemPrompt,
+        array $messages,
+        array $tools = [],
+        array $options = []
+    ): array {
+        $configuration = $this->configurationForFeature($feature);
+        if ($feature === 'mame_ai_reasoning' && empty($configuration['supportsToolCalling'])) {
+            throw new RuntimeException('The assigned Mame AI reasoning profile does not support tool calling.');
+        }
+        return $this->agentTurn($configuration, $systemPrompt, $messages, $tools, $options);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $messages
+     * @param array<int, array<string, mixed>> $tools
+     * @return array<string, mixed>
+     */
+    public function agentTurn(
+        array $configuration,
+        string $systemPrompt,
+        array $messages,
+        array $tools = [],
+        array $options = []
+    ): array {
+        $config = $this->normalizeConfiguration($configuration);
+        if ($config['apiKey'] === '' || $config['model'] === '') {
+            throw new RuntimeException('The selected LLM profile is missing its API key or model.');
+        }
+        if ($tools !== [] && empty($config['supportsToolCalling'])) {
+            throw new RuntimeException('The selected LLM profile is not marked as supporting tool calls.');
+        }
+
+        $request = AgentModelProtocol::buildRequest(
+            $config['provider'],
+            $config,
+            $systemPrompt,
+            $messages,
+            $tools,
+            $options
+        );
+        $startedAt = microtime(true);
+        $response = $this->httpJson('POST', $request['endpoint'], $request['headers'], $request['body']);
+        $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $this->assertSuccess($response, (string) $request['operation']);
+        $turn = AgentModelProtocol::parseResponse($config['provider'], $response['json'] ?? [], $response['headers'] ?? []);
+        $turn['durationMs'] = $durationMs;
+        $turn['profileId'] = $config['id'];
+        $turn['profileLabel'] = $config['label'];
+        $turn['provider'] = $config['provider'];
+        $turn['model'] = $config['model'];
+        return $turn;
     }
 
     /**
@@ -176,6 +253,12 @@ final class LlmClient
             'siteUrl' => (string) ($row['site_url'] ?? ''),
             'appName' => (string) ($row['app_name'] ?? ''),
             'anthropicVersion' => (string) ($row['anthropic_version'] ?? ''),
+            'supportsToolCalling' => !empty($row['supports_tool_calling']),
+            'supportsStructuredOutput' => !empty($row['supports_structured_output']),
+            'supportsVision' => !empty($row['supports_vision']),
+            'supportsAudio' => !empty($row['supports_audio']),
+            'contextWindowTokens' => (int) ($row['context_window_tokens'] ?? 32768),
+            'defaultOutputTokens' => (int) ($row['default_output_tokens'] ?? 4096),
         ]);
     }
 
@@ -216,6 +299,12 @@ final class LlmClient
             'siteUrl' => trim((string) ($config['siteUrl'] ?? $config['site_url'] ?? '')),
             'appName' => trim((string) ($config['appName'] ?? $config['app_name'] ?? '')),
             'anthropicVersion' => trim((string) ($config['anthropicVersion'] ?? $config['anthropic_version'] ?? '')) ?: '2023-06-01',
+            'supportsToolCalling' => !empty($config['supportsToolCalling'] ?? $config['supports_tool_calling'] ?? false),
+            'supportsStructuredOutput' => !empty($config['supportsStructuredOutput'] ?? $config['supports_structured_output'] ?? false),
+            'supportsVision' => !empty($config['supportsVision'] ?? $config['supports_vision'] ?? false),
+            'supportsAudio' => !empty($config['supportsAudio'] ?? $config['supports_audio'] ?? false),
+            'contextWindowTokens' => max(1024, min(2000000, (int) ($config['contextWindowTokens'] ?? $config['context_window_tokens'] ?? 32768))),
+            'defaultOutputTokens' => max(64, min(65536, (int) ($config['defaultOutputTokens'] ?? $config['default_output_tokens'] ?? 4096))),
         ];
     }
 
@@ -457,6 +546,9 @@ final class LlmClient
         return match ($feature) {
             'information_extraction' => 'Information extraction',
             'mame_ai' => 'Mame AI',
+            'mame_ai_fast' => 'Mame AI fast routing',
+            'mame_ai_reasoning' => 'Mame AI reasoning',
+            'mame_ai_multimodal' => 'Mame AI multimodal',
             'business_growth' => 'Grow Your Business',
             default => $feature,
         };
@@ -482,6 +574,7 @@ final class LlmClient
         $body = $jsonBody === null ? null : json_encode($jsonBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         if ($body !== null) $headerList[] = 'Content-Type: application/json';
 
+        $responseHeaders = [];
         curl_setopt_array($handle, [
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
             CURLOPT_RETURNTRANSFER => true,
@@ -492,6 +585,14 @@ final class LlmClient
             CURLOPT_MAXREDIRS => 3,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_HEADERFUNCTION => static function ($curl, string $line) use (&$responseHeaders): int {
+                $length = strlen($line);
+                $parts = explode(':', $line, 2);
+                if (count($parts) === 2) {
+                    $responseHeaders[trim($parts[0])] = trim($parts[1]);
+                }
+                return $length;
+            },
         ]);
         if ($body !== null) curl_setopt($handle, CURLOPT_POSTFIELDS, $body);
 
@@ -501,6 +602,6 @@ final class LlmClient
         curl_close($handle);
         if ($responseBody === false) throw new RuntimeException('LLM request failed: ' . $error);
         $json = json_decode($responseBody, true);
-        return ['status' => $status, 'body' => $responseBody, 'json' => is_array($json) ? $json : []];
+        return ['status' => $status, 'body' => $responseBody, 'json' => is_array($json) ? $json : [], 'headers' => $responseHeaders];
     }
 }

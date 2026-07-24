@@ -6,6 +6,7 @@ use App\Auth;
 use App\ApiException;
 use App\AutoCallApi;
 use App\BusinessGrowthApi;
+use App\BusinessActionDispatcher;
 use App\Config;
 use App\CourierApi;
 use App\Database;
@@ -50,18 +51,10 @@ try {
     $auth = new Auth($config, $database);
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
     $featureAccess = new FeatureAccess($database, $auth);
-    $master = new MasterDataApi($database, $auth, $config);
-    $operations = new OperationsApi($database, $auth, $config);
-    $courier = new CourierApi($database, $auth, $config, $operations);
-    $dataManagement = new DataManagementApi($database, $auth, $config);
-    $metaAds = new MetaAdsApi($database, $auth, $config);
-    $whatsapp = new WhatsAppApi($database, $auth, $config);
-    $messenger = new MessengerApi($database, $auth, $config);
-    $leads = new LeadApi($database, $auth, $config, $master, $operations);
-    $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
-    $autoCall = new AutoCallApi($database, $auth, $config);
-    $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
-    $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
+    $dispatcher = new BusinessActionDispatcher($database, $auth, $config);
+    $master = $dispatcher->master();
+    $operations = $dispatcher->operations();
+    $metaAds = $dispatcher->metaAds();
 
     if ($action === 'health') {
         Http::ok([
@@ -88,6 +81,11 @@ try {
     $serviceLifecycle->assertActionAllowed($action);
     $featureAccess->assertActionAllowed($action, $payload);
 
+    if ($action === 'streamAgentRunEvents') {
+        $master->streamAgentRunEvents($payload);
+        exit;
+    }
+
     if ($action === 'batchUpdateSettings') {
         $updates = is_array($payload['updates'] ?? null) ? $payload['updates'] : $payload;
         if (isset($updates['courier']) && is_array($updates['courier'])) {
@@ -113,17 +111,8 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $leads, $woocommerce];
-    foreach ($services as $service) {
-        if (!method_exists($service, $action)) {
-            continue;
-        }
-
-        $result = $service->{$action}($payload);
-        if ($action === 'createOrder' && is_array($result)) {
-            $postCreateEffects->schedule($result);
-        }
-        Http::ok($result);
+    if ($dispatcher->hasAction($action)) {
+        Http::ok($dispatcher->dispatch($action, $payload));
         exit;
     }
 

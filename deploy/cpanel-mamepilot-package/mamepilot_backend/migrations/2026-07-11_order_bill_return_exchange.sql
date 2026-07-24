@@ -1,0 +1,21 @@
+-- Order/Bill Return & Exchange feature
+-- Adds partial return, exchange, and partial refund support for orders
+-- Adds partial return support for bills (vendor returns)
+--
+-- No schema changes required. Return/exchange tracking is stored in the
+-- existing `items` JSON blob on orders/bills tables using these fields:
+--   returnedQty   (number) — how many of this item were returned
+--   exchangedQty  (number) — how many of this item were exchanged
+--   exchangedWith (array)  — replacement items for exchanges
+--
+-- New API endpoints:
+--   processOrderReturnExchange — partial return, exchange, partial refund on orders
+--   processBillReturn          — partial return on bills (vendor returns)
+--
+-- New permission keys (added to permissions.ts, defaulting to off for Employee roles):
+--   orders.processReturnExchangeOwn / orders.processReturnExchangeAny
+--   bills.processReturnOwn / bills.processReturnAny
+--
+-- Admin and Developer roles always have access. Employee roles need these
+-- permissions enabled via Settings → Permissions to use the feature.
+-- Existing role_permissions rows are unaffected — missing keys default to deny.

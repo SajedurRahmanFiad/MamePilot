@@ -392,7 +392,7 @@ const Orders: React.FC = () => {
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
-        values: Object.values(OrderStatus).map((status) => ({
+        values: Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => ({
           value: status,
           label: getStatusDisplayName(status),
         })),

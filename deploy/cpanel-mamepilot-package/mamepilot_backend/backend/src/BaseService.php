@@ -9,7 +9,7 @@ abstract class BaseService
     protected const DEFAULT_PAGE_SIZE = 25;
     protected const DEFAULT_PAYROLL_STATUSES = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange delivered', 'Cancelled'];
     protected const ALL_ORDER_STATUSES = [
-        'Created', 'On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed',
+        'On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed',
         'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned',
         'Exchange cancelled', 'Returned', 'Cancelled',
     ];
@@ -87,6 +87,10 @@ abstract class BaseService
         'payroll.pay',
         'payroll.deletePayments',
         'recycleBin.view',
+        'recycleBin.restore',
+        'recycleBin.deletePermanent',
+        'undoer.view',
+        'undoer.execute',
         'users.view',
     ];
     protected const DEFAULT_ROLE_PERMISSIONS = [
@@ -1059,9 +1063,37 @@ abstract class BaseService
     /**
      * @return array<string, mixed>
      */
+    protected function canonicalOrderStatus(string $status, array $history = []): string
+    {
+        $normalized = trim($status);
+        if ($normalized === 'Created') {
+            return 'On Hold';
+        }
+
+        $exchangeStatuses = [
+            'Processing' => ['exchangeProcessing', 'Exchange processing'],
+            'Picked' => ['exchangePicked', 'Exchange picked'],
+            'Completed' => ['exchangeDelivered', 'Exchange delivered'],
+            'Returned' => ['exchangeReturned', 'Exchange returned'],
+            'Cancelled' => ['exchangeCancelled', 'Exchange cancelled'],
+        ];
+        if (isset($exchangeStatuses[$normalized])) {
+            [$historyKey, $exchangeStatus] = $exchangeStatuses[$normalized];
+            if (trim((string) ($history[$historyKey] ?? '')) !== '') {
+                return $exchangeStatus;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     protected function mapOrder(array $row): array
     {
         $pageSnapshot = $this->jsonDecodeAssoc($row['page_snapshot'] ?? $row['pageSnapshot'] ?? []);
+        $history = $this->jsonDecodeAssoc($row['history'] ?? []);
 
         return [
             'id' => (string) $row['id'],
@@ -1069,7 +1101,7 @@ abstract class BaseService
             'orderDate' => (string) ($row['order_date'] ?? $row['orderDate'] ?? ''),
             'customerId' => (string) ($row['customer_id'] ?? $row['customerId'] ?? ''),
             'createdBy' => (string) ($row['created_by'] ?? $row['createdBy'] ?? ''),
-            'status' => (string) ($row['status'] ?? ''),
+            'status' => $this->canonicalOrderStatus((string) ($row['status'] ?? ''), $history),
             'items' => $this->jsonDecodeList($row['items'] ?? []),
             'subtotal' => (float) ($row['subtotal'] ?? 0),
             'discount' => (float) ($row['discount'] ?? 0),
@@ -1089,7 +1121,7 @@ abstract class BaseService
             'exchangePathaoConsignmentId' => $this->nullableString($row['exchange_pathao_consignment_id'] ?? $row['exchangePathaoConsignmentId'] ?? null),
             'exchangeCourierHistory' => $this->nullableString($row['exchange_courier_history'] ?? $row['exchangeCourierHistory'] ?? null),
             'sourceAd' => $this->nullableString($row['source_ad'] ?? $row['sourceAd'] ?? null),
-            'history' => $this->jsonDecodeAssoc($row['history'] ?? []),
+            'history' => $history,
             'paidAmount' => (float) ($row['paid_amount'] ?? $row['paidAmount'] ?? 0),
             'customerName' => $this->nullableString($row['customer_name'] ?? $row['customerName'] ?? null),
             'customerPhone' => $this->nullableString($row['customer_phone'] ?? $row['customerPhone'] ?? null),
@@ -1749,7 +1781,7 @@ abstract class BaseService
         $allowed = self::ALL_ORDER_STATUSES;
         $normalized = [];
         foreach ($statuses as $status) {
-            $statusText = trim((string) $status);
+            $statusText = $this->canonicalOrderStatus((string) $status);
             if ($statusText !== '' && in_array($statusText, $allowed, true) && !in_array($statusText, $normalized, true)) {
                 $normalized[] = $statusText;
             }

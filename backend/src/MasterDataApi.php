@@ -2344,11 +2344,7 @@ final class MasterDataApi extends BaseService
     public function fetchLlmSettings(array $params = []): array
     {
         $this->requireDeveloperUser();
-        $assignments = [
-            'information_extraction' => null,
-            'mame_ai' => null,
-            'business_growth' => null,
-        ];
+        $assignments = array_fill_keys(LlmClient::features(), null);
         $multimodalConfigurations = [];
         $multimodalAssignment = null;
         if (!$this->tableExists('llm_configurations') || !$this->tableExists('llm_feature_assignments')) {
@@ -2404,7 +2400,12 @@ final class MasterDataApi extends BaseService
             if ($config['model'] === '') throw new ApiException($config['label'] . ' needs a model.', 422);
             $config['id'] = $id;
             $configurations[] = $config;
-            $ids[$id] = (bool) $config['enabled'];
+            $ids[$id] = [
+                'enabled' => (bool) $config['enabled'],
+                'supportsToolCalling' => (bool) $config['supportsToolCalling'],
+                'supportsVision' => (bool) $config['supportsVision'],
+                'supportsAudio' => (bool) $config['supportsAudio'],
+            ];
         }
 
         $multimodalRows = is_array($params['multimodalConfigurations'] ?? null) ? array_values($params['multimodalConfigurations']) : [];
@@ -2440,8 +2441,14 @@ final class MasterDataApi extends BaseService
             if ($configurationId !== '' && !array_key_exists($configurationId, $ids)) {
                 throw new ApiException('The selected model for ' . str_replace('_', ' ', $feature) . ' does not exist.', 422);
             }
-            if ($configurationId !== '' && !$ids[$configurationId]) {
+            if ($configurationId !== '' && empty($ids[$configurationId]['enabled'])) {
                 throw new ApiException('The selected model for ' . str_replace('_', ' ', $feature) . ' is disabled.', 422);
+            }
+            if ($feature === 'mame_ai_reasoning' && $configurationId !== '' && empty($ids[$configurationId]['supportsToolCalling'])) {
+                throw new ApiException('The Mame AI reasoning profile must be marked as supporting tool calls.', 422);
+            }
+            if ($feature === 'mame_ai_multimodal' && $configurationId !== '' && empty($ids[$configurationId]['supportsVision']) && empty($ids[$configurationId]['supportsAudio'])) {
+                throw new ApiException('The Mame AI multimodal profile must support image or audio input.', 422);
             }
             $assignments[$feature] = $configurationId !== '' ? $configurationId : null;
         }
@@ -2451,15 +2458,21 @@ final class MasterDataApi extends BaseService
                 $this->database->execute(
                     'INSERT INTO llm_configurations (
                         id, label, provider, enabled, base_url, api_key, model, organization, project,
-                        site_url, app_name, anthropic_version, created_at, updated_at
+                        site_url, app_name, anthropic_version, supports_tool_calling, supports_structured_output,
+                        supports_vision, supports_audio, context_window_tokens, default_output_tokens, created_at, updated_at
                      ) VALUES (
                         :id, :label, :provider, :enabled, :base_url, :api_key, :model, :organization, :project,
-                        :site_url, :app_name, :anthropic_version, :created_at, :updated_at
+                        :site_url, :app_name, :anthropic_version, :supports_tool_calling, :supports_structured_output,
+                        :supports_vision, :supports_audio, :context_window_tokens, :default_output_tokens, :created_at, :updated_at
                      ) ON DUPLICATE KEY UPDATE
                         label = VALUES(label), provider = VALUES(provider), enabled = VALUES(enabled),
                         base_url = VALUES(base_url), api_key = VALUES(api_key), model = VALUES(model),
                         organization = VALUES(organization), project = VALUES(project), site_url = VALUES(site_url),
-                        app_name = VALUES(app_name), anthropic_version = VALUES(anthropic_version), updated_at = VALUES(updated_at)',
+                        app_name = VALUES(app_name), anthropic_version = VALUES(anthropic_version),
+                        supports_tool_calling = VALUES(supports_tool_calling), supports_structured_output = VALUES(supports_structured_output),
+                        supports_vision = VALUES(supports_vision), supports_audio = VALUES(supports_audio),
+                        context_window_tokens = VALUES(context_window_tokens), default_output_tokens = VALUES(default_output_tokens),
+                        updated_at = VALUES(updated_at)',
                     [
                         ':id' => $config['id'],
                         ':label' => $config['label'],
@@ -2473,6 +2486,12 @@ final class MasterDataApi extends BaseService
                         ':site_url' => $this->nullableString($config['siteUrl']),
                         ':app_name' => $this->nullableString($config['appName']),
                         ':anthropic_version' => $config['anthropicVersion'],
+                        ':supports_tool_calling' => $config['supportsToolCalling'] ? 1 : 0,
+                        ':supports_structured_output' => $config['supportsStructuredOutput'] ? 1 : 0,
+                        ':supports_vision' => $config['supportsVision'] ? 1 : 0,
+                        ':supports_audio' => $config['supportsAudio'] ? 1 : 0,
+                        ':context_window_tokens' => $config['contextWindowTokens'],
+                        ':default_output_tokens' => $config['defaultOutputTokens'],
                         ':created_at' => $this->database->nowUtc(),
                         ':updated_at' => $this->database->nowUtc(),
                     ]
@@ -2573,14 +2592,30 @@ final class MasterDataApi extends BaseService
             ? $this->database->fetchOne('SELECT * FROM agent_settings LIMIT 1')
             : null;
 
+        $queue = $this->tableExists('agent_runs') ? $this->database->fetchOne("SELECT COUNT(*) AS count FROM agent_runs WHERE status = 'queued'") : null;
+        $heartbeat = trim((string) ($row['worker_last_heartbeat'] ?? ''));
         return [
             'enabled' => !empty($row['enabled'] ?? 0),
-            'showReasoningSummaries' => !empty($row['show_reasoning_summaries'] ?? 1),
+            'showPlanActivity' => !empty($row['show_reasoning_summaries'] ?? 1),
             'showToolActivity' => !empty($row['show_tool_activity'] ?? 1),
             'maxReasoningSteps' => max(1, (int) ($row['max_reasoning_steps'] ?? 8)),
             'maxToolCalls' => max(1, (int) ($row['max_tool_calls'] ?? 12)),
             'queryRowLimit' => max(1, (int) ($row['query_row_limit'] ?? 100)),
             'queryTimeoutMs' => max(1000, (int) ($row['query_timeout_ms'] ?? 15000)),
+            'queryMaxColumns' => max(1, (int) ($row['query_max_columns'] ?? 30)),
+            'queryMaxBytes' => max(10000, (int) ($row['query_max_bytes'] ?? 100000)),
+            'runTimeoutSeconds' => max(30, (int) ($row['run_timeout_seconds'] ?? 240)),
+            'contextBudgetTokens' => max(1000, (int) ($row['context_budget_tokens'] ?? 12000)),
+            'maxOutputTokens' => max(64, (int) ($row['max_output_tokens'] ?? 4096)),
+            'retryLimit' => max(0, (int) ($row['retry_limit'] ?? 2)),
+            'confirmationExpiryMinutes' => max(1, (int) ($row['confirmation_expiry_minutes'] ?? 15)),
+            'leaseSeconds' => max(30, (int) ($row['lease_seconds'] ?? 90)),
+            'workerReady' => $heartbeat !== '' && strtotime($heartbeat) >= time() - 300,
+            'queueDepth' => (int) ($queue['count'] ?? 0),
+            'workerLastHeartbeat' => $heartbeat !== '' ? $heartbeat : null,
+            'workerLastSuccessAt' => $row['worker_last_success_at'] ?? null,
+            'workerLastErrorAt' => $row['worker_last_error_at'] ?? null,
+            'workerLastError' => trim((string) ($row['worker_last_error'] ?? '')) ?: null,
         ];
     }
 
@@ -2593,12 +2628,20 @@ final class MasterDataApi extends BaseService
 
         $payload = [
             'enabled' => !empty($params['enabled'] ?? false) ? 1 : 0,
-            'show_reasoning_summaries' => !empty($params['showReasoningSummaries'] ?? true) ? 1 : 0,
+            'show_reasoning_summaries' => !empty($params['showPlanActivity'] ?? $params['showReasoningSummaries'] ?? true) ? 1 : 0,
             'show_tool_activity' => !empty($params['showToolActivity'] ?? true) ? 1 : 0,
             'max_reasoning_steps' => max(1, (int) ($params['maxReasoningSteps'] ?? 8)),
             'max_tool_calls' => max(1, (int) ($params['maxToolCalls'] ?? 12)),
             'query_row_limit' => max(1, (int) ($params['queryRowLimit'] ?? 100)),
             'query_timeout_ms' => max(1000, (int) ($params['queryTimeoutMs'] ?? 15000)),
+            'query_max_columns' => max(1, min(100, (int) ($params['queryMaxColumns'] ?? 30))),
+            'query_max_bytes' => max(10000, min(1000000, (int) ($params['queryMaxBytes'] ?? 100000))),
+            'run_timeout_seconds' => max(30, min(900, (int) ($params['runTimeoutSeconds'] ?? 240))),
+            'context_budget_tokens' => max(1000, min(200000, (int) ($params['contextBudgetTokens'] ?? 12000))),
+            'max_output_tokens' => max(64, min(65536, (int) ($params['maxOutputTokens'] ?? 4096))),
+            'retry_limit' => max(0, min(5, (int) ($params['retryLimit'] ?? 2))),
+            'confirmation_expiry_minutes' => max(1, min(120, (int) ($params['confirmationExpiryMinutes'] ?? 15))),
+            'lease_seconds' => max(30, min(300, (int) ($params['leaseSeconds'] ?? 90))),
         ];
 
         $this->saveSingleton('agent_settings', 'agent-settings-default', $payload, fn(): array => $this->fetchAgentSettings());
@@ -3183,52 +3226,15 @@ final class MasterDataApi extends BaseService
     public function mameChat(array $params): array
     {
         $this->currentUser();
-
-        $message = trim((string) ($params['message'] ?? ''));
-        if ($message === '') {
-            throw new ApiException('Message cannot be empty.', 400);
-        }
-
         $executor = new AgentExecutor($this->database, $this->auth, $this->config);
-        $run = $executor->startRun(['message' => $message, 'conversationId' => (string) ($params['conversationId'] ?? '')]);
-
-        // Process synchronously
-        if (!empty($run['runId']) && ($run['status'] ?? '') === 'queued') {
-            try {
-                $result = $executor->processQueuedRun(['runId' => $run['runId']]);
-                return [
-                    'answer' => (string) ($result['answer'] ?? ''),
-                    'runId' => (string) ($run['runId'] ?? ''),
-                    'conversationId' => (string) ($run['conversationId'] ?? ''),
-                    'streamToken' => (string) ($run['streamToken'] ?? ''),
-                    'status' => (string) ($result['status'] ?? 'completed'),
-                ];
-            } catch (\Throwable $ex) {
-                return [
-                    'answer' => 'I could not complete the analysis. Please try again.',
-                    'runId' => (string) ($run['runId'] ?? ''),
-                    'conversationId' => (string) ($run['conversationId'] ?? ''),
-                    'streamToken' => (string) ($run['streamToken'] ?? ''),
-                    'status' => 'failed',
-                ];
-            }
-        }
-
-        // Agent disabled or already completed
-        return [
-            'answer' => (string) ($run['answer'] ?? ''),
-            'runId' => (string) ($run['runId'] ?? ''),
-            'conversationId' => (string) ($run['conversationId'] ?? ''),
-            'streamToken' => (string) ($run['streamToken'] ?? ''),
-            'status' => (string) ($run['status'] ?? 'completed'),
-        ];
+        return $executor->startRun($params);
     }
 
     public function agentRunStream(array $params): array
     {
         $this->currentUser();
         $executor = new AgentExecutor($this->database, $this->auth, $this->config);
-        return $executor->fetchRunStream($params);
+        return $executor->fetchRunEvents($params);
     }
 
     public function startAgentRun(array $params): array
@@ -3245,1177 +3251,54 @@ final class MasterDataApi extends BaseService
         return $executor->fetchRunStream($params);
     }
 
-    public function legacyMameChat(array $params): array
+    public function fetchAgentRunEvents(array $params): array
     {
         $this->currentUser();
-
-        $message = trim((string) ($params['message'] ?? ''));
-        if ($message === '') {
-            throw new ApiException('Message cannot be empty.', 400);
-        }
-
-        $facts = $this->buildMameDatabaseFacts();
-        $relevantRecords = $this->buildMameRelevantRecords($message);
-
-        $systemMessage = <<<'TXT'
-You are Mame, an exclusive AI assistant made by Mame Studios. Assist the user with business operations, customers, vendors, products, orders, bills, transactions, accounts, and settings.
-Use only the facts provided below and the relevant database records section. Do not invent or hallucinate details not supported by the database summary or matching records. If the answer cannot be found in the provided facts, explain that it is not available and suggest a follow-up question.
-If a write operation is requested, use the available tool actions only when the user explicitly asks to create or update data.
-TXT;
-
-        $prompt = "Business facts:\n" . implode("\n", $facts);
-        if (!empty($relevantRecords)) {
-            $prompt .= "\n\nRelevant database records:\n" . implode("\n", $relevantRecords);
-        }
-
-        $toolInstructions = $this->buildMameToolInstructions();
-        if (!empty($toolInstructions)) {
-            $prompt .= "\n\nAvailable tools:\n" . implode("\n", $toolInstructions);
-        }
-
-        $prompt .= "\n\nUser question:\n{$message}";
-
-        try {
-            $answer = (new LlmClient($this->database, $this->config))->generateForFeature(
-                'mame_ai',
-                $systemMessage,
-                $prompt,
-                [],
-                ['temperature' => 0.3, 'maxTokens' => 4096]
-            );
-            return ['answer' => $this->maybeExecuteMameToolResponse($answer, $message)];
-        } catch (\Throwable $exception) {
-            throw new ApiException('Failed to generate Mame response: ' . $exception->getMessage(), 502);
-        }
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->fetchRunEvents($params);
     }
 
-    /**
-     * @return string[]
-     */
-    private function buildMameDatabaseFacts(): array
+    public function streamAgentRunEvents(array $params): void
     {
-        $facts = [];
-
-        $tables = $this->database->fetchAll(
-            'SELECT TABLE_NAME
-             FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = DATABASE()
-             ORDER BY TABLE_NAME ASC'
-        );
-
-        if (!empty($tables)) {
-            $facts[] = 'Database tables and row counts:';
-            foreach ($tables as $row) {
-                $tableName = (string) ($row['TABLE_NAME'] ?? '');
-                if ($tableName === '' || preg_match('/[^A-Za-z0-9_]/', $tableName) !== 0) {
-                    continue;
-                }
-
-                try {
-                    $quotedTable = $this->quoteIdentifier($tableName);
-                    if ($this->columnExists($tableName, 'deleted_at')) {
-                        $countRow = $this->database->fetchOne(
-                            "SELECT COUNT(*) AS count FROM {$quotedTable} WHERE deleted_at IS NULL"
-                        );
-                    } else {
-                        $countRow = $this->database->fetchOne(
-                            "SELECT COUNT(*) AS count FROM {$quotedTable}"
-                        );
-                    }
-                } catch (\Throwable $exception) {
-                    continue;
-                }
-
-                $facts[] = sprintf(
-                    '- %s: %s',
-                    $tableName,
-                    (int) ($countRow['count'] ?? 0)
-                );
-            }
-        }
-
-        if ($this->tableExists('orders')) {
-            $recentOrders = $this->database->fetchAll(
-                'SELECT o.order_number, o.status, o.created_at, c.name AS customer_name
-                 FROM orders o
-                 LEFT JOIN customers c ON c.id = o.customer_id
-                 WHERE o.deleted_at IS NULL
-                 ORDER BY o.created_at DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentOrders)) {
-                $facts[] = 'Recent orders:';
-                foreach ($recentOrders as $row) {
-                    $facts[] = sprintf(
-                        '- %s (%s) for %s',
-                        (string) ($row['order_number'] ?? 'Unknown'),
-                        (string) ($row['status'] ?? 'Unknown'),
-                        $this->nullableString($row['customer_name']) ?? 'Unknown customer'
-                    );
-                }
-            }
-        }
-
-        if ($this->tableExists('customers')) {
-            $recentCustomers = $this->database->fetchAll(
-                'SELECT name, phone, created_at
-                 FROM customers
-                 WHERE deleted_at IS NULL
-                 ORDER BY created_at DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentCustomers)) {
-                $facts[] = 'Recent customers:';
-                foreach ($recentCustomers as $row) {
-                    $facts[] = sprintf(
-                        '- %s (%s)',
-                        (string) ($row['name'] ?? 'Unknown'),
-                        $this->nullableString($row['phone']) ?? 'No phone'
-                    );
-                }
-            }
-        }
-
-        if ($this->tableExists('products')) {
-            $recentProducts = $this->database->fetchAll(
-                'SELECT name, sale_price, stock
-                 FROM products
-                 WHERE deleted_at IS NULL
-                 ORDER BY created_at DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentProducts)) {
-                $facts[] = 'Recent products:';
-                foreach ($recentProducts as $row) {
-                    $facts[] = sprintf(
-                        '- %s (â‚¹%s, stock %s)',
-                        (string) ($row['name'] ?? 'Unknown'),
-                        (string) ($row['sale_price'] ?? '0'),
-                        (string) ($row['stock'] ?? '0')
-                    );
-                }
-            }
-        }
-
-        if ($this->tableExists('transactions')) {
-            $recentTransactions = $this->database->fetchAll(
-                'SELECT type, amount, created_at
-                 FROM transactions
-                 WHERE deleted_at IS NULL
-                 ORDER BY created_at DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentTransactions)) {
-                $facts[] = 'Recent transactions:';
-                foreach ($recentTransactions as $row) {
-                    $facts[] = sprintf(
-                        '- %s %s',
-                        (string) ($row['type'] ?? 'Unknown'),
-                        (string) ($row['amount'] ?? '0')
-                    );
-                }
-            }
-        }
-
-        if ($this->tableExists('bills')) {
-            $recentBills = $this->database->fetchAll(
-                'SELECT b.bill_number, b.status, b.bill_date, v.name AS vendor_name
-                 FROM bills b
-                 LEFT JOIN vendors v ON v.id = b.vendor_id
-                 WHERE b.deleted_at IS NULL
-                 ORDER BY b.bill_date DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentBills)) {
-                $facts[] = 'Recent bills:';
-                foreach ($recentBills as $row) {
-                    $facts[] = sprintf(
-                        '- %s (%s) for %s',
-                        (string) ($row['bill_number'] ?? 'Unknown'),
-                        (string) ($row['status'] ?? 'Unknown'),
-                        $this->nullableString($row['vendor_name']) ?? 'Unknown vendor'
-                    );
-                }
-            }
-        }
-
-        if ($this->tableExists('accounts')) {
-            $recentAccounts = $this->database->fetchAll(
-                'SELECT name, type, opening_balance, current_balance
-                 FROM accounts
-                 ORDER BY created_at DESC
-                 LIMIT 3'
-            );
-            if (!empty($recentAccounts)) {
-                $facts[] = 'Recent accounts:';
-                foreach ($recentAccounts as $row) {
-                    $facts[] = sprintf(
-                        '- %s (%s, opening %s, current %s)',
-                        (string) ($row['name'] ?? 'Unknown'),
-                        (string) ($row['type'] ?? 'Unknown'),
-                        (string) ($row['opening_balance'] ?? '0'),
-                        (string) ($row['current_balance'] ?? '0')
-                    );
-                }
-            }
-        }
-
-        return $facts;
+        $this->currentUser();
+        (new AgentExecutor($this->database, $this->auth, $this->config))->streamRunEvents($params);
     }
 
-    /**
-     * @return string[]
-     */
-    private function buildMameRelevantRecords(string $message): array
+    public function cancelAgentRun(array $params): array
     {
-        $patterns = $this->buildMameSearchPatterns($message);
-        if ($patterns === []) {
-            return [];
-        }
-
-        $records = [];
-
-        $customerRows = $this->searchMameCustomers($patterns);
-        if (!empty($customerRows)) {
-            $records[] = 'Customers:';
-            foreach ($customerRows as $row) {
-                $records[] = sprintf(
-                    '- %s: %s, phone %s, address %s, orders %s, due %s',
-                    (string) ($row['id'] ?? ''),
-                    (string) ($row['name'] ?? 'Unknown'),
-                    $this->nullableString($row['phone']) ?? 'No phone',
-                    $this->nullableString($row['address']) ?? 'No address',
-                    (string) ($row['total_orders'] ?? '0'),
-                    (string) ($row['due_amount'] ?? '0')
-                );
-            }
-        }
-
-        $vendorRows = $this->searchMameVendors($patterns);
-        if (!empty($vendorRows)) {
-            $records[] = 'Vendors:';
-            foreach ($vendorRows as $row) {
-                $records[] = sprintf(
-                    '- %s: %s, phone %s, address %s, purchases %s, due %s',
-                    (string) ($row['id'] ?? ''),
-                    (string) ($row['name'] ?? 'Unknown'),
-                    $this->nullableString($row['phone']) ?? 'No phone',
-                    $this->nullableString($row['address']) ?? 'No address',
-                    (string) ($row['total_purchases'] ?? '0'),
-                    (string) ($row['due_amount'] ?? '0')
-                );
-            }
-        }
-
-        $orderRows = $this->searchMameOrders($patterns);
-        if (!empty($orderRows)) {
-            $records[] = 'Orders:';
-            foreach ($orderRows as $row) {
-                $records[] = sprintf(
-                    '- %s: %s, customer %s, total %s, created %s',
-                    (string) ($row['order_number'] ?? ''),
-                    (string) ($row['status'] ?? 'Unknown'),
-                    $this->nullableString($row['customer_name']) ?? 'Unknown customer',
-                    (string) ($row['total'] ?? '0'),
-                    (string) ($row['order_date'] ?? 'Unknown date')
-                );
-            }
-        }
-
-        $billRows = $this->searchMameBills($patterns);
-        if (!empty($billRows)) {
-            $records[] = 'Bills:';
-            foreach ($billRows as $row) {
-                $records[] = sprintf(
-                    '- %s: %s, vendor %s, total %s, date %s',
-                    (string) ($row['bill_number'] ?? ''),
-                    (string) ($row['status'] ?? 'Unknown'),
-                    $this->nullableString($row['vendor_name']) ?? 'Unknown vendor',
-                    (string) ($row['total'] ?? '0'),
-                    (string) ($row['bill_date'] ?? 'Unknown date')
-                );
-            }
-        }
-
-        $productRows = $this->searchMameProducts($patterns);
-        if (!empty($productRows)) {
-            $records[] = 'Products:';
-            foreach ($productRows as $row) {
-                $records[] = sprintf(
-                    '- %s: category %s, price %s, stock %s',
-                    (string) ($row['name'] ?? 'Unknown'),
-                    $this->nullableString($row['category']) ?? 'No category',
-                    (string) ($row['sale_price'] ?? '0'),
-                    (string) ($row['stock'] ?? '0')
-                );
-            }
-        }
-
-        $accountRows = $this->searchMameAccounts($patterns);
-        if (!empty($accountRows)) {
-            $records[] = 'Accounts:';
-            foreach ($accountRows as $row) {
-                $records[] = sprintf(
-                    '- %s: type %s, opening %s, current %s',
-                    (string) ($row['name'] ?? 'Unknown'),
-                    (string) ($row['type'] ?? 'Unknown'),
-                    (string) ($row['opening_balance'] ?? '0'),
-                    (string) ($row['current_balance'] ?? '0')
-                );
-            }
-        }
-
-        $transactionRows = $this->searchMameTransactions($patterns);
-        if (!empty($transactionRows)) {
-            $records[] = 'Transactions:';
-            foreach ($transactionRows as $row) {
-                $records[] = sprintf(
-                    '- %s: %s, amount %s, account %s, date %s',
-                    $this->nullableString($row['transaction_id']) ?? 'Unknown',
-                    $this->nullableString($row['type']) ?? 'Unknown',
-                    (string) ($row['amount'] ?? '0'),
-                    $this->nullableString($row['account_name']) ?? 'Unknown account',
-                    (string) ($row['created_at'] ?? 'Unknown date')
-                );
-            }
-        }
-
-        $settingsRows = $this->searchMameSettings($message);
-        if (!empty($settingsRows)) {
-            $records[] = 'Settings:';
-            foreach ($settingsRows as $row) {
-                $records[] = '- ' . json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            }
-        }
-
-        return $records;
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->cancelRun($params);
     }
 
-    /**
-     * @return string[]
-     */
-    private function buildMameSearchPatterns(string $message): array
+    public function confirmAgentActionBundle(array $params): array
     {
-        $clean = trim(preg_replace('/[^a-z0-9\s]/i', ' ', $message));
-        if ($clean === '') {
-            return [];
-        }
-
-        $terms = preg_split('/\s+/', strtolower($clean), -1, PREG_SPLIT_NO_EMPTY);
-        $stopWords = [
-            'about' => true, 'address' => true, 'addresses' => true, 'and' => true, 'any' => true,
-            'are' => true, 'bill' => true, 'bills' => true, 'can' => true, 'customer' => true,
-            'customers' => true, 'data' => true, 'detail' => true, 'details' => true, 'does' => true,
-            'find' => true, 'for' => true, 'from' => true, 'give' => true, 'have' => true,
-            'is' => true, 'me' => true, 'order' => true, 'orders' => true, 'phone' => true,
-            'please' => true, 'product' => true, 'products' => true, 'show' => true, 'tell' => true,
-            'the' => true, 'this' => true, 'to' => true, 'vendor' => true, 'vendors' => true,
-            'what' => true, 'where' => true, 'who' => true, 'with' => true,
-        ];
-        $patterns = [];
-        foreach ($terms as $term) {
-            $term = trim($term);
-            if ($term === '' || strlen($term) < 2) {
-                continue;
-            }
-            if (isset($stopWords[$term]) && !preg_match('/\d/', $term)) {
-                continue;
-            }
-            $patterns[] = '%' . $term . '%';
-            if (count($patterns) >= 8) {
-                break;
-            }
-        }
-
-        return array_values(array_unique($patterns));
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->confirmActionBundle($params);
     }
 
-    private function searchMameCustomers(array $patterns): array
+    public function rejectAgentActionBundle(array $params): array
     {
-        if (!$this->tableExists('customers') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['name', 'phone', 'address'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT id, name, phone, address, total_orders, due_amount
-             FROM customers
-             WHERE deleted_at IS NULL AND (' . $where . ')
-             ORDER BY created_at DESC
-             LIMIT 3',
-            $bindings
-        );
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->rejectActionBundle($params);
     }
 
-    private function searchMameVendors(array $patterns): array
+    public function fetchAgentConversations(array $params = []): array
     {
-        if (!$this->tableExists('vendors') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['name', 'phone', 'address'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT id, name, phone, address, total_purchases, due_amount
-             FROM vendors
-             WHERE deleted_at IS NULL AND (' . $where . ')
-             ORDER BY created_at DESC
-             LIMIT 3',
-            $bindings
-        );
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->fetchConversations($params);
     }
 
-    private function searchMameOrders(array $patterns): array
+    public function fetchAgentConversation(array $params): array
     {
-        if (!$this->tableExists('orders') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['order_number', 'status'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT o.order_number, o.status, o.total, o.order_date, c.name AS customer_name
-             FROM orders o
-             LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE o.deleted_at IS NULL AND (' . $where . ')
-             ORDER BY o.created_at DESC
-             LIMIT 3',
-            $bindings
-        );
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->fetchConversation($params);
     }
 
-    private function searchMameBills(array $patterns): array
+    public function createAgentAttachment(array $params): array
     {
-        if (!$this->tableExists('bills') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['bill_number', 'status'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT b.bill_number, b.status, b.total, b.bill_date, v.name AS vendor_name
-             FROM bills b
-             LEFT JOIN vendors v ON v.id = b.vendor_id
-             WHERE b.deleted_at IS NULL AND (' . $where . ')
-             ORDER BY b.bill_date DESC
-             LIMIT 3',
-            $bindings
-        );
+        return (new AgentExecutor($this->database, $this->auth, $this->config))->createAttachment($params);
     }
 
-    private function searchMameProducts(array $patterns): array
+    public function legacyMameChat(array $params): array
     {
-        if (!$this->tableExists('products') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['name', 'category'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT name, category, sale_price, stock
-             FROM products
-             WHERE deleted_at IS NULL AND (' . $where . ')
-             ORDER BY created_at DESC
-             LIMIT 3',
-            $bindings
-        );
-    }
-
-    private function searchMameAccounts(array $patterns): array
-    {
-        if (!$this->tableExists('accounts') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['name', 'type'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT name, type, opening_balance, current_balance
-             FROM accounts
-             WHERE ' . $where . '
-             ORDER BY created_at DESC
-             LIMIT 3',
-            $bindings
-        );
-    }
-
-    private function searchMameTransactions(array $patterns): array
-    {
-        if (!$this->tableExists('transactions') || $patterns === []) {
-            return [];
-        }
-
-        $bindings = [];
-        $where = $this->buildMameLikeSearchSql(['transaction_id', 'type', 'account_name'], $patterns, $bindings);
-        if ($where === '') {
-            return [];
-        }
-
-        return $this->database->fetchAll(
-            'SELECT transaction_id, type, amount, account_name, created_at
-             FROM transactions
-             WHERE deleted_at IS NULL AND (' . $where . ')
-             ORDER BY created_at DESC
-             LIMIT 3',
-            $bindings
-        );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function searchMameSettings(string $message): array
-    {
-        if (!$this->isMameSettingsQuery($message)) {
-            return [];
-        }
-
-        $tables = [
-            'company_settings',
-            'order_settings',
-            'invoice_settings',
-            'app_capability_settings',
-            'payment_gateway_settings',
-            'service_subscription_settings',
-            'courier_settings',
-        ];
-
-        $rows = [];
-        foreach ($tables as $table) {
-            if (!$this->tableExists($table)) {
-                continue;
-            }
-
-            try {
-                $row = $this->database->fetchOne("SELECT * FROM {$this->quoteIdentifier($table)} LIMIT 1");
-                if (!is_array($row) || $row === []) {
-                    continue;
-                }
-
-                $rows[] = array_merge(['table' => $table], $this->sanitizeMameSettingsRow($row));
-            } catch (\Throwable $exception) {
-                continue;
-            }
-        }
-
-        return $rows;
-    }
-
-    private function isMameSettingsQuery(string $message): bool
-    {
-        $lower = strtolower($message);
-        return str_contains($lower, 'setting')
-            || str_contains($lower, 'configuration')
-            || str_contains($lower, 'configure')
-            || str_contains($lower, 'license')
-            || str_contains($lower, 'gateway')
-            || str_contains($lower, 'courier')
-            || str_contains($lower, 'company');
-    }
-
-    /**
-     * @param string[] $fields
-     * @param string[] $patterns
-     * @param array<string, string> $bindings
-     */
-    private function buildMameLikeSearchSql(array $fields, array $patterns, array &$bindings): string
-    {
-        $clauses = [];
-        foreach ($fields as $field) {
-            foreach ($patterns as $index => $pattern) {
-                $name = ':mame_pattern_' . $field . '_' . $index;
-                $bindings[$name] = $pattern;
-                $clauses[] = 'LOWER(' . $field . ') LIKE ' . $name;
-            }
-        }
-
-        return implode(' OR ', $clauses);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function sanitizeMameSettingsRow(array $row): array
-    {
-        $sanitized = [];
-        $sensitive = ['api_key', 'apiKey', 'secret', 'password', 'token', 'license_key', 'license_owner_token', 'piprapay_ipn_secret'];
-
-        foreach ($row as $key => $value) {
-            $lowerKey = strtolower((string) $key);
-            $shouldExclude = false;
-            foreach ($sensitive as $needle) {
-                if (str_contains($lowerKey, strtolower($needle))) {
-                    $shouldExclude = true;
-                    break;
-                }
-            }
-            if ($shouldExclude) {
-                continue;
-            }
-
-            $sanitized[$key] = is_string($value) ? trim($value) : $value;
-        }
-
-        return $sanitized;
-    }
-
-    private function maybeExecuteMameToolResponse(string $answer, string $message): string
-    {
-        $tool = $this->parseMameToolResponse($answer);
-        if ($tool === null) {
-            return $answer;
-        }
-
-        $action = trim((string) ($tool['action'] ?? $tool['tool'] ?? ''));
-        $payload = is_array($tool['payload'] ?? null) ? $tool['payload'] : [];
-
-        if ($action === '' || strtolower($action) === 'none') {
-            $missing = is_array($tool['missing'] ?? null) ? array_values(array_filter(array_map('strval', $tool['missing']))) : [];
-            $fallback = trim((string) ($tool['answer'] ?? ''));
-            if ($fallback !== '') {
-                return $fallback;
-            }
-
-            return $missing !== []
-                ? 'I need ' . implode(', ', $missing) . ' before I can do that.'
-                : $answer;
-        }
-
-        try {
-            $result = $this->executeMameToolAction($action, $payload);
-            return $this->formatMameToolResult($result);
-        } catch (\Throwable $exception) {
-            return 'I could not complete that action: ' . $exception->getMessage();
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function parseMameToolResponse(string $answer): ?array
-    {
-        $candidate = trim($answer);
-        if ($candidate === '') {
-            return null;
-        }
-
-        if (preg_match('/^```(?:json)?\s*(.*?)\s*```$/is', $candidate, $matches) === 1) {
-            $candidate = trim((string) $matches[1]);
-        }
-
-        $decoded = json_decode($candidate, true);
-        if (!is_array($decoded)) {
-            $start = strpos($candidate, '{');
-            $end = strrpos($candidate, '}');
-            if ($start === false || $end === false || $end <= $start) {
-                return null;
-            }
-            $decoded = json_decode(substr($candidate, $start, $end - $start + 1), true);
-            if (!is_array($decoded)) {
-                return null;
-            }
-        }
-
-        if (!array_key_exists('action', $decoded) && !array_key_exists('tool', $decoded)) {
-            return null;
-        }
-
-        if (!is_array($decoded['payload'] ?? null)) {
-            $payload = $decoded;
-            unset($payload['action'], $payload['tool'], $payload['missing'], $payload['answer']);
-            $decoded['payload'] = $payload;
-        }
-
-        return $decoded;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function executeMameToolAction(string $action, array $payload): array
-    {
-        $normalized = $this->normalizeMameToolAction($action);
-        if ($normalized === '') {
-            throw new RuntimeException('Unsupported Mame action.');
-        }
-
-        $entityUpdateActions = [
-            'updateCustomer' => true,
-            'updateVendor' => true,
-            'updateProduct' => true,
-            'updateAccount' => true,
-            'updateOrder' => true,
-            'updateBill' => true,
-            'updateTransaction' => true,
-        ];
-        if (isset($entityUpdateActions[$normalized])) {
-            $payload = $this->normalizeMameUpdatePayload($payload);
-        }
-
-        if ($normalized === 'createTransfer') {
-            $payload['type'] = 'Transfer';
-            $normalized = 'createTransaction';
-        }
-
-        $this->serviceLifecycle()->assertActionAllowed($normalized);
-        $this->validateMameToolPayload($normalized, $payload);
-        $operations = null;
-        $operationsActions = [
-            'createOrder' => true,
-            'updateOrder' => true,
-            'deleteOrder' => true,
-            'createBill' => true,
-            'updateBill' => true,
-            'deleteBill' => true,
-            'createTransaction' => true,
-            'updateTransaction' => true,
-            'deleteTransaction' => true,
-        ];
-
-        if (isset($operationsActions[$normalized])) {
-            $operations = new OperationsApi($this->database, $this->auth, $this->config);
-            $record = $operations->{$normalized}($payload);
-        } else {
-            $record = $this->{$normalized}($payload);
-        }
-
-        if ($record === null || $record === false) {
-            throw new RuntimeException('No matching record was changed.');
-        }
-        if (is_array($record) && array_key_exists('success', $record) && !$record['success']) {
-            throw new RuntimeException('The requested change was not applied.');
-        }
-
-        return [
-            'action' => $normalized,
-            'record' => is_array($record) ? $record : ['success' => (bool) $record],
-        ];
-    }
-
-    private function normalizeMameToolAction(string $action): string
-    {
-        $key = strtolower(preg_replace('/[^a-z0-9]/i', '', $action));
-        $actions = [
-            'createcustomer' => 'createCustomer',
-            'updatecustomer' => 'updateCustomer',
-            'deletecustomer' => 'deleteCustomer',
-            'createvendor' => 'createVendor',
-            'updatevendor' => 'updateVendor',
-            'deletevendor' => 'deleteVendor',
-            'createproduct' => 'createProduct',
-            'updateproduct' => 'updateProduct',
-            'deleteproduct' => 'deleteProduct',
-            'createaccount' => 'createAccount',
-            'updateaccount' => 'updateAccount',
-            'deleteaccount' => 'deleteAccount',
-            'createorder' => 'createOrder',
-            'updateorder' => 'updateOrder',
-            'deleteorder' => 'deleteOrder',
-            'createbill' => 'createBill',
-            'updatebill' => 'updateBill',
-            'deletebill' => 'deleteBill',
-            'createtransaction' => 'createTransaction',
-            'updatetransaction' => 'updateTransaction',
-            'deletetransaction' => 'deleteTransaction',
-            'createtransfer' => 'createTransfer',
-            'updatecompanysettings' => 'updateCompanySettings',
-            'updateordersettings' => 'updateOrderSettings',
-            'updateinvoicesettings' => 'updateInvoiceSettings',
-            'updatesystemdefaults' => 'updateSystemDefaults',
-            'updatesettings' => 'updateSystemDefaults',
-        ];
-
-        return $actions[$key] ?? '';
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function normalizeMameUpdatePayload(array $payload): array
-    {
-        if (is_array($payload['updates'] ?? null)) {
-            return $payload;
-        }
-
-        $updates = $payload;
-        unset($updates['id']);
-
-        return [
-            'id' => $payload['id'] ?? '',
-            'updates' => $updates,
-        ];
-    }
-
-    private function validateMameToolPayload(string $action, array &$payload): void
-    {
-        $missing = [];
-        $require = static function (string $field, string $label = '') use (&$missing, &$payload): void {
-            $value = $payload[$field] ?? null;
-            if ($value === null || (is_string($value) && trim($value) === '') || (is_array($value) && $value === [])) {
-                $missing[] = $label !== '' ? $label : $field;
-            }
-        };
-
-        $idRequiredActions = [
-            'updateCustomer' => true,
-            'deleteCustomer' => true,
-            'updateVendor' => true,
-            'deleteVendor' => true,
-            'updateProduct' => true,
-            'deleteProduct' => true,
-            'updateAccount' => true,
-            'deleteAccount' => true,
-            'updateOrder' => true,
-            'deleteOrder' => true,
-            'updateBill' => true,
-            'deleteBill' => true,
-            'updateTransaction' => true,
-            'deleteTransaction' => true,
-        ];
-        if (isset($idRequiredActions[$action])) {
-            $require('id');
-        }
-
-        switch ($action) {
-            case 'createCustomer':
-            case 'createVendor':
-                $require('name');
-                $require('phone');
-                break;
-            case 'createProduct':
-                $require('name');
-                $require('salePrice');
-                $require('purchasePrice');
-                $require('stock');
-                $payload['image'] = $payload['image'] ?? null;
-                break;
-            case 'createAccount':
-                $require('name');
-                $require('type');
-                $payload['openingBalance'] = $payload['openingBalance'] ?? 0;
-                break;
-            case 'createOrder':
-                $require('customerId', 'customer id');
-                $require('items');
-                $payload = $this->normalizeMameOrderLikePayload($payload, 'order');
-                break;
-            case 'createBill':
-                $require('vendorId', 'vendor id');
-                $require('items');
-                $payload = $this->normalizeMameOrderLikePayload($payload, 'bill');
-                break;
-            case 'createTransaction':
-                $require('type');
-                $require('accountId', 'account id');
-                $require('amount');
-                $payload['type'] = trim((string) ($payload['type'] ?? 'Income')) ?: 'Income';
-                if (strcasecmp((string) $payload['type'], 'Transfer') === 0) {
-                    $require('toAccountId', 'to account id');
-                    $payload['category'] = $payload['category'] ?? 'transfer';
-                } else {
-                    $require('category');
-                }
-                $payload['paymentMethod'] = $payload['paymentMethod'] ?? 'Cash';
-                break;
-        }
-
-        if ($missing !== []) {
-            throw new RuntimeException('Missing required value(s): ' . implode(', ', array_values(array_unique($missing))) . '.');
-        }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function normalizeMameOrderLikePayload(array $payload, string $kind): array
-    {
-        $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
-        $normalizedItems = [];
-        $subtotal = 0.0;
-
-        foreach ($items as $item) {
-            if (!is_array($item)) {
-                continue;
-            }
-
-            $quantity = (float) ($item['quantity'] ?? $item['qty'] ?? 0);
-            $unitPrice = (float) ($item['unitPrice'] ?? $item['price'] ?? $item['salePrice'] ?? 0);
-            $lineTotal = array_key_exists('lineTotal', $item) ? (float) $item['lineTotal'] : $quantity * $unitPrice;
-            $subtotal += $lineTotal;
-
-            $normalizedItems[] = array_merge($item, [
-                'productId' => trim((string) ($item['productId'] ?? $item['id'] ?? '')),
-                'quantity' => $quantity,
-                'unitPrice' => $unitPrice,
-                'lineTotal' => $lineTotal,
-            ]);
-        }
-
-        $discount = (float) ($payload['discount'] ?? 0);
-        $shipping = (float) ($payload['shipping'] ?? 0);
-        $payload['items'] = $normalizedItems;
-        $payload['subtotal'] = array_key_exists('subtotal', $payload) ? (float) $payload['subtotal'] : $subtotal;
-        $payload['discount'] = $discount;
-        $payload['shipping'] = $shipping;
-        $payload['total'] = array_key_exists('total', $payload)
-            ? (float) $payload['total']
-            : max($payload['subtotal'] - $discount + $shipping, 0);
-        $payload['paidAmount'] = (float) ($payload['paidAmount'] ?? 0);
-        $payload['status'] = trim((string) ($payload['status'] ?? 'On Hold')) ?: 'On Hold';
-        $payload['notes'] = $payload['notes'] ?? null;
-
-        if ($kind === 'order' && empty($payload['orderDate'])) {
-            unset($payload['orderDate']);
-        }
-        if ($kind === 'bill' && empty($payload['billDate'])) {
-            unset($payload['billDate']);
-        }
-
-        return $payload;
-    }
-
-    private function formatMameToolResult(array $result): string
-    {
-        $action = (string) ($result['action'] ?? '');
-        $record = is_array($result['record'] ?? null) ? $result['record'] : [];
-        $verb = str_starts_with($action, 'delete') ? 'deleted' : (str_starts_with($action, 'update') ? 'updated' : 'created');
-        $type = strtolower((string) preg_replace('/^(create|update|delete)/', '', $action));
-        $label = $this->mameRecordLabel($record);
-
-        $message = 'Done - ' . $verb . ' ' . ($type !== '' ? $type : 'record');
-        if ($label !== '') {
-            $message .= ': ' . $label;
-        }
-        $message .= '.';
-
-        if ($action === 'createProduct') {
-            $message .= ' Please update the product image manually from the product form.';
-        }
-
-        return $message;
-    }
-
-    private function mameRecordLabel(array $record): string
-    {
-        foreach (['orderNumber', 'billNumber', 'transactionId', 'name', 'id'] as $field) {
-            $value = trim((string) ($record[$field] ?? ''));
-            if ($value !== '') {
-                return $value;
-            }
-        }
-
-        return '';
-    }
-
-    private function quoteIdentifier(string $identifier): string
-    {
-        $safe = str_replace('`', '``', $identifier);
-        return '`' . $safe . '`';
-    }
-
-    /**
-     * @return string[]
-     */
-    private function buildMameToolInstructions(): array
-    {
-        return [
-            'For read-only questions, answer directly using Business facts and Relevant database records.',
-            'For write actions, respond with one JSON object only and no markdown: {"action":"createCustomer","payload":{"name":"Ayesha","phone":"017..."}}.',
-            'If a required value is missing, respond with JSON only: {"action":"none","missing":["customer phone"],"answer":"Please provide the customer phone number."}.',
-            'Allowed actions: createCustomer, updateCustomer, deleteCustomer, createVendor, updateVendor, deleteVendor, createProduct, updateProduct, deleteProduct, createAccount, updateAccount, deleteAccount, createOrder, updateOrder, deleteOrder, createBill, updateBill, deleteBill, createTransaction, updateTransaction, deleteTransaction, createTransfer, updateCompanySettings, updateOrderSettings, updateInvoiceSettings, updateSystemDefaults.',
-            'Required create fields: customer/vendor need name and phone; product needs name, salePrice, purchasePrice, stock and image must be null unless the user provides an image URL; account needs name and type; order needs customerId and at least one item; bill needs vendorId and at least one item; transaction needs type, accountId, amount, category; transfer needs accountId, toAccountId, amount.',
-            'Optional fields: orderDate, billDate, transaction date, notes, description, discount, shipping, paidAmount, address, due amounts, image, category, currentBalance. Order and bill dates default to creation date.',
-            'For update and delete actions, id is required. Put changed fields inside payload.updates for updates.',
-            'For products, after creating without an image, tell the user to update the product image manually.',
-        ];
-    }
-
-    private function callGeminiChat(array $payload, string $apiKey): string
-    {
-        $endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
-        $headers = ['Content-Type' => 'application/json'];
-        $url = $endpoint;
-
-        if (str_starts_with($apiKey, 'ya29.') || str_starts_with($apiKey, 'Bearer ')) {
-            $cleanKey = preg_replace('/^Bearer\s+/i', '', $apiKey);
-            $headers['Authorization'] = 'Bearer ' . $cleanKey;
-        } else {
-            $headers['x-goog-api-key'] = $apiKey;
-        }
-
-        $systemContent = (string) ($payload['messages'][0]['content'] ?? '');
-        $userContent = (string) ($payload['messages'][1]['content'] ?? '');
-
-        $requestBody = [
-            'contents' => [
-                [
-                    'role' => 'system',
-                    'parts' => [
-                        ['text' => $systemContent],
-                    ],
-                ],
-                [
-                    'role' => 'user',
-                    'parts' => [
-                        ['text' => $userContent],
-                    ],
-                ],
-            ],
-            'generationConfig' => [
-                'temperature' => $payload['temperature'] ?? 0.3,
-                'topP' => 0.95,
-                'candidateCount' => 1,
-            ],
-        ];
-
-        $response = $this->httpJson(
-            'POST',
-            $url,
-            $headers,
-            $requestBody
-        );
-
-        $json = $response['json'] ?? null;
-        if ($response['status'] !== 200) {
-            $message = 'HTTP ' . $response['status'];
-            if (is_array($json) && isset($json['error']['message'])) {
-                $message .= ': ' . $json['error']['message'];
-            }
-            throw new RuntimeException($message);
-        }
-
-        $text = $this->extractGeminiResponseText($json);
-        if ($text !== '') {
-            return $text;
-        }
-
-        throw new RuntimeException('Unexpected Gemini response format.');
-    }
-
-    private function extractGeminiResponseText(mixed $json): string
-    {
-        if (!is_array($json)) {
-            return '';
-        }
-
-        if (isset($json['candidates'][0]['content'])) {
-            $candidate = $json['candidates'][0]['content'];
-            if (is_string($candidate)) {
-                return trim($candidate);
-            }
-            if (is_array($candidate)) {
-                if (isset($candidate['text'])) {
-                    return trim((string) $candidate['text']);
-                }
-                if (isset($candidate['parts'][0]['text'])) {
-                    return trim((string) $candidate['parts'][0]['text']);
-                }
-            }
-        }
-
-        if (isset($json['output']['content']) && is_array($json['output']['content'])) {
-            foreach ($json['output']['content'] as $contentItem) {
-                if (is_array($contentItem) && isset($contentItem['type']) && $contentItem['type'] === 'output_text' && isset($contentItem['text'])) {
-                    return trim((string) $contentItem['text']);
-                }
-            }
-        }
-
-        if (isset($json['candidates'][0]['content'])) {
-            $candidate = $json['candidates'][0]['content'];
-            if (is_string($candidate)) {
-                return trim($candidate);
-            }
-            if (is_array($candidate)) {
-                foreach ($candidate as $item) {
-                    if (is_string($item)) {
-                        return trim($item);
-                    }
-                    if (is_array($item)) {
-                        if (isset($item['text'])) {
-                            return trim((string) $item['text']);
-                        }
-                        if (isset($item['content']) && is_string($item['content'])) {
-                            return trim($item['content']);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (isset($json['output'][0]['content']) && is_array($json['output'][0]['content'])) {
-            foreach ($json['output'][0]['content'] as $contentItem) {
-                if (!is_array($contentItem)) {
-                    continue;
-                }
-                if (isset($contentItem['type']) && $contentItem['type'] === 'output_text' && isset($contentItem['text'])) {
-                    return trim((string) $contentItem['text']);
-                }
-                if (isset($contentItem['text'])) {
-                    return trim((string) $contentItem['text']);
-                }
-                if (isset($contentItem['content']) && is_string($contentItem['content'])) {
-                    return trim($contentItem['content']);
-                }
-            }
-        }
-
-        return '';
-    }
-
-    private function callOpenRouterChat(array $payload, string $apiKey): string
-    {
-        $payload['model'] = 'nex-agi/nex-n2-pro:free';
-
-        $response = $this->httpJson(
-            'POST',
-            'https://openrouter.ai/v1/chat/completions',
-            ['Authorization' => 'Bearer ' . $apiKey],
-            $payload
-        );
-
-        $json = $response['json'] ?? null;
-        if (is_array($json)) {
-            if (isset($json['choices'][0]['message']['content'])) {
-                return trim((string) $json['choices'][0]['message']['content']);
-            }
-            if (isset($json['choices'][0]['message']['content'][0]['text'])) {
-                return trim((string) $json['choices'][0]['message']['content'][0]['text']);
-            }
-            if (isset($json['choices'][0]['text'])) {
-                return trim((string) $json['choices'][0]['text']);
-            }
-            if (isset($json['choices'][0]['delta']['content'])) {
-                return trim((string) $json['choices'][0]['delta']['content']);
-            }
-        }
-
-        throw new RuntimeException('Unexpected OpenRouter response format.');
+        // Temporary compatibility alias. It deliberately has the same durable
+        // asynchronous semantics as startAgentRun and never enters the retired
+        // generated-SQL/direct-write implementation below.
+        return $this->mameChat($params);
     }
 
     /**

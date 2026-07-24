@@ -1256,7 +1256,7 @@ final class CourierApi extends BaseService
 
     /**
      * Sync exchange consignment statuses for all couriers.
-     * Multi-step exchange flow: Exchange processing → Exchange picked → Exchange delivered → Completed.
+     * Multi-step exchange flow: Exchange processing → Exchange picked → Exchange delivered.
      */
     public function syncExchangeConsignmentStatuses(array $params = []): array
     {

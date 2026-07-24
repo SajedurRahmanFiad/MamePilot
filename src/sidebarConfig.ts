@@ -121,6 +121,34 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     ],
   },
   {
+    key: 'banking',
+    label: 'Banking',
+    icon: ICONS.Banking,
+    children: [
+      {
+        key: 'accounts',
+        label: 'Accounts',
+        to: '/banking/accounts',
+        icon: ICONS.Banking,
+        visible: ({ can, hasSubCapability }) => can('accounts.view') && hasSubCapability('accounts'),
+      },
+      {
+        key: 'transactions',
+        label: 'Transactions',
+        to: '/banking/transactions',
+        icon: ICONS.Banking,
+        visible: ({ can, hasSubCapability }) => can('transactions.view') && hasSubCapability('transactions'),
+      },
+      {
+        key: 'transfer',
+        label: 'Transfer',
+        to: '/banking/transfer',
+        icon: ICONS.PlusCircle,
+        visible: ({ can, hasSubCapability }) => can('transfers.create') && hasSubCapability('transfer'),
+      },
+    ],
+  },
+  {
     key: 'human_resources',
     label: 'Human Resource',
     icon: ICONS.Users,
@@ -177,34 +205,6 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     visible: ({ hasCapability }) => hasCapability('grow_your_business'),
   },
   {
-    key: 'banking',
-    label: 'Banking',
-    icon: ICONS.Banking,
-    children: [
-      {
-        key: 'accounts',
-        label: 'Accounts',
-        to: '/banking/accounts',
-        icon: ICONS.Banking,
-        visible: ({ can, hasSubCapability }) => can('accounts.view') && hasSubCapability('accounts'),
-      },
-      {
-        key: 'transactions',
-        label: 'Transactions',
-        to: '/banking/transactions',
-        icon: ICONS.Banking,
-        visible: ({ can, hasSubCapability }) => can('transactions.view') && hasSubCapability('transactions'),
-      },
-      {
-        key: 'transfer',
-        label: 'Transfer',
-        to: '/banking/transfer',
-        icon: ICONS.PlusCircle,
-        visible: ({ can, hasSubCapability }) => can('transfers.create') && hasSubCapability('transfer'),
-      },
-    ],
-  },
-  {
     key: 'reports',
     label: 'Reports',
     to: '/reports',
@@ -212,18 +212,25 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     visible: ({ can, hasCapability }) => can('reports.view') && hasCapability('advanced_reports'),
   },
   {
-    key: 'recycle_bin',
-    label: 'Recycle Bin',
-    to: '/recycle-bin',
+    key: 'recovery',
+    label: 'Recovery',
     icon: ICONS.RecycleBin,
-    visible: ({ can, hasSubCapability }) => can('recycleBin.view') && hasSubCapability('recycle_bin'),
-  },
-  {
-    key: 'undoer',
-    label: 'Undoer',
-    to: '/undoer',
-    icon: ICONS.Undoer,
-    visible: ({ can, hasSubCapability }) => can('undoer.view') && hasSubCapability('undoer'),
+    children: [
+      {
+        key: 'recycle_bin',
+        label: 'Recycle Bin',
+        to: '/recycle-bin',
+        icon: ICONS.RecycleBin,
+        visible: ({ can, hasSubCapability }) => can('recycleBin.view') && hasSubCapability('recycle_bin'),
+      },
+      {
+        key: 'undoer',
+        label: 'Undoer',
+        to: '/undoer',
+        icon: ICONS.Undoer,
+        visible: ({ can, hasSubCapability }) => can('undoer.view') && hasSubCapability('undoer'),
+      },
+    ],
   },
   {
     key: 'subscriptions',

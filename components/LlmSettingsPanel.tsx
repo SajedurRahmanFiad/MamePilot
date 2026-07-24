@@ -17,13 +17,16 @@ const PROVIDERS: Array<{ id: LlmProvider; label: string; baseUrl: string; note: 
 
 const FEATURE_DETAILS: Array<{ key: LlmFeatureKey; label: string; description: string }> = [
   { key: 'information_extraction', label: 'Information extraction', description: 'Extracts customer and vendor name, Bangladesh phone, and address for Be smart.' },
-  { key: 'mame_ai', label: 'Mame AI', description: 'Plans read-only data queries and writes the answer shown in Mame AI.' },
+  { key: 'mame_ai', label: 'Mame AI fallback', description: 'Explicit fallback only when a dedicated Mame AI role below is not assigned.' },
+  { key: 'mame_ai_fast', label: 'Mame AI fast', description: 'Routes direct, agent, and needs-input requests without accessing business tools.' },
+  { key: 'mame_ai_reasoning', label: 'Mame AI reasoning', description: 'Runs the multi-step tool loop. The selected profile must support tool calling.' },
+  { key: 'mame_ai_multimodal', label: 'Mame AI multimodal', description: 'Reads private image or audio attachments before routing and analysis.' },
   { key: 'business_growth', label: 'Grow Your Business', description: 'Analyzes business summaries and produces growth recommendations.' },
 ];
 
 const EMPTY_SETTINGS: LlmSettings = {
   configurations: [],
-  assignments: { information_extraction: null, mame_ai: null, business_growth: null },
+  assignments: { information_extraction: null, mame_ai: null, mame_ai_fast: null, mame_ai_reasoning: null, mame_ai_multimodal: null, business_growth: null },
   multimodalConfigurations: [],
   multimodalAssignment: null,
 };
@@ -43,6 +46,12 @@ const newConfiguration = (): LlmConfiguration => ({
   siteUrl: '',
   appName: 'MamePilot',
   anthropicVersion: '2023-06-01',
+  supportsToolCalling: false,
+  supportsStructuredOutput: false,
+  supportsVision: false,
+  supportsAudio: false,
+  contextWindowTokens: 32768,
+  defaultOutputTokens: 4096,
 });
 
 const newMultimodalConfiguration = (): MultimodalLlmConfiguration => ({
@@ -75,6 +84,20 @@ const LlmSettingsPanel: React.FC = () => {
     () => form.configurations.filter((configuration) => configuration.enabled && configuration.model.trim()),
     [form.configurations],
   );
+  const assignmentIssues = useMemo(() => {
+    const byId = new Map(selectableConfigurations.map((configuration) => [configuration.id, configuration]));
+    const fallback = form.assignments.mame_ai ? byId.get(form.assignments.mame_ai) : undefined;
+    const fast = form.assignments.mame_ai_fast ? byId.get(form.assignments.mame_ai_fast) : fallback;
+    const reasoning = form.assignments.mame_ai_reasoning ? byId.get(form.assignments.mame_ai_reasoning) : fallback;
+    const multimodal = form.assignments.mame_ai_multimodal ? byId.get(form.assignments.mame_ai_multimodal) : fallback;
+    const issues: string[] = [];
+    if (!fast) issues.push('Assign a fast Mame AI profile or an explicit Mame AI fallback.');
+    if (!reasoning) issues.push('Assign a reasoning Mame AI profile or an explicit fallback.');
+    else if (!reasoning.supportsToolCalling) issues.push('The effective reasoning profile must be marked as supporting tool calls.');
+    if (!multimodal) issues.push('Assign a multimodal Mame AI profile or fallback to enable image and audio requests.');
+    else if (!multimodal.supportsVision && !multimodal.supportsAudio) issues.push('The effective multimodal profile must support image or audio input.');
+    return issues;
+  }, [form.assignments, selectableConfigurations]);
 
   const patchConfiguration = (id: string, updates: Partial<LlmConfiguration>) => {
     setForm((current) => ({
@@ -107,6 +130,7 @@ const LlmSettingsPanel: React.FC = () => {
 
   const removeConfiguration = (id: string) => {
     setForm((current) => ({
+      ...current,
       configurations: current.configurations.filter((configuration) => configuration.id !== id),
       assignments: Object.fromEntries(
         Object.entries(current.assignments).map(([feature, selected]) => [feature, selected === id ? null : selected]),
@@ -160,6 +184,10 @@ const LlmSettingsPanel: React.FC = () => {
           <Button onClick={save} variant="primary" disabled={updateSettings.isPending}>Save LLM Settings</Button>
         </div>
         <div className="grid gap-4">
+          <div className={`rounded-2xl border px-5 py-4 ${assignmentIssues.length === 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            <p className="text-sm font-black">Mame AI assignments {assignmentIssues.length === 0 ? 'are ready' : 'need attention'}</p>
+            {assignmentIssues.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold">{assignmentIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+          </div>
           {FEATURE_DETAILS.map((feature) => (
             <div key={feature.key} className="grid gap-3 rounded-2xl border border-gray-100 bg-gray-50/70 p-5 md:grid-cols-[1fr_minmax(260px,420px)] md:items-center">
               <div>
@@ -273,6 +301,22 @@ const LlmSettingsPanel: React.FC = () => {
                 {configuration.provider === 'anthropic' && (
                   <label className="block space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Anthropic API version</span><input className={`${inputClass} max-w-md`} value={configuration.anthropicVersion || '2023-06-01'} onChange={(event) => patchConfiguration(configuration.id, { anthropicVersion: event.target.value })} /></label>
                 )}
+                <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <div>
+                    <p className="text-sm font-black text-gray-800">Model capabilities</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-500">These flags control which Mame AI roles can use this profile. Set them to match the selected provider model.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-5 text-sm font-bold text-gray-600">
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsToolCalling} onChange={(event) => patchConfiguration(configuration.id, { supportsToolCalling: event.target.checked })} />Tool calling</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsStructuredOutput} onChange={(event) => patchConfiguration(configuration.id, { supportsStructuredOutput: event.target.checked })} />Structured output</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsVision} onChange={(event) => patchConfiguration(configuration.id, { supportsVision: event.target.checked })} />Vision input</label>
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={configuration.supportsAudio} onChange={(event) => patchConfiguration(configuration.id, { supportsAudio: event.target.checked })} />Audio input</label>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Context window tokens</span><input className={inputClass} type="number" min="1024" max="2000000" value={configuration.contextWindowTokens} onChange={(event) => patchConfiguration(configuration.id, { contextWindowTokens: Number(event.target.value) })} /></label>
+                    <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Default output tokens</span><input className={inputClass} type="number" min="64" max="65536" value={configuration.defaultOutputTokens} onChange={(event) => patchConfiguration(configuration.id, { defaultOutputTokens: Number(event.target.value) })} /></label>
+                  </div>
+                </div>
               </article>
             );
           })}

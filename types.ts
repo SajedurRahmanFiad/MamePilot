@@ -641,6 +641,72 @@ export interface Order {
   pendingTransactionIds?: string[];
 }
 
+export interface OrderUndoStockAdjustment {
+  productId: string;
+  productName: string;
+  currentStock: number;
+  adjustment: number;
+  projectedStock: number;
+}
+
+export interface OrderUndoImpact {
+  transactions: Array<{
+    id: string;
+    type: string;
+    amount: number;
+    description: string;
+    accountName?: string | null;
+    toAccountName?: string | null;
+  }>;
+  transactionCount: number;
+  accountAdjustments: Array<{
+    accountId: string;
+    accountName: string;
+    currentBalance: number;
+    adjustment: number;
+    projectedBalance: number;
+  }>;
+  walletEntriesCreatedByStatus: number;
+  walletTreatment: 'append_compensating_entry';
+  stockAdjustments: OrderUndoStockAdjustment[];
+  restoredFields: string[];
+  externalEffects: Array<{
+    type: 'courier_submission';
+    provider: string;
+    message: string;
+  }>;
+  transactionsMoveToRecycleBin: boolean;
+}
+
+export interface OrderUndoRestorePoint {
+  id: string;
+  targetStatus: OrderStatus;
+  sourceAction: string;
+  occurredAt?: string | null;
+  exact: boolean;
+  blockedReason?: string | null;
+  impact: OrderUndoImpact;
+}
+
+export interface OrderUndoPlan {
+  order: Order;
+  restorePoints: OrderUndoRestorePoint[];
+  hasExactHistory: boolean;
+}
+
+export interface OrderUndoResult {
+  order: Order;
+  result: {
+    exact: boolean;
+    message?: string;
+    undoBatchId?: string;
+    eventsReverted?: number;
+    transactionsMovedToRecycleBin?: number;
+    stockProductsAdjusted?: number;
+    walletTreatment?: 'append_compensating_entry';
+  };
+}
+
 export interface Bill {
   id: string;
   billNumber: string;
@@ -1092,12 +1158,26 @@ export interface PaymentGatewaySettings {
 
 export interface AgentSettings {
   enabled: boolean;
-  showReasoningSummaries: boolean;
+  showPlanActivity: boolean;
   showToolActivity: boolean;
   maxReasoningSteps: number;
   maxToolCalls: number;
   queryRowLimit: number;
   queryTimeoutMs: number;
+  queryMaxColumns: number;
+  queryMaxBytes: number;
+  runTimeoutSeconds: number;
+  contextBudgetTokens: number;
+  maxOutputTokens: number;
+  retryLimit: number;
+  confirmationExpiryMinutes: number;
+  leaseSeconds: number;
+  workerReady?: boolean;
+  queueDepth?: number;
+  workerLastHeartbeat?: string | null;
+  workerLastSuccessAt?: string | null;
+  workerLastErrorAt?: string | null;
+  workerLastError?: string | null;
 }
 
 export interface BusinessGrowthSettings {
@@ -1105,7 +1185,7 @@ export interface BusinessGrowthSettings {
 }
 
 export type LlmProvider = 'google' | 'openai' | 'openrouter' | 'groq' | 'anthropic' | 'deepseek';
-export type LlmFeatureKey = 'information_extraction' | 'mame_ai' | 'business_growth';
+export type LlmFeatureKey = 'information_extraction' | 'mame_ai' | 'mame_ai_fast' | 'mame_ai_reasoning' | 'mame_ai_multimodal' | 'business_growth';
 
 export interface LlmConfiguration {
   id: string;
@@ -1120,14 +1200,18 @@ export interface LlmConfiguration {
   siteUrl?: string;
   appName?: string;
   anthropicVersion?: string;
+  supportsToolCalling: boolean;
+  supportsStructuredOutput: boolean;
+  supportsVision: boolean;
+  supportsAudio: boolean;
+  contextWindowTokens: number;
+  defaultOutputTokens: number;
 }
 
 export interface MultimodalLlmConfiguration extends LlmConfiguration {
   systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
-  supportsVision?: boolean;
-  supportsAudio?: boolean;
 }
 
 export interface LlmSettings {

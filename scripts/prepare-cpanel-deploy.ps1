@@ -54,6 +54,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\woocommerce-web
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force
+Copy-Item -Path (Join-Path $repoRoot 'migrations') -Destination (Join-Path $appRoot 'migrations') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot '.env.example') -Destination (Join-Path $appRoot '.env.example') -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $appRoot 'VERSION') -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $packageRoot 'VERSION') -Force
@@ -89,7 +90,31 @@ if (-not $NoZip) {
         Start-Sleep -Seconds 2
       }
 
-      Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $zipPath -Force
+      Add-Type -AssemblyName System.IO.Compression
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      $archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+      try {
+        $packagePrefixLength = $packageRoot.TrimEnd('\', '/').Length + 1
+        Get-ChildItem -LiteralPath $packageRoot -Recurse -File -Force |
+          Sort-Object FullName |
+          ForEach-Object {
+            $entryName = $_.FullName.Substring($packagePrefixLength).Replace('\', '/')
+            $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+            $entry.LastWriteTime = $_.LastWriteTime
+            $sourceStream = $_.OpenRead()
+            $entryStream = $entry.Open()
+            try {
+              $sourceStream.CopyTo($entryStream)
+            }
+            finally {
+              $entryStream.Dispose()
+              $sourceStream.Dispose()
+            }
+          }
+      }
+      finally {
+        $archive.Dispose()
+      }
       $zipCreated = $true
     }
     catch {

@@ -330,6 +330,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/recycle-bin')) {
       return { title: 'Recycle Bin', subtitle: 'Restore removed records and review deleted items.' };
     }
+    if (pathname.startsWith('/undoer')) {
+      return { title: 'Undoer', subtitle: 'Review and reverse order status operations safely.' };
+    }
     if (pathname.startsWith('/wallet')) {
       return { title: 'Wallet', subtitle: 'Track employee wallet balance and activity.' };
     }

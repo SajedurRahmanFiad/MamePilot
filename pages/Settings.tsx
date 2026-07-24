@@ -297,7 +297,9 @@ const SettingsPage: React.FC = () => {
         missedCallRetryCount: voiceSurveySettingsData.missedCallRetryCount ?? 3,
         noKeyRetryMinutes: voiceSurveySettingsData.noKeyRetryMinutes ?? 10,
         noKeyRetryCount: voiceSurveySettingsData.noKeyRetryCount ?? 2,
-        triggerStatuses: [voiceSurveySettingsData.triggerStatuses?.[0] || 'On Hold'],
+        triggerStatuses: [voiceSurveySettingsData.triggerStatuses?.[0] === 'Created'
+          ? 'On Hold'
+          : (voiceSurveySettingsData.triggerStatuses?.[0] || 'On Hold')],
       });
     }
   }, [voiceSurveySettingsData]);
@@ -1442,7 +1444,7 @@ const SettingsPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {Object.values(OrderStatus).map((status) => {
+                    {Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => {
                       const checked = walletSettings.countedStatuses.includes(status);
 
                       return (
@@ -1861,7 +1863,7 @@ const SettingsPage: React.FC = () => {
                         }))}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
                       >
-                        {['On Hold', 'Processing', 'Created'].map((status) => (
+                        {['On Hold', 'Processing'].map((status) => (
                           <option key={status} value={status}>{status}</option>
                         ))}
                       </select>

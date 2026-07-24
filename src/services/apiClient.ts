@@ -36,7 +36,7 @@ function normalizeApiBaseUrl(value: string): string {
 const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
 const SERVICE_ERROR_CODES = new Set(['SERVICE_EXPIRED', 'SERVICE_RENEWAL_PENDING']);
 
-function buildActionUrl(action: string): string {
+export function apiActionUrl(action: string): string {
   const separator = API_BASE_URL.includes('?') ? '&' : '?';
   return `${API_BASE_URL}${separator}action=${encodeURIComponent(action)}`;
 }
@@ -68,7 +68,7 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
 
   let response: Response;
   try {
-    response = await fetch(buildActionUrl(action), {
+    response = await fetch(apiActionUrl(action), {
       method: 'POST',
       cache: 'no-store',
       headers: {

@@ -12,6 +12,7 @@ final class Auth
     private ?array $resolvedUser = null;
     private ?string $resolvedToken = null;
     private bool $hasResolvedToken = false;
+    private ?array $backgroundUser = null;
 
     public function __construct(Config $config, Database $database)
     {
@@ -102,12 +103,47 @@ final class Auth
 
     public function requireUser(): array
     {
+        if ($this->backgroundUser !== null) {
+            return $this->backgroundUser;
+        }
+
         $user = $this->userFromToken(Http::bearerToken());
         if ($user === null) {
             throw new \RuntimeException('Authentication required.');
         }
 
         return $user;
+    }
+
+    /**
+     * Build an authentication context for a durable background job. The
+     * original browser token is intentionally never persisted or replayed.
+     */
+    public function forUserId(string $userId): self
+    {
+        $normalized = trim($userId);
+        if ($normalized === '') {
+            throw new \RuntimeException('Background user id is required.');
+        }
+
+        $user = $this->database->fetchOne(
+            'SELECT id, name, phone, role, image, created_at, deleted_at, deleted_by
+             FROM users
+             WHERE id = :id AND deleted_at IS NULL
+             LIMIT 1',
+            [':id' => $normalized]
+        );
+        if ($user === null) {
+            throw new \RuntimeException('The user who started this run no longer exists or is disabled.');
+        }
+
+        if ($this->userIsExplicitlyDisabled($normalized)) {
+            throw new \RuntimeException('The user who started this run is disabled.');
+        }
+
+        $context = new self($this->config, $this->database);
+        $context->backgroundUser = $user;
+        return $context;
     }
 
     public function requireAdmin(): array
@@ -124,6 +160,34 @@ final class Auth
     private function jwtSecret(): string
     {
         return $this->config->get('APP_JWT_SECRET', 'bdhatbela-change-this-secret') ?? 'bdhatbela-change-this-secret';
+    }
+
+    private function userIsExplicitlyDisabled(string $userId): bool
+    {
+        $column = $this->database->fetchOne(
+            "SELECT COLUMN_NAME
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'users'
+               AND COLUMN_NAME IN ('is_active', 'enabled', 'disabled_at')
+             ORDER BY FIELD(COLUMN_NAME, 'is_active', 'enabled', 'disabled_at')
+             LIMIT 1"
+        );
+        $columnName = (string) ($column['COLUMN_NAME'] ?? '');
+        if ($columnName === '') {
+            return false;
+        }
+
+        $row = $this->database->fetchOne(
+            'SELECT `' . $columnName . '` AS state_value FROM users WHERE id = :id LIMIT 1',
+            [':id' => $userId]
+        );
+        $value = $row['state_value'] ?? null;
+        if ($columnName === 'disabled_at') {
+            return $value !== null && trim((string) $value) !== '';
+        }
+
+        return (int) $value !== 1;
     }
 
     private function base64UrlEncode(string $value): string

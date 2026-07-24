@@ -511,7 +511,12 @@ final class OperationsApi extends BaseService
                 continue;
             }
 
-            $updates[] = ['id' => $productId, 'stock' => $nextStock];
+            $updates[] = [
+                'id' => $productId,
+                'stock' => $nextStock,
+                'previousStock' => $currentStock,
+                'delta' => (int) $deltas[$productId],
+            ];
         }
 
         if ($insufficient !== []) {
@@ -791,7 +796,8 @@ final class OperationsApi extends BaseService
         $shippingDescription = "Shipping costs for Order #{$orderNumber}";
 
         $rows = $this->database->fetchAll(
-            "SELECT id, type, account_id, to_account_id, amount, account_effect_applied
+            "SELECT id, date, type, category, account_id, to_account_id, amount, description,
+                    payment_method, approval_status, account_effect_applied
              FROM transactions
              WHERE {$stateSql}
                AND (reference_id = :reference_id OR (type = 'Expense' AND category = 'expense_shipping' AND description = :shipping_description))",
@@ -802,6 +808,137 @@ final class OperationsApi extends BaseService
         );
 
         return array_values($this->keyBy($rows, 'id'));
+    }
+
+    /**
+     * Capture only order fields that status workflows are allowed to restore.
+     * Customer notes and other ordinary edits are deliberately excluded so an
+     * undo cannot overwrite unrelated work performed later.
+     *
+     * @return array<string, mixed>
+     */
+    private function orderUndoSnapshot(array $row): array
+    {
+        $columns = [
+            'status', 'items', 'subtotal', 'discount', 'shipping', 'total', 'paid_amount', 'history',
+            'carrybee_consignment_id', 'steadfast_consignment_id', 'paperfly_tracking_number',
+            'pathao_consignment_id', 'exchange_courier', 'exchange_steadfast_consignment_id',
+            'exchange_carrybee_consignment_id', 'exchange_paperfly_tracking_number',
+            'exchange_pathao_consignment_id', 'exchange_courier_history',
+        ];
+        $snapshot = [];
+        foreach ($columns as $column) {
+            $snapshot[$column] = $row[$column] ?? null;
+        }
+        $snapshot['status'] = $this->canonicalOrderStatus(
+            (string) ($snapshot['status'] ?? ''),
+            $this->jsonDecodeAssoc($snapshot['history'] ?? [])
+        );
+        return $snapshot;
+    }
+
+    /** @return array<string, mixed> */
+    private function canonicalizeOrderUndoSnapshot(array $snapshot): array
+    {
+        $snapshot['status'] = $this->canonicalOrderStatus(
+            (string) ($snapshot['status'] ?? ''),
+            $this->jsonDecodeAssoc($snapshot['history'] ?? [])
+        );
+        return $snapshot;
+    }
+
+    /** @return array{transactions: array<int, string>, wallet: array<int, string>} */
+    private function orderUndoEffectIds(string $orderId, string $orderNumber): array
+    {
+        $transactionIds = array_map(
+            static fn(array $row): string => (string) ($row['id'] ?? ''),
+            $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active')
+        );
+        $walletIds = [];
+        if ($this->tableExists('wallet_entries')) {
+            $walletIds = array_map(
+                static fn(array $row): string => (string) ($row['id'] ?? ''),
+                $this->database->fetchAll(
+                    "SELECT id FROM wallet_entries WHERE source_order_id = :order_id AND entry_type IN ('order_credit', 'order_reversal')",
+                    [':order_id' => $orderId]
+                )
+            );
+        }
+        sort($transactionIds);
+        sort($walletIds);
+        return ['transactions' => $transactionIds, 'wallet' => $walletIds];
+    }
+
+    /** @return array<string, int> */
+    private function orderUndoStockDeltas(array $stockUpdates): array
+    {
+        $deltas = [];
+        foreach ($stockUpdates as $update) {
+            $productId = trim((string) ($update['id'] ?? ''));
+            $delta = (int) ($update['delta'] ?? 0);
+            if ($productId !== '' && $delta !== 0) {
+                $deltas[$productId] = ($deltas[$productId] ?? 0) + $delta;
+            }
+        }
+        return $deltas;
+    }
+
+    /**
+     * Persist an immutable restore point after the surrounding order
+     * transaction has applied every financial, wallet and stock side effect.
+     * Older deployments without the migration continue to work, but their
+     * Undoer previews are explicitly marked as inferred.
+     *
+     * @param array{transactions: array<int, string>, wallet: array<int, string>} $beforeEffects
+     */
+    private function recordOrderUndoEvent(
+        array $beforeRow,
+        array $afterRow,
+        string $sourceAction,
+        string $actorId,
+        array $stockUpdates,
+        array $beforeEffects
+    ): void {
+        if (!$this->tableExists('order_status_undo_events')) {
+            return;
+        }
+        $beforeSnapshot = $this->orderUndoSnapshot($beforeRow);
+        $afterSnapshot = $this->orderUndoSnapshot($afterRow);
+        if ($this->encodeComparableJson($beforeSnapshot) === $this->encodeComparableJson($afterSnapshot)) {
+            return;
+        }
+        $orderId = trim((string) ($afterRow['id'] ?? $beforeRow['id'] ?? ''));
+        $orderNumber = trim((string) ($afterRow['order_number'] ?? $beforeRow['order_number'] ?? ''));
+        $afterEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
+        $transactionIds = array_values(array_diff($afterEffects['transactions'], $beforeEffects['transactions']));
+        $walletEntryIds = array_values(array_diff($afterEffects['wallet'], $beforeEffects['wallet']));
+        $now = $this->database->nowUtc();
+        $this->database->execute(
+            'INSERT INTO order_status_undo_events (
+                id, order_id, order_number, from_status, to_status, source_action,
+                before_snapshot, after_snapshot, transaction_ids, wallet_entry_ids,
+                stock_deltas, created_by, created_at
+             ) VALUES (
+                :id, :order_id, :order_number, :from_status, :to_status, :source_action,
+                :before_snapshot, :after_snapshot, :transaction_ids, :wallet_entry_ids,
+                :stock_deltas, :created_by, :created_at
+             )',
+            [
+                ':id' => $this->uuid4(),
+                ':order_id' => $orderId,
+                ':order_number' => $orderNumber,
+                ':from_status' => (string) ($beforeSnapshot['status'] ?? ''),
+                ':to_status' => (string) ($afterSnapshot['status'] ?? ''),
+                ':source_action' => $sourceAction,
+                ':before_snapshot' => $this->jsonEncode($beforeSnapshot),
+                ':after_snapshot' => $this->jsonEncode($afterSnapshot),
+                ':transaction_ids' => $this->jsonEncode($transactionIds),
+                ':wallet_entry_ids' => $this->jsonEncode($walletEntryIds),
+                ':stock_deltas' => $this->jsonEncode($this->orderUndoStockDeltas($stockUpdates)),
+                ':created_by' => $actorId !== '' ? $actorId : null,
+                ':created_at' => $now,
+            ]
+        );
     }
 
     /**
@@ -2002,6 +2139,36 @@ final class OperationsApi extends BaseService
         }
 
         return $order;
+    }
+
+    /**
+     * Recheck the scoped courier permission before any provider request is
+     * sent. This is shared by normal HTTP dispatch and durable agent runs so
+     * an "own orders" permission can never be used on another user's order.
+     */
+    public function assertCanSendOrderToCourier(array $params): void
+    {
+        $user = $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? $params['id'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Select an order to send to the courier.');
+        }
+
+        $order = $this->database->fetchOne(
+            'SELECT id, created_by FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => $orderId]
+        );
+        if ($order === null) {
+            throw new RuntimeException('The selected order no longer exists.');
+        }
+
+        $this->assertUserCanManageOrderRecord(
+            $user,
+            $order,
+            'orders.sendToCourierOwn',
+            'orders.sendToCourierAny',
+            'You do not have permission to send this order to a courier.'
+        );
     }
 
     public function fetchOrdersByCustomerId(array $params): array
@@ -3914,7 +4081,10 @@ final class OperationsApi extends BaseService
         return $this->database->transaction(function () use ($actor, $id, $params): array {
             $allocation = $this->allocateOrderNumber();
             $orderDate = $this->normalizeDateOnly((string) ($params['orderDate'] ?? '')) ?: gmdate('Y-m-d');
-            $status = trim((string) ($params['status'] ?? 'On Hold'));
+            $status = $this->canonicalOrderStatus(
+                (string) ($params['status'] ?? 'On Hold'),
+                $this->jsonDecodeAssoc($params['history'] ?? [])
+            );
             $items = is_array($params['items'] ?? null) ? $params['items'] : [];
             $this->validateDocumentAmounts($params, $items, 'Order');
             $pageSelection = $this->resolveOrderPageSelection($params);
@@ -3999,15 +4169,24 @@ final class OperationsApi extends BaseService
 
             $this->assertUserCanUpdateOrder($actor, $existingRow, $updates);
 
-            $previousStatus = (string) ($existingRow['status'] ?? '');
+            $previousHistory = $this->jsonDecodeAssoc($existingRow['history'] ?? []);
+            $previousStatus = $this->canonicalOrderStatus((string) ($existingRow['status'] ?? ''), $previousHistory);
             $previousItems = $this->jsonDecodeList($existingRow['items'] ?? []);
             $previousCustomerId = (string) ($existingRow['customer_id'] ?? '');
             $previousPaidAmount = (float) ($existingRow['paid_amount'] ?? 0);
             $orderTotal = (float) ($existingRow['total'] ?? 0);
             $orderNumber = trim((string) ($existingRow['order_number'] ?? ''));
-            $nextStatus = array_key_exists('status', $updates) ? trim((string) $updates['status']) : $previousStatus;
+            $nextHistory = array_key_exists('history', $updates)
+                ? $this->jsonDecodeAssoc($updates['history'])
+                : $previousHistory;
+            $nextStatus = array_key_exists('status', $updates)
+                ? $this->canonicalOrderStatus((string) $updates['status'], $nextHistory)
+                : $previousStatus;
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
             $stockUpdates = [];
+            $beforeUndoEffects = $nextStatus !== $previousStatus
+                ? $this->orderUndoEffectIds($id, $orderNumber)
+                : ['transactions' => [], 'wallet' => []];
 
             if (array_key_exists('status', $updates) || array_key_exists('items', $updates)) {
                 $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $nextItems);
@@ -4201,6 +4380,23 @@ final class OperationsApi extends BaseService
                 ]);
             }
 
+            if ($nextStatus !== $previousStatus) {
+                $afterOrderRow = $this->database->fetchOne(
+                    'SELECT * FROM orders WHERE id = :id LIMIT 1',
+                    [':id' => $id]
+                );
+                if ($afterOrderRow !== null) {
+                    $this->recordOrderUndoEvent(
+                        $existingRow,
+                        $afterOrderRow,
+                        'update_order_status',
+                        (string) ($actor['id'] ?? ''),
+                        $stockUpdates,
+                        $beforeUndoEffects
+                    );
+                }
+            }
+
             return $this->mapOrder($row);
         });
     }
@@ -4271,6 +4467,7 @@ final class OperationsApi extends BaseService
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
             $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
             $orderTotal = (float) ($orderRow['total'] ?? 0);
             $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
@@ -4425,6 +4622,21 @@ final class OperationsApi extends BaseService
                 'createdAt' => $this->toIso($orderRow['created_at'] ?? null),
             ]);
 
+            $afterOrderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id LIMIT 1',
+                [':id' => $orderId]
+            );
+            if ($afterOrderRow !== null) {
+                $this->recordOrderUndoEvent(
+                    $orderRow,
+                    $afterOrderRow,
+                    'complete_picked_order',
+                    (string) ($actor['id'] ?? ''),
+                    $stockUpdates,
+                    $beforeUndoEffects
+                );
+            }
+
             $order = $this->mapOrder($row);
             $pendingTransactionIds = array_values(array_map(
                 static fn(array $transaction): string => (string) ($transaction['id'] ?? ''),
@@ -4502,6 +4714,7 @@ final class OperationsApi extends BaseService
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
             $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
             $previousPaidAmount = (float) ($orderRow['paid_amount'] ?? 0);
             $previousTotal = (float) ($orderRow['total'] ?? 0);
@@ -4815,6 +5028,32 @@ final class OperationsApi extends BaseService
             $row = $this->fetchOrderRowById($orderId);
             if ($row === null) {
                 throw new RuntimeException('Updated order could not be loaded.');
+            }
+
+            if ($nextStatus !== null && $nextStatus !== $currentStatus) {
+                $this->syncWalletCreditForOrder([
+                    'id' => $orderId,
+                    'createdBy' => (string) ($row['created_by'] ?? $orderRow['created_by'] ?? ''),
+                    'status' => (string) ($row['status'] ?? $nextStatus),
+                    'orderNumber' => $orderNumber,
+                    'orderDate' => (string) ($orderRow['order_date'] ?? ''),
+                    'createdAt' => $this->toIso($orderRow['created_at'] ?? null),
+                ]);
+            }
+
+            $afterOrderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id LIMIT 1',
+                [':id' => $orderId]
+            );
+            if ($afterOrderRow !== null) {
+                $this->recordOrderUndoEvent(
+                    $orderRow,
+                    $afterOrderRow,
+                    $action === 'exchange' ? 'process_order_exchange' : 'process_order_return',
+                    (string) ($actor['id'] ?? ''),
+                    $stockUpdates,
+                    $beforeUndoEffects
+                );
             }
 
             $order = $this->mapOrder($row);
@@ -8570,6 +8809,524 @@ final class OperationsApi extends BaseService
     }
 
     /**
+     * Return server-authoritative restore points and their exact impact. The UI
+     * never guesses a status path or promises effects the backend cannot prove.
+     */
+    public function fetchOrderUndoPlan(array $params): array
+    {
+        if (!$this->currentUserHasPermission('undoer.view')) {
+            throw new RuntimeException('You do not have permission to view order undo plans.');
+        }
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        $orderRow = $this->database->fetchOne(
+            'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => $orderId]
+        );
+        if ($orderRow === null) {
+            throw new RuntimeException('Order not found.');
+        }
+
+        $events = [];
+        if ($this->tableExists('order_status_undo_events')) {
+            $events = $this->database->fetchAll(
+                'SELECT * FROM order_status_undo_events
+                 WHERE order_id = :order_id AND undone_at IS NULL
+                 ORDER BY created_at ASC, id ASC',
+                [':order_id' => $orderId]
+            );
+        }
+
+        $journalBlockedReason = null;
+        if ($events !== []) {
+            $latestAfter = $this->canonicalizeOrderUndoSnapshot(
+                $this->jsonDecodeAssoc($events[count($events) - 1]['after_snapshot'] ?? [])
+            );
+            $currentSnapshot = $this->orderUndoSnapshot($orderRow);
+            $changedFields = [];
+            foreach ($latestAfter as $field => $value) {
+                if (
+                    array_key_exists($field, $currentSnapshot)
+                    && $this->encodeComparableJson($currentSnapshot[$field]) !== $this->encodeComparableJson($value)
+                ) {
+                    $changedFields[] = (string) $field;
+                }
+            }
+            if ($changedFields !== []) {
+                $journalBlockedReason = 'The order changed after its latest restore point (' . implode(', ', $changedFields) . '). Create or reach a new recorded status before undoing.';
+            }
+        }
+
+        $restorePoints = [];
+        $runningTransactionIds = [];
+        $runningWalletEntryIds = [];
+        $runningStockDeltas = [];
+        for ($index = count($events) - 1; $index >= 0; $index--) {
+            $event = $events[$index];
+            foreach ($this->jsonDecodeList($event['transaction_ids'] ?? []) as $transactionId) {
+                $runningTransactionIds[] = trim((string) $transactionId);
+            }
+            foreach ($this->jsonDecodeList($event['wallet_entry_ids'] ?? []) as $walletEntryId) {
+                $runningWalletEntryIds[] = trim((string) $walletEntryId);
+            }
+            foreach ($this->jsonDecodeAssoc($event['stock_deltas'] ?? []) as $productId => $delta) {
+                $runningStockDeltas[(string) $productId] = ($runningStockDeltas[(string) $productId] ?? 0) + (int) $delta;
+            }
+            $beforeSnapshot = $this->canonicalizeOrderUndoSnapshot(
+                $this->jsonDecodeAssoc($event['before_snapshot'] ?? [])
+            );
+            $impact = $this->buildOrderUndoImpact(
+                $orderRow,
+                $beforeSnapshot,
+                array_values(array_unique(array_filter($runningTransactionIds))),
+                array_values(array_unique(array_filter($runningWalletEntryIds))),
+                $runningStockDeltas
+            );
+            $blockedReason = $journalBlockedReason ?? $this->undoImpactStockBlockReason($impact);
+            $restorePoints[] = [
+                'id' => (string) $event['id'],
+                'targetStatus' => (string) ($beforeSnapshot['status'] ?? $event['from_status'] ?? ''),
+                'sourceAction' => (string) ($event['source_action'] ?? 'order_status_change'),
+                'occurredAt' => $this->toIso($event['created_at'] ?? null),
+                'exact' => true,
+                'blockedReason' => $blockedReason,
+                'impact' => $impact,
+            ];
+        }
+
+        if ($restorePoints === []) {
+            $orderHistory = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+            $currentStatus = $this->canonicalOrderStatus((string) ($orderRow['status'] ?? ''), $orderHistory);
+            $legacyTargets = $this->legacyOrderUndoTargets($currentStatus, $orderHistory);
+            $hasItemAdjustments = $this->orderHasReturnExchangeAdjustments($this->jsonDecodeList($orderRow['items'] ?? []));
+            foreach ($legacyTargets as $targetStatus) {
+                $impact = $this->buildLegacyOrderUndoImpact($orderRow, $targetStatus);
+                $blockedReason = $hasItemAdjustments
+                    ? 'This older order has return/exchange item adjustments but no exact restore point. It cannot be safely auto-reverted.'
+                    : $this->undoImpactStockBlockReason($impact);
+                $restorePoints[] = [
+                    'id' => 'legacy:' . $targetStatus,
+                    'targetStatus' => $targetStatus,
+                    'sourceAction' => 'legacy_inferred_status',
+                    'occurredAt' => null,
+                    'exact' => false,
+                    'blockedReason' => $blockedReason,
+                    'impact' => $impact,
+                ];
+            }
+        }
+
+        return [
+            'order' => $this->mapOrder($this->fetchOrderRowById($orderId) ?? $orderRow),
+            'restorePoints' => $restorePoints,
+            'hasExactHistory' => $events !== [],
+        ];
+    }
+
+    private function undoImpactStockBlockReason(array $impact): ?string
+    {
+        foreach ((array) ($impact['stockAdjustments'] ?? []) as $stock) {
+            if ((int) ($stock['projectedStock'] ?? 0) < 0) {
+                return sprintf(
+                    'Undo would make %s stock negative (%d). Correct the available stock before restoring this point.',
+                    (string) ($stock['productName'] ?? 'a product'),
+                    (int) ($stock['projectedStock'] ?? 0)
+                );
+            }
+        }
+        return null;
+    }
+
+    /** @return array<int, string> */
+    private function legacyOrderUndoTargets(string $currentStatus, array $history): array
+    {
+        $paths = [
+            'On Hold' => [],
+            'Processing' => ['On Hold'],
+            'Courier assigned' => ['Processing', 'On Hold'],
+            'Picked' => ['Courier assigned', 'Processing', 'On Hold'],
+            'Completed' => ['Picked', 'Courier assigned', 'Processing', 'On Hold'],
+            'Exchange processing' => ['Completed', 'Picked', 'Processing', 'On Hold'],
+            'Exchange picked' => ['Exchange processing', 'Completed', 'Picked', 'Processing', 'On Hold'],
+            'Exchange delivered' => ['Exchange picked', 'Exchange processing', 'Completed', 'Picked', 'Processing', 'On Hold'],
+            'Exchange returned' => ['Exchange delivered', 'Exchange picked', 'Exchange processing', 'Completed', 'Picked', 'Processing', 'On Hold'],
+            'Exchange cancelled' => ['Exchange picked', 'Exchange processing', 'Completed', 'Picked', 'Processing', 'On Hold'],
+            'Returned' => ['Completed', 'Picked', 'Courier assigned', 'Processing', 'On Hold'],
+            'Cancelled' => ['Picked', 'Courier assigned', 'Processing', 'On Hold'],
+        ];
+        $targets = $paths[$currentStatus] ?? [];
+        if (trim((string) ($history['completed'] ?? '')) === '') {
+            $targets = array_values(array_filter($targets, static fn(string $status): bool => $status !== 'Completed'));
+        }
+        return $targets;
+    }
+
+    private function orderHasReturnExchangeAdjustments(array $items): bool
+    {
+        foreach ($items as $item) {
+            if ((int) ($item['returnedQty'] ?? 0) > 0 || (int) ($item['exchangedQty'] ?? 0) > 0 || !empty($item['isExchangeReplacement'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function buildLegacyOrderUndoImpact(array $orderRow, string $targetStatus): array
+    {
+        $orderId = (string) ($orderRow['id'] ?? '');
+        $orderNumber = (string) ($orderRow['order_number'] ?? '');
+        $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
+        $transitionIds = [];
+        foreach ($linkedTransactions as $transaction) {
+            if ($this->shouldLegacyUndoOrderTransaction($transaction, $targetStatus)) {
+                $transitionIds[] = (string) $transaction['id'];
+            }
+        }
+        $items = $this->jsonDecodeList($orderRow['items'] ?? []);
+        $currentStatus = $this->canonicalOrderStatus(
+            (string) ($orderRow['status'] ?? ''),
+            $this->jsonDecodeAssoc($orderRow['history'] ?? [])
+        );
+        $legacyUndoDeltas = $this->buildStockDeltas(
+            $items,
+            $items,
+            $this->isOrderStockApplied($currentStatus) ? 1 : 0,
+            $this->isOrderStockApplied($targetStatus) ? -1 : 0
+        );
+        $stockDeltas = [];
+        foreach ($legacyUndoDeltas as $productId => $delta) {
+            $stockDeltas[(string) $productId] = -(int) $delta;
+        }
+        $targetSnapshot = ['status' => $targetStatus, 'history' => null];
+        if (in_array((string) ($orderRow['status'] ?? ''), ['Completed', 'Returned', 'Exchange returned'], true)) {
+            $targetSnapshot['paid_amount'] = null;
+        }
+        if (in_array($targetStatus, ['Created', 'On Hold', 'Processing'], true)) {
+            $targetSnapshot['carrybee_consignment_id'] = null;
+            $targetSnapshot['steadfast_consignment_id'] = null;
+            $targetSnapshot['paperfly_tracking_number'] = null;
+            $targetSnapshot['pathao_consignment_id'] = null;
+        }
+        if (!str_starts_with($targetStatus, 'Exchange ')) {
+            $targetSnapshot['exchange_courier'] = null;
+            $targetSnapshot['exchange_steadfast_consignment_id'] = null;
+            $targetSnapshot['exchange_carrybee_consignment_id'] = null;
+            $targetSnapshot['exchange_paperfly_tracking_number'] = null;
+            $targetSnapshot['exchange_pathao_consignment_id'] = null;
+            $targetSnapshot['exchange_courier_history'] = null;
+        }
+        return $this->buildOrderUndoImpact(
+            $orderRow,
+            $targetSnapshot,
+            $transitionIds,
+            [],
+            $stockDeltas
+        );
+    }
+
+    private function shouldLegacyUndoOrderTransaction(array $transaction, string $targetStatus): bool
+    {
+        $description = strtolower(trim((string) ($transaction['description'] ?? '')));
+        if (str_starts_with($description, 'delivery payment for order #')) {
+            return !in_array($targetStatus, ['Completed', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled'], true);
+        }
+        if (str_starts_with($description, 'return/exchange refund for order #') || str_starts_with($description, 'exchange collection for order #')) {
+            return !str_starts_with($targetStatus, 'Exchange ');
+        }
+        return str_starts_with($description, 'return expense for order #')
+            || str_starts_with($description, 'refund for order #');
+    }
+
+    private function buildOrderUndoImpact(
+        array $orderRow,
+        array $targetSnapshot,
+        array $transactionIds,
+        array $walletEntryIds,
+        array $stockDeltas
+    ): array {
+        $transactions = [];
+        if ($transactionIds !== []) {
+            [$placeholders, $bindings] = $this->inClause($transactionIds, 'undo_preview_tx');
+            $transactions = $this->database->fetchAll(
+                'SELECT t.id, t.type, t.amount, t.description, t.account_id, t.to_account_id,
+                        t.account_effect_applied, a.name AS account_name, ta.name AS to_account_name
+                 FROM transactions t
+                 LEFT JOIN accounts a ON a.id = t.account_id
+                 LEFT JOIN accounts ta ON ta.id = t.to_account_id
+                 WHERE t.id IN (' . implode(', ', $placeholders) . ') AND t.deleted_at IS NULL',
+                $bindings
+            );
+        }
+        $transactionPreview = array_map(function (array $row): array {
+            return [
+                'id' => (string) $row['id'],
+                'type' => (string) ($row['type'] ?? ''),
+                'amount' => (float) ($row['amount'] ?? 0),
+                'description' => (string) ($row['description'] ?? ''),
+                'accountName' => $this->nullableString($row['account_name'] ?? null),
+                'toAccountName' => $this->nullableString($row['to_account_name'] ?? null),
+            ];
+        }, $transactions);
+        $accountDeltas = [];
+        foreach ($transactions as $transaction) {
+            foreach (['account_id', 'to_account_id'] as $accountField) {
+                $accountId = trim((string) ($transaction[$accountField] ?? ''));
+                if ($accountId === '') {
+                    continue;
+                }
+                $accountDeltas[$accountId] = ($accountDeltas[$accountId] ?? 0.0)
+                    + $this->accountBalanceAdjustmentFromRevertingTransaction($transaction, $accountId);
+            }
+        }
+        $accountAdjustments = [];
+        if ($accountDeltas !== []) {
+            [$placeholders, $bindings] = $this->inClause(array_keys($accountDeltas), 'undo_preview_account');
+            $accountRows = $this->database->fetchAll(
+                'SELECT id, name, current_balance FROM accounts WHERE id IN (' . implode(', ', $placeholders) . ')',
+                $bindings
+            );
+            foreach ($accountRows as $account) {
+                $accountId = (string) $account['id'];
+                $currentBalance = (float) ($account['current_balance'] ?? 0);
+                $adjustment = round((float) ($accountDeltas[$accountId] ?? 0), 2);
+                $accountAdjustments[] = [
+                    'accountId' => $accountId,
+                    'accountName' => (string) ($account['name'] ?? $accountId),
+                    'currentBalance' => $currentBalance,
+                    'adjustment' => $adjustment,
+                    'projectedBalance' => round($currentBalance + $adjustment, 2),
+                ];
+            }
+        }
+
+        $stockPreview = [];
+        if ($stockDeltas !== []) {
+            [$placeholders, $bindings] = $this->inClause(array_keys($stockDeltas), 'undo_preview_product');
+            $products = $this->database->fetchAll(
+                'SELECT id, name, stock FROM products WHERE id IN (' . implode(', ', $placeholders) . ')',
+                $bindings
+            );
+            foreach ($products as $product) {
+                $productId = (string) $product['id'];
+                $reversalDelta = -(int) ($stockDeltas[$productId] ?? 0);
+                $stockPreview[] = [
+                    'productId' => $productId,
+                    'productName' => (string) ($product['name'] ?? $productId),
+                    'currentStock' => (int) ($product['stock'] ?? 0),
+                    'adjustment' => $reversalDelta,
+                    'projectedStock' => (int) ($product['stock'] ?? 0) + $reversalDelta,
+                ];
+            }
+        }
+        $currentSnapshot = $this->orderUndoSnapshot($orderRow);
+        $restoredFields = [];
+        foreach ($targetSnapshot as $field => $value) {
+            if (array_key_exists($field, $currentSnapshot) && $this->encodeComparableJson($currentSnapshot[$field]) !== $this->encodeComparableJson($value)) {
+                $restoredFields[] = (string) $field;
+            }
+        }
+        $externalEffects = [];
+        $courierReferenceFields = [
+            'carrybee_consignment_id' => 'CarryBee',
+            'steadfast_consignment_id' => 'Steadfast',
+            'paperfly_tracking_number' => 'Paperfly',
+            'pathao_consignment_id' => 'Pathao',
+            'exchange_carrybee_consignment_id' => 'CarryBee exchange',
+            'exchange_steadfast_consignment_id' => 'Steadfast exchange',
+            'exchange_paperfly_tracking_number' => 'Paperfly exchange',
+            'exchange_pathao_consignment_id' => 'Pathao exchange',
+        ];
+        foreach ($courierReferenceFields as $field => $provider) {
+            $currentValue = trim((string) ($currentSnapshot[$field] ?? ''));
+            $targetValue = trim((string) ($targetSnapshot[$field] ?? ''));
+            if ($currentValue !== '' && $currentValue !== $targetValue) {
+                $externalEffects[] = [
+                    'type' => 'courier_submission',
+                    'provider' => $provider,
+                    'message' => $provider . ' already received this consignment. Undo restores the local order reference but cannot retract the provider-side shipment automatically.',
+                ];
+            }
+        }
+        return [
+            'transactions' => $transactionPreview,
+            'transactionCount' => count($transactionPreview),
+            'accountAdjustments' => $accountAdjustments,
+            'walletEntriesCreatedByStatus' => count($walletEntryIds),
+            'walletTreatment' => 'append_compensating_entry',
+            'stockAdjustments' => $stockPreview,
+            'restoredFields' => $restoredFields,
+            'externalEffects' => $externalEffects,
+            'transactionsMoveToRecycleBin' => true,
+        ];
+    }
+
+    public function revertOrderStatus(array $params): array
+    {
+        if (!$this->currentUserHasPermission('undoer.execute')) {
+            throw new RuntimeException('You do not have permission to execute order undo operations.');
+        }
+        $restorePointId = trim((string) ($params['restorePointId'] ?? ''));
+        if ($restorePointId !== '' && !str_starts_with($restorePointId, 'legacy:')) {
+            return $this->revertOrderStatusFromEvent($params, $restorePointId);
+        }
+        if (str_starts_with($restorePointId, 'legacy:') && trim((string) ($params['targetStatus'] ?? '')) === '') {
+            $params['targetStatus'] = substr($restorePointId, strlen('legacy:'));
+        }
+        $order = $this->revertOrderStatusLegacy($params);
+        return [
+            'order' => $order,
+            'result' => [
+                'exact' => false,
+                'message' => 'Legacy order reverted using inferred status effects.',
+            ],
+        ];
+    }
+
+    private function revertOrderStatusFromEvent(array $params, string $restorePointId): array
+    {
+        $actor = $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        return $this->database->transaction(function () use ($actor, $orderId, $restorePointId): array {
+            $orderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $orderId]
+            );
+            if ($orderRow === null) {
+                throw new RuntimeException('Order not found.');
+            }
+            $events = $this->database->fetchAll(
+                'SELECT * FROM order_status_undo_events
+                 WHERE order_id = :order_id AND undone_at IS NULL
+                 ORDER BY created_at ASC, id ASC FOR UPDATE',
+                [':order_id' => $orderId]
+            );
+            $selectedIndex = null;
+            foreach ($events as $index => $event) {
+                if ((string) $event['id'] === $restorePointId) {
+                    $selectedIndex = $index;
+                    break;
+                }
+            }
+            if ($selectedIndex === null) {
+                throw new RuntimeException('This restore point is no longer available. Refresh the undo plan.');
+            }
+            $latestAfter = $this->canonicalizeOrderUndoSnapshot(
+                $this->jsonDecodeAssoc($events[count($events) - 1]['after_snapshot'] ?? [])
+            );
+            $currentSnapshot = $this->orderUndoSnapshot($orderRow);
+            $changedAfterRestorePoint = [];
+            foreach ($latestAfter as $field => $value) {
+                if (
+                    array_key_exists($field, $currentSnapshot)
+                    && $this->encodeComparableJson($currentSnapshot[$field]) !== $this->encodeComparableJson($value)
+                ) {
+                    $changedAfterRestorePoint[] = (string) $field;
+                }
+            }
+            if ($changedAfterRestorePoint !== []) {
+                throw new RuntimeException(
+                    'The order changed after its latest restore point (' . implode(', ', $changedAfterRestorePoint) . '). Refresh and review or create a new status event before undoing.'
+                );
+            }
+            $eventsToUndo = array_slice($events, $selectedIndex);
+            $targetSnapshot = $this->canonicalizeOrderUndoSnapshot(
+                $this->jsonDecodeAssoc($events[$selectedIndex]['before_snapshot'] ?? [])
+            );
+            $transactionIds = [];
+            $stockReversalDeltas = [];
+            foreach ($eventsToUndo as $event) {
+                foreach ($this->jsonDecodeList($event['transaction_ids'] ?? []) as $id) {
+                    $transactionIds[] = trim((string) $id);
+                }
+                foreach ($this->jsonDecodeAssoc($event['stock_deltas'] ?? []) as $productId => $delta) {
+                    $stockReversalDeltas[(string) $productId] = ($stockReversalDeltas[(string) $productId] ?? 0) - (int) $delta;
+                }
+            }
+            $transactionIds = array_values(array_unique(array_filter($transactionIds)));
+            $transactions = [];
+            if ($transactionIds !== []) {
+                [$placeholders, $bindings] = $this->inClause($transactionIds, 'undo_tx');
+                $transactions = $this->database->fetchAll(
+                    'SELECT * FROM transactions WHERE id IN (' . implode(', ', $placeholders) . ') AND deleted_at IS NULL FOR UPDATE',
+                    $bindings
+                );
+                $this->applyTransactionAccountEffect($transactions, 'revert');
+                $this->softDeleteTransactionRowsByIds(
+                    array_map(static fn(array $row): string => (string) $row['id'], $transactions),
+                    $this->database->nowUtc(),
+                    (string) $actor['id']
+                );
+                foreach ($transactions as $transaction) {
+                    $this->resolveTransactionApprovalNotification((string) $transaction['id'], 'cancelled', 'order_status_undo');
+                }
+            }
+            $stockUpdates = $this->resolveProductStockUpdates(
+                array_filter($stockReversalDeltas, static fn(int $delta): bool => $delta !== 0),
+                'order undo'
+            );
+            $this->applyResolvedProductStockUpdates($stockUpdates);
+
+            $history = $this->jsonDecodeAssoc($targetSnapshot['history'] ?? []);
+            $history['undone'] = $this->appendHistoryText(
+                (string) ($history['undone'] ?? ''),
+                sprintf(
+                    'Restored from %s to %s by %s on %s.',
+                    (string) ($orderRow['status'] ?? ''),
+                    (string) ($targetSnapshot['status'] ?? ''),
+                    trim((string) ($actor['name'] ?? 'System')),
+                    $this->database->nowUtc()
+                )
+            );
+            $targetSnapshot['history'] = $this->jsonEncode($history);
+            $this->touchUpdate('orders', $orderId, $targetSnapshot);
+
+            $eventIds = array_map(static fn(array $event): string => (string) $event['id'], $eventsToUndo);
+            [$eventPlaceholders, $eventBindings] = $this->inClause($eventIds, 'undo_event');
+            $undoBatchId = $this->uuid4();
+            $eventBindings[':undone_at'] = $this->database->nowUtc();
+            $eventBindings[':undone_by'] = (string) $actor['id'];
+            $eventBindings[':undo_batch_id'] = $undoBatchId;
+            $this->database->execute(
+                'UPDATE order_status_undo_events
+                 SET undone_at = :undone_at, undone_by = :undone_by, undo_batch_id = :undo_batch_id
+                 WHERE id IN (' . implode(', ', $eventPlaceholders) . ') AND undone_at IS NULL',
+                $eventBindings
+            );
+
+            $restoredRow = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1', [':id' => $orderId]);
+            if ($restoredRow === null) {
+                throw new RuntimeException('Restored order could not be loaded.');
+            }
+            $this->syncCustomerOrderSummaries([(string) ($restoredRow['customer_id'] ?? '')]);
+            $this->syncWalletCreditForOrder([
+                'id' => $orderId,
+                'createdBy' => (string) ($restoredRow['created_by'] ?? ''),
+                'status' => (string) ($restoredRow['status'] ?? ''),
+                'orderNumber' => (string) ($restoredRow['order_number'] ?? ''),
+                'orderDate' => (string) ($restoredRow['order_date'] ?? ''),
+                'createdAt' => $this->toIso($restoredRow['created_at'] ?? null),
+            ]);
+            $mappedRow = $this->fetchOrderRowById($orderId);
+            return [
+                'order' => $this->mapOrder($mappedRow ?? $restoredRow),
+                'result' => [
+                    'exact' => true,
+                    'undoBatchId' => $undoBatchId,
+                    'eventsReverted' => count($eventsToUndo),
+                    'transactionsMovedToRecycleBin' => count($transactions),
+                    'stockProductsAdjusted' => count($stockUpdates),
+                    'walletTreatment' => 'append_compensating_entry',
+                ],
+            ];
+        });
+    }
+
+    /**
      * Atomically revert an order from its current status to a prior status,
      * undoing every side-effect produced by the forward transition(s).
      *
@@ -8581,17 +9338,9 @@ final class OperationsApi extends BaseService
      *  5. History keys         → completion/return/payment stamps removed
      *  6. Customer summaries   → re-synced
      */
-    public function revertOrderStatus(array $params): array
+    private function revertOrderStatusLegacy(array $params): array
     {
         $actor = $this->currentUser();
-        $hasPermission = $this->currentUserHasPermission('orders.markCompletedOwn')
-            || $this->currentUserHasPermission('orders.markCompletedAny')
-            || $this->currentUserHasPermission('orders.markReturnedOwn')
-            || $this->currentUserHasPermission('orders.markReturnedAny');
-        if (!$hasPermission) {
-            throw new RuntimeException('You do not have permission to revert order statuses.');
-        }
-
         $orderId = trim((string) ($params['orderId'] ?? ''));
         $targetStatus = trim((string) ($params['targetStatus'] ?? ''));
         if ($orderId === '') {
@@ -8601,7 +9350,7 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Target status is required.');
         }
 
-        $statusOrder = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'Returned', 'Cancelled'];
+        $statusOrder = self::ALL_ORDER_STATUSES;
 
         if (!in_array($targetStatus, $statusOrder, true)) {
             throw new RuntimeException('Invalid target status.');
@@ -8617,7 +9366,10 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Order not found.');
             }
 
-            $currentStatus = trim((string) ($orderRow['status'] ?? ''));
+            $currentStatus = $this->canonicalOrderStatus(
+                (string) ($orderRow['status'] ?? ''),
+                $this->jsonDecodeAssoc($orderRow['history'] ?? [])
+            );
             $currentIndex = array_search($currentStatus, $statusOrder, true);
             $targetIndex = array_search($targetStatus, $statusOrder, true);
 
@@ -8627,10 +9379,12 @@ final class OperationsApi extends BaseService
             if ($targetIndex === false) {
                 throw new RuntimeException('Target status is unrecognised.');
             }
-
-            // "Returned", "Exchange returned", and "Cancelled" are terminal; allow reverting to anything before them.
-            if ($targetIndex >= $currentIndex) {
-                throw new RuntimeException('Target status must be prior to the current status.');
+            $allowedTargets = $this->legacyOrderUndoTargets(
+                $currentStatus,
+                $this->jsonDecodeAssoc($orderRow['history'] ?? [])
+            );
+            if (!in_array($targetStatus, $allowedTargets, true)) {
+                throw new RuntimeException('The selected status is not a recorded or safe predecessor of the current status.');
             }
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
@@ -8649,14 +9403,10 @@ final class OperationsApi extends BaseService
 
             // ─── 1. Reverse linked transactions (soft-delete + revert account balances) ───
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
-            $transitionTransactions = array_values(array_filter($linkedTransactions, static function (array $transaction): bool {
-                $description = strtolower(trim((string) ($transaction['description'] ?? '')));
-                return str_starts_with($description, 'delivery payment for order #')
-                    || str_starts_with($description, 'return expense for order #')
-                    || str_starts_with($description, 'refund for order #')
-                    || str_starts_with($description, 'return/exchange refund for order #')
-                    || str_starts_with($description, 'exchange collection for order #');
-            }));
+            $transitionTransactions = array_values(array_filter(
+                $linkedTransactions,
+                fn(array $transaction): bool => $this->shouldLegacyUndoOrderTransaction($transaction, $targetStatus)
+            ));
             if ($transitionTransactions !== []) {
                 $this->applyTransactionAccountEffect($transitionTransactions, 'revert');
                 $deletedAt = $this->database->nowUtc();
@@ -8665,10 +9415,14 @@ final class OperationsApi extends BaseService
                     $deletedAt,
                     (string) $actor['id']
                 );
+                foreach ($transitionTransactions as $transaction) {
+                    $this->resolveTransactionApprovalNotification((string) $transaction['id'], 'cancelled', 'order_status_undo');
+                }
             }
 
             // ─── 2. Reverse wallet entries ───
-            $this->revertWalletEntriesForOrder($orderId);
+            // Wallet entries are append-only audit records. The sync at the end
+            // writes a compensating reversal only when the target requires it.
 
             // ─── 3. Reverse product stock ───
             $stockUpdates = $this->applyOrderStockTransition($currentStatus, $targetStatus, $previousItems, $previousItems);
@@ -8687,12 +9441,11 @@ final class OperationsApi extends BaseService
             }
 
             // If reverting before Picked, remove picked key
-            $targetIdx = array_search($targetStatus, ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Returned', 'Cancelled'], true);
-            if ($targetIdx !== false && $targetIdx < 3) {
+            if (in_array($targetStatus, ['Created', 'On Hold', 'Processing', 'Courier assigned'], true)) {
                 // Reverting to On Hold, Processing, or Courier assigned – remove picked
                 $keysToRemove[] = 'picked';
             }
-            if ($targetIdx !== false && $targetIdx < 1) {
+            if (in_array($targetStatus, ['Created', 'On Hold'], true)) {
                 // Reverting to On Hold – remove processing
                 $keysToRemove[] = 'processing';
             }
@@ -8717,6 +9470,20 @@ final class OperationsApi extends BaseService
                 'status' => $targetStatus,
                 'history' => $this->jsonEncode($history),
             ];
+            if (in_array($targetStatus, ['Created', 'On Hold', 'Processing'], true)) {
+                $payload['carrybee_consignment_id'] = null;
+                $payload['steadfast_consignment_id'] = null;
+                $payload['paperfly_tracking_number'] = null;
+                $payload['pathao_consignment_id'] = null;
+            }
+            if (!str_starts_with($targetStatus, 'Exchange ')) {
+                $payload['exchange_courier'] = null;
+                $payload['exchange_steadfast_consignment_id'] = null;
+                $payload['exchange_carrybee_consignment_id'] = null;
+                $payload['exchange_paperfly_tracking_number'] = null;
+                $payload['exchange_pathao_consignment_id'] = null;
+                $payload['exchange_courier_history'] = null;
+            }
 
             // Reverse only payment/refund amounts created by the status
             // transition; ordinary advance payments remain intact.
@@ -8767,26 +9534,4 @@ final class OperationsApi extends BaseService
         });
     }
 
-    /**
-     * Remove all wallet entries (credits + reversals) for an order so the
-     * wallet state can be cleanly re-evaluated by syncWalletCreditForOrder.
-     */
-    private function revertWalletEntriesForOrder(string $orderId): void
-    {
-        if (!$this->tableExists('wallet_entries')) {
-            return;
-        }
-
-        $entries = $this->database->fetchAll(
-            "SELECT id FROM wallet_entries WHERE source_order_id = :order_id",
-            [':order_id' => $orderId]
-        );
-
-        if ($entries === []) {
-            return;
-        }
-
-        $ids = array_map(static fn(array $row): string => (string) $row['id'], $entries);
-        $this->deleteWalletEntryRows($ids);
-    }
 }

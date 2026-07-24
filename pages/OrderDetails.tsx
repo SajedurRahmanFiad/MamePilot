@@ -761,7 +761,7 @@ const OrderDetails: React.FC = () => {
 
   const statusTransition = useMemo<OrderStatusTransition | null>(() => {
     if (!order) return null;
-    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_RETURNED || order.status === OrderStatus.EXCHANGE_CANCELLED) {
+    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.RETURNED || order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED || order.status === OrderStatus.EXCHANGE_RETURNED || order.status === OrderStatus.EXCHANGE_CANCELLED) {
       return null;
     }
 
@@ -790,18 +790,8 @@ const OrderDetails: React.FC = () => {
       return {
         action: 'complete' as const,
         label: 'Complete order',
-        nextStatus: OrderStatus.COMPLETED,
+        nextStatus: OrderStatus.EXCHANGE_DELIVERED,
         description: 'Complete the order by marking the exchange as delivered.',
-        enabled: canFinalizeOrders,
-      };
-    }
-
-    if (order.status === OrderStatus.EXCHANGE_DELIVERED) {
-      return {
-        action: 'complete' as const,
-        label: 'Complete order',
-        nextStatus: OrderStatus.COMPLETED,
-        description: 'Finalize the order after exchange delivery.',
         enabled: canFinalizeOrders,
       };
     }
@@ -1080,7 +1070,7 @@ const OrderDetails: React.FC = () => {
               setShowCourierSelectionModal(true);
               return;
             }
-            if (transition.action === 'complete' && (order?.status === OrderStatus.PICKED || order?.status === OrderStatus.EXCHANGE_PICKED || order?.status === OrderStatus.EXCHANGE_DELIVERED)) {
+            if (transition.action === 'complete' && (order?.status === OrderStatus.PICKED || order?.status === OrderStatus.EXCHANGE_PICKED)) {
               openCompletion();
               return;
             }

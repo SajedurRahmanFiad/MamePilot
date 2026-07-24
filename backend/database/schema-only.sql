@@ -2321,6 +2321,201 @@ CREATE TABLE IF NOT EXISTS lead_events (
   CONSTRAINT fk_lead_events_lead FOREIGN KEY (lead_id) REFERENCES lead_profiles(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Migration: 2026-07-24_mame_ai_agent_runtime.sql
+CALL sp_add_col('llm_configurations', 'supports_tool_calling', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('llm_configurations', 'supports_structured_output', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('llm_configurations', 'supports_vision', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('llm_configurations', 'supports_audio', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('llm_configurations', 'context_window_tokens', 'INT NOT NULL DEFAULT 32768');
+CALL sp_add_col('llm_configurations', 'default_output_tokens', 'INT NOT NULL DEFAULT 4096');
+
+CALL sp_add_col('agent_settings', 'query_max_columns', 'INT NOT NULL DEFAULT 30');
+CALL sp_add_col('agent_settings', 'query_max_bytes', 'INT NOT NULL DEFAULT 100000');
+CALL sp_add_col('agent_settings', 'run_timeout_seconds', 'INT NOT NULL DEFAULT 240');
+CALL sp_add_col('agent_settings', 'context_budget_tokens', 'INT NOT NULL DEFAULT 12000');
+CALL sp_add_col('agent_settings', 'max_output_tokens', 'INT NOT NULL DEFAULT 4096');
+CALL sp_add_col('agent_settings', 'retry_limit', 'INT NOT NULL DEFAULT 2');
+CALL sp_add_col('agent_settings', 'confirmation_expiry_minutes', 'INT NOT NULL DEFAULT 15');
+CALL sp_add_col('agent_settings', 'lease_seconds', 'INT NOT NULL DEFAULT 90');
+CALL sp_add_col('agent_settings', 'worker_last_heartbeat', 'DATETIME NULL');
+CALL sp_add_col('agent_settings', 'worker_last_success_at', 'DATETIME NULL');
+CALL sp_add_col('agent_settings', 'worker_last_error_at', 'DATETIME NULL');
+CALL sp_add_col('agent_settings', 'worker_last_error', 'TEXT NULL');
+
+CALL sp_add_col('agent_conversations', 'summary', 'LONGTEXT NULL');
+CALL sp_add_col('agent_conversations', 'summary_boundary_message_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_conversations', 'summary_updated_at', 'DATETIME NULL');
+
+CALL sp_add_col('agent_runs', 'active_conversation_key', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_runs', 'route', 'VARCHAR(32) NULL');
+CALL sp_add_col('agent_runs', 'routed_domains_json', 'LONGTEXT NULL');
+CALL sp_add_col('agent_runs', 'fast_configuration_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_runs', 'reasoning_configuration_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_runs', 'multimodal_configuration_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_runs', 'worker_id', 'VARCHAR(191) NULL');
+CALL sp_add_col('agent_runs', 'lease_expires_at', 'DATETIME NULL');
+CALL sp_add_col('agent_runs', 'heartbeat_at', 'DATETIME NULL');
+CALL sp_add_col('agent_runs', 'attempts', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'cancellation_requested_at', 'DATETIME NULL');
+CALL sp_add_col('agent_runs', 'cancellation_reason', 'TEXT NULL');
+CALL sp_add_col('agent_runs', 'current_activity', 'VARCHAR(500) NULL');
+CALL sp_add_col('agent_runs', 'tool_call_count', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'model_call_count', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'input_tokens', 'BIGINT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'output_tokens', 'BIGINT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'event_sequence', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('agent_runs', 'attachment_ids_json', 'LONGTEXT NULL');
+CALL sp_add_col('agent_runs', 'resume_payload_json', 'LONGTEXT NULL');
+CALL sp_create_unique_idx('agent_runs', 'uq_agent_runs_active_conversation', '`active_conversation_key`');
+CALL sp_create_idx('agent_runs', 'idx_agent_runs_queue_lease', '`status`, `lease_expires_at`, `created_at`');
+CALL sp_create_idx('agent_runs', 'idx_agent_runs_worker', '`worker_id`, `lease_expires_at`');
+
+-- Skipped data-mutating statement from 2026-07-24_mame_ai_agent_runtime.sql.
+
+CALL sp_add_col('agent_messages', 'attachment_ids_json', 'LONGTEXT NULL');
+CALL sp_add_col('agent_messages', 'structured_reference_json', 'LONGTEXT NULL');
+
+CALL sp_add_col('agent_tool_calls', 'provider_call_id', 'VARCHAR(191) NULL');
+CALL sp_add_col('agent_tool_calls', 'tool_version', 'VARCHAR(32) NOT NULL DEFAULT ''1.0.0''');
+CALL sp_add_col('agent_tool_calls', 'risk_class', 'VARCHAR(32) NOT NULL DEFAULT ''read''');
+CALL sp_add_col('agent_tool_calls', 'error_message', 'TEXT NULL');
+CALL sp_add_col('agent_tool_calls', 'confirmation_bundle_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('agent_tool_calls', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+CALL sp_create_unique_idx('agent_tool_calls', 'uq_agent_tool_calls_provider_id', '`run_id`, `provider_call_id`');
+CALL sp_create_idx('agent_tool_calls', 'idx_agent_tool_calls_status', '`run_id`, `status`');
+
+CALL sp_create_unique_idx('agent_run_events', 'uq_agent_run_events_sequence', '`run_id`, `sequence_no`');
+CALL sp_create_idx('agent_run_events', 'idx_agent_run_events_cursor', '`run_id`, `sequence_no`, `created_at`');
+
+CALL sp_add_col('agent_db_query_audit', 'allowed_datasets_json', 'LONGTEXT NULL');
+CALL sp_add_col('agent_db_query_audit', 'returned_columns_json', 'LONGTEXT NULL');
+CALL sp_add_col('agent_db_query_audit', 'decision', 'VARCHAR(32) NOT NULL DEFAULT ''allowed''');
+CALL sp_add_col('agent_db_query_audit', 'error_message', 'TEXT NULL');
+
+CREATE TABLE IF NOT EXISTS agent_action_bundles (
+  id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  immutable_hash CHAR(64) NOT NULL,
+  confirmation_token_hash CHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  expires_at DATETIME NOT NULL,
+  confirmed_by VARCHAR(64) NULL,
+  confirmed_at DATETIME NULL,
+  rejected_at DATETIME NULL,
+  rejection_reason TEXT NULL,
+  execution_started_at DATETIME NULL,
+  execution_finished_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_action_bundles_run (run_id, created_at),
+  KEY idx_agent_action_bundles_user_status (user_id, status, expires_at),
+  CONSTRAINT fk_agent_action_bundles_run FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_action_bundles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_action_bundles_confirmer FOREIGN KEY (confirmed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_action_items (
+  id VARCHAR(64) NOT NULL,
+  bundle_id VARCHAR(64) NOT NULL,
+  position_no INT NOT NULL,
+  tool_name VARCHAR(191) NOT NULL,
+  tool_version VARCHAR(32) NOT NULL DEFAULT '1.0.0',
+  dependencies_json LONGTEXT NULL,
+  input_json LONGTEXT NOT NULL,
+  preview_json LONGTEXT NULL,
+  idempotency_key CHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  result_json LONGTEXT NULL,
+  error_message TEXT NULL,
+  started_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_agent_action_items_position (bundle_id, position_no),
+  UNIQUE KEY uq_agent_action_items_idempotency (idempotency_key),
+  KEY idx_agent_action_items_status (bundle_id, status),
+  CONSTRAINT fk_agent_action_items_bundle FOREIGN KEY (bundle_id) REFERENCES agent_action_bundles(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_attachments (
+  id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  storage_path VARCHAR(1000) NOT NULL,
+  mime_type VARCHAR(191) NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  sha256_hash CHAR(64) NOT NULL,
+  retention_state VARCHAR(32) NOT NULL DEFAULT 'active',
+  deleted_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_attachments_user (user_id, retention_state, created_at),
+  CONSTRAINT fk_agent_attachments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_model_calls (
+  id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  phase VARCHAR(64) NOT NULL,
+  profile_id VARCHAR(64) NULL,
+  provider VARCHAR(32) NULL,
+  model VARCHAR(255) NULL,
+  provider_request_id VARCHAR(255) NULL,
+  finish_reason VARCHAR(64) NULL,
+  input_tokens INT NOT NULL DEFAULT 0,
+  output_tokens INT NOT NULL DEFAULT 0,
+  duration_ms INT NOT NULL DEFAULT 0,
+  error_message TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_agent_model_calls_run (run_id, created_at),
+  KEY idx_agent_model_calls_profile (profile_id, created_at),
+  CONSTRAINT fk_agent_model_calls_run FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-24_order_status_undo_journal.sql
+CREATE TABLE IF NOT EXISTS order_status_undo_events (
+  id VARCHAR(64) NOT NULL,
+  order_id VARCHAR(64) NOT NULL,
+  order_number VARCHAR(100) NOT NULL,
+  from_status VARCHAR(32) NOT NULL,
+  to_status VARCHAR(32) NOT NULL,
+  source_action VARCHAR(64) NOT NULL,
+  before_snapshot LONGTEXT NOT NULL,
+  after_snapshot LONGTEXT NOT NULL,
+  transaction_ids LONGTEXT NULL,
+  wallet_entry_ids LONGTEXT NULL,
+  stock_deltas LONGTEXT NULL,
+  created_by VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  undone_at DATETIME NULL,
+  undone_by VARCHAR(64) NULL,
+  undo_batch_id VARCHAR(64) NULL,
+  PRIMARY KEY (id),
+  KEY idx_order_status_undo_events_order_active (order_id, undone_at, created_at),
+  KEY idx_order_status_undo_events_batch (undo_batch_id),
+  CONSTRAINT fk_order_status_undo_events_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_status_undo_events_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_order_status_undo_events_undone_by FOREIGN KEY (undone_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-07-25_order_status_canonicalization.sql
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;

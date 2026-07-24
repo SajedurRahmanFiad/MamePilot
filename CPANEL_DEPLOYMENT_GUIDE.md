@@ -136,6 +136,21 @@ Set `AUTO_CALL_MANAGE_CRON=0` only when the host manages this entry separately.
 The Auto Calling page shows whether delivery is running and whether calls are
 overdue.
 
+### Mame AI agent worker
+
+Mame AI starts an immediate background process after a message is queued, but
+the recurring worker is required to recover queued or abandoned runs reliably.
+Add this cPanel cron job with the real account name and backend path:
+
+```text
+* * * * * /usr/local/bin/php /home/your-cpanel-user/mamepilot_backend/backend/bin/process_agent_queue.php --max-runs 10 >> /home/your-cpanel-user/mamepilot-agent.log 2>&1
+```
+
+Run it every minute. Developer Settings > Mame AI shows queue depth, the last
+worker heartbeat, the last successful run, and the latest sanitized worker
+error. The private `backend/storage/agent-attachments` directory must remain
+outside the public document root and writable only by the deployment account.
+
 ---
 
 ## 5. Optional Automatic Updates

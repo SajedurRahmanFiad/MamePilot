@@ -18,7 +18,7 @@ final class LeadApi extends BaseService
     {
         $this->currentUser();
         $this->ensureTables();
-        $this->syncChannelLeads();
+        if (empty($params['agentReadOnly'])) $this->syncChannelLeads();
         $page = max(1, (int) ($params['page'] ?? 1));
         $pageSize = min(100, max(10, (int) ($params['pageSize'] ?? 25)));
         $search = trim((string) ($params['search'] ?? ''));
@@ -53,7 +53,7 @@ final class LeadApi extends BaseService
         $lead = $this->resolveLead($params);
         if ($lead === null) throw new RuntimeException('Conversation lead could not be resolved.');
         $latest = $this->latestMessageId($lead);
-        if ($latest !== '' && (string) ($lead['last_analyzed_message_id'] ?? '') !== $latest && $this->activeModelRow($lead) !== null) {
+        if (empty($params['agentReadOnly']) && $latest !== '' && (string) ($lead['last_analyzed_message_id'] ?? '') !== $latest && $this->activeModelRow($lead) !== null) {
             try { $lead = $this->runAnalysis($lead, false); $this->maybeCreateConfirmedOrder($lead); } catch (\Throwable $exception) {
                 $this->saveEvent((string) $lead['id'], 'analysis_failed', ['message' => $exception->getMessage()]);
             }
@@ -68,7 +68,7 @@ final class LeadApi extends BaseService
         $lead = $this->resolveLead($params);
         if ($lead === null) throw new RuntimeException('Conversation lead could not be resolved.');
         $lead = $this->runAnalysis($lead, true);
-        $this->maybeCreateConfirmedOrder($lead);
+        if (empty($params['suppressOrderCreation'])) $this->maybeCreateConfirmedOrder($lead);
         return $this->leadResponse($this->leadRow((string) $lead['id']) ?: $lead);
     }
 

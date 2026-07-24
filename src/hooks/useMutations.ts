@@ -129,6 +129,7 @@ import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import type {
   Customer,
   Order,
+  OrderUndoResult,
   Bill,
   Account,
   Transaction,
@@ -3123,13 +3124,13 @@ export function useBatchUpdateSettings(): UseMutationResult<any, Error, any, unk
 
 // ========== UNDOER (ORDER STATUS REVERT) ==========
 
-export function useRevertOrderStatus(): UseMutationResult<Order, Error, { orderId: string; targetStatus: string }, unknown> {
+export function useRevertOrderStatus(): UseMutationResult<OrderUndoResult, Error, { orderId: string; restorePointId: string; targetStatus: string }, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { orderId: string; targetStatus: string }) =>
+    mutationFn: (payload: { orderId: string; restorePointId: string; targetStatus: string }) =>
       revertOrderStatus(payload),
     onSuccess: (data) => {
-      queryClient.setQueryData(['order', data.id], data);
+      queryClient.setQueryData(['order', data.order.id], data.order);
       invalidateResourceQueries(queryClient, 'orders');
       queryClient.invalidateQueries({ queryKey: ['orders-search'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['customers'], exact: false });
