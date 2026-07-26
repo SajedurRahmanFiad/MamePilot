@@ -46,6 +46,11 @@ foreach ($dynamicFilterPages as $relativePath) {
     rawSearchAssert(str_contains($source, 'onRawSearchChange='), "{$relativePath} is missing a raw-search result handler.");
 }
 
+rawSearchAssert(
+    !str_contains($ordersPage, 'type: \'Orders\', operator: \'contains\''),
+    'Orders raw search is still being reconstructed as a structured contains chip.'
+);
+
 foreach (['raw_order_search', 'raw_bill_search', 'raw_transaction_search'] as $binding) {
     rawSearchAssert(str_contains($operations, $binding), "Operations raw search is missing {$binding}.");
 }

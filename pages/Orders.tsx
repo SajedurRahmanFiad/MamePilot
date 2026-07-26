@@ -494,8 +494,6 @@ const Orders: React.FC = () => {
     previousLocationRef.current = currentLocation;
   }, [location.pathname, location.search]);
 
-  const urlSearch = searchParams.get('search') || '';
-
   const initialFilters = useMemo(() => {
     const filters: Array<{ id: string; type: string; operator: '=' | '≠' | 'contains' | 'does not contain'; value: string; display?: string }> = [];
     const getCreatorFilterLabel = (value: string) => value === 'admins' ? 'Admins'
@@ -588,9 +586,6 @@ const Orders: React.FC = () => {
     if (urlCreatedByNot) {
       filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot, display: getCreatorFilterLabel(urlCreatedByNot) });
     }
-    if (urlSearch) {
-      filters.push({ id: `search-${urlSearch}`, type: 'Orders', operator: 'contains', value: urlSearch, display: urlSearch });
-    }
     return filters;
   }, [
     urlStatusTab,
@@ -611,7 +606,6 @@ const Orders: React.FC = () => {
     urlSourceAdNot,
     urlCreatedByFilter,
     urlCreatedByNot,
-    urlSearch,
     users,
     getSourceAdLabel,
   ]);
