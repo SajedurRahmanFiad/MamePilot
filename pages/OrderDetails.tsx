@@ -162,13 +162,21 @@ const OrderDetails: React.FC = () => {
     if (checkedAt >= orderCreatedAt && checkedAt > 0) return;
 
     let attempts = 0;
+    let frontendTriggered = false;
     const timer = window.setInterval(() => {
       attempts += 1;
       queryClient.invalidateQueries({ queryKey: ['customer', order.customerId] });
+
+      // Fallback: if backend hasn't started the fraud check after ~9 seconds, trigger from frontend
+      if (attempts >= 3 && !frontendTriggered && !customer?.fraudCheckedAt && currentCustomerPhone && !courierHistoryMutation.isPending) {
+        frontendTriggered = true;
+        courierHistoryMutation.mutate({ phone: currentCustomerPhone, customerId: order.customerId });
+      }
+
       if (attempts >= 10) window.clearInterval(timer);
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient]);
+  }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient, currentCustomerPhone, courierHistoryMutation]);
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
   type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick';
   type OrderStatusTransition = {
@@ -1542,6 +1550,27 @@ const OrderDetails: React.FC = () => {
 
   const customerTrust = (() => {
     if (fraudPercentage === null) return null;
+
+    const totalParcels = activeFraudResult?.summary?.totalParcel ?? 0;
+    const successParcels = activeFraudResult?.summary?.successParcel ?? 0;
+    const cancelledParcels = activeFraudResult?.summary?.cancelledParcel ?? 0;
+    const hasFraudReports = (activeFraudResult?.reports?.length ?? 0) > 0;
+
+    // No courier history at all — brand new customer, cannot assess risk
+    if (totalParcels === 0) {
+      return { label: 'New Customer', message: 'No delivery history available', className: 'bg-gray-100 text-gray-600 border-gray-200' };
+    }
+
+    // Very few parcels and no successful deliveries — not enough data to judge
+    if (totalParcels <= 2 && successParcels === 0) {
+      // But if there are fraud reports from merchants, flag it
+      if (hasFraudReports) {
+        return { label: 'High Risk', message: 'Merchant fraud reports found — verify before sending', className: 'bg-rose-100 text-rose-700 border-rose-200' };
+      }
+      return { label: 'Insufficient History', message: 'Not enough deliveries to assess risk', className: 'bg-slate-100 text-slate-600 border-slate-200' };
+    }
+
+    // Enough data — use percentage-based classification
     if (fraudPercentage >= 90) {
       return { label: 'Trusted Customer', message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
     }
@@ -1730,7 +1759,7 @@ const OrderDetails: React.FC = () => {
 
       {isBusinessGrowthEnabled && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
-          <p className="text-sm font-black">{customerTrust.label} · {Math.round(fraudPercentage ?? 0)}% delivered</p>
+          <p className="text-sm font-black">{customerTrust.label}{activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>
           <p className="text-sm font-bold">{customerTrust.message}</p>
         </div>
       ) : null}
