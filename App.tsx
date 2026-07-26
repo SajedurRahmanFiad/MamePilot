@@ -235,6 +235,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (activeUser?.role === 'Developer') {
       preloaders.add(DeveloperNotifications.preload);
       preloaders.add(DeveloperSettings.preload);
+      preloaders.add(DeveloperNotes.preload);
       preloaders.add(DeveloperSubscriptions.preload);
       preloaders.add(NotificationDetail.preload);
     }

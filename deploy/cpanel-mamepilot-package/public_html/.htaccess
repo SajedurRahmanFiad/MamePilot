@@ -11,6 +11,10 @@ DirectoryIndex index.html
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
+  # Missing hashed build assets must remain 404 responses. Rewriting them to
+  # index.html returns text/html to a module request and hides stale deployments.
+  RewriteRule ^assets/ - [R=404,L]
+
   RewriteRule ^ index.html [L]
 </IfModule>
 
