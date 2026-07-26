@@ -20,9 +20,16 @@ permissionsSettingsAssert(
         && str_contains($panelSource, 'Find a role')
         && str_contains($panelSource, 'Search permissions')
         && str_contains($panelSource, 'Enable section')
+        && str_contains($panelSource, 'Collapse sections')
+        && str_contains($panelSource, 'aria-expanded={isExpanded}')
+        && str_contains($panelSource, 'space-y-3 p-5 sm:p-6')
+        && str_contains($panelSource, "bg-[var(--primary-color,#0f2f57)] text-white")
+        && str_contains($panelSource, "isSelected ? 'text-white/75' : 'text-gray-400'")
         && !str_contains($panelSource, '<table')
-        && !str_contains($panelSource, 'overflow-x-auto'),
-    'Permissions must use a searchable, one-role-at-a-time editor without horizontal table scrolling.'
+        && !str_contains($panelSource, 'overflow-x-auto')
+        && !str_contains($panelSource, 'xl:grid-cols-2')
+        && !str_contains($panelSource, "isSelected ? 'text-blue-100'"),
+    'Permissions must use a theme-aware, searchable, one-role-at-a-time accordion without a two-column privilege grid.'
 );
 
 $handleSaveStart = strpos($settingsSource, 'const handleSave = async () =>');
