@@ -413,7 +413,7 @@ const AdminSubscriptions: React.FC = () => {
       </section>
 
       {/* ── Inactive / Available Features ── */}
-      {inactiveKeys.length > 0 && (
+      {capabilitySettings?.showInactiveSubscriptionFeatures !== false && inactiveKeys.length > 0 && (
         <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-400">

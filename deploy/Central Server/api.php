@@ -267,8 +267,68 @@ function mysqlUtcDateTime($value): ?string
     return $timestamp === false ? null : gmdate('Y-m-d H:i:s', $timestamp);
 }
 
+function ensureMaintenanceSettingsSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS maintenance_settings (
+            id VARCHAR(64) NOT NULL PRIMARY KEY,
+            enabled TINYINT(1) NOT NULL DEFAULT 0,
+            target_deployments LONGTEXT NULL,
+            deployment_scope VARCHAR(32) NOT NULL DEFAULT 'all',
+            image_url VARCHAR(1000) NULL,
+            caption VARCHAR(500) NULL,
+            subtitle TEXT NULL,
+            explanation TEXT NULL,
+            ends_at DATETIME NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $columns = $pdo->query('SHOW COLUMNS FROM `maintenance_settings`')->fetchAll(PDO::FETCH_COLUMN);
+    $existingColumns = array_fill_keys(array_map('strtolower', array_map('strval', $columns)), true);
+    $definitions = [
+        'enabled' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'target_deployments' => 'LONGTEXT NULL',
+        'deployment_scope' => "VARCHAR(32) NOT NULL DEFAULT 'all'",
+        'image_url' => 'VARCHAR(1000) NULL',
+        'caption' => 'VARCHAR(500) NULL',
+        'subtitle' => 'TEXT NULL',
+        'explanation' => 'TEXT NULL',
+        'ends_at' => 'DATETIME NULL',
+        'updated_at' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+    ];
+
+    foreach ($definitions as $column => $definition) {
+        if (isset($existingColumns[$column])) {
+            continue;
+        }
+
+        try {
+            $pdo->exec(sprintf('ALTER TABLE `maintenance_settings` ADD COLUMN `%s` %s', $column, $definition));
+        } catch (PDOException $exception) {
+            // Concurrent first requests may both attempt the same additive repair.
+            if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
+                throw $exception;
+            }
+        }
+    }
+
+    $seed = $pdo->prepare(
+        'INSERT INTO maintenance_settings (id, enabled) VALUES (:id, 0)
+         ON DUPLICATE KEY UPDATE id = VALUES(id)'
+    );
+    $seed->execute([':id' => 'maintenance']);
+    $checked = true;
+}
+
 function fetchMaintenanceStatus(PDO $pdo, string $licenseKey = ''): array
 {
+    ensureMaintenanceSettingsSchema($pdo);
     $expire = $pdo->prepare(
         'UPDATE maintenance_settings
          SET enabled = 0, updated_at = CURRENT_TIMESTAMP
@@ -307,6 +367,7 @@ function setMaintenanceStatus(
     string $explanation = '',
     ?string $endsAt = null
 ): array {
+    ensureMaintenanceSettingsSchema($pdo);
     $targetDeployments = array_values(array_unique(array_filter(array_map(
         static fn($item): string => trim((string) $item),
         $targetDeployments

@@ -85,6 +85,10 @@ const LICENSE_DB_USER = 'zomesnze_admin';
 const LICENSE_DB_PASS = 'admin@crossintbd';
 const CENTRAL_OWNER_TOKEN = 'fthderthynersgjsyrhgrdryhrtfjutfjdshnrxethmezrejt';
 const RESPONSE_SIGNING_SECRET = 'syghbaweoiwnfouvyzsnruvygebrgyhusbdrgvhjsdnrzubgjhyrdngb';
+const MAINTENANCE_DEFAULT_IMAGE_URL = '/uploads/Rat_avatar.png';
+const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
+const MAINTENANCE_DEFAULT_SUBTITLE = 'Mame is actively chasing him with a piece of cheese to get it back to make the server work again.';
+const MAINTENANCE_DEFAULT_EXPLANATION = "Some new updates are in progress. For the sake of safety and security, the server is currently turned off. You'll be able to access the app again as soon as the update is complete.";
 
 date_default_timezone_set('UTC');
 
@@ -221,36 +225,212 @@ function notificationPayload(array $row): array
     ];
 }
 
-function maintenancePayload(array $row): array
+function maintenancePayload(array $row, string $licenseKey = ''): array
 {
+    $endsAt = utcTimestamp($row['ends_at'] ?? $row['endsAt'] ?? null);
+    $deadlineTimestamp = $endsAt !== null ? strtotime($endsAt) : false;
+    $deadlineExpired = $deadlineTimestamp !== false && $deadlineTimestamp <= time();
+    $maintenanceModeEnabled = (int) ($row['enabled'] ?? 0) === 1 && !$deadlineExpired;
+    $targetDeployments = array_values(array_unique(capabilitiesFrom($row['target_deployments'] ?? $row['targetDeployments'] ?? [])));
+    $deploymentScope = trim((string) ($row['deployment_scope'] ?? $row['deploymentScope'] ?? 'all'));
+    if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+        $deploymentScope = 'all';
+    }
+
+    $isSelected = $licenseKey !== '' && in_array($licenseKey, $targetDeployments, true);
+    $maintenanceEnabled = $maintenanceModeEnabled && (
+        $deploymentScope === 'all'
+        || ($deploymentScope === 'include' && $isSelected)
+        || ($deploymentScope === 'exclude' && !$isSelected)
+    );
+
     return [
-        'maintenanceEnabled' => (int) ($row['enabled'] ?? 0) === 1,
+        'maintenanceEnabled' => $maintenanceEnabled,
+        'maintenanceModeEnabled' => $maintenanceModeEnabled,
+        'targetDeployments' => $targetDeployments,
+        'deploymentScope' => $deploymentScope,
+        'imageUrl' => trim((string) ($row['image_url'] ?? $row['imageUrl'] ?? '')) ?: MAINTENANCE_DEFAULT_IMAGE_URL,
+        'caption' => trim((string) ($row['caption'] ?? '')) ?: MAINTENANCE_DEFAULT_CAPTION,
+        'subtitle' => trim((string) ($row['subtitle'] ?? '')) ?: MAINTENANCE_DEFAULT_SUBTITLE,
+        'explanation' => trim((string) ($row['explanation'] ?? '')) ?: MAINTENANCE_DEFAULT_EXPLANATION,
+        'endsAt' => $endsAt,
     ];
 }
 
-function fetchMaintenanceStatus(PDO $pdo): array
+function mysqlUtcDateTime($value): ?string
 {
+    $text = trim((string) ($value ?? ''));
+    if ($text === '') {
+        return null;
+    }
+    $timestamp = strtotime($text);
+    return $timestamp === false ? null : gmdate('Y-m-d H:i:s', $timestamp);
+}
+
+function ensureMaintenanceSettingsSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS maintenance_settings (
+            id VARCHAR(64) NOT NULL PRIMARY KEY,
+            enabled TINYINT(1) NOT NULL DEFAULT 0,
+            target_deployments LONGTEXT NULL,
+            deployment_scope VARCHAR(32) NOT NULL DEFAULT 'all',
+            image_url VARCHAR(1000) NULL,
+            caption VARCHAR(500) NULL,
+            subtitle TEXT NULL,
+            explanation TEXT NULL,
+            ends_at DATETIME NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $columns = $pdo->query('SHOW COLUMNS FROM `maintenance_settings`')->fetchAll(PDO::FETCH_COLUMN);
+    $existingColumns = array_fill_keys(array_map('strtolower', array_map('strval', $columns)), true);
+    $definitions = [
+        'enabled' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'target_deployments' => 'LONGTEXT NULL',
+        'deployment_scope' => "VARCHAR(32) NOT NULL DEFAULT 'all'",
+        'image_url' => 'VARCHAR(1000) NULL',
+        'caption' => 'VARCHAR(500) NULL',
+        'subtitle' => 'TEXT NULL',
+        'explanation' => 'TEXT NULL',
+        'ends_at' => 'DATETIME NULL',
+        'updated_at' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+    ];
+
+    foreach ($definitions as $column => $definition) {
+        if (isset($existingColumns[$column])) {
+            continue;
+        }
+
+        try {
+            $pdo->exec(sprintf('ALTER TABLE `maintenance_settings` ADD COLUMN `%s` %s', $column, $definition));
+        } catch (PDOException $exception) {
+            // Concurrent first requests may both attempt the same additive repair.
+            if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
+                throw $exception;
+            }
+        }
+    }
+
+    $seed = $pdo->prepare(
+        'INSERT INTO maintenance_settings (id, enabled) VALUES (:id, 0)
+         ON DUPLICATE KEY UPDATE id = VALUES(id)'
+    );
+    $seed->execute([':id' => 'maintenance']);
+    $checked = true;
+}
+
+function fetchMaintenanceStatus(PDO $pdo, string $licenseKey = ''): array
+{
+    ensureMaintenanceSettingsSchema($pdo);
+    $expire = $pdo->prepare(
+        'UPDATE maintenance_settings
+         SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = :id AND enabled = 1 AND ends_at IS NOT NULL AND ends_at <= CURRENT_TIMESTAMP'
+    );
+    $expire->execute([':id' => 'maintenance']);
+
     $statement = $pdo->prepare('SELECT * FROM maintenance_settings WHERE id = :id LIMIT 1');
     $statement->execute([':id' => 'maintenance']);
     $row = $statement->fetch();
     if (!$row) {
-        return ['maintenanceEnabled' => false];
+        return [
+            'maintenanceEnabled' => false,
+            'maintenanceModeEnabled' => false,
+            'targetDeployments' => [],
+            'deploymentScope' => 'all',
+            'imageUrl' => MAINTENANCE_DEFAULT_IMAGE_URL,
+            'caption' => MAINTENANCE_DEFAULT_CAPTION,
+            'subtitle' => MAINTENANCE_DEFAULT_SUBTITLE,
+            'explanation' => MAINTENANCE_DEFAULT_EXPLANATION,
+            'endsAt' => null,
+        ];
     }
-    return maintenancePayload($row);
+    return maintenancePayload($row, trim($licenseKey));
 }
 
-function setMaintenanceStatus(PDO $pdo, bool $enabled): array
-{
+function setMaintenanceStatus(
+    PDO $pdo,
+    bool $enabled,
+    array $targetDeployments,
+    string $deploymentScope,
+    string $licenseKey = '',
+    string $imageUrl = '',
+    string $caption = '',
+    string $subtitle = '',
+    string $explanation = '',
+    ?string $endsAt = null
+): array {
+    ensureMaintenanceSettingsSchema($pdo);
+    $targetDeployments = array_values(array_unique(array_filter(array_map(
+        static fn($item): string => trim((string) $item),
+        $targetDeployments
+    ))));
+    if (!in_array($deploymentScope, ['all', 'include', 'exclude'], true)) {
+        $deploymentScope = 'all';
+    }
+    if ($deploymentScope === 'all') {
+        $targetDeployments = [];
+    } elseif ($enabled && $targetDeployments === []) {
+        respond(400, ['error' => 'Select at least one deployment.']);
+    }
+
+    $imageUrl = trim($imageUrl) ?: MAINTENANCE_DEFAULT_IMAGE_URL;
+    if (str_starts_with(strtolower($imageUrl), 'data:')) {
+        respond(400, ['error' => 'Maintenance image must be stored as an uploaded file URL.']);
+    }
+    $caption = trim($caption) ?: MAINTENANCE_DEFAULT_CAPTION;
+    $subtitle = trim($subtitle) ?: MAINTENANCE_DEFAULT_SUBTITLE;
+    $explanation = trim($explanation) ?: MAINTENANCE_DEFAULT_EXPLANATION;
+    $endsAt = mysqlUtcDateTime($endsAt);
+    if ($enabled && $endsAt !== null && strtotime($endsAt . ' UTC') <= time()) {
+        $enabled = false;
+    }
+
     $statement = $pdo->prepare(
-        'INSERT INTO maintenance_settings (id, enabled, updated_at)
-         VALUES (:id, :enabled, CURRENT_TIMESTAMP)
-         ON DUPLICATE KEY UPDATE enabled = :enabled, updated_at = CURRENT_TIMESTAMP'
+        'INSERT INTO maintenance_settings (
+             id, enabled, target_deployments, deployment_scope, image_url, caption, subtitle, explanation, ends_at, updated_at
+         ) VALUES (
+             :id, :enabled, :target_deployments, :deployment_scope, :image_url, :caption, :subtitle, :explanation, :ends_at, CURRENT_TIMESTAMP
+         )
+         ON DUPLICATE KEY UPDATE
+             enabled = VALUES(enabled),
+             target_deployments = VALUES(target_deployments),
+             deployment_scope = VALUES(deployment_scope),
+             image_url = VALUES(image_url),
+             caption = VALUES(caption),
+             subtitle = VALUES(subtitle),
+             explanation = VALUES(explanation),
+             ends_at = VALUES(ends_at),
+             updated_at = CURRENT_TIMESTAMP'
     );
     $statement->execute([
         ':id' => 'maintenance',
         ':enabled' => $enabled ? 1 : 0,
+        ':target_deployments' => json_encode($targetDeployments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ':deployment_scope' => $deploymentScope,
+        ':image_url' => $imageUrl,
+        ':caption' => $caption,
+        ':subtitle' => $subtitle,
+        ':explanation' => $explanation,
+        ':ends_at' => $endsAt,
     ]);
-    return ['maintenanceEnabled' => $enabled];
+    return maintenancePayload([
+        'enabled' => $enabled ? 1 : 0,
+        'target_deployments' => $targetDeployments,
+        'deployment_scope' => $deploymentScope,
+        'image_url' => $imageUrl,
+        'caption' => $caption,
+        'subtitle' => $subtitle,
+        'explanation' => $explanation,
+        'ends_at' => $endsAt,
+    ], trim($licenseKey));
 }
 
 function activeTiers(PDO $pdo): array
@@ -550,7 +730,8 @@ try {
     }
 
     if ($action === 'fetch_maintenance_status') {
-        respond(200, fetchMaintenanceStatus($pdo));
+        $licenseKey = trim((string) ($body['license_key'] ?? $body['licenseKey'] ?? ''));
+        respond(200, fetchMaintenanceStatus($pdo, $licenseKey));
     }
 
     requireOwnerToken();
@@ -773,7 +954,21 @@ try {
 
     if ($action === 'set_maintenance_status') {
         $enabled = !empty($body['maintenanceEnabled'] ?? $body['maintenance_enabled'] ?? false);
-        respond(200, setMaintenanceStatus($pdo, $enabled));
+        $targetDeployments = capabilitiesFrom($body['targetDeployments'] ?? $body['target_deployments'] ?? []);
+        $deploymentScope = trim((string) ($body['deploymentScope'] ?? $body['deployment_scope'] ?? 'all'));
+        $licenseKey = trim((string) ($body['license_key'] ?? $body['licenseKey'] ?? ''));
+        respond(200, setMaintenanceStatus(
+            $pdo,
+            $enabled,
+            $targetDeployments,
+            $deploymentScope,
+            $licenseKey,
+            (string) ($body['imageUrl'] ?? $body['image_url'] ?? ''),
+            (string) ($body['caption'] ?? ''),
+            (string) ($body['subtitle'] ?? ''),
+            (string) ($body['explanation'] ?? ''),
+            isset($body['endsAt']) || isset($body['ends_at']) ? (string) ($body['endsAt'] ?? $body['ends_at']) : null
+        ));
     }
 
     if ($action === 'create_or_update_license') {

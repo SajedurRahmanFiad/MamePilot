@@ -3,7 +3,7 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, LoadingOverlay } from '../components';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCentralLicenseTiers, useLocalUsageSummary, useServiceSubscriptionOverview } from '../src/hooks/useQueries';
-import { useCreateOrUpdateCentralLicense, useRegisterWebhookWithCentral, useResetCentralLicenseOverride, useSyncLicenseCapabilities, useUpdateCentralLicenseOverride } from '../src/hooks/useMutations';
+import { useCreateOrUpdateCentralLicense, useRegisterWebhookWithCentral, useResetCentralLicenseOverride, useSyncLicenseCapabilities, useUpdateCapabilitySettings, useUpdateCentralLicenseOverride } from '../src/hooks/useMutations';
 import {
   CAPABILITY_KEYS,
   CAPABILITY_LABELS,
@@ -55,11 +55,13 @@ const DeveloperSubscriptions: React.FC = () => {
   const [expandedCapabilities, setExpandedCapabilities] = useState<Record<string, boolean>>({});
   const [monthlyPriceOverride, setMonthlyPriceOverride] = useState('');
   const [yearlyPriceOverride, setYearlyPriceOverride] = useState('');
+  const [showInactiveSubscriptionFeatures, setShowInactiveSubscriptionFeatures] = useState(true);
 
   const tiersQuery = useCentralLicenseTiers({ licenseApiUrl, licenseOwnerToken: ownerToken }, false);
   const syncMutation = useSyncLicenseCapabilities();
   const registerWebhookMutation = useRegisterWebhookWithCentral();
   const saveLicenseMutation = useCreateOrUpdateCentralLicense();
+  const displayPreferenceMutation = useUpdateCapabilitySettings();
   const overrideMutation = useUpdateCentralLicenseOverride();
   const resetOverrideMutation = useResetCentralLicenseOverride();
 
@@ -78,7 +80,6 @@ const DeveloperSubscriptions: React.FC = () => {
     setLicenseApiUrl(capabilitySettings.licenseApiUrl || '');
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
     setClientName(capabilitySettings.clientName || '');
-    setSelectedTierKey(capabilitySettings.tierKey || capabilitySettings.availableTiers?.[0]?.tierKey || '');
     const caps = normalizeCapabilities(capabilitySettings.capabilities);
     setOverrideCapabilities(caps);
     // Extract sub-capabilities from the capabilities response if present
@@ -86,16 +87,33 @@ const DeveloperSubscriptions: React.FC = () => {
     setOverrideSubCapabilities(normalizeSubCapabilities(rawSubs || {}, caps));
     setMonthlyPriceOverride(typeof capabilitySettings.pricingMetadata?.monthly === 'number' ? String(capabilitySettings.pricingMetadata.monthly) : '');
     setYearlyPriceOverride(typeof capabilitySettings.pricingMetadata?.yearly === 'number' ? String(capabilitySettings.pricingMetadata.yearly) : '');
+    setShowInactiveSubscriptionFeatures(capabilitySettings.showInactiveSubscriptionFeatures !== false);
     if (capabilitySettings.renewalDate) {
       setRenewalDate(capabilitySettings.renewalDate.slice(0, 10));
     }
   }, [capabilitySettings]);
 
   useEffect(() => {
-    if (!selectedTierKey && availableTiers[0]?.tierKey) {
-      setSelectedTierKey(availableTiers[0].tierKey);
+    const persistedTierKey = capabilitySettings?.tierKey?.trim() || '';
+    if (persistedTierKey) {
+      setSelectedTierKey(persistedTierKey);
+      return;
     }
-  }, [availableTiers, selectedTierKey]);
+
+    const normalizedPlanName = capabilitySettings?.planName?.trim().toLowerCase() || '';
+    const matchingTier = normalizedPlanName
+      ? availableTiers.find((tier) => (
+          tier.tierName.trim().toLowerCase() === normalizedPlanName
+          || tier.tierKey.trim().toLowerCase() === normalizedPlanName
+        ))
+      : undefined;
+    if (matchingTier) {
+      setSelectedTierKey(matchingTier.tierKey);
+      return;
+    }
+
+    setSelectedTierKey((current) => current || availableTiers[0]?.tierKey || '');
+  }, [availableTiers, capabilitySettings?.planName, capabilitySettings?.tierKey]);
 
   const loadTiers = async () => {
     const toastId = toast.loading('Loading subscription plans...');
@@ -107,6 +125,23 @@ const DeveloperSubscriptions: React.FC = () => {
       toast.update(toastId, 'Subscription plans loaded.', 'success');
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'Could not load subscription plans. Please try again.', 'error');
+    }
+  };
+
+  const updateSubscriptionPageDisplay = async (nextValue: boolean) => {
+    const previousValue = showInactiveSubscriptionFeatures;
+    setShowInactiveSubscriptionFeatures(nextValue);
+    const toastId = toast.loading('Saving subscription page display...');
+    try {
+      await displayPreferenceMutation.mutateAsync({ showInactiveSubscriptionFeatures: nextValue });
+      toast.update(
+        toastId,
+        nextValue ? 'Available features will be shown.' : 'Available features will be hidden.',
+        'success'
+      );
+    } catch (error) {
+      setShowInactiveSubscriptionFeatures(previousValue);
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save the display preference.', 'error');
     }
   };
 
@@ -188,7 +223,7 @@ const DeveloperSubscriptions: React.FC = () => {
     }
   };
 
-  const busy = loadingOverview || loadingUsage || loadingCapabilities || tiersQuery.isFetching || syncMutation.isPending || saveLicenseMutation.isPending || overrideMutation.isPending || resetOverrideMutation.isPending;
+  const busy = loadingOverview || loadingUsage || loadingCapabilities || tiersQuery.isFetching || syncMutation.isPending || saveLicenseMutation.isPending || displayPreferenceMutation.isPending || overrideMutation.isPending || resetOverrideMutation.isPending;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -274,6 +309,24 @@ const DeveloperSubscriptions: React.FC = () => {
               <input type="number" min="0" step="0.01" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" value={yearlyPriceOverride} onChange={(event) => setYearlyPriceOverride(event.target.value)} placeholder="0" />
             </label>
           </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-black text-gray-900">Show Available Features</h3>
+            <p className="mt-1 text-sm text-gray-500">Show inactive features as upgrade options on this deployment's Subscriptions page. Active features always remain visible.</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showInactiveSubscriptionFeatures}
+            aria-label="Show available features on the Subscriptions page"
+            disabled={displayPreferenceMutation.isPending}
+            onClick={() => void updateSubscriptionPageDisplay(!showInactiveSubscriptionFeatures)}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-wait disabled:opacity-60 ${showInactiveSubscriptionFeatures ? 'bg-[#0f2f57]' : 'bg-gray-300'}`}
+          >
+            <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${showInactiveSubscriptionFeatures ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">

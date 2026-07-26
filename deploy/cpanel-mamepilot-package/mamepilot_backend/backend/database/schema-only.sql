@@ -411,6 +411,7 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   license_status VARCHAR(64) NOT NULL DEFAULT 'local',
   renewal_date DATETIME NULL,
   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  show_inactive_subscription_features TINYINT(1) NOT NULL DEFAULT 1,
   maintenance_enabled TINYINT(1) NOT NULL DEFAULT 0,
   maintenance_image_url VARCHAR(1000) NULL,
   maintenance_caption VARCHAR(500) NULL,
@@ -432,6 +433,7 @@ CALL sp_add_col('app_capability_settings', 'client_name', 'VARCHAR(255) NULL');
 CALL sp_add_col('app_capability_settings', 'license_owner_token', 'VARCHAR(500) NULL');
 CALL sp_add_col('app_capability_settings', 'tier_key', 'VARCHAR(64) NULL');
 CALL sp_add_col('app_capability_settings', 'override_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('app_capability_settings', 'show_inactive_subscription_features', 'TINYINT(1) NOT NULL DEFAULT 1');
 CALL sp_add_col('app_capability_settings', 'maintenance_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('app_capability_settings', 'maintenance_image_url', 'VARCHAR(1000) NULL');
 CALL sp_add_col('app_capability_settings', 'maintenance_caption', 'VARCHAR(500) NULL');
@@ -2535,6 +2537,10 @@ CALL sp_add_col('customers', 'fraud_check_result', 'LONGTEXT NULL');
 CALL sp_add_col('customers', 'fraud_check_percentage', 'DECIMAL(5,2) NULL');
 CALL sp_add_col('customers', 'fraud_check_phone', 'VARCHAR(64) NULL');
 CALL sp_add_col('customers', 'fraud_checked_at', 'DATETIME NULL');
+
+-- Migration: 2026-07-26_subscription_feature_visibility.sql
+CALL sp_add_col('app_capability_settings', 'tier_key', 'VARCHAR(64) NULL');
+CALL sp_add_col('app_capability_settings', 'show_inactive_subscription_features', 'TINYINT(1) NOT NULL DEFAULT 1');
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

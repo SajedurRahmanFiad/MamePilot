@@ -8,6 +8,8 @@ use Throwable;
 
 final class MasterDataApi extends BaseService
 {
+    private bool $capabilitySettingsRuntimeSchemaChecked = false;
+
     private const MAINTENANCE_DEFAULT_IMAGE_URL = '/uploads/Rat_avatar.png';
     private const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
     private const MAINTENANCE_DEFAULT_SUBTITLE = 'Mame is actively chasing him with a piece of cheese to get it back to make the server work again.';
@@ -1595,6 +1597,8 @@ final class MasterDataApi extends BaseService
             'licenseStatus' => (string) ($row['license_status'] ?? 'local'),
             'renewalDate' => $this->toIso($row['renewal_date'] ?? null),
             'overrideEnabled' => !empty($row['override_enabled']),
+            'showInactiveSubscriptionFeatures' => !array_key_exists('show_inactive_subscription_features', $row ?? [])
+                || !empty($row['show_inactive_subscription_features']),
             'maintenanceEnabled' => $maintenanceEnabled,
             'availableTiers' => $this->normalizeLicenseTiers($row['available_tiers'] ?? null),
             'pricingMetadata' => $this->jsonDecodeAssoc($row['pricing_metadata'] ?? null),
@@ -1774,6 +1778,7 @@ final class MasterDataApi extends BaseService
         if (!$this->tableExists('app_capability_settings')) {
             throw new RuntimeException('Capability settings table is missing. Run the latest migration first.');
         }
+        $this->ensureCapabilitySettingsRuntimeColumns();
 
         $current = $this->fetchCapabilitySettings();
         $capabilities = array_key_exists('capabilities', $params)
@@ -1793,6 +1798,9 @@ final class MasterDataApi extends BaseService
             'license_status' => array_key_exists('licenseStatus', $params) ? trim((string) $params['licenseStatus']) : (string) ($row['license_status'] ?? 'local'),
             'renewal_date' => array_key_exists('renewalDate', $params) && $params['renewalDate'] ? $this->normalizeDateTimeInput((string) $params['renewalDate']) : ($row['renewal_date'] ?? null),
             'override_enabled' => array_key_exists('overrideEnabled', $params) ? (!empty($params['overrideEnabled']) ? 1 : 0) : (int) ($row['override_enabled'] ?? 0),
+            'show_inactive_subscription_features' => array_key_exists('showInactiveSubscriptionFeatures', $params)
+                ? (!empty($params['showInactiveSubscriptionFeatures']) ? 1 : 0)
+                : (int) ($row['show_inactive_subscription_features'] ?? 1),
             'maintenance_enabled' => array_key_exists('maintenanceEnabled', $params) ? (!empty($params['maintenanceEnabled']) ? 1 : 0) : (int) ($row['maintenance_enabled'] ?? 0),
             'available_tiers' => array_key_exists('availableTiers', $params) ? $this->jsonEncode($this->normalizeLicenseTiers($params['availableTiers'])) : ($row['available_tiers'] ?? null),
             'pricing_metadata' => array_key_exists('pricingMetadata', $params) ? $this->jsonEncode(is_array($params['pricingMetadata']) ? $params['pricingMetadata'] : []) : ($row['pricing_metadata'] ?? null),
@@ -1802,7 +1810,7 @@ final class MasterDataApi extends BaseService
             'webhook_secret' => array_key_exists('webhookSecret', $params) ? $this->nullableString($params['webhookSecret']) : ($row['webhook_secret'] ?? null),
         ];
 
-        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
+        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'show_inactive_subscription_features', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -1835,6 +1843,38 @@ final class MasterDataApi extends BaseService
         );
 
         return $this->fetchCapabilitySettings();
+    }
+
+    private function ensureCapabilitySettingsRuntimeColumns(): void
+    {
+        if ($this->capabilitySettingsRuntimeSchemaChecked) {
+            return;
+        }
+        $this->capabilitySettingsRuntimeSchemaChecked = true;
+
+        $definitions = [
+            'tier_key' => 'VARCHAR(64) NULL',
+            'show_inactive_subscription_features' => 'TINYINT(1) NOT NULL DEFAULT 1',
+        ];
+        $missing = [];
+        foreach ($definitions as $column => $definition) {
+            $exists = $this->database->fetchOne(
+                'SELECT 1 AS present
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = :table
+                   AND COLUMN_NAME = :column
+                 LIMIT 1',
+                [':table' => 'app_capability_settings', ':column' => $column]
+            );
+            if ($exists === null) {
+                $missing[] = sprintf('ADD COLUMN `%s` %s', $column, $definition);
+            }
+        }
+
+        if ($missing !== []) {
+            $this->database->execute('ALTER TABLE `app_capability_settings` ' . implode(', ', $missing));
+        }
     }
 
     public function fetchCentralLicenseTiers(array $params = []): array
@@ -2251,8 +2291,8 @@ final class MasterDataApi extends BaseService
             'licenseKey' => $licenseKey,
             'licenseApiUrl' => $apiUrl,
             'licenseOwnerToken' => $ownerToken,
-            'tierKey' => $payload['tier_key'] ?? $payload['tierKey'] ?? null,
-            'planName' => $payload['plan_name'] ?? $payload['planName'] ?? null,
+            'tierKey' => $payload['tier_key'] ?? $payload['tierKey'] ?? $existingRow['tier_key'] ?? null,
+            'planName' => $payload['plan_name'] ?? $payload['planName'] ?? $existingRow['plan_name'] ?? null,
             'licenseStatus' => $payload['status'] ?? 'active',
             'renewalDate' => $payload['renewal_date'] ?? $payload['renewalDate'] ?? null,
             'overrideEnabled' => !empty($payload['override_enabled'] ?? $payload['overrideEnabled'] ?? false),
@@ -6145,6 +6185,7 @@ PROMPT;
     public function fetchEmailSettings(array $params = []): array
     {
         $this->requireDeveloperUser();
+        $this->ensureEmailSettingsTable();
         $row = $this->database->fetchOne('SELECT * FROM email_settings LIMIT 1');
         if ($row === null) {
             return [
@@ -6172,7 +6213,8 @@ PROMPT;
 
     public function updateEmailSettings(array $params): array
     {
-        $user = $this->requireDeveloperUser();
+        $this->requireDeveloperUser();
+        $this->ensureEmailSettingsTable();
         $now = $this->database->nowUtc();
 
         $data = [
@@ -6202,9 +6244,10 @@ PROMPT;
                 $bindings[':' . $k] = $v;
             }
             $bindings[':id'] = $id;
-            $bindings[':now'] = $now;
+            $bindings[':created_at'] = $now;
+            $bindings[':updated_at'] = $now;
             $this->database->execute(
-                "INSERT INTO email_settings (id, {$columns}, created_at, updated_at) VALUES (:id, {$placeholders}, :now, :now)",
+                "INSERT INTO email_settings (id, {$columns}, created_at, updated_at) VALUES (:id, {$placeholders}, :created_at, :updated_at)",
                 $bindings
             );
         }
@@ -6237,6 +6280,7 @@ PROMPT;
 
     public function sendEmailNotification(string $subject, string $htmlBody): bool
     {
+        $this->ensureEmailSettingsTable();
         $row = $this->database->fetchOne('SELECT * FROM email_settings LIMIT 1');
         if ($row === null) {
             return false;
@@ -6275,6 +6319,30 @@ PROMPT;
             error_log('[SMTP] Email delivery failed: ' . $exception->getMessage());
             return false;
         }
+    }
+
+    private function ensureEmailSettingsTable(): void
+    {
+        if ($this->tableExists('email_settings')) {
+            return;
+        }
+
+        $this->database->execute(
+            "CREATE TABLE IF NOT EXISTS email_settings (
+                id VARCHAR(64) NOT NULL,
+                recipient_email VARCHAR(255) NULL,
+                smtp_host VARCHAR(255) NULL,
+                smtp_port INT NOT NULL DEFAULT 587,
+                smtp_username VARCHAR(255) NULL,
+                smtp_password VARCHAR(500) NULL,
+                smtp_encryption VARCHAR(16) NOT NULL DEFAULT 'tls',
+                sender_email VARCHAR(255) NULL,
+                sender_name VARCHAR(255) NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
     }
 
     private function sendSmtpMessage(
