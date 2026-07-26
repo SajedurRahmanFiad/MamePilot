@@ -258,6 +258,17 @@ const OrderForm: React.FC = () => {
 
   // Initialize form with existing order data when loaded
   const initializedRef = React.useRef(false);
+  const orderNumberRequestedRef = React.useRef(false);
+  const initializationGenerationRef = React.useRef(0);
+
+  // Reset before the initialization effect runs when the route/account
+  // changes. The generation prevents an older preview request from writing
+  // into a different order form after navigation.
+  React.useEffect(() => {
+    initializedRef.current = false;
+    orderNumberRequestedRef.current = false;
+    initializationGenerationRef.current += 1;
+  }, [id, user?.id]);
 
   React.useEffect(() => {
     // Only initialize the local form state once from server data. This
@@ -307,27 +318,30 @@ const OrderForm: React.FC = () => {
       setShipping(String(existingOrderData.shipping ?? 0));
       setNotes(existingOrderData.notes || '');
       initializedRef.current = true;
-    } else if (!isEdit) {
+    } else if (!isEdit && !orderNumberRequestedRef.current) {
       // For new orders, fetch the next order number from the server
+      orderNumberRequestedRef.current = true;
+      const requestGeneration = initializationGenerationRef.current;
       setOrderNumberLoading(true);
       getNextOrderNumber()
         .then(nextNumber => {
+          if (requestGeneration !== initializationGenerationRef.current) return;
           setOrderNumber(nextNumber);
           initializedRef.current = true;
         })
         .catch(err => {
+          if (requestGeneration !== initializationGenerationRef.current) return;
           console.error('Failed to fetch next order number:', err);
           setOrderNumber('ERROR');
           toast.error('Failed to generate order number. Please refresh the page.');
         })
-        .finally(() => setOrderNumberLoading(false));
+        .finally(() => {
+          if (requestGeneration === initializationGenerationRef.current) {
+            setOrderNumberLoading(false);
+          }
+        });
     }
   }, [can, canAccessRecord, existingOrderData, isEdit, navigate, normalizedCompanySettings, toast, user?.id]);
-
-  // Reset the initialization flag when switching to a different order id
-  React.useEffect(() => {
-    initializedRef.current = false;
-  }, [id]);
 
   React.useEffect(() => {
     if (companySettingsLoading || pageId || companyPages.length === 0) {

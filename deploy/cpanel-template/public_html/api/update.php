@@ -14,7 +14,12 @@ $appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
 
 $bootstrapPath = $appRoot . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 if (!is_file($bootstrapPath)) {
-    Http::error(500, 'Backend bootstrap not found.', ['expected' => $bootstrapPath]);
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'error' => 'Backend bootstrap not found.',
+        'expected' => $bootstrapPath,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 

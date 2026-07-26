@@ -33,7 +33,8 @@ For a first deployment you must:
 4. Import `backend/database/schema.sql` into your database.
 5. If this is a brand-new install, import `backend/database/seed.sql` once.
 6. Choose your update method and configure the corresponding `UPDATE_*` variables.
-7. If you want automatic periodic updates, create a cron job on the server.
+7. Run `php backend/bin/setup.php` once. On compatible Linux hosting it installs the recurring update cron automatically.
+8. If the host does not expose user crontab access, create the same cron job in the hosting panel.
 
 You can choose one of two update methods:
 
@@ -74,6 +75,8 @@ UPDATE_RUN_SEED=0
 UPDATE_BACKUP_BEFORE_UPDATE=1
 UPDATE_BACKUP_ROOT=/home/user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
+UPDATE_MANAGE_CRON=1
+UPDATE_CRON_SCHEDULE=*/15 * * * *
 ```
 
 ### What the update script does
@@ -99,13 +102,13 @@ Important: `git pull --ff-only` will fail if the server has local file changes. 
 
 ### Cron job for git method
 
-You still need a cron job to make updates automatic. Use the same cron command as the release package method:
+Setup and update runs install or repair the cron automatically when the hosting account exposes user crontab access. If the returned schedule status is `unavailable`, add this same command in the hosting panel:
 
 ```text
 */30 * * * * php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php >> /home/your-cpanel-user/mamepilot-update.log 2>&1
 ```
 
-Without the cron, the server will not check for or install updates automatically.
+Without either the managed cron or a hosting-panel cron, the server will not check for or install updates automatically.
 
 ---
 
@@ -115,11 +118,11 @@ If your hosting does not support git, use the release package method.
 
 ### How it works
 
-The server will check a public update URL and download a package only if a newer version exists. It does not do this automatically until you create the cron job.
+The server checks a public update URL and downloads a package only if a newer version exists. Setup installs the recurring check automatically when the host permits user crontab management.
 
 ### What the cron job does
 
-Create one scheduled task that runs the update script periodically. For example:
+If automatic schedule installation reports `unavailable`, create one hosting-panel scheduled task that runs the update script periodically. For example:
 
 ```text
 */30 * * * * php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php >> /home/your-cpanel-user/mamepilot-update.log 2>&1
@@ -163,6 +166,8 @@ UPDATE_BACKUP_BEFORE_UPDATE=1
 UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
+
+`UPDATE_DOCUMENT_ROOT_FOLDER` and `UPDATE_BACKEND_FOLDER` are names inside the release ZIP. Put absolute server destinations in `UPDATE_PUBLIC_ROOT` and `UPDATE_APP_ROOT`; do not put absolute paths in the two `*_FOLDER` settings. The updater retains compatibility with older deployments that did so by falling back to the standard package folder names.
 
 Then create the cron job. Without the cron, the server will not check or install updates automatically.
 

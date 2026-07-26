@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { toastMessage } from '../utils/userFacingMessages';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -78,12 +78,12 @@ export const useToast = () => {
 export const useToastNotifications = () => {
   const { showToast, updateToast } = useToast();
 
-  return {
+  return useMemo(() => ({
     success: (message: string) => showToast(message, 'success', 3500),
     error: (message: string) => showToast(message, 'error', 4500),
     warning: (message: string) => showToast(message, 'warning', 3500),
     info: (message: string) => showToast(message, 'info', 3500),
     loading: (message: string) => showToast(message, 'info', 0),  // 0 duration = manual dismiss
     update: (id: string, message: string, type: 'success' | 'error' = 'success') => updateToast(id, message, type, 3500),
-  };
+  }), [showToast, updateToast]);
 };

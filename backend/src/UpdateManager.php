@@ -39,7 +39,11 @@ final class UpdateManager
         $check = $this->check();
         (new AuditLog($this->config))->append('update.check', $check);
         if (!$force && !$check['updateAvailable']) {
-            return array_merge($check, ['updated' => false, 'message' => 'Already on the latest version.']);
+            return array_merge($check, [
+                'updated' => false,
+                'message' => 'Already on the latest version.',
+                'automaticUpdateSchedule' => (new UpdateScheduler($this->config))->ensureInstalled(),
+            ]);
         }
 
         $projectRoot = $this->projectRoot();
@@ -51,8 +55,14 @@ final class UpdateManager
 
         $releaseUrl = $this->releaseUrl();
         $publicRoot = $this->config->get('UPDATE_PUBLIC_ROOT', '');
-        $documentRootFolder = $this->config->get('UPDATE_DOCUMENT_ROOT_FOLDER', 'public_html');
-        $backendFolder = $this->config->get('UPDATE_BACKEND_FOLDER', 'mamepilot_backend');
+        $documentRootFolder = self::normalizeReleaseFolderName(
+            (string) $this->config->get('UPDATE_DOCUMENT_ROOT_FOLDER', 'public_html'),
+            'public_html'
+        );
+        $backendFolder = self::normalizeReleaseFolderName(
+            (string) $this->config->get('UPDATE_BACKEND_FOLDER', 'mamepilot_backend'),
+            'mamepilot_backend'
+        );
         $tempRoot = $this->temporaryDirectory();
         
         // Check if UPDATE_BACKUP_ROOT is configured
@@ -105,6 +115,7 @@ final class UpdateManager
                 $databaseResult = ['message' => 'Database update step skipped.'];
             }
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
+            $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -116,6 +127,7 @@ final class UpdateManager
                 'backupRoot' => $actualBackupRoot,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
+                'automaticUpdateSchedule' => $updateSchedule,
                 'updatedAt' => gmdate('c'),
             ];
             (new AuditLog($this->config))->append('update.success', $result);
@@ -169,6 +181,7 @@ final class UpdateManager
                 $databaseResult = ['message' => 'Schema update skipped by UPDATE_RUN_SCHEMA=0.'];
             }
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
+            $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -181,6 +194,7 @@ final class UpdateManager
                 'backupRoot' => $actualBackupRoot,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
+                'automaticUpdateSchedule' => $updateSchedule,
                 'updatedAt' => gmdate('c'),
             ];
             (new AuditLog($this->config))->append('update.git_success', $result);
@@ -382,6 +396,31 @@ final class UpdateManager
         }
 
         return trim($value);
+    }
+
+    public static function normalizeReleaseFolderName(string $configured, string $default): string
+    {
+        $value = trim($configured);
+        if ($value === '') {
+            return $default;
+        }
+
+        $normalized = str_replace('\\', '/', $value);
+        $looksLikePath = str_starts_with($normalized, '/')
+            || preg_match('/^[A-Za-z]:\//', $normalized) === 1
+            || str_contains($normalized, '/');
+        if ($looksLikePath) {
+            // Older deployment instructions were sometimes interpreted as asking
+            // for destination paths here. These settings identify top-level ZIP
+            // folders, while UPDATE_PUBLIC_ROOT/UPDATE_APP_ROOT hold destinations.
+            return $default;
+        }
+
+        if ($normalized === '.' || $normalized === '..') {
+            return $default;
+        }
+
+        return $normalized;
     }
 
     private function boolConfig(string $key, bool $default): bool

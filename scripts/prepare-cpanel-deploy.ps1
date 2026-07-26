@@ -47,6 +47,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\.htaccess') -Destin
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\.htaccess') -Destination (Join-Path $publicRoot 'api\.htaccess') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -Destination (Join-Path $publicRoot 'api\index.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\update.php') -Destination (Join-Path $publicRoot 'api\update.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\trigger_update.php') -Destination (Join-Path $publicRoot 'api\trigger_update.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\webhook-survey.php') -Destination (Join-Path $publicRoot 'api\webhook-survey.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\whatsapp-webhook.php') -Destination (Join-Path $publicRoot 'api\whatsapp-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\messenger-webhook.php') -Destination (Join-Path $publicRoot 'api\messenger-webhook.php') -Force

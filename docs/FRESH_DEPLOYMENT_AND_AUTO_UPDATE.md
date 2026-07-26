@@ -47,6 +47,8 @@ UPDATE_BACKUP_ROOT=/home/your-user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
 
+`UPDATE_DOCUMENT_ROOT_FOLDER` and `UPDATE_BACKEND_FOLDER` are release-ZIP folder names, not absolute server paths. Use `UPDATE_PUBLIC_ROOT` and `UPDATE_APP_ROOT` for absolute destinations.
+
 If you prefer explicit URLs, use:
 
 ```ini
@@ -83,9 +85,15 @@ After upload, these URLs must work:
 0.0.4
 ```
 
-### Step 4: Create the cron job on the deployment server
+### Step 4: Verify the automatic update schedule
 
-Add one scheduled cron job on the deployment server:
+Run setup once after the production `.env` is configured:
+
+```bash
+php /home/your-user/mamepilot_backend/backend/bin/setup.php
+```
+
+On compatible Linux hosting this installs or repairs the updater cron. If setup reports that schedule management is unavailable, add this cron job in the hosting panel:
 
 ```text
 */30 * * * * php /home/your-user/mamepilot_backend/backend/bin/update.php >> /home/your-user/mamepilot-update.log 2>&1
@@ -166,7 +174,7 @@ php /home/your-user/mamepilot_backend/backend/bin/update.php
 ## 3. Important notes
 
 - `UPDATE_ENABLED=1` is required for automatic updates.
-- The deployment cron is required. Without it, automatic updates will not happen.
+- Either the managed deployment cron or an equivalent hosting-panel cron is required. Without one, automatic updates will not happen.
 - The central host must serve plain-text `VERSION` and the ZIP file.
 - `backend/VERSION` must exist on each deployed backend so the updater can read the current installed version.
 - `UPDATE_RUN_SCHEMA=1` ensures database schema changes are applied during updates.

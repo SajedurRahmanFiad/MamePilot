@@ -31,6 +31,17 @@ final class FeatureAccess
         'woocommerce' => false,
     ];
 
+    /**
+     * Read-only preview actions that are always allowed regardless of
+     * capability state. These supply UI form scaffolding (e.g. the next
+     * order/bill number) and must remain reachable even when the parent
+     * feature is disabled — the actual write actions are separately gated.
+     */
+    private const PREVIEW_ACTIONS = [
+        'getNextOrderNumber',
+        'getNextBillNumber',
+    ];
+
     // Maps sub-capability keys to their parent capability keys
     private const SUB_CAPABILITY_PARENTS = [
         'hr_management' => 'human_resources',
@@ -289,6 +300,13 @@ final class FeatureAccess
 
         $user = $this->auth->requireUser();
         if (trim((string) ($user['role'] ?? '')) === 'Developer') {
+            return;
+        }
+
+        // Preview actions supply read-only UI scaffolding (e.g. next
+        // order/bill number) and must remain reachable even when the
+        // parent capability is disabled.
+        if (in_array($action, self::PREVIEW_ACTIONS, true)) {
             return;
         }
 

@@ -50,7 +50,6 @@ function scheduleIdlePreload(task: () => void): () => void {
 import { hasAdminAccess, isEmployeeRole } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
 import { useCapabilities } from './src/hooks/useCapabilities';
-import { useBackgroundSync } from './src/hooks/useBackgroundSync';
 import { useMaintenanceStatus } from './src/hooks/useQueries';
 import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
@@ -545,8 +544,6 @@ const AppContent: React.FC = () => {
       />
     );
   }
-
-  useBackgroundSync();
 
   return <AppRouter user={user} profile={profile} />;
 };

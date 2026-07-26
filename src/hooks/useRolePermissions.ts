@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react';
 import { db } from '../../db';
 import type { PermissionKey } from '../../types';
 import { hasAdminAccess } from '../../types';
@@ -9,39 +10,43 @@ export function useRolePermissions() {
   const { user, profile } = useAuth();
   const activeUser = profile || user || db.currentUser;
   const role = String(activeUser?.role || '');
+  const activeUserId = String(activeUser?.id || '');
   const isAdminAccessUser = hasAdminAccess(role);
   const { data: permissionsSettings } = usePermissionsSettings(!!activeUser);
   const permissionsReady = !activeUser || isAdminAccessUser || !!permissionsSettings;
   const authoritativeSettings = permissionsReady ? permissionsSettings : null;
-  const rolePermissions = permissionsReady
-    ? getRolePermissions(authoritativeSettings, role)
-    : createBlankPermissionMap();
+  const rolePermissions = useMemo(
+    () => permissionsReady
+      ? getRolePermissions(authoritativeSettings, role)
+      : createBlankPermissionMap(),
+    [authoritativeSettings, permissionsReady, role],
+  );
 
-  const can = (permissionKey: PermissionKey): boolean => {
+  const can = useCallback((permissionKey: PermissionKey): boolean => {
     if (!permissionsReady) {
       return false;
     }
 
     return roleHasPermission(role, permissionKey, authoritativeSettings);
-  };
+  }, [authoritativeSettings, permissionsReady, role]);
 
-  const canAny = (permissionKeys: PermissionKey[]): boolean => {
+  const canAny = useCallback((permissionKeys: PermissionKey[]): boolean => {
     return permissionMapHasAnyPermission(rolePermissions, permissionKeys);
-  };
+  }, [rolePermissions]);
 
-  const canAccessRecord = (
+  const canAccessRecord = useCallback((
     createdBy: string | null | undefined,
     ownPermissionKey: PermissionKey,
     anyPermissionKey: PermissionKey,
   ): boolean => {
-    return hasScopedPermission(rolePermissions, activeUser?.id, createdBy, ownPermissionKey, anyPermissionKey);
-  };
+    return hasScopedPermission(rolePermissions, activeUserId, createdBy, ownPermissionKey, anyPermissionKey);
+  }, [activeUserId, rolePermissions]);
 
   return {
     permissionsSettings: authoritativeSettings,
     permissionsReady,
     role,
-    userId: String(activeUser?.id || ''),
+    userId: activeUserId,
     rolePermissions,
     isAdminAccessUser,
     can,
