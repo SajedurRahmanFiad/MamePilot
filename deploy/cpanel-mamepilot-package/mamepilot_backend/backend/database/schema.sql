@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS customers (
   address TEXT NULL,
   total_orders INT NOT NULL DEFAULT 0,
   due_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  fraud_check_result LONGTEXT NULL,
+  fraud_check_percentage DECIMAL(5,2) NULL,
+  fraud_check_phone VARCHAR(64) NULL,
+  fraud_checked_at DATETIME NULL,
   created_by VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -54,6 +58,11 @@ CREATE TABLE IF NOT EXISTS customers (
   CONSTRAINT fk_customers_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
   CONSTRAINT fk_customers_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS fraud_check_result LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS fraud_check_percentage DECIMAL(5,2) NULL,
+  ADD COLUMN IF NOT EXISTS fraud_check_phone VARCHAR(64) NULL,
+  ADD COLUMN IF NOT EXISTS fraud_checked_at DATETIME NULL;
 CREATE TABLE IF NOT EXISTS vendors (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -305,6 +314,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 CREATE TABLE IF NOT EXISTS app_capability_settings (
   id VARCHAR(64) NOT NULL,
   capabilities LONGTEXT NULL,
+  client_name VARCHAR(255) NULL,
   license_key VARCHAR(255) NULL,
   license_api_url VARCHAR(500) NULL,
   license_owner_token VARCHAR(500) NULL,
@@ -330,6 +340,7 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ALTER TABLE `app_capability_settings`
+  ADD COLUMN IF NOT EXISTS `client_name` VARCHAR(255) NULL,
   ADD COLUMN IF NOT EXISTS `license_owner_token` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `tier_key` VARCHAR(64) NULL,
   ADD COLUMN IF NOT EXISTS `override_enabled` TINYINT(1) NOT NULL DEFAULT 0,

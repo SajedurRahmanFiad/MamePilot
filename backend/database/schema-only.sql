@@ -114,6 +114,10 @@ CREATE TABLE IF NOT EXISTS customers (
   address TEXT NULL,
   total_orders INT NOT NULL DEFAULT 0,
   due_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  fraud_check_result LONGTEXT NULL,
+  fraud_check_percentage DECIMAL(5,2) NULL,
+  fraud_check_phone VARCHAR(64) NULL,
+  fraud_checked_at DATETIME NULL,
   created_by VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -129,6 +133,11 @@ CREATE TABLE IF NOT EXISTS customers (
   CONSTRAINT fk_customers_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
   CONSTRAINT fk_customers_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('customers', 'fraud_check_result', 'LONGTEXT NULL');
+CALL sp_add_col('customers', 'fraud_check_percentage', 'DECIMAL(5,2) NULL');
+CALL sp_add_col('customers', 'fraud_check_phone', 'VARCHAR(64) NULL');
+CALL sp_add_col('customers', 'fraud_checked_at', 'DATETIME NULL');
 
 CREATE TABLE IF NOT EXISTS vendors (
   id VARCHAR(64) NOT NULL,
@@ -393,6 +402,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 CREATE TABLE IF NOT EXISTS app_capability_settings (
   id VARCHAR(64) NOT NULL,
   capabilities LONGTEXT NULL,
+  client_name VARCHAR(255) NULL,
   license_key VARCHAR(255) NULL,
   license_api_url VARCHAR(500) NULL,
   license_owner_token VARCHAR(500) NULL,
@@ -418,6 +428,7 @@ CREATE TABLE IF NOT EXISTS app_capability_settings (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CALL sp_add_col('app_capability_settings', 'client_name', 'VARCHAR(255) NULL');
 CALL sp_add_col('app_capability_settings', 'license_owner_token', 'VARCHAR(500) NULL');
 CALL sp_add_col('app_capability_settings', 'tier_key', 'VARCHAR(64) NULL');
 CALL sp_add_col('app_capability_settings', 'override_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
@@ -2515,6 +2526,15 @@ CREATE TABLE IF NOT EXISTS order_status_undo_events (
 -- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
 
 -- Skipped data-mutating statement from 2026-07-25_order_status_canonicalization.sql.
+
+-- Migration: 2026-07-26_capability_client_name.sql
+CALL sp_add_col('app_capability_settings', 'client_name', 'VARCHAR(255) NULL');
+
+-- Migration: 2026-07-26_customer_fraud_snapshots.sql
+CALL sp_add_col('customers', 'fraud_check_result', 'LONGTEXT NULL');
+CALL sp_add_col('customers', 'fraud_check_percentage', 'DECIMAL(5,2) NULL');
+CALL sp_add_col('customers', 'fraud_check_phone', 'VARCHAR(64) NULL');
+CALL sp_add_col('customers', 'fraud_checked_at', 'DATETIME NULL');
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

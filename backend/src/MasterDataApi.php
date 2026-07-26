@@ -1563,6 +1563,31 @@ final class MasterDataApi extends BaseService
             }
         }
 
+        if (
+            $row !== null
+            && $isDeveloper
+            && $this->columnExists('app_capability_settings', 'client_name')
+            && trim((string) ($row['client_name'] ?? '')) === ''
+            && trim((string) ($row['license_api_url'] ?? '')) !== ''
+            && trim((string) ($row['license_key'] ?? '')) !== ''
+        ) {
+            try {
+                $remoteLicense = $this->centralLicenseRequest(
+                    (string) $row['license_api_url'],
+                    (string) ($row['license_owner_token'] ?? ''),
+                    'resolve_license',
+                    ['license_key' => (string) $row['license_key']]
+                );
+                $remoteClientName = trim((string) ($remoteLicense['client_name'] ?? $remoteLicense['clientName'] ?? ''));
+                if ($remoteClientName !== '') {
+                    $this->touchUpdate('app_capability_settings', (string) $row['id'], ['client_name' => $remoteClientName]);
+                    $row['client_name'] = $remoteClientName;
+                }
+            } catch (\Throwable) {
+                // Keep the page usable with the local value if central is unavailable.
+            }
+        }
+
         return [
             'capabilities' => $capabilities,
             'tierKey' => $this->nullableString($row['tier_key'] ?? null),
@@ -1577,6 +1602,7 @@ final class MasterDataApi extends BaseService
             'lastSyncStatus' => $this->nullableString($row['last_sync_status'] ?? null),
             'lastSyncMessage' => $this->nullableString($row['last_sync_message'] ?? null),
             'syncGraceUntil' => $this->toIso($row['sync_grace_until'] ?? null),
+            'clientName' => $isDeveloper ? (string) ($row['client_name'] ?? '') : '',
             'licenseKey' => $isDeveloper ? (string) ($row['license_key'] ?? '') : '',
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
@@ -1758,6 +1784,7 @@ final class MasterDataApi extends BaseService
         $id = (string) ($row['id'] ?? 'app-capabilities-default');
         $payload = [
             'capabilities' => $this->jsonEncode($capabilities),
+            'client_name' => array_key_exists('clientName', $params) ? $this->nullableString($params['clientName']) : $this->nullableString($row['client_name'] ?? null),
             'license_key' => array_key_exists('licenseKey', $params) ? $this->nullableString($params['licenseKey']) : $this->nullableString($row['license_key'] ?? null),
             'license_api_url' => array_key_exists('licenseApiUrl', $params) ? $this->nullableString($params['licenseApiUrl']) : $this->nullableString($row['license_api_url'] ?? null),
             'license_owner_token' => array_key_exists('licenseOwnerToken', $params) ? $this->nullableString($params['licenseOwnerToken']) : $this->nullableString($row['license_owner_token'] ?? null),
@@ -1775,7 +1802,7 @@ final class MasterDataApi extends BaseService
             'webhook_secret' => array_key_exists('webhookSecret', $params) ? $this->nullableString($params['webhookSecret']) : ($row['webhook_secret'] ?? null),
         ];
 
-        foreach (['license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
+        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -1872,10 +1899,14 @@ final class MasterDataApi extends BaseService
 
         $licenseKey = trim((string) ($params['licenseKey'] ?? $settingsRow['license_key'] ?? ''));
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $clientName = trim((string) ($params['clientName'] ?? $settingsRow['client_name'] ?? ''));
+        if ($clientName === '') {
+            $clientName = $host !== '' ? $host : 'MamePilot Client';
+        }
         $pricingMetadata = $this->normalizePricingMetadata($params['pricingMetadata'] ?? null);
         $payload = [
             'license_key' => $licenseKey ?: null,
-            'client_name' => trim((string) ($params['clientName'] ?? $host ?: 'MamePilot Client')),
+            'client_name' => $clientName,
             'domain' => trim((string) ($params['domain'] ?? $host)),
             'tier_key' => $tierKey,
             'status' => trim((string) ($params['status'] ?? 'active')),
@@ -2216,6 +2247,7 @@ final class MasterDataApi extends BaseService
         $this->updateCapabilitySettings([
             '__skipDeveloperCheck' => true,
             'capabilities' => $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'] ?? []),
+            'clientName' => $payload['client_name'] ?? $payload['clientName'] ?? $existingRow['client_name'] ?? null,
             'licenseKey' => $licenseKey,
             'licenseApiUrl' => $apiUrl,
             'licenseOwnerToken' => $ownerToken,

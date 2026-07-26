@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { theme } from '../theme';
 import { Button, NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
@@ -250,9 +249,9 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
 
   return (
     <>
-      <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-        <div className={`${theme.card.elevated} w-full max-w-2xl max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300`}>
+        <div className="w-full max-w-2xl max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl animate-in fade-in scale-in-100 duration-300">
           <div className="flex items-center justify-between p-6 border-b border-gray-100">
             <h2 className="text-2xl font-bold text-gray-900">{isExchangeConsignment ? 'Exchange — ' : ''}Add to Paperfly</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>

@@ -8,7 +8,7 @@ import { theme, resolveThemeColorPalette } from '../theme';
 import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor, useSystemDefaults, usePaymentMethods, useCategories } from '../src/hooks/useQueries';
 import { useUpdateBill, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { LoadingOverlay, CommonPaymentModal, BillReturnModal } from '../components';
+import { LoadingOverlay, CommonPaymentModal, BillReturnModal, NumericInput } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -35,7 +35,8 @@ const BillDetails: React.FC = () => {
   const { data: invoiceSettings } = useInvoiceSettings();
   const { data: systemDefaults } = useSystemDefaults();
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const { data: categories = [] } = useCategories('Income');
+  const { data: incomeCategories = [] } = useCategories('Income');
+  const { data: expenseCategories = [] } = useCategories('Expense');
   const themeColorHex = useMemo(() => {
     const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
     return resolveThemeColorPalette(tc).primary;
@@ -87,6 +88,8 @@ const BillDetails: React.FC = () => {
   const [completionAccountId, setCompletionAccountId] = useState('');
   const [completionPaymentMethod, setCompletionPaymentMethod] = useState('');
   const [completionCategoryId, setCompletionCategoryId] = useState('');
+  const [additionalExpenseAmount, setAdditionalExpenseAmount] = useState(0);
+  const [additionalExpenseCategoryId, setAdditionalExpenseCategoryId] = useState('');
 
   const isSectionExpanded = (section: string) => !!expandedSection[section];
 
@@ -102,7 +105,13 @@ const BillDetails: React.FC = () => {
     setCompletionNote('');
     setCompletionAccountId(systemDefaults?.defaultAccountId || accounts[0]?.id || '');
     setCompletionPaymentMethod(systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '');
-    setCompletionCategoryId(categories[0]?.id || '');
+    setCompletionCategoryId(incomeCategories[0]?.id || '');
+    setAdditionalExpenseAmount(0);
+    setAdditionalExpenseCategoryId(
+      (systemDefaults?.expenseCategoryId && expenseCategories.some((category) => category.id === systemDefaults.expenseCategoryId)
+        ? systemDefaults.expenseCategoryId
+        : '') || expenseCategories[0]?.id || ''
+    );
     setShowCompleteModal(true);
   };
 
@@ -414,6 +423,16 @@ const BillDetails: React.FC = () => {
         return;
       }
     }
+    if (completionOutcome === 'Received') {
+      if (additionalExpenseAmount < 0) {
+        toast.error('Additional expenses cannot be negative');
+        return;
+      }
+      if (additionalExpenseAmount > 0 && !additionalExpenseCategoryId) {
+        toast.error('Please select an additional expense category');
+        return;
+      }
+    }
 
     const historyText = `Marked as ${completionOutcome.toLowerCase()} by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     const newStatus = completionOutcome === 'Returned' ? BillStatus.RETURNED : BillStatus.RECEIVED;
@@ -425,6 +444,9 @@ const BillDetails: React.FC = () => {
       if (completionPaymentMethod) extraUpdates.returnPaymentMethod = completionPaymentMethod;
       if (completionCategoryId) extraUpdates.returnCategoryId = completionCategoryId;
       if (completionNote.trim()) extraUpdates.returnNote = completionNote.trim();
+    } else if (additionalExpenseAmount > 0) {
+      extraUpdates.additionalExpenseAmount = additionalExpenseAmount;
+      extraUpdates.additionalExpenseCategoryId = additionalExpenseCategoryId;
     }
 
     await updateStatus(newStatus, historyKey as keyof Exclude<Bill['history'], undefined>, historyText, extraUpdates);
@@ -1077,6 +1099,46 @@ const BillDetails: React.FC = () => {
                 ))}
               </div>
 
+              {completionOutcome === 'Received' && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-5 space-y-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-amber-700">Delivery Expenses</p>
+                    <p className="mt-1 text-xs font-medium text-amber-700/80">Record any extra cost incurred while receiving this bill.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-500">Additional Expenses</label>
+                    <NumericInput
+                      value={additionalExpenseAmount}
+                      onChange={setAdditionalExpenseAmount}
+                      disabled={updateMutation.isPending}
+                      className="border border-amber-200 bg-white text-lg text-amber-800"
+                      decimalPlaces={2}
+                      allowDecimals={true}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-500">Additional Expense Category</label>
+                    <select
+                      value={additionalExpenseCategoryId}
+                      onChange={(event) => setAdditionalExpenseCategoryId(event.target.value)}
+                      disabled={updateMutation.isPending || additionalExpenseAmount <= 0}
+                      className="w-full rounded-lg border border-amber-200 bg-white px-6 py-3.5 font-bold outline-none focus:ring-2 disabled:opacity-50"
+                      style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
+                    >
+                      <option value="">Select an expense category...</option>
+                      {expenseCategories.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                    {(systemDefaults?.defaultAccountId || accounts[0]?.id) ? (
+                      <p className="ml-2 text-[10px] font-medium text-gray-500">
+                        The expense will use {(accounts.find((account) => account.id === systemDefaults?.defaultAccountId) || accounts[0])?.name} and the default payment method.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               {completionOutcome === 'Returned' && (
                 <>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1125,7 +1187,7 @@ const BillDetails: React.FC = () => {
                       style={{ '--tw-ring-color': themeColorHex } as React.CSSProperties}
                     >
                       <option value="">Select category...</option>
-                      {categories.map((cat) => (
+                      {incomeCategories.map((cat) => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>

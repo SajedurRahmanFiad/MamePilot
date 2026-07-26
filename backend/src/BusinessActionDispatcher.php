@@ -159,7 +159,7 @@ final class BusinessActionDispatcher
             'fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones',
             'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails',
             'fetchSteadfastStatusByTrackingCode', 'fetchPaperflyOrderTracking',
-            'fetchPathaoOrderInfo',
+            'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo',
         ], true);
     }
 

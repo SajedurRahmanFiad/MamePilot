@@ -77,6 +77,7 @@ const DeveloperSubscriptions: React.FC = () => {
     if (!capabilitySettings) return;
     setLicenseApiUrl(capabilitySettings.licenseApiUrl || '');
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
+    setClientName(capabilitySettings.clientName || '');
     setSelectedTierKey(capabilitySettings.tierKey || capabilitySettings.availableTiers?.[0]?.tierKey || '');
     const caps = normalizeCapabilities(capabilitySettings.capabilities);
     setOverrideCapabilities(caps);

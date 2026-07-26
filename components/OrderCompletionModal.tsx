@@ -16,6 +16,8 @@ export type OrderCompletionFormState = {
   refundAmount: number;
   refundAccountId: string;
   refundPaymentMethod: string;
+  additionalExpenseAmount: number;
+  additionalExpenseCategoryId: string;
 };
 
 interface OrderCompletionModalProps {
@@ -79,12 +81,21 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
           : '') ||
           categories[0]?.id ||
           '');
+      const fallbackAdditionalExpenseCategoryId =
+        (systemDefaults?.expenseCategoryId && categories.some((category) => category.id === systemDefaults.expenseCategoryId)
+          ? systemDefaults.expenseCategoryId
+          : '') ||
+        categories[0]?.id ||
+        '';
 
       if (!next.accountId && fallbackAccountId) next.accountId = fallbackAccountId;
       if (!next.paymentMethod && fallbackPaymentMethod) next.paymentMethod = fallbackPaymentMethod;
       if (!next.categoryId && fallbackCategoryId) next.categoryId = fallbackCategoryId;
       if (!next.refundAccountId && fallbackAccountId) next.refundAccountId = fallbackAccountId;
       if (!next.refundPaymentMethod && fallbackPaymentMethod) next.refundPaymentMethod = fallbackPaymentMethod;
+      if (!next.additionalExpenseCategoryId && fallbackAdditionalExpenseCategoryId) {
+        next.additionalExpenseCategoryId = fallbackAdditionalExpenseCategoryId;
+      }
       if (!availableOutcomes.includes(next.outcome)) {
         next.outcome = availableOutcomes[0] || 'Delivered';
       }
@@ -100,7 +111,8 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         next.paymentMethod === current.paymentMethod &&
         next.categoryId === current.categoryId &&
         next.refundAccountId === current.refundAccountId &&
-        next.refundPaymentMethod === current.refundPaymentMethod
+        next.refundPaymentMethod === current.refundPaymentMethod &&
+        next.additionalExpenseCategoryId === current.additionalExpenseCategoryId
       ) {
         return current;
       }
@@ -131,6 +143,8 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   if (!isOpen || !order || availableOutcomes.length === 0) return null;
 
   const isReturned = form.outcome === 'Returned';
+  const additionalExpenseAccount =
+    accounts.find((account) => account.id === systemDefaults?.defaultAccountId) || accounts[0] || null;
   const outstanding = Math.max(order.total - order.paidAmount, 0);
 
   const dueAmount = Math.max(order.total - order.paidAmount, 0);
@@ -185,6 +199,49 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                   <span className="hidden sm:inline">{outcome}</span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {!isReturned && (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-5 space-y-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-amber-700">Delivery Expenses</p>
+                <p className="mt-1 text-xs font-medium text-amber-700/80">
+                  Record any extra cost incurred while delivering this order.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-500">Additional Expenses</label>
+                <NumericInput
+                  value={form.additionalExpenseAmount}
+                  onChange={(value) => setForm((current) => ({ ...current, additionalExpenseAmount: value }))}
+                  disabled={isLoading}
+                  className="border border-amber-200 bg-white text-lg text-amber-800"
+                  decimalPlaces={2}
+                  allowDecimals={true}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-500">Additional Expense Category</label>
+                <select
+                  value={form.additionalExpenseCategoryId}
+                  onChange={(event) => setForm((current) => ({ ...current, additionalExpenseCategoryId: event.target.value }))}
+                  disabled={isLoading || form.additionalExpenseAmount <= 0}
+                  className="w-full rounded-lg border border-amber-200 bg-white px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50"
+                >
+                  <option value="">Select an expense category...</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+                {additionalExpenseAccount ? (
+                  <p className="ml-2 text-[10px] font-medium text-gray-500">
+                    The expense will use {additionalExpenseAccount.name} and the default payment method.
+                  </p>
+                ) : null}
+              </div>
             </div>
           )}
 

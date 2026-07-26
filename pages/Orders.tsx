@@ -85,6 +85,8 @@ const Orders: React.FC = () => {
     refundAmount: 0,
     refundAccountId: '',
     refundPaymentMethod: '',
+    additionalExpenseAmount: 0,
+    additionalExpenseCategoryId: '',
   });
 
   const {
@@ -832,6 +834,16 @@ const Orders: React.FC = () => {
           return;
         }
       }
+      if (completionForm.outcome === 'Delivered') {
+        if (completionForm.additionalExpenseAmount < 0) {
+          toast.error('Additional expenses cannot be negative');
+          return;
+        }
+        if (completionForm.additionalExpenseAmount > 0 && !completionForm.additionalExpenseCategoryId) {
+          toast.error('Please select an additional expense category');
+          return;
+        }
+      }
 
       const fullDatetime = buildLocalDateTime(completionForm.date, completionForm.time);
       if (!fullDatetime) {
@@ -849,6 +861,9 @@ const Orders: React.FC = () => {
         payload.paymentMethod = completionForm.paymentMethod;
         payload.categoryId = completionForm.categoryId;
         payload.note = completionForm.note;
+      } else if (completionForm.additionalExpenseAmount > 0) {
+        payload.additionalExpenseAmount = completionForm.additionalExpenseAmount;
+        payload.additionalExpenseCategoryId = completionForm.additionalExpenseCategoryId;
       }
       const updatedOrder = await completePickedOrderMutation.mutateAsync(payload);
 

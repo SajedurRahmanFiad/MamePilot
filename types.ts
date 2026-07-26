@@ -1142,6 +1142,7 @@ export interface CapabilitySettings {
   lastSyncStatus?: string | null;
   lastSyncMessage?: string | null;
   syncGraceUntil?: string | null;
+  clientName?: string;
   licenseKey?: string;
   licenseApiUrl?: string;
   licenseOwnerToken?: string;
@@ -1726,6 +1727,8 @@ export interface CompletePickedOrderPayload {
   paymentMethod?: string;
   categoryId?: string;
   note?: string;
+  additionalExpenseAmount?: number;
+  additionalExpenseCategoryId?: string;
 }
 
 export type NotificationActionKind = 'none' | 'link' | 'decision' | 'link_and_decision';

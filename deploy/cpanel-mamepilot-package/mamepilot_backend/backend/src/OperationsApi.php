@@ -4418,6 +4418,8 @@ final class OperationsApi extends BaseService
         $amount = (float) ($params['amount'] ?? 0);
         $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
         $categoryId = trim((string) ($params['categoryId'] ?? ''));
+        $additionalExpenseAmount = round((float) ($params['additionalExpenseAmount'] ?? 0), 2);
+        $additionalExpenseCategoryId = trim((string) ($params['additionalExpenseCategoryId'] ?? ''));
 
         if ($outcome === 'Returned') {
             if ($amount < 0) {
@@ -4427,12 +4429,36 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Account, payment method, and expense category are required when a return expense is recorded.');
             }
         }
+        if ($additionalExpenseAmount < 0) {
+            throw new RuntimeException('Additional expense amount cannot be negative.');
+        }
+        if ($outcome !== 'Delivered' && $additionalExpenseAmount > 0) {
+            throw new RuntimeException('Additional delivery expenses can only be recorded for delivered orders.');
+        }
+        if ($additionalExpenseAmount > 0 && $additionalExpenseCategoryId === '') {
+            throw new RuntimeException('An expense category is required when an additional delivery expense is recorded.');
+        }
 
         $refundAmount = (float) ($params['refundAmount'] ?? 0);
         $refundAccountId = trim((string) ($params['refundAccountId'] ?? ''));
         $refundPaymentMethod = trim((string) ($params['refundPaymentMethod'] ?? ''));
 
-        return $this->database->transaction(function () use ($actor, $orderId, $outcome, $recordedAt, $accountId, $amount, $paymentMethod, $categoryId, $refundAmount, $refundAccountId, $refundPaymentMethod, $params): array {
+        return $this->database->transaction(function () use (
+            $actor,
+            $orderId,
+            $outcome,
+            $recordedAt,
+            $accountId,
+            $amount,
+            $paymentMethod,
+            $categoryId,
+            $refundAmount,
+            $refundAccountId,
+            $refundPaymentMethod,
+            $additionalExpenseAmount,
+            $additionalExpenseCategoryId,
+            $params
+        ): array {
             $orderRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
                 [':id' => $orderId]
@@ -4475,10 +4501,15 @@ final class OperationsApi extends BaseService
             $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
             $systemDefaults = $this->database->fetchOne(
-                'SELECT default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
+                'SELECT default_account_id, default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
             ) ?? [];
             $defaultPaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? 'Cash')) ?: 'Cash';
             $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
+            $defaultAccountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+            if ($additionalExpenseAmount > 0 && $defaultAccountId === '') {
+                $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+                $defaultAccountId = trim((string) ($fallbackAccount['id'] ?? ''));
+            }
             $existingIncome = 0.0;
             $existingExpense = 0.0;
             foreach ($linkedTransactions as $transactionRow) {
@@ -4530,6 +4561,27 @@ final class OperationsApi extends BaseService
                     $history['payment'] = $this->appendHistoryText(
                         (string) ($history['payment'] ?? ''),
                         'Delivery payment recorded: ' . $this->formatMoney($effectivePayment) . '.'
+                    );
+                }
+                if ($additionalExpenseAmount > 0) {
+                    if ($defaultAccountId === '') {
+                        throw new RuntimeException('Configure a default account before recording additional delivery expenses.');
+                    }
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => $additionalExpenseCategoryId,
+                        'accountId' => $defaultAccountId,
+                        'amount' => $additionalExpenseAmount,
+                        'description' => "Additional delivery expense for Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $defaultPaymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $history['expense'] = $this->appendHistoryText(
+                        (string) ($history['expense'] ?? ''),
+                        'Additional delivery expense recorded: ' . $this->formatMoney($additionalExpenseAmount) . '.'
                     );
                 }
                 // When completing from exchange picked, set exchange delivered history
@@ -5413,6 +5465,24 @@ final class OperationsApi extends BaseService
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
 
+            $additionalExpenseAmount = round((float) ($updates['additionalExpenseAmount'] ?? 0), 2);
+            $additionalExpenseCategoryId = trim((string) ($updates['additionalExpenseCategoryId'] ?? ''));
+            if ($additionalExpenseAmount < 0) {
+                throw new RuntimeException('Additional expense amount cannot be negative.');
+            }
+            if ($additionalExpenseAmount > 0) {
+                if ($nextStatus !== 'Received') {
+                    throw new RuntimeException('Additional delivery expenses can only be recorded while receiving a bill.');
+                }
+                if ($previousStatus === 'Received') {
+                    throw new RuntimeException('This bill has already been received.');
+                }
+                if ($additionalExpenseCategoryId === '') {
+                    throw new RuntimeException('An expense category is required when an additional delivery expense is recorded.');
+                }
+            }
+
+            $createdTransactions = [];
             $paymentAmount = round((float) ($updates['paymentAmount'] ?? 0), 2);
             $refundAmount = round((float) ($updates['refundAmount'] ?? 0), 2);
             if ($paymentAmount > 0 && $refundAmount > 0) {
@@ -5446,7 +5516,7 @@ final class OperationsApi extends BaseService
                     if ($paymentAmount > $remainingDue) {
                         throw new RuntimeException('Bill payment cannot exceed the remaining due amount.');
                     }
-                    $transaction = $this->createTransactionRecord([
+                    $createdTransactions[] = $this->createTransactionRecord([
                         'date' => $recordedAt,
                         'type' => 'Expense',
                         'category' => trim((string) ($systemDefaults['expense_category_id'] ?? '')) ?: 'expense_purchases',
@@ -5464,7 +5534,7 @@ final class OperationsApi extends BaseService
                     if ($refundAmount > $maxRefund) {
                         throw new RuntimeException('Vendor refund cannot exceed the bill overpayment.');
                     }
-                    $transaction = $this->createTransactionRecord([
+                    $createdTransactions[] = $this->createTransactionRecord([
                         'date' => $recordedAt,
                         'type' => 'Income',
                         'category' => trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_other',
@@ -5480,6 +5550,34 @@ final class OperationsApi extends BaseService
                 }
             }
 
+            if ($additionalExpenseAmount > 0) {
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT default_account_id, default_payment_method FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $additionalExpenseAccountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+                if ($additionalExpenseAccountId === '') {
+                    $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+                    $additionalExpenseAccountId = trim((string) ($fallbackAccount['id'] ?? ''));
+                }
+                if ($additionalExpenseAccountId === '') {
+                    throw new RuntimeException('Configure a default account before recording additional delivery expenses.');
+                }
+                $additionalExpensePaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash';
+                $billNumber = trim((string) ($existingRow['bill_number'] ?? ''));
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $this->database->nowUtc(),
+                    'type' => 'Expense',
+                    'category' => $additionalExpenseCategoryId,
+                    'accountId' => $additionalExpenseAccountId,
+                    'amount' => $additionalExpenseAmount,
+                    'description' => "Additional delivery expense for Bill #{$billNumber}",
+                    'referenceId' => $id,
+                    'contactId' => $previousVendorId,
+                    'paymentMethod' => $additionalExpensePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
             $this->touchUpdate('bills', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
             $this->syncVendorPurchaseSummaries([
@@ -5492,7 +5590,13 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Updated bill could not be loaded.');
             }
 
-            return $this->mapBill($row);
+            $bill = $this->mapBill($row);
+            $bill['pendingTransactionCount'] = count(array_filter(
+                $createdTransactions,
+                static fn(array $transaction): bool => (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending'
+            ));
+
+            return $bill;
         });
     }
 

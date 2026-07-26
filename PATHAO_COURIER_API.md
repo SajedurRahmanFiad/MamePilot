@@ -118,7 +118,37 @@ Accept: application/json
 
 ---
 
-## 3. Order Creation Endpoint
+## 3. Location Lookup and Order Creation
+
+The Add to Pathao modal loads its location dropdowns from Pathao. Each request uses the configured base URL and the current Bearer access token.
+
+### 3.1 City List
+
+```text
+GET {baseUrl}/aladdin/api/v1/city-list
+```
+
+The response items use `city_id` and `city_name`. A city must be selected before zones can be loaded.
+
+### 3.2 Zone List
+
+```text
+GET {baseUrl}/aladdin/api/v1/cities/{city_id}/zone-list
+```
+
+The response items use `zone_id` and `zone_name`. A zone must be selected before areas can be loaded.
+
+### 3.3 Area List
+
+```text
+GET {baseUrl}/aladdin/api/v1/zones/{zone_id}/area-list
+```
+
+The response items use `area_id` and `area_name`.
+
+> Pathao's current order contract requires City and Zone. Area is optional. The modal follows that provider contract so the create-order request is not rejected with HTTP 422.
+
+### 3.4 Order Creation Endpoint
 
 ### Endpoint
 
@@ -142,6 +172,9 @@ Authorization: Bearer {accessToken}
   "recipient_name": "John Doe",
   "recipient_phone": "01712345678",
   "recipient_address": "House 12, Road 5, Dhanmondi, Dhaka",
+  "recipient_city": 1,
+  "recipient_zone": 1,
+  "recipient_area": 1,
   "delivery_type": 48,
   "item_type": 2,
   "special_instruction": "Call before delivery",
@@ -159,6 +192,9 @@ Authorization: Bearer {accessToken}
 | `recipient_name` | string | **Yes** | Customer's full name |
 | `recipient_phone` | string | **Yes** | Customer's phone number |
 | `recipient_address` | string | **Yes** | Full delivery address |
+| `recipient_city` | int | **Yes** | Selected Pathao city ID |
+| `recipient_zone` | int | **Yes** | Selected Pathao zone ID within the city |
+| `recipient_area` | int | No | Selected Pathao area ID within the zone |
 | `delivery_type` | int | **Yes** | Delivery speed (see enum values below) |
 | `item_type` | int | **Yes** | Item category (see enum values below) |
 | `special_instruction` | string \| null | No | Delivery notes / special instructions (e.g., "Call before delivery") |
@@ -174,6 +210,9 @@ Authorization: Bearer {accessToken}
 | `recipient_name` | Order's `processedInfo.name` |
 | `recipient_phone` | Order's `processedInfo.phone` |
 | `recipient_address` | Order's `processedInfo.address` |
+| `recipient_city` | Required City selection in the Add to Pathao modal |
+| `recipient_zone` | Required Zone selection loaded for the selected City |
+| `recipient_area` | Optional Area selection loaded for the selected Zone; omitted when blank |
 | `delivery_type` | Request body `deliveryType` override, or setting `pathaoDefaultDeliveryType` (default `48`) |
 | `item_type` | Request body `itemType` override, or setting `pathaoDefaultItemType` (default `2`) |
 | `special_instruction` | Order's `processedInfo.additionalPhone` (if present), otherwise falls back to the `selectedNote` parameter passed by the caller |
@@ -252,11 +291,12 @@ The raw response body is returned along with the HTTP status code. Common patter
 │                                                         │
 │  Required body fields:                                  │
 │    store_id, recipient_name, recipient_phone,           │
-│    recipient_address, delivery_type, item_type,         │
-│    item_quantity, item_weight, amount_to_collect        │
+│    recipient_address, recipient_city, recipient_zone,   │
+│    delivery_type, item_type, item_quantity,             │
+│    item_weight, amount_to_collect                       │
 │                                                         │
 │  Optional body field:                                   │
-│    special_instruction                                  │
+│    recipient_area, special_instruction                  │
 │                                                         │
 │  Response → data.consignment_id (tracking number)       │
 │                                                         │
@@ -286,10 +326,16 @@ Before calling the Pathao token endpoint:
 - For `password` grant: `username` and `password` must be non-empty.
 - For `refresh_token` grant: `refreshToken` must be non-empty.
 
+Before calling the Pathao location endpoints:
+- `pathaoBaseUrl` and `pathaoAccessToken` must be configured.
+- Zone lookup requires a non-empty `cityId`.
+- Area lookup requires a non-empty `zoneId`.
+
 Before calling the Pathao order creation endpoint:
 - `pathaoBaseUrl`, `pathaoAccessToken`, `pathaoStoreId` must all be non-empty in settings.
-- `recipient_name`, `recipient_phone`, `recipient_address` must all be non-empty in the payload.
-- If any of these three are missing, the request is rejected with a `400` error before hitting the Pathao API.
+- `recipient_name`, `recipient_phone`, `recipient_address`, `recipient_city`, and `recipient_zone` must all be non-empty in the payload.
+- `recipient_area` is omitted from the provider payload when no area is selected.
+- If any required recipient field is missing, the request is rejected before hitting the Pathao API.
 
 ### COD Amount
 
@@ -323,7 +369,7 @@ pathao_token_expires_at   VARCHAR/TEXT   -- ISO 8601 expiry timestamp
 | Scenario | Behavior |
 |---|---|
 | Missing credentials in settings | Returns `400` with `"Pathao credentials are not fully configured"` |
-| Missing recipient fields | Returns `400` with `"Missing required order field: {field}"` |
+| Missing recipient fields | Rejects the request with the missing name, phone, address, city, or zone fields identified |
 | Invalid/expired access token | Pathao returns 401/403; the raw response is passed through with `success: false` |
 | Network/timeout error | Caught by PHP exception handler, returns `502` with error details |
 | Pathao returns validation error (422) | Raw response body is returned in the `raw` field alongside `success: false` |
@@ -332,13 +378,16 @@ pathao_token_expires_at   VARCHAR/TEXT   -- ISO 8601 expiry timestamp
 
 ---
 
-## 8. API Endpoints Summary (Internal PHP Wrappers)
+## 8. API Endpoints Summary (Internal Application Actions)
 
-| Internal Endpoint | Method | Purpose | Calls Pathao Endpoint |
-|---|---|---|---|
-| `/api/pathao-token.php` | POST | Generate or refresh OAuth2 token | `POST /aladdin/api/v1/issue-token` |
-| `/api/pathao-create-order.php` | POST | Create a new delivery order | `POST /aladdin/api/v1/orders` |
-| `/api/settings.php` | GET/PUT | Read/update all Pathao settings | N/A (manages credentials) |
+| Internal Action | Purpose | Calls Pathao Endpoint |
+|---|---|---|
+| `generatePathaoToken` / `refreshPathaoToken` | Generate or refresh OAuth2 token | `POST /aladdin/api/v1/issue-token` |
+| `fetchPathaoCities` | Load City dropdown items | `GET /aladdin/api/v1/city-list` |
+| `fetchPathaoZones` | Load Zone dropdown items for a City | `GET /aladdin/api/v1/cities/{city_id}/zone-list` |
+| `fetchPathaoAreas` | Load Area dropdown items for a Zone | `GET /aladdin/api/v1/zones/{zone_id}/area-list` |
+| `submitPathaoOrder` | Create a new delivery order | `POST /aladdin/api/v1/orders` |
+| `fetchPathaoOrderInfo` | Read consignment status | `GET /aladdin/api/v1/orders/{consignment_id}/info` |
 
 ---
 
@@ -347,6 +396,9 @@ pathao_token_expires_at   VARCHAR/TEXT   -- ISO 8601 expiry timestamp
 | Constant | Value | Description |
 |---|---|---|
 | Token endpoint path | `/aladdin/api/v1/issue-token` | Appended to `baseUrl` |
+| City list path | `/aladdin/api/v1/city-list` | Loads City options |
+| Zone list path | `/aladdin/api/v1/cities/{city_id}/zone-list` | Loads Zone options for the selected City |
+| Area list path | `/aladdin/api/v1/zones/{zone_id}/area-list` | Loads optional Area options for the selected Zone |
 | Order endpoint path | `/aladdin/api/v1/orders` | Appended to `baseUrl` |
 | Default delivery type | `48` | Normal (48-hour) delivery |
 | Default item type | `2` | Parcel |

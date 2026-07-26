@@ -397,7 +397,10 @@ final class CourierApi extends BaseService
 
     private function persistCustomerFraudSnapshot(string $customerId, string $phone, array $result): void
     {
-        if (!$this->columnExists('customers', 'fraud_check_result')) {
+        foreach (['fraud_check_result', 'fraud_check_percentage', 'fraud_check_phone', 'fraud_checked_at'] as $column) {
+            if ($this->columnExists('customers', $column)) {
+                continue;
+            }
             throw new RuntimeException('Customer fraud snapshot columns are missing. Run schema-only.sql first.');
         }
 
@@ -1545,6 +1548,87 @@ final class CourierApi extends BaseService
     // ===== Pathao Courier Methods =====
 
     /**
+     * @return array<int, array{id: string, name: string}>
+     */
+    private function pathaoLocationCollection(array $response, string $idKey, string $nameKey): array
+    {
+        $payload = is_array($response['json'] ?? null) ? $response['json'] : [];
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            throw new RuntimeException((string) ($payload['message'] ?? $payload['error'] ?? ('Pathao location request failed with HTTP ' . $response['status'] . '.')));
+        }
+
+        $rows = $payload['data']['data'] ?? $payload['data'] ?? [];
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $locations = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = trim((string) ($row[$idKey] ?? $row['id'] ?? ''));
+            $name = trim((string) ($row[$nameKey] ?? $row['name'] ?? ''));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+            $locations[] = ['id' => $id, 'name' => $name];
+        }
+
+        return $locations;
+    }
+
+    /** GET {baseUrl}/aladdin/api/v1/city-list */
+    public function fetchPathaoCities(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $accessToken = trim((string) ($params['accessToken'] ?? ''));
+        if ($baseUrl === '' || $accessToken === '') {
+            throw new RuntimeException('Pathao access token is not configured.');
+        }
+
+        return $this->pathaoLocationCollection($this->request(
+            'GET',
+            $baseUrl . '/aladdin/api/v1/city-list',
+            ['Authorization' => 'Bearer ' . $accessToken, 'Accept' => 'application/json']
+        ), 'city_id', 'city_name');
+    }
+
+    /** GET {baseUrl}/aladdin/api/v1/cities/{cityId}/zone-list */
+    public function fetchPathaoZones(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $accessToken = trim((string) ($params['accessToken'] ?? ''));
+        $cityId = trim((string) ($params['cityId'] ?? ''));
+        if ($baseUrl === '' || $accessToken === '' || $cityId === '') {
+            throw new RuntimeException('Select a Pathao city before loading zones.');
+        }
+
+        return $this->pathaoLocationCollection($this->request(
+            'GET',
+            $baseUrl . '/aladdin/api/v1/cities/' . rawurlencode($cityId) . '/zone-list',
+            ['Authorization' => 'Bearer ' . $accessToken, 'Accept' => 'application/json']
+        ), 'zone_id', 'zone_name');
+    }
+
+    /** GET {baseUrl}/aladdin/api/v1/zones/{zoneId}/area-list */
+    public function fetchPathaoAreas(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $accessToken = trim((string) ($params['accessToken'] ?? ''));
+        $zoneId = trim((string) ($params['zoneId'] ?? ''));
+        if ($baseUrl === '' || $accessToken === '' || $zoneId === '') {
+            throw new RuntimeException('Select a Pathao zone before loading areas.');
+        }
+
+        return $this->pathaoLocationCollection($this->request(
+            'GET',
+            $baseUrl . '/aladdin/api/v1/zones/' . rawurlencode($zoneId) . '/area-list',
+            ['Authorization' => 'Bearer ' . $accessToken, 'Accept' => 'application/json']
+        ), 'area_id', 'area_name');
+    }
+
+    /**
      * Generate a Pathao OAuth2 access token using the password grant.
      * POST {baseUrl}/aladdin/api/v1/issue-token
      */
@@ -1655,9 +1739,12 @@ final class CourierApi extends BaseService
         $recipientName = trim((string) ($params['recipientName'] ?? ''));
         $recipientPhone = trim((string) ($params['recipientPhone'] ?? ''));
         $recipientAddress = trim((string) ($params['recipientAddress'] ?? ''));
+        $recipientCity = trim((string) ($params['recipientCity'] ?? ''));
+        $recipientZone = trim((string) ($params['recipientZone'] ?? ''));
+        $recipientArea = trim((string) ($params['recipientArea'] ?? ''));
 
-        if ($recipientName === '' || $recipientPhone === '' || $recipientAddress === '') {
-            return ['error' => 'Missing required order fields: recipient name, phone, or address'];
+        if ($recipientName === '' || $recipientPhone === '' || $recipientAddress === '' || $recipientCity === '' || $recipientZone === '') {
+            return ['error' => 'Missing required order fields: recipient name, phone, address, city, or zone'];
         }
 
         $payload = [
@@ -1665,12 +1752,17 @@ final class CourierApi extends BaseService
             'recipient_name' => $recipientName,
             'recipient_phone' => $recipientPhone,
             'recipient_address' => $recipientAddress,
+            'recipient_city' => (int) $recipientCity,
+            'recipient_zone' => (int) $recipientZone,
             'delivery_type' => (int) ($params['deliveryType'] ?? 48),
             'item_type' => (int) ($params['itemType'] ?? 2),
             'item_quantity' => (int) ($params['itemQuantity'] ?? 1),
             'item_weight' => (float) ($params['itemWeight'] ?? 1.0),
             'amount_to_collect' => max(0, (int) round((float) ($params['amountToCollect'] ?? 0))),
         ];
+        if ($recipientArea !== '') {
+            $payload['recipient_area'] = (int) $recipientArea;
+        }
 
         $specialInstruction = trim((string) ($params['specialInstruction'] ?? ''));
         if ($specialInstruction !== '') {

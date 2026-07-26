@@ -285,7 +285,7 @@ final class AgentToolRegistry
             ],
             'courier' => [
                 'capability' => 'courier_automation',
-                'reads' => ['fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones', 'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails', 'fetchSteadfastStatusByTrackingCode', 'fetchPaperflyOrderTracking', 'fetchPathaoOrderInfo'],
+                'reads' => ['fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones', 'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails', 'fetchSteadfastStatusByTrackingCode', 'fetchPaperflyOrderTracking', 'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo'],
                 'actions' => ['submitCarryBeeOrder', 'submitCarryBeeExchangeOrder', 'syncCarryBeeTransferStatuses', 'submitSteadfastOrder', 'syncSteadfastDeliveryStatuses', 'submitPaperflyOrder', 'submitPaperflyExchangeOrder', 'syncPaperflyOrderStatuses', 'submitPathaoOrder', 'syncPathaoDeliveryStatuses', 'syncExchangeConsignmentStatuses'],
             ],
             'fraud' => [
@@ -613,6 +613,9 @@ final class AgentToolRegistry
         if ($action === 'fetchCarryBeeOrderDetails') return $strictObject(['orderId' => ['type' => 'string'], 'consignmentId' => ['type' => 'string']]);
         if ($action === 'fetchSteadfastStatusByTrackingCode') return $strictObject(['orderId' => ['type' => 'string'], 'trackingCode' => ['type' => 'string']]);
         if ($action === 'fetchPaperflyOrderTracking') return $strictObject(['orderId' => ['type' => 'string'], 'referenceNumber' => ['type' => 'string']]);
+        if ($action === 'fetchPathaoCities') return $strictObject();
+        if ($action === 'fetchPathaoZones') return $strictObject(['cityId' => ['type' => 'string', 'minLength' => 1]], ['cityId']);
+        if ($action === 'fetchPathaoAreas') return $strictObject(['zoneId' => ['type' => 'string', 'minLength' => 1]], ['zoneId']);
         if ($action === 'fetchPathaoOrderInfo') return $strictObject(['orderId' => ['type' => 'string'], 'consignmentId' => ['type' => 'string']]);
 
         if ($action === 'fetchWooCommerceStores') return $strictObject();
@@ -722,6 +725,7 @@ final class AgentToolRegistry
                 'total' => ['type' => 'number'], 'paidAmount' => ['type' => 'number'], 'notes' => ['type' => 'string'],
                 'paymentAmount' => ['type' => 'number', 'minimum' => 0], 'refundAmount' => ['type' => 'number', 'minimum' => 0],
                 'accountId' => ['type' => 'string'], 'paymentMethod' => ['type' => 'string'], 'transactionDate' => ['type' => 'string'],
+                'additionalExpenseAmount' => ['type' => 'number', 'minimum' => 0], 'additionalExpenseCategoryId' => ['type' => 'string'],
             ], 'additionalProperties' => false],
         ], ['id', 'updates']);
         if (in_array($action, ['updateCustomer', 'updateVendor'], true)) return $strictObject([
@@ -774,6 +778,7 @@ final class AgentToolRegistry
             'date' => ['type' => 'string'], 'accountId' => ['type' => 'string'], 'amount' => ['type' => 'number'],
             'paymentMethod' => ['type' => 'string'], 'categoryId' => ['type' => 'string'],
             'refundAmount' => ['type' => 'number'], 'refundAccountId' => ['type' => 'string'],
+            'additionalExpenseAmount' => ['type' => 'number', 'minimum' => 0], 'additionalExpenseCategoryId' => ['type' => 'string'],
         ], ['orderId', 'outcome']);
         if ($action === 'reviewTransactionApproval') return $strictObject([
             'transactionId' => ['type' => 'string', 'minLength' => 1], 'decision' => ['type' => 'string', 'enum' => ['approve', 'decline']], 'note' => ['type' => 'string'],
@@ -854,7 +859,9 @@ final class AgentToolRegistry
             'orderId' => ['type' => 'string', 'minLength' => 1], 'specialInstruction' => ['type' => 'string'],
             'deliveryType' => ['type' => 'integer', 'minimum' => 1], 'itemType' => ['type' => 'integer', 'minimum' => 1],
             'itemQuantity' => ['type' => 'integer', 'minimum' => 1], 'itemWeight' => ['type' => 'number', 'exclusiveMinimum' => 0],
-        ], ['orderId']);
+            'recipientCity' => ['type' => 'string', 'minLength' => 1], 'recipientZone' => ['type' => 'string', 'minLength' => 1],
+            'recipientArea' => ['type' => 'string'],
+        ], ['orderId', 'recipientCity', 'recipientZone']);
         if ($action === 'submitCarryBeeOrder') return $strictObject([
             'orderId' => ['type' => 'string', 'minLength' => 1], 'cityId' => ['type' => 'string', 'minLength' => 1],
             'zoneId' => ['type' => 'string', 'minLength' => 1], 'areaId' => ['type' => 'string'], 'deliveryType' => ['type' => 'integer'],
