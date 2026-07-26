@@ -191,6 +191,7 @@ const OrderDetails: React.FC = () => {
     icon: React.ReactNode;
     text: string;
     parsedAt: Date | null;
+    fallbackOrder?: number;
     children?: ActivityTimelineEntry[];
   };
   const [pendingStatusTransition, setPendingStatusTransition] = useState<OrderStatusTransition | null>(null);
@@ -304,13 +305,22 @@ const OrderDetails: React.FC = () => {
         if (!parsed) return line;
 
         const { date: formattedDate, time: formattedTime } = formatDateTimeParts(parsed);
+        if (!formattedTime) return line;
 
-        const onAtRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
-        const match = line.match(onAtRegex);
-        if (match && typeof match.index === 'number') {
-          const prefix = line.slice(0, match.index);
-          const suffix = line.slice(match.index + match[0].length);
-          return `${prefix}${match[1]}${formattedDate}${match[3]}${formattedTime}${suffix}`;
+        const onAtCommaRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
+        const commaMatch = line.match(onAtCommaRegex);
+        if (commaMatch && typeof commaMatch.index === 'number') {
+          const prefix = line.slice(0, commaMatch.index);
+          const suffix = line.slice(commaMatch.index + commaMatch[0].length);
+          return `${prefix}${commaMatch[1]}${formattedDate}${commaMatch[3]}${formattedTime}${suffix}`;
+        }
+
+        const onAtNoCommaRegex = /(on\s+)(.+?)(\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
+        const noCommaMatch = line.match(onAtNoCommaRegex);
+        if (noCommaMatch && typeof noCommaMatch.index === 'number') {
+          const prefix = line.slice(0, noCommaMatch.index);
+          const suffix = line.slice(noCommaMatch.index + noCommaMatch[0].length);
+          return `${prefix}${noCommaMatch[1]}${formattedDate}, at ${formattedTime}${suffix}`;
         }
 
         const isoTimestampRegex = /\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/;
@@ -633,19 +643,37 @@ const OrderDetails: React.FC = () => {
         }
       : null;
 
+    const lifecycleOrder: Record<string, number> = {
+      created: 0,
+      processing: 1,
+      packed: 2,
+      courier: 3,
+      picked: 4,
+      completed: 5,
+      returnExchange: 6,
+      exchangeProcessing: 7,
+      exchangeCourier: 8,
+      exchangePicked: 9,
+      exchangeDelivered: 10,
+      exchangeReturned: 11,
+      returned: 12,
+      cancelled: 13,
+    };
+
     const entries: ActivityTimelineEntry[] = [...baseEntries, ...paymentEntries]
-      .map((entry) => ({
+      .map((entry, index) => ({
         ...entry,
         text: formatHistoryTextForTimeline(entry.text),
         parsedAt: parseHistoryTimestamp(entry.text),
+        fallbackOrder: lifecycleOrder[entry.key] ?? (100 + index),
       }));
 
-    if (surveyGroup) entries.push(surveyGroup);
+    if (surveyGroup) entries.push({ ...surveyGroup, fallbackOrder: 50 });
     entries.sort((a, b) => {
       if (a.parsedAt && b.parsedAt) return a.parsedAt.getTime() - b.parsedAt.getTime();
       if (a.parsedAt) return -1;
       if (b.parsedAt) return 1;
-      return 0;
+      return (a.fallbackOrder ?? 999) - (b.fallbackOrder ?? 999);
     });
 
     return entries;
