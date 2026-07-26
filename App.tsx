@@ -13,6 +13,7 @@ import { WRITE_FREEZE_ENABLED } from './src/config/incidentMode';
 import GlobalApiEventWatcher from './src/components/GlobalApiEventWatcher';
 import FeatureLocked from './src/components/FeatureLocked';
 import { SubscriptionReadOnlyProvider, useSubscriptionReadOnly } from './src/contexts/SubscriptionReadOnlyContext';
+import { BrandingProvider } from './src/contexts/BrandingProvider';
 
 type PreloadableComponent<T extends React.ComponentType<any>> = React.LazyExoticComponent<T> & {
   preload: () => Promise<unknown>;
@@ -551,22 +552,24 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <NetworkProvider>
-      <ToastProvider>
-        <SearchProvider>
-          <RealtimeProvider>
-            <HashRouter>
-            <SubscriptionReadOnlyProvider>
-              <AppContent />
-            </SubscriptionReadOnlyProvider>
-            <GlobalApiEventWatcher />
-            <NetworkStatusBanner />
-            <ToastContainer />
-          </HashRouter>
-          </RealtimeProvider>
-        </SearchProvider>
-      </ToastProvider>
-    </NetworkProvider>
+    <BrandingProvider>
+      <NetworkProvider>
+        <ToastProvider>
+          <SearchProvider>
+            <RealtimeProvider>
+              <HashRouter>
+              <SubscriptionReadOnlyProvider>
+                <AppContent />
+              </SubscriptionReadOnlyProvider>
+              <GlobalApiEventWatcher />
+              <NetworkStatusBanner />
+              <ToastContainer />
+            </HashRouter>
+            </RealtimeProvider>
+          </SearchProvider>
+        </ToastProvider>
+      </NetworkProvider>
+    </BrandingProvider>
   );
 };
 

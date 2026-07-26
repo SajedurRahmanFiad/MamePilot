@@ -1,26 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../db';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { fetchCompanySettings, fetchSystemDefaults } from '../src/services/supabaseQueries';
-import { getGlobalCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
-
-const defaultBranding = {
-  name: 'Mame Pilot',
-  logo: '/uploads/Avatar.png',
-};
+import { useAppBranding } from '../src/contexts/BrandingProvider';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const { signIn, isLoading, user } = useAuth();
+  const branding = useAppBranding();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [companySettings, setCompanySettings] = useState(defaultBranding);
-  const [whiteLabelEnabled, setWhiteLabelEnabled] = useState(false);
-  const [brandLoading, setBrandLoading] = useState(true);
+  const brandLoading = branding.mode === 'loading';
+  const brandUnavailable = branding.mode === 'unavailable';
 
   // Redirect to dashboard when user is fully authenticated
   // Profile is now GUARANTEED to exist when user exists (never null)
@@ -31,67 +24,6 @@ const Login: React.FC = () => {
       navigate('/dashboard', { replace: true });
     }
   }, [user, isLoading, navigate]);
-
-  useEffect(() => {
-    const loadBranding = async () => {
-      try {
-        const defaults = await fetchSystemDefaults();
-        const enabled = Boolean(defaults.whiteLabel);
-        setWhiteLabelEnabled(enabled);
-
-        if (!enabled) {
-          setCompanySettings(defaultBranding);
-          return;
-        }
-
-        const settings = await fetchCompanySettings();
-        const globalPage = getGlobalCompanyPage(normalizeCompanySettings(settings));
-        setCompanySettings({
-          name: globalPage.name || defaultBranding.name,
-          logo: globalPage.logo || defaultBranding.logo,
-        });
-      } catch (err) {
-        console.error('Failed to load branding settings:', err);
-        setWhiteLabelEnabled(false);
-        setCompanySettings(defaultBranding);
-      } finally {
-        setBrandLoading(false);
-      }
-    };
-
-    loadBranding();
-  }, []);
-
-  useEffect(() => {
-    const pageTitle = whiteLabelEnabled
-      ? brandLoading
-        ? 'Loading...'
-        : companySettings.name?.trim() || 'Management'
-      : 'Mame Pilot';
-    document.title = `${pageTitle} - Management`;
-  }, [brandLoading, whiteLabelEnabled, companySettings.name]);
-
-  useEffect(() => {
-    if (!companySettings?.logo) return;
-
-    try {
-      const setLink = (rel: string) => {
-        let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
-        if (!el) {
-          el = document.createElement('link');
-          el.rel = rel;
-          document.head.appendChild(el);
-        }
-        el.href = companySettings.logo;
-      };
-
-      setLink('icon');
-      setLink('shortcut icon');
-      setLink('apple-touch-icon');
-    } catch (e) {
-      console.warn('Failed to update login favicon:', e);
-    }
-  }, [companySettings.logo]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,19 +58,34 @@ const Login: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow p-8">
         <div className="flex items-center gap-4 mb-6">
-          {brandLoading && whiteLabelEnabled ? (
-            <div className="flex h-12 w-12 items-center justify-center rounded-md bg-gray-100 text-sm font-semibold text-gray-500">
-              ...
-            </div>
+          {brandLoading || brandUnavailable ? (
+            <div
+              className={`h-12 w-12 rounded-md bg-gray-100 ${brandLoading ? 'animate-pulse' : ''}`}
+              role="status"
+              aria-label={brandLoading ? 'Loading workspace branding' : 'Workspace branding unavailable'}
+            />
           ) : (
-            companySettings.logo && (
-              <img src={companySettings.logo} alt="Logo" className="w-12 h-12 rounded-md object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }} />
+            branding.compactLogo && (
+              <img
+                src={branding.compactLogo}
+                alt={branding.name || 'Company logo'}
+                className="w-12 h-12 rounded-md object-cover"
+                onError={(e) => {
+                  if (branding.mode === 'mamepilot') {
+                    e.currentTarget.src = '/uploads/Avatar.png';
+                  } else {
+                    e.currentTarget.style.visibility = 'hidden';
+                  }
+                }}
+              />
             )
           )}
           <div>
-            <h1 className="text-xl font-bold">
-              {brandLoading && whiteLabelEnabled ? 'Loading...' : companySettings.name}
-            </h1>
+            {brandLoading ? (
+              <div className="h-6 w-36 animate-pulse rounded bg-gray-100" />
+            ) : (
+              <h1 className="text-xl font-bold">{branding.name || 'Management'}</h1>
+            )}
             <p className="text-sm text-gray-500">Sign in to continue</p>
           </div>
         </div>

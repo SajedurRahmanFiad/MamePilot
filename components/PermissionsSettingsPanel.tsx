@@ -6,9 +6,7 @@ import type { PermissionKey, PermissionsSettings, RolePermissionMap } from '../t
 import {
   PERMISSION_DEFINITIONS,
   STORED_PERMISSION_KEYS,
-  areAllPrivilegesEnabled,
   clonePermissionsSettings,
-  createBlankPermissionMap,
   getDefaultPermissionsForRole,
   getPermissionRoles,
   isReservedPermissionRole,
@@ -130,17 +128,6 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     }));
   };
 
-  const toggleAllPrivileges = (roleName: string) => {
-    updateRolePermissions(roleName, (current) => {
-      const nextValue = !areAllPrivilegesEnabled(current);
-      const next = { ...current };
-      for (const key of STORED_PERMISSION_KEYS) {
-        next[key] = nextValue;
-      }
-      return next;
-    });
-  };
-
   const toggleSection = (roleName: string, permissionKeys: PermissionKey[]) => {
     updateRolePermissions(roleName, (current) => {
       const shouldEnable = !permissionKeys.every((key) => current[key]);
@@ -162,15 +149,6 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       ...current,
       [permissionKey]: !current[permissionKey],
     }));
-  };
-
-  const toggleDraftAllPrivileges = () => {
-    const shouldEnable = !areAllPrivilegesEnabled(draftPermissions);
-    const next = createBlankPermissionMap();
-    for (const key of STORED_PERMISSION_KEYS) {
-      next[key] = shouldEnable;
-    }
-    setDraftPermissions(next);
   };
 
   const handleCreateRole = () => {
@@ -360,15 +338,6 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                     >
                       {areVisibleSectionsExpanded ? 'Collapse sections' : 'Expand sections'}
                     </button>
-                    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-black text-gray-800 transition hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)]">
-                      <input
-                        type="checkbox"
-                        className={checkboxClassName}
-                        checked={areAllPrivilegesEnabled(selectedRole.permissions)}
-                        onChange={() => toggleAllPrivileges(selectedRole.roleName)}
-                      />
-                      All privileges
-                    </label>
                   </div>
                 </div>
               </div>
@@ -483,17 +452,6 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                 )}
 
                 <div className="rounded-2xl border border-gray-100">
-                  <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
-                    <label className="flex items-center gap-3 text-sm font-black text-gray-900">
-                      <input
-                        type="checkbox"
-                        className={checkboxClassName}
-                        checked={areAllPrivilegesEnabled(draftPermissions)}
-                        onChange={toggleDraftAllPrivileges}
-                      />
-                      All Privileges
-                    </label>
-                  </div>
                   <div className="grid gap-6 px-6 py-6">
                     {groupedDefinitions.map((group) => (
                       <div key={group.section} className="space-y-4 rounded-2xl border border-gray-100 p-5">

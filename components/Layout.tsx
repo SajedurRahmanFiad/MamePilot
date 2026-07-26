@@ -7,7 +7,7 @@ import { db } from '../db';
 import { hasAdminAccess, isEmployeeRole } from '../types';
 import { resolveThemeColorPalette, theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useGlobalBranding, useSystemDefaults } from '../src/hooks/useQueries';
+import { useSystemDefaults } from '../src/hooks/useQueries';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -18,6 +18,7 @@ import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incide
 import NotificationCenterButton from './NotificationCenterButton';
 import ServiceAnnouncementBar from './ServiceAnnouncementBar';
 import MameChat from './MameChat';
+import { useAppBranding } from '../src/contexts/BrandingProvider';
 
 type SidebarConfigItemWithActive = SidebarConfigItem & {
   active: boolean;
@@ -121,9 +122,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
-  const { data: systemDefaults, isLoading: isSystemDefaultsLoading } = useSystemDefaults();
-  const whiteLabelEnabled = Boolean(systemDefaults?.whiteLabel);
-  const { data: globalBranding, isLoading: isCompanySettingsLoading } = useGlobalBranding(whiteLabelEnabled);
+  const { data: systemDefaults } = useSystemDefaults();
+  const branding = useAppBranding();
+  const whiteLabelEnabled = branding.mode === 'white-label';
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability, hasSubCapability } = useCapabilities(Boolean(profile));
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
@@ -139,46 +140,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     transition: 'width 220ms ease-in-out',
     willChange: 'width',
   };
-  const brandLoading = isSystemDefaultsLoading || (whiteLabelEnabled && isCompanySettingsLoading);
+  const brandLoading = branding.mode === 'loading';
+  const brandUnavailable = branding.mode === 'unavailable';
   const isWhatsAppPage = location.pathname.startsWith('/whatsapp');
   const isMessengerPage = location.pathname.startsWith('/messenger');
   const isConversationPage = isWhatsAppPage || isMessengerPage;
 
-  const companySettings = useMemo(() => {
-    if (isSystemDefaultsLoading) {
-      return {
-        name: 'Loading...',
-        logo: '',
-      };
-    }
-
-    if (!whiteLabelEnabled) {
-      return {
-        name: 'Mame Pilot',
-        logo: '/uploads/Full Branding.png',
-      };
-    }
-
-    if (isCompanySettingsLoading) {
-      return {
-        name: 'Loading...',
-        logo: '',
-      };
-    }
-
-    return {
-      name: globalBranding?.name || db.settings.company.name,
-      logo: globalBranding?.logo || db.settings.company.logo || '/uploads/Avatar.png',
-    };
-  }, [globalBranding, whiteLabelEnabled, isCompanySettingsLoading, isSystemDefaultsLoading]);
-  
   // Use profile from Auth context if available, fallback to db.currentUser
   const user = profile || db.currentUser;
-
-  useEffect(() => {
-    const pageTitle = companySettings.name?.trim() || 'Management';
-    document.title = `${pageTitle} - Management`;
-  }, [companySettings.name]);
 
   useEffect(() => {
     if (!systemDefaults?.themeColor) return;
@@ -191,28 +160,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     root.style.setProperty('--primary-dark', dark);
     root.style.setProperty('--primary-soft', soft);
   }, [systemDefaults?.themeColor]);
-
-  // Update favicon links when company logo becomes available
-  useEffect(() => {
-    const faviconUrl = (whiteLabelEnabled ? companySettings.logo : '') || '/uploads/Avatar.png';
-    try {
-      const setLink = (rel: string) => {
-        let el = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
-        if (!el) {
-          el = document.createElement('link');
-          el.rel = rel;
-          document.head.appendChild(el);
-        }
-        el.href = faviconUrl;
-      };
-
-      setLink('icon');
-      setLink('shortcut icon');
-      setLink('apple-touch-icon');
-    } catch (e) {
-      console.error('Failed to set favicon:', e);
-    }
-  }, [companySettings.logo]);
 
   const avatarBackgroundColor = useMemo(() => {
     if (!systemDefaults?.themeColor) return '0f2f57';
@@ -459,15 +406,30 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div className="flex flex-col h-full">
           <div className={isSidebarExpanded ? 'p-8 h-28' : 'px-3 py-4 h-28'}>
             <div className={`flex items-center h-full ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}>
-            {whiteLabelEnabled ? (
+            {brandLoading || brandUnavailable ? (
+              <div
+                className={`flex items-center ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}
+                role="status"
+                aria-label={brandLoading ? 'Loading workspace branding' : 'Workspace branding unavailable'}
+              >
+                <div className={`h-10 w-10 rounded-full bg-gray-200 ${brandLoading ? 'animate-pulse' : ''}`} />
+                {isSidebarExpanded && (
+                  brandLoading ? (
+                    <div className="h-5 w-32 animate-pulse rounded bg-gray-200" />
+                  ) : (
+                    <span className={`text-sm font-semibold ${theme.colors.text.secondary}`}>Management</span>
+                  )
+                )}
+              </div>
+            ) : whiteLabelEnabled ? (
               <>
                 <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white ${isSidebarExpanded ? '' : 'mx-auto'}`}>
-                  {companySettings.logo ? (
+                  {branding.logo ? (
                     <img
-                      src={companySettings.logo}
-                      alt={companySettings.name || 'Mame Pilot'}
+                      src={branding.logo}
+                      alt={branding.name || 'Company logo'}
                       className="w-10 h-10 rounded-full object-cover"
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
+                      onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
                     />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-gray-200" />
@@ -477,7 +439,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 {isSidebarExpanded && (
                   <div>
                     <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
-                      {brandLoading ? 'Loading...' : companySettings.name || 'Mame Pilot'}
+                      {branding.name || 'Management'}
                     </h1>
                   </div>
                 )}
@@ -485,7 +447,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             ) : (
               <div className={`flex items-center ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
                 <img
-                  src={isSidebarExpanded ? '/uploads/Full Branding.png' : '/uploads/Avatar.png'}
+                  src={isSidebarExpanded ? branding.logo : branding.compactLogo}
                   alt="Mame Pilot"
                   className={`object-contain ${isSidebarExpanded ? 'h-14 w-auto' : 'h-10 w-10 rounded-full'}`}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}

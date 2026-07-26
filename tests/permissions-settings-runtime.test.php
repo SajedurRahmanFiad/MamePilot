@@ -14,6 +14,8 @@ $panelSource = (string) file_get_contents($root . '/components/PermissionsSettin
 $settingsSource = (string) file_get_contents($root . '/pages/Settings.tsx');
 $mutationsSource = (string) file_get_contents($root . '/src/hooks/useMutations.ts');
 $backendSource = (string) file_get_contents($root . '/backend/src/MasterDataApi.php');
+$baseServiceSource = (string) file_get_contents($root . '/backend/src/BaseService.php');
+$typesSource = (string) file_get_contents($root . '/types.ts');
 
 permissionsSettingsAssert(
     str_contains($panelSource, 'selectedRoleName')
@@ -28,8 +30,23 @@ permissionsSettingsAssert(
         && !str_contains($panelSource, '<table')
         && !str_contains($panelSource, 'overflow-x-auto')
         && !str_contains($panelSource, 'xl:grid-cols-2')
-        && !str_contains($panelSource, "isSelected ? 'text-blue-100'"),
+        && !str_contains($panelSource, "isSelected ? 'text-blue-100'")
+        && !str_contains($panelSource, 'All privileges')
+        && !str_contains($panelSource, 'All Privileges'),
     'Permissions must use a theme-aware, searchable, one-role-at-a-time accordion without a two-column privilege grid.'
+);
+
+preg_match('/export type PermissionKey\s*=\s*(.*?);/s', $typesSource, $frontendPermissionBlock);
+preg_match_all("/'([^']+)'/", $frontendPermissionBlock[1] ?? '', $frontendPermissionMatches);
+preg_match('/ROLE_PERMISSION_KEYS\s*=\s*\[(.*?)\];/s', $baseServiceSource, $backendPermissionBlock);
+preg_match_all("/'([^']+)'/", $backendPermissionBlock[1] ?? '', $backendPermissionMatches);
+$frontendPermissionKeys = array_values(array_unique($frontendPermissionMatches[1] ?? []));
+$backendPermissionKeys = array_values(array_unique($backendPermissionMatches[1] ?? []));
+sort($frontendPermissionKeys);
+sort($backendPermissionKeys);
+permissionsSettingsAssert(
+    $frontendPermissionKeys !== [] && $frontendPermissionKeys === $backendPermissionKeys,
+    'Frontend and backend permission-key registries must match so saved checkboxes are not discarded.'
 );
 
 $handleSaveStart = strpos($settingsSource, 'const handleSave = async () =>');

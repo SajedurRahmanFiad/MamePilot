@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { db } from '../db';
 import type { StartupStatus } from '../src/contexts/AuthProvider';
 import { Button } from './Button';
 
@@ -41,8 +40,6 @@ const StartupScreen: React.FC<StartupScreenProps> = ({
 }) => {
   const [retrying, setRetrying] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const companyName = db.settings.company.name?.trim() || 'Mame Pilot';
-  const companyLogo = db.settings.company.logo?.trim() || '/uploads/Avatar.png';
   const copy = STATUS_COPY[status];
   const isChecking = status === 'idle' || status === 'checking';
 
