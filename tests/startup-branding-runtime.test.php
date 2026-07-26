@@ -50,6 +50,7 @@ startupBrandingAssert(
         && str_contains($layoutSource, 'brandLoading || brandUnavailable')
         && str_contains($layoutSource, 'Loading workspace branding')
         && !str_contains($layoutSource, 'useGlobalBranding(')
+        && !str_contains($layoutSource, 'companySettings')
         && !str_contains($layoutSource, 'document.title'),
     'Authenticated navigation must use the shared resolved branding state without applying metadata itself.'
 );

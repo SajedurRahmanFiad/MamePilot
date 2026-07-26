@@ -591,7 +591,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           {children}
           {!isConversationPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
-              © {new Date().getFullYear()} {companySettings.name || 'Mame Pilot'}
+              © {new Date().getFullYear()} {branding.name || 'Management'}
               <span className="mx-2">|</span>
               Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
               <span className="mx-2">|</span>
