@@ -124,7 +124,7 @@ const Orders: React.FC = () => {
     to: searchParams.get('to') || '',
   };
   const urlIncludeTime = searchParams.get('includeTime') === 'true';
-  const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
+  const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
 
@@ -768,13 +768,13 @@ const Orders: React.FC = () => {
   };
 
   const canEditOrder = (order: Order) => {
-    if (order.status === OrderStatus.ON_HOLD) {
+    if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
       if (can('orders.editAny')) return true;
       return can('orders.editOwn') && order.createdBy === user?.id;
     }
 
     // Allow Admin/Developer to edit picked orders
-    if ((order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && hasAdminAccess(user?.role)) return true;
+    if (order.status === OrderStatus.PICKED && hasAdminAccess(user?.role)) return true;
 
     return false;
   };
@@ -1177,6 +1177,8 @@ const Orders: React.FC = () => {
           companies={companyNames}
           couriers={courierNames}
           freeTextLabel="Orders"
+          rawSearchValue={searchQuery}
+          onRawSearchChange={setSearchQuery}
           onApply={(appliedFilters) => {
             // Apply filters: map known types to query params, others to search
             const params: Record<string, string> = {};

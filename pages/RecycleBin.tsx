@@ -221,6 +221,12 @@ const RecycleBin: React.FC = () => {
       <DynamicFilterBar
         filterDefinitions={recycleBinFilterDefinitions}
         initialFilters={initialFilters}
+        freeTextLabel="Recycle Bin"
+        rawSearchValue={searchQuery}
+        onRawSearchChange={(value) => {
+          setPage(1);
+          setSearchQuery(value);
+        }}
         onApply={(appliedFilters) => {
           setPage(1);
           const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));

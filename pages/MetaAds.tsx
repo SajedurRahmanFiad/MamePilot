@@ -136,6 +136,7 @@ const MetaAdsList: React.FC = () => {
     statusOperator: '=',
     search: '',
     searchOperator: 'contains',
+    rawSearch: '',
     ...getDateRange('Last 7 days', { from: '', to: '' }),
     ...(restoredListState.queryFilters || {}),
   });
@@ -419,7 +420,9 @@ const MetaAdsList: React.FC = () => {
         <DynamicFilterBar
           filterDefinitions={filterDefinitions}
           initialFilters={dynamicFilters}
-          freeTextLabel="Ad Name"
+          freeTextLabel="Meta Ads"
+          rawSearchValue={queryFilters.rawSearch}
+          onRawSearchChange={(value) => setQueryFilters((current) => ({ ...current, rawSearch: value }))}
           onApply={applyDynamicFilters}
           className="w-full"
         />

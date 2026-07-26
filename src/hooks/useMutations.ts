@@ -2681,8 +2681,8 @@ export function useUpdatePermissionsSettings(): UseMutationResult<
         queryClient.setQueryData(['settings', 'permissions'], context.previousSettings);
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', 'permissions'] });
+    onSuccess: (savedSettings) => {
+      queryClient.setQueryData(['settings', 'permissions'], savedSettings);
     },
   });
 }

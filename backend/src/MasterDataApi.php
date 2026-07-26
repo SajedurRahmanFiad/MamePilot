@@ -89,12 +89,6 @@ final class MasterDataApi extends BaseService
             return ['user' => null, 'error' => 'Invalid password'];
         }
 
-        $maintenanceStatus = $this->fetchMaintenanceStatus();
-        $isDeveloper = trim((string) ($row['role'] ?? '')) === 'Developer';
-        if (!empty($maintenanceStatus['maintenanceEnabled']) && !$isDeveloper) {
-            return ['user' => null, 'error' => 'Server under maintenance.'];
-        }
-
         return [
             'user' => $this->mapUser($row),
             'token' => $this->auth->issueToken($row),
@@ -232,10 +226,11 @@ final class MasterDataApi extends BaseService
         }
 
         if ($search !== '') {
-            $where .= ' AND (name LIKE :search_name OR phone LIKE :search_phone OR role LIKE :search_role)';
-            $bindings[':search_name'] = '%' . $search . '%';
-            $bindings[':search_phone'] = '%' . $search . '%';
-            $bindings[':search_role'] = '%' . $search . '%';
+            $where .= " AND CONVERT(CONCAT_WS(' ',
+                id, name, phone, role, email, address, birthday, gender, blood_group, nationality,
+                CAST(is_commission_based AS CHAR), CAST(fixed_salary AS CHAR), created_at
+            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_user_search ESCAPE '='";
+            $bindings[':raw_user_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
 
         $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'user_name');
@@ -562,10 +557,8 @@ final class MasterDataApi extends BaseService
         $where = 'WHERE deleted_at IS NULL';
         $bindings = [];
         if ($search !== '') {
-            $where .= ' AND (name LIKE :search_name OR phone LIKE :search_phone OR address LIKE :search_address)';
-            $bindings[':search_name'] = '%' . $search . '%';
-            $bindings[':search_phone'] = '%' . $search . '%';
-            $bindings[':search_address'] = '%' . $search . '%';
+            $where .= " AND CONVERT(CONCAT_WS(' ', id, name, phone, address, CAST(total_orders AS CHAR), CAST(due_amount AS CHAR), created_by, created_at) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_customer_search ESCAPE '='";
+            $bindings[':raw_customer_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
 
         $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'name');
@@ -717,10 +710,8 @@ final class MasterDataApi extends BaseService
         $where = 'WHERE deleted_at IS NULL';
         $bindings = [];
         if ($search !== '') {
-            $where .= ' AND (name LIKE :search_name OR phone LIKE :search_phone OR address LIKE :search_address)';
-            $bindings[':search_name'] = '%' . $search . '%';
-            $bindings[':search_phone'] = '%' . $search . '%';
-            $bindings[':search_address'] = '%' . $search . '%';
+            $where .= " AND CONVERT(CONCAT_WS(' ', id, name, phone, address, CAST(total_purchases AS CHAR), CAST(due_amount AS CHAR), created_by, created_at) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_vendor_search ESCAPE '='";
+            $bindings[':raw_vendor_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
         $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'vendor_name');
         $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['nameNot'] ?? '')), 'vendor_name_not', true);
@@ -856,8 +847,11 @@ final class MasterDataApi extends BaseService
         $where = 'WHERE deleted_at IS NULL';
         $bindings = [];
         if ($search !== '') {
-            $where .= ' AND name LIKE :search';
-            $bindings[':search'] = '%' . $search . '%';
+            $where .= " AND CONVERT(CONCAT_WS(' ',
+                id, name, category, unit_id, CAST(sale_price AS CHAR), CAST(purchase_price AS CHAR),
+                CAST(stock AS CHAR), dynamic_pricing, created_by, created_at
+            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
+            $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
         if ($category !== '') {
             $this->appendEncodedTextFilter($where, $bindings, 'category', $category, 'category');

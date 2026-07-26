@@ -34,7 +34,7 @@ const Users: React.FC = () => {
   const { canCreateUsers, canEditUsers } = useRolePermissions();
   const currentSearchParams = searchParams.toString();
   const urlPage = getPositivePageParam(searchParams.get('page'));
-  const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
+  const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = React.useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = React.useState<number>(urlPage);
@@ -308,6 +308,9 @@ const Users: React.FC = () => {
           <DynamicFilterBar
             filterDefinitions={userFilterDefinitions}
             initialFilters={initialFilters}
+            freeTextLabel="Users"
+            rawSearchValue={searchQuery}
+            onRawSearchChange={setSearchQuery}
             onApply={(appliedFilters) => {
               setPage(1);
               const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));

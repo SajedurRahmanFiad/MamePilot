@@ -889,7 +889,7 @@ const OrderDetails: React.FC = () => {
   if (loading) return <div className="p-8 text-center text-gray-500">Loading order...</div>;
   if (orderError || !order) return <div className="p-8 text-center text-gray-500">{orderError?.message || 'Order not found.'}</div>;
   let canEditCurrentOrder = false;
-  if (order.status === OrderStatus.ON_HOLD) {
+  if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
     canEditCurrentOrder = can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
   } else if (order.status === OrderStatus.PICKED) {
     // Admins and Developers are allowed to edit picked orders

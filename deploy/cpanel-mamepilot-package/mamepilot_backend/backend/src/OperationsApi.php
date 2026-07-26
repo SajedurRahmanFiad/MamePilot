@@ -1018,20 +1018,20 @@ final class OperationsApi extends BaseService
     private function assertUserCanEditOrder(array $user, array $row): void
     {
         $role = (string) ($user['role'] ?? '');
-        if ($this->roleHasPermission($role, 'orders.editAny')) {
-            return;
-        }
-
         $createdBy = (string) ($row['created_by'] ?? '');
         $status = (string) ($row['status'] ?? '');
         if (
-            $status === 'On Hold'
+            in_array($status, ['On Hold', 'Exchange processing'], true)
             && $this->userHasScopedPermissionForRecord($user, $createdBy, 'orders.editOwn', 'orders.editAny')
         ) {
             return;
         }
 
-        throw new RuntimeException('You do not have permission to edit this order.');
+        if ($status === 'Picked' && $this->hasAdminAccess($role)) {
+            return;
+        }
+
+        throw new RuntimeException('This order can no longer be edited in its current status.');
     }
 
     /**
@@ -1758,25 +1758,16 @@ final class OperationsApi extends BaseService
 
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
-            $searchTerm = '%' . $search . '%';
-            if (preg_match('/\d/', $search) === 1) {
-                $where .= ' AND (
-                    customerPhone LIKE :search_term
-                    OR orderNumber LIKE :search_term
-                    OR customerName LIKE :search_term
-                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
-                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
-                )';
-                $bindings[':search_term'] = $searchTerm;
-            } else {
-                $where .= ' AND (
-                    customerName LIKE :search_term
-                    OR orderNumber LIKE :search_term
-                    OR JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :search_term
-                    OR JSON_UNQUOTE(JSON_EXTRACT(history, "$.courier")) LIKE :search_term
-                )';
-                $bindings[':search_term'] = $searchTerm;
-            }
+            $where .= " AND CONVERT(CONCAT_WS(' ',
+                id, orderNumber, orderDate, customerId, customerName, customerPhone, customerAddress,
+                createdBy, creatorName, status, items, CAST(subtotal AS CHAR), CAST(discount AS CHAR),
+                CAST(shipping AS CHAR), CAST(total AS CHAR), CAST(paidAmount AS CHAR), notes, history,
+                pageSnapshot, carrybeeConsignmentId, steadfastConsignmentId, paperflyTrackingNumber,
+                pathaoConsignmentId, exchangeCourier, exchangeSteadfastConsignmentId,
+                exchangeCarrybeeConsignmentId, exchangePaperflyTrackingNumber,
+                exchangePathaoConsignmentId, exchangeCourierHistory, sourceAd, createdAt
+            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_order_search ESCAPE '='";
+            $bindings[':raw_order_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
@@ -2537,11 +2528,23 @@ final class OperationsApi extends BaseService
             $bindings[':user_activity_search_name'] = $bindingValue;
             $bindings[':user_activity_search_phone'] = $bindingValue;
             $bindings[':user_activity_search_role'] = $bindingValue;
+            $bindings[':user_activity_search_id'] = $bindingValue;
+            $bindings[':user_activity_search_email'] = $bindingValue;
+            $bindings[':user_activity_search_address'] = $bindingValue;
+            $bindings[':user_activity_search_gender'] = $bindingValue;
+            $bindings[':user_activity_search_blood_group'] = $bindingValue;
+            $bindings[':user_activity_search_nationality'] = $bindingValue;
             $joiner = $negativeSearch ? ' AND ' : ' OR ';
             $conditions[] = '(' . implode($joiner, [
+                "u.id {$comparison} :user_activity_search_id",
                 "u.name {$comparison} :user_activity_search_name",
                 "u.phone {$comparison} :user_activity_search_phone",
                 "u.role {$comparison} :user_activity_search_role",
+                "COALESCE(u.email, '') {$comparison} :user_activity_search_email",
+                "COALESCE(u.address, '') {$comparison} :user_activity_search_address",
+                "COALESCE(u.gender, '') {$comparison} :user_activity_search_gender",
+                "COALESCE(u.blood_group, '') {$comparison} :user_activity_search_blood_group",
+                "COALESCE(u.nationality, '') {$comparison} :user_activity_search_nationality",
             ]) . ')';
         }
 
@@ -5254,10 +5257,12 @@ final class OperationsApi extends BaseService
 
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
-            $where .= ' AND (billNumber LIKE :search_number OR vendorName LIKE :search_name OR vendorPhone LIKE :search_phone)';
-            $bindings[':search_number'] = '%' . $search . '%';
-            $bindings[':search_name'] = '%' . $search . '%';
-            $bindings[':search_phone'] = '%' . $search . '%';
+            $where .= " AND CONVERT(CONCAT_WS(' ',
+                id, billNumber, billDate, vendorId, vendorName, vendorPhone, vendorAddress,
+                createdBy, creatorName, status, items, CAST(subtotal AS CHAR), CAST(discount AS CHAR),
+                CAST(shipping AS CHAR), CAST(total AS CHAR), CAST(paidAmount AS CHAR), notes, history, createdAt
+            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_bill_search ESCAPE '='";
+            $bindings[':raw_bill_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
@@ -5916,29 +5921,30 @@ final class OperationsApi extends BaseService
             $bindings[':to'] = $this->normalizeDateTimeInput((string) $filters['to']);
         }
         if (!empty($filters['search'])) {
-            $searchValue = '%' . trim((string) $filters['search']) . '%';
-            $bindings[':search_desc'] = $searchValue;
-            $bindings[':search_id'] = $searchValue;
-            $bindings[':search_type'] = $searchValue;
-            $bindings[':search_cat'] = $searchValue;
-            $bindings[':search_contact'] = $searchValue;
-            $bindings[':search_creator'] = $searchValue;
-            $bindings[':search_amount'] = $searchValue;
-            $bindings[':search_cat_name'] = $searchValue;
+            $searchValue = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], trim((string) $filters['search'])) . '%';
+            $bindings[':raw_transaction_search'] = $searchValue;
+            $bindings[':raw_transaction_category'] = $searchValue;
+            $bindings[':raw_transaction_to_account'] = $searchValue;
 
             $where .= " AND (
-                twr.description LIKE :search_desc
-                OR twr.id LIKE :search_id
-                OR twr.type LIKE :search_type
-                OR twr.category LIKE :search_cat
-                OR COALESCE(twr.contactName, '') LIKE :search_contact
-                OR COALESCE(twr.creatorName, '') LIKE :search_creator
-                OR CAST(twr.amount AS CHAR) LIKE :search_amount
+                CONVERT(CONCAT_WS(' ',
+                    twr.id, twr.date, twr.type, twr.category, twr.accountId, twr.accountName,
+                    twr.toAccountId, CAST(twr.amount AS CHAR), twr.description, twr.referenceId,
+                    twr.contactId, twr.contactName, twr.contactType, twr.paymentMethod,
+                    twr.attachmentName, twr.createdBy, twr.creatorName, twr.approvalStatus,
+                    twr.approvalNote, twr.createdAt
+                ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_transaction_search ESCAPE '='
                 OR EXISTS (
                     SELECT 1
                     FROM categories cat
                     WHERE cat.id = twr.category
-                      AND cat.name LIKE :search_cat_name
+                      AND cat.name LIKE :raw_transaction_category ESCAPE '='
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM accounts raw_to_account
+                    WHERE raw_to_account.id = twr.toAccountId
+                      AND raw_to_account.name LIKE :raw_transaction_to_account ESCAPE '='
                 )
             )";
         }
@@ -8677,11 +8683,16 @@ final class OperationsApi extends BaseService
             }
 
             $haystack = implode(' ', array_filter([
+                (string) ($item['id'] ?? ''),
+                (string) ($item['entityType'] ?? ''),
                 (string) ($item['title'] ?? ''),
                 (string) ($item['description'] ?? ''),
                 (string) ($item['deletedByName'] ?? ''),
                 (string) ($item['createdByName'] ?? ''),
                 (string) ($item['status'] ?? ''),
+                (string) ($item['amount'] ?? ''),
+                (string) ($item['deletedAt'] ?? ''),
+                (string) ($item['createdAt'] ?? ''),
                 implode(' ', is_array($item['details'] ?? null) ? $item['details'] : []),
             ]));
 

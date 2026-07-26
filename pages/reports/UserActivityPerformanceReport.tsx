@@ -843,6 +843,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   const [userFilter, setUserFilter] = useState<ReportFilterSelection | null>(null);
   const [roleFilter, setRoleFilter] = useState<ReportFilterSelection | null>(null);
   const [activityFilter, setActivityFilter] = useState<ReportFilterSelection | null>(null);
+  const [rawSearch, setRawSearch] = useState('');
   const [expandedLogUserIds, setExpandedLogUserIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 10;
@@ -918,7 +919,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   };
   const reportFilters = useMemo(
     () => ({
-      search: userFilter?.value || '',
+      search: userFilter?.value || rawSearch,
       searchOperator: userFilter?.operator || 'contains',
       roleFilter: (roleFilter?.value as RoleFilter | undefined) || 'All Users',
       roleOperator: roleFilter?.operator || '=',
@@ -927,7 +928,7 @@ const UserActivityPerformanceReport: React.FC = () => {
       activityFilter: (activityFilter?.value as ActivityFilter | undefined) || 'all',
       activityOperator: activityFilter?.operator || '=',
     }),
-    [activityFilter, customDates, filterRange, roleFilter, userFilter]
+    [activityFilter, customDates, filterRange, rawSearch, roleFilter, userFilter]
   );
   const canLoadReport = !!user && hasAdminAccess(user.role);
   const { data: reportPage, isPending: reportLoading, isFetching: reportFetching } = useUserActivityPerformanceReportPage(
@@ -944,7 +945,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   React.useEffect(() => {
     setCurrentPage(1);
     setExpandedLogUserIds([]);
-  }, [userFilter, roleFilter, activityFilter, filterRange, customDates.from, customDates.to]);
+  }, [userFilter, roleFilter, activityFilter, rawSearch, filterRange, customDates.from, customDates.to]);
 
   React.useEffect(() => {
     setExpandedLogUserIds([]);
@@ -1053,6 +1054,9 @@ const UserActivityPerformanceReport: React.FC = () => {
               <DynamicFilterBar
                 filterDefinitions={reportFilterDefinitions}
                 initialFilters={initialReportFilters}
+                freeTextLabel="Users"
+                rawSearchValue={rawSearch}
+                onRawSearchChange={setRawSearch}
                 onApply={handleApplyReportFilters}
                 className="[&>div>div]:!rounded-xl"
               />

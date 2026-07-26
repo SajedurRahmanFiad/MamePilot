@@ -376,7 +376,7 @@ export async function fetchMetaAdInsightsDemographics(id: string): Promise<any> 
 export async function fetchMetaAdInsightsPlacements(id: string): Promise<any> { return call<any>('fetchMetaAdInsightsPlacements', { id }, { timeoutMs: 60000 }); }
 export async function fetchMetaAdInsightsDevices(id: string): Promise<any> { return call<any>('fetchMetaAdInsightsDevices', { id }, { timeoutMs: 60000 }); }
 
-export async function fetchMetaAds(filters?: { businessId?: string; businessOperator?: string; adAccountId?: string; adAccountOperator?: string; campaignId?: string; campaignOperator?: string; status?: string; statusOperator?: string; from?: string; to?: string; search?: string; searchOperator?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
+export async function fetchMetaAds(filters?: { businessId?: string; businessOperator?: string; adAccountId?: string; adAccountOperator?: string; campaignId?: string; campaignOperator?: string; status?: string; statusOperator?: string; from?: string; to?: string; search?: string; searchOperator?: string; rawSearch?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
 export async function fetchMetaAdById(id: string): Promise<any | null> { return call<any | null>('fetchMetaAdById', { id }); }
 
 export async function fetchWhatsAppSettings(): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('fetchWhatsAppSettings'); }

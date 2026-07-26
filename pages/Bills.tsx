@@ -589,6 +589,9 @@ const Bills: React.FC = () => {
         filterDefinitions={billFilterDefinitions}
         initialFilters={initialFilters}
         users={users}
+        freeTextLabel="Bills"
+        rawSearchValue={searchQuery}
+        onRawSearchChange={setSearchQuery}
         onApply={(appliedFilters) => {
           setPage(1);
           const encodeTextValue = (filter: { operator: string; value: string }) =>

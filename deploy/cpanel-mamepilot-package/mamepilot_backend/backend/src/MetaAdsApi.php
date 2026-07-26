@@ -299,6 +299,7 @@ final class MetaAdsApi extends BaseService
         $insightsTo = $to;
         $search = trim((string) ($params['search'] ?? ''));
         $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
+        $rawSearch = trim((string) ($params['rawSearch'] ?? ''));
 
         $where = [];
         $bindings = [];
@@ -349,6 +350,41 @@ final class MetaAdsApi extends BaseService
             } else {
                 $escapedSearch = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search);
                 $bindings[':search'] = '%' . $escapedSearch . '%';
+            }
+        }
+        if ($rawSearch !== '') {
+            $escapedRawSearch = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $rawSearch);
+            $rawSearchValue = '%' . $escapedRawSearch . '%';
+            $where[] = "(
+                CONVERT(CONCAT_WS(' ',
+                    ma.id, ma.meta_ad_id, ma.name, ma.status, ma.effective_status, ma.configured_status,
+                    ma.objective, ma.creative_id, ma.primary_text, ma.headline, ma.description, ma.call_to_action,
+                    CAST(ma.spend AS CHAR), CAST(ma.reach AS CHAR), CAST(ma.impressions AS CHAR),
+                    CAST(ma.clicks AS CHAR), CAST(ma.conversions AS CHAR), CAST(ma.results AS CHAR), CAST(ma.roas AS CHAR)
+                ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_search_ad ESCAPE '='
+                OR EXISTS (
+                    SELECT 1 FROM meta_businesses raw_business
+                    WHERE raw_business.id = ma.business_id
+                      AND CONCAT_WS(' ', raw_business.id, raw_business.meta_business_id, raw_business.name) LIKE :raw_search_business ESCAPE '='
+                )
+                OR EXISTS (
+                    SELECT 1 FROM meta_ad_accounts raw_account
+                    WHERE raw_account.id = ma.ad_account_id
+                      AND CONCAT_WS(' ', raw_account.id, raw_account.meta_ad_account_id, raw_account.account_id, raw_account.name, raw_account.currency) LIKE :raw_search_account ESCAPE '='
+                )
+                OR EXISTS (
+                    SELECT 1 FROM meta_campaigns raw_campaign
+                    WHERE raw_campaign.id = ma.campaign_id
+                      AND CONCAT_WS(' ', raw_campaign.id, raw_campaign.meta_campaign_id, raw_campaign.name, raw_campaign.objective) LIKE :raw_search_campaign ESCAPE '='
+                )
+                OR EXISTS (
+                    SELECT 1 FROM meta_ad_sets raw_ad_set
+                    WHERE raw_ad_set.id = ma.ad_set_id
+                      AND CONCAT_WS(' ', raw_ad_set.id, raw_ad_set.meta_ad_set_id, raw_ad_set.name) LIKE :raw_search_ad_set ESCAPE '='
+                )
+            )";
+            foreach (['ad', 'business', 'account', 'campaign', 'ad_set'] as $rawSearchField) {
+                $bindings[':raw_search_' . $rawSearchField] = $rawSearchValue;
             }
         }
 

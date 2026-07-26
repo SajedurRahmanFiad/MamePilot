@@ -56,7 +56,7 @@ const Transactions: React.FC = () => {
   const urlPaymentMethodNotFilter = searchParams.get('paymentMethodNot') || '';
   const urlApprovalStatusFilter = searchParams.get('approvalStatus') || '';
   const urlApprovalStatusNotFilter = searchParams.get('approvalStatusNot') || '';
-  const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
+  const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [filterRange, setFilterRange] = useState<FilterRange>(urlFilterRange);
@@ -687,6 +687,9 @@ const Transactions: React.FC = () => {
         filterDefinitions={transactionFilterDefinitions}
         initialFilters={initialFilters}
         users={users}
+        freeTextLabel="Transactions"
+        rawSearchValue={searchQuery}
+        onRawSearchChange={setSearchQuery}
         onApply={(appliedFilters) => {
           setPage(1);
           const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));

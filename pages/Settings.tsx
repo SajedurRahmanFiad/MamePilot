@@ -17,6 +17,7 @@ import {
   useCreatePaymentMethod, useDeletePaymentMethod,
   useCreateUnit, useDeleteUnit,
   useBatchUpdateSettings,
+  useUpdatePermissionsSettings,
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
@@ -102,6 +103,7 @@ const SettingsPage: React.FC = () => {
   const createUnitMutation = useCreateUnit();
   const deleteUnitMutation = useDeleteUnit();
   const batchUpdateMutation = useBatchUpdateSettings();
+  const updatePermissionsSettingsMutation = useUpdatePermissionsSettings();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
@@ -185,6 +187,8 @@ const SettingsPage: React.FC = () => {
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
   );
+  const permissionsDirtyRef = useRef(false);
+  const [permissionsDirty, setPermissionsDirty] = useState(false);
   const [metaAdsSettings, setMetaAdsSettings] = useState<MetaAdsSettings>({
     appId: '',
     appSecret: '',
@@ -263,7 +267,7 @@ const SettingsPage: React.FC = () => {
   }, [walletSettingsData]);
 
   React.useEffect(() => {
-    if (permissionsSettingsData) {
+    if (permissionsSettingsData && !permissionsDirtyRef.current) {
       setPermissionsSettings(clonePermissionsSettings(permissionsSettingsData));
     }
   }, [permissionsSettingsData]);
@@ -511,7 +515,33 @@ const SettingsPage: React.FC = () => {
   };
   const togglePayrollStatus = toggleWalletStatus;
 
+  const handlePermissionsChange = useCallback((next: PermissionsSettings) => {
+    permissionsDirtyRef.current = true;
+    setPermissionsDirty(true);
+    setPermissionsSettings(next);
+  }, []);
+
   const handleSave = async () => {
+    if (activeTab === 'permissions') {
+      const toastId = toast.loading('Saving permissions...');
+      try {
+        const savedPermissions = await updatePermissionsSettingsMutation.mutateAsync(
+          clonePermissionsSettings(permissionsSettings),
+        );
+        const persistedPermissions = clonePermissionsSettings(savedPermissions);
+        permissionsDirtyRef.current = false;
+        setPermissionsDirty(false);
+        setPermissionsSettings(persistedPermissions);
+        db.settings.permissions = persistedPermissions as any;
+        queryClient.setQueryData(['settings', 'permissions'], persistedPermissions);
+        toast.update(toastId, 'Permissions saved successfully!', 'success');
+      } catch (err) {
+        console.error('Failed to save permissions:', err);
+        toast.update(toastId, err instanceof Error ? err.message : 'Could not save permissions. Please try again.', 'error');
+      }
+      return;
+    }
+
     const normalizedCompany = normalizeCompanySettings(companySettings);
     const hasUnnamedPage = normalizedCompany.pages.some((page) => !page.name.trim());
     if (hasUnnamedPage) {
@@ -532,10 +562,7 @@ const SettingsPage: React.FC = () => {
       if (hasCapability('courier_automation')) {
         updates.courier = courierSettings;
       }
-      if (hasCapability('custom_roles')) {
-        updates.permissions = permissionsSettings;
-      }
-      
+
       // Save all settings and use server response to update local state
       batchUpdateMutation.mutateAsync(updates).then((response) => {
         // Update mock db with server response (contains processed file paths, not base64)
@@ -548,7 +575,6 @@ const SettingsPage: React.FC = () => {
         db.settings.invoice = response?.invoice || invoiceSettings;
         db.settings.defaults = response?.defaults || systemDefaults;
         db.settings.courier = response?.courier || courierSettings;
-        db.settings.permissions = (response?.permissions || permissionsSettings) as any;
         db.settings.payroll = {
           ...db.settings.payroll,
           unitAmount: walletSettings.unitAmount,
@@ -914,8 +940,13 @@ const SettingsPage: React.FC = () => {
           onClick={handleSave}
           variant="primary"
           size="md"
+          disabled={activeTab === 'permissions'
+            ? !permissionsDirty || updatePermissionsSettingsMutation.isPending
+            : batchUpdateMutation.isPending}
         >
-          Save Changes
+          {(activeTab === 'permissions' ? updatePermissionsSettingsMutation.isPending : batchUpdateMutation.isPending)
+            ? 'Saving...'
+            : 'Save Changes'}
         </Button>}
       </div>
 
@@ -1934,7 +1965,8 @@ const SettingsPage: React.FC = () => {
           {activeTab === 'permissions' && (
             <PermissionsSettingsPanel
               value={permissionsSettings}
-              onChange={setPermissionsSettings}
+              onChange={handlePermissionsChange}
+              hasUnsavedChanges={permissionsDirty}
             />
           )}
 

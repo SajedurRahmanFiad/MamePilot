@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ICONS } from '../constants';
 import { Button } from './Button';
 import type { PermissionKey, PermissionsSettings, RolePermissionMap } from '../types';
@@ -17,6 +17,7 @@ import {
 type PermissionsSettingsPanelProps = {
   value: PermissionsSettings;
   onChange: (next: PermissionsSettings) => void;
+  hasUnsavedChanges?: boolean;
 };
 
 const SECTION_ORDER = ['Overview', 'Orders', 'Customers', 'Bills', 'Transactions', 'Inventory & Banking', 'Other Modules', 'Marketing', 'Settings'];
@@ -24,7 +25,7 @@ const SECTION_ORDER = ['Overview', 'Orders', 'Customers', 'Bills', 'Transactions
 const checkboxClassName =
   'h-4 w-4 rounded border border-gray-300 text-[#0f2f57] focus:ring-[#0f2f57] focus:ring-offset-0';
 
-const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange }) => {
+const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false }) => {
   const roles = useMemo(() => getPermissionRoles(value), [value]);
   const groupedDefinitions = useMemo(() => {
     return SECTION_ORDER.map((section) => ({
@@ -42,6 +43,37 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
   const [rolePendingRemoval, setRolePendingRemoval] = useState<string | null>(null);
   const [roleRemovalConfirmText, setRoleRemovalConfirmText] = useState('');
   const [roleRemovalError, setRoleRemovalError] = useState('');
+  const [selectedRoleName, setSelectedRoleName] = useState(() => roles[0]?.roleName || '');
+  const [roleSearch, setRoleSearch] = useState('');
+  const [permissionSearch, setPermissionSearch] = useState('');
+
+  const selectedRole = roles.find((role) => role.roleName === selectedRoleName) || roles[0] || null;
+  const filteredRoles = useMemo(() => {
+    const query = roleSearch.trim().toLowerCase();
+    if (!query) return roles;
+    return roles.filter((role) => role.roleName.toLowerCase().includes(query));
+  }, [roleSearch, roles]);
+  const visibleGroups = useMemo(() => {
+    const query = permissionSearch.trim().toLowerCase();
+    return groupedDefinitions
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((definition) => {
+          if (definition.key === 'allPrivileges') return false;
+          if (!query) return true;
+          return `${group.section} ${definition.label} ${definition.description}`.toLowerCase().includes(query);
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groupedDefinitions, permissionSearch]);
+  const enabledPermissionCount = selectedRole
+    ? STORED_PERMISSION_KEYS.filter((key) => selectedRole.permissions[key]).length
+    : 0;
+
+  useEffect(() => {
+    if (selectedRole && selectedRole.roleName === selectedRoleName) return;
+    setSelectedRoleName(roles[0]?.roleName || '');
+  }, [roles, selectedRole, selectedRoleName]);
 
   const updateRolePermissions = (roleName: string, updater: (current: RolePermissionMap) => RolePermissionMap) => {
     const next = clonePermissionsSettings(value);
@@ -70,6 +102,15 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       for (const key of STORED_PERMISSION_KEYS) {
         next[key] = nextValue;
       }
+      return next;
+    });
+  };
+
+  const toggleSection = (roleName: string, permissionKeys: PermissionKey[]) => {
+    updateRolePermissions(roleName, (current) => {
+      const shouldEnable = !permissionKeys.every((key) => current[key]);
+      const next = { ...current };
+      for (const key of permissionKeys) next[key] = shouldEnable;
       return next;
     });
   };
@@ -137,6 +178,8 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     });
 
     onChange(next);
+    setSelectedRoleName(normalizedRoleName);
+    setRoleSearch('');
     resetRoleModal();
   };
 
@@ -165,6 +208,9 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     const next = clonePermissionsSettings(value);
     next.roles = next.roles.filter((role) => role.roleName !== rolePendingRemoval);
     onChange(next);
+    if (selectedRoleName === rolePendingRemoval) {
+      setSelectedRoleName(next.roles[0]?.roleName || '');
+    }
     closeRoleRemovalModal();
   };
 
@@ -173,96 +219,166 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
         <div>
           <h3 className="mt-2 text-xl font-black text-gray-900">Role-based access</h3>
+          <p className="mt-2 max-w-2xl text-sm font-medium text-gray-500">
+            Choose one role, then adjust its access below. Changes apply only after you save.
+          </p>
         </div>
-        <Button onClick={() => setIsRoleModalOpen(true)} variant="primary" size="md">
-          Add Custom Role
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {hasUnsavedChanges && (
+            <span className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 ring-1 ring-amber-200">
+              Unsaved changes
+            </span>
+          )}
+          <Button onClick={() => setIsRoleModalOpen(true)} variant="primary" size="md">
+            Add Custom Role
+          </Button>
+        </div>
       </div>
 
-      <div className="w-full max-w-full overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-        <div className="max-w-full overflow-x-auto pb-2">
-          <table className="w-max min-w-full border-collapse">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="sticky left-0 z-10 min-w-[280px] bg-gray-50 px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                  Permission
-                </th>
-                {roles.map((role) => (
-                  <th key={role.roleName} className="min-w-[128px] px-4 py-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="text-sm font-black text-gray-900">{role.roleName}</span>
-                      {role.isCustom && (
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="min-w-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <label className="relative hidden lg:block">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">{ICONS.Search}</span>
+            <input
+              type="search"
+              value={roleSearch}
+              onChange={(event) => setRoleSearch(event.target.value)}
+              placeholder="Find a role"
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm font-medium text-gray-800 outline-none transition focus:border-[#0f2f57] focus:bg-white"
+            />
+          </label>
+
+          <label className="mt-4 block lg:hidden">
+            <span className="sr-only">Choose a role</span>
+            <select
+              value={selectedRole?.roleName || ''}
+              onChange={(event) => setSelectedRoleName(event.target.value)}
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-bold text-gray-900 outline-none focus:border-[#0f2f57]"
+            >
+              {roles.map((role) => <option key={role.roleName} value={role.roleName}>{role.roleName}</option>)}
+            </select>
+          </label>
+
+          <div className="mt-4 hidden max-h-[68vh] space-y-1 overflow-y-auto pr-1 lg:block">
+            {filteredRoles.map((role) => {
+              const enabledCount = STORED_PERMISSION_KEYS.filter((key) => role.permissions[key]).length;
+              const isSelected = selectedRole?.roleName === role.roleName;
+              return (
+                <button
+                  key={role.roleName}
+                  type="button"
+                  onClick={() => setSelectedRoleName(role.roleName)}
+                  className={`w-full rounded-xl px-3 py-3 text-left transition ${
+                    isSelected ? 'bg-[#0f2f57] text-white shadow-sm' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="block truncate text-sm font-black">{role.roleName}</span>
+                  <span className={`mt-1 block text-xs font-semibold ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
+                    {enabledCount} of {STORED_PERMISSION_KEYS.length} enabled
+                  </span>
+                </button>
+              );
+            })}
+            {filteredRoles.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm font-medium text-gray-400">No roles found.</p>
+            )}
+          </div>
+        </aside>
+
+        <section className="min-w-0 rounded-2xl border border-gray-100 bg-white shadow-sm">
+          {selectedRole ? (
+            <>
+              <div className="border-b border-gray-100 p-5 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Editing role</p>
+                    <h4 className="mt-2 truncate text-xl font-black text-gray-900">{selectedRole.roleName}</h4>
+                    <p className="mt-1 text-sm font-medium text-gray-500">
+                      {enabledPermissionCount} of {STORED_PERMISSION_KEYS.length} permissions enabled
+                    </p>
+                  </div>
+                  {selectedRole.isCustom && (
+                    <Button onClick={() => openRoleRemovalModal(selectedRole.roleName)} variant="danger" size="sm">
+                      Remove Role
+                    </Button>
+                  )}
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <label className="relative block">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">{ICONS.Search}</span>
+                    <input
+                      type="search"
+                      value={permissionSearch}
+                      onChange={(event) => setPermissionSearch(event.target.value)}
+                      placeholder="Search permissions"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm font-medium text-gray-800 outline-none transition focus:border-[#0f2f57] focus:bg-white"
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-black text-gray-800 transition hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      className={checkboxClassName}
+                      checked={areAllPrivilegesEnabled(selectedRole.permissions)}
+                      onChange={() => toggleAllPrivileges(selectedRole.roleName)}
+                    />
+                    All privileges
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-4 p-5 sm:p-6 xl:grid-cols-2">
+                {visibleGroups.map((group) => {
+                  const permissionKeys = group.items.map((definition) => definition.key as PermissionKey);
+                  const sectionEnabled = permissionKeys.every((key) => selectedRole.permissions[key]);
+                  return (
+                    <div key={group.section} className="min-w-0 rounded-2xl border border-gray-100 p-4 sm:p-5">
+                      <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                        <h5 className="text-sm font-black uppercase tracking-[0.14em] text-[#0f2f57]">{group.section}</h5>
                         <button
                           type="button"
-                          onClick={() => openRoleRemovalModal(role.roleName)}
-                          className="flex h-7 w-7 items-center justify-center rounded-full text-red-500 transition-all hover:bg-red-50"
-                          title={`Remove ${role.roleName}`}
-                          aria-label={`Remove ${role.roleName}`}
+                          onClick={() => toggleSection(selectedRole.roleName, permissionKeys)}
+                          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-black text-[#0f2f57] transition hover:bg-blue-50"
                         >
-                          {ICONS.Delete}
+                          {sectionEnabled ? 'Clear section' : 'Enable section'}
                         </button>
-                      )}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {groupedDefinitions.map((group) => (
-                <React.Fragment key={group.section}>
-                  <tr className="border-b border-gray-100 bg-[#f8fbff]">
-                    <td
-                      colSpan={roles.length + 1}
-                      className="px-6 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-[#0f2f57]"
-                    >
-                      {group.section}
-                    </td>
-                  </tr>
-                  {group.items.map((definition) => (
-                    <tr key={definition.key} className="border-b border-gray-100 last:border-b-0">
-                      <td className="sticky left-0 z-[1] min-w-[280px] bg-white px-6 py-4 align-top">
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{definition.label}</p>
-                          <p className="mt-1 text-xs font-medium text-gray-500">{definition.description}</p>
-                        </div>
-                      </td>
-                      {roles.map((role) => {
-                        if (definition.key === 'allPrivileges') {
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        {group.items.map((definition) => {
+                          const permissionKey = definition.key as PermissionKey;
                           return (
-                            <td key={`${role.roleName}-${definition.key}`} className="px-4 py-4 text-center align-middle">
-                              <div className="flex items-center justify-center">
-                                <input
-                                  type="checkbox"
-                                  className={checkboxClassName}
-                                  checked={areAllPrivilegesEnabled(role.permissions)}
-                                  onChange={() => toggleAllPrivileges(role.roleName)}
-                                />
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        const permissionKey = definition.key as PermissionKey;
-                        return (
-                          <td key={`${role.roleName}-${definition.key}`} className="px-4 py-4 text-center align-middle">
-                            <div className="flex items-center justify-center">
+                            <label key={definition.key} className="flex cursor-pointer items-start gap-3 rounded-xl p-3 transition hover:bg-gray-50">
                               <input
                                 type="checkbox"
-                                className={checkboxClassName}
-                                checked={role.permissions[permissionKey]}
-                                onChange={() => togglePermission(role.roleName, permissionKey)}
+                                className={`${checkboxClassName} mt-0.5 shrink-0`}
+                                checked={selectedRole.permissions[permissionKey]}
+                                onChange={() => togglePermission(selectedRole.roleName, permissionKey)}
                               />
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                              <span className="min-w-0">
+                                <span className="block text-sm font-bold text-gray-900">{definition.label}</span>
+                                <span className="mt-1 block text-xs font-medium leading-5 text-gray-500">{definition.description}</span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {visibleGroups.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-gray-200 px-6 py-12 text-center xl:col-span-2">
+                    <p className="text-sm font-bold text-gray-700">No permissions match your search.</p>
+                    <button type="button" onClick={() => setPermissionSearch('')} className="mt-2 text-sm font-black text-[#0f2f57]">
+                      Clear search
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="px-6 py-16 text-center text-sm font-medium text-gray-500">Add a role to start configuring permissions.</div>
+          )}
+        </section>
       </div>
 
       {isRoleModalOpen && (

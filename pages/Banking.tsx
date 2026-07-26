@@ -15,7 +15,7 @@ import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../u
 
 const Banking: React.FC = () => {
   const { data: accounts = [], isLoading } = useAccounts();
-  const { searchQuery } = useSearch();
+  const { searchQuery, setSearchQuery } = useSearch();
   const createAccountMutation = useCreateAccount();
   const deleteAccountMutation = useDeleteAccount();
   const toast = useToastNotifications();
@@ -35,7 +35,13 @@ const Banking: React.FC = () => {
   const [balanceFilter, setBalanceFilter] = useState<{ operator: string; value: string } | null>(null);
   const filteredAccounts = useMemo(() => accounts.filter((account) => {
     const query = searchQuery.trim().toLowerCase();
-    if (query && !account.name.toLowerCase().includes(query) && !account.type.toLowerCase().includes(query)) return false;
+    if (query && ![
+      account.id,
+      account.name,
+      account.type,
+      account.openingBalance,
+      account.currentBalance,
+    ].some((value) => String(value ?? '').toLowerCase().includes(query))) return false;
     if (typeFilter && account.type !== typeFilter) return false;
     if (typeNotFilter && account.type === typeNotFilter) return false;
     const matchesText = (actual: string, encoded: string) => {
@@ -141,6 +147,9 @@ const Banking: React.FC = () => {
           <DynamicFilterBar
             filterDefinitions={accountFilterDefinitions}
             initialFilters={initialFilters}
+            freeTextLabel="Accounts"
+            rawSearchValue={searchQuery}
+            onRawSearchChange={setSearchQuery}
             onApply={(appliedFilters) => {
               const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));
               const typeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');

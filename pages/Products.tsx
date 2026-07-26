@@ -23,7 +23,7 @@ const Products: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
-  const { searchQuery } = useSearch();
+  const { searchQuery, setSearchQuery } = useSearch();
   const { user } = useAuth();
   const {
     data: systemDefaults,
@@ -242,6 +242,9 @@ const Products: React.FC = () => {
             filterDefinitions={productFilterDefinitions}
             initialFilters={initialFilters}
             users={users}
+            freeTextLabel="Products"
+            rawSearchValue={searchQuery}
+            onRawSearchChange={setSearchQuery}
             onApply={(appliedFilters) => {
               setPage(1);
               const encodeTextValue = (filter: { operator: string; value: string }) =>

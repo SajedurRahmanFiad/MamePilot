@@ -56,6 +56,7 @@ const NotificationDetail: React.FC = () => {
 
   // Dynamic filter state
   const [filters, setFilters] = useState<CombinedFilter[]>([]);
+  const [rawSearch, setRawSearch] = useState('');
 
   // Dynamically build unique roles from recipients
   const uniqueRoles = useMemo(() => {
@@ -103,6 +104,24 @@ const NotificationDetail: React.FC = () => {
   const filteredRecipients = useMemo(() => {
     let list = data?.recipients ?? [];
 
+    const rawQuery = rawSearch.trim().toLowerCase();
+    if (rawQuery) {
+      list = list.filter((recipient) => {
+        const deployment = recipient as NotificationDeploymentRecipient;
+        const status = getRecipientStatus(recipient).label;
+        return [
+          recipient.userName,
+          recipient.userRole,
+          recipient.userId,
+          recipient.readAt,
+          recipient.actionResult,
+          deployment.deploymentName,
+          deployment.deploymentKey,
+          status,
+        ].some((value) => String(value ?? '').toLowerCase().includes(rawQuery));
+      });
+    }
+
     for (const filter of filters) {
       const negate = filter.operator === '≠';
 
@@ -140,7 +159,7 @@ const NotificationDetail: React.FC = () => {
     }
 
     return list;
-  }, [data?.recipients, filters]);
+  }, [data?.recipients, filters, rawSearch]);
 
   if (isLoading) {
     return (
@@ -285,6 +304,12 @@ const NotificationDetail: React.FC = () => {
             <div className="mt-4">
               <DynamicFilterBar
                 filterDefinitions={filterDefinitions}
+                freeTextLabel="Recipients"
+                rawSearchValue={rawSearch}
+                onRawSearchChange={(value) => {
+                  setRawSearch(value);
+                  setFilters([]);
+                }}
                 onApply={handleApplyFilters}
               />
             </div>

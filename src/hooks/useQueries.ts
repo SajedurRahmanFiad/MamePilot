@@ -628,6 +628,7 @@ export function useUserActivityPerformanceReportPage(
   filters?: {
     search?: string;
     searchOperator?: string;
+    rawSearch?: string;
     roleFilter?: string;
     roleOperator?: string;
     activityFilter?: string;
@@ -641,6 +642,7 @@ export function useUserActivityPerformanceReportPage(
   const normalizedFilters = {
     search: String(filters?.search || '').trim(),
     searchOperator: String(filters?.searchOperator || 'contains'),
+    rawSearch: String(filters?.rawSearch || '').trim(),
     roleFilter: String(filters?.roleFilter || 'All Users'),
     roleOperator: String(filters?.roleOperator || '='),
     activityFilter: String(filters?.activityFilter || (filters?.onlyActive ? 'active' : 'all')),

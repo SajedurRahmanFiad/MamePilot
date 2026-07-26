@@ -265,12 +265,13 @@ const OrderForm: React.FC = () => {
     // user input while editing.
     if (existingOrderData && !initializedRef.current) {
       if (isEdit) {
-          // Allow edits when order is On Hold. Also allow Admin/Developer users
-          // to edit orders that are in Picked status.
-          if (existingOrderData.status !== OrderStatus.ON_HOLD) {
+          // Exchange-processing orders remain editable until the courier picks
+          // the exchange parcel. Admin/Developer users retain the existing
+          // exception for ordinary Picked orders.
+          if (![OrderStatus.ON_HOLD, OrderStatus.EXCHANGE_PROCESSING].includes(existingOrderData.status)) {
             const allowedForPicked = existingOrderData.status === OrderStatus.PICKED && isAdminAccessUser;
             if (!allowedForPicked) {
-              toast.warning('Orders can only be edited when they are in On Hold status.');
+              toast.warning('Orders can only be edited while On Hold, while an exchange is processing, or by an admin after an ordinary pickup.');
               navigate('/orders');
               return;
             }

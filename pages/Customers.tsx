@@ -37,7 +37,7 @@ const Customers: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentSearchParams = searchParams.toString();
   const urlPage = getPositivePageParam(searchParams.get('page'));
-  const { searchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
+  const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = React.useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = React.useState<number>(urlPage);
@@ -320,6 +320,9 @@ const Customers: React.FC = () => {
           filterDefinitions={customerFilterDefinitions}
           initialFilters={initialFilters}
           users={users}
+          freeTextLabel="Customers"
+          rawSearchValue={searchQuery}
+          onRawSearchChange={setSearchQuery}
           onApply={(appliedFilters) => {
           setPage(1);
           const encodeTextValue = (filter: { operator: string; value: string }) =>

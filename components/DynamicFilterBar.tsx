@@ -40,6 +40,13 @@ export const formatDateDisplay = (dateStr: string): string => {
 interface DynamicFilterBarProps {
   filterDefinitions?: FilterDefinition[];
   initialFilters?: CombinedFilter[];
+  /** Search text used when the empty bar is in raw-search mode. */
+  rawSearchValue?: string;
+  /**
+   * When supplied, typing into an empty bar drives the page's existing broad
+   * search query. Structured filters remain unchanged and still use onApply.
+   */
+  onRawSearchChange?: (value: string) => void;
   freeTextLabel?: string;
   onApply?: (filters: CombinedFilter[]) => void;
   className?: string;
@@ -64,8 +71,8 @@ const filterPresentationSignature = (items: CombinedFilter[] | undefined): strin
     .sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')))
 );
 
-const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', filterDefinitions, initialFilters, onApply, className }) => {
-  const [inputValue, setInputValue] = useState('');
+const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', filterDefinitions, initialFilters, rawSearchValue, onRawSearchChange, onApply, className }) => {
+  const [inputValue, setInputValue] = useState(rawSearchValue ?? '');
   const [isOpen, setIsOpen] = useState(false);
   // stage: 0=pick type,1=pick operator,2=pick value
   const [stage, setStage] = useState(0);
@@ -114,16 +121,23 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   }, [filters, currentType, currentOperator, inputValue]);
 
   useEffect(() => {
+    // Raw search is controlled by the page so URL hydration and browser
+    // history can restore it without disturbing an in-progress chip.
+    if (currentType || filters.length > 0 || rawSearchValue === undefined) return;
+    setInputValue((current) => current === rawSearchValue ? current : rawSearchValue);
+  }, [currentType, filters.length, rawSearchValue]);
+
+  useEffect(() => {
     if (!isOpen) {
       setStage(0);
       setCurrentType(null);
       setCurrentOperator(null);
-      setInputValue('');
+      setInputValue(currentType || filters.length > 0 ? '' : (rawSearchValue ?? ''));
       if (inputRef.current === document.activeElement) {
         inputRef.current.blur();
       }
     }
-  }, [isOpen]);
+  }, [currentType, filters.length, isOpen, rawSearchValue]);
 
   // Close on outside interaction. Dropdown buttons retain input focus while
   // moving between stages, so an unmounted option cannot reset the badges.
@@ -428,6 +442,14 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const isRawSearchMode = !currentType && filters.length === 0 && !!onRawSearchChange;
+
+    if (isRawSearchMode && e.key === 'Enter') {
+      e.preventDefault();
+      setIsOpen(false);
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       if (effectiveStage === 0 && inputValue.trim() && filteredTypes.length === 0) {
@@ -456,8 +478,29 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       }
     }
     if (e.key === 'Escape') {
+      if (isRawSearchMode && inputValue.trim()) {
+        e.preventDefault();
+        setInputValue('');
+        onRawSearchChange?.('');
+        setIsOpen(true);
+        return;
+      }
       setIsOpen(false);
       setStage(0);
+    }
+  };
+
+  const handleInputChange = (nextValue: string) => {
+    const isRawSearchMode = !currentType && filters.length === 0 && !!onRawSearchChange;
+    setInputValue(nextValue);
+    if (isRawSearchMode) {
+      // The empty bar is intentionally a normal search field while the user
+      // types. Hide the type dropdown immediately; clearing the text restores
+      // the structured-filter picker.
+      onRawSearchChange?.(nextValue);
+      // Keep the input focused while the dropdown is visually suppressed by
+      // the raw-search guard in the render below.
+      setIsOpen(true);
     }
   };
 
@@ -551,17 +594,29 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
               <input
                 ref={inputRef}
                 value={inputValue}
-                onFocus={() => setIsOpen(true)}
-                onChange={(e) => setInputValue(e.target.value)}
+                onFocus={() => setIsOpen(!(onRawSearchChange && !currentType && filters.length === 0 && inputValue.trim()))}
+                onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={filters.length === 0 ? 'Search or select filters' : 'Search or filter'}
+                aria-label={filters.length === 0 ? `Search ${freeTextLabel}` : 'Search or filter'}
+                placeholder={filters.length === 0 ? `Search ${freeTextLabel} or select filters` : 'Search or filter'}
                 className="flex-1 outline-none bg-transparent text-sm px-2 py-2"
               />
+              {onRawSearchChange && !currentType && filters.length === 0 && inputValue && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleInputChange('')}
+                  className="shrink-0 px-1 text-gray-400 hover:text-gray-700"
+                >
+                  ×
+                </button>
+              )}
             </div>
             <div className="hidden sm:flex rounded-lg bg-white p-2 text-gray-400 shadow-sm">{ICONS.Search}</div>
           </div>
 
-          {isOpen && (
+          {isOpen && !(onRawSearchChange && !currentType && filters.length === 0 && inputValue.trim()) && (
             <div
               className="absolute z-40 mt-1 bg-white border border-gray-100 rounded-lg shadow-md"
               style={chipsWidth ? {
