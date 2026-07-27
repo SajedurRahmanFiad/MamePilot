@@ -50,6 +50,7 @@ function scheduleIdlePreload(task: () => void): () => void {
 import { hasAdminAccess, isEmployeeRole } from './types';
 import { useRolePermissions } from './src/hooks/useRolePermissions';
 import { useCapabilities } from './src/hooks/useCapabilities';
+import { useGitUpdateDispatcher } from './src/hooks/useGitUpdateDispatcher';
 import { useMaintenanceStatus } from './src/hooks/useQueries';
 import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
@@ -529,6 +530,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
 // App content component - safely uses auth context and passes to router
 const AppContent: React.FC = () => {
   const { user, profile, startupStatus, startupError, retrySessionRestore, signOut } = useAuth();
+  useGitUpdateDispatcher(startupStatus === 'ready' && !!user);
 
   if (startupStatus === 'idle' || startupStatus === 'checking') {
     return <StartupScreen status={startupStatus} />;

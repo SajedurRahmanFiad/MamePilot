@@ -98,6 +98,19 @@ export function getErrorMessage(err: any): string {
   return JSON.stringify(err);
 }
 
+export type GitUpdateDispatchResponse = {
+  status: 'dispatched' | 'cooldown' | 'cron_only' | 'disabled' | 'unavailable';
+  mode: 'git' | 'package';
+  enabled: boolean;
+  intervalSeconds: number;
+  retryAfterSeconds: number;
+  message: string;
+};
+
+export async function triggerGitUpdate(): Promise<GitUpdateDispatchResponse> {
+  return call<GitUpdateDispatchResponse>('triggerGitUpdate', {}, { timeoutMs: 15000 });
+}
+
 export async function fetchCustomers() { return call<Customer[]>('fetchCustomers'); }
 export async function fetchCustomerById(id: string) { return call<Customer | null>('fetchCustomerById', { id }); }
 export async function createCustomer(customer: Omit<Customer, 'id'>) { return call<Customer>('createCustomer', customer); }

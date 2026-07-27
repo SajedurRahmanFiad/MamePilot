@@ -12,6 +12,7 @@ use App\CourierApi;
 use App\Database;
 use App\DataManagementApi;
 use App\FeatureAccess;
+use App\GitUpdateDispatcher;
 use App\Http;
 use App\MasterDataApi;
 use App\MetaAdsApi;
@@ -75,6 +76,12 @@ try {
     // with its per-deployment HMAC secret before writing anything.
     if ($action === 'receiveCentralNotification') {
         Http::ok($master->receiveCentralNotification($payload));
+        exit;
+    }
+
+    if ($action === 'triggerGitUpdate') {
+        $auth->requireUser();
+        Http::ok((new GitUpdateDispatcher($config))->dispatch());
         exit;
     }
 

@@ -11,6 +11,7 @@ use App\CourierApi;
 use App\DataManagementApi;
 use App\Database;
 use App\FeatureAccess;
+use App\GitUpdateDispatcher;
 use App\Http;
 use App\MasterDataApi;
 use App\MetaAdsApi;
@@ -96,6 +97,12 @@ try {
     // write actions are restricted by maintenance/subscription state.
     if ($action === 'receiveCentralNotification') {
         Http::ok($master->receiveCentralNotification($payload));
+        exit;
+    }
+
+    if ($action === 'triggerGitUpdate') {
+        $auth->requireUser();
+        Http::ok((new GitUpdateDispatcher($config))->dispatch());
         exit;
     }
 

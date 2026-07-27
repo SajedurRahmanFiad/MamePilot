@@ -21,11 +21,14 @@ final class UpdateScheduler
         if (DIRECTORY_SEPARATOR === '\\') {
             return ['status' => 'skipped', 'message' => 'Automatic update schedule installation is not used on Windows.'];
         }
-        if (!$this->boolConfig('UPDATE_ENABLED', false)) {
-            return ['status' => 'skipped', 'message' => 'Automatic updates are disabled.'];
-        }
         if (!$this->boolConfig('UPDATE_MANAGE_CRON', true)) {
-            return ['status' => 'skipped', 'message' => 'Automatic update schedule management is disabled.'];
+            $message = $this->boolConfig('UPDATE_USE_GIT', false)
+                ? 'Automatic update schedule management is disabled. Remove any manually configured Git updater cron yourself.'
+                : 'Automatic update schedule management is disabled.';
+            return ['status' => 'skipped', 'message' => $message];
+        }
+        if (!$this->boolConfig('UPDATE_USE_GIT', false) && !$this->boolConfig('UPDATE_ENABLED', false)) {
+            return ['status' => 'skipped', 'message' => 'Automatic updates are disabled.'];
         }
         if (!function_exists('proc_open')) {
             return ['status' => 'unavailable', 'message' => 'The hosting account does not allow automatic update schedule management.'];
@@ -42,6 +45,20 @@ final class UpdateScheduler
 
         $existing = $current['exitCode'] === 0 ? $current['stdout'] : '';
         $entry = $this->cronEntry();
+        if ($this->boolConfig('UPDATE_USE_GIT', false)) {
+            $withoutGitCron = self::removeManagedEntry($existing, $entry);
+            if (self::normalizeCrontab($existing) === self::normalizeCrontab($withoutGitCron)) {
+                return ['status' => 'absent', 'message' => 'Git updates use the authenticated browser dispatcher; no updater cron is installed.'];
+            }
+
+            $installed = $this->run(['crontab', '-'], $withoutGitCron);
+            if ($installed['exitCode'] !== 0) {
+                return ['status' => 'unavailable', 'message' => 'The managed Git updater cron could not be removed automatically.'];
+            }
+
+            return ['status' => 'removed', 'message' => 'The managed Git updater cron was removed; authenticated browser sessions now dispatch Git updates.'];
+        }
+
         $merged = self::mergeCrontab($existing, $entry);
         if (self::normalizeCrontab($existing) === self::normalizeCrontab($merged)) {
             return ['status' => 'present', 'message' => 'The automatic update schedule is already installed.'];
@@ -56,6 +73,22 @@ final class UpdateScheduler
     }
 
     public static function mergeCrontab(string $existing, string $entry): string
+    {
+        $kept = self::withoutTargetEntry($existing, $entry);
+        $kept[] = trim($entry);
+
+        return implode("\n", $kept) . "\n";
+    }
+
+    public static function removeManagedEntry(string $existing, string $entry): string
+    {
+        $kept = self::withoutTargetEntry($existing, $entry);
+
+        return $kept === [] ? '' : implode("\n", $kept) . "\n";
+    }
+
+    /** @return list<string> */
+    private static function withoutTargetEntry(string $existing, string $entry): array
     {
         $targetMarker = self::markerFromEntry($entry);
         $targetScript = self::updateScriptFromEntry($entry);
@@ -80,9 +113,7 @@ final class UpdateScheduler
             $kept[] = rtrim($line);
         }
 
-        $kept[] = trim($entry);
-
-        return implode("\n", $kept) . "\n";
+        return $kept;
     }
 
     private static function normalizeCrontab(string $value): string

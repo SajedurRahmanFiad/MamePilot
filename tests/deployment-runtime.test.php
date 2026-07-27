@@ -21,6 +21,9 @@ $legacyTriggerSource = (string) file_get_contents($root . '/deploy/cpanel-templa
 $packageScriptSource = (string) file_get_contents($root . '/scripts/prepare-cpanel-deploy.ps1');
 $updateWrapperSource = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/api/update.php');
 $appSource = (string) file_get_contents($root . '/App.tsx');
+$gitDispatcherHookSource = (string) file_get_contents($root . '/src/hooks/useGitUpdateDispatcher.ts');
+$backendRouterSource = (string) file_get_contents($root . '/backend/public/index.php');
+$packageRouterSource = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/api/index.php');
 
 assertDeploymentRuntime(
     str_contains($setupSource, 'new UpdateScheduler')
@@ -58,6 +61,14 @@ assertDeploymentRuntime(substr_count($mergedCrontab, '# mamepilot-automatic-upda
 assertDeploymentRuntime(str_contains($mergedCrontab, 'another-task.php'), 'Update schedule repair must preserve unrelated entries.');
 assertDeploymentRuntime(str_contains($mergedCrontab, '/home/another-site/backend/bin/update.php'), 'Update schedule repair must preserve other MamePilot deployments.');
 
+$gitCrontab = UpdateScheduler::removeManagedEntry(
+    $mergedCrontab,
+    "*/15 * * * * '/usr/local/bin/php' '/old/backend/bin/update.php' >> '/home/example/mamepilot-update.log' 2>&1 # mamepilot-automatic-update:112233445566"
+);
+assertDeploymentRuntime(!str_contains($gitCrontab, '# mamepilot-automatic-update:112233445566'), 'Git mode must remove this deployment\'s managed updater cron.');
+assertDeploymentRuntime(str_contains($gitCrontab, 'another-task.php'), 'Git cron removal must preserve unrelated cron jobs.');
+assertDeploymentRuntime(str_contains($gitCrontab, '/home/another-site/backend/bin/update.php'), 'Git cron removal must preserve other MamePilot deployments.');
+
 assertDeploymentRuntime(
     str_contains($legacyTriggerSource, 'http_response_code(410)')
         && !str_contains($legacyTriggerSource, 'exec(')
@@ -65,9 +76,14 @@ assertDeploymentRuntime(
     'The legacy unauthenticated update trigger must remain disabled.'
 );
 assertDeploymentRuntime(
-    !is_file($root . '/src/hooks/useBackgroundSync.ts')
-        && !str_contains($appSource, 'useBackgroundSync'),
-    'Public browser sessions must not be able to dispatch application updates.'
+    is_file($root . '/src/hooks/useGitUpdateDispatcher.ts')
+        && str_contains($appSource, 'useGitUpdateDispatcher')
+        && str_contains($gitDispatcherHookSource, "triggerGitUpdate")
+        && str_contains($gitDispatcherHookSource, "response.status === 'cron_only'")
+        && str_contains($backendRouterSource, "\$auth->requireUser()")
+        && str_contains($backendRouterSource, "\$action === 'triggerGitUpdate'")
+        && str_contains($packageRouterSource, "\$action === 'triggerGitUpdate'"),
+    'Authenticated browser sessions must dispatch only Git updates through both normal API routers.'
 );
 assertDeploymentRuntime(
     str_contains($packageScriptSource, "public_html\\api\\trigger_update.php"),

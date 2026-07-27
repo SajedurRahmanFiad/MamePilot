@@ -40,8 +40,8 @@ For a first deployment you must:
 4. Import `backend/database/schema.sql` into your database.
 5. If this is a brand-new install, import `backend/database/seed.sql` once.
 6. Choose your update method and configure the corresponding `UPDATE_*` variables.
-7. Run `php backend/bin/setup.php` once. On compatible Linux hosting it installs the recurring update cron automatically.
-8. If the host does not expose user crontab access, create the same cron job in the hosting panel.
+7. Run `php backend/bin/setup.php` once. Package deployments install the recurring update cron automatically on compatible Linux hosting. Git deployments remove their managed updater cron because authenticated browser sessions dispatch the Git updater instead.
+8. Only for package deployments: if the host does not expose user crontab access, create the update cron in the hosting panel.
 
 You can choose one of two update methods:
 
@@ -111,15 +111,15 @@ Then it applies `schema-only.sql`.
 
 Important: `git pull --ff-only` will fail if the server has local file changes. That is good. It prevents accidental overwrites.
 
-### Cron job for git method
+### Authenticated browser dispatcher for the git method
 
-Setup and update runs install or repair the cron automatically when the hosting account exposes user crontab access. If the returned schedule status is `unavailable`, add this same command in the hosting panel:
+Git deployments do not use an updater cron. While at least one user is authenticated in the app, the frontend calls the normal authenticated API every two minutes. The API applies a deployment-specific cooldown and launches `backend/bin/update.php` as a detached PHP process. The browser console logs whether Git auto-update is active and the seconds remaining before the next dispatch.
 
-```text
-*/30 * * * * php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php >> /home/your-cpanel-user/mamepilot-update.log 2>&1
-```
+Keep `UPDATE_MANAGE_CRON=1` so setup and successful updates can remove only this deployment's older managed updater-cron entry while preserving unrelated cron jobs, automatic-calling workers, and other MamePilot deployments. If you deliberately set `UPDATE_MANAGE_CRON=0`, remove any manually created Git updater cron yourself.
 
-Without either the managed cron or a hosting-panel cron, the server will not check for or install updates automatically.
+The legacy public `api/trigger_update.php` stays disabled. It is not used because it allowed unauthenticated visitors to launch server processes.
+
+Git auto-update checks require an authenticated app session to remain open. Package/ZIP deployments remain independent and continue using only their server cron.
 
 ---
 
