@@ -1884,6 +1884,17 @@ export function useUpdateProduct(): UseMutationResult<Product, Error, { id: stri
         } catch (e) {}
       });
       queryClient.setQueryData(['product', data.id], data);
+      // Product images are loaded through a separate lightweight query. Patch every
+      // cached page containing this product so returning to Products shows the
+      // server-confirmed image immediately instead of waiting for a browser reload.
+      const imageQueries = queryClient.getQueriesData<Record<string, string>>({ queryKey: ['product-images'] });
+      imageQueries.forEach(([key, value]) => {
+        if (!value || !Object.prototype.hasOwnProperty.call(value, data.id)) return;
+        queryClient.setQueryData<Record<string, string>>(key, {
+          ...value,
+          [data.id]: data.image || '',
+        });
+      });
       // Invalidate lightweight product caches so OrderForm picks up changes (e.g. dynamic pricing)
       queryClient.invalidateQueries({ queryKey: ['productsMini'] });
       queryClient.invalidateQueries({ queryKey: ['productsSearch'] });

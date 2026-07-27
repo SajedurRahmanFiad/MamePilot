@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Product, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
@@ -17,7 +17,16 @@ import FilterBar, { FilterRange } from '../components/FilterBar';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useResettablePage } from '../src/hooks/useResettablePage';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { getPositivePageParam } from '../src/utils/navigation';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+
+const withImageCacheVersion = (imageUrl: string, version: number): string => {
+  if (!imageUrl || version <= 0 || imageUrl.startsWith('data:')) return imageUrl;
+
+  const [urlWithoutHash, hash = ''] = imageUrl.split('#', 2);
+  const separator = urlWithoutHash.includes('?') ? '&' : '?';
+  return `${urlWithoutHash}${separator}v=${version}${hash ? `#${hash}` : ''}`;
+};
 
 const Products: React.FC = () => {
   const navigate = useNavigate();
@@ -32,7 +41,12 @@ const Products: React.FC = () => {
   } = useSystemDefaults();
   const pageSize = systemDefaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
   const canLoadProducts = !systemDefaultsLoading || !!systemDefaults || systemDefaultsError;
-  const [page, setPage] = useState<number>(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentSearchParams = searchParams.toString();
+  const urlPage = getPositivePageParam(searchParams.get('page'));
+  const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
+  const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
+  const [page, setPage] = useState<number>(urlPage);
   const { data: users = [] } = useUsers();
   const { data: units = [] } = useUnits();
 
@@ -55,14 +69,11 @@ const Products: React.FC = () => {
     return [createdByNotFilter];
   }, [createdByNotFilter, users]);
 
-  const pageResetKey = useMemo(
-    () => JSON.stringify({ searchQuery, createdByFilter, createdByIds }),
-    [searchQuery, createdByFilter, createdByIds]
-  );
-  const effectivePage = useResettablePage(page, setPage, pageResetKey);
-
-  const handleRefreshProducts = useCallback(() => {
-    queryClient.refetchQueries({ queryKey: ['products'], exact: false, type: 'active' });
+  const handleRefreshProducts = useCallback(async () => {
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ['products'], exact: false, type: 'active' }),
+      queryClient.refetchQueries({ queryKey: ['product-images'], exact: false, type: 'active' }),
+    ]);
   }, [queryClient]);
   const { data: productFilterOpts } = useProductFilterOptions();
   const deleteProductMutation = useDeleteProduct();
@@ -81,6 +92,34 @@ const Products: React.FC = () => {
   const [salePriceFilter, setSalePriceFilter] = useState<{ operator: string; value: string } | null>(null);
   const [purchasePriceFilter, setPurchasePriceFilter] = useState<{ operator: string; value: string } | null>(null);
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
+  const pageResetKey = useMemo(
+    () => JSON.stringify({
+      searchQuery,
+      createdByFilter,
+      createdByNotFilter,
+      categoryFilter,
+      categoryNotFilter,
+      nameFilter,
+      nameNotFilter,
+      stockFilter,
+      salePriceFilter,
+      purchasePriceFilter,
+    }),
+    [
+      searchQuery,
+      createdByFilter,
+      createdByNotFilter,
+      categoryFilter,
+      categoryNotFilter,
+      nameFilter,
+      nameNotFilter,
+      stockFilter,
+      salePriceFilter,
+      purchasePriceFilter,
+    ]
+  );
+  const pageFromStateOrUrl = shouldHydrateFromUrl ? urlPage : page;
+  const effectivePage = useResettablePage(pageFromStateOrUrl, setPage, pageResetKey);
   const { data: productsPage, isFetching } = useProductsPage(effectivePage, pageSize, searchQuery, undefined, createdByIds, {
     createdByNotIds,
     category: categoryFilter || undefined,
@@ -93,9 +132,14 @@ const Products: React.FC = () => {
   }, { enabled: canLoadProducts });
   const products = productsPage?.data ?? [];
   const productIds = useMemo(() => products.map((product) => product.id), [products]);
-  const { data: productImages = {} } = useProductImagesByIds(productIds);
+  const {
+    data: productImages = {},
+    dataUpdatedAt: productImagesUpdatedAt,
+    isFetching: productImagesFetching,
+  } = useProductImagesByIds(productIds);
   const total = productsPage?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const isRefreshing = isFetching || productImagesFetching;
 
   const categoryOptions = useMemo(() => {
     return productFilterOpts?.categories || [];
@@ -215,10 +259,29 @@ const Products: React.FC = () => {
     return filters;
   }, [createdByFilter, createdByNotFilter, categoryFilter, categoryNotFilter, nameFilter, nameNotFilter, stockFilter, salePriceFilter, purchasePriceFilter, users]);
 
-  // Reset page to 1 when any filter changes to avoid 416 Range Not Satisfiable errors
+  // Hydrate pagination when the route is loaded directly or its query string changes.
   useEffect(() => {
-    setPage(1);
-  }, [searchQuery, createdByFilter, createdByNotFilter, categoryFilter, categoryNotFilter, nameFilter, nameNotFilter, stockFilter, salePriceFilter, purchasePriceFilter]);
+    if (!shouldHydrateFromUrl) return;
+
+    setPage(urlPage);
+    setSyncedSearchParams(currentSearchParams);
+  }, [shouldHydrateFromUrl, urlPage, currentSearchParams]);
+
+  // Keep the current page reload-safe without discarding unrelated URL parameters.
+  useEffect(() => {
+    if (shouldHydrateFromUrl) return;
+
+    const nextSearchParams = new URLSearchParams(currentSearchParams);
+    if (effectivePage > 1) {
+      nextSearchParams.set('page', String(effectivePage));
+    } else {
+      nextSearchParams.delete('page');
+    }
+
+    if (nextSearchParams.toString() !== currentSearchParams) {
+      setSearchParams(nextSearchParams, { replace: true });
+    }
+  }, [shouldHydrateFromUrl, effectivePage, currentSearchParams, setSearchParams]);
 
   const filteredProducts = products;
 
@@ -278,11 +341,11 @@ const Products: React.FC = () => {
         </div>
         <button
           onClick={handleRefreshProducts}
-          disabled={isFetching}
+          disabled={isRefreshing}
           className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold text-gray-500 bg-white border border-gray-100 shadow-sm hover:bg-gray-50 transition-all disabled:opacity-50"
           title="Refresh"
         >
-          <svg className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           Refresh
         </button>
         {canCreateProducts && (
@@ -304,7 +367,7 @@ const Products: React.FC = () => {
             render: (_, product) => (
               <div className="flex items-center gap-4">
                 <img
-                  src={productImages[product.id] || '/uploads/Empty_product.png'}
+                  src={withImageCacheVersion(productImages[product.id] || '/uploads/Empty_product.png', productImagesUpdatedAt)}
                   alt={product.name}
                   className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm"
                 />
