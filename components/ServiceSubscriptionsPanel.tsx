@@ -166,6 +166,7 @@ const ServiceSubscriptionsPanel: React.FC = () => {
         id: item.id,
         name: item.name.trim(),
         description: item.description?.trim() || null,
+        amount: item.amount != null ? Number(item.amount) : null,
         isOptional: !!item.isOptional,
         isActive: !!item.isActive,
         displayOrder: item.displayOrder,

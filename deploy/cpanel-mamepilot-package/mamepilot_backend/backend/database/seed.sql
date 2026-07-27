@@ -103,7 +103,6 @@ VALUES
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
-  amount = VALUES(amount),
   is_optional = VALUES(is_optional),
   is_active = VALUES(is_active),
   display_order = VALUES(display_order),
