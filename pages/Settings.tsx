@@ -1874,8 +1874,8 @@ const SettingsPage: React.FC = () => {
                       {' · '}Pending: {voiceSurveySettingsData.workerHealth.pendingCount}
                       {' · '}Overdue: {voiceSurveySettingsData.workerHealth.overdueCount}
                     </p>
-                    {voiceSurveySettingsData.workerHealth.status !== 'healthy' && (
-                      <p className="mt-2 text-xs font-semibold text-gray-600">Ask a developer to review the automatic calling setup.</p>
+                    {voiceSurveySettingsData.workerHealth.status === 'stopped' && (
+                      <p className="mt-2 text-xs text-gray-500">Set up the cron job in cPanel → Cron Jobs to run every minute.</p>
                     )}
                   </div>
                 )}

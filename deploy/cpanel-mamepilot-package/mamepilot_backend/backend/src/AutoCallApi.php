@@ -1042,7 +1042,7 @@ final class AutoCallApi extends BaseService
             $status = 'stopped';
             $message = $overdueCount > 0
                 ? sprintf('%d overdue call%s waiting. Automatic calling needs attention.', $overdueCount, $overdueCount === 1 ? ' is' : 's are')
-                : 'Automatic calling is temporarily unavailable. Ask a developer to review the service.';
+                : 'The scheduled task is not running. Set up the cron job in cPanel to enable automatic calling.';
         } else {
             $status = 'healthy';
             $message = $overdueCount > 0
