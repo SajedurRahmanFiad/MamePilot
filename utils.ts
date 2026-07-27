@@ -425,6 +425,30 @@ export const getPreferredCourierFromHistory = (
   return null;
 };
 
+export const getCourierAutoFinalizedOutcome = (
+  order?: Pick<Order, 'status' | 'history'> | null
+): 'Delivered' | 'Returned' | null => {
+  if (!order) return null;
+
+  const outcome = order.status === 'Completed'
+    ? 'Delivered'
+    : order.status === 'Returned'
+      ? 'Returned'
+      : null;
+  if (!outcome) return null;
+
+  const historyText = String(
+    outcome === 'Delivered' ? order.history?.completed : order.history?.returned
+  ).trim().toLowerCase();
+  const marker = outcome === 'Delivered'
+    ? 'marked delivered automatically from'
+    : 'marked returned automatically from';
+  const hasKnownCourier = ['carrybee', 'paperfly', 'steadfast', 'pathao']
+    .some((courier) => historyText.includes(courier));
+
+  return historyText.includes(marker) && hasKnownCourier ? outcome : null;
+};
+
 export const extractSteadfastTrackingFromHistory = (historyText?: string | null): string => {
   const text = String(historyText || '').trim();
   if (!text || !text.toLowerCase().includes('steadfast')) return '';

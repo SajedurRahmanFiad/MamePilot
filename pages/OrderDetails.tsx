@@ -8,7 +8,7 @@ import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabe
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
 import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -23,6 +23,7 @@ import {
   formatDateTime,
   formatDateTimeParts,
   getPaperflyReferenceNumber,
+  getCourierAutoFinalizedOutcome,
   getPreferredCourierFromHistory,
   getTodayDate,
   normalizePhoneSearchValue,
@@ -100,6 +101,7 @@ const OrderDetails: React.FC = () => {
   const updateMutation = useUpdateOrder();
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
+  const addCourierCompletionExpenseMutation = useAddCourierCompletionExpense();
   const deleteOrderMutation = useDeleteOrder();
   const processReturnExchangeMutation = useProcessOrderReturnExchange();
   const triggerSurveyCallMutation = useTriggerSurveyCall();
@@ -127,6 +129,7 @@ const OrderDetails: React.FC = () => {
 
   // Modal and form state
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [completionExpenseOnly, setCompletionExpenseOnly] = useState(false);
   const [showSteadfast, setShowSteadfast] = useState(false);
   const [showCarryBee, setShowCarryBee] = useState(false);
   const [showPaperfly, setShowPaperfly] = useState(false);
@@ -773,6 +776,12 @@ const OrderDetails: React.FC = () => {
     'orders.markReturnedAny',
   ) : false;
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
+  const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
+  const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
+    ? canMarkCurrentOrderCompleted
+    : courierAutoFinalizedOutcome === 'Returned'
+      ? canMarkCurrentOrderReturned
+      : false;
   const canCancelCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny') : false;
   const canDeleteCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny') : false;
   const canProcessReturnExchange = order ? canAccessRecord(order.createdBy, 'orders.processReturnExchangeOwn', 'orders.processReturnExchangeAny') : false;
@@ -1093,6 +1102,19 @@ const OrderDetails: React.FC = () => {
   };
 
   const getNextStatusTransitionCTA = () => {
+    if (canAddCourierCompletionExpense && courierAutoFinalizedOutcome) {
+      return (
+        <div className="pt-4">
+          <button
+            type="button"
+            onClick={openCourierCompletionExpense}
+            className={`w-full rounded-xl py-3 text-sm font-bold text-white transition ${theme.colors.primary[600]} hover:${theme.colors.primary[700]}`}
+          >
+            {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
+          </button>
+        </div>
+      );
+    }
     if (!statusTransition) return null;
     const transition = statusTransition;
     return (
@@ -1152,6 +1174,7 @@ const OrderDetails: React.FC = () => {
 
   const handleCompletePickedOrder = async () => {
     if (!order) return;
+    const isExpenseOnly = completionExpenseOnly;
 
     if (completionForm.outcome === 'Delivered' && !canMarkCurrentOrderCompleted) {
       toast.error('You do not have permission to mark orders as completed.');
@@ -1163,8 +1186,8 @@ const OrderDetails: React.FC = () => {
     }
 
     if (completionForm.outcome === 'Returned') {
-      if (completionForm.amount < 0) {
-        toast.error('Return expense cannot be negative');
+      if (completionForm.amount < 0 || (isExpenseOnly && completionForm.amount <= 0)) {
+        toast.error(isExpenseOnly ? 'Enter a return expense amount greater than zero' : 'Return expense cannot be negative');
         return;
       }
       if (completionForm.amount > 0) {
@@ -1182,7 +1205,7 @@ const OrderDetails: React.FC = () => {
       }
 
       // Validate refund fields if a refund amount is entered
-      if (completionForm.refundAmount > 0) {
+      if (!isExpenseOnly && completionForm.refundAmount > 0) {
         if (!completionForm.refundAccountId) {
           toast.error('Please select a refund account');
           return;
@@ -1198,8 +1221,8 @@ const OrderDetails: React.FC = () => {
       }
     }
     if (completionForm.outcome === 'Delivered') {
-      if (completionForm.additionalExpenseAmount < 0) {
-        toast.error('Additional expenses cannot be negative');
+      if (completionForm.additionalExpenseAmount < 0 || (isExpenseOnly && completionForm.additionalExpenseAmount <= 0)) {
+        toast.error(isExpenseOnly ? 'Enter an additional expense amount greater than zero' : 'Additional expenses cannot be negative');
         return;
       }
       if (completionForm.additionalExpenseAmount > 0 && !completionForm.additionalExpenseCategoryId) {
@@ -1235,24 +1258,31 @@ const OrderDetails: React.FC = () => {
         payload.additionalExpenseAmount = completionForm.additionalExpenseAmount;
         payload.additionalExpenseCategoryId = completionForm.additionalExpenseCategoryId;
       }
-      const updatedOrder = await completePickedOrderMutation.mutateAsync(payload);
+      const updatedOrder = isExpenseOnly
+        ? await addCourierCompletionExpenseMutation.mutateAsync(payload)
+        : await completePickedOrderMutation.mutateAsync(payload);
 
       setShowCompletionModal(false);
+      setCompletionExpenseOnly(false);
       setCompletionForm(createCompletionForm());
       if ((updatedOrder.pendingTransactionCount || 0) > 0) {
         toast.info(
-          `Order #${order.orderNumber} was finalized, and ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} were sent for admin approval.`
+          isExpenseOnly
+            ? `Expense for order #${order.orderNumber} was sent for admin approval.`
+            : `Order #${order.orderNumber} was finalized, and ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} were sent for admin approval.`
         );
       } else {
         toast.success(
-          completionForm.outcome === 'Returned'
-            ? `Order #${order.orderNumber} marked as returned`
-            : `Order #${order.orderNumber} marked as delivered`
+          isExpenseOnly
+            ? `${completionForm.outcome === 'Returned' ? 'Return' : 'Additional delivery'} expense added to order #${order.orderNumber}`
+            : completionForm.outcome === 'Returned'
+              ? `Order #${order.orderNumber} marked as returned`
+              : `Order #${order.orderNumber} marked as delivered`
         );
       }
     } catch (err) {
-      console.error('Failed to finalize order:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to finalize order');
+      console.error(isExpenseOnly ? 'Failed to add completion expense:' : 'Failed to finalize order:', err);
+      toast.error(err instanceof Error ? err.message : isExpenseOnly ? 'Failed to add expense' : 'Failed to finalize order');
     }
   };
 
@@ -1385,6 +1415,20 @@ const OrderDetails: React.FC = () => {
       refundAccountId: baseForm.accountId,
       refundPaymentMethod: baseForm.paymentMethod,
     });
+    setCompletionExpenseOnly(false);
+    setShowCompletionModal(true);
+  };
+
+  const openCourierCompletionExpense = () => {
+    if (!order || !courierAutoFinalizedOutcome) return;
+    const baseForm = createCompletionForm(order);
+    setCompletionForm({
+      ...baseForm,
+      outcome: courierAutoFinalizedOutcome,
+      amount: courierAutoFinalizedOutcome === 'Returned' ? order.shipping : 0,
+      refundAmount: 0,
+    });
+    setCompletionExpenseOnly(true);
     setShowCompletionModal(true);
   };
 
@@ -1541,6 +1585,7 @@ const OrderDetails: React.FC = () => {
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder
+    || canAddCourierCompletionExpense
     || (sentToAnyCourier && canUseCourierAutomation)
     || canCancelCurrentOrder
     || canDeleteCurrentOrder
@@ -1704,6 +1749,11 @@ const OrderDetails: React.FC = () => {
                     {canFinalizeCurrentOrder && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Complete Order
+                      </button>
+                    )}
+                    {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openCourierCompletionExpense(); setIsActionOpen(false); }}>
+                        {ICONS.Plus} {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
                       </button>
                     )}
                     {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED) && (
@@ -2379,14 +2429,15 @@ const OrderDetails: React.FC = () => {
 
       <OrderCompletionModal
         isOpen={showCompletionModal}
-        onClose={() => setShowCompletionModal(false)}
+        onClose={() => { setShowCompletionModal(false); setCompletionExpenseOnly(false); }}
         onSubmit={handleCompletePickedOrder}
         order={order}
         form={completionForm}
         setForm={setCompletionForm}
-        isLoading={completePickedOrderMutation.isPending}
-        allowDeliveredOutcome={canMarkCurrentOrderCompleted}
-        allowReturnedOutcome={canMarkCurrentOrderReturned}
+        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending}
+        allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : canMarkCurrentOrderCompleted}
+        allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : canMarkCurrentOrderReturned}
+        expenseOnly={completionExpenseOnly}
       />
 
       <CommonPaymentModal

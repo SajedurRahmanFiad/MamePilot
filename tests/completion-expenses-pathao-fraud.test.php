@@ -37,6 +37,8 @@ $categoryId = substr('category-' . $stamp, 0, 64);
 $customerId = substr('customer-' . $stamp, 0, 64);
 $vendorId = substr('vendor-' . $stamp, 0, 64);
 $orderId = substr('order-' . $stamp, 0, 64);
+$autoDeliveredOrderId = substr('auto-delivered-' . $stamp, 0, 64);
+$autoReturnedOrderId = substr('auto-returned-' . $stamp, 0, 64);
 $billId = substr('bill-' . $stamp, 0, 64);
 $orderNumber = 'TEST-ORDER-' . $stamp;
 $billNumber = 'TEST-BILL-' . $stamp;
@@ -88,6 +90,61 @@ try {
     completionAssert(($orderExpense['category'] ?? '') === $categoryId, 'Order additional expense category was not preserved.');
     completionAssert(abs((float) ($orderExpense['amount'] ?? 0) - 12.50) < 0.001, 'Order additional expense amount is incorrect.');
 
+    $nextAutoDeliveredSeq = (int) (($database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) + 1 AS seq FROM orders') ?? [])['seq'] ?? 1);
+    $database->execute(
+        "INSERT INTO orders (id, order_number, order_seq, order_date, customer_id, created_by, status, items, total, history)
+         VALUES (:id, :number, :seq, CURRENT_DATE, :customer_id, :created_by, 'Completed', '[]', 0, :history)",
+        [
+            ':id' => $autoDeliveredOrderId,
+            ':number' => 'TEST-AUTO-DELIVERED-' . $stamp,
+            ':seq' => $nextAutoDeliveredSeq,
+            ':customer_id' => $customerId,
+            ':created_by' => $actor['id'],
+            ':history' => json_encode(['completed' => 'Marked delivered automatically from Steadfast delivery status "delivered" on ' . gmdate('c')]),
+        ]
+    );
+    $autoDeliveredOrder = $operations->addCourierCompletionExpense([
+        'orderId' => $autoDeliveredOrderId,
+        'outcome' => 'Delivered',
+        'date' => gmdate('c'),
+        'additionalExpenseAmount' => 4.50,
+        'additionalExpenseCategoryId' => $categoryId,
+    ]);
+    completionAssert(($autoDeliveredOrder['status'] ?? '') === 'Completed', 'Expense-only delivery changed the courier-finalized status.');
+    completionAssert(str_contains((string) ($autoDeliveredOrder['history']['expense'] ?? ''), '4.50'), 'Expense-only delivery history was not appended.');
+
+    $nextAutoReturnedSeq = (int) (($database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) + 1 AS seq FROM orders') ?? [])['seq'] ?? 1);
+    $database->execute(
+        "INSERT INTO orders (id, order_number, order_seq, order_date, customer_id, created_by, status, items, total, history)
+         VALUES (:id, :number, :seq, CURRENT_DATE, :customer_id, :created_by, 'Returned', '[]', 0, :history)",
+        [
+            ':id' => $autoReturnedOrderId,
+            ':number' => 'TEST-AUTO-RETURNED-' . $stamp,
+            ':seq' => $nextAutoReturnedSeq,
+            ':customer_id' => $customerId,
+            ':created_by' => $actor['id'],
+            ':history' => json_encode(['returned' => 'Marked returned automatically from Pathao order status "returned" on ' . gmdate('c')]),
+        ]
+    );
+    $autoReturnedOrder = $operations->addCourierCompletionExpense([
+        'orderId' => $autoReturnedOrderId,
+        'outcome' => 'Returned',
+        'date' => gmdate('c'),
+        'accountId' => $accountId,
+        'amount' => 6.75,
+        'paymentMethod' => 'Cash',
+        'categoryId' => $categoryId,
+        'note' => 'Courier return charge',
+    ]);
+    completionAssert(($autoReturnedOrder['status'] ?? '') === 'Returned', 'Expense-only return changed the courier-finalized status.');
+    completionAssert(str_contains((string) ($autoReturnedOrder['history']['expense'] ?? ''), 'Courier return charge'), 'Expense-only return note was not appended.');
+
+    $autoExpenseCount = (int) (($database->fetchOne(
+        'SELECT COUNT(*) AS count FROM transactions WHERE reference_id IN (:delivered_id, :returned_id) AND type = :type',
+        [':delivered_id' => $autoDeliveredOrderId, ':returned_id' => $autoReturnedOrderId, ':type' => 'Expense']
+    ) ?? [])['count'] ?? 0);
+    completionAssert($autoExpenseCount === 2, 'Courier-finalized expense-only actions did not create exactly two linked expense transactions.');
+
     $nextBillSeq = (int) (($database->fetchOne('SELECT COALESCE(MAX(bill_seq), 0) + 1 AS seq FROM bills') ?? [])['seq'] ?? 1);
     $database->execute(
         "INSERT INTO bills (id, bill_number, bill_seq, bill_date, vendor_id, created_by, status, items, total, history)
@@ -114,7 +171,12 @@ try {
     completionAssert(abs((float) ($billExpense['amount'] ?? 0) - 8.25) < 0.001, 'Bill additional expense amount is incorrect.');
 
     $balance = (float) (($database->fetchOne('SELECT current_balance FROM accounts WHERE id = :id', [':id' => $accountId]) ?? [])['current_balance'] ?? 0);
-    completionAssert(abs($balance - 979.25) < 0.001, 'Additional expense transactions did not deduct the account balance exactly once.');
+    completionAssert(abs($balance - 968.00) < 0.001, 'Additional expense transactions did not deduct the account balance exactly once.');
+
+    $completionModal = (string) file_get_contents($root . '/components/OrderCompletionModal.tsx');
+    completionAssert(str_contains($completionModal, 'expenseOnly?: boolean'), 'The completion modal does not expose expense-only mode.');
+    completionAssert(str_contains($completionModal, 'disabled={isLoading || expenseOnly}'), 'The courier-finalized outcome tab is not locked.');
+    completionAssert(str_contains($completionModal, '!expenseOnly && order.paidAmount > 0'), 'Refund controls remain editable in expense-only mode.');
 
     $schemaOnly = (string) file_get_contents($root . '/backend/database/schema-only.sql');
     foreach (['fraud_check_result', 'fraud_check_percentage', 'fraud_check_phone', 'fraud_checked_at'] as $column) {
@@ -129,7 +191,7 @@ try {
     completionAssert(str_contains($courierApi, "'recipient_zone'"), 'Pathao booking payload is missing recipient_zone.');
     completionAssert(str_contains($courierApi, "'recipient_area'"), 'Pathao booking payload is missing recipient_area.');
 
-    echo "Order and bill additional expenses, fraud schema, and Pathao location contracts passed.\n";
+    echo "Manual and courier-finalized completion expenses, fraud schema, and Pathao location contracts passed.\n";
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

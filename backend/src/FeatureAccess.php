@@ -80,6 +80,7 @@ final class FeatureAccess
         'createOrder' => 'sales',
         'updateOrder' => 'sales',
         'deleteOrder' => 'sales',
+        'addCourierCompletionExpense' => 'sales',
         'completePickedOrder' => 'sales',
         'fetchCustomers' => 'sales',
         'fetchLeadsPage' => 'automatic_leads',

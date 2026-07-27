@@ -30,6 +30,7 @@ interface OrderCompletionModalProps {
   isLoading: boolean;
   allowDeliveredOutcome?: boolean;
   allowReturnedOutcome?: boolean;
+  expenseOnly?: boolean;
 }
 
 const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
@@ -42,6 +43,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   isLoading,
   allowDeliveredOutcome = true,
   allowReturnedOutcome = true,
+  expenseOnly = false,
 }) => {
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
@@ -166,7 +168,11 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
           ×
         </button>
         <div className="mb-8">
-          <h3 className="mt-2 text-2xl font-black text-gray-900">Complete order #{order.orderNumber}</h3>
+          <h3 className="mt-2 text-2xl font-black text-gray-900">
+            {expenseOnly
+              ? `Add ${isReturned ? 'return' : 'additional delivery'} expense for order #${order.orderNumber}`
+              : `Complete order #${order.orderNumber}`}
+          </h3>
           <p className="mt-2 text-sm font-medium">
             <span className={`font-black ${isFullyPaid ? 'text-emerald-600' : 'text-red-600'}`}>
               {isFullyPaid ? dueLabel : `Due amount ${dueLabel}`}
@@ -175,7 +181,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         </div>
 
         <div className="space-y-6">
-          {availableOutcomes.length > 1 && (
+          {(availableOutcomes.length > 1 || expenseOnly) && (
             <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
               {availableOutcomes.map((outcome) => (
                 <button
@@ -188,12 +194,12 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                       amount: outcome === 'Returned' ? order.shipping : current.amount,
                     }))
                   }
-                  disabled={isLoading}
+                  disabled={isLoading || expenseOnly}
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all ${
                     form.outcome === outcome
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
-                  } disabled:opacity-50`}
+                  } disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500 disabled:opacity-70 disabled:shadow-none`}
                 >
                   {outcome === 'Delivered' ? ICONS.Check : ICONS.Return}
                   <span className="hidden sm:inline">{outcome}</span>
@@ -329,7 +335,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
               </div>
 
               {/* Refund section for partially paid orders */}
-              {order.paidAmount > 0 && (
+              {!expenseOnly && order.paidAmount > 0 && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Refund to Customer</p>
@@ -408,7 +414,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
               disabled={isLoading}
               loading={isLoading}
             >
-              {isReturned ? 'Mark Returned' : 'Mark Delivered'}
+              {expenseOnly ? 'Add Expense' : isReturned ? 'Mark Returned' : 'Mark Delivered'}
             </Button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db';
 import { Product, DynamicPricingRule, UserRole, isEmployeeRole } from '../types';
 import { Button, NumericInput } from '../components';
@@ -9,6 +9,7 @@ import { compressImage } from '../utils';
 import { useProduct, useCategories, useUnits } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { getPreservedRouteState } from '../src/utils/navigation';
 
 function slugify(text: string): string {
   return text
@@ -21,9 +22,19 @@ function slugify(text: string): string {
 const ProductForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEdit = Boolean(id);
   const user = db.currentUser;
   const { canCreateProducts, canEditProducts } = useRolePermissions();
+
+  const handleClose = () => {
+    const navState = getPreservedRouteState(location.state);
+    if (navState.backMode === 'history' && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(navState.from || '/products');
+  };
 
   // Safety check
   if (!user) {
@@ -42,7 +53,7 @@ const ProductForm: React.FC = () => {
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
         <p className="text-gray-500 mb-6">You don't have permission to edit products. Contact an administrator for assistance.</p>
-        <Button onClick={() => navigate('/products')} variant="primary">Back to Products</Button>
+        <Button onClick={handleClose} variant="primary">Back to Products</Button>
       </div>
     );
   }
@@ -53,7 +64,7 @@ const ProductForm: React.FC = () => {
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
         <p className="text-gray-500 mb-6">You don't have permission to create products. Contact an administrator for assistance.</p>
-        <Button onClick={() => navigate('/products')} variant="primary">Back to Products</Button>
+        <Button onClick={handleClose} variant="primary">Back to Products</Button>
       </div>
     );
   }
@@ -182,12 +193,12 @@ const ProductForm: React.FC = () => {
 
       if (isEdit) {
         await updateMutation.mutateAsync({ id: id!, updates: productData });
-        navigate('/products');
+        handleClose();
       } else {
         // Trigger mutation and navigate immediately (don't wait for background tasks)
         createMutation.mutateAsync(productData as any).then(
           () => {
-            navigate('/products');
+            handleClose();
           },
           (err) => {
             setSaving(false);
@@ -227,7 +238,7 @@ const ProductForm: React.FC = () => {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Product' : 'Add Product'}</h2>
-        <button onClick={() => navigate('/products')} className="px-4 py-2 border rounded-xl text-gray-500 font-bold bg-white hover:bg-gray-50">
+        <button onClick={handleClose} className="px-4 py-2 border rounded-xl text-gray-500 font-bold bg-white hover:bg-gray-50">
           Cancel
         </button>
       </div>

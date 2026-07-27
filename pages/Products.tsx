@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Product, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
@@ -17,7 +17,7 @@ import FilterBar, { FilterRange } from '../components/FilterBar';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useResettablePage } from '../src/hooks/useResettablePage';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { getPositivePageParam } from '../src/utils/navigation';
+import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const withImageCacheVersion = (imageUrl: string, version: number): string => {
@@ -30,6 +30,7 @@ const withImageCacheVersion = (imageUrl: string, version: number): string => {
 
 const Products: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
   const { searchQuery, setSearchQuery } = useSearch();
@@ -350,7 +351,7 @@ const Products: React.FC = () => {
         </button>
         {canCreateProducts && (
           <Button
-            onClick={() => navigate('/products/new')}
+            onClick={() => navigate('/products/new', { state: buildHistoryBackState(location) })}
             variant="primary"
             size="md"
             icon={ICONS.Plus}
@@ -437,7 +438,7 @@ const Products: React.FC = () => {
                       title="Edit"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/products/edit/${productId}`);
+                        navigate(`/products/edit/${productId}`, { state: buildHistoryBackState(location) });
                       }}
                     />
                   )}

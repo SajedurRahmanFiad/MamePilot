@@ -618,6 +618,7 @@ export interface Order {
     completed?: string;
     returned?: string;
     cancelled?: string;
+    expense?: string;
     payment?: string;
     returnExchange?: string;
     exchangeCourier?: string; // history entry for exchange courier assignment
@@ -1720,6 +1721,19 @@ export interface EmployeeWalletPayoutPayload {
 }
 
 export interface CompletePickedOrderPayload {
+  orderId: string;
+  outcome: OrderCompletionOutcome;
+  date: string;
+  accountId?: string;
+  amount?: number;
+  paymentMethod?: string;
+  categoryId?: string;
+  note?: string;
+  additionalExpenseAmount?: number;
+  additionalExpenseCategoryId?: string;
+}
+
+export interface AddCourierCompletionExpensePayload {
   orderId: string;
   outcome: OrderCompletionOutcome;
   date: string;

@@ -9441,6 +9441,148 @@ final class OperationsApi extends BaseService
         });
     }
 
+    public function addCourierCompletionExpense(array $params): array
+    {
+        $actor = $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        $outcome = trim((string) ($params['outcome'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        if (!in_array($outcome, ['Delivered', 'Returned'], true)) {
+            throw new RuntimeException('Unsupported completion expense outcome.');
+        }
+
+        $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
+        $amount = round((float) ($outcome === 'Delivered'
+            ? ($params['additionalExpenseAmount'] ?? 0)
+            : ($params['amount'] ?? 0)), 2);
+        $categoryId = trim((string) ($outcome === 'Delivered'
+            ? ($params['additionalExpenseCategoryId'] ?? '')
+            : ($params['categoryId'] ?? '')));
+        $accountId = trim((string) ($params['accountId'] ?? ''));
+        $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+        $note = trim((string) ($params['note'] ?? ''));
+
+        if ($amount <= 0) {
+            throw new RuntimeException($outcome === 'Delivered'
+                ? 'Enter an additional delivery expense amount greater than zero.'
+                : 'Enter a return expense amount greater than zero.');
+        }
+        if ($categoryId === '') {
+            throw new RuntimeException('An expense category is required.');
+        }
+
+        return $this->database->transaction(function () use (
+            $actor,
+            $orderId,
+            $outcome,
+            $recordedAt,
+            $amount,
+            $categoryId,
+            $accountId,
+            $paymentMethod,
+            $note
+        ): array {
+            $orderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $orderId]
+            );
+            if ($orderRow === null) {
+                throw new RuntimeException('Order not found.');
+            }
+
+            $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+            $status = trim((string) ($orderRow['status'] ?? ''));
+            $historyKey = $outcome === 'Delivered' ? 'completed' : 'returned';
+            $expectedStatus = $outcome === 'Delivered' ? 'Completed' : 'Returned';
+            $automaticHistory = strtolower(trim((string) ($history[$historyKey] ?? '')));
+            $automaticMarker = $outcome === 'Delivered'
+                ? 'marked delivered automatically from'
+                : 'marked returned automatically from';
+            $knownCourier = false;
+            foreach (['carrybee', 'paperfly', 'steadfast', 'pathao'] as $courier) {
+                if (str_contains($automaticHistory, $courier)) {
+                    $knownCourier = true;
+                    break;
+                }
+            }
+            if ($status !== $expectedStatus || !str_contains($automaticHistory, $automaticMarker) || !$knownCourier) {
+                throw new RuntimeException('Completion expenses can only be added here after a courier automatically marks the order delivered or returned.');
+            }
+
+            if ($outcome === 'Delivered') {
+                $this->assertUserCanManageOrderRecord(
+                    $actor,
+                    $orderRow,
+                    'orders.markCompletedOwn',
+                    'orders.markCompletedAny',
+                    'You do not have permission to add expenses to this completed order.'
+                );
+            } else {
+                $this->assertUserCanManageOrderRecord(
+                    $actor,
+                    $orderRow,
+                    'orders.markReturnedOwn',
+                    'orders.markReturnedAny',
+                    'You do not have permission to add expenses to this returned order.'
+                );
+            }
+
+            $systemDefaults = $this->database->fetchOne(
+                'SELECT default_account_id, default_payment_method FROM system_defaults LIMIT 1'
+            ) ?? [];
+            if ($outcome === 'Delivered') {
+                $accountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+                if ($accountId === '') {
+                    $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+                    $accountId = trim((string) ($fallbackAccount['id'] ?? ''));
+                }
+                $paymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash';
+            }
+            if ($accountId === '' || $paymentMethod === '') {
+                throw new RuntimeException('Account and payment method are required when recording this expense.');
+            }
+
+            $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
+            $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $description = $outcome === 'Delivered'
+                ? "Additional delivery expense for Order #{$orderNumber}"
+                : "Return expense for Order #{$orderNumber}";
+            $transaction = $this->createTransactionRecord([
+                'date' => $recordedAt,
+                'type' => 'Expense',
+                'category' => $categoryId,
+                'accountId' => $accountId,
+                'amount' => $amount,
+                'description' => $description,
+                'referenceId' => $orderId,
+                'contactId' => $customerId,
+                'paymentMethod' => $paymentMethod,
+                'history' => [],
+            ], (string) $actor['id'], $actor);
+
+            $expenseLabel = $outcome === 'Delivered' ? 'Additional delivery expense' : 'Return expense';
+            $history['expense'] = $this->appendHistoryText(
+                (string) ($history['expense'] ?? ''),
+                $expenseLabel . ' recorded after automatic courier completion: ' . $this->formatMoney($amount) . '.'
+                    . ($note !== '' ? ' Note: ' . $note : '')
+            );
+            $this->touchUpdate('orders', $orderId, ['history' => $this->jsonEncode($history)]);
+
+            $row = $this->fetchOrderRowById($orderId);
+            if ($row === null) {
+                throw new RuntimeException('Updated order could not be loaded.');
+            }
+
+            $order = $this->mapOrder($row);
+            $isPending = (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending';
+            $order['pendingTransactionCount'] = $isPending ? 1 : 0;
+            $order['pendingTransactionIds'] = $isPending ? [(string) ($transaction['id'] ?? '')] : [];
+            return $order;
+        });
+    }
+
     /**
      * Atomically revert an order from its current status to a prior status,
      * undoing every side-effect produced by the forward transition(s).

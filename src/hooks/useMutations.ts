@@ -6,6 +6,7 @@ import {
   createNotification,
   createOrder,
   completePickedOrder,
+  addCourierCompletionExpense,
   revertOrderStatus,
   updateOrder,
   deleteOrder,
@@ -149,6 +150,7 @@ import type {
   WalletSettings,
   RecycleBinEntityType,
   CompletePickedOrderPayload,
+  AddCourierCompletionExpensePayload,
   FraudCheckResult,
   CapabilitySettings,
   PaymentGatewaySettings,
@@ -784,6 +786,20 @@ export function useCompletePickedOrder(): UseMutationResult<Order, Error, Comple
       queryClient.invalidateQueries({ queryKey: ['employeeOrderCounts'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['payroll'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useAddCourierCompletionExpense(): UseMutationResult<Order, Error, AddCourierCompletionExpensePayload, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: addCourierCompletionExpense,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', data.id], data);
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
       invalidateDashboardQueries(queryClient);
     },
   });

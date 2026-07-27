@@ -11,6 +11,7 @@ function productsRefreshAssert(bool $condition, string $message): void
 
 $root = dirname(__DIR__);
 $productsPage = (string) file_get_contents($root . '/pages/Products.tsx');
+$productForm = (string) file_get_contents($root . '/pages/ProductForm.tsx');
 $mutations = (string) file_get_contents($root . '/src/hooks/useMutations.ts');
 
 productsRefreshAssert(
@@ -19,6 +20,14 @@ productsRefreshAssert(
         && str_contains($productsPage, "nextSearchParams.set('page', String(effectivePage))")
         && str_contains($productsPage, 'setSearchParams(nextSearchParams, { replace: true })'),
     'Products pagination is not synchronized with the URL.',
+);
+
+productsRefreshAssert(
+    str_contains($productsPage, 'buildHistoryBackState(location)')
+        && str_contains($productForm, 'getPreservedRouteState(location.state)')
+        && str_contains($productForm, "navigate(-1)")
+        && str_contains($productForm, "navigate(navState.from || '/products')"),
+    'Product edit navigation does not preserve and restore the originating Products page.',
 );
 
 productsRefreshAssert(

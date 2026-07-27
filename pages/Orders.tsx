@@ -13,7 +13,7 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
 import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
-import { useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
+import { useAddCourierCompletionExpense, useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
@@ -28,6 +28,7 @@ import {
   formatDate,
   formatDateTimeParts,
   getDateTimeFilters,
+  getCourierAutoFinalizedOutcome,
   getOrderActivityDate,
   getPaperflyReferenceNumber,
   getPreferredCourierFromHistory,
@@ -156,6 +157,7 @@ const Orders: React.FC = () => {
   const previousSearchQueryRef = React.useRef(searchQuery);
 
   const [completionOrder, setCompletionOrder] = useState<Order | null>(null);
+  const [completionExpenseOnly, setCompletionExpenseOnly] = useState(false);
   const [showSteadfast, setShowSteadfast] = useState<string | null>(null);
   const [showCarryBee, setShowCarryBee] = useState<string | null>(null);
   const [showPaperfly, setShowPaperfly] = useState<string | null>(null);
@@ -705,6 +707,7 @@ const Orders: React.FC = () => {
 
   const createOrderMutation = useCreateOrder();
   const completePickedOrderMutation = useCompletePickedOrder();
+  const addCourierCompletionExpenseMutation = useAddCourierCompletionExpense();
   const deleteOrderMutation = useDeleteOrder();
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<Order | null>(null);
 
@@ -784,11 +787,26 @@ const Orders: React.FC = () => {
       ...createCompletionForm(order),
       outcome: canDeliverOrder(order) ? 'Delivered' : 'Returned',
     });
+    setCompletionExpenseOnly(false);
+    setCompletionOrder(order);
+  };
+
+  const openCourierCompletionExpense = (order: Order) => {
+    const outcome = getCourierAutoFinalizedOutcome(order);
+    if (!outcome) return;
+    setCompletionForm({
+      ...createCompletionForm(order),
+      outcome,
+      amount: outcome === 'Returned' ? order.shipping : 0,
+      refundAmount: 0,
+    });
+    setCompletionExpenseOnly(true);
     setCompletionOrder(order);
   };
 
   const handleCompletePickedOrder = async () => {
     if (!completionOrder) return;
+    const isExpenseOnly = completionExpenseOnly;
 
     try {
       const canMarkCompletionOrderDelivered = canDeliverOrder(completionOrder);
@@ -809,7 +827,7 @@ const Orders: React.FC = () => {
           return;
         }
         if (completionForm.amount <= 0) {
-          toast.error('Please enter the return expense amount');
+          toast.error(isExpenseOnly ? 'Enter a return expense amount greater than zero' : 'Please enter the return expense amount');
           return;
         }
         if (!completionForm.paymentMethod) {
@@ -829,8 +847,8 @@ const Orders: React.FC = () => {
         }
       }
       if (completionForm.outcome === 'Delivered') {
-        if (completionForm.additionalExpenseAmount < 0) {
-          toast.error('Additional expenses cannot be negative');
+        if (completionForm.additionalExpenseAmount < 0 || (isExpenseOnly && completionForm.additionalExpenseAmount <= 0)) {
+          toast.error(isExpenseOnly ? 'Enter an additional expense amount greater than zero' : 'Additional expenses cannot be negative');
           return;
         }
         if (completionForm.additionalExpenseAmount > 0 && !completionForm.additionalExpenseCategoryId) {
@@ -859,24 +877,31 @@ const Orders: React.FC = () => {
         payload.additionalExpenseAmount = completionForm.additionalExpenseAmount;
         payload.additionalExpenseCategoryId = completionForm.additionalExpenseCategoryId;
       }
-      const updatedOrder = await completePickedOrderMutation.mutateAsync(payload);
+      const updatedOrder = isExpenseOnly
+        ? await addCourierCompletionExpenseMutation.mutateAsync(payload)
+        : await completePickedOrderMutation.mutateAsync(payload);
 
       setCompletionOrder(null);
+      setCompletionExpenseOnly(false);
       setCompletionForm(createCompletionForm());
       if ((updatedOrder.pendingTransactionCount || 0) > 0) {
         toast.info(
-          `Order #${completionOrder.orderNumber} was finalized, and ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} were sent for admin approval.`
+          isExpenseOnly
+            ? `Expense for order #${completionOrder.orderNumber} was sent for admin approval.`
+            : `Order #${completionOrder.orderNumber} was finalized, and ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} were sent for admin approval.`
         );
       } else {
         toast.success(
-          completionForm.outcome === 'Returned'
-            ? `Order #${completionOrder.orderNumber} marked as returned`
-            : `Order #${completionOrder.orderNumber} marked as delivered`
+          isExpenseOnly
+            ? `${completionForm.outcome === 'Returned' ? 'Return' : 'Additional delivery'} expense added to order #${completionOrder.orderNumber}`
+            : completionForm.outcome === 'Returned'
+              ? `Order #${completionOrder.orderNumber} marked as returned`
+              : `Order #${completionOrder.orderNumber} marked as delivered`
         );
       }
     } catch (err) {
-      console.error('Failed to finalize order:', err);
-      toast.error(err instanceof Error ? err.message : 'Could not finalize the order. Please try again.');
+      console.error(isExpenseOnly ? 'Failed to add completion expense:' : 'Failed to finalize order:', err);
+      toast.error(err instanceof Error ? err.message : isExpenseOnly ? 'Could not add the expense. Please try again.' : 'Could not finalize the order. Please try again.');
     }
   };
 
@@ -1375,12 +1400,19 @@ const Orders: React.FC = () => {
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
                   (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
+                const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
+                const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
+                  ? canDeliverOrder(order)
+                  : courierAutoFinalizedOutcome === 'Returned'
+                    ? canReturnOrder(order)
+                    : false;
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
                 const canTrackSelectedOrder = sentToAnyCourier;
                 const canAddPaymentSelectedOrder = canAddPayment(order);
                 const hasRowActions =
                   canEditSelectedOrder
                   || canFinalizeSelectedOrder
+                  || canAddCourierCompletionExpense
                   || canSendSelectedOrderToCourier
                   || canTrackSelectedOrder
                   || canAddPaymentSelectedOrder
@@ -1489,6 +1521,11 @@ const Orders: React.FC = () => {
                               {canFinalizeSelectedOrder && (
                                 <button onClick={() => { openCompletionModal(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Check} Complete Order</button>
                               )}
+                              {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
+                                <button onClick={() => { openCourierCompletionExpense(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700">
+                                  {ICONS.Plus} {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
+                                </button>
+                              )}
                               {canAddPaymentSelectedOrder && (
                                 <button onClick={() => { openPayment(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-green-600">{ICONS.Banking} Add Payment</button>
                               )}
@@ -1535,9 +1572,12 @@ const Orders: React.FC = () => {
                           {canEditSelectedOrder && (
                             <button onClick={() => navigate(`/orders/edit/${order.id}`)} className="p-2.5 text-gray-400 hover:text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Edit">{ICONS.Edit}</button>
                           )}
-                          {canFinalizeSelectedOrder && (
-                            <button onClick={() => openCompletionModal(order)} className="p-2.5 text-gray-400 hover:text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Complete Order">{ICONS.Check}</button>
-                          )}
+                              {canFinalizeSelectedOrder && (
+                                <button onClick={() => openCompletionModal(order)} className="p-2.5 text-gray-400 hover:text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Complete Order">{ICONS.Check}</button>
+                              )}
+                              {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
+                                <button onClick={() => openCourierCompletionExpense(order)} className="p-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all" title={courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}>{ICONS.Plus}</button>
+                              )}
                           {canAddPaymentSelectedOrder && (
                             <button onClick={() => openPayment(order)} className="p-2.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-xl transition-all" title="Add Payment">{ICONS.Banking}</button>
                           )}
@@ -1583,14 +1623,15 @@ const Orders: React.FC = () => {
         </div>
       <OrderCompletionModal
         isOpen={!!completionOrder}
-        onClose={() => setCompletionOrder(null)}
+        onClose={() => { setCompletionOrder(null); setCompletionExpenseOnly(false); }}
         onSubmit={handleCompletePickedOrder}
         order={completionOrder}
         form={completionForm}
         setForm={setCompletionForm}
-        isLoading={completePickedOrderMutation.isPending}
-        allowDeliveredOutcome={completionOrder ? canDeliverOrder(completionOrder) : false}
-        allowReturnedOutcome={completionOrder ? canReturnOrder(completionOrder) : false}
+        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending}
+        allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : completionOrder ? canDeliverOrder(completionOrder) : false}
+        allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : completionOrder ? canReturnOrder(completionOrder) : false}
+        expenseOnly={completionExpenseOnly}
       />
 
       <Dialog

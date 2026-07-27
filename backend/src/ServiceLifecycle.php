@@ -13,6 +13,7 @@ final class ServiceLifecycle
      */
     private const BLOCKED_ACTIONS = [
         'batchUpdateSettings',
+        'addCourierCompletionExpense',
         'completePickedOrder',
         'createAccount',
         'createBill',
