@@ -1,209 +1,392 @@
-# Fresh Deployment and Auto-Update Guide
+# MamePilot Setup Guide
 
-This document explains:
-
-1. How to deploy MamePilot for the first time.
-2. How to configure automatic updates for the release package method.
-3. What to do after you make a bug fix.
+This guide explains how to set up MamePilot on a server and how automatic updates work. Written in plain language — no technical background needed.
 
 ---
 
-## 1. Fresh deployment (first install)
+## How MamePilot updates itself
 
-### Step 1: Deploy the app files
+Once set up, MamePilot keeps itself updated automatically. You fix a bug on your computer, push it to GitHub, and every server running MamePilot picks up the change within 1 minute. Nobody has to log into the server or click anything.
 
-On the target server, deploy these parts:
+### The flow
 
-- Frontend build output (`dist/`) to the public website root.
-- Backend PHP code to a secure folder outside the public web root.
-- `backend/database/schema.sql` into the database.
-- `backend/database/seed.sql` only for a brand-new install, not for existing customer databases.
+```
+You (on your computer)          →    GitHub              →    Your server (cPanel)
+                                   
+Fix the bug                         Stores the code           Detects new version
+npm run release:push                Always has latest         Downloads & installs
+                                    version                   Restarts automatically
+```
 
-Example folder layout:
+### What YOU do (every time you fix something)
 
-- `/home/your-user/public_html/` → frontend files and `api/`
-- `/home/your-user/mamepilot_backend/` → backend PHP and `backend/bin/update.php`
+1. Fix the bug in the code.
+2. Open terminal and type:
+   ```bash
+   npm run release:push
+   ```
+3. Done. Go drink coffee.
 
-### Step 2: Create the backend `.env`
+That command does everything for you:
+- Increases the version number (like 0.0.95 → 0.0.96)
+- Builds the website files
+- Saves database changes
+- Sends everything to GitHub
 
-In the backend folder, create `.env` with your credentials and update settings.
+### What happens on the server (automatic)
 
-Example `.env` for the release package update method:
+Every 1 minute, the server wakes up and asks: **"Is there a newer version?"**
+
+- If **no** → goes back to sleep.
+- If **yes** → downloads the new code, builds it, installs it, updates the database if needed. Your visitors are now seeing the latest version.
+
+---
+
+## Two ways the server can get updates
+
+Think of it like getting groceries:
+
+### Way 1 — Git method (`UPDATE_USE_GIT=1`)
+
+> The server goes to the store (GitHub) itself, picks the items (code), brings them home, and cooks (builds).
+
+- The server has a copy of your GitHub repository.
+- It pulls new changes from GitHub.
+- It builds the website on the server.
+- **Best for**: servers with git and npm installed (most cPanel servers).
+
+### Way 2 — Package method (`UPDATE_USE_GIT=0`)
+
+> You cook at home (build on your computer), pack a bag (ZIP file), ship it to the server. The server just unpacks it.
+
+- You build everything on your computer (the `release:push` command does this).
+- The server downloads the ready-made package from a URL you configure.
+- **Best for**: shared hosting that doesn't have git or npm.
+
+---
+
+## First-time setup (Git method)
+
+This is the most common setup. Use this if your cPanel has Terminal or SSH access.
+
+### Step 1: Clone your repository on the server
+
+In cPanel, go to **Git Version Control** and click **Create**. Enter:
+
+- **Repository URL**: `https://github.com/SajedurRahmanFiad/MamePilot.git`
+- **Clone path**: `/home/your-cpanel-user/repositories/MamePilot`
+
+Or if you prefer Terminal:
+
+```bash
+git clone https://github.com/SajedurRahmanFiad/MamePilot.git /home/your-cpanel-user/repositories/MamePilot
+```
+
+Note the path — you'll need it in the next step.
+
+### Step 2: Upload the website files
+
+Upload these from your computer to the server:
+
+- Everything inside `dist/` (the built website) → goes to `/home/your-cpanel-user/public_html/`
+- The `backend/` folder → goes to `/home/your-cpanel-user/mamepilot_backend/backend/`
+- The `.env.example` file → goes to `/home/your-cpanel-user/mamepilot_backend/.env.example`
+
+### Step 3: Set up the database
+
+In cPanel → **phpMyAdmin** (or MySQL Databases):
+
+1. Create a new database (e.g., `mamepilot_db`).
+2. Create a database user and give it full access to that database.
+3. Import `backend/database/schema.sql` into the database.
+4. If this is a brand-new install (not an existing customer), also import `backend/database/seed.sql`.
+
+### Step 4: Create the `.env` file
+
+In `/home/your-cpanel-user/mamepilot_backend/`, create a file called `.env` with these contents:
 
 ```ini
+# ---- Database ----
+DB_HOST=localhost
+DB_NAME=mamepilot_db
+DB_USER=your_db_user
+DB_PASS=your_db_password
+
+# ---- App ----
+APP_FRONTEND_URL=https://your-domain.com
+
+# ---- Automatic updates ----
+UPDATE_ENABLED=1
+UPDATE_USE_GIT=1
+UPDATE_GIT_URL=https://github.com/SajedurRahmanFiad/MamePilot.git
+UPDATE_GIT_BRANCH=main
+UPDATE_GIT_DEPLOY_ROOT=/home/your-cpanel-user/repositories/MamePilot
+UPDATE_DOCUMENT_ROOT=/home/your-cpanel-user/public_html
+UPDATE_BACKEND_ROOT=/home/your-cpanel-user/mamepilot_backend
+UPDATE_APP_ROOT=/home/your-cpanel-user/mamepilot_backend
+UPDATE_SKIP_BUILD=0
+UPDATE_BUILD_COMMAND=npm run build
+UPDATE_RUN_SCHEMA=1
+UPDATE_RUN_SEED=0
+UPDATE_BACKUP_BEFORE_UPDATE=1
+UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
+UPDATE_CRON_SECRET=make-up-a-long-random-password-here
+UPDATE_MANAGE_CRON=1
+UPDATE_CRON_SCHEDULE=*/1 * * * *
+```
+
+**Replace these values:**
+- `DB_NAME` → your actual database name
+- `DB_USER` → your actual database username
+- `DB_PASS` → your actual database password
+- `APP_FRONTEND_URL` → your actual website URL (like `https://orders.yourbusiness.com`)
+- `your-cpanel-user` → your actual cPanel username (like `fiadsoft`)
+- `UPDATE_CRON_SECRET` → make up a long random password (like `xK9mP2vL8nQ4wR7jT5y`)
+- `UPDATE_GIT_DEPLOY_ROOT` → the path from Step 1
+
+### Step 5: Run setup
+
+Open cPanel Terminal (or SSH) and run:
+
+```bash
+cd /home/your-cpanel-user/mamepilot_backend
+php backend/bin/setup.php
+```
+
+This does two things:
+1. Sets up the database tables.
+2. **Installs the automatic update check** — a cron job that runs every 1 minute.
+
+**That's it. The server will now keep itself updated automatically.**
+
+### Step 6: Verify it works
+
+Run this to check if the server can see the latest version:
+
+```bash
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php --check
+```
+
+You should see:
+- `localVersion` → the version currently installed on the server
+- `remoteVersion` → the latest version on GitHub
+- `updateAvailable` → `true` if there's a newer version, `false` if already up to date
+
+---
+
+## First-time setup (Package method)
+
+Use this if your hosting doesn't have git or npm. The server downloads a ready-made ZIP file instead of building from source.
+
+### Step 1: Upload the website files
+
+Same as the Git method — upload `dist/` contents to `public_html/` and `backend/` to `mamepilot_backend/backend/`.
+
+### Step 2: Set up the database
+
+Same as the Git method — create database, import `schema.sql` and optionally `seed.sql`.
+
+### Step 3: Upload release files to a public URL
+
+After running `npm run release:push` on your computer, upload these two files to a public folder on any website:
+
+- `deploy/releases/VERSION`
+- `deploy/releases/cpanel-mamepilot-package.zip`
+
+For example, if you upload to `https://your-website.com/mamepilot/`, these URLs must work:
+- `https://your-website.com/mamepilot/VERSION`
+- `https://your-website.com/mamepilot/cpanel-mamepilot-package.zip`
+
+### Step 4: Create the `.env` file
+
+```ini
+# ---- Database ----
+DB_HOST=localhost
+DB_NAME=mamepilot_db
+DB_USER=your_db_user
+DB_PASS=your_db_password
+
+# ---- App ----
+APP_FRONTEND_URL=https://your-domain.com
+
+# ---- Automatic updates ----
 UPDATE_ENABLED=1
 UPDATE_USE_GIT=0
-UPDATE_BASE_URL=https://your-central-domain.com/mamepilot
+UPDATE_BASE_URL=https://your-website.com/mamepilot
 UPDATE_VERSION_FILENAME=VERSION
 UPDATE_PACKAGE_NAME=cpanel-mamepilot-package
-UPDATE_APP_ROOT=/home/your-user/mamepilot_backend
-UPDATE_PUBLIC_ROOT=/home/your-user/public_html
+UPDATE_APP_ROOT=/home/your-cpanel-user/mamepilot_backend
+UPDATE_PUBLIC_ROOT=/home/your-cpanel-user/public_html
 UPDATE_DOCUMENT_ROOT_FOLDER=public_html
 UPDATE_BACKEND_FOLDER=mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
 UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-user/mamepilot_backups
-UPDATE_CRON_SECRET=use-a-long-random-secret-here
+UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
+UPDATE_CRON_SECRET=make-up-a-long-random-password-here
+UPDATE_MANAGE_CRON=1
 ```
 
-`UPDATE_DOCUMENT_ROOT_FOLDER` and `UPDATE_BACKEND_FOLDER` are release-ZIP folder names, not absolute server paths. Use `UPDATE_PUBLIC_ROOT` and `UPDATE_APP_ROOT` for absolute destinations.
-
-If you prefer explicit URLs, use:
-
-```ini
-UPDATE_ENABLED=1
-UPDATE_USE_GIT=0
-UPDATE_VERSION_URL=https://your-central-domain.com/mamepilot/VERSION
-UPDATE_RELEASE_URL=https://your-central-domain.com/mamepilot/cpanel-mamepilot-package.zip
-UPDATE_APP_ROOT=/home/your-user/mamepilot_backend
-UPDATE_PUBLIC_ROOT=/home/your-user/public_html
-UPDATE_DOCUMENT_ROOT_FOLDER=public_html
-UPDATE_BACKEND_FOLDER=mamepilot_backend
-UPDATE_RUN_SCHEMA=1
-UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-user/mamepilot_backups
-UPDATE_CRON_SECRET=use-a-long-random-secret-here
-```
-
-### Step 3: Upload the update source files to the central host
-
-On your central update host, upload these generated release artifacts to the folder referenced by `UPDATE_BASE_URL` or explicit URLs:
-
-- `deploy/releases/VERSION`
-- `deploy/releases/cpanel-mamepilot-package.zip`
-
-After upload, these URLs must work:
-
-- `https://your-central-domain.com/mamepilot/VERSION`
-- `https://your-central-domain.com/mamepilot/cpanel-mamepilot-package.zip`
-
-`VERSION` must be plain text containing the release version, for example:
-
-```text
-0.0.4
-```
-
-### Step 4: Verify the automatic update schedule
-
-Run setup once after the production `.env` is configured:
+### Step 5: Run setup
 
 ```bash
-php /home/your-user/mamepilot_backend/backend/bin/setup.php
-```
-
-On compatible Linux hosting this installs or repairs the updater cron. If setup reports that schedule management is unavailable, add this cron job in the hosting panel:
-
-```text
-*/30 * * * * php /home/your-user/mamepilot_backend/backend/bin/update.php >> /home/your-user/mamepilot-update.log 2>&1
-```
-
-This makes the deployment check for updates every 30 minutes.
-
-### Step 5: Verify the deployment
-
-Run on the server:
-
-```bash
-php /home/your-user/mamepilot_backend/backend/bin/update.php --check
-```
-
-Expected result:
-
-- `localVersion` shows the deployment version
-- `remoteVersion` shows the version from the central host
-- `updateAvailable` is `false` if there is no newer version yet
-
----
-
-## 2. After a bug fix
-
-When you make a bug fix and want deployments to update automatically:
-
-### Step 1: Create a release locally
-
-From your repository root, run:
-
-```powershell
-npm run release:push
-```
-
-This will:
-
-- bump the root `VERSION`
-- update `package.json` version
-- build the frontend
-- prepare `deploy/releases/VERSION`
-- prepare `deploy/releases/cpanel-mamepilot-package.zip`
-- commit and push the release files
-
-If you do not want the commit/push behavior and only need the release files, run:
-
-```powershell
-npm run release:cpanel:prepare
-```
-
-### Step 2: Upload the new release files
-
-Upload these files to the central update host folder:
-
-- `deploy/releases/VERSION`
-- `deploy/releases/cpanel-mamepilot-package.zip`
-
-This updates the central source that deployments poll.
-
-### Step 3: Wait for the deployments to auto-update
-
-Each deployment will check the central host on the next cron run.
-
-If you want to force a deployment to check immediately, run:
-
-```bash
-php /home/your-user/mamepilot_backend/backend/bin/update.php --check
-```
-
-If you want to force the update immediately:
-
-```bash
-php /home/your-user/mamepilot_backend/backend/bin/update.php
+cd /home/your-cpanel-user/mamepilot_backend
+php backend/bin/setup.php
 ```
 
 ---
 
-## 3. Important notes
+## Optional: Let cPanel handle the git pull
 
-- `UPDATE_ENABLED=1` is required for automatic updates.
-- Either the managed deployment cron or an equivalent hosting-panel cron is required. Without one, automatic updates will not happen.
-- The central host must serve plain-text `VERSION` and the ZIP file.
-- `backend/VERSION` must exist on each deployed backend so the updater can read the current installed version.
-- `UPDATE_RUN_SCHEMA=1` ensures database schema changes are applied during updates.
-- `UPDATE_RUN_SEED=0` is safer for existing databases; only run seeds on a fresh install if needed.
+If your cPanel has **Git Version Control** with **Auto Deploy** turned on, cPanel can pull from GitHub automatically when you push. The app then just builds and deploys — it doesn't pull from GitHub itself.
+
+### How to set it up
+
+1. In cPanel → **Git Version Control**, make sure your repo is set up and **Auto Deploy** is enabled.
+2. Add this to your `.env`:
+   ```ini
+   UPDATE_GIT_SKIP_PULL=1
+   ```
+3. Remove or comment out `UPDATE_GIT_URL` — it's no longer needed.
+
+Now the flow is: you push → cPanel pulls → the app detects the new version → builds and deploys.
 
 ---
 
-## 4. Quick command summary
+## What if something goes wrong?
 
-### Local release creation
-
-```powershell
-npm run release:push
-```
-
-Or:
-
-```powershell
-npm run release:cpanel:prepare
-```
-
-### Deployment verification
+### Check the logs
 
 ```bash
-php /home/your-user/mamepilot_backend/backend/bin/update.php --check
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/audit_log.php
 ```
 
-### Deployment cron job
+This shows a history of all update attempts — what worked, what failed, and why.
 
-```text
-*/30 * * * * php /home/your-user/mamepilot_backend/backend/bin/update.php >> /home/your-user/mamepilot-update.log 2>&1
+### Check the update log
+
+```bash
+cat /home/your-cpanel-user/mamepilot-update.log
+```
+
+This shows the raw output from each update run.
+
+### Roll back to a previous version
+
+```bash
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/rollback.php
+```
+
+This restores the backup from before the last update.
+
+### Force an update now
+
+```bash
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php
+```
+
+### Force a check without updating
+
+```bash
+php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php --check
+```
+
+---
+
+## The `.env` file explained
+
+Every setting in the `.env` file and what it does:
+
+### Database settings
+
+| Setting | What it means |
+|---------|---------------|
+| `DB_HOST` | Usually `localhost` — where the database lives |
+| `DB_NAME` | The name of your database |
+| `DB_USER` | Your database username |
+| `DB_PASS` | Your database password |
+
+### App settings
+
+| Setting | What it means |
+|---------|---------------|
+| `APP_FRONTEND_URL` | Your website URL (like `https://orders.yourbusiness.com`) |
+
+### Update settings
+
+| Setting | What it means |
+|---------|---------------|
+| `UPDATE_ENABLED` | `1` = auto-updates are on, `0` = off |
+| `UPDATE_USE_GIT` | `1` = pull from GitHub, `0` = download ZIP package |
+| `UPDATE_GIT_URL` | Your GitHub repository URL |
+| `UPDATE_GIT_BRANCH` | Which branch to pull (usually `main`) |
+| `UPDATE_GIT_DEPLOY_ROOT` | Where the git clone lives on the server |
+| `UPDATE_GIT_SKIP_PULL` | `1` = let cPanel handle git pull instead of the app |
+| `UPDATE_DOCUMENT_ROOT` | Where the website files go (usually `public_html`) |
+| `UPDATE_BACKEND_ROOT` | Where the backend code goes |
+| `UPDATE_APP_ROOT` | Same as `UPDATE_BACKEND_ROOT` in most cases |
+| `UPDATE_SKIP_BUILD` | `0` = build on server, `1` = skip build (if you pre-built) |
+| `UPDATE_BUILD_COMMAND` | The command to build the website (usually `npm run build`) |
+| `UPDATE_BASE_URL` | (Package method only) Where to download the ZIP from |
+| `UPDATE_RUN_SCHEMA` | `1` = apply database changes during update |
+| `UPDATE_RUN_SEED` | `1` = run seed data (only for fresh installs, keep `0` for existing sites) |
+| `UPDATE_BACKUP_BEFORE_UPDATE` | `1` = save a backup before each update |
+| `UPDATE_BACKUP_ROOT` | Where to store backups |
+| `UPDATE_CRON_SECRET` | A secret password that protects the update endpoint |
+| `UPDATE_MANAGE_CRON` | `1` = let the system manage the cron job automatically |
+| `UPDATE_CRON_SCHEDULE` | How often to check for updates (default: every 1 minute) |
+
+---
+
+## Existing customer site (not a fresh install)
+
+If you're deploying to a site that already has data:
+
+1. **Do NOT** run `seed.sql` — it would overwrite existing defaults.
+2. **Do NOT** set `UPDATE_RUN_SEED=1` — keep it at `0`.
+3. The automatic updater will apply `schema-only.sql` which only adds new columns and tables — it never deletes or overwrites existing data.
+
+---
+
+## Beginner checklist
+
+### Before your first release
+
+- [ ] I set up the server (Steps 1–5 above).
+- [ ] I ran `php backend/bin/setup.php` and it succeeded.
+- [ ] I ran `php backend/bin/update.php --check` and it shows my version.
+
+### Before every release
+
+- [ ] I fixed the bug.
+- [ ] If the database changed, I updated `backend/database/schema.sql` and added a migration under `migrations/`.
+- [ ] If fresh-install defaults changed, I updated `backend/database/seed.sql`.
+- [ ] I ran `npm run release:push`.
+
+### After release
+
+- [ ] Wait 1 minute — the server picks it up automatically.
+- [ ] If using the package method, I uploaded `deploy/releases/` to the central URL.
+
+---
+
+## Quick command reference
+
+### On your computer
+
+```bash
+npm run release:push          # Release a new version
+npm run schema:sync           # Regenerate schema-only.sql
+```
+
+### On the server
+
+```bash
+php backend/bin/setup.php                  # First-time setup (also installs cron)
+php backend/bin/update.php --check         # Check if an update is available
+php backend/bin/update.php                 # Force an update now
+php backend/bin/audit_log.php              # View update history
+php backend/bin/rollback.php               # Roll back to previous version
+php backend/bin/backup_db.php              # Backup the database
+php backend/bin/restore_db.php --file X    # Restore a database backup
 ```

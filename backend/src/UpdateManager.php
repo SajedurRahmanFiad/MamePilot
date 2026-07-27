@@ -163,18 +163,18 @@ final class UpdateManager
     private function updateFromGit(array $check, bool $force, string $appRoot): array
     {
         $gitRoot = $this->config->get('UPDATE_GIT_DEPLOY_ROOT', $this->projectRoot());
-        $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
+        $skipPull = $this->boolConfig('UPDATE_GIT_SKIP_PULL', false);
         $branch = $this->gitBranch();
         $documentRoot = $this->requiredConfig('UPDATE_DOCUMENT_ROOT');
         $backendRoot = $this->config->get('UPDATE_BACKEND_ROOT', dirname($gitRoot) . DIRECTORY_SEPARATOR . 'mamepilot_backend');
-        
+
         // Check if UPDATE_BACKUP_ROOT is configured
         $backupRootConfigured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', '')) !== '';
         $backupRoot = null;
         if ($backupRootConfigured) {
             $backupRoot = $this->backupRoot($backendRoot, $documentRoot, $this->temporaryDirectory());
         }
-        
+
         $actualBackupRoot = null;
 
         try {
@@ -183,9 +183,12 @@ final class UpdateManager
                 $this->rememberLatestBackup($actualBackupRoot, $backupRoot);
             }
 
-            $this->runGitCommand($gitRoot, ['remote', 'set-url', 'origin', $gitUrl]);
-            $this->runGitCommand($gitRoot, ['fetch', 'origin', $branch]);
-            $this->runGitCommand($gitRoot, ['pull', '--ff-only', 'origin', $branch]);
+            if (!$skipPull) {
+                $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
+                $this->runGitCommand($gitRoot, ['remote', 'set-url', 'origin', $gitUrl]);
+                $this->runGitCommand($gitRoot, ['fetch', 'origin', $branch]);
+                $this->runGitCommand($gitRoot, ['pull', '--ff-only', 'origin', $branch]);
+            }
             $this->buildFrontend($gitRoot);
             $this->deployGitCheckout($gitRoot, $documentRoot, $backendRoot);
 
@@ -404,8 +407,26 @@ final class UpdateManager
     private function gitRemoteVersion(): array
     {
         $gitRoot = $this->config->get('UPDATE_GIT_DEPLOY_ROOT', $this->projectRoot());
-        $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
         $branch = $this->gitBranch();
+
+        if ($this->boolConfig('UPDATE_GIT_SKIP_PULL', false)) {
+            // cPanel Git Version Control handles pulls; read local VERSION.
+            $versionPath = rtrim($gitRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'VERSION';
+            if (!is_file($versionPath)) {
+                throw new RuntimeException("VERSION file not found in local repo: {$versionPath}");
+            }
+            $version = file_get_contents($versionPath);
+            if ($version === false) {
+                throw new RuntimeException("Failed to read VERSION from local repo: {$versionPath}");
+            }
+
+            return [
+                'version' => $this->normalizeVersion($version, 'Git VERSION'),
+                'source' => 'git:local:VERSION',
+            ];
+        }
+
+        $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
         $remoteRef = 'refs/remotes/origin/' . $branch;
 
         $this->runGitCommand($gitRoot, ['remote', 'set-url', 'origin', $gitUrl]);

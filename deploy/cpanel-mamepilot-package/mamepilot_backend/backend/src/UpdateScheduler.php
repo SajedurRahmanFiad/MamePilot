@@ -44,20 +44,7 @@ final class UpdateScheduler
         }
 
         $existing = $current['exitCode'] === 0 ? $current['stdout'] : '';
-        $entry = $this->cronEntry();
-        if ($this->boolConfig('UPDATE_USE_GIT', false)) {
-            $withoutGitCron = self::removeManagedEntry($existing, $entry);
-            if (self::normalizeCrontab($existing) === self::normalizeCrontab($withoutGitCron)) {
-                return ['status' => 'absent', 'message' => 'Git updates use the authenticated browser dispatcher; no updater cron is installed.'];
-            }
-
-            $installed = $this->run(['crontab', '-'], $withoutGitCron);
-            if ($installed['exitCode'] !== 0) {
-                return ['status' => 'unavailable', 'message' => 'The managed Git updater cron could not be removed automatically.'];
-            }
-
-            return ['status' => 'removed', 'message' => 'The managed Git updater cron was removed; authenticated browser sessions now dispatch Git updates.'];
-        }
+        $entry = $this->boolConfig('UPDATE_USE_GIT', false) ? $this->gitCronEntry() : $this->cronEntry();
 
         $merged = self::mergeCrontab($existing, $entry);
         if (self::normalizeCrontab($existing) === self::normalizeCrontab($merged)) {
@@ -141,11 +128,37 @@ final class UpdateScheduler
         );
     }
 
+    private function gitCronEntry(): string
+    {
+        $baseUrl = rtrim(trim((string) ($this->config->get('APP_FRONTEND_URL', '') ?? '')), '/');
+        $secret = trim((string) ($this->config->get('UPDATE_CRON_SECRET', '') ?? ''));
+        $marker = self::MARKER_PREFIX . ':' . substr(hash('sha256', 'git-dispatch'), 0, 12);
+        $logPath = trim((string) ($this->config->get('UPDATE_CRON_LOG', '') ?? ''));
+        if ($logPath === '') {
+            $logPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot-update.log';
+        }
+
+        if ($baseUrl === '' || $secret === '') {
+            // Fall back to direct PHP invocation if URL or secret is not configured.
+            return $this->cronEntry();
+        }
+
+        $url = $baseUrl . '/api/update.php?action=dispatch&secret=' . urlencode($secret);
+
+        return sprintf(
+            '%s curl -s %s >> %s 2>&1 %s',
+            $this->cronSchedule(),
+            escapeshellarg($url),
+            escapeshellarg($logPath),
+            $marker
+        );
+    }
+
     private function cronSchedule(): string
     {
-        $schedule = trim((string) ($this->config->get('UPDATE_CRON_SCHEDULE', '*/15 * * * *') ?? ''));
+        $schedule = trim((string) ($this->config->get('UPDATE_CRON_SCHEDULE', '*/1 * * * *') ?? ''));
         if (preg_match('/^(?:[0-9*\/,\-]+\s+){4}[0-9*\/,\-]+$/', $schedule) !== 1) {
-            return '*/15 * * * *';
+            return '*/1 * * * *';
         }
 
         return $schedule;

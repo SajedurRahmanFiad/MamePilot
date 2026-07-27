@@ -111,15 +111,74 @@ Then it applies `schema-only.sql`.
 
 Important: `git pull --ff-only` will fail if the server has local file changes. That is good. It prevents accidental overwrites.
 
-### Authenticated browser dispatcher for the git method
+### Automatic git update cron
 
-Git deployments do not use an updater cron. While at least one user is authenticated in the app, the frontend calls the normal authenticated API every two minutes. The API applies a deployment-specific cooldown and launches `backend/bin/update.php` as a detached PHP process. The browser console logs whether Git auto-update is active and the seconds remaining before the next dispatch.
+When `UPDATE_USE_GIT=1`, the setup script automatically installs a cron job that calls `api/update.php?action=dispatch` via curl every 15 minutes (configurable via `UPDATE_CRON_SCHEDULE`). The `dispatch` action launches the updater as a detached background process and returns immediately. The updater then runs `git pull --ff-only`, builds the frontend, and deploys — all in the background.
 
-Keep `UPDATE_MANAGE_CRON=1` so setup and successful updates can remove only this deployment's older managed updater-cron entry while preserving unrelated cron jobs, automatic-calling workers, and other MamePilot deployments. If you deliberately set `UPDATE_MANAGE_CRON=0`, remove any manually created Git updater cron yourself.
+This requires `APP_FRONTEND_URL` and `UPDATE_CRON_SECRET` to be set in your `.env`. If either is missing, the cron falls back to running `backend/bin/update.php` directly (synchronous).
+
+Keep `UPDATE_MANAGE_CRON=1` so setup and successful updates can manage the cron entry automatically.
+
+### Optional browser dispatcher
+
+While at least one user is authenticated in the app, the frontend also calls a separate dispatch endpoint every two minutes. This provides faster update detection but is not required — the cron job is the primary trigger.
 
 The legacy public `api/trigger_update.php` stays disabled. It is not used because it allowed unauthenticated visitors to launch server processes.
 
-Git auto-update checks require an authenticated app session to remain open. Package/ZIP deployments remain independent and continue using only their server cron.
+---
+
+## cPanel Git Version Control method
+
+If your cPanel has Git Version Control, you can let cPanel handle the repository pull instead of the app maintaining its own clone. This avoids stale-checkout problems where the app's separate git clone falls behind.
+
+### How it works
+
+1. cPanel's Git Version Control clones your repo and keeps it current (manually or via auto-deploy on push).
+2. The app's auto-updater reads `VERSION` from cPanel's local repo, builds the frontend, and deploys — it never runs `git pull` itself.
+
+### Setup steps
+
+1. In cPanel → **Git Version Control**, create a repo pointing to your GitHub repository. Note the clone path (for example `/home/user/repositories/MamePilot`). Enable **Pull from Remote** auto-deploy if available.
+
+2. Configure the backend `.env` with these values:
+
+```ini
+UPDATE_ENABLED=1
+UPDATE_USE_GIT=1
+UPDATE_GIT_SKIP_PULL=1
+UPDATE_GIT_DEPLOY_ROOT=/home/user/repositories/MamePilot
+UPDATE_GIT_BRANCH=main
+UPDATE_DOCUMENT_ROOT=/home/user/public_html
+UPDATE_BACKEND_ROOT=/home/user/mamepilot_backend
+UPDATE_SKIP_BUILD=0
+UPDATE_BUILD_COMMAND=npm run build
+UPDATE_APP_ROOT=/home/user/mamepilot_backend
+UPDATE_RUN_SCHEMA=1
+UPDATE_RUN_SEED=0
+UPDATE_BACKUP_BEFORE_UPDATE=1
+UPDATE_BACKUP_ROOT=/home/user/mamepilot_backups
+UPDATE_CRON_SECRET=use-a-long-random-secret-here
+UPDATE_MANAGE_CRON=1
+```
+
+Note: `UPDATE_GIT_URL` is not required when `UPDATE_GIT_SKIP_PULL=1` because cPanel manages the remote.
+
+### What the update script does
+
+When the update script runs with `UPDATE_GIT_SKIP_PULL=1`, it will:
+
+```bash
+# No git fetch or pull — cPanel handles that
+npm run build
+```
+
+Then it copies the same files as the normal git method and applies `schema-only.sql`.
+
+### Keeping cPanel's repo current
+
+After each `npm run release:push` on your local machine, cPanel's auto-deploy (if enabled) will pull the new commits automatically. If auto-deploy is not available, open cPanel → Git Version Control and click **Pull from Remote** manually.
+
+The app's auto-updater detects the new `VERSION` in the local repo and runs the build and deploy steps.
 
 ---
 

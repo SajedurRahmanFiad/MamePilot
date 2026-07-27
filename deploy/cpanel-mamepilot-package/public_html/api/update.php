@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Config;
 use App\Database;
+use App\GitUpdateDispatcher;
 use App\Http;
 use App\UpdateManager;
 
@@ -45,6 +46,12 @@ try {
 
     if ($action === 'check') {
         Http::ok($manager->check());
+        exit;
+    }
+
+    if ($action === 'dispatch') {
+        $dispatcher = new GitUpdateDispatcher($config);
+        Http::ok($dispatcher->dispatch());
         exit;
     }
 
