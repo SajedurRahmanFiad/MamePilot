@@ -22,12 +22,25 @@ final class UpdateManager
     {
         $this->assertEnabled();
         $localVersion = AppVersion::current($this->projectRoot());
-        $remoteVersion = $this->fetchText($this->versionUrl(), 'remote version');
-        $remoteVersion = trim(preg_replace('/^\s*(?:v)?/i', '', $remoteVersion) ?? '');
+        $method = $this->updateMethod();
+
+        if ($method === 'git') {
+            $remote = $this->gitRemoteVersion();
+            $remoteVersion = $remote['version'];
+            $versionSource = $remote['source'];
+        } else {
+            $versionSource = $this->versionUrl();
+            $remoteVersion = $this->normalizeVersion(
+                $this->fetchText($versionSource, 'remote version'),
+                'release package version'
+            );
+        }
 
         return [
+            'method' => $method,
             'localVersion' => $localVersion,
             'remoteVersion' => $remoteVersion,
+            'versionSource' => $versionSource,
             'updateAvailable' => version_compare($remoteVersion, $localVersion, '>'),
             'checkedAt' => gmdate('c'),
         ];
@@ -49,7 +62,7 @@ final class UpdateManager
         $projectRoot = $this->projectRoot();
         $appRoot = $this->config->get('UPDATE_APP_ROOT', $projectRoot);
 
-        if ($this->boolConfig('UPDATE_USE_GIT', false)) {
+        if (($check['method'] ?? $this->updateMethod()) === 'git') {
             return $this->updateFromGit($check, $force, $appRoot);
         }
 
@@ -119,6 +132,7 @@ final class UpdateManager
 
             $result = [
                 'updated' => true,
+                'method' => 'package',
                 'localVersion' => $check['localVersion'],
                 'remoteVersion' => $check['remoteVersion'],
                 'releaseUrl' => $releaseUrl,
@@ -150,7 +164,7 @@ final class UpdateManager
     {
         $gitRoot = $this->config->get('UPDATE_GIT_DEPLOY_ROOT', $this->projectRoot());
         $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
-        $branch = $this->config->get('UPDATE_GIT_BRANCH', 'main');
+        $branch = $this->gitBranch();
         $documentRoot = $this->requiredConfig('UPDATE_DOCUMENT_ROOT');
         $backendRoot = $this->config->get('UPDATE_BACKEND_ROOT', dirname($gitRoot) . DIRECTORY_SEPARATOR . 'mamepilot_backend');
         
@@ -381,6 +395,56 @@ final class UpdateManager
         return $baseUrl;
     }
 
+    private function updateMethod(): string
+    {
+        return $this->boolConfig('UPDATE_USE_GIT', false) ? 'git' : 'package';
+    }
+
+    /** @return array{version: string, source: string} */
+    private function gitRemoteVersion(): array
+    {
+        $gitRoot = $this->config->get('UPDATE_GIT_DEPLOY_ROOT', $this->projectRoot());
+        $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
+        $branch = $this->gitBranch();
+        $remoteRef = 'refs/remotes/origin/' . $branch;
+
+        $this->runGitCommand($gitRoot, ['remote', 'set-url', 'origin', $gitUrl]);
+        $this->runGitCommand($gitRoot, ['fetch', 'origin', $branch]);
+        $version = $this->runGitCommand($gitRoot, ['show', $remoteRef . ':VERSION']);
+
+        return [
+            'version' => $this->normalizeVersion($version, 'Git VERSION'),
+            'source' => 'git:origin/' . $branch . ':VERSION',
+        ];
+    }
+
+    private function gitBranch(): string
+    {
+        $branch = trim((string) $this->config->get('UPDATE_GIT_BRANCH', 'main'));
+        if (
+            $branch === ''
+            || preg_match('/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/', $branch) !== 1
+            || str_contains($branch, '..')
+            || str_contains($branch, '//')
+            || str_ends_with($branch, '/')
+            || str_ends_with($branch, '.')
+        ) {
+            throw new RuntimeException('Invalid UPDATE_GIT_BRANCH value.');
+        }
+
+        return $branch;
+    }
+
+    private function normalizeVersion(string $version, string $label): string
+    {
+        $normalized = trim(preg_replace('/^\s*(?:v)?/i', '', $version) ?? '');
+        if (preg_match('/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/', $normalized) !== 1) {
+            throw new RuntimeException("Invalid {$label}: {$normalized}");
+        }
+
+        return $normalized;
+    }
+
     private function assertEnabled(): void
     {
         if (!$this->boolConfig('UPDATE_ENABLED', false)) {
@@ -462,7 +526,7 @@ final class UpdateManager
     /**
      * @param list<string> $args
      */
-    private function runGitCommand(string $gitRoot, array $args, bool $requireRoot = true): void
+    private function runGitCommand(string $gitRoot, array $args, bool $requireRoot = true): string
     {
         if ($requireRoot && !is_dir($gitRoot . DIRECTORY_SEPARATOR . '.git')) {
             throw new RuntimeException("Git deploy root is not a git repository: {$gitRoot}");
@@ -490,6 +554,8 @@ final class UpdateManager
         if ($exitCode !== 0) {
             throw new RuntimeException(trim((string) $stderr) ?: 'git command failed.');
         }
+
+        return (string) $stdout;
     }
 
     private function downloadFile(string $url, string $destination): void

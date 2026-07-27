@@ -21,6 +21,13 @@ That command:
 7. Commits
 8. Pushes to git
 
+This deliberately publishes both update channels from the same version:
+
+- Git-capable deployments can update from the pushed branch.
+- Package deployments can update from `deploy/releases/VERSION` and the ZIP after you upload them to the central server (or directly from the configured GitHub raw release folder).
+
+Neither deployment method replaces the other. Every deployment chooses its own method with `UPDATE_USE_GIT`.
+
 After that, each production deployment can update itself automatically, but only after the deployment is configured correctly.
 
 ### What you must do before auto-update works
@@ -42,6 +49,7 @@ You can choose one of two update methods:
 2. **Git method**: deployment runs `git pull --ff-only` from your repository.
 
 The release package method is safer for cPanel. The git method is simpler if your hosting supports git.
+Git checks the configured branch's `VERSION` directly; it does not require the central ZIP server. Package deployments continue using the central `VERSION` and ZIP URLs.
 
 ---
 
@@ -84,9 +92,12 @@ UPDATE_CRON_SCHEDULE=*/15 * * * *
 When the update script runs, it will:
 
 ```bash
+git fetch origin main
 git pull --ff-only origin main
 npm run build
 ```
+
+The update check reads `VERSION` from `origin/main`, so Git deployments remain independent of the package server.
 
 Then it copies:
 

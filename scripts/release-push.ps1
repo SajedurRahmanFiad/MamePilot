@@ -94,10 +94,15 @@ finally {
 Push-Location $repoRoot
 try {
   git add .
+  if ($LASTEXITCODE -ne 0) { throw "git add failed with exit code $LASTEXITCODE" }
 
   $commitMessage = if ($Message.Trim() -ne '') { $Message.Trim() } else { "Release v$newVersion" }
   git commit -m $commitMessage
-  if (-not $NoPush) { git push }
+  if ($LASTEXITCODE -ne 0) { throw "git commit failed with exit code $LASTEXITCODE" }
+  if (-not $NoPush) {
+    git push
+    if ($LASTEXITCODE -ne 0) { throw "git push failed with exit code $LASTEXITCODE" }
+  }
 }
 finally {
   Pop-Location
