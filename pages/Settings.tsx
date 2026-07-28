@@ -1,7 +1,7 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { db } from '../db';
+import { db, saveDb } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
@@ -36,6 +36,9 @@ import WhatsAppSettingsPanel from '../components/WhatsAppSettingsPanel';
 import MessengerSettingsPanel from '../components/MessengerSettingsPanel';
 import WooCommerceSettingsPanel from '../components/WooCommerceSettingsPanel';
 import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
+import { writeSystemDefaultsCache } from '../src/utils/startupCache';
+
+type SystemDefaultField = keyof Settings['defaults'];
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -183,6 +186,7 @@ const SettingsPage: React.FC = () => {
     whiteLabel: false,
     themeColor: '#0f2f57',
   });
+  const systemDefaultsDirtyFieldsRef = useRef<Set<SystemDefaultField>>(new Set());
   const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
@@ -242,12 +246,23 @@ const SettingsPage: React.FC = () => {
 
   React.useEffect(() => {
     if (systemDefaultsData) {
-      setSystemDefaults({
-        ...systemDefaultsData,
-        themeColor: systemDefaultsData.themeColor || '#0f2f57',
+      setSystemDefaults((current) => {
+        const next = {
+          ...systemDefaultsData,
+          themeColor: systemDefaultsData.themeColor || '#0f2f57',
+        } as Settings['defaults'];
+        systemDefaultsDirtyFieldsRef.current.forEach((field) => {
+          (next as any)[field] = current[field];
+        });
+        return next;
       });
     }
   }, [systemDefaultsData]);
+
+  const setSystemDefaultField = useCallback(<K extends SystemDefaultField,>(field: K, value: Settings['defaults'][K]) => {
+    systemDefaultsDirtyFieldsRef.current.add(field);
+    setSystemDefaults((current) => ({ ...current, [field]: value }));
+  }, []);
 
   const isDeveloper = user?.role === 'Developer';
 
@@ -542,60 +557,87 @@ const SettingsPage: React.FC = () => {
       return;
     }
 
-    const normalizedCompany = normalizeCompanySettings(companySettings);
-    const hasUnnamedPage = normalizedCompany.pages.some((page) => !page.name.trim());
-    if (hasUnnamedPage) {
-      toast.warning('Please enter a page name for every company page.');
-      return;
-    }
-
+    let toastId: string | undefined;
     try {
-      // Show toast immediately (optimistic UI)
-      const toastId = toast.loading('Saving all settings...');
-      const updates: any = {
-        company: normalizedCompany,
-        order: orderSettings,
-        invoice: invoiceSettings,
-        defaults: systemDefaults,
-        wallet: walletSettings,
-      };
-      if (hasCapability('courier_automation')) {
-        updates.courier = courierSettings;
+      const updates: any = {};
+      switch (activeTab) {
+        case 'company': {
+          const normalizedCompany = normalizeCompanySettings(companySettings);
+          const hasUnnamedPage = normalizedCompany.pages.some((page) => !page.name.trim());
+          if (hasUnnamedPage) {
+            toast.warning('Please enter a page name for every company page.');
+            return;
+          }
+          updates.company = normalizedCompany;
+          break;
+        }
+        case 'order':
+          updates.order = orderSettings;
+          updates.invoice = invoiceSettings;
+          break;
+        case 'defaults': {
+          const dirtyFields = Array.from(systemDefaultsDirtyFieldsRef.current);
+          if (dirtyFields.length === 0) {
+            toast.info('No default-setting changes to save.');
+            return;
+          }
+          updates.defaults = dirtyFields.reduce<Record<string, unknown>>((payload, field) => {
+            payload[field] = systemDefaults[field];
+            return payload;
+          }, {});
+          break;
+        }
+        case 'wallet':
+          updates.wallet = walletSettings;
+          break;
+        case 'courier':
+          if (hasCapability('courier_automation')) {
+            updates.courier = courierSettings;
+          }
+          break;
+        default:
+          toast.info('Changes on this tab are saved when you make them.');
+          return;
       }
 
-      // Save all settings and use server response to update local state
-      batchUpdateMutation.mutateAsync(updates).then((response) => {
-        // Update mock db with server response (contains processed file paths, not base64)
-        if (response?.company) {
-          db.settings.company = response.company;
-        } else {
-          db.settings.company = normalizedCompany;
+      toastId = toast.loading('Saving settings...');
+
+      // Save the active settings section and use the server response to update local state.
+      const response = await batchUpdateMutation.mutateAsync(updates);
+
+      // Update mock db with server response (contains processed file paths, not base64).
+      if (response?.company) db.settings.company = response.company;
+      if (response?.order) db.settings.order = response.order;
+      if (response?.invoice) db.settings.invoice = response.invoice;
+      if (response?.defaults) {
+        db.settings.defaults = response.defaults;
+        writeSystemDefaultsCache(response.defaults);
+        if (updates.defaults) {
+          setSystemDefaults(response.defaults);
+          systemDefaultsDirtyFieldsRef.current.clear();
         }
-        db.settings.order = response?.order || orderSettings;
-        db.settings.invoice = response?.invoice || invoiceSettings;
-        db.settings.defaults = response?.defaults || systemDefaults;
-        db.settings.courier = response?.courier || courierSettings;
+      }
+      if (response?.courier) db.settings.courier = response.courier;
+      if (response?.wallet) {
         db.settings.payroll = {
           ...db.settings.payroll,
-          unitAmount: walletSettings.unitAmount,
-          countedStatuses: walletSettings.countedStatuses,
+          unitAmount: response.wallet.unitAmount,
+          countedStatuses: response.wallet.countedStatuses,
         };
+      }
+      saveDb();
 
-        // Invalidate React Query caches so hooks refetch with server-processed data
-        // (e.g. logo base64 → file path conversion). Without this the useCompanySettings
-        // hook keeps returning stale cached data and the useEffect that syncs
-        // companySettingsData → companySettings state never re-runs.
-        queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
-
-        // Update toast to success
-        toast.update(toastId, 'Settings saved successfully!', 'success');
-      }).catch((err) => {
-        console.error('Failed to save settings:', err);
-        toast.update(toastId, err instanceof Error ? err.message : 'Could not save the settings. Please try again.', 'error');
-      });
+      // Refetch server-processed data, such as uploaded logo paths.
+      queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+      toast.update(toastId, 'Settings saved successfully!', 'success');
     } catch (err) {
-      console.error('Failed to initiate settings save:', err);
-      toast.error(err instanceof Error ? err.message : 'Could not save the settings. Please try again.');
+      console.error('Failed to save settings:', err);
+      const message = err instanceof Error ? err.message : 'Could not save the settings. Please try again.';
+      if (toastId !== undefined) {
+        toast.update(toastId, message, 'error');
+      } else {
+        toast.error(message);
+      }
     }
   };
 
@@ -936,7 +978,7 @@ const SettingsPage: React.FC = () => {
         >
           {updateBeSmartSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
         </Button>}
-        {!['meta-ads', 'whatsapp', 'messenger', 'woocommerce', 'voice-survey', 'data-management', 'be-smart'].includes(activeTab) && <Button
+        {['company', 'order', 'defaults', 'wallet', 'courier', 'permissions'].includes(activeTab) && <Button
           onClick={handleSave}
           variant="primary"
           size="md"
@@ -1205,7 +1247,7 @@ const SettingsPage: React.FC = () => {
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
                     <select
                       value={systemDefaults.defaultAccountId}
-                      onChange={e => setSystemDefaults({...systemDefaults, defaultAccountId: e.target.value})}
+                      onChange={e => setSystemDefaultField('defaultAccountId', e.target.value)}
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                     >
                       <option value="">Select an account...</option>
@@ -1217,7 +1259,7 @@ const SettingsPage: React.FC = () => {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
                   <select 
                     value={systemDefaults.defaultPaymentMethod}
-                    onChange={e => setSystemDefaults({...systemDefaults, defaultPaymentMethod: e.target.value})}
+                    onChange={e => setSystemDefaultField('defaultPaymentMethod', e.target.value)}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                   >
                     <option value="">Select a payment method...</option>
@@ -1228,7 +1270,7 @@ const SettingsPage: React.FC = () => {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Income Category</label>
                   <select 
                     value={systemDefaults.incomeCategoryId}
-                    onChange={e => setSystemDefaults({...systemDefaults, incomeCategoryId: e.target.value})}
+                    onChange={e => setSystemDefaultField('incomeCategoryId', e.target.value)}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                   >
                     <option value="">Select a category...</option>
@@ -1241,7 +1283,7 @@ const SettingsPage: React.FC = () => {
                     <input
                       type="color"
                       value={systemDefaults.themeColor}
-                      onChange={e => setSystemDefaults({...systemDefaults, themeColor: e.target.value})}
+                      onChange={e => setSystemDefaultField('themeColor', e.target.value)}
                       className="w-28 h-12 p-0 border border-gray-100 rounded-2xl cursor-pointer"
                     />
                     <span className="text-sm font-medium text-gray-600">{systemDefaults.themeColor}</span>
@@ -1251,7 +1293,7 @@ const SettingsPage: React.FC = () => {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Records Per Page</label>
                   <NumericInput 
                     value={systemDefaults.recordsPerPage} 
-                    onChange={value => setSystemDefaults({...systemDefaults, recordsPerPage: Math.max(1, value)})}
+                    onChange={value => setSystemDefaultField('recordsPerPage', Math.max(1, value))}
                     className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
                     allowDecimals={false}
                   />
@@ -1260,7 +1302,7 @@ const SettingsPage: React.FC = () => {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Expense Category</label>
                   <select 
                     value={systemDefaults.expenseCategoryId}
-                    onChange={e => setSystemDefaults({...systemDefaults, expenseCategoryId: e.target.value})}
+                    onChange={e => setSystemDefaultField('expenseCategoryId', e.target.value)}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                   >
                     <option value="">Select a category...</option>
@@ -1272,10 +1314,7 @@ const SettingsPage: React.FC = () => {
                   <NumericInput
                     value={systemDefaults.maxTransactionAmount ?? 0}
                     onChange={value =>
-                      setSystemDefaults({
-                        ...systemDefaults,
-                        maxTransactionAmount: Math.max(0, value),
-                      })
+                      setSystemDefaultField('maxTransactionAmount', Math.max(0, value))
                     }
                     className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
                     allowDecimals={true}

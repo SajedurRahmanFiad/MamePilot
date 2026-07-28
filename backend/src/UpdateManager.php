@@ -116,11 +116,11 @@ final class UpdateManager
                 $databaseResult = $this->runSchemaUpdate(dirname(__DIR__, 2));
 
                 if ($this->boolConfig('UPDATE_RUN_SEED', false)) {
-                    $seedPath = $this->config->get('UPDATE_SEED_PATH', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'seed.sql');
-                    if (is_file($seedPath)) {
-                        (new SchemaManager($this->config, $this->database))->runSqlFile($seedPath, true);
-                        $databaseResult['seed'] = 'Applied seed.sql';
-                    }
+                    // Seed data is an installation concern, never an upgrade step. Older
+                    // deployments may still have UPDATE_RUN_SEED=1 in their preserved
+                    // .env file; honoring it here can overwrite branding, theme, invoice,
+                    // courier, catalog, and login data after every automatic update.
+                    $databaseResult['seed'] = 'Skipped seed.sql: automatic updates preserve existing data. Use backend:setup for a fresh install.';
                 }
             } elseif ($this->boolConfig('UPDATE_RUN_MIGRATIONS', false)) {
                 $databaseResult = (new MigrationManager($this->config, $this->database))->run();

@@ -1003,7 +1003,11 @@ export function useSystemDefaults(): UseQueryResult<any, Error> {
     },
     initialData: cached?.data ?? db.settings.defaults,
     initialDataUpdatedAt: cached?.cachedAt ?? 0,
-    staleTime: 24 * 60 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * (attempt + 1), 5000),
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

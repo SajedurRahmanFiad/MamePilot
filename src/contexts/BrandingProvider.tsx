@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useGlobalBranding, useSystemDefaults } from '../hooks/useQueries';
 import type { SystemDefaultsSnapshot } from '../utils/startupCache';
+import { resolveThemeColorPalette } from '../../theme';
 
 export type BrandingMode = 'loading' | 'mamepilot' | 'white-label' | 'unavailable';
 
@@ -60,6 +61,21 @@ export const BrandingProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [verifiedGlobalBranding, setVerifiedGlobalBranding] = useState<{ name: string; logo: string; version: string } | null>(null);
   const [verifiedGlobalBrandingAt, setVerifiedGlobalBrandingAt] = useState(0);
   const [globalBrandingResolution, setGlobalBrandingResolution] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+
+  const activeThemeColor = String(
+    verifiedSystemDefaults?.themeColor || systemDefaults?.themeColor || ''
+  ).trim();
+
+  useEffect(() => {
+    if (!activeThemeColor) return;
+
+    const { primary, medium, dark, soft } = resolveThemeColorPalette(activeThemeColor);
+    const root = document.documentElement;
+    root.style.setProperty('--primary-color', primary);
+    root.style.setProperty('--primary-medium', medium);
+    root.style.setProperty('--primary-dark', dark);
+    root.style.setProperty('--primary-soft', soft);
+  }, [activeThemeColor]);
 
   useEffect(() => {
     let active = true;

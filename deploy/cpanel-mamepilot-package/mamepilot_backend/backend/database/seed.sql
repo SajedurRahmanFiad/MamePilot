@@ -1,5 +1,5 @@
 -- MamePilot seed data file.
--- Use only for fresh installs or when intentionally refreshing defaults.
+-- Safe to re-run: insert missing fresh-install defaults without changing existing rows.
 
 INSERT INTO payment_methods (id, name, description, is_active)
 VALUES
@@ -9,9 +9,7 @@ VALUES
   ('cheque', 'Cheque', 'Cheque payment', 1),
   ('digital_wallet', 'Digital Wallet', 'Digital wallet (Nagad, Bkash, etc.)', 1)
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description),
-  is_active = VALUES(is_active);
+  id = id;
 INSERT INTO units (id, name, short_name, description)
 VALUES
   ('piece', 'Piece', 'pc', NULL),
@@ -25,9 +23,7 @@ VALUES
   ('pack', 'Pack', 'pack', NULL),
   ('dozen', 'Dozen', 'dz', NULL)
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  short_name = VALUES(short_name),
-  description = VALUES(description);
+  id = id;
 INSERT INTO categories (id, name, type, color, parent_id)
 VALUES
   ('income_sales', 'Sales', 'Income', '#10B981', NULL),
@@ -45,35 +41,23 @@ VALUES
   ('product_food', 'Food & Beverage', 'Product', '#10B981', NULL),
   ('product_other', 'Other Products', 'Product', '#8B5CF6', NULL)
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  type = VALUES(type),
-  color = VALUES(color),
-  parent_id = VALUES(parent_id);
+  id = id;
 INSERT INTO company_settings (id, name, phone, email, address, logo)
 VALUES ('company-default', 'MamePilot', '+880', 'info@mamepilot.com', '', '/uploads/Full Branding.png')
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  phone = VALUES(phone),
-  email = VALUES(email),
-  address = VALUES(address),
-  logo = VALUES(logo);
+  id = id;
 INSERT INTO order_settings (id, prefix, next_number)
 VALUES ('order-default', 'ORD-', 1)
 ON DUPLICATE KEY UPDATE
-  prefix = VALUES(prefix);
+  id = id;
 INSERT INTO invoice_settings (id, title, logo_width, logo_height, footer)
 VALUES ('invoice-default', 'Invoice', 120, 120, 'Thank you for choosing MamePilot!')
 ON DUPLICATE KEY UPDATE
-  title = VALUES(title),
-  logo_width = VALUES(logo_width),
-  logo_height = VALUES(logo_height),
-  footer = VALUES(footer);
+  id = id;
 INSERT INTO system_defaults (id, records_per_page, white_label, theme_color)
 VALUES ('defaults-default', 10, 0, '#294b57')
 ON DUPLICATE KEY UPDATE
-  records_per_page = VALUES(records_per_page),
-  white_label = VALUES(white_label),
-  theme_color = VALUES(theme_color);
+  id = id;
 INSERT INTO courier_settings (
   id,
   steadfast_enabled,
@@ -82,7 +66,7 @@ INSERT INTO courier_settings (
 )
 VALUES ('courier-default', 0, 0, 0.300)
 ON DUPLICATE KEY UPDATE
-  paperfly_max_weight_kg = VALUES(paperfly_max_weight_kg);
+  id = id;
 INSERT INTO payroll_settings (id, singleton, unit_amount, counted_statuses)
 VALUES (
   'payroll-default',
@@ -91,7 +75,7 @@ VALUES (
   '["On Hold","Processing","Picked","Completed","Cancelled"]'
 )
 ON DUPLICATE KEY UPDATE
-  counted_statuses = COALESCE(payroll_settings.counted_statuses, VALUES(counted_statuses));
+  id = id;
 INSERT INTO service_subscription_items (id, name, description, amount, is_optional, is_active, display_order, system_key)
 VALUES
   ('service-item-db-hosting', 'Database hosting', NULL, NULL, 0, 1, 10, 'database-hosting'),
@@ -101,26 +85,14 @@ VALUES
   ('service-item-load-balancer', 'Load balancer', NULL, NULL, 0, 1, 50, 'load-balancer'),
   ('service-item-maintenance', 'Maintenance cost', NULL, NULL, 1, 1, 60, 'maintenance-cost')
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description),
-  is_optional = VALUES(is_optional),
-  is_active = VALUES(is_active),
-  display_order = VALUES(display_order),
-  system_key = VALUES(system_key);
+  id = id;
 INSERT INTO service_subscription_methods (id, name, description, is_active, display_order)
 VALUES
   ('service-method-nagad', 'Nagad', 'Primary renewal payment method', 1, 10)
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  description = VALUES(description),
-  is_active = VALUES(is_active),
-  display_order = VALUES(display_order);
+  id = id;
 INSERT INTO users (id, name, phone, role, image, password_hash, created_at, updated_at)
 VALUES ('developer-1', 'Developer', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  phone = VALUES(phone),
-  role = VALUES(role),
-  password_hash = VALUES(password_hash),
-  updated_at = VALUES(updated_at);
+  id = id;
 

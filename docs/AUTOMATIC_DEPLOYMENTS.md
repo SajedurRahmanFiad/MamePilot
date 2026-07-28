@@ -213,7 +213,7 @@ The background update script does these steps:
 3. Extract it and copy updated files.
 4. Preserve the existing `.env` file.
 5. Run the database schema update.
-6. Run seeds only if the deployment is new or `UPDATE_RUN_SEED=1`.
+6. Never run seed data during an update. Fresh installations use `backend:setup` before joining the update channel.
 7. Save audit logs.
 
 ### What you must configure for this method
@@ -251,7 +251,7 @@ MamePilot keeps fresh-install, production-upgrade, and seed responsibilities sep
 | :--- | :--- |
 | `backend/database/schema.sql` | Complete schema for a fresh database. `CREATE TABLE IF NOT EXISTS` alone does not upgrade columns in existing tables. |
 | `backend/database/schema-only.sql` | Generated additive production-upgrade artifact. The automatic updater applies this file. |
-| `backend/database/seed.sql` | Basic default data for fresh installs. Do not run this repeatedly on customer databases unless you intentionally want to refresh defaults. |
+| `backend/database/seed.sql` | Append-only default data for fresh installs. Updates never execute it. |
 
 `schema-only.sql` is generated from `schema.sql` plus every SQL file in `migrations/`:
 
@@ -360,7 +360,7 @@ AUDIT_LOG_FILE=/home/your-cpanel-user/mamepilot_backend/backend/storage/audit/up
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
 
-`UPDATE_RUN_SEED=0` is important for existing customer sites.
+Keep `UPDATE_RUN_SEED=0` for clarity. The updater ignores this legacy flag and preserves existing customer data even if an older `.env` still contains `1`.
 
 ---
 

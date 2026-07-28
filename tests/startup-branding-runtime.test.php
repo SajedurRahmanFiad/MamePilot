@@ -34,6 +34,11 @@ startupBrandingAssert(
 startupBrandingAssert(
     str_contains($providerSource, "useSystemDefaults()")
         && str_contains($providerSource, 'verifySystemDefaults()')
+        && str_contains($providerSource, 'resolveThemeColorPalette')
+        && str_contains($providerSource, "root.style.setProperty('--primary-color', primary)")
+        && str_contains($providerSource, "root.style.setProperty('--primary-medium', medium)")
+        && str_contains($providerSource, "root.style.setProperty('--primary-dark', dark)")
+        && str_contains($providerSource, "root.style.setProperty('--primary-soft', soft)")
         && str_contains($providerSource, 'whiteLabelEnabled')
         && str_contains($providerSource, 'verifyGlobalBranding()')
         && strpos($providerSource, 'verifySystemDefaults()') < strpos($providerSource, 'verifyGlobalBranding()')
@@ -50,6 +55,8 @@ startupBrandingAssert(
         && str_contains($layoutSource, 'brandLoading || brandUnavailable')
         && str_contains($layoutSource, 'Loading workspace branding')
         && !str_contains($layoutSource, 'useGlobalBranding(')
+        && !str_contains($layoutSource, 'useSystemDefaults(')
+        && !str_contains($layoutSource, "style.setProperty('--primary-color'")
         && !str_contains($layoutSource, 'companySettings')
         && !str_contains($layoutSource, 'document.title'),
     'Authenticated navigation must use the shared resolved branding state without applying metadata itself.'

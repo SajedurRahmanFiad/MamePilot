@@ -5,9 +5,8 @@ import { ICONS } from '../constants';
 import { RotateCcw } from 'lucide-react';
 import { db } from '../db';
 import { hasAdminAccess, isEmployeeRole } from '../types';
-import { resolveThemeColorPalette, theme } from '../theme';
+import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useSystemDefaults } from '../src/hooks/useQueries';
 import { buildHistoryBackState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -122,7 +121,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
-  const { data: systemDefaults } = useSystemDefaults();
   const branding = useAppBranding();
   const whiteLabelEnabled = branding.mode === 'white-label';
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
@@ -148,23 +146,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Use profile from Auth context if available, fallback to db.currentUser
   const user = profile || db.currentUser;
-
-  useEffect(() => {
-    if (!systemDefaults?.themeColor) return;
-
-    const { primary, medium, dark, soft } = resolveThemeColorPalette(systemDefaults.themeColor);
-    const root = document.documentElement;
-
-    root.style.setProperty('--primary-color', primary);
-    root.style.setProperty('--primary-medium', medium);
-    root.style.setProperty('--primary-dark', dark);
-    root.style.setProperty('--primary-soft', soft);
-  }, [systemDefaults?.themeColor]);
-
-  const avatarBackgroundColor = useMemo(() => {
-    if (!systemDefaults?.themeColor) return '0f2f57';
-    return resolveThemeColorPalette(systemDefaults.themeColor).primary.replace('#', '');
-  }, [systemDefaults?.themeColor]);
 
   // Reset main scroll position when route changes so each page starts at top
   React.useEffect(() => {

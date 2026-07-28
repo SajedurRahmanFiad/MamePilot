@@ -329,7 +329,7 @@ Every setting in the `.env` file and what it does:
 | `UPDATE_BUILD_COMMAND` | The command to build the website (usually `npm run build`) |
 | `UPDATE_BASE_URL` | (Package method only) Where to download the ZIP from |
 | `UPDATE_RUN_SCHEMA` | `1` = apply database changes during update |
-| `UPDATE_RUN_SEED` | `1` = run seed data (only for fresh installs, keep `0` for existing sites) |
+| `UPDATE_RUN_SEED` | Legacy compatibility flag. Automatic updates ignore it and preserve existing rows. |
 | `UPDATE_BACKUP_BEFORE_UPDATE` | `1` = save a backup before each update |
 | `UPDATE_BACKUP_ROOT` | Where to store backups |
 | `UPDATE_CRON_SECRET` | A secret password that protects the update endpoint |
@@ -342,8 +342,8 @@ Every setting in the `.env` file and what it does:
 
 If you're deploying to a site that already has data:
 
-1. **Do NOT** run `seed.sql` — it would overwrite existing defaults.
-2. **Do NOT** set `UPDATE_RUN_SEED=1` — keep it at `0`.
+1. Do not use `seed.sql` as an upgrade mechanism; automatic updates never execute it.
+2. Keep `UPDATE_RUN_SEED=0` for clarity. Older deployments left at `1` are still protected.
 3. The automatic updater will apply `schema-only.sql` which only adds new columns and tables — it never deletes or overwrites existing data.
 
 ---

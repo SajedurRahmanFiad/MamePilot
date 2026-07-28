@@ -61,7 +61,7 @@ Follow these steps to configure your MariaDB/MySQL database on cPanel:
 Then import [seed.sql](file:///f:/Projects/React/MamePilot/backend/database/seed.sql) only for fresh installs.
 
 > [!IMPORTANT]
-> Do **not** run `seed.sql` repeatedly on existing customer databases. It contains default rows with `ON DUPLICATE KEY UPDATE` and can overwrite settings or the default developer user. Existing deployments should receive `schema-only.sql` during updates; `schema.sql` is for fresh databases.
+> `seed.sql` is append-only and safe to re-run, but it is still an installation artifact. Existing deployments should receive `schema-only.sql` during updates; `schema.sql` plus `seed.sql` is for fresh databases.
 
 ---
 
@@ -112,7 +112,7 @@ For an existing deployment, code updates should be followed by the pure schema u
 php /home/your-cpanel-user/mamepilot_backend/backend/bin/update.php
 ```
 
-The update agent applies `backend/database/schema-only.sql` automatically and does not run `seed.sql` unless `UPDATE_RUN_SEED=1`.
+The update agent applies `backend/database/schema-only.sql` automatically and never runs `seed.sql`. This remains true when an older preserved `.env` contains `UPDATE_RUN_SEED=1`; fresh installs use `backend:setup` instead.
 
 ### Automatic calling schedule
 
