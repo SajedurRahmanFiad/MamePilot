@@ -2109,6 +2109,36 @@ final class OperationsApi extends BaseService
         }
 
         $order = $this->mapOrder($row);
+        $order['statusTimestamps'] = [];
+        if ($this->tableExists('order_status_undo_events')) {
+            $statusEvents = $this->database->fetchAll(
+                'SELECT to_status, created_at
+                 FROM order_status_undo_events
+                 WHERE order_id = :order_id AND undone_at IS NULL
+                 ORDER BY created_at ASC, id ASC',
+                [':order_id' => (string) $row['id']]
+            );
+            $timestampKeys = [
+                'Processing' => 'processing',
+                'Courier assigned' => 'courier',
+                'Picked' => 'picked',
+                'Completed' => 'completed',
+                'Returned' => 'returned',
+                'Cancelled' => 'cancelled',
+                'Exchange processing' => 'exchangeProcessing',
+                'Exchange picked' => 'exchangePicked',
+                'Exchange delivered' => 'exchangeDelivered',
+                'Exchange returned' => 'exchangeReturned',
+                'Exchange cancelled' => 'exchangeCancelled',
+            ];
+            foreach ($statusEvents as $statusEvent) {
+                $key = $timestampKeys[trim((string) ($statusEvent['to_status'] ?? ''))] ?? null;
+                $timestamp = $this->toIso($statusEvent['created_at'] ?? null);
+                if ($key !== null && $timestamp !== null) {
+                    $order['statusTimestamps'][$key] = $timestamp;
+                }
+            }
+        }
         $order['surveyEvents'] = [];
         if ($this->tableExists('voice_survey_events')) {
             $events = $this->database->fetchAll(

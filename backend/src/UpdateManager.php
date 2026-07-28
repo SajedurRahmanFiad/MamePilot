@@ -51,6 +51,7 @@ final class UpdateManager
         $this->assertEnabled();
         $check = $this->check();
         (new AuditLog($this->config))->append('update.check', $check);
+        $this->cleanupStaleTemporaryDirectories();
         if (!$force && !$check['updateAvailable']) {
             return array_merge($check, [
                 'updated' => false,
@@ -77,13 +78,9 @@ final class UpdateManager
             'mamepilot_backend'
         );
         $tempRoot = $this->temporaryDirectory();
-        
-        // Check if UPDATE_BACKUP_ROOT is configured
-        $backupRootConfigured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', '')) !== '';
-        $backupRoot = null;
-        if ($backupRootConfigured) {
-            $backupRoot = $this->backupRoot($appRoot, $publicRoot, $tempRoot);
-        }
+        $result = null;
+        $failure = null;
+        $cleanupFailure = null;
 
         try {
             $zipPath = $tempRoot . DIRECTORY_SEPARATOR . 'release.zip';
@@ -95,16 +92,11 @@ final class UpdateManager
             $this->downloadFile($releaseUrl, $zipPath);
             $this->extractZip($zipPath, $extractRoot);
 
-            $actualBackupRoot = null;
-            if ($backupRootConfigured && $backupRoot !== null && $this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
-                $actualBackupRoot = $this->backupDirectories([$appRoot => 'backend', $publicRoot => 'public'], $backupRoot);
-                $this->rememberLatestBackup($actualBackupRoot, $backupRoot);
-            }
-
             $extractedBackend = $extractRoot . DIRECTORY_SEPARATOR . $backendFolder;
             if (!is_dir($extractedBackend)) {
                 throw new RuntimeException("Release package does not contain backend folder: {$backendFolder}");
             }
+            $this->assertReleasePackageVersion($extractedBackend, (string) $check['remoteVersion']);
             $this->copyDirectory($extractedBackend, $appRoot, ['.env', '.env.local']);
 
             if ($publicRoot !== '' && is_dir($extractRoot . DIRECTORY_SEPARATOR . $documentRootFolder)) {
@@ -138,23 +130,44 @@ final class UpdateManager
                 'releaseUrl' => $releaseUrl,
                 'appRoot' => $appRoot,
                 'publicRoot' => $publicRoot === '' ? null : $publicRoot,
-                'backupRoot' => $actualBackupRoot,
+                'backupRoot' => null,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
                 'updatedAt' => gmdate('c'),
             ];
-            (new AuditLog($this->config))->append('update.success', $result);
-
-            return $result;
         } catch (\Throwable $exception) {
+            $failure = $exception;
+        } finally {
+            try {
+                $this->removeDirectory($tempRoot);
+            } catch (\Throwable $exception) {
+                $cleanupFailure = $exception;
+            }
+        }
+
+        if ($failure !== null || $cleanupFailure !== null) {
+            $reportedFailure = $failure ?? $cleanupFailure;
             (new AuditLog($this->config))->append('update.failed', [
                 'localVersion' => $check['localVersion'] ?? null,
                 'remoteVersion' => $check['remoteVersion'] ?? null,
-                'error' => $exception->getMessage(),
+                'error' => $reportedFailure?->getMessage(),
+                'cleanupError' => $cleanupFailure?->getMessage(),
             ]);
-            throw new RuntimeException('Update failed: ' . $exception->getMessage(), 0, $exception);
+            throw new RuntimeException(
+                'Update failed: ' . $reportedFailure?->getMessage(),
+                0,
+                $reportedFailure,
+            );
         }
+
+        if (!is_array($result)) {
+            throw new RuntimeException('Update failed without producing a result.');
+        }
+
+        (new AuditLog($this->config))->append('update.success', $result);
+
+        return $result;
     }
 
     /**
@@ -168,21 +181,7 @@ final class UpdateManager
         $documentRoot = $this->requiredConfig('UPDATE_DOCUMENT_ROOT');
         $backendRoot = $this->config->get('UPDATE_BACKEND_ROOT', dirname($gitRoot) . DIRECTORY_SEPARATOR . 'mamepilot_backend');
 
-        // Check if UPDATE_BACKUP_ROOT is configured
-        $backupRootConfigured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', '')) !== '';
-        $backupRoot = null;
-        if ($backupRootConfigured) {
-            $backupRoot = $this->backupRoot($backendRoot, $documentRoot, $this->temporaryDirectory());
-        }
-
-        $actualBackupRoot = null;
-
         try {
-            if ($backupRootConfigured && $backupRoot !== null && $this->boolConfig('UPDATE_BACKUP_BEFORE_UPDATE', true)) {
-                $actualBackupRoot = $this->backupDirectories([$backendRoot => 'backend', $documentRoot => 'public'], $backupRoot);
-                $this->rememberLatestBackup($actualBackupRoot, $backupRoot);
-            }
-
             if (!$skipPull) {
                 $gitUrl = $this->requiredConfig('UPDATE_GIT_URL');
                 $this->runGitCommand($gitRoot, ['remote', 'set-url', 'origin', $gitUrl]);
@@ -208,7 +207,7 @@ final class UpdateManager
                 'gitRoot' => $gitRoot,
                 'documentRoot' => $documentRoot,
                 'backendRoot' => $backendRoot,
-                'backupRoot' => $actualBackupRoot,
+                'backupRoot' => null,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
@@ -544,6 +543,80 @@ final class UpdateManager
         return $dir;
     }
 
+    private function cleanupStaleTemporaryDirectories(): void
+    {
+        $base = rtrim((string) $this->config->get('UPDATE_TEMP_DIR', sys_get_temp_dir()), DIRECTORY_SEPARATOR);
+        if ($base === '' || !is_dir($base)) {
+            return;
+        }
+
+        $staleBefore = time() - 600;
+        foreach (scandir($base) ?: [] as $item) {
+            if (preg_match('/^mamepilot-update-\d{14}-[a-f0-9]{8}$/', $item) !== 1) {
+                continue;
+            }
+
+            $path = $base . DIRECTORY_SEPARATOR . $item;
+            $modifiedAt = filemtime($path);
+            if (is_link($path) || !is_dir($path) || $modifiedAt === false || $modifiedAt > $staleBefore) {
+                continue;
+            }
+
+            $this->removeDirectory($path);
+        }
+    }
+
+    private function assertReleasePackageVersion(string $extractedBackend, string $expectedVersion): void
+    {
+        $versionPath = rtrim($extractedBackend, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'VERSION';
+        if (!is_file($versionPath)) {
+            throw new RuntimeException('Release package does not contain mamepilot_backend/VERSION.');
+        }
+
+        $contents = file_get_contents($versionPath);
+        if ($contents === false) {
+            throw new RuntimeException('Failed to read the release package VERSION file.');
+        }
+
+        $packageVersion = $this->normalizeVersion($contents, 'release package VERSION');
+        if ($packageVersion !== $expectedVersion) {
+            throw new RuntimeException(
+                "Release package version {$packageVersion} does not match advertised version {$expectedVersion}."
+            );
+        }
+    }
+
+    private function removeDirectory(string $path): void
+    {
+        if (!file_exists($path) && !is_link($path)) {
+            return;
+        }
+        if (is_link($path) || !is_dir($path)) {
+            if (!@unlink($path)) {
+                throw new RuntimeException("Failed to remove temporary update path: {$path}");
+            }
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $item) {
+            $itemPath = $item->getPathname();
+            $removed = $item->isDir() && !$item->isLink()
+                ? @rmdir($itemPath)
+                : @unlink($itemPath);
+            if (!$removed) {
+                throw new RuntimeException("Failed to remove temporary update path: {$itemPath}");
+            }
+        }
+
+        if (!@rmdir($path)) {
+            throw new RuntimeException("Failed to remove temporary update directory: {$path}");
+        }
+    }
+
     /**
      * @param list<string> $args
      */
@@ -658,69 +731,6 @@ final class UpdateManager
         }
 
         $zip->close();
-    }
-
-    private function backupRoot(string $appRoot, string $publicRoot, string $tempRoot): string
-    {
-        $configured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', ''));
-        $base = $configured !== '' ? $configured : $tempRoot;
-        $backupRoot = rtrim($base, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'update-' . gmdate('YmdHis');
-
-        $realBackupRoot = realpath($backupRoot);
-        $realAppRoot = realpath($appRoot);
-        $realPublicRoot = $publicRoot === '' ? false : realpath($publicRoot);
-
-        if ($realBackupRoot !== false && $realBackupRoot === $realAppRoot) {
-            throw new RuntimeException('UPDATE_BACKUP_ROOT must not be the same as UPDATE_APP_ROOT.');
-        }
-        if ($realBackupRoot !== false && $realPublicRoot !== false && $realBackupRoot === $realPublicRoot) {
-            throw new RuntimeException('UPDATE_BACKUP_ROOT must not be the same as UPDATE_PUBLIC_ROOT.');
-        }
-
-        if (!mkdir($backupRoot, 0700, true) && !is_dir($backupRoot)) {
-            throw new RuntimeException("Failed to create backup directory: {$backupRoot}");
-        }
-
-        return $backupRoot;
-    }
-
-    private function rememberLatestBackup(string $actualBackupRoot, string $backupRoot): void
-    {
-        $configured = trim((string) $this->config->get('UPDATE_BACKUP_ROOT', ''));
-        if ($configured === '') {
-            return;
-        }
-
-        if (!is_dir($configured) && !mkdir($configured, 0700, true) && !is_dir($configured)) {
-            throw new RuntimeException("Failed to create backup directory: {$configured}");
-        }
-
-        $payload = [
-            'backupRoot' => $actualBackupRoot,
-            'createdAt' => gmdate('c'),
-        ];
-
-        file_put_contents($configured . DIRECTORY_SEPARATOR . 'latest.txt', $actualBackupRoot);
-        file_put_contents($configured . DIRECTORY_SEPARATOR . 'latest.json', json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-    }
-
-    /**
-     * @param array<string, string> $directories
-     */
-    private function backupDirectories(array $directories, string $backupRoot): string
-    {
-        if (!mkdir($backupRoot, 0700, true) && !is_dir($backupRoot)) {
-            throw new RuntimeException("Failed to create backup directory: {$backupRoot}");
-        }
-
-        foreach ($directories as $source => $label) {
-            if ($source === '' || !is_dir($source)) {
-                continue;
-            }
-            $this->copyDirectory($source, $backupRoot . DIRECTORY_SEPARATOR . $label, []);
-        }
-
-        return $backupRoot;
     }
 
     /**

@@ -7,7 +7,7 @@ import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
 import { useCreateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { buildLocalDateTime, getTodayDate } from '../utils';
+import { buildLocalDateTime, getCurrentTime, getTodayDate } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 const Transfer: React.FC = () => {
@@ -19,7 +19,7 @@ const Transfer: React.FC = () => {
   
   const [form, setForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     fromAccountId: '',
     toAccountId: '',
     amount: 0,
@@ -74,7 +74,7 @@ const Transfer: React.FC = () => {
         toast.success('Transfer completed successfully');
         setForm({
           date: getTodayDate(),
-          time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          time: getCurrentTime(),
           fromAccountId: '',
           toAccountId: '',
           amount: 0,

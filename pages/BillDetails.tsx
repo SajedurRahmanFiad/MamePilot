@@ -12,7 +12,15 @@ import { LoadingOverlay, CommonPaymentModal, BillReturnModal, NumericInput } fro
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { handlePrintBill } from '../src/utils/printUtils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { buildLocalDateTime, formatDate, formatDateTimeParts, getTodayDate } from '../utils';
+import {
+  buildLocalDateTime,
+  formatActivityStatusTimestamp,
+  formatDate,
+  formatHistoryMoment,
+  getCurrentTime,
+  getTodayDate,
+  parseHistoryTimestamp,
+} from '../utils';
 
 const BillDetails: React.FC = () => {
   const { id } = useParams();
@@ -66,13 +74,13 @@ const BillDetails: React.FC = () => {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0
   });
   const [refundForm, setRefundForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0,
   });
@@ -188,53 +196,6 @@ const BillDetails: React.FC = () => {
     return null;
   };
 
-  const parseHistoryTimestamp = (value?: string | null) => {
-    const raw = String(value || '').trim();
-    if (!raw) return null;
-
-    const candidates: string[] = [raw];
-    const onAtMatch = raw.match(/on\s+(.+?)(?:,\s*at\s*|\s+at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i);
-    if (onAtMatch) {
-      const datePart = onAtMatch[1].trim();
-      const timePart = onAtMatch[2].trim().replace(/\./g, '');
-      candidates.push(`${datePart} ${timePart}`);
-      candidates.push(`${datePart}, ${timePart}`);
-    }
-
-    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/);
-    if (isoMatch) {
-      candidates.push(isoMatch[0]);
-    }
-
-    for (const candidate of candidates) {
-      const parsed = new Date(candidate);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    return null;
-  };
-
-  const formatStatusTimestamp = (date: Date) => {
-    if (Number.isNaN(date.getTime())) return '';
-    const now = new Date();
-    const local = new Date(date);
-    const isToday = local.toDateString() === now.toDateString();
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const isYesterday = local.toDateString() === yesterday.toDateString();
-
-    const { time } = formatDateTimeParts(local);
-
-    if (isToday) return time;
-    if (isYesterday) return `Yesterday, ${time}`;
-    return `${formatDate(local)}, ${time}`;
-  };
-
-  const formatHistoryMoment = (value: Date | string) => {
-    const { date, time } = formatDateTimeParts(value);
-    return `${date}, at ${time}`;
-  };
-
   const getTimelineLabel = (item: BillTimelineItem, index: number) => {
     if (index === billProgressIndex) {
       switch (item.label) {
@@ -289,11 +250,11 @@ const BillDetails: React.FC = () => {
         case 'Created':
           return bill.createdAt || bill.history?.created;
         case 'Processing':
-          return bill.processedAt || bill.history?.processing;
+          return bill.history?.processing;
         case 'Received':
-          return bill.receivedAt || bill.history?.received;
+          return bill.history?.received;
         case 'Exchanged':
-          return bill.receivedAt || bill.history?.received;
+          return bill.history?.received;
         case 'Returned':
           return (bill.history as Record<string, string | undefined>)?.returned;
         case 'Cancelled':
@@ -305,7 +266,7 @@ const BillDetails: React.FC = () => {
 
     const parsed = parseHistoryTimestamp(rawValue);
     if (parsed) {
-      return ` (${formatStatusTimestamp(parsed)})`;
+      return ` (${formatActivityStatusTimestamp(parsed)})`;
     }
 
     return '';
@@ -518,7 +479,7 @@ const BillDetails: React.FC = () => {
     }
     setPaymentForm({
       date: getTodayDate(),
-      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: getCurrentTime(),
       accountId: db.settings.defaults.defaultAccountId || '',
       amount: Math.max(settlementTotal - bill.paidAmount, 0)
     });
@@ -534,7 +495,7 @@ const BillDetails: React.FC = () => {
     }
     setRefundForm({
       date: getTodayDate(),
-      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: getCurrentTime(),
       accountId: db.settings.defaults.defaultAccountId || '',
       amount: refundDue,
     });

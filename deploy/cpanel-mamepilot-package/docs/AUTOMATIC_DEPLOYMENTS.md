@@ -30,6 +30,10 @@ Neither deployment method replaces the other. Every deployment chooses its own m
 
 After that, each production deployment can update itself automatically, but only after the deployment is configured correctly.
 
+Automatic updates do not create application backups. Package updates use a
+temporary download/extraction workspace and remove it after every successful or
+failed attempt. Arrange a separate hosting or database backup policy if needed.
+
 ### What you must do before auto-update works
 
 For a first deployment you must:
@@ -80,8 +84,6 @@ UPDATE_BUILD_COMMAND=npm run build
 UPDATE_APP_ROOT=/home/user/mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 UPDATE_MANAGE_CRON=1
 UPDATE_CRON_SCHEDULE=*/15 * * * *
@@ -155,8 +157,6 @@ UPDATE_BUILD_COMMAND=npm run build
 UPDATE_APP_ROOT=/home/user/mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 UPDATE_MANAGE_CRON=1
 ```
@@ -232,8 +232,6 @@ UPDATE_DOCUMENT_ROOT_FOLDER=public_html
 UPDATE_BACKEND_FOLDER=mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
 
@@ -354,8 +352,6 @@ UPDATE_DOCUMENT_ROOT_FOLDER=public_html
 UPDATE_BACKEND_FOLDER=mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 AUDIT_LOG_FILE=/home/your-cpanel-user/mamepilot_backend/backend/storage/audit/update-log.jsonl
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```

@@ -8,6 +8,10 @@ This guide explains how to set up MamePilot on a server and how automatic update
 
 Once set up, MamePilot keeps itself updated automatically. You fix a bug on your computer, push it to GitHub, and every server running MamePilot picks up the change within 1 minute. Nobody has to log into the server or click anything.
 
+Automatic updates do not save application backups. They use a temporary working
+folder only while downloading and extracting a release, then remove it whether
+the attempt succeeds or fails.
+
 ### The flow
 
 ```
@@ -128,8 +132,6 @@ UPDATE_SKIP_BUILD=0
 UPDATE_BUILD_COMMAND=npm run build
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 UPDATE_CRON_SECRET=make-up-a-long-random-password-here
 UPDATE_MANAGE_CRON=1
 UPDATE_CRON_SCHEDULE=*/1 * * * *
@@ -221,8 +223,6 @@ UPDATE_DOCUMENT_ROOT_FOLDER=public_html
 UPDATE_BACKEND_FOLDER=mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 UPDATE_CRON_SECRET=make-up-a-long-random-password-here
 UPDATE_MANAGE_CRON=1
 ```
@@ -330,8 +330,6 @@ Every setting in the `.env` file and what it does:
 | `UPDATE_BASE_URL` | (Package method only) Where to download the ZIP from |
 | `UPDATE_RUN_SCHEMA` | `1` = apply database changes during update |
 | `UPDATE_RUN_SEED` | Legacy compatibility flag. Automatic updates ignore it and preserve existing rows. |
-| `UPDATE_BACKUP_BEFORE_UPDATE` | `1` = save a backup before each update |
-| `UPDATE_BACKUP_ROOT` | Where to store backups |
 | `UPDATE_CRON_SECRET` | A secret password that protects the update endpoint |
 | `UPDATE_MANAGE_CRON` | `1` = let the system manage the cron job automatically |
 | `UPDATE_CRON_SCHEDULE` | How often to check for updates (default: every 1 minute) |

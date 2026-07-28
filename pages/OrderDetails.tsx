@@ -19,14 +19,19 @@ import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   buildLocalDateTime,
   extractSteadfastTrackingFromHistory,
+  formatActivityStatusTimestamp,
   formatDate,
   formatDateTime,
   formatDateTimeParts,
+  formatHistoryMoment,
+  formatHistoryTextForTimeline,
+  getCurrentTime,
   getPaperflyReferenceNumber,
   getCourierAutoFinalizedOutcome,
   getPreferredCourierFromHistory,
   getTodayDate,
   normalizePhoneSearchValue,
+  parseHistoryTimestamp,
 } from '../utils';
 import { getOrderCompanyPage } from '../src/utils/companyPages';
 
@@ -43,7 +48,7 @@ const OrderDetails: React.FC = () => {
   const createCompletionForm = (activeOrder?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: '',
     amount: activeOrder ? Math.max(activeOrder.total - activeOrder.paidAmount, 0) : 0,
     paymentMethod: '',
@@ -208,14 +213,14 @@ const OrderDetails: React.FC = () => {
   const [pendingStatusTransition, setPendingStatusTransition] = useState<OrderStatusTransition | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0,
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
   });
   const [refundForm, setRefundForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0,
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
@@ -274,96 +279,6 @@ const OrderDetails: React.FC = () => {
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
     return timelineItems.findIndex((item) => item.label === 'Created');
-  };
-
-  const parseHistoryTimestamp = (value?: string | null) => {
-    const raw = String(value || '').trim();
-    if (!raw) return null;
-
-    const candidates: string[] = [raw];
-
-    const onAtMatch = raw.match(/on\s+(.+?)(?:,\s*at\s*|\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i);
-    if (onAtMatch) {
-      const datePart = onAtMatch[1].trim();
-      const timePart = onAtMatch[2].trim().replace(/\./g, '');
-      candidates.push(`${datePart} ${timePart}`);
-      candidates.push(`${datePart}, ${timePart}`);
-    }
-
-    const isoMatch = raw.match(/\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/);
-    if (isoMatch) {
-      candidates.push(isoMatch[0]);
-    }
-
-    for (const candidate of candidates) {
-      const parsed = new Date(candidate);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    return null;
-  };
-
-  const formatHistoryTextForTimeline = (value?: string | null) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-
-    return raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parsed = parseHistoryTimestamp(line);
-        if (!parsed) return line;
-
-        const { date: formattedDate, time: formattedTime } = formatDateTimeParts(parsed);
-        if (!formattedTime) return line;
-
-        const onAtCommaRegex = /(on\s+)(.+?)(,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
-        const commaMatch = line.match(onAtCommaRegex);
-        if (commaMatch && typeof commaMatch.index === 'number') {
-          const prefix = line.slice(0, commaMatch.index);
-          const suffix = line.slice(commaMatch.index + commaMatch[0].length);
-          return `${prefix}${commaMatch[1]}${formattedDate}${commaMatch[3]}${formattedTime}${suffix}`;
-        }
-
-        const onAtNoCommaRegex = /(on\s+)(.+?)(\s+at\s+)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
-        const noCommaMatch = line.match(onAtNoCommaRegex);
-        if (noCommaMatch && typeof noCommaMatch.index === 'number') {
-          const prefix = line.slice(0, noCommaMatch.index);
-          const suffix = line.slice(noCommaMatch.index + noCommaMatch[0].length);
-          return `${prefix}${noCommaMatch[1]}${formattedDate}, at ${formattedTime}${suffix}`;
-        }
-
-        const isoTimestampRegex = /\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/;
-        if (isoTimestampRegex.test(line)) {
-          return line.replace(isoTimestampRegex, `${formattedDate}, at ${formattedTime}`);
-        }
-
-        return line;
-      })
-      .join('\n');
-  };
-
-  const formatStatusTimestamp = (date: Date) => {
-    if (Number.isNaN(date.getTime())) return '';
-    const now = new Date();
-    const local = new Date(date);
-    const isToday = local.toDateString() === now.toDateString();
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const isYesterday = local.toDateString() === yesterday.toDateString();
-
-    const { time } = formatDateTimeParts(local);
-
-    if (isToday) return time;
-    if (isYesterday) return `Yesterday, ${time}`;
-
-    return `${formatDate(local)}, ${time}`;
-  };
-
-  const formatHistoryMoment = (value: Date | string) => {
-    const { date, time } = formatDateTimeParts(value);
-    return `${date}, at ${time}`;
   };
 
   const getStatusDisplayName = (status: OrderStatus) => {
@@ -475,29 +390,29 @@ const OrderDetails: React.FC = () => {
         case 'Created':
           return order.createdAt || order.history?.created;
         case 'Processing':
-          return order.processedAt || order.history?.processing;
+          return order.statusTimestamps?.processing || order.history?.processing;
         case 'Courier assigned':
-          return order.history?.courier;
+          return order.statusTimestamps?.courier || order.history?.courier;
         case 'Picked up':
-          return order.history?.picked;
+          return order.statusTimestamps?.picked || order.history?.picked;
         case 'Delivered':
-          return order.completedAt || order.history?.completed;
+          return order.statusTimestamps?.completed || order.history?.completed;
         case 'Exchanged':
-          return order.completedAt || order.history?.completed;
+          return order.statusTimestamps?.completed || order.history?.completed;
         case 'Exchange processing':
-          return order.history?.exchangeProcessing || order.history?.exchangeCourier || '';
+          return order.statusTimestamps?.exchangeProcessing || order.history?.exchangeProcessing || order.history?.exchangeCourier || '';
         case 'Exchange picked':
-          return order.history?.exchangePicked || '';
+          return order.statusTimestamps?.exchangePicked || order.history?.exchangePicked || '';
         case 'Exchange delivered':
-          return order.history?.exchangeDelivered || order.completedAt || order.history?.completed || '';
+          return order.statusTimestamps?.exchangeDelivered || order.history?.exchangeDelivered || order.history?.completed || '';
         case 'Exchange returned':
-          return order.history?.exchangeReturned || '';
+          return order.statusTimestamps?.exchangeReturned || order.history?.exchangeReturned || '';
         case 'Exchange cancelled':
-          return order.history?.exchangeCancelled || '';
+          return order.statusTimestamps?.exchangeCancelled || order.history?.exchangeCancelled || '';
         case 'Returned':
-          return order.history?.returned;
+          return order.statusTimestamps?.returned || order.history?.returned;
         case 'Cancelled':
-          return order.history?.cancelled;
+          return order.statusTimestamps?.cancelled || order.history?.cancelled;
         default:
           return item.historyKey ? order.history?.[item.historyKey] : '';
       }
@@ -505,7 +420,7 @@ const OrderDetails: React.FC = () => {
 
     const parsed = parseHistoryTimestamp(rawValue);
     if (parsed) {
-      return ` (${formatStatusTimestamp(parsed)})`;
+      return ` (${formatActivityStatusTimestamp(parsed)})`;
     }
 
     return '';
@@ -550,20 +465,20 @@ const OrderDetails: React.FC = () => {
 
     // Build timeline entries, expanding multi-line payment history into separate events
     const baseEntries = [
-      { key: 'created', label: 'Created', icon: ICONS.Plus, text: history.created || defaultCreated },
-      { key: 'processing', label: 'Processing', icon: ICONS.ChevronRight, text: history.processing },
+      { key: 'created', label: 'Created', icon: ICONS.Plus, text: history.created || defaultCreated, timestamp: order.createdAt },
+      { key: 'processing', label: 'Processing', icon: ICONS.ChevronRight, text: history.processing, timestamp: order.statusTimestamps?.processing },
       { key: 'packed', label: 'Packed', icon: ICONS.ChevronRight, text: history.packed },
-      { key: 'courier', label: 'Courier assigned', icon: ICONS.Courier, text: history.courier },
-      { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked },
-      { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed },
-      { key: 'returned', label: 'Returned', icon: ICONS.Close, text: history.returned },
+      { key: 'courier', label: 'Courier assigned', icon: ICONS.Courier, text: history.courier, timestamp: order.statusTimestamps?.courier },
+      { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked, timestamp: order.statusTimestamps?.picked },
+      { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed, timestamp: order.statusTimestamps?.completed },
+      { key: 'returned', label: 'Returned', icon: ICONS.Close, text: history.returned, timestamp: order.statusTimestamps?.returned },
       { key: 'returnExchange', label: 'Return/Exchange', icon: ICONS.Return, text: history.returnExchange },
-      { key: 'exchangeProcessing', label: 'Exchange processing', icon: ICONS.ChevronRight, text: history.exchangeProcessing },
-      { key: 'exchangePicked', label: 'Exchange picked', icon: ICONS.Check, text: history.exchangePicked },
-      { key: 'exchangeDelivered', label: 'Exchange delivered', icon: ICONS.Check, text: history.exchangeDelivered },
-      { key: 'exchangeReturned', label: 'Exchange returned', icon: ICONS.Close, text: history.exchangeReturned },
+      { key: 'exchangeProcessing', label: 'Exchange processing', icon: ICONS.ChevronRight, text: history.exchangeProcessing, timestamp: order.statusTimestamps?.exchangeProcessing },
+      { key: 'exchangePicked', label: 'Exchange picked', icon: ICONS.Check, text: history.exchangePicked, timestamp: order.statusTimestamps?.exchangePicked },
+      { key: 'exchangeDelivered', label: 'Exchange delivered', icon: ICONS.Check, text: history.exchangeDelivered, timestamp: order.statusTimestamps?.exchangeDelivered },
+      { key: 'exchangeReturned', label: 'Exchange returned', icon: ICONS.Close, text: history.exchangeReturned, timestamp: order.statusTimestamps?.exchangeReturned },
       { key: 'exchangeCourier', label: 'Exchange courier', icon: ICONS.Courier, text: history.exchangeCourier },
-      { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled },
+      { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled, timestamp: order.statusTimestamps?.cancelled },
     ].filter((entry) => entry.text);
 
     const paymentLines = String(history.payment || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -672,12 +587,15 @@ const OrderDetails: React.FC = () => {
     };
 
     const entries: ActivityTimelineEntry[] = [...baseEntries, ...paymentEntries]
-      .map((entry, index) => ({
-        ...entry,
-        text: formatHistoryTextForTimeline(entry.text),
-        parsedAt: parseHistoryTimestamp(entry.text),
-        fallbackOrder: lifecycleOrder[entry.key] ?? (100 + index),
-      }));
+      .map((entry, index) => {
+        const timestamp = 'timestamp' in entry ? entry.timestamp : undefined;
+        return {
+          ...entry,
+          text: formatHistoryTextForTimeline(entry.text, timestamp),
+          parsedAt: parseHistoryTimestamp(timestamp || entry.text),
+          fallbackOrder: lifecycleOrder[entry.key] ?? (100 + index),
+        };
+      });
 
     if (surveyGroup) entries.push({ ...surveyGroup, fallbackOrder: 50 });
     entries.sort((a, b) => {
@@ -1291,7 +1209,7 @@ const OrderDetails: React.FC = () => {
 
     setPaymentForm({
       date: getTodayDate(),
-      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: getCurrentTime(),
       accountId: db.settings.defaults.defaultAccountId || '',
       amount: Math.max(settlementTotal - order.paidAmount, 0),
       paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
@@ -1306,7 +1224,7 @@ const OrderDetails: React.FC = () => {
 
     setRefundForm({
       date: getTodayDate(),
-      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: getCurrentTime(),
       accountId: db.settings.defaults.defaultAccountId || '',
       amount: refundDue > 0 ? refundDue : Math.max(order.paidAmount, 0),
       paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',

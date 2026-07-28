@@ -48,39 +48,142 @@ export type FilterRange =
   | 'This Year'
   | 'Custom';
 
-const APP_TIME_ZONE = 'Asia/Dhaka';
+export const APP_TIME_ZONE = 'Asia/Dhaka';
 const UTC_OFFSET_SUFFIX_PATTERN = /(?:[zZ]|[+-]\d{2}(?::?\d{2})?)$/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME_MINUTE_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/;
 const DATE_TIME_SECOND_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/;
-const HISTORY_CREATED_PATTERNS = [
-  /\bon\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}),\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)\b/i,
-  /\bon\s+(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}),\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)\b/i,
-];
+const ISO_TIMESTAMP_PATTERN = /\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[zZ]|[+-]\d{2}:?\d{2})?/;
+const HUMAN_HISTORY_TIMESTAMP_PATTERN = /(?:\bon\s+)?(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})(?:,?\s+at\s+|,\s*at\s*)(\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?)/i;
+const MONTH_INDEX: Record<string, number> = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
+
+type CalendarDateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
 
 const isValidDate = (value: Date): boolean => !Number.isNaN(value.getTime());
 
-const formatYmd = (value: Date): string => {
-  const year = value.getFullYear();
-  const month = `${value.getMonth() + 1}`.padStart(2, '0');
-  const day = `${value.getDate()}`.padStart(2, '0');
+const getTimeZoneParts = (value: Date, timeZone = APP_TIME_ZONE): CalendarDateTimeParts => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second),
+  };
+};
+
+const formatCalendarYmd = (parts: Pick<CalendarDateTimeParts, 'year' | 'month' | 'day'>): string => {
+  const year = `${parts.year}`.padStart(4, '0');
+  const month = `${parts.month}`.padStart(2, '0');
+  const day = `${parts.day}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
 
-const parseYmd = (value: string, endOfDay: boolean): Date | null => {
-  if (!value || !DATE_ONLY_PATTERN.test(value)) return null;
+const formatYmd = (value: Date): string => formatCalendarYmd(getTimeZoneParts(value));
+
+const parseCalendarYmd = (value: string): Pick<CalendarDateTimeParts, 'year' | 'month' | 'day'> | null => {
+  if (!DATE_ONLY_PATTERN.test(value)) return null;
   const [year, month, day] = value.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-  if (!isValidDate(date)) return null;
-  if (endOfDay) date.setHours(23, 59, 59, 999);
-  else date.setHours(0, 0, 0, 0);
-  return date;
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (
+    check.getUTCFullYear() !== year
+    || check.getUTCMonth() !== month - 1
+    || check.getUTCDate() !== day
+  ) return null;
+  return { year, month, day };
+};
+
+const getTimeZoneOffsetMilliseconds = (value: Date, timeZone = APP_TIME_ZONE): number => {
+  const parts = getTimeZoneParts(value, timeZone);
+  const valueWithoutMilliseconds = Math.floor(value.getTime() / 1000) * 1000;
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - valueWithoutMilliseconds;
+};
+
+const buildTimeZoneDate = (
+  parts: CalendarDateTimeParts,
+  milliseconds = 0,
+  timeZone = APP_TIME_ZONE,
+): Date | null => {
+  const utcGuess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, milliseconds);
+  let candidate = new Date(utcGuess - getTimeZoneOffsetMilliseconds(new Date(utcGuess), timeZone));
+  const correctedOffset = getTimeZoneOffsetMilliseconds(candidate, timeZone);
+  candidate = new Date(utcGuess - correctedOffset);
+  if (!isValidDate(candidate)) return null;
+
+  const roundTrip = getTimeZoneParts(candidate, timeZone);
+  if (
+    roundTrip.year !== parts.year
+    || roundTrip.month !== parts.month
+    || roundTrip.day !== parts.day
+    || roundTrip.hour !== parts.hour
+    || roundTrip.minute !== parts.minute
+    || roundTrip.second !== parts.second
+  ) return null;
+  return candidate;
+};
+
+const parseYmd = (value: string, endOfDay: boolean): Date | null => {
+  const calendar = parseCalendarYmd(value);
+  if (!calendar) return null;
+  return buildTimeZoneDate({
+    ...calendar,
+    hour: endOfDay ? 23 : 0,
+    minute: endOfDay ? 59 : 0,
+    second: endOfDay ? 59 : 0,
+  }, endOfDay ? 999 : 0);
 };
 
 const parseDateInput = (value: string): Date | null => {
   const ymd = parseYmd(value, false);
   if (ymd) return ymd;
-  const date = new Date(value);
+  const raw = String(value || '').trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/.test(raw) && !UTC_OFFSET_SUFFIX_PATTERN.test(raw)
+    ? `${raw}Z`
+    : raw;
+  const date = new Date(normalized);
   return isValidDate(date) ? date : null;
 };
 
@@ -90,6 +193,18 @@ const parseCustomDateBoundary = (value: string, edge: 'start' | 'end'): Date | n
 
   if (DATE_ONLY_PATTERN.test(trimmed)) {
     return parseYmd(trimmed, edge === 'end');
+  }
+
+  if (DATE_TIME_MINUTE_PATTERN.test(trimmed) || DATE_TIME_SECOND_PATTERN.test(trimmed)) {
+    const [datePart, timePart = '00:00'] = trimmed.replace('T', ' ').split(' ');
+    const calendar = parseCalendarYmd(datePart);
+    if (!calendar) return null;
+    const [hour = 0, minute = 0, parsedSecond = 0] = timePart.split(':').map(Number);
+    const second = DATE_TIME_MINUTE_PATTERN.test(trimmed) && edge === 'end' ? 59 : parsedSecond;
+    return buildTimeZoneDate(
+      { ...calendar, hour, minute, second },
+      edge === 'end' ? 999 : 0,
+    );
   }
 
   const date = parseDateInput(trimmed);
@@ -119,11 +234,12 @@ export const toDateTimeLocalInputValue = (value: string, edge: 'start' | 'end' =
   const date = parseCustomDateBoundary(value, edge);
   if (!date) return '';
 
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  const hours = `${date.getHours()}`.padStart(2, '0');
-  const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  const parts = getTimeZoneParts(date);
+  const year = parts.year;
+  const month = `${parts.month}`.padStart(2, '0');
+  const day = `${parts.day}`.padStart(2, '0');
+  const hours = `${parts.hour}`.padStart(2, '0');
+  const minutes = `${parts.minute}`.padStart(2, '0');
 
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
@@ -140,15 +256,15 @@ export const normalizeUtcTimestamp = (value?: string | null): string => {
 };
 
 export const buildLocalDateTime = (dateValue: string, timeValue: string = '00:00'): Date | null => {
-  const baseDate = parseYmd(dateValue, false) || parseDateInput(dateValue);
-  if (!baseDate) return null;
-
-  const [hoursStr = '0', minutesStr = '0'] = String(timeValue || '').split(':');
-  const hours = Number(hoursStr);
-  const minutes = Number(minutesStr);
-
-  baseDate.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
-  return baseDate;
+  const calendar = parseCalendarYmd(String(dateValue || '').trim());
+  if (!calendar) return null;
+  const [hoursStr = '0', minutesStr = '0', secondsStr = '0'] = String(timeValue || '').split(':');
+  const hour = Number(hoursStr);
+  const minute = Number(minutesStr);
+  const second = Number(secondsStr);
+  if (![hour, minute, second].every(Number.isFinite)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+  return buildTimeZoneDate({ ...calendar, hour, minute, second });
 };
 
 export const combineDateAndTimeToIso = (dateValue: string, timeValue: string = '00:00'): string => {
@@ -156,21 +272,62 @@ export const combineDateAndTimeToIso = (dateValue: string, timeValue: string = '
   return localDateTime ? localDateTime.toISOString() : '';
 };
 
-export const parseCreatedHistoryTimestamp = (value?: string | null): string => {
+const parseHumanHistoryDate = (datePart: string, timePart: string): Date | null => {
+  const normalizedDate = datePart.trim().replace(/,/g, '');
+  const dayFirst = normalizedDate.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+  const monthFirst = normalizedDate.match(/^([A-Za-z]{3,9})\s+(\d{1,2})\s+(\d{4})$/);
+  const day = Number(dayFirst?.[1] ?? monthFirst?.[2]);
+  const monthName = String(dayFirst?.[2] ?? monthFirst?.[1] ?? '').toLowerCase();
+  const month = MONTH_INDEX[monthName];
+  const year = Number(dayFirst?.[3] ?? monthFirst?.[3]);
+  if (!year || !month || !day) return null;
+
+  const normalizedTime = timePart.trim().toLowerCase().replace(/\./g, '');
+  const timeMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!timeMatch) return null;
+  let hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const second = Number(timeMatch[3] || 0);
+  const meridiem = timeMatch[4];
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    hour = hour % 12 + (meridiem === 'pm' ? 12 : 0);
+  }
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  return buildTimeZoneDate({ year, month, day, hour, minute, second });
+};
+
+/**
+ * Parse an activity-history timestamp without ever consulting the browser's
+ * local timezone. ISO/database values are UTC; legacy readable values are
+ * Bangladesh wall-clock values.
+ */
+export const parseHistoryTimestamp = (value?: string | null): Date | null => {
   const raw = String(value || '').trim();
-  if (!raw) return '';
+  if (!raw) return null;
 
-  for (const pattern of HISTORY_CREATED_PATTERNS) {
-    const match = raw.match(pattern);
-    if (!match?.[1] || !match?.[2]) continue;
-
-    const parsed = new Date(`${match[1]} ${match[2]} +06:00`);
-    if (isValidDate(parsed)) {
-      return parsed.toISOString();
-    }
+  const isoMatch = raw.match(ISO_TIMESTAMP_PATTERN);
+  if (isoMatch?.[0]) {
+    const normalized = normalizeUtcTimestamp(isoMatch[0]);
+    const parsed = new Date(normalized);
+    if (isValidDate(parsed)) return parsed;
   }
 
-  return '';
+  const humanMatch = raw.match(HUMAN_HISTORY_TIMESTAMP_PATTERN);
+  if (humanMatch?.[1] && humanMatch?.[2]) {
+    const parsed = parseHumanHistoryDate(humanMatch[1], humanMatch[2]);
+    if (parsed) return parsed;
+  }
+
+  if (UTC_OFFSET_SUFFIX_PATTERN.test(raw)) {
+    const parsed = new Date(raw);
+    if (isValidDate(parsed)) return parsed;
+  }
+  return null;
+};
+
+export const parseCreatedHistoryTimestamp = (value?: string | null): string => {
+  return parseHistoryTimestamp(value)?.toISOString() || '';
 };
 
 const resolveActivityDate = (
@@ -206,16 +363,15 @@ export const getTransactionActivityDate = (
   );
 };
 
-const startOfToday = (now: Date): Date => {
-  const date = new Date(now);
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
-const endOfDay = (value: Date): Date => {
-  const date = new Date(value);
-  date.setHours(23, 59, 59, 999);
-  return date;
+const shiftCalendarYmd = (value: string, days: number): string => {
+  const calendar = parseCalendarYmd(value);
+  if (!calendar) return value;
+  const shifted = new Date(Date.UTC(calendar.year, calendar.month - 1, calendar.day + days));
+  return formatCalendarYmd({
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  });
 };
 
 const buildDateRange = (
@@ -223,44 +379,38 @@ const buildDateRange = (
   customDates: { from: string; to: string }
 ): { from?: Date; to?: Date } => {
   const now = new Date();
+  const today = formatYmd(now);
+  const todayCalendar = parseCalendarYmd(today)!;
+  const todayStart = parseYmd(today, false)!;
+  const todayEnd = parseYmd(today, true)!;
 
   if (filterRange === 'All Time') return {};
 
   if (filterRange === 'Today') {
-    return { from: startOfToday(now), to: endOfDay(now) };
+    return { from: todayStart, to: todayEnd };
   }
 
   if (filterRange === 'Last 7 days') {
-    const from = new Date(now);
-    from.setDate(now.getDate() - 6);
-    from.setHours(0, 0, 0, 0);
-    return { from, to: endOfDay(now) };
+    return { from: parseYmd(shiftCalendarYmd(today, -6), false)!, to: todayEnd };
   }
 
   if (filterRange === 'Last 30 days') {
-    const from = new Date(now);
-    from.setDate(now.getDate() - 29);
-    from.setHours(0, 0, 0, 0);
-    return { from, to: endOfDay(now) };
+    return { from: parseYmd(shiftCalendarYmd(today, -29), false)!, to: todayEnd };
   }
 
   if (filterRange === 'This Week') {
-    const first = new Date(now);
-    first.setDate(now.getDate() - now.getDay());
-    first.setHours(0, 0, 0, 0);
-    return { from: first, to: endOfDay(now) };
+    const weekday = new Date(Date.UTC(todayCalendar.year, todayCalendar.month - 1, todayCalendar.day)).getUTCDay();
+    return { from: parseYmd(shiftCalendarYmd(today, -weekday), false)!, to: todayEnd };
   }
 
   if (filterRange === 'This Month') {
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    from.setHours(0, 0, 0, 0);
-    return { from, to: endOfDay(now) };
+    const monthStart = formatCalendarYmd({ ...todayCalendar, day: 1 });
+    return { from: parseYmd(monthStart, false)!, to: todayEnd };
   }
 
   if (filterRange === 'This Year') {
-    const from = new Date(now.getFullYear(), 0, 1);
-    from.setHours(0, 0, 0, 0);
-    return { from, to: endOfDay(now) };
+    const yearStart = formatCalendarYmd({ year: todayCalendar.year, month: 1, day: 1 });
+    return { from: parseYmd(yearStart, false)!, to: todayEnd };
   }
 
   const from = parseCustomDateBoundary(customDates.from, 'start') || undefined;
@@ -321,6 +471,15 @@ const parseDisplayDate = (value: DateDisplayValue): { date: Date; hasTime: boole
   const raw = String(value || '').trim();
   if (!raw) return null;
   const hasTime = raw.length > 10;
+  if (!hasTime && DATE_ONLY_PATTERN.test(raw)) {
+    const calendar = parseCalendarYmd(raw);
+    if (!calendar) return null;
+    return {
+      date: new Date(Date.UTC(calendar.year, calendar.month - 1, calendar.day)),
+      hasTime: false,
+      fallback: raw,
+    };
+  }
   const normalized = hasTime ? normalizeUtcTimestamp(raw) || raw : raw;
   const date = parseDateInput(normalized);
   return date ? { date, hasTime, fallback: raw } : null;
@@ -338,7 +497,7 @@ export const formatDate = (value: DateDisplayValue): string => {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    ...(parsed.hasTime ? { timeZone: APP_TIME_ZONE } : {}),
+    timeZone: parsed.hasTime ? APP_TIME_ZONE : 'UTC',
   }).format(parsed.date);
 };
 
@@ -363,6 +522,67 @@ export const formatDateTimeParts = (
 export const formatDateTime = (value?: DateDisplayValue): string => {
   const { date, time } = formatDateTimeParts(value);
   return date && time ? `${date}, ${time}` : date;
+};
+
+/** Current HH:mm value in Bangladesh, suitable for time inputs. */
+export const getCurrentTime = (now: Date = new Date()): string => {
+  const parts = getTimeZoneParts(now);
+  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+};
+
+/** Human-readable history moment, always rendered as Bangladesh time. */
+export const formatHistoryMoment = (value: DateDisplayValue = new Date()): string => {
+  const { date, time } = formatDateTimeParts(value);
+  return date && time ? `${date}, at ${time}` : date;
+};
+
+/** Status suffix using Bangladesh calendar boundaries for Today/Yesterday. */
+export const formatActivityStatusTimestamp = (value: DateDisplayValue, now: Date = new Date()): string => {
+  const parsed = value instanceof Date ? value : parseHistoryTimestamp(String(value || ''));
+  if (!parsed || !isValidDate(parsed)) return '';
+  const valueYmd = formatYmd(parsed);
+  const todayYmd = formatYmd(now);
+  const { time } = formatDateTimeParts(parsed);
+  if (valueYmd === todayYmd) return time;
+  if (valueYmd === shiftCalendarYmd(todayYmd, -1)) return `Yesterday, ${time}`;
+  return `${formatDate(parsed)}, ${time}`;
+};
+
+/**
+ * Normalize the readable timestamp inside activity text. An authoritative ISO
+ * value (for example, a server-side order status event) wins over legacy text.
+ */
+export const formatHistoryTextForTimeline = (
+  value?: string | null,
+  authoritativeTimestamp?: string | null,
+): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const authoritative = parseHistoryTimestamp(authoritativeTimestamp);
+
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parsed = authoritative || parseHistoryTimestamp(line);
+      if (!parsed) return line;
+      const { date, time } = formatDateTimeParts(parsed);
+      if (!date || !time) return line;
+
+      const humanMatch = line.match(HUMAN_HISTORY_TIMESTAMP_PATTERN);
+      if (humanMatch && typeof humanMatch.index === 'number') {
+        const matchedText = humanMatch[0];
+        const hasOnPrefix = /^on\s+/i.test(matchedText);
+        const replacement = `${hasOnPrefix ? 'on ' : ''}${date}, at ${time}`;
+        return `${line.slice(0, humanMatch.index)}${replacement}${line.slice(humanMatch.index + matchedText.length)}`;
+      }
+      if (ISO_TIMESTAMP_PATTERN.test(line)) {
+        return line.replace(ISO_TIMESTAMP_PATTERN, `${date}, at ${time}`);
+      }
+      return line;
+    })
+    .join('\n');
 };
 
 export const openAttachmentPreview = (attachmentUrl?: string | null): boolean => {
@@ -477,8 +697,8 @@ export const getPaperflyReferenceNumber = (
 /**
  * Get today's date in YYYY-MM-DD format
  */
-export const getTodayDate = (): string => {
-  return formatYmd(new Date());
+export const getTodayDate = (now: Date = new Date()): string => {
+  return formatYmd(now);
 };
 
 /**

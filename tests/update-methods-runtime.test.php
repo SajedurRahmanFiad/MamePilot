@@ -48,6 +48,22 @@ function removeUpdateMethodTree(string $path): void
     @rmdir($path);
 }
 
+function createUpdateMethodPackage(string $path, string $version, string $markerName): void
+{
+    if (!class_exists(ZipArchive::class)) {
+        throw new RuntimeException('ZipArchive is required for the updater runtime test.');
+    }
+
+    $zip = new ZipArchive();
+    $opened = $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    if ($opened !== true) {
+        throw new RuntimeException("Failed to create updater test package: {$path}");
+    }
+    $zip->addFromString('mamepilot_backend/VERSION', $version . "\n");
+    $zip->addFromString('mamepilot_backend/' . $markerName, "test\n");
+    $zip->close();
+}
+
 $tempRoot = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
     . DIRECTORY_SEPARATOR
     . 'mamepilot-update-methods-'
@@ -57,6 +73,9 @@ $publisherRoot = $tempRoot . DIRECTORY_SEPARATOR . 'publisher';
 $gitDeploymentRoot = $tempRoot . DIRECTORY_SEPARATOR . 'git-deployment';
 $packageDeploymentRoot = $tempRoot . DIRECTORY_SEPARATOR . 'package-deployment';
 $packageVersionPath = $tempRoot . DIRECTORY_SEPARATOR . 'central-VERSION';
+$packageReleasePath = $tempRoot . DIRECTORY_SEPARATOR . 'central-release.zip';
+$packageTempRoot = $tempRoot . DIRECTORY_SEPARATOR . 'package-temp';
+$legacyBackupRoot = $tempRoot . DIRECTORY_SEPARATOR . 'legacy-update-backups';
 
 try {
     mkdir($tempRoot, 0700, true);
@@ -109,6 +128,61 @@ try {
     updateMethodAssert(($packageCheck['method'] ?? null) === 'package', 'Package deployments did not select the ZIP updater.');
     updateMethodAssert(($packageCheck['remoteVersion'] ?? null) === '3.0.0', 'Package check did not read the central VERSION file.');
     updateMethodAssert(($packageCheck['versionSource'] ?? null) === $packageVersionPath, 'Package version source was not preserved.');
+
+    mkdir($packageTempRoot, 0700, true);
+    $packageUpdateConfigValues = [
+        'UPDATE_ENABLED' => '1',
+        'UPDATE_USE_GIT' => '0',
+        'UPDATE_PROJECT_ROOT' => $packageDeploymentRoot,
+        'UPDATE_APP_ROOT' => $packageDeploymentRoot,
+        'UPDATE_VERSION_URL' => $packageVersionPath,
+        'UPDATE_RELEASE_URL' => $packageReleasePath,
+        'UPDATE_TEMP_DIR' => $packageTempRoot,
+        'UPDATE_RUN_SCHEMA' => '0',
+        'UPDATE_RUN_MIGRATIONS' => '0',
+        'UPDATE_MANAGE_CRON' => '0',
+        'AUTO_CALL_MANAGE_CRON' => '0',
+        'AUDIT_LOG_FILE' => $tempRoot . DIRECTORY_SEPARATOR . 'update-audit.jsonl',
+        // Legacy values must no longer enable pre-update application copies.
+        'UPDATE_BACKUP_BEFORE_UPDATE' => '1',
+        'UPDATE_BACKUP_ROOT' => $legacyBackupRoot,
+    ];
+
+    createUpdateMethodPackage($packageReleasePath, '2.9.0', 'must-not-deploy.txt');
+    $mismatchThrown = false;
+    try {
+        $mismatchConfig = new Config($packageUpdateConfigValues);
+        (new UpdateManager($mismatchConfig, new Database($mismatchConfig)))->update();
+    } catch (RuntimeException $exception) {
+        $mismatchThrown = str_contains(
+            $exception->getMessage(),
+            'Release package version 2.9.0 does not match advertised version 3.0.0.',
+        );
+    }
+    updateMethodAssert($mismatchThrown, 'Package update did not reject a ZIP whose VERSION differs from the advertised release.');
+    updateMethodAssert(!is_file($packageDeploymentRoot . DIRECTORY_SEPARATOR . 'must-not-deploy.txt'), 'Mismatched package content was deployed.');
+    updateMethodAssert(glob($packageTempRoot . DIRECTORY_SEPARATOR . 'mamepilot-update-*') === [], 'Failed package update left a temporary directory behind.');
+    updateMethodAssert(!is_dir($legacyBackupRoot), 'Failed package update created a legacy application backup.');
+
+    createUpdateMethodPackage($packageReleasePath, '3.0.0', 'valid-release.txt');
+    $validConfig = new Config($packageUpdateConfigValues);
+    $packageResult = (new UpdateManager($validConfig, new Database($validConfig)))->update();
+    updateMethodAssert(($packageResult['updated'] ?? false) === true, 'Matching package update did not complete.');
+    updateMethodAssert(
+        array_key_exists('backupRoot', $packageResult) && $packageResult['backupRoot'] === null,
+        'Package update reported an application backup.',
+    );
+    updateMethodAssert(is_file($packageDeploymentRoot . DIRECTORY_SEPARATOR . 'valid-release.txt'), 'Matching package content was not deployed.');
+    updateMethodAssert(glob($packageTempRoot . DIRECTORY_SEPARATOR . 'mamepilot-update-*') === [], 'Successful package update left a temporary directory behind.');
+    updateMethodAssert(!is_dir($legacyBackupRoot), 'Successful package update created a legacy application backup.');
+
+    $abandonedTempRoot = $packageTempRoot . DIRECTORY_SEPARATOR . 'mamepilot-update-20260101000000-deadbeef';
+    mkdir($abandonedTempRoot, 0700, true);
+    file_put_contents($abandonedTempRoot . DIRECTORY_SEPARATOR . 'abandoned.txt', "test\n");
+    touch($abandonedTempRoot, time() - 3600);
+    $noUpdateResult = (new UpdateManager($validConfig, new Database($validConfig)))->update();
+    updateMethodAssert(($noUpdateResult['updated'] ?? true) === false, 'Current package unexpectedly ran another update.');
+    updateMethodAssert(!is_dir($abandonedTempRoot), 'A later update check did not remove an abandoned temporary workspace.');
 
     $releaseScript = (string) file_get_contents(dirname(__DIR__) . '/scripts/release-push.ps1');
     $publisherScript = (string) file_get_contents(dirname(__DIR__) . '/scripts/publish-cpanel-release.ps1');

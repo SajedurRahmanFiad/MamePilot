@@ -182,10 +182,11 @@ UPDATE_BACKEND_FOLDER=mamepilot_backend
 UPDATE_RUN_SCHEMA=1
 UPDATE_RUN_SEED=0
 UPDATE_RUN_MIGRATIONS=0
-UPDATE_BACKUP_BEFORE_UPDATE=1
-UPDATE_BACKUP_ROOT=/home/your-cpanel-user/mamepilot_backups
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
+
+Automatic updates do not create application backups. The downloaded ZIP and
+temporary extraction workspace are removed after every successful or failed attempt.
 
 Check manually from the backend folder:
 

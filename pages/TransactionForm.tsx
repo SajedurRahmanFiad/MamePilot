@@ -9,7 +9,7 @@ import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults, useTr
 import { useCreateTransaction, useUpdateTransaction } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
-import { buildLocalDateTime, compressImage, formatDate, getTodayDate, normalizeUtcTimestamp, openAttachmentPreview } from '../utils';
+import { buildLocalDateTime, compressImage, formatDate, getCurrentTime, getTodayDate, normalizeUtcTimestamp, openAttachmentPreview } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 
 type TransactionFormState = {
@@ -24,8 +24,7 @@ type TransactionFormState = {
   attachmentUrl: string;
 };
 
-const getDefaultTimeValue = (): string =>
-  new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false });
+const getDefaultTimeValue = (): string => getCurrentTime();
 
 const createInitialFormState = (): TransactionFormState => ({
   date: getTodayDate(),

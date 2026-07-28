@@ -28,6 +28,7 @@ import {
   formatDate,
   formatDateTimeParts,
   getDateTimeFilters,
+  getCurrentTime,
   getCourierAutoFinalizedOutcome,
   getOrderActivityDate,
   getPaperflyReferenceNumber,
@@ -77,7 +78,7 @@ const Orders: React.FC = () => {
   const createCompletionForm = (order?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: '',
     amount: order ? Math.max(order.total - order.paidAmount, 0) : 0,
     paymentMethod: '',
@@ -169,7 +170,7 @@ const Orders: React.FC = () => {
   const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
   const [paymentForm, setPaymentForm] = useState({
     date: getTodayDate(),
-    time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    time: getCurrentTime(),
     accountId: db.settings.defaults.defaultAccountId || '',
     amount: 0,
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
@@ -1044,7 +1045,7 @@ const Orders: React.FC = () => {
     setPaymentOrder(order);
     setPaymentForm({
       date: getTodayDate(),
-      time: new Date().toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: getCurrentTime(),
       accountId: db.settings.defaults.defaultAccountId || '',
       amount: Math.max(order.total - order.paidAmount, 0),
       paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',

@@ -628,9 +628,22 @@ export interface Order {
     exchangeReturned?: string; // history entry for exchange returned
     exchangeCancelled?: string; // history entry for exchange cancelled
   };
+  /** Server-authored UTC instants for lifecycle changes; legacy orders fall back to history text. */
+  statusTimestamps?: Partial<Record<
+    | 'processing'
+    | 'courier'
+    | 'picked'
+    | 'completed'
+    | 'returned'
+    | 'cancelled'
+    | 'exchangeProcessing'
+    | 'exchangePicked'
+    | 'exchangeDelivered'
+    | 'exchangeReturned'
+    | 'exchangeCancelled',
+    string
+  >>;
   paidAmount: number;
-  processedAt?: string; // ISO timestamp when marked processing
-  completedAt?: string; // ISO timestamp when marked completed
   paidAt?: string; // ISO timestamp when payment received
   // Relational fields: populated from joined customer and user data
   // Present when fetching paginated orders via orders_with_customer_creator view
@@ -735,8 +748,6 @@ export interface Bill {
     refund?: string;
   };
   paidAmount: number;
-  processedAt?: string; // ISO timestamp when marked processing
-  receivedAt?: string; // ISO timestamp when marked received
   paidAt?: string; // ISO timestamp when payment received
   // Relational fields populated by joined paginated queries
   vendorName?: string;
