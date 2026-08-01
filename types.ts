@@ -808,6 +808,7 @@ export interface UserActivityPerformanceMetrics {
   processingOrders: number;
   pickedOrders: number;
   onHoldOrders: number;
+  returnedOrders: number;
   cancelledOrders: number;
   orderValue: number;
   completedOrderValue: number;

@@ -40,6 +40,7 @@ declare(strict_types=1);
  *   renewal_date DATETIME NULL,
  *   capability_overrides LONGTEXT NULL,
  *   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
+ *   pricing_metadata LONGTEXT NULL,
  *   notes TEXT NULL,
  *   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  *   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -257,6 +258,33 @@ function maintenancePayload(array $row, string $licenseKey = ''): array
     ];
 }
 
+function ensureLicensePricingSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked || !tableExists($pdo, 'licenses')) {
+        return;
+    }
+
+    $statement = $pdo->prepare(
+        "SELECT 1 FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = 'licenses' AND column_name = 'pricing_metadata'
+         LIMIT 1"
+    );
+    $statement->execute();
+    if ($statement->fetch() === false) {
+        try {
+            $pdo->exec('ALTER TABLE `licenses` ADD COLUMN `pricing_metadata` LONGTEXT NULL AFTER `override_enabled`');
+        } catch (PDOException $exception) {
+            // Concurrent first requests may both attempt the same additive repair.
+            if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
+                throw $exception;
+            }
+        }
+    }
+
+    $checked = true;
+}
+
 function mysqlUtcDateTime($value): ?string
 {
     $text = trim((string) ($value ?? ''));
@@ -465,6 +493,11 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
     $overrideEnabled = (int) ($license['override_enabled'] ?? 0) === 1;
     $overrideCapabilities = capabilitiesFrom($license['capability_overrides'] ?? '[]');
     $resolvedCapabilities = $overrideEnabled ? $overrideCapabilities : $tierCapabilities;
+    $storedPricingMetadata = pricingMetadataFrom($license['pricing_metadata'] ?? []);
+    $resolvedPricingMetadata = array_replace([
+        'monthly' => (float) $tier['monthly_price'],
+        'yearly' => (float) $tier['yearly_price'],
+    ], $storedPricingMetadata);
 
     return [
         'license_key' => $licenseKey,
@@ -477,10 +510,7 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
         'override_enabled' => $overrideEnabled,
         'capabilities' => $resolvedCapabilities,
         'tier_capabilities' => $tierCapabilities,
-        'pricing_metadata' => [
-            'monthly' => (float) $tier['monthly_price'],
-            'yearly' => (float) $tier['yearly_price'],
-        ],
+        'pricing_metadata' => $resolvedPricingMetadata,
         'available_tiers' => activeTiers($pdo),
         'updated_at' => $license['updated_at'] ?? gmdate('c'),
     ];
@@ -589,6 +619,7 @@ $action = trim((string) ($body['action'] ?? 'resolve_license'));
 
 try {
     $pdo = db();
+    ensureLicensePricingSchema($pdo);
 
     if ($action === 'list_tiers') {
         respond(200, ['tiers' => activeTiers($pdo)]);
@@ -995,13 +1026,13 @@ try {
         if ($existing->fetch()) {
             $statement = $pdo->prepare(
                 'UPDATE licenses
-                 SET client_name = :client_name, domain = :domain, tier_key = :tier_key, status = :status, renewal_date = :renewal_date, updated_at = CURRENT_TIMESTAMP
+                 SET client_name = :client_name, domain = :domain, tier_key = :tier_key, status = :status, renewal_date = :renewal_date, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
                  WHERE license_key = :license_key'
             );
         } else {
             $statement = $pdo->prepare(
-                'INSERT INTO licenses (license_key, client_name, domain, tier_key, status, renewal_date)
-                 VALUES (:license_key, :client_name, :domain, :tier_key, :status, :renewal_date)'
+                'INSERT INTO licenses (license_key, client_name, domain, tier_key, status, renewal_date, pricing_metadata)
+                 VALUES (:license_key, :client_name, :domain, :tier_key, :status, :renewal_date, :pricing_metadata)'
             );
         }
 
@@ -1012,13 +1043,12 @@ try {
             ':tier_key' => $tierKey,
             ':status' => trim((string) ($body['status'] ?? 'active')) ?: 'active',
             ':renewal_date' => trim((string) ($body['renewal_date'] ?? '')) ?: null,
+            ':pricing_metadata' => $pricingMetadata !== []
+                ? json_encode($pricingMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : null,
         ]);
 
-        $responsePayload = resolveLicense($pdo, $licenseKey);
-        if ($pricingMetadata !== []) {
-            $responsePayload['pricing_metadata'] = $pricingMetadata;
-        }
-        respond(200, $responsePayload);
+        respond(200, resolveLicense($pdo, $licenseKey));
     }
 
     if ($action === 'update_license_override') {
@@ -1031,19 +1061,18 @@ try {
         $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
         $statement = $pdo->prepare(
             'UPDATE licenses
-             SET capability_overrides = :capability_overrides, override_enabled = 1, updated_at = CURRENT_TIMESTAMP
+             SET capability_overrides = :capability_overrides, override_enabled = 1, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
              WHERE license_key = :license_key'
         );
         $statement->execute([
             ':license_key' => $licenseKey,
             ':capability_overrides' => json_encode($capabilities, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':pricing_metadata' => $pricingMetadata !== []
+                ? json_encode($pricingMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : null,
         ]);
 
-        $responsePayload = resolveLicense($pdo, $licenseKey);
-        if ($pricingMetadata !== []) {
-            $responsePayload['pricing_metadata'] = $pricingMetadata;
-        }
-        respond(200, $responsePayload);
+        respond(200, resolveLicense($pdo, $licenseKey));
     }
 
     if ($action === 'reset_license_override') {
@@ -1054,14 +1083,12 @@ try {
 
         $statement = $pdo->prepare(
             'UPDATE licenses
-             SET capability_overrides = NULL, override_enabled = 0, updated_at = CURRENT_TIMESTAMP
+             SET capability_overrides = NULL, override_enabled = 0, pricing_metadata = NULL, updated_at = CURRENT_TIMESTAMP
              WHERE license_key = :license_key'
         );
         $statement->execute([':license_key' => $licenseKey]);
 
-        $responsePayload = resolveLicense($pdo, $licenseKey);
-        $responsePayload['pricing_metadata'] = [];
-        respond(200, $responsePayload);
+        respond(200, resolveLicense($pdo, $licenseKey));
     }
 
     if ($action === 'list_deployments') {

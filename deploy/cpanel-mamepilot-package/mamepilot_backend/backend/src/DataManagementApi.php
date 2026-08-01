@@ -10,6 +10,17 @@ use Throwable;
 final class DataManagementApi extends BaseService
 {
     private const MAX_IMPORT_ROWS = 250;
+    private const DATASET_CAPABILITIES = [
+        'orders' => 'sales',
+        'products' => 'inventory',
+        'customers' => 'sales',
+        'bills' => 'purchases',
+        'vendors' => 'purchases',
+        'transactions' => 'banking',
+        'accounts' => 'banking',
+        'users' => 'human_resources',
+        'leads' => 'automatic_leads',
+    ];
 
     /**
      * @return array<string, array<string, mixed>>
@@ -19,6 +30,7 @@ final class DataManagementApi extends BaseService
         return [
             'orders' => [
                 'label' => 'Orders',
+                'capability' => self::DATASET_CAPABILITIES['orders'],
                 'description' => 'One row per order item. Reuse the same Order Number for additional items; missing customers and products are created automatically. Existing orders are never changed.',
                 'fields' => [
                     $this->field('orderNumber', 'Order Number', true, ['order no', 'invoice number']),
@@ -49,6 +61,7 @@ final class DataManagementApi extends BaseService
             ],
             'products' => [
                 'label' => 'Products',
+                'capability' => self::DATASET_CAPABILITIES['products'],
                 'description' => 'Product catalog with human-readable category and unit names. Existing products are skipped, not overwritten.',
                 'fields' => [
                     $this->field('name', 'Product Name', true, ['name', 'item name']),
@@ -67,6 +80,7 @@ final class DataManagementApi extends BaseService
             ],
             'customers' => [
                 'label' => 'Customers',
+                'capability' => self::DATASET_CAPABILITIES['customers'],
                 'description' => 'Customer contact details. Existing phone numbers are skipped; order counts and due amounts are calculated by the app.',
                 'fields' => [
                     $this->field('name', 'Customer Name', true, ['name', 'client name']),
@@ -77,6 +91,7 @@ final class DataManagementApi extends BaseService
             ],
             'bills' => [
                 'label' => 'Bills',
+                'capability' => self::DATASET_CAPABILITIES['bills'],
                 'description' => 'One row per bill item. Reuse the same Bill Number for additional items; missing vendors and products are created automatically. Existing bills are never changed.',
                 'fields' => [
                     $this->field('billNumber', 'Bill Number', true, ['bill no', 'invoice number']),
@@ -102,6 +117,7 @@ final class DataManagementApi extends BaseService
             ],
             'vendors' => [
                 'label' => 'Vendors',
+                'capability' => self::DATASET_CAPABILITIES['vendors'],
                 'description' => 'Vendor contact details. Existing phone numbers are skipped; purchase counts and due amounts are calculated by the app.',
                 'fields' => [
                     $this->field('name', 'Vendor Name', true, ['name', 'supplier name']),
@@ -112,6 +128,7 @@ final class DataManagementApi extends BaseService
             ],
             'transactions' => [
                 'label' => 'Transactions',
+                'capability' => self::DATASET_CAPABILITIES['transactions'],
                 'description' => 'Income, expenses, and transfers using account names. Missing accounts are created automatically and existing transactions are never reapplied.',
                 'fields' => [
                     $this->field('transactionId', 'Transaction ID', false, ['reference number', 'transaction no']),
@@ -142,6 +159,7 @@ final class DataManagementApi extends BaseService
             ],
             'accounts' => [
                 'label' => 'Accounts',
+                'capability' => self::DATASET_CAPABILITIES['accounts'],
                 'description' => 'Bank and cash accounts. Existing account names are skipped so their balances are never overwritten.',
                 'fields' => [
                     $this->field('name', 'Account Name', true, ['name', 'bank name', 'cash account']),
@@ -155,6 +173,7 @@ final class DataManagementApi extends BaseService
             ],
             'users' => [
                 'label' => 'Users',
+                'capability' => self::DATASET_CAPABILITIES['users'],
                 'description' => 'User profiles and roles. Existing phone numbers are skipped. Passwords are never exported; a password is required only for a brand-new user.',
                 'fields' => [
                     $this->field('name', 'User Name', true, ['name', 'employee name']),
@@ -179,6 +198,36 @@ final class DataManagementApi extends BaseService
                     'address' => 'Mirpur, Dhaka', 'birthday' => '1995-05-15', 'nidPassportCopy' => '',
                     'gender' => 'Male', 'bloodGroup' => 'B+', 'nationality' => 'Bangladeshi', 'cv' => '',
                     'isCommissionBased' => 'yes', 'fixedSalary' => '',
+                ],
+            ],
+            'leads' => [
+                'label' => 'Leads',
+                'capability' => self::DATASET_CAPABILITIES['leads'],
+                'description' => 'Messenger and WhatsApp lead profiles with readable contact and qualification fields. Existing channel contacts are skipped and never overwritten.',
+                'fields' => [
+                    $this->field('name', 'Lead Name', true, ['name', 'contact name']),
+                    $this->field('phone', 'Phone', false, ['mobile', 'phone number']),
+                    $this->field('email', 'Email', false, ['email address']),
+                    $this->field('address', 'Address', false, ['contact address']),
+                    $this->field('sourceChannel', 'Source Channel', true, ['channel', 'source']),
+                    $this->field('status', 'Status', false, ['lead status']),
+                    $this->field('stage', 'Stage', false, ['sales stage']),
+                    $this->field('score', 'Lead Score', false, ['score'], 'number'),
+                    $this->field('orderProbability', 'Order Probability', false, ['order chance', 'probability'], 'number'),
+                    $this->field('interestedProducts', 'Interested Products', false, ['products', 'product interests']),
+                    $this->field('buyingSignals', 'Buying Signals', false, ['signals']),
+                    $this->field('objections', 'Objections', false, ['concerns']),
+                    $this->field('nextAction', 'Next Action', false, ['recommended action']),
+                    $this->field('notes', 'Analysis Notes', false, ['notes', 'notices']),
+                    $this->field('lastMessageAt', 'Last Message At', false, ['last contact', 'last message'], 'datetime'),
+                ],
+                'sampleRow' => [
+                    'name' => 'Nusrat Jahan', 'phone' => '01700000000', 'email' => 'nusrat@example.com',
+                    'address' => 'Uttara, Dhaka', 'sourceChannel' => 'messenger', 'status' => 'qualified',
+                    'stage' => 'qualified', 'score' => '78', 'orderProbability' => '72',
+                    'interestedProducts' => 'Premium T-Shirt; Gift Box', 'buyingSignals' => 'Asked about delivery; Confirmed preferred color',
+                    'objections' => 'Wants delivery before Friday', 'nextAction' => 'Confirm stock and delivery date',
+                    'notes' => 'Respond within business hours', 'lastMessageAt' => '2026-07-22 10:30:00',
                 ],
             ],
         ];
@@ -214,13 +263,14 @@ final class DataManagementApi extends BaseService
                 'key' => $key,
                 'label' => $definition['label'],
                 'description' => $definition['description'],
+                'capability' => $definition['capability'],
                 'fields' => $definition['fields'],
                 'sampleRow' => $definition['sampleRow'],
             ];
         }
 
         return [
-            'schemaVersion' => 3,
+            'schemaVersion' => 4,
             'datasets' => $datasets,
             'settingsTabs' => array_values(array_map(
                 static fn(array $definition): array => [
@@ -235,23 +285,26 @@ final class DataManagementApi extends BaseService
 
     public function exportDataRecords(array $params): array
     {
-        $this->requireAdmin();
+        $actor = $this->requireAdmin();
         $entity = $this->requireDataset((string) ($params['entity'] ?? ''));
+        $this->assertDatasetAccess($entity, $actor, (string) ($params['dependencyFor'] ?? ''));
+        $dateRange = $this->resolveExportDateRange($params);
         $rows = match ($entity) {
-            'orders' => $this->exportOrders(),
-            'products' => $this->exportProducts(),
-            'customers' => $this->exportCustomers(),
-            'bills' => $this->exportBills(),
-            'vendors' => $this->exportVendors(),
-            'transactions' => $this->exportTransactions(),
-            'accounts' => $this->exportAccounts(),
-            'users' => $this->exportUsers(),
+            'orders' => $this->exportOrders($dateRange),
+            'products' => $this->exportProducts($dateRange),
+            'customers' => $this->exportCustomers($dateRange),
+            'bills' => $this->exportBills($dateRange),
+            'vendors' => $this->exportVendors($dateRange),
+            'transactions' => $this->exportTransactions($dateRange),
+            'accounts' => $this->exportAccounts($dateRange),
+            'users' => $this->exportUsers($dateRange),
+            'leads' => $this->exportLeads($dateRange),
         };
         $definition = $this->datasetDefinitions()[$entity];
 
         return [
             'app' => 'MamePilot',
-            'schemaVersion' => 3,
+            'schemaVersion' => 4,
             'entity' => $entity,
             'exportedAt' => gmdate('c'),
             'filename' => sprintf('mamepilot-%s-%s.csv', $entity, gmdate('Y-m-d-His')),
@@ -264,6 +317,7 @@ final class DataManagementApi extends BaseService
     {
         $actor = $this->requireAdmin();
         $entity = $this->requireDataset((string) ($params['entity'] ?? ''));
+        $this->assertDatasetAccess($entity, $actor, (string) ($params['dependencyFor'] ?? ''));
         $rows = is_array($params['rows'] ?? null) ? array_values($params['rows']) : [];
         if ($rows === []) {
             throw new RuntimeException('The import batch does not contain any rows.');
@@ -300,6 +354,7 @@ final class DataManagementApi extends BaseService
                         'transactions' => $this->importTransaction($rawRow, $actor),
                         'accounts' => $this->importAccount($rawRow),
                         'users' => $this->importUser($rawRow),
+                        'leads' => $this->importLead($rawRow),
                     };
                     $this->database->execute('RELEASE SAVEPOINT data_import_row');
                     $result[$operation]++;
@@ -988,6 +1043,138 @@ final class DataManagementApi extends BaseService
         return $entity;
     }
 
+    /** @param array<string, mixed> $actor */
+    private function canAccessDataset(string $entity, array $actor): bool
+    {
+        if (trim((string) ($actor['role'] ?? '')) === 'Developer') {
+            return true;
+        }
+        $capability = self::DATASET_CAPABILITIES[$entity] ?? null;
+        if ($capability === null) {
+            return false;
+        }
+        $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
+        return !empty($capabilities[$capability]);
+    }
+
+    /** @param array<string, mixed> $actor */
+    private function assertDatasetAccess(string $entity, array $actor, string $dependencyFor = ''): void
+    {
+        if ($this->canAccessDataset($entity, $actor)) {
+            return;
+        }
+        if ($entity === 'accounts'
+            && in_array($dependencyFor, ['orders', 'bills', 'transactions'], true)
+            && $this->canAccessDataset($dependencyFor, $actor)
+        ) {
+            return;
+        }
+        throw new ApiException('This data type is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
+            'capability' => self::DATASET_CAPABILITIES[$entity] ?? '',
+        ]);
+    }
+
+    /**
+     * @return array{from: string|null, to: string|null}
+     */
+    private function resolveExportDateRange(array $params): array
+    {
+        $filterRange = trim((string) ($params['filterRange'] ?? 'All Time'));
+        $supportedRanges = ['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom'];
+        if (!in_array($filterRange, $supportedRanges, true)) {
+            throw new RuntimeException('Select a supported export date range.');
+        }
+        if ($filterRange === 'All Time') {
+            return ['from' => null, 'to' => null];
+        }
+
+        $localTimezone = new \DateTimeZone($this->config->timezone());
+        $now = new \DateTimeImmutable('now', $localTimezone);
+        $from = null;
+        $to = null;
+
+        if ($filterRange === 'Today') {
+            $from = $now->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } elseif ($filterRange === 'Last 7 days') {
+            $from = $now->modify('-6 days')->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } elseif ($filterRange === 'Last 30 days') {
+            $from = $now->modify('-29 days')->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } elseif ($filterRange === 'This Week') {
+            $from = $now->modify('-' . (int) $now->format('w') . ' days')->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } elseif ($filterRange === 'This Month') {
+            $from = $now->modify('first day of this month')->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } elseif ($filterRange === 'This Year') {
+            $from = $now->setDate((int) $now->format('Y'), 1, 1)->setTime(0, 0, 0);
+            $to = $now->setTime(23, 59, 59);
+        } else {
+            $customDates = is_array($params['customDates'] ?? null) ? $params['customDates'] : [];
+            $fromValue = trim((string) ($customDates['from'] ?? ''));
+            $toValue = trim((string) ($customDates['to'] ?? ''));
+            if ($fromValue === '' && $toValue === '') {
+                throw new RuntimeException('Choose a From or To datetime for a custom export range.');
+            }
+            $from = $fromValue !== '' ? $this->parseExportDateBoundary($fromValue, $localTimezone, false) : null;
+            $to = $toValue !== '' ? $this->parseExportDateBoundary($toValue, $localTimezone, true) : null;
+        }
+
+        if ($from instanceof \DateTimeImmutable && $to instanceof \DateTimeImmutable && $from > $to) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return [
+            'from' => $from instanceof \DateTimeImmutable ? $from->setTimezone($this->utcTimezone())->format('Y-m-d H:i:s') : null,
+            'to' => $to instanceof \DateTimeImmutable ? $to->setTimezone($this->utcTimezone())->format('Y-m-d H:i:s') : null,
+        ];
+    }
+
+    private function parseExportDateBoundary(string $value, \DateTimeZone $localTimezone, bool $endOfRange): \DateTimeImmutable
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value, $localTimezone);
+            if ($date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value) {
+                return $endOfRange ? $date->setTime(23, 59, 59) : $date->setTime(0, 0, 0);
+            }
+        }
+
+        $normalized = str_replace('T', ' ', $value);
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $normalized) === 1) {
+            $date = \DateTimeImmutable::createFromFormat('!Y-m-d H:i', $normalized, $localTimezone);
+            if ($date instanceof \DateTimeImmutable && $date->format('Y-m-d H:i') === $normalized) {
+                return $endOfRange ? $date->setTime((int) $date->format('H'), (int) $date->format('i'), 59) : $date;
+            }
+        }
+
+        try {
+            $date = new \DateTimeImmutable($value, $localTimezone);
+        } catch (\Exception) {
+            throw new RuntimeException('The export date range contains an invalid datetime.');
+        }
+        return $date;
+    }
+
+    /**
+     * @param array{from: string|null, to: string|null} $range
+     * @param array<string, mixed> $bindings
+     */
+    private function exportDateSql(string $column, array $range, array &$bindings, string $prefix): string
+    {
+        $conditions = [];
+        if ($range['from'] !== null) {
+            $conditions[] = "{$column} >= :{$prefix}_from";
+            $bindings[":{$prefix}_from"] = $range['from'];
+        }
+        if ($range['to'] !== null) {
+            $conditions[] = "{$column} <= :{$prefix}_to";
+            $bindings[":{$prefix}_to"] = $range['to'];
+        }
+        return $conditions === [] ? '' : ' AND ' . implode(' AND ', $conditions);
+    }
+
     private function safeImportError(Throwable $exception): string
     {
         $message = trim($exception->getMessage());
@@ -1004,8 +1191,10 @@ final class DataManagementApi extends BaseService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportOrders(): array
+    private function exportOrders(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('o.created_at', $dateRange, $bindings, 'export_orders');
         $documents = $this->database->fetchAll(
             "SELECT o.order_number AS orderNumber,
                     o.order_date AS orderDate,
@@ -1027,8 +1216,9 @@ final class DataManagementApi extends BaseService
                     o.source_ad AS sourceAd
              FROM orders o
              LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE o.deleted_at IS NULL
-             ORDER BY o.created_at ASC, o.id ASC"
+             WHERE o.deleted_at IS NULL{$dateSql}
+             ORDER BY o.created_at ASC, o.id ASC",
+            $bindings
         );
         $pageNames = $this->companyPageNames();
         $rows = [];
@@ -1063,8 +1253,10 @@ final class DataManagementApi extends BaseService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportProducts(): array
+    private function exportProducts(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('p.created_at', $dateRange, $bindings, 'export_products');
         return $this->database->fetchAll(
             "SELECT p.name,
                     p.image,
@@ -1076,27 +1268,33 @@ final class DataManagementApi extends BaseService
                     p.dynamic_pricing AS dynamicPricing
              FROM products p
              LEFT JOIN units un ON un.id = p.unit_id
-             WHERE p.deleted_at IS NULL
-             ORDER BY p.created_at ASC, p.id ASC"
+             WHERE p.deleted_at IS NULL{$dateSql}
+             ORDER BY p.created_at ASC, p.id ASC",
+            $bindings
         );
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportCustomers(): array
+    private function exportCustomers(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('c.created_at', $dateRange, $bindings, 'export_customers');
         return $this->database->fetchAll(
             "SELECT c.name,
                     c.phone,
                     c.address
              FROM customers c
-             WHERE c.deleted_at IS NULL
-             ORDER BY c.created_at ASC, c.id ASC"
+             WHERE c.deleted_at IS NULL{$dateSql}
+             ORDER BY c.created_at ASC, c.id ASC",
+            $bindings
         );
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportBills(): array
+    private function exportBills(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('b.created_at', $dateRange, $bindings, 'export_bills');
         $documents = $this->database->fetchAll(
             "SELECT b.bill_number AS billNumber,
                     b.bill_date AS billDate,
@@ -1111,8 +1309,9 @@ final class DataManagementApi extends BaseService
                     b.notes
              FROM bills b
              LEFT JOIN vendors v ON v.id = b.vendor_id
-             WHERE b.deleted_at IS NULL
-             ORDER BY b.created_at ASC, b.id ASC"
+             WHERE b.deleted_at IS NULL{$dateSql}
+             ORDER BY b.created_at ASC, b.id ASC",
+            $bindings
         );
         $rows = [];
         foreach ($documents as $document) {
@@ -1138,21 +1337,26 @@ final class DataManagementApi extends BaseService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportVendors(): array
+    private function exportVendors(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('v.created_at', $dateRange, $bindings, 'export_vendors');
         return $this->database->fetchAll(
             "SELECT v.name,
                     v.phone,
                     v.address
              FROM vendors v
-             WHERE v.deleted_at IS NULL
-             ORDER BY v.created_at ASC, v.id ASC"
+             WHERE v.deleted_at IS NULL{$dateSql}
+             ORDER BY v.created_at ASC, v.id ASC",
+            $bindings
         );
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportTransactions(): array
+    private function exportTransactions(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('t.created_at', $dateRange, $bindings, 'export_transactions');
         return $this->database->fetchAll(
             "SELECT t.transaction_id AS transactionId,
                     t.date,
@@ -1177,27 +1381,34 @@ final class DataManagementApi extends BaseService
              LEFT JOIN bills b ON b.id = t.reference_id
              LEFT JOIN customers c ON c.id = t.contact_id
              LEFT JOIN vendors v ON v.id = t.contact_id
-             WHERE t.deleted_at IS NULL
-             ORDER BY t.date ASC, t.created_at ASC, t.id ASC"
+             WHERE t.deleted_at IS NULL{$dateSql}
+             ORDER BY t.date ASC, t.created_at ASC, t.id ASC",
+            $bindings
         );
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportAccounts(): array
+    private function exportAccounts(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('a.created_at', $dateRange, $bindings, 'export_accounts');
         return $this->database->fetchAll(
             "SELECT a.name,
                     a.type,
                     a.opening_balance AS openingBalance,
                     a.current_balance AS currentBalance
              FROM accounts a
-             ORDER BY a.created_at ASC, a.id ASC"
+             WHERE 1 = 1{$dateSql}
+             ORDER BY a.created_at ASC, a.id ASC",
+            $bindings
         );
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function exportUsers(): array
+    private function exportUsers(array $dateRange): array
     {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('u.created_at', $dateRange, $bindings, 'export_users');
         return $this->database->fetchAll(
             "SELECT u.name,
                     u.phone,
@@ -1215,9 +1426,88 @@ final class DataManagementApi extends BaseService
                     u.is_commission_based AS isCommissionBased,
                     u.fixed_salary AS fixedSalary
              FROM users u
-             WHERE u.deleted_at IS NULL AND COALESCE(u.is_system, 0) = 0
-             ORDER BY u.created_at ASC, u.id ASC"
+             WHERE u.deleted_at IS NULL AND COALESCE(u.is_system, 0) = 0{$dateSql}
+             ORDER BY u.created_at ASC, u.id ASC",
+            $bindings
         );
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function exportLeads(array $dateRange): array
+    {
+        $bindings = [];
+        $dateSql = $this->exportDateSql('l.created_at', $dateRange, $bindings, 'export_leads');
+        $rows = $this->database->fetchAll(
+            "SELECT l.source_channel,
+                    l.status,
+                    l.stage,
+                    l.score,
+                    l.order_probability,
+                    l.profile_json,
+                    l.last_message_at,
+                    mc.name AS messenger_name,
+                    wc.name AS whatsapp_name,
+                    wc.profile_name AS whatsapp_profile_name,
+                    wc.phone_number AS whatsapp_phone
+             FROM lead_profiles l
+             LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id
+             LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id
+             WHERE l.archived_at IS NULL{$dateSql}
+             ORDER BY l.created_at ASC, l.id ASC",
+            $bindings
+        );
+
+        return array_map(function (array $row): array {
+            $profile = $this->jsonDecodeAssoc($row['profile_json'] ?? []);
+            $identity = is_array($profile['identity'] ?? null) ? $profile['identity'] : [];
+            $sales = is_array($profile['sales'] ?? null) ? $profile['sales'] : [];
+            $recommendation = is_array($profile['recommendation'] ?? null) ? $profile['recommendation'] : [];
+            $analysis = is_array($profile['analysis'] ?? null) ? $profile['analysis'] : [];
+            $interests = is_array($profile['interest'] ?? null) ? $profile['interest'] : [];
+            $productNames = [];
+            foreach ($interests as $interest) {
+                if (!is_array($interest)) {
+                    continue;
+                }
+                $name = trim((string) ($interest['productName'] ?? ''));
+                if ($name !== '') {
+                    $productNames[] = $name;
+                }
+            }
+
+            $profileName = trim((string) ($identity['name']['value'] ?? ''));
+            $name = trim((string) ($row['messenger_name'] ?? $row['whatsapp_name'] ?? $row['whatsapp_profile_name'] ?? $profileName));
+            $phone = trim((string) ($row['whatsapp_phone'] ?? $identity['phone']['value'] ?? ''));
+
+            return [
+                'name' => $name !== '' ? $name : 'Unknown lead',
+                'phone' => $phone,
+                'email' => trim((string) ($identity['email']['value'] ?? '')),
+                'address' => trim((string) ($identity['address']['value'] ?? '')),
+                'sourceChannel' => (string) ($row['source_channel'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'stage' => (string) ($row['stage'] ?? ''),
+                'score' => (float) ($row['score'] ?? 0),
+                'orderProbability' => (float) ($row['order_probability'] ?? 0),
+                'interestedProducts' => implode('; ', array_values(array_unique($productNames))),
+                'buyingSignals' => $this->exportLeadList($sales['buyingSignals'] ?? []),
+                'objections' => $this->exportLeadList($sales['objections'] ?? []),
+                'nextAction' => trim((string) ($recommendation['nextAction'] ?? '')),
+                'notes' => $this->exportLeadList($analysis['notices'] ?? []),
+                'lastMessageAt' => (string) ($row['last_message_at'] ?? ''),
+            ];
+        }, $rows);
+    }
+
+    private function exportLeadList($value): string
+    {
+        if (!is_array($value)) {
+            return trim((string) $value);
+        }
+        return implode('; ', array_values(array_filter(array_map(
+            static fn($item): string => trim((string) $item),
+            $value
+        ), static fn(string $item): bool => $item !== '')));
     }
 
     /** @return array<string, string> */
@@ -2060,6 +2350,125 @@ final class DataManagementApi extends BaseService
                 [':delta' => $this->formatMoney($amount * $direction), ':updated_at' => $this->database->nowUtc(), ':id' => $toAccountId]
             );
         }
+    }
+
+    /** @return 'created'|'skipped' */
+    private function importLead(array $row): string
+    {
+        $name = $this->requiredText($row, 'name', 'Lead Name');
+        $phone = $this->text($row, 'phone');
+        $email = $this->text($row, 'email');
+        $channel = strtolower($this->requiredText($row, 'sourceChannel', 'Source Channel'));
+        if (!in_array($channel, ['messenger', 'whatsapp'], true)) {
+            throw new RuntimeException('Source Channel must be messenger or whatsapp.');
+        }
+
+        $normalizedPhone = preg_replace('/\D+/', '', $phone) ?: '';
+        $normalizedName = strtolower(preg_replace('/\s+/', ' ', trim($name)) ?: trim($name));
+        $normalizedEmail = strtolower($email);
+        $existingRows = $this->database->fetchAll(
+            'SELECT l.profile_json,
+                    mc.name AS messenger_name,
+                    wc.name AS whatsapp_name,
+                    wc.profile_name AS whatsapp_profile_name,
+                    wc.phone_number AS whatsapp_phone
+             FROM lead_profiles l
+             LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id
+             LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id
+             WHERE l.source_channel = :channel AND l.archived_at IS NULL',
+            [':channel' => $channel]
+        );
+        foreach ($existingRows as $existing) {
+            $profile = $this->jsonDecodeAssoc($existing['profile_json'] ?? []);
+            $identity = is_array($profile['identity'] ?? null) ? $profile['identity'] : [];
+            $existingPhone = preg_replace('/\D+/', '', (string) ($existing['whatsapp_phone'] ?? $identity['phone']['value'] ?? '')) ?: '';
+            if ($normalizedPhone !== '' && $existingPhone === $normalizedPhone) {
+                return 'skipped';
+            }
+            $existingName = trim((string) ($existing['messenger_name'] ?? $existing['whatsapp_name'] ?? $existing['whatsapp_profile_name'] ?? $identity['name']['value'] ?? ''));
+            $existingEmail = strtolower(trim((string) ($identity['email']['value'] ?? '')));
+            $sameName = strtolower(preg_replace('/\s+/', ' ', $existingName) ?: $existingName) === $normalizedName;
+            if ($sameName && ($normalizedEmail === '' || $existingEmail === $normalizedEmail)) {
+                return 'skipped';
+            }
+        }
+
+        $status = strtolower(str_replace([' ', '-'], '_', $this->text($row, 'status') ?: 'new'));
+        $allowedStatuses = ['new', 'active', 'needs_reply', 'qualified', 'high_intent', 'order_pending', 'converted', 'lost', 'paused'];
+        if (!in_array($status, $allowedStatuses, true)) {
+            throw new RuntimeException('Status is not a supported lead status.');
+        }
+        $stage = strtolower(str_replace([' ', '-'], '_', $this->text($row, 'stage') ?: $status));
+        $score = min(100, max(0, $this->number($row, 'score')));
+        $orderProbability = min(100, max(0, $this->number($row, 'orderProbability')));
+
+        $identity = [
+            'name' => $this->importLeadProfileField($name),
+        ];
+        foreach (['phone' => $phone, 'email' => $email, 'address' => $this->text($row, 'address')] as $key => $value) {
+            if ($value !== '') {
+                $identity[$key] = $this->importLeadProfileField($value);
+            }
+        }
+        $interests = array_map(
+            static fn(string $productName): array => ['productName' => $productName, 'confidence' => 1],
+            $this->importLeadList($this->text($row, 'interestedProducts'))
+        );
+        $profile = [
+            'schemaVersion' => 1,
+            'identity' => $identity,
+            'interest' => $interests,
+            'sales' => [
+                'stage' => $stage,
+                'orderProbability' => $orderProbability,
+                'buyingSignals' => $this->importLeadList($this->text($row, 'buyingSignals')),
+                'objections' => $this->importLeadList($this->text($row, 'objections')),
+            ],
+            'missingInformation' => [],
+            'recommendation' => ['nextAction' => $this->text($row, 'nextAction')],
+            'orderConfirmation' => ['status' => 'not_detected'],
+            'analysis' => [
+                'notices' => $this->importLeadList($this->text($row, 'notes')),
+                'updatedAt' => gmdate('c'),
+            ],
+        ];
+        $now = $this->database->nowUtc();
+        $this->database->insert('lead_profiles', [
+            'id' => $this->uuid4(),
+            'source_channel' => $channel,
+            'messenger_contact_id' => null,
+            'whatsapp_contact_id' => null,
+            'assigned_model_id' => null,
+            'status' => $status,
+            'stage' => $stage,
+            'score' => $score,
+            'order_probability' => $orderProbability,
+            'profile_json' => $this->jsonEncode($profile),
+            'last_analyzed_message_id' => null,
+            'last_message_at' => $this->dateValue($row, 'lastMessageAt'),
+            'created_at' => $now,
+            'updated_at' => $now,
+            'archived_at' => null,
+        ]);
+        return 'created';
+    }
+
+    /** @return array{value: string, confidence: int, inferred: bool} */
+    private function importLeadProfileField(string $value): array
+    {
+        return ['value' => $value, 'confidence' => 1, 'inferred' => false];
+    }
+
+    /** @return list<string> */
+    private function importLeadList(string $value): array
+    {
+        if ($value === '') {
+            return [];
+        }
+        return array_values(array_unique(array_filter(array_map(
+            static fn(string $item): string => trim($item),
+            preg_split('/[;\r\n]+/', $value) ?: []
+        ), static fn(string $item): bool => $item !== '')));
     }
 
     /** @return 'created'|'skipped' */

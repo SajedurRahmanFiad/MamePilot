@@ -148,6 +148,7 @@ const buildUserReportPdfHtml = (params: {
     ['Processing', report.metrics.processingOrders],
     ['Picked', report.metrics.pickedOrders],
     ['Completed', report.metrics.completedOrders],
+    ['Returned', report.metrics.returnedOrders],
     ['Cancelled', report.metrics.cancelledOrders],
   ];
 
@@ -1089,6 +1090,7 @@ const UserActivityPerformanceReport: React.FC = () => {
                 { label: 'Processing', value: report.metrics.processingOrders, color: 'bg-sky-500', track: 'bg-sky-100' },
                 { label: 'Picked', value: report.metrics.pickedOrders, color: 'bg-cyan-500', track: 'bg-cyan-100' },
                 { label: 'Completed', value: report.metrics.completedOrders, color: 'bg-emerald-500', track: 'bg-emerald-100' },
+                { label: 'Returned', value: report.metrics.returnedOrders, color: 'bg-orange-500', track: 'bg-orange-100' },
                 { label: 'Cancelled', value: report.metrics.cancelledOrders, color: 'bg-rose-500', track: 'bg-rose-100' },
               ];
               const maxStatus = Math.max(1, ...statusRows.map((row) => row.value));

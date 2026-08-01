@@ -1,4 +1,5 @@
 import { apiAction } from './apiClient';
+import type { AppCapabilityKey } from '../../types';
 
 export type DataFieldFormat = 'date' | 'datetime' | 'number' | 'boolean' | 'json' | 'password';
 
@@ -15,8 +16,15 @@ export interface DataManagementDataset {
   key: string;
   label: string;
   description: string;
+  capability?: AppCapabilityKey;
   fields: DataManagementField[];
   sampleRow: Record<string, string>;
+}
+
+export interface DataExportFilters {
+  filterRange: 'All Time' | 'Today' | 'Last 7 days' | 'Last 30 days' | 'This Week' | 'This Month' | 'This Year' | 'Custom';
+  customDates: { from: string; to: string };
+  dependencyFor?: string;
 }
 
 export interface DataManagementSchemasResponse {
@@ -82,16 +90,17 @@ export function fetchDataManagementSchemas(): Promise<DataManagementSchemasRespo
   return apiAction<DataManagementSchemasResponse>('fetchDataManagementSchemas', {}, { timeoutMs: 60_000 });
 }
 
-export function exportDataRecords(entity: string): Promise<DataExportResponse> {
-  return apiAction<DataExportResponse>('exportDataRecords', { entity }, { timeoutMs: 120_000 });
+export function exportDataRecords(entity: string, filters?: DataExportFilters): Promise<DataExportResponse> {
+  return apiAction<DataExportResponse>('exportDataRecords', { entity, ...(filters || {}) }, { timeoutMs: 120_000 });
 }
 
 export function importDataRecords(
   entity: string,
   rows: Array<Record<string, string>>,
   rowOffset: number,
+  dependencyFor?: string,
 ): Promise<DataImportResponse> {
-  return apiAction<DataImportResponse>('importDataRecords', { entity, rows, rowOffset }, { timeoutMs: 120_000 });
+  return apiAction<DataImportResponse>('importDataRecords', { entity, rows, rowOffset, ...(dependencyFor ? { dependencyFor } : {}) }, { timeoutMs: 120_000 });
 }
 
 export function exportSettingsPackage(tabs: string[]): Promise<SettingsPackage> {

@@ -3,8 +3,10 @@ import { AlertTriangle, CheckCircle2, Database, Download, FileDown, FileSpreadsh
 import { useQueryClient } from '@tanstack/react-query';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { Button } from './Button';
+import FilterBar, { type FilterRange } from './FilterBar';
 import { Modal } from './Modal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   exportDataRecords,
   exportSettingsPackage,
@@ -12,6 +14,7 @@ import {
   importDataRecords,
   importSettingsPackage,
   type DataImportError,
+  type DataExportFilters,
   type DataManagementDataset,
   type SettingsPackage,
   type SettingsTransferTab,
@@ -57,6 +60,10 @@ interface SettingsTransferSession {
   selectedTabs: string[];
   settingsPackage?: SettingsPackage;
   fileName?: string;
+}
+
+interface ExportSession extends DataExportFilters {
+  dataset: DataManagementDataset;
 }
 
 const imageExtension = (mimeType: string, fallbackPath = '') => {
@@ -164,6 +171,7 @@ const createProductPackageBatches = (records: Array<Record<string, string>>) => 
 const DataManagementSettingsPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { capabilities, isDeveloper } = useCapabilities();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsFileInputRef = useRef<HTMLInputElement>(null);
   const [datasets, setDatasets] = useState<DataManagementDataset[]>([]);
@@ -172,6 +180,7 @@ const DataManagementSettingsPanel: React.FC = () => {
   const [schemaError, setSchemaError] = useState('');
   const [selectedDatasetKey, setSelectedDatasetKey] = useState('');
   const [exportingKey, setExportingKey] = useState('');
+  const [exportSession, setExportSession] = useState<ExportSession | null>(null);
   const [session, setSession] = useState<ImportSession | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -209,18 +218,26 @@ const DataManagementSettingsPanel: React.FC = () => {
   const mappedFields = useMemo(() => (
     session?.dataset.fields.filter((field) => session.mapping[field.key] !== undefined) || []
   ), [session]);
+  const visibleDatasets = useMemo(
+    () => datasets.filter((dataset) => !dataset.capability || isDeveloper || Boolean(capabilities[dataset.capability])),
+    [capabilities, datasets, isDeveloper],
+  );
 
-  const handleExport = async (dataset: DataManagementDataset) => {
+  const handleExport = async (dataset: DataManagementDataset, filters: DataExportFilters): Promise<boolean> => {
     setExportingKey(dataset.key);
     try {
-      const response = await exportDataRecords(dataset.key);
+      const response = await exportDataRecords(dataset.key, filters);
       const headers = response.fields.map((field) => field.label);
       const exportedRows = response.rows.map((row) => ({ ...row }));
 
       if (FINANCIAL_DATASET_KEYS.has(dataset.key)) {
         const accountsDataset = datasets.find((candidate) => candidate.key === 'accounts');
         if (!accountsDataset) throw new Error('The Accounts export option is unavailable. Refresh the page and try again.');
-        const accountsResponse = await exportDataRecords('accounts');
+        const accountsResponse = await exportDataRecords('accounts', {
+          filterRange: 'All Time',
+          customDates: { from: '', to: '' },
+          dependencyFor: dataset.key,
+        });
         const primaryRows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
         const accountRows = accountsResponse.rows.map((row) => accountsResponse.fields.map((field) => row[field.key]));
         const archive: Record<string, Uint8Array> = {
@@ -240,7 +257,7 @@ const DataManagementSettingsPanel: React.FC = () => {
           response.filename.replace(/\.csv$/i, '.zip'),
         );
         toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} and ${accountsResponse.rows.length} accounts exported.`);
-        return;
+        return true;
       }
 
       if (dataset.key === 'products') {
@@ -285,17 +302,40 @@ const DataManagementSettingsPanel: React.FC = () => {
         downloadBlob(new Blob([zipBytes as BlobPart], { type: 'application/zip' }), packageFilename);
         const missingNote = unavailableImages > 0 ? ` ${unavailableImages} unavailable image(s) were left as URLs.` : '';
         toast.success(`${response.rows.length} products and ${packagedImages} image(s) exported.${missingNote}`);
-        return;
+        return true;
       }
 
       const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
       downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), response.filename);
       toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} exported.`);
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not export ${dataset.label.toLocaleLowerCase()}.`);
+      return false;
     } finally {
       setExportingKey('');
     }
+  };
+
+  const openExport = (dataset: DataManagementDataset) => {
+    setExportSession({
+      dataset,
+      filterRange: 'All Time',
+      customDates: { from: '', to: '' },
+    });
+  };
+
+  const runExport = async () => {
+    if (!exportSession) return;
+    if (exportSession.filterRange === 'Custom' && !exportSession.customDates.from && !exportSession.customDates.to) {
+      toast.warning('Choose a From or To datetime for a custom export range.');
+      return;
+    }
+    const completed = await handleExport(exportSession.dataset, {
+      filterRange: exportSession.filterRange,
+      customDates: exportSession.customDates,
+    });
+    if (completed) setExportSession(null);
   };
 
   const handleTemplateDownload = (dataset: DataManagementDataset) => {
@@ -564,7 +604,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       for (const dependency of session.dependencies) {
         const dependencyBatches = createDataImportBatches(dependency.dataset.key, dependency.records, IMPORT_BATCH_SIZE);
         for (const batch of dependencyBatches) {
-          const result = await importDataRecords(dependency.dataset.key, batch, 0);
+          const result = await importDataRecords(dependency.dataset.key, batch, 0, session.dataset.key);
           aggregate.processed += result.processed;
           aggregate.created += result.created;
           aggregate.skipped += result.skipped;
@@ -668,7 +708,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             </Button>
           </div>
         </section>
-        {datasets.map((dataset) => (
+        {visibleDatasets.map((dataset) => (
           <section key={dataset.key} className="flex flex-col rounded-2xl border border-gray-100 bg-gray-50/50 p-5 transition-shadow hover:shadow-sm">
             <div className="flex items-start gap-3">
               <div className="rounded-xl border border-gray-100 bg-white p-2.5 text-gray-500">
@@ -697,7 +737,7 @@ const DataManagementSettingsPanel: React.FC = () => {
                 icon={<Download size={16} />}
                 loading={exportingKey === dataset.key}
                 disabled={Boolean(exportingKey)}
-                onClick={() => handleExport(dataset)}
+                onClick={() => openExport(dataset)}
               >
                 {dataset.key === 'products' || FINANCIAL_DATASET_KEYS.has(dataset.key) ? 'Export Package' : 'Export CSV'}
               </Button>
@@ -715,6 +755,49 @@ const DataManagementSettingsPanel: React.FC = () => {
           </section>
         ))}
       </div>
+
+      <Modal
+        isOpen={Boolean(exportSession)}
+        onClose={() => {
+          if (!exportingKey) setExportSession(null);
+        }}
+        title={exportSession ? `Export ${exportSession.dataset.label}` : 'Export data'}
+        size="xl"
+        footer={exportSession ? (
+          <>
+            <Button type="button" variant="outline" onClick={() => setExportSession(null)} disabled={Boolean(exportingKey)}>Cancel</Button>
+            <Button type="button" onClick={runExport} loading={exportingKey === exportSession.dataset.key}>
+              {exportSession.dataset.key === 'products' || FINANCIAL_DATASET_KEYS.has(exportSession.dataset.key) ? 'Export package' : 'Export CSV'}
+            </Button>
+          </>
+        ) : undefined}
+      >
+        {exportSession && (
+          <div className="space-y-5">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm font-semibold leading-6 text-blue-800">
+              Choose when the rows were created. Datetimes use the application timezone; All Time exports every available row.
+            </div>
+            <FilterBar
+              filterRange={exportSession.filterRange}
+              setFilterRange={(filterRange: FilterRange) => setExportSession((current) => current ? { ...current, filterRange } : current)}
+              customDates={exportSession.customDates}
+              setCustomDates={(customDates) => setExportSession((current) => current ? { ...current, customDates } : current)}
+              includeTime
+              ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
+              compact
+              showOnMobile
+            />
+            {exportSession.filterRange === 'Custom' && !exportSession.customDates.from && !exportSession.customDates.to && (
+              <p className="text-xs font-semibold text-amber-700">Enter at least one datetime boundary for a custom range.</p>
+            )}
+            {FINANCIAL_DATASET_KEYS.has(exportSession.dataset.key) && (
+              <p className="text-xs font-medium leading-5 text-gray-500">
+                The selected range limits {exportSession.dataset.label.toLocaleLowerCase()} rows. The dependency Accounts CSV remains complete so older accounts referenced by the selected records can still be restored safely.
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={Boolean(settingsSession)}

@@ -18,7 +18,7 @@ $api = $reflection->newInstanceWithoutConstructor();
 $definitionsMethod = $reflection->getMethod('datasetDefinitions');
 $definitions = $definitionsMethod->invoke($api);
 
-$expectedDatasets = ['orders', 'products', 'customers', 'bills', 'vendors', 'transactions', 'accounts', 'users'];
+$expectedDatasets = ['orders', 'products', 'customers', 'bills', 'vendors', 'transactions', 'accounts', 'users', 'leads'];
 assertTrue(array_keys($definitions) === $expectedDatasets, 'The supported dataset order changed unexpectedly.');
 
 foreach ($definitions as $key => $definition) {

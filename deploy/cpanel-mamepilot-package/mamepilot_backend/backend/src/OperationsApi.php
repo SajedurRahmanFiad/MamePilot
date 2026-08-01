@@ -2268,8 +2268,9 @@ final class OperationsApi extends BaseService
                     SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN 1 ELSE 0 END) AS completedOrders,
                     SUM(CASE WHEN o.status IN ('Processing', 'Courier assigned', 'Exchange processing') THEN 1 ELSE 0 END) AS processingOrders,
                     SUM(CASE WHEN o.status IN ('Picked', 'Exchange picked') THEN 1 ELSE 0 END) AS pickedOrders,
-                    SUM(CASE WHEN o.status = 'On Hold' THEN 1 ELSE 0 END) AS onHoldOrders,
-                    SUM(CASE WHEN o.status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelledOrders,
+                    SUM(CASE WHEN o.status IN ('On Hold', 'Created') THEN 1 ELSE 0 END) AS onHoldOrders,
+                    SUM(CASE WHEN o.status IN ('Returned', 'Exchange returned') THEN 1 ELSE 0 END) AS returnedOrders,
+                    SUM(CASE WHEN o.status IN ('Cancelled', 'Exchange cancelled') THEN 1 ELSE 0 END) AS cancelledOrders,
                     COALESCE(SUM(o.total), 0) AS orderValue,
                     COALESCE(SUM(CASE WHEN o.status IN ('Completed', 'Exchange delivered') THEN o.total ELSE 0 END), 0) AS completedOrderValue,
                     COALESCE(SUM(o.paid_amount), 0) AS orderPaidAmount,
@@ -2352,6 +2353,7 @@ final class OperationsApi extends BaseService
                 COALESCE(oa.processingOrders, 0) AS processingOrders,
                 COALESCE(oa.pickedOrders, 0) AS pickedOrders,
                 COALESCE(oa.onHoldOrders, 0) AS onHoldOrders,
+                COALESCE(oa.returnedOrders, 0) AS returnedOrders,
                 COALESCE(oa.cancelledOrders, 0) AS cancelledOrders,
                 COALESCE(oa.orderValue, 0) AS orderValue,
                 COALESCE(oa.completedOrderValue, 0) AS completedOrderValue,
@@ -2674,7 +2676,7 @@ final class OperationsApi extends BaseService
 
         foreach ($derived as $userId => $metrics) {
             $derived[$userId] = [
-                'orderQuantity' => (int) ($metrics['orderQuantity'] ?? 0),
+                'orderQuantity' => (float) ($metrics['orderQuantity'] ?? 0),
                 'activeDays' => count((array) ($metrics['activityDays'] ?? [])),
                 'firstActivity' => $this->toIso($metrics['firstActivityRaw'] ?? null),
                 'lastActivity' => $this->toIso($metrics['lastActivityRaw'] ?? null),
@@ -2714,14 +2716,17 @@ final class OperationsApi extends BaseService
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    private function sumUserActivityItemsQuantity(array $items): int
+    private function sumUserActivityItemsQuantity(array $items): float
     {
-        $sum = 0;
+        $sum = 0.0;
         foreach ($items as $item) {
-            $sum += (int) ($item['quantity'] ?? 0);
+            $quantity = $item['quantity'] ?? 0;
+            if (is_numeric($quantity)) {
+                $sum += (float) $quantity;
+            }
         }
 
-        return $sum;
+        return round($sum, 4);
     }
 
     /**
@@ -2771,11 +2776,12 @@ final class OperationsApi extends BaseService
                 'processingOrders' => (int) ($row['processingOrders'] ?? 0),
                 'pickedOrders' => (int) ($row['pickedOrders'] ?? 0),
                 'onHoldOrders' => (int) ($row['onHoldOrders'] ?? 0),
+                'returnedOrders' => (int) ($row['returnedOrders'] ?? 0),
                 'cancelledOrders' => (int) ($row['cancelledOrders'] ?? 0),
                 'orderValue' => $orderValue,
                 'completedOrderValue' => (float) ($row['completedOrderValue'] ?? 0),
                 'orderPaidAmount' => $orderPaidAmount,
-                'orderQuantity' => (int) ($derived['orderQuantity'] ?? 0),
+                'orderQuantity' => (float) ($derived['orderQuantity'] ?? 0),
                 'uniqueCustomers' => (int) ($row['uniqueCustomers'] ?? 0),
                 'averageOrderValue' => $ordersCreated > 0 ? $orderValue / $ordersCreated : 0,
                 'completionRate' => $ordersCreated > 0 ? (((int) ($row['completedOrders'] ?? 0)) / $ordersCreated) * 100 : 0,

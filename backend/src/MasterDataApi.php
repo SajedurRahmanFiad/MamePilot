@@ -1949,15 +1949,7 @@ final class MasterDataApi extends BaseService
         ];
 
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'create_or_update_license', $payload);
-        $result = $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central license saved successfully.');
-        if ($pricingMetadata !== []) {
-            $this->updateCapabilitySettings([
-                '__skipDeveloperCheck' => true,
-                'pricingMetadata' => $pricingMetadata,
-            ]);
-            $result = $this->fetchCapabilitySettings();
-        }
-        return $result;
+        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central license saved successfully.');
     }
 
     public function updateCentralLicenseOverride(array $params): array
@@ -1979,15 +1971,7 @@ final class MasterDataApi extends BaseService
             'pricing_metadata' => $pricingMetadata,
         ]);
 
-        $result = $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
-        if ($pricingMetadata !== []) {
-            $this->updateCapabilitySettings([
-                '__skipDeveloperCheck' => true,
-                'pricingMetadata' => $pricingMetadata,
-            ]);
-            $result = $this->fetchCapabilitySettings();
-        }
-        return $result;
+        return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
     }
 
     public function resetCentralLicenseOverride(array $params = []): array

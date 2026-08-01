@@ -286,12 +286,6 @@ const HumanResourceDashboard: React.FC = () => {
               total={Math.max(1, dashboard.employees.length)}
               tone="bg-[#3c5a82]"
             />
-            <ProgressRow
-              label="Pay basis configured"
-              value={dashboard.compensationReady.length}
-              total={Math.max(1, dashboard.employees.length)}
-              tone="bg-emerald-500"
-            />
           </div>
 
           {dashboard.compensationReady.length < dashboard.employees.length && !usersLoading && (

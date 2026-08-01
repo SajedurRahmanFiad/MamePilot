@@ -39,6 +39,13 @@ const tierCapabilitiesToMap = (tier?: LicenseTier | null): AppCapabilityMap => {
   return defaults;
 };
 
+const buildPriceOverride = (monthly: string, yearly: string): { monthly?: number; yearly?: number } => {
+  const pricing: { monthly?: number; yearly?: number } = {};
+  if (monthly.trim() !== '') pricing.monthly = Math.max(0, Number(monthly) || 0);
+  if (yearly.trim() !== '') pricing.yearly = Math.max(0, Number(yearly) || 0);
+  return pricing;
+};
+
 const DeveloperSubscriptions: React.FC = () => {
   const toast = useToastNotifications();
   const { data: overview, isPending: loadingOverview } = useServiceSubscriptionOverview(true);
@@ -160,10 +167,7 @@ const DeveloperSubscriptions: React.FC = () => {
         clientName: clientName || window.location.hostname,
         domain: window.location.hostname,
         renewalDate: renewalDate || null,
-        pricingMetadata: {
-          monthly: Number(monthlyPriceOverride || 0),
-          yearly: Number(yearlyPriceOverride || 0),
-        },
+        pricingMetadata: buildPriceOverride(monthlyPriceOverride, yearlyPriceOverride),
       });
       toast.update(toastId, 'Subscription access saved.', 'success');
     } catch (error) {
@@ -199,10 +203,7 @@ const DeveloperSubscriptions: React.FC = () => {
         licenseOwnerToken: ownerToken,
         licenseKey: capabilitySettings?.licenseKey,
         capabilities: capabilitiesWithSubs,
-        pricingMetadata: {
-          monthly: Number(monthlyPriceOverride || 0),
-          yearly: Number(yearlyPriceOverride || 0),
-        },
+        pricingMetadata: buildPriceOverride(monthlyPriceOverride, yearlyPriceOverride),
       });
       toast.update(toastId, 'Custom subscription access saved.', 'success');
     } catch (error) {
