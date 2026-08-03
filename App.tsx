@@ -145,19 +145,19 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
             ? '/bills'
             : can('vendors.view') && hasCapability('purchases')
               ? '/vendors'
-              : can('transactions.view') && hasCapability('banking')
+              : can('transactions.view') && hasSubCapability('transactions')
                 ? '/banking/transactions'
-                : can('accounts.view') && hasCapability('banking')
+                : can('accounts.view') && hasSubCapability('accounts')
                   ? '/banking/accounts'
                   : can('fraudChecker.check') && hasCapability('fraud_checker')
                     ? '/fraud-checker'
-                  : can('transfers.create') && hasCapability('banking')
+                  : can('transfers.create') && hasSubCapability('transfer')
                     ? '/banking/transfer'
                     : canAccessEmployeeWallet
                       ? '/wallet'
                       : can('reports.view') && hasCapability('advanced_reports')
                         ? '/reports'
-                        : can('recycleBin.view') && hasCapability('recycle_bin_undoer')
+                        : can('recycleBin.view') && hasSubCapability('recycle_bin')
                           ? '/recycle-bin'
           : can('users.view') && hasSubCapability('hr_management')
             ? '/users'
@@ -204,13 +204,13 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     }
     if (can('products.view')) preloaders.add(Products.preload);
     if (can('products.create') || can('products.edit')) preloaders.add(ProductForm.preload);
-    if (can('transactions.view')) preloaders.add(Transactions.preload);
-    if (can('transactions.create') || can('transactions.edit')) preloaders.add(TransactionForm.preload);
-    if (can('accounts.view')) preloaders.add(Banking.preload);
+    if (can('transactions.view') && hasSubCapability('transactions')) preloaders.add(Transactions.preload);
+    if ((can('transactions.create') || can('transactions.edit')) && hasSubCapability('transactions')) preloaders.add(TransactionForm.preload);
+    if (can('accounts.view') && hasSubCapability('accounts')) preloaders.add(Banking.preload);
     if (can('fraudChecker.check')) preloaders.add(FraudCheckerPage.preload);
     if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
     if (hasCapability('auto_calling')) preloaders.add(AutoCalling.preload);
-    if (can('transfers.create')) preloaders.add(Transfer.preload);
+    if (can('transfers.create') && hasSubCapability('transfer')) preloaders.add(Transfer.preload);
     if (can('users.view') && hasSubCapability('hr_management')) {
       preloaders.add(Users.preload);
       preloaders.add(UserDetails.preload);
@@ -230,7 +230,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         preloaders.add(UserActivityPerformanceReport.preload);
       }
     }
-    if (can('recycleBin.view')) preloaders.add(RecycleBin.preload);
+    if (can('recycleBin.view') && hasSubCapability('recycle_bin')) preloaders.add(RecycleBin.preload);
     if (isAdmin) preloaders.add(SettingsPage.preload);
     if (activeUser?.role === 'Developer') {
       preloaders.add(DeveloperNotifications.preload);
@@ -340,7 +340,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
 
       <Route path="/banking/accounts" element={
-        isAuthenticated ? (can('accounts.view') ? <Layout><Banking /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('accounts.view') && hasSubCapability('accounts') ? <Layout><Banking /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/fraud-checker" element={
         isAuthenticated ? (can('fraudChecker.check') ? <Layout><FraudCheckerPage /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -364,20 +364,20 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (hasCapability('auto_calling') ? <Layout><AutoCalling /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transfer" element={
-        isAuthenticated ? (can('transfers.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transfers.create') && hasSubCapability('transfer') ? (writeDisabled ? <Navigate to={defaultProtectedRoute} replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transactions" element={
-        isAuthenticated ? (can('transactions.view') ? <Layout><Transactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.view') && hasSubCapability('transactions') ? <Layout><Transactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       
       <Route path="/transactions" element={
-        isAuthenticated ? (can('transactions.view') ? <Navigate to="/banking/transactions" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.view') && hasSubCapability('transactions') ? <Navigate to="/banking/transactions" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/transactions/new/:type" element={
-        isAuthenticated ? (can('transactions.create') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.create') && hasSubCapability('transactions') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/transactions/edit/:id" element={
-        isAuthenticated ? (can('transactions.edit') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transactions.edit') && hasSubCapability('transactions') ? (writeDisabled ? <Navigate to="/banking/transactions" replace /> : <Layout><TransactionForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/customers" element={
@@ -471,7 +471,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/recycle-bin" element={
         isAuthenticated
-          ? can('recycleBin.view')
+          ? can('recycleBin.view') && hasSubCapability('recycle_bin')
             ? <Layout><RecycleBin /></Layout>
             : canAccessEmployeeWallet
               ? <Navigate to="/wallet" replace />
@@ -516,7 +516,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
 
       <Route path="/undoer" element={
-        isAuthenticated ? (can('undoer.view') ? <Layout><Undoer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('undoer.view') && hasSubCapability('undoer') ? <Layout><Undoer /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       {/* Catch all - redirect based on auth state */}

@@ -51,6 +51,7 @@ import type {
   PaymentGatewaySettings,
   LicenseTier,
   AppCapabilityMap,
+  SubCapabilityMap,
   AgentSettings,
   AgentConversation,
   MetaAdsSettings,
@@ -340,7 +341,7 @@ export async function setMaintenanceStatus(payload: MaintenanceUpdatePayload): P
 export async function syncLicenseCapabilities(payload?: { licenseKey?: string; licenseApiUrl?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('syncLicenseCapabilities', payload || {}, { timeoutMs: 30000 }); }
 export async function fetchCentralLicenseTiers(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string }): Promise<{ tiers: LicenseTier[] }> { return call<{ tiers: LicenseTier[] }>('fetchCentralLicenseTiers', payload || {}, { timeoutMs: 30000 }); }
 export async function createOrUpdateCentralLicense(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('createOrUpdateCentralLicense', payload, { timeoutMs: 30000 }); }
-export async function updateCentralLicenseOverride(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('updateCentralLicenseOverride', payload, { timeoutMs: 30000 }); }
+export async function updateCentralLicenseOverride(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap; subCapabilities: SubCapabilityMap; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('updateCentralLicenseOverride', payload, { timeoutMs: 30000 }); }
 export async function resetCentralLicenseOverride(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('resetCentralLicenseOverride', payload || {}, { timeoutMs: 30000 }); }
 export async function registerWebhookWithCentral(payload?: { webhookUrl?: string }): Promise<{ success: boolean; message: string; webhookUrl?: string }> { return call<{ success: boolean; message: string; webhookUrl?: string }>('registerWebhookWithCentral', payload || {}, { timeoutMs: 30000 }); }
 export async function unregisterWebhookFromCentral(): Promise<{ success: boolean; message: string }> { return call<{ success: boolean; message: string }>('unregisterWebhookFromCentral', {}, { timeoutMs: 30000 }); }

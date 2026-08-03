@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS licenses (
   status VARCHAR(64) NOT NULL DEFAULT 'active',
   renewal_date DATETIME NULL,
   capability_overrides LONGTEXT NULL,
+  sub_capability_overrides LONGTEXT NULL,
   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
   pricing_metadata LONGTEXT NULL,
   notes TEXT NULL,
@@ -43,7 +44,8 @@ CREATE TABLE IF NOT EXISTS maintenance_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE licenses
-  ADD COLUMN IF NOT EXISTS pricing_metadata LONGTEXT NULL AFTER override_enabled;
+  ADD COLUMN IF NOT EXISTS pricing_metadata LONGTEXT NULL AFTER override_enabled,
+  ADD COLUMN IF NOT EXISTS sub_capability_overrides LONGTEXT NULL AFTER capability_overrides;
 
 INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
   ON DUPLICATE KEY UPDATE id = VALUES(id);

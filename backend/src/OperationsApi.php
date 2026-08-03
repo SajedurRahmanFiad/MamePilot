@@ -703,12 +703,16 @@ final class OperationsApi extends BaseService
         $discount = round((float) ($params['discount'] ?? 0), 2);
         $shipping = round((float) ($params['shipping'] ?? 0), 2);
         $submittedTotal = round((float) ($params['total'] ?? 0), 2);
+        $maximumDiscount = $documentLabel === 'Order'
+            ? round($calculatedSubtotal + max(0.0, $shipping), 2)
+            : $calculatedSubtotal;
         $expectedTotal = round(max(0.0, $calculatedSubtotal - $discount + $shipping), 2);
         if (abs($submittedSubtotal - $calculatedSubtotal) > 0.01) {
             throw new RuntimeException("{$documentLabel} subtotal does not match its items.");
         }
-        if ($discount < 0 || $discount > $calculatedSubtotal) {
-            throw new RuntimeException("{$documentLabel} discount must be between zero and the subtotal.");
+        if ($discount < 0 || $discount > $maximumDiscount) {
+            $discountLimitLabel = $documentLabel === 'Order' ? 'calculated total' : 'subtotal';
+            throw new RuntimeException("{$documentLabel} discount must be between zero and the {$discountLimitLabel}.");
         }
         if ($shipping < 0 || abs($submittedTotal - $expectedTotal) > 0.01) {
             throw new RuntimeException("{$documentLabel} total is invalid.");

@@ -39,6 +39,7 @@ declare(strict_types=1);
  *   status VARCHAR(64) NOT NULL DEFAULT 'active',
  *   renewal_date DATETIME NULL,
  *   capability_overrides LONGTEXT NULL,
+ *   sub_capability_overrides LONGTEXT NULL,
  *   override_enabled TINYINT(1) NOT NULL DEFAULT 0,
  *   pricing_metadata LONGTEXT NULL,
  *   notes TEXT NULL,
@@ -90,6 +91,11 @@ const MAINTENANCE_DEFAULT_IMAGE_URL = '/uploads/Rat_avatar.png';
 const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
 const MAINTENANCE_DEFAULT_SUBTITLE = 'Mame is actively chasing him with a piece of cheese to get it back to make the server work again.';
 const MAINTENANCE_DEFAULT_EXPLANATION = "Some new updates are in progress. For the sake of safety and security, the server is currently turned off. You'll be able to access the app again as soon as the update is complete.";
+const SUB_CAPABILITY_KEYS = [
+    'hr_management', 'payroll', 'accounts', 'transactions', 'transfer',
+    'steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier',
+    'recycle_bin', 'undoer',
+];
 
 date_default_timezone_set('UTC');
 
@@ -155,6 +161,29 @@ function capabilitiesFrom($value): array
     }
 
     return array_values(array_filter(array_map(static fn($item): string => trim((string) $item), $decoded)));
+}
+
+function subCapabilitiesFrom($value): array
+{
+    $decoded = is_array($value) ? $value : json_decode((string) $value, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $normalized = [];
+    foreach (SUB_CAPABILITY_KEYS as $key) {
+        if (!array_key_exists($key, $decoded)) {
+            continue;
+        }
+        $candidate = $decoded[$key];
+        if (is_bool($candidate)) {
+            $normalized[$key] = $candidate;
+        } elseif (in_array($candidate, [0, 1, '0', '1'], true)) {
+            $normalized[$key] = (bool) $candidate;
+        }
+    }
+
+    return $normalized;
 }
 
 function pricingMetadataFrom($value): array
@@ -265,15 +294,22 @@ function ensureLicensePricingSchema(PDO $pdo): void
         return;
     }
 
-    $statement = $pdo->prepare(
-        "SELECT 1 FROM information_schema.columns
-         WHERE table_schema = DATABASE() AND table_name = 'licenses' AND column_name = 'pricing_metadata'
-         LIMIT 1"
-    );
-    $statement->execute();
-    if ($statement->fetch() === false) {
+    $definitions = [
+        'pricing_metadata' => 'LONGTEXT NULL AFTER `override_enabled`',
+        'sub_capability_overrides' => 'LONGTEXT NULL AFTER `capability_overrides`',
+    ];
+    foreach ($definitions as $column => $definition) {
+        $statement = $pdo->prepare(
+            "SELECT 1 FROM information_schema.columns
+             WHERE table_schema = DATABASE() AND table_name = 'licenses' AND column_name = :column
+             LIMIT 1"
+        );
+        $statement->execute([':column' => $column]);
+        if ($statement->fetch() !== false) {
+            continue;
+        }
         try {
-            $pdo->exec('ALTER TABLE `licenses` ADD COLUMN `pricing_metadata` LONGTEXT NULL AFTER `override_enabled`');
+            $pdo->exec(sprintf('ALTER TABLE `licenses` ADD COLUMN `%s` %s', $column, $definition));
         } catch (PDOException $exception) {
             // Concurrent first requests may both attempt the same additive repair.
             if ((int) ($exception->errorInfo[1] ?? 0) !== 1060) {
@@ -492,6 +528,7 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
     $tierCapabilities = capabilitiesFrom($tier['capabilities'] ?? '[]');
     $overrideEnabled = (int) ($license['override_enabled'] ?? 0) === 1;
     $overrideCapabilities = capabilitiesFrom($license['capability_overrides'] ?? '[]');
+    $subCapabilityOverrides = subCapabilitiesFrom($license['sub_capability_overrides'] ?? '[]');
     $resolvedCapabilities = $overrideEnabled ? $overrideCapabilities : $tierCapabilities;
     $storedPricingMetadata = pricingMetadataFrom($license['pricing_metadata'] ?? []);
     $resolvedPricingMetadata = array_replace([
@@ -509,6 +546,7 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
         'renewal_date' => $license['renewal_date'] ?? null,
         'override_enabled' => $overrideEnabled,
         'capabilities' => $resolvedCapabilities,
+        'sub_capabilities' => $overrideEnabled ? $subCapabilityOverrides : [],
         'tier_capabilities' => $tierCapabilities,
         'pricing_metadata' => $resolvedPricingMetadata,
         'available_tiers' => activeTiers($pdo),
@@ -1058,15 +1096,17 @@ try {
         }
 
         $capabilities = capabilitiesFrom($body['capabilities'] ?? []);
+        $subCapabilities = subCapabilitiesFrom($body['sub_capabilities'] ?? $body['subCapabilities'] ?? []);
         $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
         $statement = $pdo->prepare(
             'UPDATE licenses
-             SET capability_overrides = :capability_overrides, override_enabled = 1, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
+             SET capability_overrides = :capability_overrides, sub_capability_overrides = :sub_capability_overrides, override_enabled = 1, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
              WHERE license_key = :license_key'
         );
         $statement->execute([
             ':license_key' => $licenseKey,
             ':capability_overrides' => json_encode($capabilities, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':sub_capability_overrides' => json_encode($subCapabilities, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             ':pricing_metadata' => $pricingMetadata !== []
                 ? json_encode($pricingMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                 : null,
@@ -1083,7 +1123,7 @@ try {
 
         $statement = $pdo->prepare(
             'UPDATE licenses
-             SET capability_overrides = NULL, override_enabled = 0, pricing_metadata = NULL, updated_at = CURRENT_TIMESTAMP
+             SET capability_overrides = NULL, sub_capability_overrides = NULL, override_enabled = 0, pricing_metadata = NULL, updated_at = CURRENT_TIMESTAMP
              WHERE license_key = :license_key'
         );
         $statement->execute([':license_key' => $licenseKey]);

@@ -1612,11 +1612,12 @@ export function usePayrollHistory(
   });
 }
 
-export function useWalletSettings(): UseQueryResult<WalletSettings, Error> {
+export function useWalletSettings(options?: { enabled?: boolean }): UseQueryResult<WalletSettings, Error> {
   return useQuery({
     queryKey: ['settings', 'wallet'],
     queryFn: fetchWalletSettings,
     staleTime: 60 * 60 * 1000,
+    enabled: options?.enabled ?? true,
   });
 }
 

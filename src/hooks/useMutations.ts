@@ -155,6 +155,7 @@ import type {
   CapabilitySettings,
   PaymentGatewaySettings,
   AppCapabilityMap,
+  SubCapabilityMap,
   AgentSettings,
   MetaAdsSettings,
   ProcessOrderReturnExchangePayload,
@@ -2483,7 +2484,7 @@ export function useCreateOrUpdateCentralLicense(): UseMutationResult<
 export function useUpdateCentralLicenseOverride(): UseMutationResult<
   CapabilitySettings,
   Error,
-  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap; subCapabilities: SubCapabilityMap; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
   unknown
 > {
   const queryClient = useQueryClient();

@@ -14,6 +14,19 @@ final class MasterDataApi extends BaseService
     private const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
     private const MAINTENANCE_DEFAULT_SUBTITLE = 'Mame is actively chasing him with a piece of cheese to get it back to make the server work again.';
     private const MAINTENANCE_DEFAULT_EXPLANATION = "Some new updates are in progress. For the sake of safety and security, the server is currently turned off. You'll be able to access the app again as soon as the update is complete.";
+    private const SUB_CAPABILITY_PARENTS = [
+        'hr_management' => 'human_resources',
+        'payroll' => 'human_resources',
+        'accounts' => 'banking',
+        'transactions' => 'banking',
+        'transfer' => 'banking',
+        'steadfast_courier' => 'courier_automation',
+        'carrybee_courier' => 'courier_automation',
+        'paperfly_courier' => 'courier_automation',
+        'pathao_courier' => 'courier_automation',
+        'recycle_bin' => 'recycle_bin_undoer',
+        'undoer' => 'recycle_bin_undoer',
+    ];
 
     private function appendEncodedTextFilter(
         string &$where,
@@ -1512,12 +1525,34 @@ final class MasterDataApi extends BaseService
             }
         }
 
-        // Preserve sub-capabilities if present
-        if (isset($raw['subCapabilities']) && is_array($raw['subCapabilities'])) {
-            $defaults['subCapabilities'] = $raw['subCapabilities'];
+        $rawSubCapabilities = $raw['subCapabilities'] ?? $raw['sub_capabilities'] ?? null;
+        if (is_array($rawSubCapabilities)) {
+            $defaults['subCapabilities'] = $this->normalizeSubCapabilities($rawSubCapabilities, $defaults);
         }
 
         return $defaults;
+    }
+
+    private function normalizeSubCapabilities($value, array $parentCapabilities): array
+    {
+        $raw = is_array($value) ? $value : $this->jsonDecodeAssoc($value);
+        $normalized = [];
+        foreach (self::SUB_CAPABILITY_PARENTS as $key => $parentKey) {
+            $parentEnabled = !empty($parentCapabilities[$parentKey]);
+            $hasValue = is_array($raw) && array_key_exists($key, $raw);
+            $subEnabled = true;
+            if ($hasValue) {
+                $candidate = $raw[$key];
+                if (is_bool($candidate)) {
+                    $subEnabled = $candidate;
+                } elseif (in_array($candidate, [0, 1, '0', '1'], true)) {
+                    $subEnabled = (bool) $candidate;
+                }
+            }
+            $normalized[$key] = $parentEnabled && $subEnabled;
+        }
+
+        return $normalized;
     }
 
     private function capabilityRow(): ?array
@@ -1538,6 +1573,7 @@ final class MasterDataApi extends BaseService
         $isDeveloper = trim((string) ($user['role'] ?? '')) === 'Developer';
         $row = $this->capabilityRow();
         $capabilities = $this->normalizeCapabilities($row['capabilities'] ?? null);
+        $capabilities['subCapabilities'] = $this->normalizeSubCapabilities($capabilities['subCapabilities'] ?? [], $capabilities);
         $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
 
         if ($row !== null && trim((string) ($row['license_api_url'] ?? '')) !== '') {
@@ -1586,6 +1622,7 @@ final class MasterDataApi extends BaseService
 
         return [
             'capabilities' => $capabilities,
+            'subCapabilities' => $capabilities['subCapabilities'],
             'tierKey' => $this->nullableString($row['tier_key'] ?? null),
             'planName' => $this->nullableString($row['plan_name'] ?? null),
             'licenseStatus' => (string) ($row['license_status'] ?? 'local'),
@@ -1778,6 +1815,12 @@ final class MasterDataApi extends BaseService
         $capabilities = array_key_exists('capabilities', $params)
             ? $this->normalizeCapabilities($params['capabilities'])
             : $this->normalizeCapabilities($current['capabilities'] ?? []);
+        if (array_key_exists('subCapabilities', $params) || array_key_exists('sub_capabilities', $params)) {
+            $capabilities['subCapabilities'] = $this->normalizeSubCapabilities(
+                $params['subCapabilities'] ?? $params['sub_capabilities'] ?? [],
+                $capabilities
+            );
+        }
 
         $row = $this->capabilityRow();
         $id = (string) ($row['id'] ?? 'app-capabilities-default');
@@ -1963,13 +2006,32 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('License API URL, owner token, and license key are required.');
         }
 
-        $capabilities = array_keys(array_filter($this->normalizeCapabilities($params['capabilities'] ?? [])));
+        $capabilityMap = $this->normalizeCapabilities($params['capabilities'] ?? []);
+        $capabilities = [];
+        foreach (FeatureAccess::defaultCapabilities() as $key => $_default) {
+            if (!empty($capabilityMap[$key])) {
+                $capabilities[] = $key;
+            }
+        }
+        $rawSubCapabilities = $params['subCapabilities'] ?? $params['sub_capabilities'] ?? null;
+        if ($rawSubCapabilities === null && is_array($params['capabilities'] ?? null)) {
+            $rawSubCapabilities = $params['capabilities']['subCapabilities'] ?? [];
+        }
+        $subCapabilities = $this->normalizeSubCapabilities($rawSubCapabilities ?? [], $capabilityMap);
         $pricingMetadata = $this->normalizePricingMetadata($params['pricingMetadata'] ?? null);
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'update_license_override', [
             'license_key' => $licenseKey,
             'capabilities' => $capabilities,
+            'sub_capabilities' => $subCapabilities,
             'pricing_metadata' => $pricingMetadata,
         ]);
+
+        // Older central APIs silently dropped this field. Keep the local result
+        // truthful until the central package is updated, without losing the
+        // selected values on the next local refetch.
+        if (!array_key_exists('sub_capabilities', $response) && !array_key_exists('subCapabilities', $response)) {
+            $response['sub_capabilities'] = $subCapabilities;
+        }
 
         return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override saved successfully.');
     }
@@ -1988,6 +2050,10 @@ final class MasterDataApi extends BaseService
         $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'reset_license_override', [
             'license_key' => $licenseKey,
         ]);
+
+        if (!array_key_exists('sub_capabilities', $response) && !array_key_exists('subCapabilities', $response)) {
+            $response['sub_capabilities'] = [];
+        }
 
         return $this->storeResolvedLicensePayload($response, $apiUrl, $ownerToken, 'Central capability override reset to tier defaults.');
     }
@@ -2262,9 +2328,14 @@ final class MasterDataApi extends BaseService
             $pricingMetadata = $existingPricingMetadata;
         }
 
+        $resolvedCapabilities = $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'] ?? []);
+        $existingCapabilities = $this->normalizeCapabilities($existingRow['capabilities'] ?? []);
+        $remoteSubCapabilities = $payload['sub_capabilities'] ?? $payload['subCapabilities'] ?? ($existingCapabilities['subCapabilities'] ?? []);
+        $resolvedCapabilities['subCapabilities'] = $this->normalizeSubCapabilities($remoteSubCapabilities, $resolvedCapabilities);
+
         $this->updateCapabilitySettings([
             '__skipDeveloperCheck' => true,
-            'capabilities' => $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'] ?? []),
+            'capabilities' => $resolvedCapabilities,
             'clientName' => $payload['client_name'] ?? $payload['clientName'] ?? $existingRow['client_name'] ?? null,
             'licenseKey' => $licenseKey,
             'licenseApiUrl' => $apiUrl,

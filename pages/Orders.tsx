@@ -20,6 +20,7 @@ import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { handlePrintOrder } from '../src/utils/printUtils';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   buildLocalDateTime,
   decodeDynamicTextFilterValue,
@@ -74,6 +75,12 @@ const Orders: React.FC = () => {
   const { user, isLoading: authLoading } = useAuth();
   const isEmployee = isEmployeeRole(user?.role);
   const { can, canAccessRecord } = useRolePermissions();
+  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
+  const canUseCourierAutomation = hasCapability('courier_automation');
+  const canUseSteadfast = hasSubCapability('steadfast_courier');
+  const canUseCarryBee = hasSubCapability('carrybee_courier');
+  const canUsePaperfly = hasSubCapability('paperfly_courier');
+  const canUsePathao = hasSubCapability('pathao_courier');
   const canCreateOrders = can('orders.create');
   const createCompletionForm = (order?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
@@ -989,7 +996,8 @@ const Orders: React.FC = () => {
   };
 
   const canSendOrderToCourier = (order: Order, sentToAnyCourier: boolean) => (
-    canAccessRecord(order.createdBy, 'orders.sendToCourierOwn', 'orders.sendToCourierAny')
+    canUseCourierAutomation
+      && canAccessRecord(order.createdBy, 'orders.sendToCourierOwn', 'orders.sendToCourierAny')
       && order.status !== OrderStatus.PICKED
       && order.status !== OrderStatus.COMPLETED
       && order.status !== OrderStatus.EXCHANGE_PROCESSING
@@ -1658,7 +1666,7 @@ const Orders: React.FC = () => {
               <button onClick={closeCourierSelection} className="text-gray-400 hover:text-gray-600 text-3xl leading-none flex-shrink-0">×</button>
             </div>
             <div className="space-y-4 p-6">
-              {isCourierConfigured('steadfast') && (
+              {canUseSteadfast && isCourierConfigured('steadfast') && (
                 <button
                   type="button"
                   onClick={() => handleSelectCourierService('steadfast')}
@@ -1668,7 +1676,7 @@ const Orders: React.FC = () => {
                   <span>Steadfast</span>
                 </button>
               )}
-              {isCourierConfigured('carrybee') && (
+              {canUseCarryBee && isCourierConfigured('carrybee') && (
                 <button
                   type="button"
                   onClick={() => handleSelectCourierService('carrybee')}
@@ -1678,7 +1686,7 @@ const Orders: React.FC = () => {
                   <span>CarryBee</span>
                 </button>
               )}
-              {isCourierConfigured('paperfly') && (
+              {canUsePaperfly && isCourierConfigured('paperfly') && (
                 <button
                   type="button"
                   onClick={() => handleSelectCourierService('paperfly')}
@@ -1688,7 +1696,7 @@ const Orders: React.FC = () => {
                   <span>Paperfly</span>
                 </button>
               )}
-              {isCourierConfigured('pathao') && (
+              {canUsePathao && isCourierConfigured('pathao') && (
                 <button
                   type="button"
                   onClick={() => handleSelectCourierService('pathao')}

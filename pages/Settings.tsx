@@ -62,7 +62,13 @@ const SettingsPage: React.FC = () => {
     canManagePermissions,
     canSyncAds,
   } = useRolePermissions();
-  const { hasCapability, capabilities } = useCapabilities(Boolean(user));
+  const { hasCapability, hasSubCapability, capabilities } = useCapabilities(Boolean(user));
+  const canUseSteadfast = hasSubCapability('steadfast_courier');
+  const canUseCarryBee = hasSubCapability('carrybee_courier');
+  const canUsePaperfly = hasSubCapability('paperfly_courier');
+  const canUsePathao = hasSubCapability('pathao_courier');
+  const canUseAccounts = hasSubCapability('accounts');
+  const canUsePayroll = hasSubCapability('payroll');
 
   // Query data from React Query hooks
   const { data: companySettingsData, isPending: companyLoading } = useCompanySettings();
@@ -70,7 +76,8 @@ const SettingsPage: React.FC = () => {
   const { data: invoiceSettingsData, isPending: invoiceLoading } = useInvoiceSettings();
   const { data: systemDefaultsData, isPending: defaultsLoading } = useSystemDefaults();
   const { data: courierSettingsData, isPending: courierLoading } = useCourierSettings();
-  const { data: walletSettingsData, isPending: walletLoading } = useWalletSettings();
+  const { data: walletSettingsData, isPending: walletPending } = useWalletSettings({ enabled: canUsePayroll });
+  const walletLoading = canUsePayroll && walletPending;
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
   const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
@@ -96,7 +103,7 @@ const SettingsPage: React.FC = () => {
   const { data: categories = [], isPending: loadingCategories } = useCategories();
   const { data: paymentMethods = [], isPending: loadingPaymentMethods } = usePaymentMethods();
   const { data: units = [], isPending: loadingUnits } = useUnits();
-  const { data: accounts = [] } = useAccounts();
+  const { data: accounts = [] } = useAccounts({ enabled: canUseAccounts });
   
   // Mutations
   const createCategoryMutation = useCreateCategory();
@@ -363,6 +370,10 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     let timer: any = null;
     const fetchStores = async () => {
+      if (!canUseCarryBee) {
+        setCarryBeeStores([]);
+        return;
+      }
       const { baseUrl, clientId, clientSecret, clientContext } = courierSettings.carryBee;
       
       // Only fetch if all required fields are filled (trim whitespace)
@@ -401,7 +412,7 @@ const SettingsPage: React.FC = () => {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [courierSettings.carryBee.baseUrl, courierSettings.carryBee.clientId, courierSettings.carryBee.clientSecret, courierSettings.carryBee.clientContext]);
+  }, [canUseCarryBee, courierSettings.carryBee.baseUrl, courierSettings.carryBee.clientId, courierSettings.carryBee.clientSecret, courierSettings.carryBee.clientContext]);
 
   React.useEffect(() => {
     const result = searchParams.get('meta_ads');
@@ -592,7 +603,16 @@ const SettingsPage: React.FC = () => {
           break;
         case 'courier':
           if (hasCapability('courier_automation')) {
-            updates.courier = courierSettings;
+            const enabledCourierSettings: Partial<CourierSettings> = {};
+            if (canUseSteadfast) enabledCourierSettings.steadfast = courierSettings.steadfast;
+            if (canUseCarryBee) enabledCourierSettings.carryBee = courierSettings.carryBee;
+            if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
+            if (canUsePathao) enabledCourierSettings.pathao = courierSettings.pathao;
+            if (Object.keys(enabledCourierSettings).length === 0) {
+              toast.info('No courier providers are enabled for this subscription.');
+              return;
+            }
+            updates.courier = enabledCourierSettings;
           }
           break;
         default:
@@ -921,7 +941,7 @@ const SettingsPage: React.FC = () => {
     canEditOrderInvoiceSettings ? { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales } : null,
     canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
     capabilities.be_smart && hasAdminAccess(user?.role) ? { id: 'be-smart', label: 'Be Smart', icon: ICONS.Bell } : null,
-    hasCapability('human_resources') && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
+    canUsePayroll && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
     hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
     hasCapability('whatsapp') && hasAdminAccess(user?.role) ? { id: 'whatsapp', label: 'WhatsApp', icon: ICONS.WhatsApp } : null,
     hasCapability('messenger') && hasAdminAccess(user?.role) ? { id: 'messenger', label: 'Messenger', icon: ICONS.Messenger } : null,
@@ -1242,7 +1262,7 @@ const SettingsPage: React.FC = () => {
             <div className="space-y-10 animate-in fade-in duration-300">
               <h3 className="text-xl font-bold text-gray-800 border-b pb-4">System Defaults</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {hasCapability('banking') && (
+                {canUseAccounts && (
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
                     <select
@@ -2141,6 +2161,12 @@ const SettingsPage: React.FC = () => {
 
           {activeTab === 'courier' && (
             <div className="space-y-10 animate-in fade-in duration-300">
+              {!canUseSteadfast && !canUseCarryBee && !canUsePaperfly && !canUsePathao && (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm font-medium text-gray-500">
+                  No courier providers are enabled for this subscription.
+                </div>
+              )}
+              {canUseSteadfast && (
               <section className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-800 border-b pb-4 flex items-center gap-2">
                   <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
@@ -2178,7 +2204,9 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               </section>
+              )}
 
+              {canUseCarryBee && (
               <section className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-800 border-b pb-4 flex items-center gap-2">
                   <img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full" />
@@ -2243,7 +2271,9 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               </section>
+              )}
 
+              {canUsePaperfly && (
               <section className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-800 border-b pb-4 flex items-center gap-2">
                   <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
@@ -2317,7 +2347,9 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               </section>
+              )}
 
+              {canUsePathao && (
               <section className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-800 border-b pb-4 flex items-center gap-2">
                   <img src="/uploads/pathao.png" alt="Pathao" className="w-6 h-6 rounded-full" />
@@ -2446,6 +2478,7 @@ const SettingsPage: React.FC = () => {
                   )}
                 </div>
               </section>
+              )}
             </div>
           )}
 

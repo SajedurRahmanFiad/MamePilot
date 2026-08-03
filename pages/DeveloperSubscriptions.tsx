@@ -90,7 +90,7 @@ const DeveloperSubscriptions: React.FC = () => {
     const caps = normalizeCapabilities(capabilitySettings.capabilities);
     setOverrideCapabilities(caps);
     // Extract sub-capabilities from the capabilities response if present
-    const rawSubs = (capabilitySettings.capabilities as any)?.subCapabilities;
+    const rawSubs = capabilitySettings.subCapabilities ?? capabilitySettings.capabilities.subCapabilities;
     setOverrideSubCapabilities(normalizeSubCapabilities(rawSubs || {}, caps));
     setMonthlyPriceOverride(typeof capabilitySettings.pricingMetadata?.monthly === 'number' ? String(capabilitySettings.pricingMetadata.monthly) : '');
     setYearlyPriceOverride(typeof capabilitySettings.pricingMetadata?.yearly === 'number' ? String(capabilitySettings.pricingMetadata.yearly) : '');
@@ -196,13 +196,12 @@ const DeveloperSubscriptions: React.FC = () => {
   const saveOverride = async () => {
     const toastId = toast.loading('Saving custom subscription access...');
     try {
-      // Merge sub-capabilities into the capabilities object for storage
-      const capabilitiesWithSubs = { ...overrideCapabilities, subCapabilities: overrideSubCapabilities };
       await overrideMutation.mutateAsync({
         licenseApiUrl,
         licenseOwnerToken: ownerToken,
         licenseKey: capabilitySettings?.licenseKey,
-        capabilities: capabilitiesWithSubs,
+        capabilities: overrideCapabilities,
+        subCapabilities: overrideSubCapabilities,
         pricingMetadata: buildPriceOverride(monthlyPriceOverride, yearlyPriceOverride),
       });
       toast.update(toastId, 'Custom subscription access saved.', 'success');

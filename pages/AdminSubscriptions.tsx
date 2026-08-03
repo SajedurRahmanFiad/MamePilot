@@ -180,7 +180,7 @@ const AdminSubscriptions: React.FC = () => {
   const activeKeys = useMemo(() => CAPABILITY_KEYS.filter((key) => Boolean(capabilities[key])), [capabilities]);
   const inactiveKeys = useMemo(() => CAPABILITY_KEYS.filter((key) => !capabilities[key]), [capabilities]);
   const yearlySavings = monthlyAmount > 0 && yearlyAmount > 0 ? Math.ceil(((monthlyAmount * 12 - yearlyAmount) / (monthlyAmount * 12)) * 100) : 0;
-  const rawSubs = (capabilitySettings?.capabilities as any)?.subCapabilities;
+  const rawSubs = capabilitySettings?.subCapabilities ?? capabilitySettings?.capabilities.subCapabilities;
   const subCaps = useMemo(() => normalizeSubCapabilities(rawSubs || {}, capabilities), [rawSubs, capabilities]);
   const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(new Set());
   const toggleFeature = (key: string) => setExpandedFeatures((prev) => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });

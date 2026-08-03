@@ -1138,7 +1138,8 @@ export interface LicenseTier {
 }
 
 export interface CapabilitySettings {
-  capabilities: AppCapabilityMap;
+  capabilities: AppCapabilityMap & { subCapabilities?: SubCapabilityMap };
+  subCapabilities?: SubCapabilityMap;
   tierKey?: string | null;
   planName?: string | null;
   licenseStatus: string;

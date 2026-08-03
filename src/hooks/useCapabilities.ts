@@ -9,7 +9,7 @@ export function useCapabilities(enabled: boolean = true) {
   const isDeveloper = isDeveloperRole(activeUser?.role);
   const { data, isPending } = useCapabilitySettings(enabled && !!activeUser);
   const capabilities = normalizeCapabilities(data?.capabilities);
-  const rawSubs = (data?.capabilities as any)?.subCapabilities;
+  const rawSubs = data?.subCapabilities ?? data?.capabilities.subCapabilities;
   const subCapabilities = normalizeSubCapabilities(rawSubs || {}, capabilities);
 
   const hasCapability = (key: AppCapabilityKey): boolean => {

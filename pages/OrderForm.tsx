@@ -62,6 +62,8 @@ function applyDynamicPricing(
   return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
 }
 
+const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+
 const OrderForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -397,7 +399,17 @@ const OrderForm: React.FC = () => {
   const dynamicDiscountTotal = items.reduce((sum, item) => sum + (item.dynamicDiscount || 0) * item.quantity, 0);
   const parsedDiscount = parseFloat(discount) || 0;
   const parsedShipping = parseFloat(shipping) || 0;
-  const total = Math.max(0, subtotal - parsedDiscount + parsedShipping);
+  const calculatedTotal = roundMoney(Math.max(0, subtotal + parsedShipping));
+  const total = roundMoney(Math.max(0, calculatedTotal - parsedDiscount));
+
+  const handleDiscountChange = (value: number) => {
+    setDiscount(String(roundMoney(Math.min(calculatedTotal, Math.max(0, value)))));
+  };
+
+  const handleTotalChange = (value: number) => {
+    const nextTotal = roundMoney(Math.min(calculatedTotal, Math.max(0, value)));
+    setDiscount(String(roundMoney(calculatedTotal - nextTotal)));
+  };
 
   // Auto-populate discount field with dynamic pricing discount when items change
   React.useEffect(() => {
@@ -529,8 +541,8 @@ const OrderForm: React.FC = () => {
       setError('User session expired. Please log in again.');
       return;
     }
-    if (parsedDiscount < 0 || parsedDiscount > subtotal) {
-      toast.error(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(subtotal)}.`);
+    if (parsedDiscount < 0 || parsedDiscount > calculatedTotal) {
+      toast.error(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(calculatedTotal)}.`);
       return;
     }
     if (parsedShipping < 0) {
@@ -1063,7 +1075,7 @@ const OrderForm: React.FC = () => {
                 <span className="text-xs text-gray-500 font-black">৳</span>
                 <NumericInput 
                   value={discount} 
-                  onChange={(value) => setDiscount(String(value))}
+                  onChange={handleDiscountChange}
                   className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white"
                   allowDecimals={true}
                   decimalPlaces={2}
@@ -1085,7 +1097,19 @@ const OrderForm: React.FC = () => {
             </div>
             <div className="pt-6 border-t-4 border-[#c7dff5] flex justify-between items-center">
               <span className="text-sm font-black text-gray-900 uppercase tracking-tighter">Total</span>
-              <span className="text-sm font-black text-[#3c5a82]">{formatCurrency(total)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#3c5a82] font-black">৳</span>
+                <NumericInput
+                  value={total}
+                  onChange={handleTotalChange}
+                  min={0}
+                  max={calculatedTotal}
+                  className="w-24 text-right py-1.5 border border-[#c7dff5] rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-[#3c5a82] bg-white font-black"
+                  allowDecimals={true}
+                  decimalPlaces={2}
+                  aria-label="Order total"
+                />
+              </div>
             </div>
             {error && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
