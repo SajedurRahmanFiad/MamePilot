@@ -907,8 +907,8 @@ abstract class BaseService
             'id' => $id,
             'name' => trim((string) ($page['name'] ?? $fallback['name'] ?? '')) ?: $fallbackName,
             'logo' => $this->normalizeUploadedFileValue($page['logo'] ?? $fallback['logo'] ?? null, 'logos', null) ?? '',
-            'phone' => (string) ($page['phone'] ?? $fallback['phone'] ?? '+880'),
-            'email' => (string) ($page['email'] ?? $fallback['email'] ?? 'info@company.com'),
+            'phone' => $page['phone'] ?? ($fallback['phone'] ?? '+880'),
+            'email' => $page['email'] ?? ($fallback['email'] ?? 'info@company.com'),
             'address' => (string) ($page['address'] ?? $fallback['address'] ?? ''),
             'isGlobalBranding' => (bool) ($page['isGlobalBranding'] ?? $page['is_global_branding'] ?? $fallback['isGlobalBranding'] ?? $fallback['is_global_branding'] ?? false),
         ];

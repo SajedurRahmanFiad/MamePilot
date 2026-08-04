@@ -23,8 +23,8 @@ export function normalizeCompanyPage(
     id,
     name,
     logo: String(page?.logo || fallback.logo || (index === 0 ? DEFAULT_COMPANY_LOGO : '')),
-    phone: String(page?.phone || fallback.phone || DEFAULT_COMPANY_PHONE),
-    email: String(page?.email || fallback.email || DEFAULT_COMPANY_EMAIL),
+    phone: String(page?.phone ?? fallback.phone ?? DEFAULT_COMPANY_PHONE),
+    email: String(page?.email ?? fallback.email ?? DEFAULT_COMPANY_EMAIL),
     address: String(page?.address || fallback.address || ''),
     isGlobalBranding: Boolean(page?.isGlobalBranding ?? fallback.isGlobalBranding ?? false),
   };

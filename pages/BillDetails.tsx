@@ -727,6 +727,14 @@ const BillDetails: React.FC = () => {
               </div>
             </div>
 
+            {invoiceSettings?.footer && (
+              <div className="bg-gray-50 p-3 sm:p-4 rounded-[10px] border border-gray-100">
+                <p className="text-[9px] sm:text-[10px] lg:text-sm text-gray-500 font-medium leading-relaxed whitespace-pre-line">
+                  {invoiceSettings.footer}
+                </p>
+              </div>
+            )}
+
           </div>
         </div>
 
