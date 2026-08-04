@@ -2710,6 +2710,11 @@ CALL sp_add_col('transactions', 'recurring_scheduled_for', 'DATETIME NULL AFTER 
 CALL sp_create_unique_idx('transactions', 'uq_transactions_recurring_occurrence', 'recurring_transaction_id, recurring_scheduled_for');
 CALL sp_create_idx('transactions', 'idx_transactions_recurring_transaction', 'recurring_transaction_id');
 
+-- Migration: 2026-08-05_product_selection_mode.sql
+-- Add product selection mode setting for order/bill product dropdowns.
+
+CALL sp_add_col('system_defaults', 'product_selection_mode', 'VARCHAR(16) NOT NULL DEFAULT ''simple''');
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;
