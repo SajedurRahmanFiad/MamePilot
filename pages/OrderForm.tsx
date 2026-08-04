@@ -1027,7 +1027,7 @@ const OrderForm: React.FC = () => {
               setSelectedProductIds(new Set());
               setSearchTerm('');
             }}
-            className="flex items-center gap-2 ${theme.colors.primary[600]} font-black text-[10px] uppercase tracking-widest hover:bg-[#ebf4ff] px-4 py-2.5 rounded-xl border-2 border-dashed border-[#c7dff5] transition-all"
+            className={`flex items-center gap-2 ${theme.colors.primary.text} font-black text-[10px] uppercase tracking-widest hover:${theme.colors.primary[50]} px-4 py-2.5 rounded-xl border-2 border-dashed ${theme.colors.primary.border} transition-all`}
           >
             {ICONS.Plus} Add an item
           </button>
@@ -1092,7 +1092,7 @@ const OrderForm: React.FC = () => {
                 <div className="mt-2 pt-2 border-t border-gray-100 px-1">
                   <button
                     onClick={addSelectedItems}
-                    className="w-full py-2.5 bg-[#3c5a82] text-white font-bold text-sm rounded-xl hover:bg-[#2d4a6f] transition-all flex items-center justify-center gap-2"
+                    className={`w-full py-2.5 ${theme.colors.primary[600]} text-white font-bold text-sm rounded-xl hover:${theme.colors.primary[700]} transition-all flex items-center justify-center gap-2`}
                   >
                     {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
                   </button>

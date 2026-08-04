@@ -450,7 +450,7 @@ const BillForm: React.FC = () => {
               <tr>
                 <td colSpan={5} className="px-6 py-5 relative">
                   <div className="relative">
-                    <Button onClick={() => { setShowProductSearch(prev => !prev); setSelectedProductIds(new Set()); setSearchTerm(''); }} variant="secondary" size="sm" icon={ICONS.Plus} className="border-2 border-dashed border-[#c7e0f5]">Add an item</Button>
+                    <Button onClick={() => { setShowProductSearch(prev => !prev); setSelectedProductIds(new Set()); setSearchTerm(''); }} variant="secondary" size="sm" icon={ICONS.Plus} className={`border-2 border-dashed ${theme.colors.primary.border}`}>Add an item</Button>
                     {showProductSearch && (
                       <div className="absolute top-full left-0 mt-3 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                         <div className="relative mb-2">
@@ -504,7 +504,7 @@ const BillForm: React.FC = () => {
                           <div className="mt-2 pt-2 border-t border-gray-100 px-1">
                             <button
                               onClick={addSelectedItems}
-                              className="w-full py-2.5 bg-[#3c5a82] text-white font-bold text-sm rounded-xl hover:bg-[#2d4a6f] transition-all flex items-center justify-center gap-2"
+                              className={`w-full py-2.5 ${theme.colors.primary[600]} text-white font-bold text-sm rounded-xl hover:${theme.colors.primary[700]} transition-all flex items-center justify-center gap-2`}
                             >
                               {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
                             </button>
