@@ -1499,20 +1499,29 @@ final class MasterDataApi extends BaseService
     {
         $this->requireAdmin();
         $current = $this->fetchSystemDefaults();
+        $hasProductSelectionModeColumn = $this->database->fetchOne(
+            "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_defaults' AND COLUMN_NAME = 'product_selection_mode' LIMIT 1"
+        ) !== null;
+
+        $payload = [
+            'default_account_id' => array_key_exists('defaultAccountId', $params) ? $this->nullableString($params['defaultAccountId']) : $current['defaultAccountId'],
+            'default_payment_method' => array_key_exists('defaultPaymentMethod', $params) ? $this->nullableString($params['defaultPaymentMethod']) : $current['defaultPaymentMethod'],
+            'income_category_id' => array_key_exists('incomeCategoryId', $params) ? $this->nullableString($params['incomeCategoryId']) : $current['incomeCategoryId'],
+            'expense_category_id' => array_key_exists('expenseCategoryId', $params) ? $this->nullableString($params['expenseCategoryId']) : $current['expenseCategoryId'],
+            'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
+            'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
+            'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
+            'theme_color' => array_key_exists('themeColor', $params) ? $this->nullableString($params['themeColor']) : $current['themeColor'],
+        ];
+
+        if ($hasProductSelectionModeColumn) {
+            $payload['product_selection_mode'] = array_key_exists('productSelectionMode', $params) ? $this->nullableString($params['productSelectionMode']) : $current['productSelectionMode'];
+        }
+
         return $this->saveSingleton(
             'system_defaults',
             'system-default',
-            [
-                'default_account_id' => array_key_exists('defaultAccountId', $params) ? $this->nullableString($params['defaultAccountId']) : $current['defaultAccountId'],
-                'default_payment_method' => array_key_exists('defaultPaymentMethod', $params) ? $this->nullableString($params['defaultPaymentMethod']) : $current['defaultPaymentMethod'],
-                'income_category_id' => array_key_exists('incomeCategoryId', $params) ? $this->nullableString($params['incomeCategoryId']) : $current['incomeCategoryId'],
-                'expense_category_id' => array_key_exists('expenseCategoryId', $params) ? $this->nullableString($params['expenseCategoryId']) : $current['expenseCategoryId'],
-                'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
-                'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
-                'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
-                'theme_color' => array_key_exists('themeColor', $params) ? $this->nullableString($params['themeColor']) : $current['themeColor'],
-                'product_selection_mode' => array_key_exists('productSelectionMode', $params) ? $this->nullableString($params['productSelectionMode']) : $current['productSelectionMode'],
-            ],
+            $payload,
             fn(): array => $this->fetchSystemDefaults()
         );
     }
