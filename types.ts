@@ -1072,6 +1072,7 @@ export interface Settings {
     maxTransactionAmount?: number;
     whiteLabel: boolean;
     themeColor: string;
+    productSelectionMode: string;
   };
   categories: {
     id: string;

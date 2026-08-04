@@ -6,7 +6,7 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
@@ -98,6 +98,7 @@ const OrderForm: React.FC = () => {
   const queryClient = useQueryClient();
   const [showProductSearch, setShowProductSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
 
   // Lightweight fetch used only when the product search dropdown opens.
   const { data: productsMini = [], isFetching: productsMiniLoading } = useQuery({
@@ -143,6 +144,8 @@ const OrderForm: React.FC = () => {
   const { data: metaAdsData } = useMetaAds({ status: 'ACTIVE' }, true);
   const { data: orderSettings } = useOrderSettings();
   const { data: companySettings, isPending: companySettingsLoading } = useCompanySettings();
+  const { data: systemDefaults } = useSystemDefaults();
+  const isMultiSelectMode = (systemDefaults?.productSelectionMode ?? 'simple') === 'multi';
   
   // Mutations
   const createMutation = useCreateOrder();
@@ -416,6 +419,15 @@ const OrderForm: React.FC = () => {
     setDiscount(String(dynamicDiscountTotal));
   }, [dynamicDiscountTotal]);
 
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
+
   const addItem = (productId: string) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
@@ -446,7 +458,16 @@ const OrderForm: React.FC = () => {
       originalRate: pricing.action !== 'none' ? product.salePrice : undefined,
       dynamicDiscount: itemDiscount > 0 ? itemDiscount : undefined,
     };
-    setItems([...items, newItem]);
+    setItems(prev => [...prev, newItem]);
+    if (!isMultiSelectMode) {
+      setShowProductSearch(false);
+      setSearchTerm('');
+    }
+  };
+
+  const addSelectedItems = () => {
+    selectedProductIds.forEach(id => addItem(id));
+    setSelectedProductIds(new Set());
     setShowProductSearch(false);
     setSearchTerm('');
   };
@@ -1000,26 +1021,30 @@ const OrderForm: React.FC = () => {
         </div>
 
         <div className="relative mt-2">
-          <button 
-            onClick={() => setShowProductSearch(!showProductSearch)} 
+          <button
+            onClick={() => {
+              setShowProductSearch(prev => !prev);
+              setSelectedProductIds(new Set());
+              setSearchTerm('');
+            }}
             className="flex items-center gap-2 ${theme.colors.primary[600]} font-black text-[10px] uppercase tracking-widest hover:bg-[#ebf4ff] px-4 py-2.5 rounded-xl border-2 border-dashed border-[#c7dff5] transition-all"
           >
             {ICONS.Plus} Add an item
           </button>
-          
+
           {showProductSearch && (
             <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 animate-in slide-in-from-top-2 duration-200">
               <div className="relative mb-2">
                 <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
                   {ICONS.Search}
                 </div>
-                <input 
-                  autoFocus 
-                  type="text" 
-                  placeholder="Search catalog..." 
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" 
-                  value={searchTerm} 
-                  onChange={(e) => setSearchTerm(e.target.value)} 
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search catalog..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
               <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
@@ -1035,9 +1060,22 @@ const OrderForm: React.FC = () => {
                   products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
                     <button
                       key={p.id}
-                      onClick={() => addItem(p.id)}
-                      className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#ebf4ff] rounded-xl group transition-all"
+                      onClick={() => isMultiSelectMode ? toggleProductSelection(p.id) : addItem(p.id)}
+                      className={`flex items-center gap-4 w-full px-4 py-3 text-left rounded-xl group transition-all ${
+                        isMultiSelectMode && selectedProductIds.has(p.id) ? 'bg-[#dbeafe] ring-2 ring-[#3c5a82]' : 'hover:bg-[#ebf4ff]'
+                      }`}
                     >
+                      {isMultiSelectMode && (
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${
+                          selectedProductIds.has(p.id) ? 'bg-[#3c5a82] border-[#3c5a82]' : 'border-gray-300'
+                        }`}>
+                          {selectedProductIds.has(p.id) && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      )}
                       {p.image && (
                         <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
                       )}
@@ -1050,6 +1088,16 @@ const OrderForm: React.FC = () => {
                   ))
                 )}
               </div>
+              {isMultiSelectMode && selectedProductIds.size > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-100 px-1">
+                  <button
+                    onClick={addSelectedItems}
+                    className="w-full py-2.5 bg-[#3c5a82] text-white font-bold text-sm rounded-xl hover:bg-[#2d4a6f] transition-all flex items-center justify-center gap-2"
+                  >
+                    {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

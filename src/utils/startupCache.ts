@@ -18,6 +18,7 @@ export type SystemDefaultsSnapshot = {
   maxTransactionAmount: number;
   whiteLabel: boolean;
   themeColor: string;
+  productSelectionMode: string;
 };
 
 function readEntry<T>(key: string): CacheEntry<T> | null {

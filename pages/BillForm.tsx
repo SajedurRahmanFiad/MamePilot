@@ -6,7 +6,7 @@ import { BillStatus, OrderItem } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
-import { useBill, useVendor } from '../src/hooks/useQueries';
+import { useBill, useSystemDefaults, useVendor } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage } from '../src/services/supabaseQueries';
 import { useCreateBill, useUpdateBill } from '../src/hooks/useMutations';
@@ -38,6 +38,9 @@ const BillForm: React.FC = () => {
   const { data: existingBillData, isPending: billLoading, error: billError } = useBill(id);
   const [showProductSearch, setShowProductSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const { data: systemDefaults } = useSystemDefaults();
+  const isMultiSelectMode = (systemDefaults?.productSelectionMode ?? 'simple') === 'multi';
 
   // Lightweight fetch used only when the product search dropdown opens.
   const { data: productsMini = [], isFetching: productsMiniLoading } = useQuery({
@@ -164,6 +167,15 @@ const BillForm: React.FC = () => {
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
   const total = Math.max(0, subtotal - discount + shipping);
 
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
+
   const addItem = (productId: string) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
@@ -175,7 +187,16 @@ const BillForm: React.FC = () => {
       quantity: 1,
       amount: product.purchasePrice
     };
-    setItems([...items, newItem]);
+    setItems(prev => [...prev, newItem]);
+    if (!isMultiSelectMode) {
+      setShowProductSearch(false);
+      setSearchTerm('');
+    }
+  };
+
+  const addSelectedItems = () => {
+    selectedProductIds.forEach(id => addItem(id));
+    setSelectedProductIds(new Set());
     setShowProductSearch(false);
     setSearchTerm('');
   };
@@ -429,7 +450,7 @@ const BillForm: React.FC = () => {
               <tr>
                 <td colSpan={5} className="px-6 py-5 relative">
                   <div className="relative">
-                    <Button onClick={() => setShowProductSearch(!showProductSearch)} variant="secondary" size="sm" icon={ICONS.Plus} className="border-2 border-dashed border-[#c7e0f5]">Add an item</Button>
+                    <Button onClick={() => { setShowProductSearch(prev => !prev); setSelectedProductIds(new Set()); setSearchTerm(''); }} variant="secondary" size="sm" icon={ICONS.Plus} className="border-2 border-dashed border-[#c7e0f5]">Add an item</Button>
                     {showProductSearch && (
                       <div className="absolute top-full left-0 mt-3 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                         <div className="relative mb-2">
@@ -449,7 +470,24 @@ const BillForm: React.FC = () => {
                             <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
                           ) : (
                             products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-                              <button key={p.id} onClick={() => addItem(p.id)} className="flex items-center gap-4 w-full px-4 py-3 text-left hover:bg-[#e6f0ff] rounded-xl group transition-all">
+                              <button
+                                key={p.id}
+                                onClick={() => isMultiSelectMode ? toggleProductSelection(p.id) : addItem(p.id)}
+                                className={`flex items-center gap-4 w-full px-4 py-3 text-left rounded-xl group transition-all ${
+                                  isMultiSelectMode && selectedProductIds.has(p.id) ? 'bg-[#dbeafe] ring-2 ring-[#3c5a82]' : 'hover:bg-[#e6f0ff]'
+                                }`}
+                              >
+                                {isMultiSelectMode && (
+                                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${
+                                    selectedProductIds.has(p.id) ? 'bg-[#3c5a82] border-[#3c5a82]' : 'border-gray-300'
+                                  }`}>
+                                    {selectedProductIds.has(p.id) && (
+                                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                )}
                                 {p.image && (
                                   <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
                                 )}
@@ -462,6 +500,16 @@ const BillForm: React.FC = () => {
                             ))
                           )}
                         </div>
+                        {isMultiSelectMode && selectedProductIds.size > 0 && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 px-1">
+                            <button
+                              onClick={addSelectedItems}
+                              className="w-full py-2.5 bg-[#3c5a82] text-white font-bold text-sm rounded-xl hover:bg-[#2d4a6f] transition-all flex items-center justify-center gap-2"
+                            >
+                              {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

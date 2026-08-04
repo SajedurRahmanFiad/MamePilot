@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useToastNotifications } from '../contexts/ToastContext';
 import { useQueryClient } from '@tanstack/react-query';
-import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
+import { verifyPipraPayPayment } from '../services/supabaseQueries';
 
 const PipraPayReturnHandler: React.FC = () => {
   const location = useLocation();

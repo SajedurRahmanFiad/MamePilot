@@ -58,6 +58,7 @@ export interface DataImportResponse {
   entity: string;
   processed: number;
   created: number;
+  updated: number;
   skipped: number;
   failed: number;
   errors: DataImportError[];

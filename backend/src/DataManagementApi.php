@@ -62,8 +62,9 @@ final class DataManagementApi extends BaseService
             'products' => [
                 'label' => 'Products',
                 'capability' => self::DATASET_CAPABILITIES['products'],
-                'description' => 'Product catalog with human-readable category and unit names. Existing products are skipped, not overwritten.',
+                'description' => 'Product catalog with human-readable category and unit names. Products are matched by slug for updates; new slugs create new products.',
                 'fields' => [
+                    $this->field('slug', 'Slug', false, ['product slug']),
                     $this->field('name', 'Product Name', true, ['name', 'item name']),
                     $this->field('image', 'Image URL', false, ['image', 'photo']),
                     $this->field('category', 'Category', false, ['product category']),
@@ -74,7 +75,7 @@ final class DataManagementApi extends BaseService
                     $this->field('dynamicPricing', 'Dynamic Pricing JSON', false, ['dynamic pricing'], 'json'),
                 ],
                 'sampleRow' => [
-                    'name' => 'Premium T-Shirt', 'image' => '', 'category' => 'Clothing', 'unitName' => 'Piece',
+                    'slug' => 'premium-t-shirt', 'name' => 'Premium T-Shirt', 'image' => '', 'category' => 'Clothing', 'unitName' => 'Piece',
                     'salePrice' => '850', 'purchasePrice' => '500', 'stock' => '25', 'dynamicPricing' => '',
                 ],
             ],
@@ -330,6 +331,7 @@ final class DataManagementApi extends BaseService
             'entity' => $entity,
             'processed' => count($rows),
             'created' => 0,
+            'updated' => 0,
             'skipped' => 0,
             'failed' => 0,
             'errors' => [],
@@ -1258,7 +1260,8 @@ final class DataManagementApi extends BaseService
         $bindings = [];
         $dateSql = $this->exportDateSql('p.created_at', $dateRange, $bindings, 'export_products');
         return $this->database->fetchAll(
-            "SELECT p.name,
+            "SELECT p.slug,
+                    p.name,
                     p.image,
                     p.category,
                     un.name AS unitName,
@@ -1873,17 +1876,27 @@ final class DataManagementApi extends BaseService
         ]);
     }
 
-    /** @return 'created'|'skipped' */
+    /** @return 'created'|'updated'|'skipped' */
     private function importProduct(array $row, array $actor): string
     {
         $name = $this->requiredText($row, 'name', 'Product Name');
-        $existing = $this->database->fetchOne(
-            'SELECT id FROM products WHERE LOWER(name) = LOWER(:name) ORDER BY created_at ASC LIMIT 1',
-            [':name' => $name]
-        );
-        if ($existing !== null) {
-            return 'skipped';
+        $slug = $this->nullableString($row['slug'] ?? null);
+        $slug = $slug !== '' && $slug !== null ? $this->slugify($slug) : null;
+
+        $existing = null;
+        if ($slug !== null) {
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM products WHERE LOWER(slug) = LOWER(:slug) ORDER BY created_at ASC LIMIT 1',
+                [':slug' => $slug]
+            );
         }
+        if ($existing === null) {
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM products WHERE LOWER(name) = LOWER(:name) ORDER BY created_at ASC LIMIT 1',
+                [':name' => $name]
+            );
+        }
+
         $dynamicPricing = $this->text($row, 'dynamicPricing');
         if ($dynamicPricing !== '') {
             $this->jsonValue($row, 'dynamicPricing', true);
@@ -1893,7 +1906,7 @@ final class DataManagementApi extends BaseService
             'product-images',
             isset($row['imageName']) ? trim((string) $row['imageName']) : null
         );
-        return $this->saveByIdentity('products', '', 'name', $name, [
+        $data = [
             'name' => $name,
             'image' => $image,
             'category' => $this->nullableString($row['category'] ?? null),
@@ -1902,8 +1915,24 @@ final class DataManagementApi extends BaseService
             'purchase_price' => $this->formatMoney(max(0, $this->number($row, 'purchasePrice'))),
             'stock' => max(0, $this->integer($row, 'stock')),
             'dynamic_pricing' => $dynamicPricing !== '' ? $dynamicPricing : null,
-            'created_by' => $this->resolveUserId($row, $actor),
-        ]);
+        ];
+
+        if ($existing !== null) {
+            if ($slug !== null) {
+                $data['slug'] = $slug;
+            }
+            $data['updated_at'] = $this->database->nowUtc();
+            $this->touchUpdate('products', (string) $existing['id'], $data);
+            return 'updated';
+        }
+
+        $data['slug'] = $slug ?? $this->slugify($name) ?: null;
+        $data['created_by'] = $this->resolveUserId($row, $actor);
+        $data['id'] = $this->uuid4();
+        $data['created_at'] = $this->database->nowUtc();
+        $data['updated_at'] = $this->database->nowUtc();
+        $this->insertRow('products', $data);
+        return 'created';
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -2515,5 +2544,12 @@ final class DataManagementApi extends BaseService
             $data['password_hash'] = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
         }
         return $this->saveByIdentity('users', $requestedId, 'phone', $phone, $data);
+    }
+
+    private function slugify(string $text): string
+    {
+        $slug = strtolower(trim($text));
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug) ?? '';
+        return trim($slug, '-');
     }
 }

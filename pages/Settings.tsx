@@ -197,6 +197,7 @@ const SettingsPage: React.FC = () => {
     maxTransactionAmount: 0,
     whiteLabel: false,
     themeColor: '#0f2f57',
+    productSelectionMode: 'simple',
   });
   const systemDefaultsDirtyFieldsRef = useRef<Set<SystemDefaultField>>(new Set());
   const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false });
@@ -1315,6 +1316,17 @@ const SettingsPage: React.FC = () => {
                     />
                     <span className="text-sm font-medium text-gray-600">{systemDefaults.themeColor}</span>
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Product Selection Mode</label>
+                  <select
+                    value={systemDefaults.productSelectionMode}
+                    onChange={e => setSystemDefaultField('productSelectionMode', e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                  >
+                    <option value="simple">Simple — click to add instantly</option>
+                    <option value="multi">Multi-select — select then add</option>
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Records Per Page</label>

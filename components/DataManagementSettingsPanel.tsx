@@ -40,6 +40,7 @@ interface ImportSummary {
   fileName: string;
   processed: number;
   created: number;
+  updated: number;
   skipped: number;
   failed: number;
   errors: DataImportError[];
@@ -593,6 +594,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       fileName: session.fileName,
       processed: 0,
       created: 0,
+      updated: 0,
       skipped: 0,
       failed: 0,
       errors: [],
@@ -607,6 +609,7 @@ const DataManagementSettingsPanel: React.FC = () => {
           const result = await importDataRecords(dependency.dataset.key, batch, 0, session.dataset.key);
           aggregate.processed += result.processed;
           aggregate.created += result.created;
+          aggregate.updated += result.updated;
           aggregate.skipped += result.skipped;
           aggregate.failed += result.failed;
           aggregate.errors.push(...result.errors);
@@ -618,6 +621,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         const result = await importDataRecords(session.dataset.key, batch, 0);
         aggregate.processed += result.processed;
         aggregate.created += result.created;
+        aggregate.updated += result.updated;
         aggregate.skipped += result.skipped;
         aggregate.failed += result.failed;
         aggregate.errors.push(...result.errors);
@@ -635,9 +639,13 @@ const DataManagementSettingsPanel: React.FC = () => {
         queryClient.invalidateQueries();
       }
       if (aggregate.stoppedMessage || aggregate.failed > 0) {
-        toast.warning(`${aggregate.created} added, ${aggregate.skipped} skipped, and ${aggregate.failed} rows failed${aggregate.stoppedMessage ? ' before the file finished' : ''}.`);
+        toast.warning(`${aggregate.created} added, ${aggregate.updated} updated, ${aggregate.skipped} skipped, and ${aggregate.failed} rows failed${aggregate.stoppedMessage ? ' before the file finished' : ''}.`);
       } else {
-        toast.success(`${aggregate.created} added and ${aggregate.skipped} existing records skipped.`);
+        const parts = [];
+        if (aggregate.created > 0) parts.push(`${aggregate.created} added`);
+        if (aggregate.updated > 0) parts.push(`${aggregate.updated} updated`);
+        if (aggregate.skipped > 0) parts.push(`${aggregate.skipped} skipped`);
+        toast.success(parts.length > 0 ? parts.join(', ') + '.' : 'No changes.');
       }
     }
   };
@@ -672,7 +680,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             <h3 className="text-xl font-bold text-gray-800">Import and Export Data</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
               Download a complete CSV for a data type, or upload a CSV and map its columns before anything is saved.
-              Imports only append new records: existing matches are skipped and never overwritten—no database IDs are needed.
+              Imports append new records and skip or update existing matches depending on the data type. Products are matched by slug and updated; other types are skipped. No database IDs are needed.
             </p>
           </div>
         </div>
@@ -1022,10 +1030,11 @@ const DataManagementSettingsPanel: React.FC = () => {
               </div>
               <p className="mt-2 break-all text-xs font-semibold text-gray-600">{summary.fileName}</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               {[
                 ['Processed', summary.processed],
                 ['Created', summary.created],
+                ['Updated', summary.updated],
                 ['Skipped existing', summary.skipped],
                 ['Failed', summary.failed],
               ].map(([label, value]) => (

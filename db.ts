@@ -23,6 +23,7 @@ const defaultSettings: Settings = {
     maxTransactionAmount: 0,
     whiteLabel: false,
     themeColor: '#0f2f57',
+    productSelectionMode: 'simple',
   },
   categories: [],
   paymentMethods: [],

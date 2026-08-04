@@ -1491,6 +1491,7 @@ final class MasterDataApi extends BaseService
             'maxTransactionAmount' => (float) ($row['max_transaction_amount'] ?? 0),
             'whiteLabel' => (bool) (($capabilitySettings['capabilities']['whitelabel'] ?? null) ?? ($row['white_label'] ?? 0)),
             'themeColor' => trim((string) ($row['theme_color'] ?? '#0f2f57')),
+            'productSelectionMode' => (string) ($row['product_selection_mode'] ?? 'simple'),
         ];
     }
 
@@ -1510,6 +1511,7 @@ final class MasterDataApi extends BaseService
                 'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
                 'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
                 'theme_color' => array_key_exists('themeColor', $params) ? $this->nullableString($params['themeColor']) : $current['themeColor'],
+                'product_selection_mode' => array_key_exists('productSelectionMode', $params) ? $this->nullableString($params['productSelectionMode']) : $current['productSelectionMode'],
             ],
             fn(): array => $this->fetchSystemDefaults()
         );
@@ -2459,6 +2461,7 @@ final class MasterDataApi extends BaseService
             'piprapayMerchantId' => (string) ($row['piprapay_merchant_id'] ?? ''),
             'piprapayIpnSecret' => (string) ($row['piprapay_ipn_secret'] ?? ''),
             'piprapayWebhookUrl' => (string) ($row['piprapay_webhook_url'] ?? ''),
+            'piprapayReturnUrl' => (string) ($row['piprapay_return_url'] ?? ''),
         ];
     }
 
@@ -2811,6 +2814,7 @@ final class MasterDataApi extends BaseService
             'piprapay_merchant_id' => $this->nullableString($params['piprapayMerchantId'] ?? null),
             'piprapay_ipn_secret' => $this->nullableString($params['piprapayIpnSecret'] ?? null),
             'piprapay_webhook_url' => $this->nullableString($params['piprapayWebhookUrl'] ?? null),
+            'piprapay_return_url' => $this->nullableString($params['piprapayReturnUrl'] ?? null),
         ];
 
         if ($row !== null) {
