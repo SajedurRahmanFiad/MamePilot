@@ -11,6 +11,17 @@ final class RecurringTransactionApi extends BaseService
 {
     private const INTERVALS = ['daily', 'weekly', 'monthly', 'yearly'];
 
+    private function pageSize(array $params): int
+    {
+        return max(1, min(200, (int) ($params['pageSize'] ?? self::DEFAULT_PAGE_SIZE)));
+    }
+
+    private function pageOffset(array $params): int
+    {
+        $page = max(1, (int) ($params['page'] ?? 1));
+        return ($page - 1) * $this->pageSize($params);
+    }
+
     public function fetchRecurringTransactionsPage(array $params): array
     {
         $this->requireRecurringPermission('transactions.view');
