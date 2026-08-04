@@ -734,8 +734,10 @@ try {
     courierWebhookAssert(!str_contains($realtimeProvider, 'syncCarryBeeTransferStatuses'), 'Browser still calls courier status sync automatically.');
     $orderDetails = (string) file_get_contents($root . '/pages/OrderDetails.tsx');
     $ordersPage = (string) file_get_contents($root . '/pages/Orders.tsx');
-    courierWebhookAssert(str_contains($orderDetails, '!automaticCourierExpenseEnabled'), 'Order Details does not hide automatic delivered expenses.');
-    courierWebhookAssert(str_contains($ordersPage, '!automaticCourierExpenseEnabled'), 'Orders list does not hide automatic delivered expenses.');
+    courierWebhookAssert(str_contains($orderDetails, 'courierAutomaticExpenseRecorded'), 'Order Details does not check if automatic expense was recorded.');
+    courierWebhookAssert(str_contains($ordersPage, 'courierAutomaticExpenseRecorded'), 'Orders list does not check if automatic expense was recorded.');
+    courierWebhookAssert(str_contains($orderDetails, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Order Details does not conditionally hide the manual expense button.');
+    courierWebhookAssert(str_contains($ordersPage, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Orders list does not conditionally hide the manual expense button.');
 
     echo "Courier webhook verification, mappings, idempotency, charges, expenses, account effects, and Undoer integration passed.\n";
 } finally {

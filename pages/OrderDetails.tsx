@@ -700,8 +700,9 @@ const OrderDetails: React.FC = () => {
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
   const automaticCourierExpenseEnabled = courierSettings?.automaticallyDeductShippingCosts ?? false;
+  const courierAutomaticExpenseRecorded = order?.courierAutomaticExpenseRecorded ?? false;
   const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
-    ? !automaticCourierExpenseEnabled && canMarkCurrentOrderCompleted
+    ? !(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded) && canMarkCurrentOrderCompleted
     : courierAutoFinalizedOutcome === 'Returned'
       ? canMarkCurrentOrderReturned
       : false;

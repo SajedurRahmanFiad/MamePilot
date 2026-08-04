@@ -657,6 +657,7 @@ export interface Order {
   creatorName?: string;
   pendingTransactionCount?: number;
   pendingTransactionIds?: string[];
+  courierAutomaticExpenseRecorded?: boolean;
 }
 
 export interface OrderUndoStockAdjustment {

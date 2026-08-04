@@ -2163,6 +2163,17 @@ final class OperationsApi extends BaseService
             ], $events);
         }
 
+        $order['courierAutomaticExpenseRecorded'] = false;
+        if ($this->tableExists('courier_order_charges')) {
+            $autoCharge = $this->database->fetchOne(
+                "SELECT 1 FROM courier_order_charges
+                 WHERE order_id = :order_id AND expense_status = 'recorded'
+                 LIMIT 1",
+                [':order_id' => (string) $row['id']]
+            );
+            $order['courierAutomaticExpenseRecorded'] = $autoCharge !== null;
+        }
+
         return $order;
     }
 
