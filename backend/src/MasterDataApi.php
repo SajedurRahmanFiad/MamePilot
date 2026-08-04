@@ -1498,24 +1498,56 @@ final class MasterDataApi extends BaseService
     public function updateSystemDefaults(array $params): array
     {
         $this->requireAdmin();
-        $current = $this->fetchSystemDefaults();
-        $hasProductSelectionModeColumn = $this->database->fetchOne(
-            "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_defaults' AND COLUMN_NAME = 'product_selection_mode' LIMIT 1"
-        ) !== null;
+        $payload = [];
 
-        $payload = [
-            'default_account_id' => array_key_exists('defaultAccountId', $params) ? $this->nullableString($params['defaultAccountId']) : $current['defaultAccountId'],
-            'default_payment_method' => array_key_exists('defaultPaymentMethod', $params) ? $this->nullableString($params['defaultPaymentMethod']) : $current['defaultPaymentMethod'],
-            'income_category_id' => array_key_exists('incomeCategoryId', $params) ? $this->nullableString($params['incomeCategoryId']) : $current['incomeCategoryId'],
-            'expense_category_id' => array_key_exists('expenseCategoryId', $params) ? $this->nullableString($params['expenseCategoryId']) : $current['expenseCategoryId'],
-            'records_per_page' => array_key_exists('recordsPerPage', $params) ? (int) $params['recordsPerPage'] : $current['recordsPerPage'],
-            'max_transaction_amount' => array_key_exists('maxTransactionAmount', $params) ? $this->formatMoney($params['maxTransactionAmount']) : $this->formatMoney($current['maxTransactionAmount'] ?? 0),
-            'white_label' => array_key_exists('whiteLabel', $params) ? (int) (bool) $params['whiteLabel'] : (int) ($current['whiteLabel'] ?? false),
-            'theme_color' => array_key_exists('themeColor', $params) ? $this->nullableString($params['themeColor']) : $current['themeColor'],
-        ];
+        if (array_key_exists('defaultAccountId', $params)) {
+            $payload['default_account_id'] = $this->nullableString($params['defaultAccountId']);
+        }
+        if (array_key_exists('defaultPaymentMethod', $params)) {
+            $payload['default_payment_method'] = $this->nullableString($params['defaultPaymentMethod']);
+        }
+        if (array_key_exists('incomeCategoryId', $params)) {
+            $payload['income_category_id'] = $this->nullableString($params['incomeCategoryId']);
+        }
+        if (array_key_exists('expenseCategoryId', $params)) {
+            $payload['expense_category_id'] = $this->nullableString($params['expenseCategoryId']);
+        }
+        if (array_key_exists('recordsPerPage', $params)) {
+            $payload['records_per_page'] = (int) $params['recordsPerPage'];
+        }
+        if (array_key_exists('maxTransactionAmount', $params)) {
+            $payload['max_transaction_amount'] = $this->formatMoney($params['maxTransactionAmount']);
+        }
+        if (array_key_exists('whiteLabel', $params)) {
+            $payload['white_label'] = (int) (bool) $params['whiteLabel'];
+        }
+        if (array_key_exists('themeColor', $params)) {
+            $themeColor = $this->nullableString($params['themeColor']);
+            if ($themeColor !== null) {
+                $payload['theme_color'] = $themeColor;
+            }
+        }
+        if (array_key_exists('productSelectionMode', $params)) {
+            $productSelectionMode = trim((string) $params['productSelectionMode']);
+            if (!in_array($productSelectionMode, ['simple', 'multi'], true)) {
+                throw new ApiException(
+                    'Product selection mode must be simple or multi-select.',
+                    422,
+                    'INVALID_PRODUCT_SELECTION_MODE'
+                );
+            }
+            if (!$this->columnExists('system_defaults', 'product_selection_mode')) {
+                $this->database->execute(
+                    "ALTER TABLE `system_defaults` ADD COLUMN `product_selection_mode` VARCHAR(16) NOT NULL DEFAULT 'simple'"
+                );
+            }
+            $payload['product_selection_mode'] = $productSelectionMode;
+        }
 
-        if ($hasProductSelectionModeColumn) {
-            $payload['product_selection_mode'] = array_key_exists('productSelectionMode', $params) ? $this->nullableString($params['productSelectionMode']) : $current['productSelectionMode'];
+        $row = $this->database->fetchOne('SELECT id FROM system_defaults LIMIT 1');
+        if ($row !== null) {
+            $this->touchUpdate('system_defaults', (string) $row['id'], $payload);
+            return $this->fetchSystemDefaults();
         }
 
         return $this->saveSingleton(
