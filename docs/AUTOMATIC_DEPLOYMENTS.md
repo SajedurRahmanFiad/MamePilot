@@ -218,7 +218,15 @@ The background update script does these steps:
 
 ### What you must configure for this method
 
-In your `.env` file, set:
+If this deployment's installed backend folder is not named `mamepilot_backend`, create `.env` in its public Document Root first:
+
+```ini
+MAMEPILOT_BACKEND_FOLDER=customer_backend
+```
+
+This public `.env` is a non-secret locator used before the backend starts. Automatic updates preserve it. If it is absent, the public API uses `mamepilot_backend`.
+
+In the secure backend `.env` file, set:
 
 ```ini
 UPDATE_ENABLED=1
@@ -235,7 +243,7 @@ UPDATE_RUN_SEED=0
 UPDATE_CRON_SECRET=use-a-long-random-secret-here
 ```
 
-`UPDATE_DOCUMENT_ROOT_FOLDER` and `UPDATE_BACKEND_FOLDER` are names inside the release ZIP. Put absolute server destinations in `UPDATE_PUBLIC_ROOT` and `UPDATE_APP_ROOT`; do not put absolute paths in the two `*_FOLDER` settings. The updater retains compatibility with older deployments that did so by falling back to the standard package folder names.
+`UPDATE_DOCUMENT_ROOT_FOLDER` and `UPDATE_BACKEND_FOLDER` are universal names inside the release ZIP; they do not change for each installation. Put each server's real destinations in `UPDATE_PUBLIC_ROOT` and `UPDATE_APP_ROOT`. The public `MAMEPILOT_BACKEND_FOLDER` locator may differ per deployment and is not the ZIP folder name.
 
 Then create the cron job. Without the cron, the server will not check or install updates automatically.
 

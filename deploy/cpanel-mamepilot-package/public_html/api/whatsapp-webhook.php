@@ -2,10 +2,9 @@
 
 declare(strict_types=1);
 
-$configuredRoot = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
-$appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
-    ? rtrim($configuredRoot, DIRECTORY_SEPARATOR)
-    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'app-root.php';
+
+$appRoot = mamepilotResolveAppRoot();
 
 $handler = $appRoot . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'whatsapp-webhook.php';
 if (!is_file($handler)) {

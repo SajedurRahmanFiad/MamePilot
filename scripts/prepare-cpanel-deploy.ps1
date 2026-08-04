@@ -9,6 +9,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if ($BackendFolder -in @('.', '..') -or [System.IO.Path]::GetFileName($BackendFolder) -ne $BackendFolder) {
+  throw 'BackendFolder must be a single folder name, not a path.'
+}
 $deployRoot = Join-Path $repoRoot 'deploy'
 $templateRoot = Join-Path $deployRoot 'cpanel-template'
 $packageRoot = Join-Path $deployRoot $PackageName
@@ -44,7 +47,9 @@ Copy-Item -Path (Join-Path $repoRoot 'dist\*') -Destination $publicRoot -Recurse
 
 Write-Host 'Copying cPanel frontend template...'
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\.htaccess') -Destination (Join-Path $publicRoot '.htaccess') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\.env.example') -Destination (Join-Path $publicRoot '.env.example') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\.htaccess') -Destination (Join-Path $publicRoot 'api\.htaccess') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\app-root.php') -Destination (Join-Path $publicRoot 'api\app-root.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\index.php') -Destination (Join-Path $publicRoot 'api\index.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\update.php') -Destination (Join-Path $publicRoot 'api\update.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\trigger_update.php') -Destination (Join-Path $publicRoot 'api\trigger_update.php') -Force

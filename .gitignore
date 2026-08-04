@@ -26,3 +26,5 @@ dist-ssr
 .env.example
 .env.production
 .env
+!/deploy/cpanel-template/public_html/.env.example
+!/deploy/cpanel-mamepilot-package/public_html/.env.example

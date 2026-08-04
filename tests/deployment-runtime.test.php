@@ -24,6 +24,46 @@ $appSource = (string) file_get_contents($root . '/App.tsx');
 $gitDispatcherHookSource = (string) file_get_contents($root . '/src/hooks/useGitUpdateDispatcher.ts');
 $backendRouterSource = (string) file_get_contents($root . '/backend/public/index.php');
 $packageRouterSource = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/api/index.php');
+$appRootResolverPath = $root . '/deploy/cpanel-template/public_html/api/app-root.php';
+$appRootResolverSource = (string) file_get_contents($appRootResolverPath);
+$publicEnvExamplePath = $root . '/deploy/cpanel-template/public_html/.env.example';
+$publicEnvExampleSource = (string) file_get_contents($publicEnvExamplePath);
+$publicHtaccessSource = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/.htaccess');
+
+require_once $appRootResolverPath;
+
+putenv('MAMEPILOT_APP_ROOT');
+putenv('BDHATBELA_APP_ROOT');
+putenv('MAMEPILOT_BACKEND_FOLDER');
+assertDeploymentRuntime(
+    basename(mamepilotResolveAppRoot()) === 'mamepilot_backend',
+    'The public API resolver must default the backend folder to mamepilot_backend.'
+);
+assertDeploymentRuntime(
+    basename(mamepilotResolveAppRoot($root . '/tests/fixtures/public-backend-folder.env')) === 'customer_backend',
+    'The public API resolver must read the deployment-specific public_html/.env file.'
+);
+putenv('MAMEPILOT_BACKEND_FOLDER=customer_backend');
+assertDeploymentRuntime(
+    basename(mamepilotResolveAppRoot()) === 'customer_backend',
+    'The public API resolver must honor a configured backend folder name.'
+);
+putenv('MAMEPILOT_BACKEND_FOLDER=../unsafe');
+assertDeploymentRuntime(
+    basename(mamepilotResolveAppRoot()) === 'mamepilot_backend',
+    'The public API resolver must reject paths and retain the safe default.'
+);
+putenv('MAMEPILOT_BACKEND_FOLDER');
+
+assertDeploymentRuntime(
+    str_contains($publicEnvExampleSource, 'MAMEPILOT_BACKEND_FOLDER=mamepilot_backend')
+        && str_contains($packageScriptSource, "public_html\\.env.example")
+        && str_contains($appRootResolverSource, "getenv('MAMEPILOT_BACKEND_FOLDER')")
+        && str_contains($appRootResolverSource, "DIRECTORY_SEPARATOR . '.env'")
+        && str_contains($publicHtaccessSource, '<FilesMatch "^\\.">')
+        && str_contains($updateManagerSource, "['.env', '.env.local']"),
+    'The public backend locator must be packaged, protected, and preserved during updates.'
+);
 
 assertDeploymentRuntime(
     str_contains($setupSource, 'new UpdateScheduler')
@@ -86,7 +126,8 @@ assertDeploymentRuntime(
     'Authenticated browser sessions must dispatch only Git updates through both normal API routers.'
 );
 assertDeploymentRuntime(
-    str_contains($packageScriptSource, "public_html\\api\\trigger_update.php"),
+    str_contains($packageScriptSource, "public_html\\api\\trigger_update.php")
+        && str_contains($packageScriptSource, "public_html\\api\\app-root.php"),
     'Release packages must overwrite unsafe legacy trigger files with the tombstone.'
 );
 $bootstrapErrorPosition = strpos($updateWrapperSource, 'http_response_code(500)');

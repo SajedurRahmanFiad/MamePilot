@@ -21,10 +21,9 @@ use App\OrderPostCreateEffects;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
 
-$configuredRoot = getenv('MAMEPILOT_APP_ROOT') ?: getenv('BDHATBELA_APP_ROOT');
-$appRoot = is_string($configuredRoot) && trim($configuredRoot) !== ''
-    ? rtrim($configuredRoot, DIRECTORY_SEPARATOR)
-    : dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot_backend';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'app-root.php';
+
+$appRoot = mamepilotResolveAppRoot();
 
 $bootstrapPath = $appRoot . DIRECTORY_SEPARATOR . 'backend' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 if (!is_file($bootstrapPath)) {

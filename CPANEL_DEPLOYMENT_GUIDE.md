@@ -16,17 +16,20 @@ Here is where each folder and file from this local repository needs to be upload
 | :--- | :--- | :--- |
 | **`dist/*`** (everything inside after building) | `/public_html/subdomain/` *(Document Root)* | The compiled HTML, CSS, and JS files for the React app. |
 | **`deploy/cpanel-template/public_html/.htaccess`** | `/public_html/subdomain/.htaccess` | Configures public routing, compression, cache controls, and proxies requests to `/api` to the PHP router. |
+| **`deploy/cpanel-template/public_html/.env.example`** | `/public_html/subdomain/.env.example` | Template for the non-secret backend-folder locator. Copy it to `.env` only when this deployment uses a custom backend folder. |
 | **`deploy/cpanel-template/public_html/api/`** (Folder) | `/public_html/subdomain/api/` | Public folder acting as the gateway/endpoint for all API traffic. Contains: <br>• `index.php` (processes requests)<br>• `.htaccess` (rewrites URLs) |
 | **`backend/`** (Folder) | `/mamepilot_backend/backend/` | Secure backend PHP codebase containing controllers, models, and system files. Place this directory **one level above** your Document Root (e.g. `/home/username/mamepilot_backend`). |
 | **`.env`** (Created manually) | `/mamepilot_backend/.env` | Secure database connection strings and configuration settings. |
 
 > [!IMPORTANT]
-> **Understanding Relative Paths for `mamepilot_backend`:**
-> The `api/index.php` entry point automatically calculates the path to your backend by going two levels up from its own location:
+> **Choosing the backend folder for each deployment:**
+> The public API reads `MAMEPILOT_BACKEND_FOLDER` from the Document Root's `.env`. If that file or setting is absent, it uses `mamepilot_backend`:
 > * If your subdomain folder is `/home/username/subdomain/`, it searches for `/home/username/mamepilot_backend/backend/bootstrap.php`.
 > * If your subdomain folder is `/home/username/public_html/subdomain/`, it searches for `/home/username/public_html/mamepilot_backend/backend/bootstrap.php`.
-> 
-> If you wish to place it in a customized absolute path, set the environment variable `MAMEPILOT_APP_ROOT` in your cPanel server environment to point to that directory's absolute path.
+>
+> For a sibling folder named `customer_backend`, create `/public_html/subdomain/.env` containing `MAMEPILOT_BACKEND_FOLDER=customer_backend`. This public `.env` contains no credentials, is blocked from web access by `.htaccess`, and is preserved by automatic updates. The release ZIP remains universal and always uses its standard `mamepilot_backend` archive folder.
+>
+> For a customized absolute path that is not a sibling of the Document Root, set `MAMEPILOT_APP_ROOT` in the cPanel PHP/server environment to that directory's absolute path.
 
 ---
 

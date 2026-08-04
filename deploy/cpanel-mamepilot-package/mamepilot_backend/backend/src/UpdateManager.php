@@ -100,7 +100,11 @@ final class UpdateManager
             $this->copyDirectory($extractedBackend, $appRoot, ['.env', '.env.local']);
 
             if ($publicRoot !== '' && is_dir($extractRoot . DIRECTORY_SEPARATOR . $documentRootFolder)) {
-                $this->copyDirectory($extractRoot . DIRECTORY_SEPARATOR . $documentRootFolder, $publicRoot, []);
+                $this->copyDirectory(
+                    $extractRoot . DIRECTORY_SEPARATOR . $documentRootFolder,
+                    $publicRoot,
+                    ['.env', '.env.local']
+                );
             }
 
             $databaseResult = [];
