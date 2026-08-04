@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
-import { fetchPaperflyOrderTracking, submitPaperflyOrder, submitPaperflyExchangeOrder } from '../src/services/supabaseQueries';
+import { submitPaperflyOrder, submitPaperflyExchangeOrder } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
@@ -20,51 +20,6 @@ interface PaperflyModalProps {
 function formatHistoryMoment(): string {
   const { date, time } = formatDateTimeParts(new Date());
   return `${date}, at ${time}`;
-}
-
-function getPaperflyPickupMarker(payload: any): string {
-  const trackingEntries = [
-    payload?.success?.trackingStatus,
-    payload?.trackingStatus,
-    payload?.data?.trackingStatus,
-    payload?.data?.success?.trackingStatus,
-  ].find((candidate) => Array.isArray(candidate) && candidate.length > 0 && typeof candidate[0] === 'object');
-
-  if (!Array.isArray(trackingEntries)) {
-    return '';
-  }
-
-  const positivePatterns = [/\bpicked\b/i, /\bpickup\b/i, /\bpicked up\b/i, /\bcollected\b/i, /\bin transit\b/i, /\bshipped\b/i, /\bdelivered\b/i, /\breturned\b/i, /\bdispatch(?:ed)?\b/i, /\breceived\b/i];
-  const negativePatterns = [/\bnot picked\b/i, /\bnot pickup\b/i, /\bpending\b/i, /\bbooked\b/i, /\border placed\b/i, /\bcreated\b/i, /\bcancel(?:led)?\b/i];
-
-  for (const entry of trackingEntries) {
-    if (!entry || typeof entry !== 'object') continue;
-
-    const directMarker = [entry.Pick, entry.pick, entry.Pickup, entry.pickup]
-      .find((value) => typeof value === 'string' && value.trim() !== '');
-    if (typeof directMarker === 'string') {
-      const normalizedMarker = directMarker.trim().toLowerCase();
-      if (!['0', 'false', 'no', 'n/a', 'na', 'null', 'none', 'pending'].includes(normalizedMarker)) {
-        return directMarker.trim();
-      }
-    }
-
-    const scalarValues = Object.values(entry)
-      .filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value))
-      .map((value) => String(value).trim())
-      .filter(Boolean);
-    if (scalarValues.length === 0) continue;
-
-    const combined = scalarValues.join(' | ');
-    const hasPositiveSignal = positivePatterns.some((pattern) => pattern.test(combined));
-    const hasNegativeSignal = negativePatterns.some((pattern) => pattern.test(combined));
-
-    if (hasPositiveSignal && !hasNegativeSignal) {
-      return combined;
-    }
-  }
-
-  return '';
 }
 
 export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
@@ -208,31 +163,6 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
         updates.history.courier = historyText;
         if (paperflyReferenceNumber) updates.paperflyTrackingNumber = paperflyReferenceNumber;
 
-        if (paperflyReferenceNumber) {
-          try {
-            const pickupCheck = await fetchPaperflyOrderTracking({
-              baseUrl,
-              username,
-              password,
-              paperflyKey,
-              referenceNumber: paperflyReferenceNumber,
-            });
-
-            if (!pickupCheck.error && pickupCheck.data) {
-              const pickupMarker = getPaperflyPickupMarker(pickupCheck.data);
-              if (pickupMarker !== '') {
-                updates.status = OrderStatus.PICKED;
-                updates.history.picked = `Marked as picked automatically after Paperfly confirmed pickup${pickupMarker ? ` (${pickupMarker})` : ''} on ${formatHistoryMoment()}`;
-              } else {
-                console.log('[PaperflyModal] Immediate pickup check did not confirm pickup yet.');
-              }
-            } else {
-              console.warn('[PaperflyModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
-            }
-          } catch (pickupCheckError) {
-            console.warn('[PaperflyModal] Immediate pickup verification threw an error:', pickupCheckError);
-          }
-        }
       }
 
       await updateOrder.mutateAsync({ id: order.id, updates });

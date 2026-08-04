@@ -417,8 +417,9 @@ export interface VoiceSurveyIntegrationSettings {
 }
 
 export interface CourierSettings {
+  automaticallyDeductShippingCosts: boolean;
   steadfast: { baseUrl: string; apiKey: string; secretKey: string };
-  carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string };
+  carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; webhookSignature: string };
   paperfly: {
     baseUrl: string;
     username: string;
@@ -426,6 +427,7 @@ export interface CourierSettings {
     paperflyKey: string;
     defaultShopName: string;
     maxWeightKg: number;
+    webhookSecret: string;
   };
   pathao: {
     baseUrl: string;
@@ -441,6 +443,8 @@ export interface CourierSettings {
     accessToken: string;
     refreshToken: string;
     tokenExpiresAt: string;
+    webhookHeader: string;
+    webhookSecret: string;
   };
   fraudChecker: FraudCheckerSettings;
 }

@@ -508,6 +508,10 @@ final class CourierApi extends BaseService
             'item_weight' => (float) ($params['itemWeight'] ?? 0),
             'collectable_amount' => (float) ($params['collectableAmount'] ?? 0),
         ];
+        $merchantOrderId = trim((string) ($params['merchantOrderId'] ?? ''));
+        if ($merchantOrderId !== '') {
+            $payload['merchant_order_id'] = $merchantOrderId;
+        }
         if (!empty($params['areaId'])) {
             $payload['area_id'] = trim((string) $params['areaId']);
         }
@@ -1760,6 +1764,10 @@ final class CourierApi extends BaseService
             'item_weight' => (float) ($params['itemWeight'] ?? 1.0),
             'amount_to_collect' => max(0, (int) round((float) ($params['amountToCollect'] ?? 0))),
         ];
+        $merchantOrderId = trim((string) ($params['merchantOrderId'] ?? ''));
+        if ($merchantOrderId !== '') {
+            $payload['merchant_order_id'] = $merchantOrderId;
+        }
         if ($recipientArea !== '') {
             $payload['recipient_area'] = (int) $recipientArea;
         }
@@ -1977,6 +1985,573 @@ final class CourierApi extends BaseService
         }
 
         return ['checked' => $checked, 'updated' => $updated];
+    }
+
+    /**
+     * Receive one signed provider event. Exact retries are idempotent and the
+     * entire status/charge/expense operation shares one database transaction.
+     *
+     * @param array<string, string> $headers
+     * @return array<string, mixed>
+     */
+    public function handleWebhook(string $provider, string $rawBody, array $headers): array
+    {
+        $provider = strtolower(trim($provider));
+        if (!in_array($provider, ['carrybee', 'paperfly', 'steadfast', 'pathao'], true)) {
+            throw new RuntimeException('Unsupported courier webhook provider.');
+        }
+        if (!$this->tableExists('courier_webhook_events') || !$this->tableExists('courier_order_charges')) {
+            throw new RuntimeException('Courier webhook database upgrade has not been applied.');
+        }
+
+        $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1') ?? [];
+        $this->verifyWebhookRequest($provider, $headers, $settings);
+
+        try {
+            $payload = json_decode($rawBody, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new RuntimeException('Invalid courier webhook JSON.');
+        }
+        if (!is_array($payload)) {
+            throw new RuntimeException('Invalid courier webhook payload.');
+        }
+
+        $details = $this->webhookDetails($provider, $payload);
+        $eventKey = hash('sha256', $provider . '|' . $rawBody);
+        $now = $this->database->nowUtc();
+
+        return $this->database->transaction(function () use (
+            $provider,
+            $rawBody,
+            $details,
+            $eventKey,
+            $now
+        ): array {
+            $candidateId = $this->uuid4();
+            $this->database->execute(
+                "INSERT INTO courier_webhook_events (
+                    id, provider, event_key, event_name, merchant_reference, consignment_id,
+                    event_at, payload, processing_status, received_at
+                 ) VALUES (
+                    :id, :provider, :event_key, :event_name, :merchant_reference, :consignment_id,
+                    :event_at, :payload, 'received', :received_at
+                 ) ON DUPLICATE KEY UPDATE event_key = VALUES(event_key)",
+                [
+                    ':id' => $candidateId,
+                    ':provider' => $provider,
+                    ':event_key' => $eventKey,
+                    ':event_name' => $details['eventName'],
+                    ':merchant_reference' => $details['merchantReference'] !== '' ? $details['merchantReference'] : null,
+                    ':consignment_id' => $details['consignmentId'] !== '' ? $details['consignmentId'] : null,
+                    ':event_at' => $details['eventAt'],
+                    ':payload' => $rawBody,
+                    ':received_at' => $now,
+                ]
+            );
+            $eventRow = $this->database->fetchOne(
+                'SELECT * FROM courier_webhook_events WHERE provider = :provider AND event_key = :event_key LIMIT 1 FOR UPDATE',
+                [':provider' => $provider, ':event_key' => $eventKey]
+            );
+            if ($eventRow === null) {
+                throw new RuntimeException('Courier webhook event could not be stored.');
+            }
+            if ((string) ($eventRow['processing_status'] ?? '') === 'processed') {
+                return [
+                    'status' => 'success',
+                    'provider' => $provider,
+                    'event' => $details['eventName'],
+                    'duplicate' => true,
+                ];
+            }
+
+            $orderMatch = $this->findWebhookOrder(
+                $provider,
+                $details['consignmentId'],
+                $details['merchantReference'],
+                $details['eventName']
+            );
+            $orderId = trim((string) ($orderMatch['id'] ?? ''));
+            $charge = $this->upsertWebhookCharge(
+                $provider,
+                $details,
+                (string) $eventRow['id'],
+                $orderId
+            );
+
+            if ($orderId === '') {
+                $message = 'No local order matched the courier identifiers.';
+                $this->finishWebhookEvent((string) $eventRow['id'], 'unmatched', $message, null);
+                return [
+                    'status' => 'success',
+                    'provider' => $provider,
+                    'event' => $details['eventName'],
+                    'duplicate' => false,
+                    'orderMatched' => false,
+                ];
+            }
+
+            $updates = $this->buildWebhookOrderUpdates(
+                $provider,
+                $details,
+                $orderMatch,
+                $charge
+            );
+            $updated = false;
+            if ($updates !== []) {
+                $this->updateOrderAsCourierSystem(['id' => $orderId, 'updates' => $updates]);
+                $updated = true;
+            }
+
+            $chargeAfter = $charge === null ? null : $this->database->fetchOne(
+                'SELECT expense_status FROM courier_order_charges WHERE id = :id LIMIT 1',
+                [':id' => (string) $charge['id']]
+            );
+            $message = $updates === [] ? 'Event stored; no safe order status change was required.' : 'Order updated from courier webhook.';
+            $this->finishWebhookEvent((string) $eventRow['id'], 'processed', $message, $orderId);
+
+            return [
+                'status' => 'success',
+                'provider' => $provider,
+                'event' => $details['eventName'],
+                'duplicate' => false,
+                'orderMatched' => true,
+                'orderUpdated' => $updated,
+                'expenseRecorded' => (string) ($chargeAfter['expense_status'] ?? '') === 'recorded',
+            ];
+        });
+    }
+
+    /** @param array<string, string> $headers @param array<string, mixed> $settings */
+    private function verifyWebhookRequest(string $provider, array $headers, array $settings): void
+    {
+        $authorization = $this->webhookHeader($headers, 'Authorization');
+        if ($provider === 'carrybee') {
+            $expected = trim((string) ($settings['carrybee_webhook_signature'] ?? ''));
+            $provided = $this->webhookHeader($headers, 'X-Carrybee-Webhook-Signature');
+        } elseif ($provider === 'steadfast') {
+            $expected = trim((string) ($settings['steadfast_api_key'] ?? ''));
+            $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
+        } elseif ($provider === 'paperfly') {
+            $expected = trim((string) ($settings['paperfly_webhook_secret'] ?? ''));
+            $provided = '';
+            foreach (['X-Paperfly-Webhook-Secret', 'X-Webhook-Secret', 'Secret-Key'] as $headerName) {
+                $candidate = $this->webhookHeader($headers, $headerName);
+                if ($candidate !== '') {
+                    $provided = $candidate;
+                    break;
+                }
+            }
+            if ($provided === '' && $authorization !== '') {
+                $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
+            }
+        } else {
+            $expected = trim((string) ($settings['pathao_webhook_secret'] ?? ''));
+            $headerName = trim((string) ($settings['pathao_webhook_header'] ?? '')) ?: 'X-MamePilot-Webhook-Secret';
+            $provided = $this->webhookHeader($headers, $headerName);
+        }
+
+        if ($expected === '' || $provided === '' || !hash_equals($expected, trim($provided))) {
+            throw new RuntimeException('Invalid courier webhook signature.');
+        }
+    }
+
+    /** @param array<string, string> $headers */
+    private function webhookHeader(array $headers, string $name): string
+    {
+        foreach ($headers as $key => $value) {
+            if (strcasecmp((string) $key, $name) === 0) {
+                return trim((string) $value);
+            }
+        }
+        return '';
+    }
+
+    /** @return array<string, mixed> */
+    private function webhookDetails(string $provider, array $payload): array
+    {
+        $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+        $containers = [$payload, $data];
+        $eventName = $this->firstWebhookValue($containers, ['event', 'notification_type', 'event_type', 'type']);
+        if ($eventName === '') {
+            $eventName = 'status.update';
+        }
+        $consignmentId = $this->firstWebhookValue($containers, [
+            'consignment_id', 'consignmentId', 'order_number', 'tracking_code', 'tracking_number', 'barcode',
+        ]);
+        $merchantReference = $this->firstWebhookValue($containers, [
+            'merchant_order_id', 'merchant_order_reference', 'merchantOrderReference', 'invoice', 'merchant_order_ref',
+        ]);
+        $eventAtRaw = $this->firstWebhookValue($containers, [
+            'timestamptz', 'timestamp', 'updated_at', 'action_date_time', 'action_datetime', 'event_at',
+        ]);
+        $eventAt = null;
+        if ($eventAtRaw !== '' && strtotime($eventAtRaw) !== false) {
+            $eventAt = gmdate('Y-m-d H:i:s', (int) strtotime($eventAtRaw));
+        }
+
+        $codFee = $this->firstWebhookNumber($containers, ['cod_fee', 'cod_charge', 'collection_charge', 'collection_fee']);
+        $deliveryFee = $this->firstWebhookNumber($containers, ['delivery_fee', 'delivery_charge', 'shipping_fee', 'shipping_charge']);
+        $directTotal = $this->firstWebhookNumber($containers, ['total_charge', 'courier_charge', 'shipping_cost']);
+        $totalCharge = round($codFee + $deliveryFee, 2);
+        if ($totalCharge <= 0 && $directTotal > 0) {
+            $totalCharge = round($directTotal, 2);
+        }
+
+        $rawStatus = $this->firstWebhookValue($containers, [
+            'order_status_slug', 'order_status', 'delivery_status', 'status', 'tracking_status',
+        ]);
+        $mappedStatus = $this->mapWebhookStatus($provider, $eventName, $rawStatus);
+
+        return [
+            'eventName' => $eventName,
+            'consignmentId' => $consignmentId,
+            'merchantReference' => $merchantReference,
+            'eventAt' => $eventAt,
+            'codFee' => max(0, round($codFee, 2)),
+            'deliveryFee' => max(0, round($deliveryFee, 2)),
+            'totalCharge' => max(0, $totalCharge),
+            'currency' => strtoupper($this->firstWebhookValue($containers, ['currency'])) ?: 'BDT',
+            'rawStatus' => $rawStatus !== '' ? $rawStatus : $eventName,
+            'mappedStatus' => $mappedStatus,
+        ];
+    }
+
+    /** @param array<int, array<string, mixed>> $containers @param array<int, string> $keys */
+    private function firstWebhookValue(array $containers, array $keys): string
+    {
+        foreach ($containers as $container) {
+            foreach ($keys as $key) {
+                if (isset($container[$key]) && is_scalar($container[$key])) {
+                    $value = trim((string) $container[$key]);
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+        }
+        return '';
+    }
+
+    /** @param array<int, array<string, mixed>> $containers @param array<int, string> $keys */
+    private function firstWebhookNumber(array $containers, array $keys): float
+    {
+        foreach ($containers as $container) {
+            foreach ($keys as $key) {
+                if (isset($container[$key]) && is_numeric($container[$key])) {
+                    return max(0, (float) $container[$key]);
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    private function mapWebhookStatus(string $provider, string $eventName, string $rawStatus): ?string
+    {
+        $event = strtolower(trim($eventName));
+        $status = strtolower(trim($rawStatus));
+        $combined = $event . ' ' . $status;
+
+        if ($provider === 'carrybee') {
+            return match ($event) {
+                'order.picked' => 'Picked',
+                'order.delivered' => 'Delivered',
+                'order.returned' => 'Returned',
+                'order.cancelled', 'order.canceled' => 'Cancelled',
+                default => null,
+            };
+        }
+        if ($provider === 'paperfly') {
+            if (in_array($event, ['parcel.delivered', 'parcel.exchange'], true)) return 'Delivered';
+            if (in_array($event, ['parcel.return', 'parcel.return_to_merchant'], true)) return 'Returned';
+            if ($event === 'parcel.cancelled') return 'Cancelled';
+            if (in_array($event, [
+                'parcel.picked_up', 'parcel.in_transit', 'parcel.received_at_point',
+                'parcel.assigned_for_delivery', 'parcel.partial', 'parcel.return_transit',
+            ], true)) return 'Picked';
+            return null;
+        }
+        if ($provider === 'steadfast' && $event === 'tracking_update') {
+            return null;
+        }
+        if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
+        if (str_contains($combined, 'return')) return 'Returned';
+        if (
+            str_contains($status, 'deliver')
+            || preg_match('/(^|[._ -])delivered?($|[._ -])/', $event) === 1
+        ) return 'Delivered';
+        if (
+            str_contains($combined, 'pick') || str_contains($combined, 'transit')
+            || str_contains($combined, 'assigned') || str_contains($combined, 'out for delivery')
+            || str_contains($combined, 'received at')
+        ) return 'Picked';
+        return null;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function findWebhookOrder(
+        string $provider,
+        string $consignmentId,
+        string $merchantReference,
+        string $eventName
+    ): ?array {
+        $columns = match ($provider) {
+            'carrybee' => ['carrybee_consignment_id', 'exchange_carrybee_consignment_id'],
+            'paperfly' => ['paperfly_tracking_number', 'exchange_paperfly_tracking_number'],
+            'steadfast' => ['steadfast_consignment_id', 'exchange_steadfast_consignment_id'],
+            'pathao' => ['pathao_consignment_id', 'exchange_pathao_consignment_id'],
+        };
+        $conditions = [];
+        $bindings = [];
+        if ($consignmentId !== '') {
+            $conditions[] = "({$columns[0]} = :consignment_main OR {$columns[1]} = :consignment_exchange)";
+            $bindings[':consignment_main'] = $consignmentId;
+            $bindings[':consignment_exchange'] = $consignmentId;
+        }
+        if ($merchantReference !== '') {
+            $conditions[] = '(order_number = :merchant_order_number OR id = :merchant_order_id)';
+            $bindings[':merchant_order_number'] = $merchantReference;
+            $bindings[':merchant_order_id'] = $merchantReference;
+        }
+        if ($conditions === []) {
+            return null;
+        }
+
+        $row = $this->database->fetchOne(
+            'SELECT * FROM orders WHERE deleted_at IS NULL AND (' . implode(' OR ', $conditions) . ')
+             ORDER BY created_at DESC LIMIT 1 FOR UPDATE',
+            $bindings
+        );
+        if ($row === null) {
+            return null;
+        }
+        $mainId = trim((string) ($row[$columns[0]] ?? ''));
+        $exchangeId = trim((string) ($row[$columns[1]] ?? ''));
+        $isExchange = $consignmentId !== '' && $exchangeId === $consignmentId && $mainId !== $consignmentId;
+        if ($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange') {
+            $isExchange = true;
+        }
+        $consignmentDidNotIdentifyMain = $consignmentId === '' || $mainId !== $consignmentId;
+        if (
+            !$isExchange
+            && $consignmentDidNotIdentifyMain
+            && $exchangeId !== ''
+            && in_array((string) ($row['status'] ?? ''), ['Exchange processing', 'Exchange picked'], true)
+        ) {
+            $isExchange = true;
+        }
+        $row['isExchange'] = $isExchange;
+        return $row;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function upsertWebhookCharge(
+        string $provider,
+        array $details,
+        string $eventId,
+        string $orderId
+    ): ?array {
+        $reference = $details['consignmentId'] !== '' ? $details['consignmentId'] : $details['merchantReference'];
+        if ($reference === '') {
+            return null;
+        }
+        // A provider may quote a fee using only the merchant reference, then
+        // reveal the consignment number later. Claim that still-unassigned row
+        // when the consignment arrives, but never merge two already identified
+        // main/exchange consignments that share one merchant order reference.
+        $existingCharge = null;
+        if ($details['consignmentId'] !== '') {
+            $conditions = ['consignment_id = :match_consignment'];
+            $matchBindings = [
+                ':match_provider' => $provider,
+                ':match_consignment' => $details['consignmentId'],
+                ':rank_consignment' => $details['consignmentId'],
+            ];
+            if ($details['merchantReference'] !== '') {
+                $conditions[] = '(merchant_reference = :match_merchant AND consignment_id IS NULL)';
+                $matchBindings[':match_merchant'] = $details['merchantReference'];
+            }
+            $existingCharge = $this->database->fetchOne(
+                'SELECT * FROM courier_order_charges
+                 WHERE provider = :match_provider AND (' . implode(' OR ', $conditions) . ')
+                 ORDER BY CASE WHEN consignment_id = :rank_consignment THEN 0 ELSE 1 END,
+                          created_at ASC, id ASC
+                 LIMIT 1 FOR UPDATE',
+                $matchBindings
+            );
+        } elseif ($details['merchantReference'] !== '') {
+            $existingCharge = $this->database->fetchOne(
+                'SELECT * FROM courier_order_charges
+                 WHERE provider = :match_provider AND merchant_reference = :match_merchant
+                 ORDER BY CASE WHEN consignment_id IS NULL THEN 0 ELSE 1 END,
+                          created_at ASC, id ASC
+                 LIMIT 1 FOR UPDATE',
+                [
+                    ':match_provider' => $provider,
+                    ':match_merchant' => $details['merchantReference'],
+                ]
+            );
+        }
+        $chargeKey = trim((string) ($existingCharge['charge_key'] ?? ''));
+        if ($chargeKey === '') {
+            $chargeKey = hash('sha256', $provider . '|' . $reference);
+        }
+        $id = $this->uuid4();
+        $this->database->execute(
+            "INSERT INTO courier_order_charges (
+                id, provider, charge_key, order_id, consignment_id, merchant_reference,
+                cod_fee, delivery_fee, total_charge, currency, source_event_id,
+                provider_updated_at, created_at, updated_at
+             ) VALUES (
+                :id, :provider, :charge_key, :order_id, :consignment_id, :merchant_reference,
+                :cod_fee, :delivery_fee, :total_charge, :currency, :source_event_id,
+                :provider_updated_at, :created_at, :updated_at
+             ) ON DUPLICATE KEY UPDATE
+                order_id = COALESCE(VALUES(order_id), order_id),
+                consignment_id = COALESCE(VALUES(consignment_id), consignment_id),
+                merchant_reference = COALESCE(VALUES(merchant_reference), merchant_reference),
+                cod_fee = IF(VALUES(cod_fee) > 0, VALUES(cod_fee), cod_fee),
+                delivery_fee = IF(VALUES(delivery_fee) > 0, VALUES(delivery_fee), delivery_fee),
+                total_charge = IF(VALUES(total_charge) > 0, VALUES(total_charge), total_charge),
+                currency = VALUES(currency), source_event_id = VALUES(source_event_id),
+                provider_updated_at = COALESCE(VALUES(provider_updated_at), provider_updated_at),
+                updated_at = VALUES(updated_at)",
+            [
+                ':id' => $id,
+                ':provider' => $provider,
+                ':charge_key' => $chargeKey,
+                ':order_id' => $orderId !== '' ? $orderId : null,
+                ':consignment_id' => $details['consignmentId'] !== '' ? $details['consignmentId'] : null,
+                ':merchant_reference' => $details['merchantReference'] !== '' ? $details['merchantReference'] : null,
+                ':cod_fee' => $this->formatMoney($details['codFee']),
+                ':delivery_fee' => $this->formatMoney($details['deliveryFee']),
+                ':total_charge' => $this->formatMoney($details['totalCharge']),
+                ':currency' => $details['currency'],
+                ':source_event_id' => $eventId,
+                ':provider_updated_at' => $details['eventAt'],
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+        $this->database->execute(
+            'UPDATE courier_order_charges
+             SET total_charge = CASE
+                 WHEN cod_fee > 0 OR delivery_fee > 0 THEN ROUND(cod_fee + delivery_fee, 2)
+                 ELSE total_charge
+             END
+             WHERE provider = :provider AND charge_key = :charge_key',
+            [':provider' => $provider, ':charge_key' => $chargeKey]
+        );
+        return $this->database->fetchOne(
+            'SELECT * FROM courier_order_charges WHERE provider = :provider AND charge_key = :charge_key LIMIT 1 FOR UPDATE',
+            [':provider' => $provider, ':charge_key' => $chargeKey]
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function buildWebhookOrderUpdates(string $provider, array $details, array $order, ?array $charge): array
+    {
+        $mapped = $details['mappedStatus'];
+        $current = (string) ($order['status'] ?? '');
+        $isExchange = (bool) ($order['isExchange'] ?? false);
+        $chargeId = trim((string) ($charge['id'] ?? ''));
+        $hasCharge = (float) ($charge['total_charge'] ?? 0) > 0;
+        $providerLabel = match ($provider) {
+            'carrybee' => 'CarryBee',
+            'paperfly' => 'Paperfly',
+            'steadfast' => 'Steadfast',
+            'pathao' => 'Pathao',
+        };
+        $when = (string) ($details['eventAt'] ?? $this->database->nowUtc());
+        $raw = trim((string) ($details['rawStatus'] ?? $details['eventName']));
+        $updates = [];
+        $history = is_array(json_decode((string) ($order['history'] ?? ''), true))
+            ? json_decode((string) $order['history'], true)
+            : [];
+
+        if ($mapped !== null) {
+            $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered'];
+            $mainEventDuringExchange = !$isExchange
+                && in_array($current, ['Exchange processing', 'Exchange picked'], true);
+            $target = match ($mapped) {
+                'Delivered' => $isExchange ? 'Exchange delivered' : 'Completed',
+                'Returned' => $isExchange ? null : 'Returned',
+                'Cancelled' => $isExchange ? null : 'Cancelled',
+                'Picked' => $isExchange ? 'Exchange picked' : 'Picked',
+                default => null,
+            };
+            if (
+                $target !== null
+                && !$mainEventDuringExchange
+                && (!in_array($current, $terminal, true) || $current === $target)
+            ) {
+                if ($current !== $target) {
+                    $updates['status'] = $target;
+                    if ($mapped === 'Delivered') {
+                        $key = $isExchange ? 'exchangeDelivered' : 'completed';
+                        $history[$key] = sprintf(
+                            'Marked delivered automatically from %s webhook event "%s" on %s.',
+                            $providerLabel,
+                            $raw,
+                            $when
+                        );
+                    } elseif ($mapped === 'Returned') {
+                        $history['returned'] = sprintf(
+                            'Marked returned automatically from %s webhook event "%s" on %s.',
+                            $providerLabel,
+                            $raw,
+                            $when
+                        );
+                    } elseif ($mapped === 'Cancelled') {
+                        $history['cancelled'] = sprintf(
+                            'Marked cancelled automatically from %s webhook event "%s" on %s.',
+                            $providerLabel,
+                            $raw,
+                            $when
+                        );
+                    } else {
+                        $key = $isExchange ? 'exchangePicked' : 'picked';
+                        $history[$key] = $history[$key] ?? sprintf(
+                            'Marked picked automatically from %s webhook event "%s" on %s.',
+                            $providerLabel,
+                            $raw,
+                            $when
+                        );
+                    }
+                    $updates['history'] = $history;
+                }
+            } elseif ($isExchange && in_array($mapped, ['Returned', 'Cancelled'], true)) {
+                $history['exchangeCourier'] = trim((string) ($history['exchangeCourier'] ?? ''))
+                    . sprintf(' | Exchange returned/cancelled from %s webhook event "%s" on %s.', $providerLabel, $raw, $when);
+                $updates['history'] = $history;
+            }
+        }
+
+        $effectiveTarget = (string) ($updates['status'] ?? $current);
+        if ($chargeId !== '' && $hasCharge && in_array($effectiveTarget, ['Completed', 'Exchange delivered'], true)) {
+            $updates['courierAutomaticExpense'] = [
+                'chargeId' => $chargeId,
+                'provider' => $provider,
+                'recordedAt' => $details['eventAt'] ?? $this->database->nowUtc(),
+            ];
+        }
+        return $updates;
+    }
+
+    private function finishWebhookEvent(string $eventId, string $status, string $message, ?string $orderId): void
+    {
+        $this->database->execute(
+            'UPDATE courier_webhook_events
+             SET order_id = :order_id, processing_status = :processing_status,
+                 processing_message = :processing_message, processed_at = :processed_at
+             WHERE id = :id',
+            [
+                ':order_id' => $orderId,
+                ':processing_status' => $status,
+                ':processing_message' => $message,
+                ':processed_at' => $this->database->nowUtc(),
+                ':id' => $eventId,
+            ]
+        );
     }
 
     /**

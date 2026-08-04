@@ -45,6 +45,7 @@ $billNumber = 'TEST-BILL-' . $stamp;
 
 $pdo->beginTransaction();
 try {
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 0');
     $database->execute(
         'INSERT INTO accounts (id, name, type, opening_balance, current_balance) VALUES (:id, :name, :type, 1000, 1000)',
         [':id' => $accountId, ':name' => 'Completion Expense Test', ':type' => 'Cash']

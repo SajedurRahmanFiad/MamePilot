@@ -3566,6 +3566,7 @@ final class MasterDataApi extends BaseService
         $row = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1');
         $hasFraudCheckerColumn = $this->columnExists('courier_settings', 'fraud_checker_api_key');
         return [
+            'automaticallyDeductShippingCosts' => (bool) ($row['automatically_deduct_shipping_costs'] ?? false),
             'steadfast' => [
                 'baseUrl' => (string) ($row['steadfast_base_url'] ?? ''),
                 'apiKey' => (string) ($row['steadfast_api_key'] ?? ''),
@@ -3577,6 +3578,7 @@ final class MasterDataApi extends BaseService
                 'clientSecret' => (string) ($row['carrybee_client_secret'] ?? ''),
                 'clientContext' => (string) ($row['carrybee_client_context'] ?? ''),
                 'storeId' => (string) ($row['carrybee_store_id'] ?? ''),
+                'webhookSignature' => (string) ($row['carrybee_webhook_signature'] ?? ''),
             ],
             'paperfly' => [
                 'baseUrl' => (string) ($row['paperfly_base_url'] ?? ''),
@@ -3585,6 +3587,7 @@ final class MasterDataApi extends BaseService
                 'paperflyKey' => (string) ($row['paperfly_key'] ?? ''),
                 'defaultShopName' => (string) ($row['paperfly_default_shop_name'] ?? ''),
                 'maxWeightKg' => (float) ($row['paperfly_max_weight_kg'] ?? 0.3),
+                'webhookSecret' => (string) ($row['paperfly_webhook_secret'] ?? ''),
             ],
             'fraudChecker' => [
                 'apiKey' => $hasFraudCheckerColumn ? (string) ($row['fraud_checker_api_key'] ?? '') : '',
@@ -3603,6 +3606,8 @@ final class MasterDataApi extends BaseService
                 'accessToken' => (string) ($row['pathao_access_token'] ?? ''),
                 'refreshToken' => (string) ($row['pathao_refresh_token'] ?? ''),
                 'tokenExpiresAt' => (string) ($row['pathao_token_expires_at'] ?? ''),
+                'webhookHeader' => (string) ($row['pathao_webhook_header'] ?? 'X-MamePilot-Webhook-Secret'),
+                'webhookSecret' => (string) ($row['pathao_webhook_secret'] ?? ''),
             ],
         ];
     }
@@ -3627,6 +3632,9 @@ final class MasterDataApi extends BaseService
         }
 
         $updates = [
+            'automatically_deduct_shipping_costs' => array_key_exists('automaticallyDeductShippingCosts', $params)
+                ? ((bool) $params['automaticallyDeductShippingCosts'] ? 1 : 0)
+                : (($current['automaticallyDeductShippingCosts'] ?? false) ? 1 : 0),
             'steadfast_base_url' => $steadfast['baseUrl'] ?? $current['steadfast']['baseUrl'],
             'steadfast_api_key' => $steadfast['apiKey'] ?? $current['steadfast']['apiKey'],
             'steadfast_secret_key' => $steadfast['secretKey'] ?? $current['steadfast']['secretKey'],
@@ -3635,12 +3643,14 @@ final class MasterDataApi extends BaseService
             'carrybee_client_secret' => $carryBee['clientSecret'] ?? $current['carryBee']['clientSecret'],
             'carrybee_client_context' => $carryBee['clientContext'] ?? $current['carryBee']['clientContext'],
             'carrybee_store_id' => $carryBee['storeId'] ?? $current['carryBee']['storeId'],
+            'carrybee_webhook_signature' => $carryBee['webhookSignature'] ?? $current['carryBee']['webhookSignature'],
             'paperfly_base_url' => $paperfly['baseUrl'] ?? $current['paperfly']['baseUrl'],
             'paperfly_username' => $paperfly['username'] ?? $current['paperfly']['username'],
             'paperfly_password' => $paperfly['password'] ?? $current['paperfly']['password'],
             'paperfly_key' => $paperfly['paperflyKey'] ?? $current['paperfly']['paperflyKey'],
             'paperfly_default_shop_name' => $paperfly['defaultShopName'] ?? $current['paperfly']['defaultShopName'],
             'paperfly_max_weight_kg' => array_key_exists('maxWeightKg', $paperfly) ? (float) $paperfly['maxWeightKg'] : $current['paperfly']['maxWeightKg'],
+            'paperfly_webhook_secret' => $paperfly['webhookSecret'] ?? $current['paperfly']['webhookSecret'],
             'pathao_base_url' => $pathao['baseUrl'] ?? $current['pathao']['baseUrl'],
             'pathao_client_id' => $pathao['clientId'] ?? $current['pathao']['clientId'],
             'pathao_client_secret' => $pathao['clientSecret'] ?? $current['pathao']['clientSecret'],
@@ -3651,6 +3661,10 @@ final class MasterDataApi extends BaseService
             'pathao_default_weight' => array_key_exists('defaultWeight', $pathao) ? (float) $pathao['defaultWeight'] : $current['pathao']['defaultWeight'],
             'pathao_default_delivery_type' => array_key_exists('defaultDeliveryType', $pathao) ? (int) $pathao['defaultDeliveryType'] : $current['pathao']['defaultDeliveryType'],
             'pathao_default_item_type' => array_key_exists('defaultItemType', $pathao) ? (int) $pathao['defaultItemType'] : $current['pathao']['defaultItemType'],
+            'pathao_webhook_header' => array_key_exists('webhookHeader', $pathao)
+                ? trim((string) $pathao['webhookHeader'])
+                : ($current['pathao']['webhookHeader'] ?? 'X-MamePilot-Webhook-Secret'),
+            'pathao_webhook_secret' => $pathao['webhookSecret'] ?? $current['pathao']['webhookSecret'],
         ];
 
         if ($hasFraudCheckerColumn) {

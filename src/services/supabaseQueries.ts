@@ -412,10 +412,11 @@ export async function refreshBusinessRecommendations(): Promise<{ recommendation
 export async function fetchLocalUsageSummary(): Promise<LocalUsageSummary> { return call<LocalUsageSummary>('fetchLocalUsageSummary'); }
 export async function fetchCourierSettings(): Promise<CourierSettings> { return call<CourierSettings>('fetchCourierSettings'); }
 export async function updateCourierSettings(updates: {
+  automaticallyDeductShippingCosts?: boolean;
   steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string };
-  carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string };
-  paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number };
-  pathao?: { baseUrl?: string; clientId?: string; clientSecret?: string; username?: string; password?: string; storeId?: string; defaultQuantity?: number; defaultWeight?: number; defaultDeliveryType?: number; defaultItemType?: number };
+  carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string; webhookSignature?: string };
+  paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number; webhookSecret?: string };
+  pathao?: { baseUrl?: string; clientId?: string; clientSecret?: string; username?: string; password?: string; storeId?: string; defaultQuantity?: number; defaultWeight?: number; defaultDeliveryType?: number; defaultItemType?: number; webhookHeader?: string; webhookSecret?: string };
   fraudChecker?: { apiKey?: string };
 }): Promise<CourierSettings> { return call<CourierSettings>('updateCourierSettings', updates); }
 export async function fetchMetaAdsConnectionStatus(): Promise<any> { return call<any>('fetchMetaAdsConnectionStatus'); }
@@ -553,7 +554,7 @@ export async function fetchCarryBeeStores(params: { baseUrl: string; clientId: s
 export async function fetchCarryBeeCities(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeCities', params); }
 export async function fetchCarryBeeZones(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeZones', params); }
 export async function fetchCarryBeeAreas(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; zoneId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeAreas', params); }
-export async function submitCarryBeeOrder(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; deliveryType: number; productType: number; recipientPhone: string; recipientName: string; recipientAddress: string; cityId: string; zoneId: string; areaId?: string; itemWeight: number; collectableAmount: number; }): Promise<any> { return call<any>('submitCarryBeeOrder', params); }
+export async function submitCarryBeeOrder(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; merchantOrderId?: string; deliveryType: number; productType: number; recipientPhone: string; recipientName: string; recipientAddress: string; cityId: string; zoneId: string; areaId?: string; itemWeight: number; collectableAmount: number; }): Promise<any> { return call<any>('submitCarryBeeOrder', params); }
 export async function submitCarryBeeExchangeOrder(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; consignmentId: string; collectableAmount?: number; itemQuantity?: number; }): Promise<any> { return call<any>('submitCarryBeeExchangeOrder', params); }
 export async function fetchCarryBeeOrderDetails(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; consignmentId: string; }): Promise<{ data?: any; error?: string }> { return call<{ data?: any; error?: string }>('fetchCarryBeeOrderDetails', params); }
 export async function syncCarryBeeTransferStatuses(params?: { mode?: 'incremental' | 'backfill'; limit?: number; orderId?: string; cursorCreatedAt?: string; }): Promise<{ checked: number; updated: number; hasMore?: boolean; nextCursorCreatedAt?: string | null; statusCounts?: Record<string, number>; errors?: Array<{ orderId?: string; orderNumber?: string; error?: string }>; updatedOrders?: Array<{ orderId?: string; orderNumber?: string; rawStatus?: string }>; }> {
@@ -571,7 +572,7 @@ export async function refreshPathaoToken(params: { baseUrl: string; clientId: st
 export async function fetchPathaoCities() { return call<Array<{ id: string; name: string }>>('fetchPathaoCities'); }
 export async function fetchPathaoZones(params: { cityId: string }) { return call<Array<{ id: string; name: string }>>('fetchPathaoZones', params); }
 export async function fetchPathaoAreas(params: { zoneId: string }) { return call<Array<{ id: string; name: string }>>('fetchPathaoAreas', params); }
-export async function submitPathaoOrder(params: { baseUrl: string; accessToken: string; storeId: string; recipientName: string; recipientPhone: string; recipientAddress: string; recipientCity: string; recipientZone: string; recipientArea?: string; deliveryType?: number; itemType?: number; itemQuantity?: number; itemWeight?: number; amountToCollect?: number; specialInstruction?: string; }): Promise<any> { return call<any>('submitPathaoOrder', params); }
+export async function submitPathaoOrder(params: { baseUrl: string; accessToken: string; storeId: string; merchantOrderId?: string; recipientName: string; recipientPhone: string; recipientAddress: string; recipientCity: string; recipientZone: string; recipientArea?: string; deliveryType?: number; itemType?: number; itemQuantity?: number; itemWeight?: number; amountToCollect?: number; specialInstruction?: string; }): Promise<any> { return call<any>('submitPathaoOrder', params); }
 export async function fetchPathaoOrderInfo(params: { baseUrl: string; accessToken: string; consignmentId: string; }): Promise<{ data?: any; error?: string }> { return call('fetchPathaoOrderInfo', params); }
 export async function syncPathaoDeliveryStatuses(): Promise<{ checked: number; updated: number }> { return call<{ checked: number; updated: number }>('syncPathaoDeliveryStatuses'); }
 

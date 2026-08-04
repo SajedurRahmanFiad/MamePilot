@@ -10,7 +10,6 @@ import {
   fetchPathaoCities,
   fetchPathaoZones,
   fetchPathaoAreas,
-  fetchPathaoOrderInfo,
   updateCourierSettings,
 } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
@@ -31,15 +30,6 @@ type PathaoLocationOption = { id: string; name: string };
 function formatHistoryMoment(): string {
   const { date, time } = formatDateTimeParts(new Date());
   return `${date}, at ${time}`;
-}
-
-function getPathaoPickupStatus(orderStatusSlug: string): { rawStatus: string; isPickedOrBeyond: boolean } {
-  const normalized = (orderStatusSlug || '').toLowerCase().trim();
-  const nonPickedKeywords = ['pending', 'cancelled', 'canceled'];
-  return {
-    rawStatus: orderStatusSlug,
-    isPickedOrBeyond: normalized !== '' && !nonPickedKeywords.some(k => normalized.includes(k)),
-  };
 }
 
 export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
@@ -235,6 +225,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         baseUrl,
         accessToken: token,
         storeId,
+        merchantOrderId: order.orderNumber,
         recipientName: customer.name,
         recipientPhone: customer.phone,
         recipientAddress: customer.address,
@@ -286,29 +277,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         updates.history.courier = historyText;
         if (consignmentId) updates.pathaoConsignmentId = String(consignmentId);
 
-        // Immediate pickup check
-        if (consignmentId) {
-          try {
-            const pickupCheck = await fetchPathaoOrderInfo({
-              baseUrl,
-              accessToken: token,
-              consignmentId: String(consignmentId),
-            });
-
-            if (!pickupCheck.error && pickupCheck.data) {
-              const responseData = pickupCheck.data;
-              const orderData = responseData?.data || responseData;
-              const orderStatusSlug = orderData?.order_status_slug || orderData?.order_status || '';
-              const pickupStatus = getPathaoPickupStatus(orderStatusSlug);
-              if (pickupStatus.isPickedOrBeyond) {
-                updates.status = OrderStatus.PICKED;
-                updates.history.picked = `Marked as picked automatically after Pathao confirmed status "${pickupStatus.rawStatus}" on ${formatHistoryMoment()}`;
-              }
-            }
-          } catch (pickupCheckError) {
-            console.warn('[PathaoModal] Immediate pickup verification threw an error:', pickupCheckError);
-          }
-        }
       }
 
       await updateOrder.mutateAsync({ id: order.id, updates });

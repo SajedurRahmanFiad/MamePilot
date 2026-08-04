@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
-import { fetchSteadfastStatusByTrackingCode, submitSteadfastOrder } from '../src/services/supabaseQueries';
+import { submitSteadfastOrder } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { db } from '../db';
@@ -18,25 +18,9 @@ interface SteadfastModalProps {
   isExchangeConsignment?: boolean;
 }
 
-const STEADFAST_NON_PICKED_STATUSES = new Set(['pending', 'in_review', 'cancelled']);
-
 function formatHistoryMoment(): string {
   const { date, time } = formatDateTimeParts(new Date());
   return `${date}, at ${time}`;
-}
-
-function getSteadfastPickupStatus(payload: any): { rawStatus: string; isPickedOrBeyond: boolean } {
-  const rawStatus = [
-    payload?.data?.delivery_status,
-    payload?.delivery_status,
-  ].find((candidate) => typeof candidate === 'string' && candidate.trim() !== '')?.trim() ?? '';
-
-  const normalizedStatus = rawStatus.toLowerCase().replace(/[\s-]+/g, '_');
-
-  return {
-    rawStatus,
-    isPickedOrBeyond: rawStatus !== '' && !STEADFAST_NON_PICKED_STATUSES.has(normalizedStatus),
-  };
 }
 
 export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
@@ -183,30 +167,6 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
           updates.history.courier = historyText;
           if (trackingOrConsignment) updates.steadfastConsignmentId = String(trackingOrConsignment);
 
-          if (trackingOrConsignment) {
-            try {
-              const pickupCheck = await fetchSteadfastStatusByTrackingCode({
-                baseUrl,
-                apiKey,
-                secretKey,
-                trackingCode: String(trackingOrConsignment),
-              });
-
-              if (!pickupCheck.error && pickupCheck.data) {
-                const pickupStatus = getSteadfastPickupStatus(pickupCheck.data);
-                if (pickupStatus.isPickedOrBeyond) {
-                  updates.status = OrderStatus.PICKED;
-                  updates.history.picked = `Marked as picked automatically after Steadfast confirmed delivery status "${pickupStatus.rawStatus}" on ${formatHistoryMoment()}`;
-                } else {
-                  console.log('[SteadfastModal] Immediate pickup check did not confirm pickup yet:', pickupStatus.rawStatus || 'UNKNOWN');
-                }
-              } else {
-                console.warn('[SteadfastModal] Immediate pickup verification failed:', pickupCheck.error || 'Unknown error');
-              }
-            } catch (pickupCheckError) {
-              console.warn('[SteadfastModal] Immediate pickup verification threw an error:', pickupCheckError);
-            }
-          }
         }
 
         await updateOrder.mutateAsync({ id: order.id, updates });

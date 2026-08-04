@@ -319,6 +319,7 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
                       clientSecret,
                       clientContext,
                       storeId,
+                      merchantOrderId: order.orderNumber,
                       deliveryType: Number(deliveryType),
                       productType: 1,
                       recipientPhone: customer.phone,

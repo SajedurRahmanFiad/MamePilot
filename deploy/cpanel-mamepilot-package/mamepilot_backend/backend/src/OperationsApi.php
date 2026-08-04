@@ -4199,8 +4199,12 @@ final class OperationsApi extends BaseService
         $actor = $this->currentUser();
         $id = trim((string) ($params['id'] ?? ''));
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        $automaticCourierExpense = is_array($updates['courierAutomaticExpense'] ?? null)
+            ? $updates['courierAutomaticExpense']
+            : null;
+        unset($updates['courierAutomaticExpense']);
 
-        return $this->database->transaction(function () use ($actor, $id, $updates): ?array {
+        return $this->database->transaction(function () use ($actor, $id, $updates, $automaticCourierExpense): ?array {
             $existingRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
                 [':id' => $id]
@@ -4400,6 +4404,17 @@ final class OperationsApi extends BaseService
 
             $this->touchUpdate('orders', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
+            $automaticExpenseTransactionId = '';
+            if ($automaticCourierExpense !== null && in_array($nextStatus, ['Completed', 'Exchange delivered'], true)) {
+                $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
+                    $actor,
+                    $id,
+                    trim((string) ($automaticCourierExpense['chargeId'] ?? '')),
+                    trim((string) ($automaticCourierExpense['provider'] ?? '')),
+                    (string) ($automaticCourierExpense['recordedAt'] ?? '')
+                );
+                $automaticExpenseTransactionId = trim((string) ($automaticExpense['id'] ?? ''));
+            }
             if ($affectsCustomerSummary) {
                 $this->syncCustomerOrderSummaries([
                     $previousCustomerId,
@@ -4438,6 +4453,12 @@ final class OperationsApi extends BaseService
                         $beforeUndoEffects
                     );
                 }
+            } elseif ($automaticExpenseTransactionId !== '') {
+                $this->attachAutomaticCourierExpenseToLatestUndoEvent(
+                    $id,
+                    $nextStatus,
+                    $automaticExpenseTransactionId
+                );
             }
 
             return $this->mapOrder($row);
@@ -8968,6 +8989,164 @@ final class OperationsApi extends BaseService
     }
 
     /**
+     * Create the provider shipping-cost transaction once the courier has
+     * delivered the order. This is deliberately called inside updateOrder's
+     * transaction so the status, account effect, order history, charge row,
+     * and undo journal either all commit or all roll back together.
+     *
+     * @param array<string, mixed> $actor
+     * @return array<string, mixed>|null
+     */
+    private function recordAutomaticCourierExpenseForOrder(
+        array $actor,
+        string $orderId,
+        string $chargeId,
+        string $provider,
+        string $recordedAt
+    ): ?array {
+        if ($chargeId === '' || $provider === '' || !$this->tableExists('courier_order_charges')) {
+            return null;
+        }
+
+        $settings = $this->database->fetchOne('SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1') ?? [];
+        if (!(bool) ($settings['automatically_deduct_shipping_costs'] ?? false)) {
+            return null;
+        }
+
+        $charge = $this->database->fetchOne(
+            'SELECT * FROM courier_order_charges WHERE id = :id LIMIT 1 FOR UPDATE',
+            [':id' => $chargeId]
+        );
+        if ($charge === null || trim((string) ($charge['provider'] ?? '')) !== $provider) {
+            return null;
+        }
+        if (($charge['order_id'] ?? null) !== null && trim((string) $charge['order_id']) !== $orderId) {
+            return null;
+        }
+        if (trim((string) ($charge['expense_transaction_id'] ?? '')) !== '') {
+            return $this->fetchTransactionById(['id' => (string) $charge['expense_transaction_id']]);
+        }
+
+        $amount = round((float) ($charge['total_charge'] ?? 0), 2);
+        if ($amount <= 0) {
+            $this->database->execute(
+                "UPDATE courier_order_charges SET expense_status = 'not_recorded', expense_error = NULL WHERE id = :id",
+                [':id' => $chargeId]
+            );
+            return null;
+        }
+
+        $orderRow = $this->database->fetchOne(
+            'SELECT id, order_number, customer_id, status, history FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+            [':id' => $orderId]
+        );
+        if ($orderRow === null) {
+            return null;
+        }
+        if (!in_array((string) ($orderRow['status'] ?? ''), ['Completed', 'Exchange delivered'], true)) {
+            return null;
+        }
+
+        $defaults = $this->database->fetchOne(
+            'SELECT default_account_id, default_payment_method FROM system_defaults LIMIT 1'
+        ) ?? [];
+        $accountId = trim((string) ($defaults['default_account_id'] ?? ''));
+        if ($accountId === '') {
+            $fallback = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+            $accountId = trim((string) ($fallback['id'] ?? ''));
+        }
+        if ($accountId === '') {
+            throw new RuntimeException('Configure an account before automatic courier expenses can be recorded.');
+        }
+        $paymentMethod = trim((string) ($defaults['default_payment_method'] ?? '')) ?: 'Cash';
+        $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
+        $transactionId = 'courier-expense-' . substr(hash('sha256', $chargeId), 0, 48);
+        $transaction = $this->createTransactionRecord([
+            'id' => $transactionId,
+            'date' => $recordedAt !== '' ? $recordedAt : $this->database->nowUtc(),
+            'type' => 'Expense',
+            'category' => 'expense_shipping',
+            'accountId' => $accountId,
+            'amount' => $amount,
+            'description' => sprintf('Courier shipping cost (%s) for Order #%s', ucfirst($provider), $orderNumber),
+            'referenceId' => $orderId,
+            'contactId' => (string) ($orderRow['customer_id'] ?? ''),
+            'paymentMethod' => $paymentMethod,
+            'history' => [],
+        ], (string) ($actor['id'] ?? ''), $actor);
+
+        $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+        $history['expense'] = $this->appendHistoryText(
+            (string) ($history['expense'] ?? ''),
+            sprintf('Automatic %s courier shipping expense recorded: %s.', ucfirst($provider), $this->formatMoney($amount))
+        );
+        $this->touchUpdate('orders', $orderId, ['history' => $this->jsonEncode($history)]);
+        $this->database->execute(
+            "UPDATE courier_order_charges
+             SET order_id = :order_id, expense_transaction_id = :transaction_id,
+                 expense_status = 'recorded', expense_error = NULL, expense_recorded_at = :recorded_at
+             WHERE id = :id",
+            [
+                ':order_id' => $orderId,
+                ':transaction_id' => $transactionId,
+                ':recorded_at' => $this->database->nowUtc(),
+                ':id' => $chargeId,
+            ]
+        );
+
+        return $transaction;
+    }
+
+    /**
+     * A provider can send its fee after the delivery event. In that case the
+     * status is already terminal, so updateOrder does not create a new Undoer
+     * restore point. Keep the late expense attached to the restore point that
+     * originally completed the order.
+     */
+    private function attachAutomaticCourierExpenseToLatestUndoEvent(
+        string $orderId,
+        string $status,
+        string $transactionId
+    ): void {
+        if (
+            $transactionId === ''
+            || !in_array($status, ['Completed', 'Exchange delivered'], true)
+            || !$this->tableExists('order_status_undo_events')
+        ) {
+            return;
+        }
+
+        $event = $this->database->fetchOne(
+            'SELECT id, transaction_ids
+             FROM order_status_undo_events
+             WHERE order_id = :order_id AND to_status = :to_status AND undone_at IS NULL
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1 FOR UPDATE',
+            [':order_id' => $orderId, ':to_status' => $status]
+        );
+        if ($event === null) {
+            return;
+        }
+
+        $transactionIds = array_values(array_unique(array_filter(array_map(
+            static fn($value): string => trim((string) $value),
+            $this->jsonDecodeList($event['transaction_ids'] ?? [])
+        ))));
+        if (in_array($transactionId, $transactionIds, true)) {
+            return;
+        }
+        $transactionIds[] = $transactionId;
+        sort($transactionIds);
+        $this->database->execute(
+            'UPDATE order_status_undo_events SET transaction_ids = :transaction_ids WHERE id = :id',
+            [
+                ':transaction_ids' => $this->jsonEncode($transactionIds),
+                ':id' => (string) $event['id'],
+            ]
+        );
+    }
+
+    /**
      * Return server-authoritative restore points and their exact impact. The UI
      * never guesses a status path or promises effects the backend cannot prove.
      */
@@ -9534,6 +9713,14 @@ final class OperationsApi extends BaseService
             );
             if ($orderRow === null) {
                 throw new RuntimeException('Order not found.');
+            }
+            if ($outcome === 'Delivered') {
+                $courierSettings = $this->database->fetchOne(
+                    'SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1'
+                ) ?? [];
+                if ((bool) ($courierSettings['automatically_deduct_shipping_costs'] ?? false)) {
+                    throw new RuntimeException('Courier shipping costs are recorded automatically for delivered orders.');
+                }
             }
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);

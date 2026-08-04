@@ -27,10 +27,11 @@ const defaultSettings: Settings = {
   categories: [],
   paymentMethods: [],
   courier: {
+    automaticallyDeductShippingCosts: false,
     steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
-    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '' },
-    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3 },
-    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '' },
+    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
+    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
     fraudChecker: { apiKey: '' },
   },
   payroll: {
@@ -80,6 +81,7 @@ const mergedSettings: Settings = _storedSettings
       categories: Array.isArray((_storedSettings as any).categories) ? (_storedSettings as any).categories : defaultSettings.categories,
       paymentMethods: Array.isArray((_storedSettings as any).paymentMethods) ? (_storedSettings as any).paymentMethods : defaultSettings.paymentMethods,
       courier: {
+        automaticallyDeductShippingCosts: (_storedSettings as any).courier?.automaticallyDeductShippingCosts ?? defaultSettings.courier.automaticallyDeductShippingCosts,
         steadfast: { ...defaultSettings.courier.steadfast, ...(_storedSettings as any).courier?.steadfast },
         carryBee: { ...defaultSettings.courier.carryBee, ...(_storedSettings as any).courier?.carryBee },
         paperfly: { ...defaultSettings.courier.paperfly, ...(_storedSettings as any).courier?.paperfly },

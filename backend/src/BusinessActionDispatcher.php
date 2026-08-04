@@ -229,6 +229,7 @@ final class BusinessActionDispatcher
                 $hydrated += [
                     'deliveryType' => 0, 'productType' => 1, 'itemWeight' => 1,
                     'collectableAmount' => (float) ($order['total'] ?? 0),
+                    'merchantOrderId' => (string) ($order['orderNumber'] ?? ''),
                 ];
             } else {
                 $hydrated['consignmentId'] = trim((string) ($payload['consignmentId'] ?? $order['carrybeeConsignmentId'] ?? ''));
@@ -256,6 +257,7 @@ final class BusinessActionDispatcher
 
         $pathao = (array) ($settings['pathao'] ?? []);
         return array_merge($payload, $pathao, $common, [
+            'merchantOrderId' => (string) ($order['orderNumber'] ?? ''),
             'deliveryType' => (int) ($payload['deliveryType'] ?? $pathao['defaultDeliveryType'] ?? 48),
             'itemType' => (int) ($payload['itemType'] ?? $pathao['defaultItemType'] ?? 2),
             'itemQuantity' => (int) ($payload['itemQuantity'] ?? $pathao['defaultQuantity'] ?? 1),

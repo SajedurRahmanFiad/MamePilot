@@ -164,12 +164,17 @@ const SettingsPage: React.FC = () => {
   );
   const [orderSettings, setOrderSettings] = useState({ prefix: 'ORD-', nextNumber: 1 });
   const [courierSettings, setCourierSettings] = useState<CourierSettings>({
+    automaticallyDeductShippingCosts: false,
     steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
-    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '' },
-    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3 },
-    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '' },
+    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
+    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
     fraudChecker: { apiKey: '' },
   });
+  const courierWebhookEndpoint = (provider: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/api/courier-webhook.php?provider=${provider}`;
+  };
   const PAYROLL_STATUS_OPTIONS = [
     OrderStatus.ON_HOLD,
     OrderStatus.PROCESSING,
@@ -603,7 +608,9 @@ const SettingsPage: React.FC = () => {
           break;
         case 'courier':
           if (hasCapability('courier_automation')) {
-            const enabledCourierSettings: Partial<CourierSettings> = {};
+            const enabledCourierSettings: Partial<CourierSettings> = {
+              automaticallyDeductShippingCosts: courierSettings.automaticallyDeductShippingCosts,
+            };
             if (canUseSteadfast) enabledCourierSettings.steadfast = courierSettings.steadfast;
             if (canUseCarryBee) enabledCourierSettings.carryBee = courierSettings.carryBee;
             if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
@@ -2161,6 +2168,21 @@ const SettingsPage: React.FC = () => {
 
           {activeTab === 'courier' && (
             <div className="space-y-10 animate-in fade-in duration-300">
+              <section className="rounded-2xl border border-blue-100 bg-blue-50/60 p-5 space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={courierSettings.automaticallyDeductShippingCosts}
+                    onChange={e => setCourierSettings({ ...courierSettings, automaticallyDeductShippingCosts: e.target.checked })}
+                    className="mt-1 h-4 w-4 accent-[#0f2f57]"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-gray-800">Automatically record courier shipping costs</span>
+                    <span className="block mt-1 text-xs leading-5 text-gray-600">When a courier webhook confirms delivery, MamePilot records that courier&apos;s delivery/COD fee as a Shipping Costs expense linked to the order. The manual additional-expense button is hidden for delivered orders.</span>
+                  </span>
+                </label>
+                <p className="text-[11px] leading-5 text-blue-800">The default account and payment method from General Settings are used. A fallback account is used only when no default account is selected.</p>
+              </section>
               {!canUseSteadfast && !canUseCarryBee && !canUsePaperfly && !canUsePathao && (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm font-medium text-gray-500">
                   No courier providers are enabled for this subscription.
@@ -2172,6 +2194,9 @@ const SettingsPage: React.FC = () => {
                   <img src="/uploads/steadfast.png" alt="Steadfast" className="w-6 h-6 rounded-full" />
                   <span className="">Steadfast</span> Secrets
                 </h3>
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                  Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('steadfast')}</code>. Steadfast webhooks are verified with the API key as a Bearer token.
+                </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
@@ -2212,6 +2237,13 @@ const SettingsPage: React.FC = () => {
                   <img src="/uploads/carrybee.png" alt="CarryBee" className="w-6 h-6 rounded-full" />
                   <span className="">CarryBee</span> Secrets
                 </h3>
+                <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('carrybee')}</code>. Paste the signature shown by CarryBee in the field below.</p>
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase tracking-widest">Webhook signature</label>
+                    <input type="password" value={courierSettings.carryBee.webhookSignature} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookSignature: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="X-Carrybee-Webhook-Signature value" />
+                  </div>
+                </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
@@ -2279,6 +2311,13 @@ const SettingsPage: React.FC = () => {
                   <img src="/uploads/paperfly.png" alt="Paperfly" className="w-6 h-6 rounded-full" />
                   <span className="">Paperfly</span> Secrets
                 </h3>
+                <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('paperfly')}</code>. Paperfly sends the secret token in a verification header.</p>
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase tracking-widest">Webhook secret token</label>
+                    <input type="password" value={courierSettings.paperfly.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, paperfly: { ...courierSettings.paperfly, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="The secret key configured in Paperfly" />
+                  </div>
+                </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
@@ -2355,6 +2394,19 @@ const SettingsPage: React.FC = () => {
                   <img src="/uploads/pathao.png" alt="Pathao" className="w-6 h-6 rounded-full" />
                   <span className="">Pathao</span> Secrets
                 </h3>
+                <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('pathao')}</code>. Configure the same header name and value in Pathao&apos;s strict webhook settings.</p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="font-bold uppercase tracking-widest">Webhook header name</label>
+                      <input type="text" value={courierSettings.pathao.webhookHeader} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, webhookHeader: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="X-MamePilot-Webhook-Secret" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="font-bold uppercase tracking-widest">Webhook header value</label>
+                      <input type="password" value={courierSettings.pathao.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Shared secret value" />
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Base URL</label>

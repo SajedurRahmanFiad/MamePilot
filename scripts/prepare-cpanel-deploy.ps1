@@ -57,6 +57,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\webhook-survey.
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\whatsapp-webhook.php') -Destination (Join-Path $publicRoot 'api\whatsapp-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\messenger-webhook.php') -Destination (Join-Path $publicRoot 'api\messenger-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\woocommerce-webhook.php') -Destination (Join-Path $publicRoot 'api\woocommerce-webhook.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\courier-webhook.php') -Destination (Join-Path $publicRoot 'api\courier-webhook.php') -Force
 
 Write-Host 'Copying backend app...'
 Copy-Item -Path (Join-Path $repoRoot 'backend') -Destination (Join-Path $appRoot 'backend') -Recurse -Force
@@ -75,6 +76,12 @@ if (Test-Path $autoDeployGuide) {
   $docsDir = Join-Path $packageRoot 'docs'
   if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
   Copy-Item -LiteralPath $autoDeployGuide -Destination (Join-Path $docsDir 'AUTOMATIC_DEPLOYMENTS.md') -Force
+}
+$courierWebhookGuide = Join-Path $repoRoot 'docs\COURIER_WEBHOOKS_AND_AUTOMATIC_SHIPPING_COSTS.md'
+if (Test-Path $courierWebhookGuide) {
+  $docsDir = Join-Path $packageRoot 'docs'
+  if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
+  Copy-Item -LiteralPath $courierWebhookGuide -Destination (Join-Path $docsDir 'COURIER_WEBHOOKS_AND_AUTOMATIC_SHIPPING_COSTS.md') -Force
 }
 $serverOpsGuide = Join-Path $repoRoot 'SERVER_OPS_ACTION_GUIDE.md'
 if (Test-Path $serverOpsGuide) {

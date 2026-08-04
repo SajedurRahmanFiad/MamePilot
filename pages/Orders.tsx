@@ -1410,8 +1410,9 @@ const Orders: React.FC = () => {
                 const canFinalizeSelectedOrder =
                   (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
                 const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
+                const automaticCourierExpenseEnabled = courierSettings?.automaticallyDeductShippingCosts ?? false;
                 const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
-                  ? canDeliverOrder(order)
+                  ? !automaticCourierExpenseEnabled && canDeliverOrder(order)
                   : courierAutoFinalizedOutcome === 'Returned'
                     ? canReturnOrder(order)
                     : false;
