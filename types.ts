@@ -777,6 +777,8 @@ export interface Transaction {
   amount: number;
   description: string;
   referenceId?: string; // Order, Bill or custom Ref
+  recurringTransactionId?: string | null;
+  recurringScheduledFor?: string | null;
   contactId?: string; // Customer or Vendor ID
   paymentMethod: string;
   attachmentName?: string;
@@ -1110,7 +1112,8 @@ export type AppCapabilityKey =
   | 'whatsapp'
   | 'messenger'
   | 'auto_calling'
-  | 'woocommerce';
+  | 'woocommerce'
+  | 'recurring_transactions';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;
 
@@ -1194,6 +1197,58 @@ export interface AgentSettings {
   workerLastSuccessAt?: string | null;
   workerLastErrorAt?: string | null;
   workerLastError?: string | null;
+}
+
+export type RecurringTransactionInterval = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurringTransaction {
+  id: string;
+  type: 'Income' | 'Expense';
+  accountId: string;
+  accountName?: string | null;
+  categoryId: string;
+  categoryName?: string | null;
+  paymentMethod: string;
+  amount: number;
+  note?: string | null;
+  interval: RecurringTransactionInterval;
+  startAt: string;
+  nextRunAt: string;
+  nextAttemptAt?: string | null;
+  lastRunAt?: string | null;
+  lastTransactionId?: string | null;
+  runCount: number;
+  isActive: boolean;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  createdBy: string;
+  creatorName?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RecurringTransactionInput {
+  type: 'Income' | 'Expense';
+  accountId: string;
+  categoryId: string;
+  paymentMethod: string;
+  amount: number;
+  note?: string;
+  interval: RecurringTransactionInterval;
+  startAt: string;
+  isActive: boolean;
+}
+
+export interface RecurringTransactionFormOptions {
+  accounts: Array<Pick<Account, 'id' | 'name' | 'currentBalance'>>;
+  categories: Settings['categories'];
+  paymentMethods: Settings['paymentMethods'];
+  defaults: {
+    accountId: string;
+    paymentMethod: string;
+    incomeCategoryId: string;
+    expenseCategoryId: string;
+  };
 }
 
 export interface BusinessGrowthSettings {

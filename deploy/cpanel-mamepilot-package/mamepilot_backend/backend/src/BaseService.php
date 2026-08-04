@@ -1237,6 +1237,8 @@ abstract class BaseService
             'amount' => (float) ($row['amount'] ?? 0),
             'description' => (string) ($row['description'] ?? ''),
             'referenceId' => $this->nullableString($row['reference_id'] ?? $row['referenceId'] ?? null),
+            'recurringTransactionId' => $this->nullableString($row['recurring_transaction_id'] ?? $row['recurringTransactionId'] ?? null),
+            'recurringScheduledFor' => $this->toIso($row['recurring_scheduled_for'] ?? $row['recurringScheduledFor'] ?? null),
             'contactId' => $this->nullableString($row['contact_id'] ?? $row['contactId'] ?? null),
             'paymentMethod' => (string) ($row['payment_method'] ?? $row['paymentMethod'] ?? ''),
             'attachmentName' => $this->nullableString($row['attachment_name'] ?? $row['attachmentName'] ?? null),

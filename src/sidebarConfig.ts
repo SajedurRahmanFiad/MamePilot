@@ -149,6 +149,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     ],
   },
   {
+    key: 'recurring_transactions',
+    label: 'Recurring Transactions',
+    to: '/recurring-transactions',
+    icon: ICONS.Clock,
+    visible: ({ can, hasCapability }) => can('transactions.view') && hasCapability('recurring_transactions'),
+  },
+  {
     key: 'human_resources',
     label: 'Human Resource',
     icon: ICONS.Users,

@@ -125,6 +125,9 @@ import {
   sendMessengerSenderAction,
   type MaintenanceStatus,
   type MaintenanceUpdatePayload,
+  createRecurringTransaction,
+  updateRecurringTransaction,
+  deleteRecurringTransaction,
 } from '../services/supabaseQueries';
 import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import type {
@@ -168,6 +171,8 @@ import type {
   MessengerSettings,
   MessengerProfileSettings,
   MessengerMessage,
+  RecurringTransaction,
+  RecurringTransactionInput,
   LlmSettings,
   BeSmartSettings,
   Lead,
@@ -1444,6 +1449,36 @@ export function useDeleteTransaction(): UseMutationResult<void, Error, string, u
       invalidateResourceQueries(queryClient, 'transactions');
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateRecycleBin(queryClient);
+    },
+  });
+}
+
+export function useCreateRecurringTransaction(): UseMutationResult<RecurringTransaction, Error, RecurringTransactionInput, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createRecurringTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] });
+    },
+  });
+}
+
+export function useUpdateRecurringTransaction(): UseMutationResult<RecurringTransaction, Error, { id: string; updates: Partial<RecurringTransactionInput> }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }) => updateRecurringTransaction(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] });
+    },
+  });
+}
+
+export function useDeleteRecurringTransaction(): UseMutationResult<void, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteRecurringTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] });
     },
   });
 }

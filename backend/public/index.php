@@ -50,6 +50,10 @@ try {
     $config = Config::load(dirname(__DIR__, 2));
     $database = new Database($config);
     $auth = new Auth($config, $database);
+    $recurringScheduler = new \App\RecurringTransactionScheduler($database, $auth, $config);
+    register_shutdown_function(static function () use ($recurringScheduler): void {
+        $recurringScheduler->triggerIfNeeded();
+    });
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
     $featureAccess = new FeatureAccess($database, $auth);
     $dispatcher = new BusinessActionDispatcher($database, $auth, $config);

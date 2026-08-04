@@ -18,6 +18,8 @@ use App\MetaAdsApi;
 use App\MessengerApi;
 use App\OperationsApi;
 use App\OrderPostCreateEffects;
+use App\RecurringTransactionApi;
+use App\RecurringTransactionScheduler;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
 
@@ -63,6 +65,10 @@ try {
     $config = Config::load($appRoot);
     $database = new Database($config);
     $auth = new Auth($config, $database);
+    $recurringScheduler = new RecurringTransactionScheduler($database, $auth, $config);
+    register_shutdown_function(static function () use ($recurringScheduler): void {
+        $recurringScheduler->triggerIfNeeded();
+    });
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
     $featureAccess = new FeatureAccess($database, $auth);
     $master = new MasterDataApi($database, $auth, $config);
@@ -76,6 +82,7 @@ try {
     $autoCall = new AutoCallApi($database, $auth, $config);
     $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
+    $recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok(array_merge([
@@ -133,7 +140,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $recurringTransactions];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

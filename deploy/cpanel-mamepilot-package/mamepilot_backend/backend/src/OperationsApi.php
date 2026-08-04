@@ -6097,13 +6097,13 @@ final class OperationsApi extends BaseService
         $this->database->execute(
             'INSERT INTO transactions (
                 id, date, type, category, account_id, to_account_id, amount, description,
-                reference_id, contact_id, payment_method, attachment_name, attachment_url,
+                reference_id, recurring_transaction_id, recurring_scheduled_for, contact_id, payment_method, attachment_name, attachment_url,
                 created_by, history, approval_status, account_effect_applied,
                 approval_requested_by, approval_requested_at, approved_by, approved_at,
                 declined_by, declined_at, approval_note, created_at, updated_at
             ) VALUES (
                 :id, :date, :type, :category, :account_id, :to_account_id, :amount, :description,
-                :reference_id, :contact_id, :payment_method, :attachment_name, :attachment_url,
+                :reference_id, :recurring_transaction_id, :recurring_scheduled_for, :contact_id, :payment_method, :attachment_name, :attachment_url,
                 :created_by, :history, :approval_status, :account_effect_applied,
                 :approval_requested_by, :approval_requested_at, :approved_by, :approved_at,
                 :declined_by, :declined_at, :approval_note, :created_at, :updated_at
@@ -6118,6 +6118,10 @@ final class OperationsApi extends BaseService
                 ':amount' => $this->formatMoney($amount),
                 ':description' => trim((string) ($params['description'] ?? '')),
                 ':reference_id' => $this->nullableString($params['referenceId'] ?? null),
+                ':recurring_transaction_id' => $this->nullableString($params['recurringTransactionId'] ?? null),
+                ':recurring_scheduled_for' => isset($params['recurringScheduledFor'])
+                    ? $this->normalizeDateTimeInput((string) $params['recurringScheduledFor'])
+                    : null,
                 ':contact_id' => $this->nullableString($params['contactId'] ?? null),
                 ':payment_method' => trim((string) ($params['paymentMethod'] ?? '')),
                 ':attachment_name' => $this->nullableString($params['attachmentName'] ?? null),

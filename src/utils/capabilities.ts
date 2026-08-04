@@ -23,6 +23,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   messenger: 'Messenger',
   auto_calling: 'Auto Calling (Voice Survey)',
   woocommerce: 'WooCommerce Order Sync',
+  recurring_transactions: 'Recurring Transactions',
 };
 
 export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
@@ -48,6 +49,7 @@ export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
   messenger: 'Facebook Messenger chat interface — message customers, send images and files, manage quick replies, with lead insights on the side.',
   auto_calling: 'Automated voice calls to customers for order confirmation and follow-up, with call history, success rates, and prepaid balance.',
   woocommerce: 'Connect WooCommerce stores to sync orders automatically, manage webhooks, and test connection health from Settings.',
+  recurring_transactions: 'Schedule income and expense transactions to be created automatically on daily, weekly, monthly, or yearly intervals.',
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
@@ -73,6 +75,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   messenger: false,
   auto_calling: false,
   woocommerce: false,
+  recurring_transactions: false,
 };
 
 export const CAPABILITY_KEYS = Object.keys(DEFAULT_CAPABILITIES) as AppCapabilityKey[];
@@ -178,6 +181,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/whatsapp(?:\/|$)/, capability: 'whatsapp' },
   { pattern: /^\/messenger(?:\/|$)/, capability: 'messenger' },
   { pattern: /^\/auto-calling(?:\/|$)/, capability: 'auto_calling' },
+  { pattern: /^\/recurring-transactions(?:\/|$)/, capability: 'recurring_transactions' },
 ];
 
 export function capabilityForPath(pathname: string): AppCapabilityKey | null {

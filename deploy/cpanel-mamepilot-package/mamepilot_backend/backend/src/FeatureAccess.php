@@ -29,6 +29,7 @@ final class FeatureAccess
         'mamecx' => false,
         'auto_calling' => false,
         'woocommerce' => false,
+        'recurring_transactions' => false,
     ];
 
     /**
@@ -271,6 +272,12 @@ final class FeatureAccess
         'fetchPaperflyOrderTracking' => 'paperfly_courier',
         'syncExchangeConsignmentStatuses' => 'courier_automation',
         'processCustomerFraudCheck' => 'fraud_checker',
+        'fetchRecurringTransactionsPage' => 'recurring_transactions',
+        'fetchRecurringTransactionById' => 'recurring_transactions',
+        'fetchRecurringTransactionFormOptions' => 'recurring_transactions',
+        'createRecurringTransaction' => 'recurring_transactions',
+        'updateRecurringTransaction' => 'recurring_transactions',
+        'deleteRecurringTransaction' => 'recurring_transactions',
     ];
 
     private Database $database;

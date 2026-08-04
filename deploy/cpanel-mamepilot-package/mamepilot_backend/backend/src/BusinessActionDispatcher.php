@@ -24,6 +24,7 @@ final class BusinessActionDispatcher
     private MessengerApi $messenger;
     private LeadApi $leads;
     private WooCommerceApi $woocommerce;
+    private RecurringTransactionApi $recurringTransactions;
     private OrderPostCreateEffects $postCreateEffects;
 
     public function __construct(
@@ -44,6 +45,7 @@ final class BusinessActionDispatcher
         $this->leads = new LeadApi($database, $auth, $config, $this->master, $this->operations);
         $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall);
         $this->woocommerce = new WooCommerceApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
+        $this->recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
     }
 
     public function master(): MasterDataApi { return $this->master; }
@@ -65,6 +67,7 @@ final class BusinessActionDispatcher
             'messenger' => $this->messenger,
             'leads' => $this->leads,
             'woocommerce' => $this->woocommerce,
+            'recurringTransactions' => $this->recurringTransactions,
         ];
     }
 

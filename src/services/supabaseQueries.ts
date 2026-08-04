@@ -81,6 +81,9 @@ import type {
   ProcessBillReturnPayload,
   WooCommerceStore,
   WooCommerceSyncResult,
+  RecurringTransaction,
+  RecurringTransactionFormOptions,
+  RecurringTransactionInput,
 } from '../../types';
 import { apiAction, type ApiActionOptions } from './apiClient';
 
@@ -193,6 +196,41 @@ export async function fetchTransactionById(id: string) { return call<Transaction
 export async function createTransaction(transaction: Omit<Transaction, 'id'>) { return call<Transaction>('createTransaction', transaction); }
 export async function updateTransaction(id: string, updates: Partial<Transaction>) { return call<Transaction>('updateTransaction', { id, updates }); }
 export async function deleteTransaction(id: string) { await remove('deleteTransaction', id); }
+
+export type RecurringTransactionFilters = {
+  search?: string;
+  type?: string;
+  typeNot?: string;
+  interval?: string;
+  intervalNot?: string;
+  status?: string;
+  statusNot?: string;
+  accountId?: string;
+  accountIdNot?: string;
+  categoryId?: string;
+  categoryIdNot?: string;
+  paymentMethod?: string;
+  paymentMethodNot?: string;
+};
+
+export async function fetchRecurringTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: RecurringTransactionFilters) {
+  return call<{ data: RecurringTransaction[]; count: number }>('fetchRecurringTransactionsPage', { page, pageSize, filters });
+}
+export async function fetchRecurringTransactionById(id: string) {
+  return call<RecurringTransaction | null>('fetchRecurringTransactionById', { id });
+}
+export async function fetchRecurringTransactionFormOptions() {
+  return call<RecurringTransactionFormOptions>('fetchRecurringTransactionFormOptions');
+}
+export async function createRecurringTransaction(input: RecurringTransactionInput) {
+  return call<RecurringTransaction>('createRecurringTransaction', input);
+}
+export async function updateRecurringTransaction(id: string, updates: Partial<RecurringTransactionInput>) {
+  return call<RecurringTransaction>('updateRecurringTransaction', { id, updates });
+}
+export async function deleteRecurringTransaction(id: string) {
+  await remove('deleteRecurringTransaction', id);
+}
 
 export async function fetchUsers() { return call<User[]>('fetchUsers'); }
 export async function fetchUsersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { search?: string; role?: string; roleNot?: string; name?: string; nameNot?: string; phone?: string; phoneNot?: string; joined?: { operator: string; value: string }; gender?: string; genderNot?: string; nationality?: string; nationalityNot?: string; bloodGroup?: string; bloodGroupNot?: string }) {

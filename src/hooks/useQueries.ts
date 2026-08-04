@@ -120,6 +120,9 @@ import {
   fetchLeadsPage,
   fetchLeadById,
   fetchLeadIntelligence,
+  fetchRecurringTransactionsPage,
+  fetchRecurringTransactionFormOptions,
+  type RecurringTransactionFilters,
 } from '../services/supabaseQueries';
 import {
   readNotificationFirstPageCache,
@@ -173,6 +176,8 @@ import type {
   WalletBalanceCard,
   WalletBalanceCardPage,
   WalletSettings,
+  RecurringTransaction,
+  RecurringTransactionFormOptions,
   RecycleBinItem,
   LocalUsageSummary,
   PaymentGatewaySettings,
@@ -592,6 +597,29 @@ export function useTransaction(id: string | undefined): UseQueryResult<Transacti
     queryKey: ['transaction', id],
     queryFn: () => fetchTransactionById(id || ''),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useRecurringTransactionsPage(
+  page: number = 1,
+  pageSize: number = DEFAULT_PAGE_SIZE,
+  filters?: RecurringTransactionFilters,
+): UseQueryResult<{ data: RecurringTransaction[]; count: number }, Error> {
+  return useQuery({
+    queryKey: ['recurringTransactions', page, pageSize, filters],
+    queryFn: () => fetchRecurringTransactionsPage(page, pageSize, filters),
+    placeholderData: (previousData) => previousData,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useRecurringTransactionFormOptions(): UseQueryResult<RecurringTransactionFormOptions, Error> {
+  return useQuery({
+    queryKey: ['recurringTransactions', 'formOptions'],
+    queryFn: fetchRecurringTransactionFormOptions,
     staleTime: 5 * 60 * 1000,
   });
 }

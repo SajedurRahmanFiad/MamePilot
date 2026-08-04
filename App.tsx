@@ -69,6 +69,7 @@ const Banking = lazyPage(() => import('./pages/Banking'));
 const FraudCheckerPage = lazyPage(() => import('./pages/FraudChecker'));
 const Transactions = lazyPage(() => import('./pages/Transactions'));
 const TransactionForm = lazyPage(() => import('./pages/TransactionForm'));
+const RecurringTransactions = lazyPage(() => import('./pages/RecurringTransactions'));
 const Transfer = lazyPage(() => import('./pages/Transfer'));
 const Products = lazyPage(() => import('./pages/Products'));
 const ProductForm = lazyPage(() => import('./pages/ProductForm'));
@@ -145,6 +146,8 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
             ? '/bills'
             : can('vendors.view') && hasCapability('purchases')
               ? '/vendors'
+              : can('transactions.view') && hasCapability('recurring_transactions')
+                ? '/recurring-transactions'
               : can('transactions.view') && hasSubCapability('transactions')
                 ? '/banking/transactions'
                 : can('accounts.view') && hasSubCapability('accounts')
@@ -206,6 +209,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (can('products.create') || can('products.edit')) preloaders.add(ProductForm.preload);
     if (can('transactions.view') && hasSubCapability('transactions')) preloaders.add(Transactions.preload);
     if ((can('transactions.create') || can('transactions.edit')) && hasSubCapability('transactions')) preloaders.add(TransactionForm.preload);
+    if (can('transactions.view') && hasCapability('recurring_transactions')) preloaders.add(RecurringTransactions.preload);
     if (can('accounts.view') && hasSubCapability('accounts')) preloaders.add(Banking.preload);
     if (can('fraudChecker.check')) preloaders.add(FraudCheckerPage.preload);
     if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
@@ -368,6 +372,10 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/banking/transactions" element={
         isAuthenticated ? (can('transactions.view') && hasSubCapability('transactions') ? <Layout><Transactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+
+      <Route path="/recurring-transactions" element={
+        isAuthenticated ? (can('transactions.view') && hasCapability('recurring_transactions') ? <Layout><RecurringTransactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       
       <Route path="/transactions" element={
