@@ -1,42 +1,42 @@
-import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Clipboard, ExternalLink, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Clipboard, ExternalLink, KeyRound, LogIn, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { useWhatsAppSettings } from '../src/hooks/useQueries';
-import { useTestWhatsAppConnection, useUpdateWhatsAppSettings, useUpdateWhatsAppWelcomeExperience } from '../src/hooks/useMutations';
+import { useConnectWhatsAppEmbeddedSignup, useSyncWhatsAppBusinessAppData, useTestWhatsAppConnection, useUpdateWhatsAppWelcomeExperience } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import type { WhatsAppSettings } from '../types';
 
-const EMPTY_SETTINGS: WhatsAppSettings = {
-  accessToken: '',
-  phoneNumberId: '',
-  businessAccountId: '',
-  verifyToken: '',
-  appSecret: '',
-  graphVersion: 'v25.0',
-  displayPhoneNumber: '',
-  verifiedName: '',
-  qualityRating: '',
-  webhookUrl: '',
-  configured: false,
-  webhookConfigured: false,
-  welcomeMessage: '',
-  getStartedEnabled: false,
-  iceBreakers: [],
-  welcomeActive: false,
+type FacebookSdk = {
+  init: (options: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string }) => void;
+  login: (callback: (response: any) => void, options: Record<string, unknown>) => void;
+  __mamePilotInitialized?: boolean;
 };
 
-function randomToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
+const EMPTY_SETTINGS: WhatsAppSettings = {
+  accessToken: '', phoneNumberId: '', businessAccountId: '', verifyToken: '', appSecret: '', graphVersion: 'v25.0',
+  displayPhoneNumber: '', verifiedName: '', qualityRating: '', webhookUrl: '', configured: false, webhookConfigured: false,
+  welcomeMessage: '', getStartedEnabled: false, iceBreakers: [], welcomeActive: false,
+  embeddedSignupAvailable: false, embeddedSignupAppId: '', embeddedSignupConfigId: '', isOnBizApp: false,
+  connectionStatus: 'disconnected', contactsSyncRequested: false, historySyncRequested: false,
+};
+
+const isMetaOrigin = (origin: string): boolean => origin === 'https://facebook.com' || origin === 'https://www.facebook.com' || origin.endsWith('.facebook.com');
 
 const WhatsAppSettingsPanel: React.FC = () => {
   const toast = useToastNotifications();
   const { data, isPending, error } = useWhatsAppSettings(true);
-  const updateMutation = useUpdateWhatsAppSettings();
+  const connectMutation = useConnectWhatsAppEmbeddedSignup();
+  const syncMutation = useSyncWhatsAppBusinessAppData();
   const testMutation = useTestWhatsAppConnection();
   const welcomeMutation = useUpdateWhatsAppWelcomeExperience();
   const [settings, setSettings] = useState<WhatsAppSettings>(EMPTY_SETTINGS);
+  const [sdkLoading, setSdkLoading] = useState(false);
+  const [popupOpening, setPopupOpening] = useState(false);
+  const [signupEvent, setSignupEvent] = useState('');
+  const sdkRef = useRef<FacebookSdk | null>(null);
+  const pendingCodeRef = useRef<string | null>(null);
+  const pendingSessionRef = useRef<{ event: string; wabaId: string; phoneNumberId?: string } | null>(null);
+  const completingRef = useRef(false);
 
   useEffect(() => {
     if (data) setSettings({ ...EMPTY_SETTINGS, ...data });
@@ -46,48 +46,167 @@ const WhatsAppSettingsPanel: React.FC = () => {
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
-  const save = async () => {
-    const toastId = toast.loading('Saving WhatsApp settings...');
+  const initializeSdk = async (): Promise<FacebookSdk> => {
+    const appId = settings.embeddedSignupAppId?.trim();
+    if (!appId) throw new Error('WhatsApp login is not configured on this server.');
+    const existing = (window as any).FB as FacebookSdk | undefined;
+    if (existing) {
+      if (!existing.__mamePilotInitialized) {
+        existing.init({ appId, autoLogAppEvents: true, xfbml: true, version: settings.graphVersion || 'v25.0' });
+        existing.__mamePilotInitialized = true;
+      }
+      sdkRef.current = existing;
+      return existing;
+    }
+    setSdkLoading(true);
     try {
-      const saved = await updateMutation.mutateAsync(settings);
+      const sdk = await new Promise<FacebookSdk>((resolve, reject) => {
+        const previous = (window as any).fbAsyncInit;
+        (window as any).fbAsyncInit = () => {
+          try { if (typeof previous === 'function') previous(); } catch { /* another integration must not block WhatsApp */ }
+          const loaded = (window as any).FB as FacebookSdk | undefined;
+          if (!loaded) { reject(new Error('Meta login could not be loaded.')); return; }
+          try {
+            loaded.init({ appId, autoLogAppEvents: true, xfbml: true, version: settings.graphVersion || 'v25.0' });
+            loaded.__mamePilotInitialized = true;
+            resolve(loaded);
+          } catch { reject(new Error('Meta login could not be initialized.')); }
+        };
+        const existingScript = document.getElementById('facebook-jssdk') as HTMLScriptElement | null;
+        if (existingScript) {
+          const loaded = (window as any).FB as FacebookSdk | undefined;
+          if (loaded) (window as any).fbAsyncInit();
+          else existingScript.addEventListener('load', () => (window as any).fbAsyncInit(), { once: true });
+          existingScript.addEventListener('error', () => reject(new Error('Meta login could not be loaded.')), { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.id = 'facebook-jssdk'; script.async = true; script.defer = true; script.crossOrigin = 'anonymous';
+        script.src = 'https://connect.facebook.net/en_US/sdk.js';
+        script.onerror = () => reject(new Error('Meta login could not be loaded.'));
+        document.body.appendChild(script);
+      });
+      sdkRef.current = sdk;
+      return sdk;
+    } finally {
+      setSdkLoading(false);
+    }
+  };
+
+  const completeSignup = async () => {
+    const code = pendingCodeRef.current;
+    const session = pendingSessionRef.current;
+    if (!code || !session || completingRef.current || !session.wabaId) return;
+    completingRef.current = true;
+    const toastId = toast.loading('Finishing WhatsApp Business connection...');
+    try {
+      const saved = await connectMutation.mutateAsync({ code, wabaId: session.wabaId, phoneNumberId: session.phoneNumberId });
       setSettings({ ...EMPTY_SETTINGS, ...saved });
-      toast.update(toastId, 'WhatsApp settings saved.', 'success');
-    } catch (saveError) {
-      toast.update(toastId, saveError instanceof Error ? saveError.message : 'WhatsApp settings could not be saved. Please try again.', 'error');
+      pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
+      const warning = saved.warnings?.join(' ');
+      toast.update(toastId, warning ? `WhatsApp is connected. ${warning}` : 'WhatsApp Business and Cloud API are connected.', warning ? 'warning' : 'success');
+    } catch (connectError) {
+      toast.update(toastId, connectError instanceof Error ? connectError.message : 'WhatsApp could not be connected. Please try again.', 'error');
+      pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
+    } finally {
+      completingRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!settings.embeddedSignupAvailable) return;
+    const listener = (event: MessageEvent) => {
+      if (!isMetaOrigin(event.origin)) return;
+      let payload: any = event.data;
+      if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch { return; } }
+      if (!payload || payload.type !== 'WA_EMBEDDED_SIGNUP') return;
+      const eventName = String(payload.event || '');
+      setSignupEvent(eventName);
+      if (eventName === 'CANCEL' || eventName === 'ERROR') {
+        pendingCodeRef.current = null; pendingSessionRef.current = null;
+        toast.warning(eventName === 'CANCEL' ? 'WhatsApp login was cancelled.' : 'WhatsApp could not complete the login flow.');
+        return;
+      }
+      if (!eventName.startsWith('FINISH')) return;
+      const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+      pendingSessionRef.current = {
+        event: eventName,
+        wabaId: String(data.waba_id || data.wabaId || ''),
+        phoneNumberId: data.phone_number_id || data.phoneNumberId ? String(data.phone_number_id || data.phoneNumberId) : undefined,
+      };
+      void completeSignup();
+    };
+    window.addEventListener('message', listener);
+    return () => window.removeEventListener('message', listener);
+  });
+
+  useEffect(() => {
+    if (!settings.embeddedSignupAvailable) return;
+    void initializeSdk().catch(() => { /* the button reports a useful error if the browser blocks the SDK */ });
+    // The Meta SDK is loaded once per page; the current configuration is the
+    // only value needed here and is intentionally not a credential.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.embeddedSignupAvailable, settings.embeddedSignupAppId]);
+
+  const connect = async () => {
+    if (!settings.embeddedSignupAvailable) {
+      toast.error('WhatsApp login is not enabled on this server yet.');
+      return;
+    }
+    pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
+    setPopupOpening(true);
+    try {
+      const sdk = sdkRef.current || await initializeSdk();
+      sdk.login((response) => {
+        setPopupOpening(false);
+        const code = response?.authResponse?.code;
+        if (!code) {
+          if (response?.status !== 'unknown') toast.warning('WhatsApp login was cancelled.');
+          return;
+        }
+        pendingCodeRef.current = String(code);
+        void completeSignup();
+      }, {
+        config_id: settings.embeddedSignupConfigId,
+        response_type: 'code',
+        override_default_response_type: true,
+        // Embedded Signup v4 is selected by the Facebook Login for Business
+        // configuration; Meta requires the launch extras object to stay empty.
+        extras: {},
+      });
+    } catch (connectError) {
+      setPopupOpening(false);
+      toast.error(connectError instanceof Error ? connectError.message : 'Meta login could not be opened.');
     }
   };
 
   const test = async () => {
-    if (!settings.accessToken.trim() || !settings.phoneNumberId.trim()) {
-      toast.warning('Add the required WhatsApp connection details, then try again.');
-      return;
-    }
-    const toastId = toast.loading('Checking your WhatsApp connection...');
+    const toastId = toast.loading('Checking the WhatsApp connection...');
     try {
-      const saved = await updateMutation.mutateAsync(settings);
-      setSettings({ ...EMPTY_SETTINGS, ...saved });
       const result = await testMutation.mutateAsync();
-      setSettings((current) => ({
-        ...current,
-        configured: true,
-        displayPhoneNumber: result.displayPhoneNumber,
-        verifiedName: result.verifiedName,
-        qualityRating: result.qualityRating,
-      }));
-      toast.update(toastId, 'WhatsApp is connected.', 'success');
+      setSettings((current) => ({ ...current, configured: true, displayPhoneNumber: result.displayPhoneNumber, verifiedName: result.verifiedName, qualityRating: result.qualityRating, platformType: result.platformType, isOnBizApp: result.isOnBizApp, connectionStatus: result.isOnBizApp ? 'connected' : 'cloud_api_only' }));
+      toast.update(toastId, result.isOnBizApp ? 'WhatsApp coexistence is verified.' : 'Cloud API is reachable, but Business app coexistence is not verified.', result.isOnBizApp ? 'success' : 'warning');
     } catch (testError) {
-      toast.update(toastId, testError instanceof Error ? testError.message : 'WhatsApp could not be connected. Please check the settings and try again.', 'error');
+      toast.update(toastId, testError instanceof Error ? testError.message : 'WhatsApp could not be verified. Please try again.', 'error');
+    }
+  };
+
+  const sync = async () => {
+    const toastId = toast.loading('Starting WhatsApp contact and history synchronization...');
+    try {
+      const result = await syncMutation.mutateAsync('all');
+      setSettings({ ...EMPTY_SETTINGS, ...result.settings });
+      const warning = result.warnings?.join(' ');
+      toast.update(toastId, warning ? `WhatsApp synchronization partially started. ${warning}` : 'WhatsApp synchronization has started. New history and contacts will arrive through webhooks.', warning ? 'warning' : 'success');
+    } catch (syncError) {
+      toast.update(toastId, syncError instanceof Error ? syncError.message : 'WhatsApp synchronization could not be started.', 'error');
     }
   };
 
   const saveWelcomeExperience = async () => {
     const toastId = toast.loading('Saving the WhatsApp welcome experience...');
     try {
-      const saved = await welcomeMutation.mutateAsync({
-        welcomeMessage: settings.welcomeMessage,
-        getStartedEnabled: settings.getStartedEnabled,
-        iceBreakers: settings.iceBreakers,
-      });
+      const saved = await welcomeMutation.mutateAsync({ welcomeMessage: settings.welcomeMessage, getStartedEnabled: settings.getStartedEnabled, iceBreakers: settings.iceBreakers });
       setSettings({ ...EMPTY_SETTINGS, ...saved });
       toast.update(toastId, 'WhatsApp welcome experience is active.', 'success');
     } catch (welcomeError) {
@@ -96,190 +215,53 @@ const WhatsAppSettingsPanel: React.FC = () => {
   };
 
   const copyWebhook = async () => {
-    try {
-      await navigator.clipboard.writeText(settings.webhookUrl);
-      toast.success('Message delivery address copied.');
-    } catch {
-      toast.error('Could not copy the message delivery address. Please try again.');
-    }
+    try { await navigator.clipboard.writeText(settings.webhookUrl); toast.success('Message delivery address copied.'); }
+    catch { toast.error('Could not copy the message delivery address. Please try again.'); }
   };
 
-  if (isPending) {
-    return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading WhatsApp settings...</div>;
-  }
+  if (isPending) return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading WhatsApp settings...</div>;
+  const coexistenceConnected = settings.configured && settings.isOnBizApp && String(settings.platformType || '').toUpperCase() === 'CLOUD_API';
 
   return (
     <div className="space-y-7 animate-in fade-in duration-300">
       <div className="flex flex-col gap-4 border-b border-gray-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h3 className="text-xl font-bold text-gray-800">WhatsApp Business</h3>
-          <p className="mt-2 max-w-3xl text-sm text-gray-500">
-            Connect your business WhatsApp number to the shared inbox. These details are only available to administrators.
-          </p>
-        </div>
+        <div><h3 className="text-xl font-bold text-gray-800">WhatsApp Business</h3><p className="mt-2 max-w-3xl text-sm text-gray-500">Connect the existing WhatsApp Business mobile account to MamePilot while keeping the mobile app and Cloud API active together.</p></div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={test} loading={testMutation.isPending || updateMutation.isPending} icon={<RefreshCw size={17} />}>
-            Test Connection
-          </Button>
-          <Button type="button" onClick={save} loading={updateMutation.isPending} icon={<ShieldCheck size={17} />}>
-            Save WhatsApp
-          </Button>
+          <Button type="button" variant="outline" onClick={test} loading={testMutation.isPending} icon={<RefreshCw size={17} />}>Verify connection</Button>
+          {coexistenceConnected && <Button type="button" variant="outline" onClick={sync} loading={syncMutation.isPending} disabled={Boolean(settings.contactsSyncRequested && settings.historySyncRequested)} icon={<RefreshCw size={17} />}>Sync Business app data</Button>}
         </div>
       </div>
 
       {error && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">WhatsApp settings could not be loaded. Please refresh the page.</div>}
 
-      <div className={`rounded-xl border p-4 ${settings.configured ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50'}`}>
+      <div className={`rounded-xl border p-4 ${coexistenceConnected ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50'}`}>
         <div className="flex items-start gap-3">
-          {settings.configured ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className="mt-0.5 text-amber-600" size={20} />}
+          {coexistenceConnected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className="mt-0.5 text-amber-600" size={20} />}
           <div>
-            <p className={`text-sm font-bold ${settings.configured ? 'text-emerald-800' : 'text-amber-800'}`}>
-              {settings.configured ? 'WhatsApp connection details are saved.' : 'Complete the required WhatsApp connection details below.'}
-            </p>
-            {settings.configured && !settings.webhookConfigured && <p className="mt-1 text-xs font-semibold text-amber-700">Complete the message delivery details below so new messages can reach the inbox.</p>}
-            {(settings.verifiedName || settings.displayPhoneNumber) && (
-              <p className="mt-1 text-xs font-semibold text-gray-600">
-                {settings.verifiedName || 'WhatsApp Business'} · {settings.displayPhoneNumber || settings.phoneNumberId}
-                {settings.qualityRating ? ` · Quality ${settings.qualityRating}` : ''}
-              </p>
-            )}
+            <p className={`text-sm font-bold ${coexistenceConnected ? 'text-emerald-800' : 'text-amber-800'}`}>{coexistenceConnected ? 'WhatsApp Business app + Cloud API are connected.' : settings.configured ? 'Cloud API is connected; Business app coexistence still needs verification.' : 'Connect WhatsApp Business to start.'}</p>
+            {(settings.verifiedName || settings.displayPhoneNumber) && <p className="mt-1 text-xs font-semibold text-gray-600">{settings.verifiedName || 'WhatsApp Business'}{settings.displayPhoneNumber ? ` · ${settings.displayPhoneNumber}` : ''}{settings.qualityRating ? ` · Quality ${settings.qualityRating}` : ''}</p>}
+            {settings.lastWebhookAt && <p className="mt-1 text-xs text-gray-500">Last message delivery: {new Date(settings.lastWebhookAt).toLocaleString()}</p>}
           </div>
         </div>
       </div>
 
       <section className="rounded-xl border border-gray-100 bg-white p-5">
-        <h4 className="text-base font-black text-gray-900">WhatsApp connection</h4>
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="space-y-2 text-sm font-semibold text-gray-700 md:col-span-2">
-            <span>Permanent access token</span>
-            <textarea
-              rows={3}
-              value={settings.accessToken}
-              onChange={(event) => setField('accessToken', event.target.value)}
-              className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-[#0f2f57]"
-              placeholder="Paste the permanent access token from Meta"
-            />
-          </label>
-          <label className="space-y-2 text-sm font-semibold text-gray-700">
-            <span>Phone Number ID</span>
-            <input value={settings.phoneNumberId} onChange={(event) => setField('phoneNumberId', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-[#0f2f57]" placeholder="Meta Phone Number ID" />
-          </label>
-          <label className="space-y-2 text-sm font-semibold text-gray-700">
-            <span>WhatsApp Business Account ID</span>
-            <input value={settings.businessAccountId} onChange={(event) => setField('businessAccountId', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-[#0f2f57]" placeholder="Business Account ID from Meta" />
-          </label>
-          <label className="space-y-2 text-sm font-semibold text-gray-700">
-            <span>Meta App Secret</span>
-            <input type="password" value={settings.appSecret} onChange={(event) => setField('appSecret', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-[#0f2f57]" placeholder="Paste the app secret from Meta" />
-          </label>
-          <label className="space-y-2 text-sm font-semibold text-gray-700">
-            <span>Connection version (advanced)</span>
-            <input value={settings.graphVersion} onChange={(event) => setField('graphVersion', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-[#0f2f57]" placeholder="v25.0" />
-          </label>
-        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-base font-black text-gray-900">Connect with WhatsApp Business</h4><p className="mt-1 max-w-2xl text-sm text-gray-500">A secure Meta login window will open. Sign in, choose the existing WhatsApp Business account, and use the mobile app prompt to connect it to the Business Platform. No token or phone ID needs to be pasted here.</p></div><Button type="button" onClick={connect} loading={popupOpening || connectMutation.isPending || sdkLoading} disabled={!settings.embeddedSignupAvailable} icon={<LogIn size={17} />}>Open WhatsApp login</Button></div>
+        {!settings.embeddedSignupAvailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Embedded Signup is not enabled on this deployment. A developer must configure the Meta app ID, v4 Facebook Login for Business configuration ID, app secret, HTTPS webhook URL, and webhook verify token in the server environment.</div>}
+        {signupEvent && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">Meta login status: {signupEvent.replaceAll('_', ' ').toLowerCase()}.</div>}
+        <ol className="mt-5 grid gap-3 text-sm text-gray-600 md:grid-cols-3"><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">1. Sign in</strong><span className="mt-1 block">Use the Meta account that administers the business.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">2. Confirm on mobile</strong><span className="mt-1 block">In WhatsApp Business, tap Connect to the Business Platform.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">3. Choose chat sharing</strong><span className="mt-1 block">Allow or decline history sharing; the mobile app remains usable either way.</span></li></ol>
+        {coexistenceConnected && <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{settings.contactsSyncRequested && settings.historySyncRequested ? 'Contact and message-history synchronization requests have been sent.' : 'The connection is verified. MamePilot will request the one-time contact and history synchronization.'}</div>}
       </section>
 
-      <section className="rounded-xl border border-blue-100 bg-blue-50 p-5">
-        <h4 className="text-base font-black text-blue-950">Message delivery</h4>
-        <p className="mt-1 text-sm text-blue-700">Copy this address into the WhatsApp section of your Meta app, then turn on message delivery.</p>
-        <div className="mt-4 grid grid-cols-1 gap-4">
-          <label className="space-y-2 text-sm font-semibold text-blue-900">
-            <span>Message delivery address</span>
-            <div className="flex gap-2">
-              <input readOnly value={settings.webhookUrl} className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-medium" />
-              <Button type="button" variant="outline" onClick={copyWebhook} aria-label="Copy message delivery address"><Clipboard size={17} /></Button>
-            </div>
-          </label>
-          <label className="space-y-2 text-sm font-semibold text-blue-900">
-            <span>Security code (Verify token in Meta)</span>
-            <div className="flex gap-2">
-              <input value={settings.verifyToken} onChange={(event) => setField('verifyToken', event.target.value)} className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-medium outline-none" placeholder="A private random string" />
-              <Button type="button" variant="outline" onClick={() => setField('verifyToken', randomToken())}>Generate</Button>
-            </div>
-          </label>
-        </div>
-      </section>
+      <section className="rounded-xl border border-blue-100 bg-blue-50 p-5"><h4 className="text-base font-black text-blue-950">Message delivery</h4><p className="mt-1 text-sm text-blue-700">Embedded Signup subscribes this WABA and routes supported message, history, echo, and contact events to this deployment automatically.</p><div className="mt-4 flex gap-2"><input readOnly value={settings.webhookUrl} aria-label="Message delivery address" className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-medium" /><Button type="button" variant="outline" onClick={copyWebhook} aria-label="Copy message delivery address"><Clipboard size={17} /></Button></div>{!settings.webhookConfigured && <p className="mt-3 text-xs font-semibold text-amber-700">The server app secret or webhook security configuration is incomplete; message delivery cannot be verified until the developer fixes the deployment environment.</p>}</section>
 
-      <section className="space-y-5 rounded-xl border border-gray-100 bg-white p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h4 className="text-base font-black text-gray-900">Welcome experience</h4>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">When a customer messages for the first time, WhatsApp will automatically send this welcome—even when MamePilot is closed.</p>
-          </div>
-          <Button type="button" variant="outline" onClick={saveWelcomeExperience} loading={welcomeMutation.isPending} disabled={!settings.configured}>
-            Save welcome experience
-          </Button>
-        </div>
-
-        <label className="block space-y-2 text-sm font-semibold text-gray-700">
-          <span>Welcome message</span>
-          <textarea
-            rows={4}
-            maxLength={1024}
-            value={settings.welcomeMessage}
-            onChange={(event) => setField('welcomeMessage', event.target.value)}
-            className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-emerald-500"
-            placeholder="Welcome! How can we help you today?"
-          />
-          <span className="block text-right text-xs font-medium text-gray-400">{settings.welcomeMessage.length}/1024</span>
-        </label>
-
-        <label className="flex items-start gap-3 rounded-xl bg-gray-50 p-4">
-          <input
-            type="checkbox"
-            checked={settings.getStartedEnabled}
-            onChange={(event) => setSettings((current) => ({
-              ...current,
-              getStartedEnabled: event.target.checked,
-              iceBreakers: event.target.checked ? current.iceBreakers.slice(0, 2) : current.iceBreakers,
-            }))}
-            className="mt-1 h-4 w-4 accent-emerald-600"
-          />
-          <span>
-            <span className="block text-sm font-black text-gray-800">Show Get Started</span>
-            <span className="mt-1 block text-sm text-gray-500">Customers can begin with one tap.</span>
-          </span>
-        </label>
-
-        <div>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-gray-800">Conversation starters</p>
-              <p className="mt-1 text-sm text-gray-500">Add short choices customers can tap.</p>
-            </div>
-            <button
-              type="button"
-              disabled={settings.iceBreakers.length >= (settings.getStartedEnabled ? 2 : 3)}
-              onClick={() => setField('iceBreakers', [...settings.iceBreakers, ''])}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
-            >
-              <Plus size={16} /> Add
-            </button>
-          </div>
-          <div className="mt-3 space-y-3">
-            {settings.iceBreakers.map((question, index) => (
-              <div key={index} className="flex gap-2">
-                <input
-                  value={question}
-                  maxLength={20}
-                  onChange={(event) => setField('iceBreakers', settings.iceBreakers.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
-                  className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium outline-none focus:border-emerald-500"
-                  placeholder="Track my order"
-                />
-                <button type="button" onClick={() => setField('iceBreakers', settings.iceBreakers.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl p-3 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove conversation starter">
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      <section className="space-y-5 rounded-xl border border-gray-100 bg-white p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-base font-black text-gray-900">Welcome experience</h4><p className="mt-1 max-w-2xl text-sm text-gray-500">When a customer messages for the first time, WhatsApp will automatically send this welcome—even when MamePilot is closed.</p></div><Button type="button" variant="outline" onClick={saveWelcomeExperience} loading={welcomeMutation.isPending} disabled={!settings.configured}>Save welcome experience</Button></div>
+        <label className="block space-y-2 text-sm font-semibold text-gray-700"><span>Welcome message</span><textarea rows={4} maxLength={1024} value={settings.welcomeMessage} onChange={(event) => setField('welcomeMessage', event.target.value)} className="w-full resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium outline-none focus:border-emerald-500" placeholder="Welcome! How can we help you today?" /><span className="block text-right text-xs font-medium text-gray-400">{settings.welcomeMessage.length}/1024</span></label>
+        <label className="flex items-start gap-3 rounded-xl bg-gray-50 p-4"><input type="checkbox" checked={settings.getStartedEnabled} onChange={(event) => setSettings((current) => ({ ...current, getStartedEnabled: event.target.checked, iceBreakers: event.target.checked ? current.iceBreakers.slice(0, 2) : current.iceBreakers }))} className="mt-1 h-4 w-4 accent-emerald-600" /><span><span className="block text-sm font-black text-gray-800">Show Get Started</span><span className="mt-1 block text-sm text-gray-500">Customers can begin with one tap.</span></span></label>
+        <div><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-black text-gray-800">Conversation starters</p><p className="mt-1 text-sm text-gray-500">Add short choices customers can tap.</p></div><button type="button" disabled={settings.iceBreakers.length >= (settings.getStartedEnabled ? 2 : 3)} onClick={() => setField('iceBreakers', [...settings.iceBreakers, ''])} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"><Plus size={16} /> Add</button></div><div className="mt-3 space-y-3">{settings.iceBreakers.map((question, index) => <div key={index} className="flex gap-2"><input value={question} maxLength={20} onChange={(event) => setField('iceBreakers', settings.iceBreakers.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium outline-none focus:border-emerald-500" placeholder="Track my order" /><button type="button" onClick={() => setField('iceBreakers', settings.iceBreakers.filter((_, itemIndex) => itemIndex !== index))} className="rounded-xl p-3 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove conversation starter"><Trash2 size={17} /></button></div>)}</div></div>
         {settings.welcomeActive && <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">The automatic welcome is active for new customers.</div>}
       </section>
-
-      <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900">
-        Open Meta's WhatsApp setup guide <ExternalLink size={15} />
-      </a>
+      <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900">Open Meta's Business app Coexistence guide <ExternalLink size={15} /></a>
     </div>
   );
 };

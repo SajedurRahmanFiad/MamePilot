@@ -83,6 +83,12 @@ if (Test-Path $courierWebhookGuide) {
   if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
   Copy-Item -LiteralPath $courierWebhookGuide -Destination (Join-Path $docsDir 'COURIER_WEBHOOKS_AND_AUTOMATIC_SHIPPING_COSTS.md') -Force
 }
+$whatsappCoexistenceGuide = Join-Path $repoRoot 'docs\whatsapp-business-app-coexistence.md'
+if (Test-Path $whatsappCoexistenceGuide) {
+  $docsDir = Join-Path $packageRoot 'docs'
+  if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
+  Copy-Item -LiteralPath $whatsappCoexistenceGuide -Destination (Join-Path $docsDir 'whatsapp-business-app-coexistence.md') -Force
+}
 $serverOpsGuide = Join-Path $repoRoot 'SERVER_OPS_ACTION_GUIDE.md'
 if (Test-Path $serverOpsGuide) {
   Copy-Item -LiteralPath $serverOpsGuide -Destination (Join-Path $packageRoot 'SERVER_OPS_ACTION_GUIDE.md') -Force

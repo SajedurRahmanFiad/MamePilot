@@ -1550,8 +1550,14 @@ abstract class BaseService
             ]
         );
 
-        $this->columnExistsCache[$cacheKey] = $row !== null;
-        return $this->columnExistsCache[$cacheKey];
+        // Cache only positive results. A service may add a column during its
+        // own lazy schema initialization; retaining a cached `false` would
+        // make the next call attempt the same ALTER TABLE again.
+        $present = $row !== null;
+        if ($present) {
+            $this->columnExistsCache[$cacheKey] = true;
+        }
+        return $present;
     }
 
     protected function normalizeRoleName(string $role): string

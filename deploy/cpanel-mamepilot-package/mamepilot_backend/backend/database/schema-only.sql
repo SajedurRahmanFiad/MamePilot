@@ -2782,6 +2782,16 @@ LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by
 WHERE o.deleted_at IS NULL;
 
+-- Migration: 2026-08-06_whatsapp_embedded_signup_coexistence.sql
+CALL sp_add_col('whatsapp_settings', 'platform_type', 'VARCHAR(32) NULL AFTER quality_rating');
+CALL sp_add_col('whatsapp_settings', 'is_on_biz_app', 'TINYINT(1) NULL AFTER platform_type');
+CALL sp_add_col('whatsapp_settings', 'connection_status', 'VARCHAR(32) NOT NULL DEFAULT ''disconnected'' AFTER is_on_biz_app');
+CALL sp_add_col('whatsapp_settings', 'contacts_sync_request_id', 'VARCHAR(255) NULL AFTER connection_status');
+CALL sp_add_col('whatsapp_settings', 'contacts_sync_requested_at', 'DATETIME NULL AFTER contacts_sync_request_id');
+CALL sp_add_col('whatsapp_settings', 'history_sync_request_id', 'VARCHAR(255) NULL AFTER contacts_sync_requested_at');
+CALL sp_add_col('whatsapp_settings', 'history_sync_requested_at', 'DATETIME NULL AFTER history_sync_request_id');
+CALL sp_add_col('whatsapp_settings', 'last_webhook_at', 'DATETIME NULL AFTER history_sync_requested_at');
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;

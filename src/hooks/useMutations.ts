@@ -105,6 +105,8 @@ import {
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
   updateWhatsAppSettings,
+  connectWhatsAppEmbeddedSignup,
+  syncWhatsAppBusinessAppData,
   updateWhatsAppWelcomeExperience,
   testWhatsAppConnection,
   createWhatsAppConversation,
@@ -2896,7 +2898,7 @@ export function useUpdateWhatsAppWelcomeExperience(): UseMutationResult<WhatsApp
   return useMutation({ mutationFn: updateWhatsAppWelcomeExperience, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
 }
 
-export function useTestWhatsAppConnection(): UseMutationResult<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string }, Error, void, unknown> {
+export function useTestWhatsAppConnection(): UseMutationResult<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string; platformType?: string; isOnBizApp?: boolean }, Error, void, unknown> {
   const queryClient = useQueryClient();
   return useMutation({ mutationFn: () => testWhatsAppConnection(), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp', 'settings'] }) });
 }
@@ -3266,6 +3268,16 @@ export function useUpdateLlmSettings(): UseMutationResult<LlmSettings, Error, Ll
       queryClient.invalidateQueries({ queryKey: ['settings', 'llms'] });
     },
   });
+}
+
+export function useConnectWhatsAppEmbeddedSignup(): UseMutationResult<WhatsAppSettings, Error, { code: string; wabaId: string; phoneNumberId?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: connectWhatsAppEmbeddedSignup, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
+}
+
+export function useSyncWhatsAppBusinessAppData(): UseMutationResult<{ ok: boolean; results: Record<string, unknown>; warnings?: string[]; settings: WhatsAppSettings }, Error, 'all' | 'contacts' | 'history' | undefined, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: (type) => syncWhatsAppBusinessAppData(type || 'all'), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
 }
 
 export function useAnalyzeLead(): UseMutationResult<Lead, Error, { leadId?: string; channel?: string; contactId?: string }, unknown> {

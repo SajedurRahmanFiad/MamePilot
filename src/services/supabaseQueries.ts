@@ -437,8 +437,10 @@ export async function fetchMetaAdById(id: string): Promise<any | null> { return 
 
 export async function fetchWhatsAppSettings(): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('fetchWhatsAppSettings'); }
 export async function updateWhatsAppSettings(updates: Partial<WhatsAppSettings>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppSettings', updates); }
+export async function connectWhatsAppEmbeddedSignup(payload: { code: string; wabaId: string; phoneNumberId?: string }): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('connectWhatsAppEmbeddedSignup', payload, { timeoutMs: 120000 }); }
+export async function syncWhatsAppBusinessAppData(type: 'all' | 'contacts' | 'history' = 'all'): Promise<{ ok: boolean; results: Record<string, unknown>; warnings?: string[]; settings: WhatsAppSettings }> { return call<any>('syncWhatsAppBusinessAppData', { type }, { timeoutMs: 120000 }); }
 export async function updateWhatsAppWelcomeExperience(updates: Pick<WhatsAppSettings, 'welcomeMessage' | 'getStartedEnabled' | 'iceBreakers'>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppWelcomeExperience', updates, { timeoutMs: 60000 }); }
-export async function testWhatsAppConnection(): Promise<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string }> { return call<any>('testWhatsAppConnection'); }
+export async function testWhatsAppConnection(): Promise<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string; platformType?: string; isOnBizApp?: boolean }> { return call<any>('testWhatsAppConnection'); }
 export async function fetchWhatsAppContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }): Promise<{ data: WhatsAppContact[]; count: number; configured: boolean }> { return call<any>('fetchWhatsAppContacts', params || {}); }
 export async function fetchWhatsAppMessages(contactId: string): Promise<{ contact: WhatsAppContact; data: WhatsAppMessage[] }> { return call<any>('fetchWhatsAppMessages', { contactId, limit: 150 }); }
 export async function createWhatsAppConversation(payload: { phoneNumber: string; name?: string }): Promise<WhatsAppContact> { return call<WhatsAppContact>('createWhatsAppConversation', payload); }

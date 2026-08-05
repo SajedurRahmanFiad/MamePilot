@@ -84,6 +84,6 @@ export const useToastNotifications = () => {
     warning: (message: string) => showToast(message, 'warning', 3500),
     info: (message: string) => showToast(message, 'info', 3500),
     loading: (message: string) => showToast(message, 'info', 0),  // 0 duration = manual dismiss
-    update: (id: string, message: string, type: 'success' | 'error' = 'success') => updateToast(id, message, type, 3500),
+    update: (id: string, message: string, type: ToastType = 'success') => updateToast(id, message, type, 3500),
   }), [showToast, updateToast]);
 };
