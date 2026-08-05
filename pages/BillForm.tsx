@@ -39,6 +39,9 @@ const BillForm: React.FC = () => {
   const [showProductSearch, setShowProductSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  // Cumulative map of all products seen across mini, search, and full caches.
+  // Ensures addItem can find products even after the search filter changes the visible list.
+  const allProductsRef = React.useRef<Map<string, any>>(new Map());
   const { data: systemDefaults } = useSystemDefaults();
   const isMultiSelectMode = (systemDefaults?.productSelectionMode ?? 'simple') === 'multi';
 
@@ -81,7 +84,14 @@ const BillForm: React.FC = () => {
   const products = (fullProducts && fullProducts.length > 0)
     ? fullProducts
     : (debouncedSearch ? productsSearch : (productsMini || []));
-  
+
+  // Accumulate all seen products into the ref so addItem can find them after search changes
+  React.useEffect(() => {
+    for (const p of products) {
+      if (p?.id) allProductsRef.current.set(p.id, p);
+    }
+  }, [products]);
+
   // Mutations
   const createMutation = useCreateBill();
   const updateMutation = useUpdateBill();
@@ -177,7 +187,7 @@ const BillForm: React.FC = () => {
   };
 
   const addItem = (productId: string) => {
-    const product = products.find(p => p.id === productId);
+    const product = allProductsRef.current.get(productId) ?? products.find(p => p.id === productId);
     if (!product) return;
 
     const newItem: OrderItem = {

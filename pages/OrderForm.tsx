@@ -99,6 +99,9 @@ const OrderForm: React.FC = () => {
   const [showProductSearch, setShowProductSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  // Cumulative map of all products seen across mini, search, and full caches.
+  // Ensures addItem can find products even after the search filter changes the visible list.
+  const allProductsRef = React.useRef<Map<string, any>>(new Map());
 
   // Lightweight fetch used only when the product search dropdown opens.
   const { data: productsMini = [], isFetching: productsMiniLoading } = useQuery({
@@ -140,6 +143,14 @@ const OrderForm: React.FC = () => {
   const products = (fullProducts && fullProducts.length > 0)
     ? fullProducts
     : (debouncedSearch ? productsSearch : (productsMini || []));
+
+  // Accumulate all seen products into the ref so addItem can find them after search changes
+  React.useEffect(() => {
+    for (const p of products) {
+      if (p?.id) allProductsRef.current.set(p.id, p);
+    }
+  }, [products]);
+
   const { data: existingOrderData, isPending: existingOrderLoading } = useOrder(isEdit ? id : undefined);
   const { data: metaAdsData } = useMetaAds({ status: 'ACTIVE' }, true);
   const { data: orderSettings } = useOrderSettings();
@@ -429,7 +440,7 @@ const OrderForm: React.FC = () => {
   };
 
   const addItem = (productId: string) => {
-    const product = products.find(p => p.id === productId);
+    const product = allProductsRef.current.get(productId) ?? products.find(p => p.id === productId);
     if (!product) return;
     if ((product.stock ?? 0) <= 0) {
       toast.warning(`"${product.name}" is out of stock — will be created On Hold.`);
