@@ -52,7 +52,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       return;
     }
 
-    const { baseUrl, apiKey, secretKey } = freshCourierSettings.steadfast;
+    const { baseUrl, apiKey, secretKey, invoice = '' } = freshCourierSettings.steadfast;
 
     // Detailed logging for debugging
     console.log('[SteadfastModal] ======== SUBMISSION DEBUG ========');
@@ -82,11 +82,13 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       console.log('[SteadfastModal] Customer Address:', customer.address);
       console.log('[SteadfastModal] Order Total:', order.total);
 
-    const result = await submitSteadfastOrder({
+      const invoiceValue = invoice.trim() || order.orderNumber;
+      const result = await submitSteadfastOrder({
         baseUrl,
         apiKey,
         secretKey,
-        invoice: order.orderNumber,
+        invoice: invoiceValue,
+        orderId: order.id,
         recipientName: customer.name,
         recipientPhone: customer.phone,
         recipientAddress: customer.address,
@@ -116,64 +118,67 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       }
 
       console.log('[SteadfastModal] Order submitted successfully to Steadfast');
-      try {
-        const trackingCode = (
-          result?.consignment?.tracking_code ??
-          result?.consignment?.trackingCode ??
-          result?.tracking_code ??
-          result?.trackingCode ??
-          result?.data?.consignment?.tracking_code ??
-          result?.data?.consignment?.trackingCode ??
-          result?.data?.tracking_code ??
-          result?.data?.trackingCode ??
-          null
-        );
-        const consignmentId = (
-          result?.consignment?.consignment_id ??
-          result?.consignment?.consignmentId ??
-          result?.consignment_id ??
-          result?.consignmentId ??
-          result?.data?.consignment?.consignment_id ??
-          result?.data?.consignment?.consignmentId ??
-          result?.data?.consignment_id ??
-          result?.data?.consignmentId ??
-          null
-        );
-        const trackingOrConsignment = trackingCode ?? consignmentId;
-        const courierStatus = (
-          result?.consignment?.status ??
-          result?.data?.consignment?.status ??
-          (typeof result?.status === 'string' ? result.status : null) ??
-          null
-        );
+      const consignmentId = (
+        result?.consignment?.consignment_id ??
+        result?.consignment?.consignmentId ??
+        result?.consignment_id ??
+        result?.consignmentId ??
+        result?.data?.consignment?.consignment_id ??
+        result?.data?.consignment?.consignmentId ??
+        result?.data?.consignment_id ??
+        result?.data?.consignmentId ??
+        null
+      );
+      const trackingLink = (
+        result?.consignment?.tracking_link ??
+        result?.consignment?.trackingLink ??
+        result?.tracking_link ??
+        result?.trackingLink ??
+        result?.data?.consignment?.tracking_link ??
+        result?.data?.consignment?.trackingLink ??
+        result?.data?.tracking_link ??
+        result?.data?.trackingLink ??
+        null
+      );
+      const courierStatus = (
+        result?.consignment?.status ??
+        result?.data?.consignment?.status ??
+        (typeof result?.status === 'string' ? result.status : null) ??
+        null
+      );
 
-        const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to Steadfast by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()}${trackingOrConsignment ? ` (Tracking: ${trackingOrConsignment})` : ''}${courierStatus ? ` (Submit status: ${courierStatus})` : ''}`;
-        console.log('[SteadfastModal] Setting courier history:', historyText);
-
-        const updates: any = {
-          history: {
-            ...order.history,
-          },
-        };
-
-        if (isExchangeConsignment) {
-          // Exchange consignment — store in exchange fields, don't change status
-          updates.exchangeCourier = 'steadfast';
-          updates.history.exchangeCourier = historyText;
-          if (trackingOrConsignment) updates.exchangeSteadfastConsignmentId = String(trackingOrConsignment);
-        } else {
-          // Normal consignment
-          updates.status = OrderStatus.COURIER_ASSIGNED;
-          updates.history.courier = historyText;
-          if (trackingOrConsignment) updates.steadfastConsignmentId = String(trackingOrConsignment);
-
-        }
-
-        await updateOrder.mutateAsync({ id: order.id, updates });
-        console.log('[SteadfastModal] Courier status updated and UI refreshed');
-      } catch (err) {
-        console.error('[SteadfastModal] Failed to update order:', err);
+      if (consignmentId === null || String(consignmentId).trim() === '') {
+        throw new Error('Steadfast accepted the order but did not return a consignment ID. The local order was not changed.');
       }
+
+      const normalizedConsignmentId = String(consignmentId).trim();
+      const historyText = `${isExchangeConsignment ? 'Exchange s' : 'S'}ent to Steadfast by ${db.currentUser?.name || 'System'} on ${formatHistoryMoment()} (Consignment ID: ${normalizedConsignmentId})${courierStatus ? ` (Submit status: ${courierStatus})` : ''}`;
+      console.log('[SteadfastModal] Setting courier history:', historyText);
+
+      const updates: any = {
+        history: {
+          ...order.history,
+        },
+      };
+
+      if (isExchangeConsignment) {
+        // Exchange consignment — store in exchange fields, don't change status
+        updates.exchangeCourier = 'steadfast';
+        updates.history.exchangeCourier = historyText;
+        updates.exchangeSteadfastConsignmentId = normalizedConsignmentId;
+      } else {
+        // Normal consignment
+        updates.status = OrderStatus.COURIER_ASSIGNED;
+        updates.history.courier = historyText;
+        updates.steadfastConsignmentId = normalizedConsignmentId;
+        updates.steadfastInvoice = invoiceValue;
+        if (trackingLink !== null && String(trackingLink).trim() !== '') {
+          updates.steadfastTrackingLink = String(trackingLink).trim();
+        }
+      }
+
+      await updateOrder.mutateAsync({ id: order.id, updates });
+      console.log('[SteadfastModal] Courier status updated and UI refreshed');
       onClose();
       void queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
       toast.success('Order sent to Steadfast successfully');

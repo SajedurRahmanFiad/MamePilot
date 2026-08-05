@@ -172,6 +172,7 @@ final class FeatureAccess
         'submitPaperflyOrder' => 'paperfly_courier',
         'submitSteadfastOrder' => 'steadfast_courier',
         'fetchSteadfastStatusByTrackingCode' => 'steadfast_courier',
+        'fetchSteadfastStatusByConsignmentId' => 'steadfast_courier',
         'syncCarryBeeTransferStatuses' => 'carrybee_courier',
         'syncPaperflyOrderStatuses' => 'paperfly_courier',
         'syncSteadfastDeliveryStatuses' => 'steadfast_courier',

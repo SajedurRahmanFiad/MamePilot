@@ -165,7 +165,8 @@ const SettingsPage: React.FC = () => {
   const [orderSettings, setOrderSettings] = useState({ prefix: 'ORD-', nextNumber: 1 });
   const [courierSettings, setCourierSettings] = useState<CourierSettings>({
     automaticallyDeductShippingCosts: false,
-    steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
+    automaticallyMarkPaidAfterDelivery: false,
+    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '' },
     carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
     paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
     pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
@@ -609,10 +610,16 @@ const SettingsPage: React.FC = () => {
           break;
         case 'courier':
           if (hasCapability('courier_automation')) {
+            const steadfastInvoice = courierSettings.steadfast.invoice.trim();
+            if (canUseSteadfast && steadfastInvoice !== '' && !/^[A-Za-z0-9_-]+$/.test(steadfastInvoice)) {
+              toast.warning('Steadfast invoice can only contain letters, numbers, hyphens, and underscores.');
+              return;
+            }
             const enabledCourierSettings: Partial<CourierSettings> = {
               automaticallyDeductShippingCosts: courierSettings.automaticallyDeductShippingCosts,
+              automaticallyMarkPaidAfterDelivery: courierSettings.automaticallyMarkPaidAfterDelivery,
             };
-            if (canUseSteadfast) enabledCourierSettings.steadfast = courierSettings.steadfast;
+            if (canUseSteadfast) enabledCourierSettings.steadfast = { ...courierSettings.steadfast, invoice: steadfastInvoice };
             if (canUseCarryBee) enabledCourierSettings.carryBee = courierSettings.carryBee;
             if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
             if (canUsePathao) enabledCourierSettings.pathao = courierSettings.pathao;
@@ -2193,6 +2200,18 @@ const SettingsPage: React.FC = () => {
                     <span className="block mt-1 text-xs leading-5 text-gray-600">When a courier webhook confirms delivery, MamePilot records that courier&apos;s delivery/COD fee as a Shipping Costs expense linked to the order. The manual additional-expense button is hidden for delivered orders.</span>
                   </span>
                 </label>
+                <label className="flex items-start gap-3 cursor-pointer border-t border-blue-100 pt-3">
+                  <input
+                    type="checkbox"
+                    checked={courierSettings.automaticallyMarkPaidAfterDelivery}
+                    onChange={e => setCourierSettings({ ...courierSettings, automaticallyMarkPaidAfterDelivery: e.target.checked })}
+                    className="mt-1 h-4 w-4 accent-[#0f2f57]"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-gray-800">Automatically mark paid after courier delivery</span>
+                    <span className="block mt-1 text-xs leading-5 text-gray-600">When any configured courier confirms delivery, MamePilot records the remaining order value as an Income payment and marks the order fully paid. Leave this off to keep payments manual.</span>
+                  </span>
+                </label>
                 <p className="text-[11px] leading-5 text-blue-800">The default account and payment method from General Settings are used. A fallback account is used only when no default account is selected.</p>
               </section>
               {!canUseSteadfast && !canUseCarryBee && !canUsePaperfly && !canUsePathao && (
@@ -2218,6 +2237,19 @@ const SettingsPage: React.FC = () => {
                       onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, baseUrl: e.target.value}})}
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Custom Invoice</label>
+                    <input
+                      type="text"
+                      value={courierSettings.steadfast.invoice}
+                      onChange={e => setCourierSettings({ ...courierSettings, steadfast: { ...courierSettings.steadfast, invoice: e.target.value } })}
+                      maxLength={100}
+                      pattern="[A-Za-z0-9_-]*"
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      placeholder="MAMEPILOT"
+                    />
+                    <p className="text-[11px] leading-5 text-gray-500">Must be unique. Letters, numbers, hyphens, and underscores only. Leave blank to send the order number exactly as before.</p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">

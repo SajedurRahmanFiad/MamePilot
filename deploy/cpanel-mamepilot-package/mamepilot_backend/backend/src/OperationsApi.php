@@ -825,7 +825,7 @@ final class OperationsApi extends BaseService
     {
         $columns = [
             'status', 'items', 'subtotal', 'discount', 'shipping', 'total', 'paid_amount', 'history',
-            'carrybee_consignment_id', 'steadfast_consignment_id', 'paperfly_tracking_number',
+            'carrybee_consignment_id', 'steadfast_consignment_id', 'steadfast_invoice', 'steadfast_tracking_link', 'paperfly_tracking_number',
             'pathao_consignment_id', 'exchange_courier', 'exchange_steadfast_consignment_id',
             'exchange_carrybee_consignment_id', 'exchange_paperfly_tracking_number',
             'exchange_pathao_consignment_id', 'exchange_courier_history',
@@ -1062,6 +1062,16 @@ final class OperationsApi extends BaseService
                 (array_key_exists('steadfastConsignmentId', $updates) || array_key_exists('steadfast_consignment_id', $updates))
                 && $this->nullableString($updates['steadfastConsignmentId'] ?? $updates['steadfast_consignment_id'] ?? null)
                 !== $this->nullableString($existingRow['steadfast_consignment_id'] ?? null)
+            )
+            || (
+                (array_key_exists('steadfastTrackingLink', $updates) || array_key_exists('steadfast_tracking_link', $updates))
+                && $this->nullableString($updates['steadfastTrackingLink'] ?? $updates['steadfast_tracking_link'] ?? null)
+                !== $this->nullableString($existingRow['steadfast_tracking_link'] ?? null)
+            )
+            || (
+                (array_key_exists('steadfastInvoice', $updates) || array_key_exists('steadfast_invoice', $updates))
+                && $this->nullableString($updates['steadfastInvoice'] ?? $updates['steadfast_invoice'] ?? null)
+                !== $this->nullableString($existingRow['steadfast_invoice'] ?? null)
             )
             || (
                 (array_key_exists('paperflyTrackingNumber', $updates) || array_key_exists('paperfly_tracking_number', $updates))
@@ -4149,12 +4159,12 @@ final class OperationsApi extends BaseService
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
                     subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
-                    carrybee_consignment_id, steadfast_consignment_id, paperfly_tracking_number, pathao_consignment_id, source_ad,
+                    carrybee_consignment_id, steadfast_consignment_id, steadfast_invoice, steadfast_tracking_link, paperfly_tracking_number, pathao_consignment_id, source_ad,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
                     :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
-                    :carrybee_consignment_id, :steadfast_consignment_id, :paperfly_tracking_number, :pathao_consignment_id, :source_ad,
+                    :carrybee_consignment_id, :steadfast_consignment_id, :steadfast_invoice, :steadfast_tracking_link, :paperfly_tracking_number, :pathao_consignment_id, :source_ad,
                     :created_at, :updated_at
                 )',
                 [
@@ -4177,6 +4187,8 @@ final class OperationsApi extends BaseService
                     ':page_snapshot' => $this->jsonEncode($pageSelection['pageSnapshot']),
                     ':carrybee_consignment_id' => $this->nullableString($params['carrybeeConsignmentId'] ?? $params['carrybee_consignment_id'] ?? null),
                     ':steadfast_consignment_id' => $this->nullableString($params['steadfastConsignmentId'] ?? $params['steadfast_consignment_id'] ?? null),
+                    ':steadfast_invoice' => $this->nullableString($params['steadfastInvoice'] ?? $params['steadfast_invoice'] ?? null),
+                    ':steadfast_tracking_link' => $this->normalizeSteadfastTrackingLink($params['steadfastTrackingLink'] ?? $params['steadfast_tracking_link'] ?? null),
                     ':paperfly_tracking_number' => $this->nullableString($params['paperflyTrackingNumber'] ?? $params['paperfly_tracking_number'] ?? null),
                     ':pathao_consignment_id' => $this->nullableString($params['pathaoConsignmentId'] ?? $params['pathao_consignment_id'] ?? null),
                     ':source_ad' => $this->nullableString($params['sourceAd'] ?? $params['source_ad'] ?? null),
@@ -4203,6 +4215,99 @@ final class OperationsApi extends BaseService
 
             return $this->mapOrder($row);
         });
+    }
+
+    private function normalizeSteadfastTrackingLink(mixed $value): ?string
+    {
+        $url = trim((string) ($value ?? ''));
+        if ($url === '') {
+            return null;
+        }
+        if (strlen($url) > 1000 || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            throw new RuntimeException('Steadfast returned an invalid tracking link.');
+        }
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            throw new RuntimeException('Steadfast tracking links must use HTTP or HTTPS.');
+        }
+        return $url;
+    }
+
+    /** @return array{paidAmount:float, historyText:string, transaction:array<string, mixed>}|null */
+    private function recordAutomaticCourierDeliveryPayment(
+        array $actor,
+        array $orderRow,
+        string $previousStatus,
+        string $nextStatus,
+        array $history,
+        float $orderTotal,
+        float $paidAmount
+    ): ?array {
+        if ($nextStatus !== 'Completed' || $previousStatus === 'Completed') {
+            return null;
+        }
+
+        $completionHistory = strtolower(trim((string) ($history['completed'] ?? '')));
+        if (!str_contains($completionHistory, 'marked delivered automatically from')) {
+            return null;
+        }
+        $knownCourier = false;
+        foreach (['carrybee', 'paperfly', 'steadfast', 'pathao'] as $courier) {
+            if (str_contains($completionHistory, $courier)) {
+                $knownCourier = true;
+                break;
+            }
+        }
+        if (!$knownCourier) {
+            return null;
+        }
+
+        $settings = $this->database->fetchOne(
+            'SELECT automatically_mark_paid_after_delivery FROM courier_settings LIMIT 1'
+        ) ?? [];
+        if (!(bool) ($settings['automatically_mark_paid_after_delivery'] ?? false)) {
+            return null;
+        }
+
+        $remainingDue = round(max(0.0, $orderTotal - $paidAmount), 2);
+        if ($remainingDue <= 0) {
+            return null;
+        }
+
+        $defaults = $this->database->fetchOne(
+            'SELECT default_account_id, default_payment_method, income_category_id FROM system_defaults LIMIT 1'
+        ) ?? [];
+        $accountId = trim((string) ($defaults['default_account_id'] ?? ''));
+        if ($accountId === '' || $this->database->fetchOne('SELECT id FROM accounts WHERE id = :id LIMIT 1', [':id' => $accountId]) === null) {
+            $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+            $accountId = trim((string) ($fallbackAccount['id'] ?? ''));
+        }
+        if ($accountId === '') {
+            throw new RuntimeException('Configure an account before automatic courier delivery payments can be recorded.');
+        }
+
+        $paymentMethod = trim((string) ($defaults['default_payment_method'] ?? '')) ?: 'Cash';
+        $incomeCategory = trim((string) ($defaults['income_category_id'] ?? '')) ?: 'income_sales';
+        $orderId = trim((string) ($orderRow['id'] ?? ''));
+        $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
+        $transaction = $this->createTransactionRecord([
+            'date' => $this->database->nowUtc(),
+            'type' => 'Income',
+            'category' => $incomeCategory,
+            'accountId' => $accountId,
+            'amount' => $remainingDue,
+            'description' => "Automatic courier delivery payment for Order #{$orderNumber}",
+            'referenceId' => $orderId,
+            'contactId' => (string) ($orderRow['customer_id'] ?? ''),
+            'paymentMethod' => $paymentMethod,
+            'history' => [],
+        ], (string) ($actor['id'] ?? ''), $actor);
+
+        return [
+            'paidAmount' => $paidAmount + $remainingDue,
+            'historyText' => 'Automatically marked paid after courier delivery: ' . $this->formatMoney($remainingDue) . '.',
+            'transaction' => $transaction,
+        ];
     }
 
     public function updateOrder(array $params): ?array
@@ -4371,11 +4476,39 @@ final class OperationsApi extends BaseService
                 $payload['paid_amount'] = $this->formatMoney(max(0.0, $previousPaidAmount - $refundAmount));
             }
 
+            $automaticCourierPayment = $this->recordAutomaticCourierDeliveryPayment(
+                $actor,
+                $existingRow,
+                $previousStatus,
+                $nextStatus,
+                $nextHistory,
+                (float) ($payload['total'] ?? $orderTotal),
+                (float) ($payload['paid_amount'] ?? $previousPaidAmount)
+            );
+            if ($automaticCourierPayment !== null) {
+                $payload['paid_amount'] = $this->formatMoney($automaticCourierPayment['paidAmount']);
+                $nextHistory['payment'] = $this->appendHistoryText(
+                    (string) ($nextHistory['payment'] ?? ''),
+                    $automaticCourierPayment['historyText']
+                );
+                $payload['history'] = $this->jsonEncode($nextHistory);
+            }
+
             if (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates)) {
                 $payload['carrybee_consignment_id'] = $this->nullableString($updates['carrybeeConsignmentId'] ?? $updates['carrybee_consignment_id'] ?? null);
             }
             if (array_key_exists('steadfastConsignmentId', $updates) || array_key_exists('steadfast_consignment_id', $updates)) {
                 $payload['steadfast_consignment_id'] = $this->nullableString($updates['steadfastConsignmentId'] ?? $updates['steadfast_consignment_id'] ?? null);
+            }
+            if (array_key_exists('steadfastTrackingLink', $updates) || array_key_exists('steadfast_tracking_link', $updates)) {
+                $payload['steadfast_tracking_link'] = $this->normalizeSteadfastTrackingLink($updates['steadfastTrackingLink'] ?? $updates['steadfast_tracking_link'] ?? null);
+            }
+            if (array_key_exists('steadfastInvoice', $updates) || array_key_exists('steadfast_invoice', $updates)) {
+                $invoice = $this->nullableString($updates['steadfastInvoice'] ?? $updates['steadfast_invoice'] ?? null);
+                if ($invoice !== null && preg_match('/^[A-Za-z0-9_-]+$/', $invoice) !== 1) {
+                    throw new RuntimeException('Steadfast invoice can only contain letters, numbers, hyphens, and underscores.');
+                }
+                $payload['steadfast_invoice'] = $invoice;
             }
             if (array_key_exists('paperflyTrackingNumber', $updates) || array_key_exists('paperfly_tracking_number', $updates)) {
                 $payload['paperfly_tracking_number'] = $this->nullableString($updates['paperflyTrackingNumber'] ?? $updates['paperfly_tracking_number'] ?? null);
@@ -4411,7 +4544,8 @@ final class OperationsApi extends BaseService
                 array_key_exists('total', $updates) ||
                 array_key_exists('paidAmount', $updates) ||
                 $paymentAmount > 0 ||
-                $refundAmount > 0;
+                $refundAmount > 0 ||
+                $automaticCourierPayment !== null;
 
             $this->touchUpdate('orders', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
@@ -9355,6 +9489,8 @@ final class OperationsApi extends BaseService
         if (in_array($targetStatus, ['Created', 'On Hold', 'Processing'], true)) {
             $targetSnapshot['carrybee_consignment_id'] = null;
             $targetSnapshot['steadfast_consignment_id'] = null;
+            $targetSnapshot['steadfast_invoice'] = null;
+            $targetSnapshot['steadfast_tracking_link'] = null;
             $targetSnapshot['paperfly_tracking_number'] = null;
             $targetSnapshot['pathao_consignment_id'] = null;
         }
@@ -9972,6 +10108,8 @@ final class OperationsApi extends BaseService
             if (in_array($targetStatus, ['Created', 'On Hold', 'Processing'], true)) {
                 $payload['carrybee_consignment_id'] = null;
                 $payload['steadfast_consignment_id'] = null;
+                $payload['steadfast_invoice'] = null;
+                $payload['steadfast_tracking_link'] = null;
                 $payload['paperfly_tracking_number'] = null;
                 $payload['pathao_consignment_id'] = null;
             }

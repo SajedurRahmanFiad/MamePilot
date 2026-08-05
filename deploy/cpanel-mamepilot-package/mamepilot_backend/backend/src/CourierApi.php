@@ -769,8 +769,24 @@ final class CourierApi extends BaseService
     public function submitSteadfastOrder(array $params): array
     {
         $baseUrl = $this->trimBaseUrl($params);
-        if ($baseUrl === '' || trim((string) ($params['apiKey'] ?? '')) === '' || trim((string) ($params['secretKey'] ?? '')) === '' || trim((string) ($params['invoice'] ?? '')) === '') {
+        $invoice = trim((string) ($params['invoice'] ?? ''));
+        if ($baseUrl === '' || trim((string) ($params['apiKey'] ?? '')) === '' || trim((string) ($params['secretKey'] ?? '')) === '' || $invoice === '') {
             return ['error' => 'Missing required parameters'];
+        }
+        if (strlen($invoice) > 100 || preg_match('/^[A-Za-z0-9_-]+$/', $invoice) !== 1) {
+            return ['error' => 'Invoice must be unique and can only contain letters, numbers, hyphens, and underscores'];
+        }
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        if ($orderId !== '') {
+            $duplicate = $this->database->fetchOne(
+                'SELECT id FROM orders
+                 WHERE steadfast_invoice = :invoice AND deleted_at IS NULL AND id <> :order_id
+                 LIMIT 1',
+                [':invoice' => $invoice, ':order_id' => $orderId]
+            );
+            if ($duplicate !== null) {
+                return ['error' => 'Invoice must be unique; this value is already used by another order'];
+            }
         }
 
         $response = $this->request(
@@ -781,7 +797,7 @@ final class CourierApi extends BaseService
                 'Secret-Key' => trim((string) ($params['secretKey'] ?? '')),
             ],
             [
-                'invoice' => trim((string) ($params['invoice'] ?? '')),
+                'invoice' => $invoice,
                 'recipient_name' => trim((string) ($params['recipientName'] ?? '')),
                 'recipient_phone' => trim((string) ($params['recipientPhone'] ?? '')),
                 'recipient_address' => trim((string) ($params['recipientAddress'] ?? '')),
@@ -807,6 +823,30 @@ final class CourierApi extends BaseService
         $response = $this->request(
             'GET',
             $baseUrl . '/status_by_trackingcode/' . rawurlencode($trackingCode),
+            [
+                'Api-Key' => trim((string) ($params['apiKey'] ?? '')),
+                'Secret-Key' => trim((string) ($params['secretKey'] ?? '')),
+            ]
+        );
+
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'HTTP ' . $response['status']];
+        }
+
+        return ['data' => $response['json']];
+    }
+
+    public function fetchSteadfastStatusByConsignmentId(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $consignmentId = trim((string) ($params['consignmentId'] ?? ''));
+        if ($baseUrl === '' || trim((string) ($params['apiKey'] ?? '')) === '' || trim((string) ($params['secretKey'] ?? '')) === '' || $consignmentId === '') {
+            return ['error' => 'Missing required parameters'];
+        }
+
+        $response = $this->request(
+            'GET',
+            $baseUrl . '/status_by_cid/' . rawurlencode($consignmentId),
             [
                 'Api-Key' => trim((string) ($params['apiKey'] ?? '')),
                 'Secret-Key' => trim((string) ($params['secretKey'] ?? '')),
@@ -1213,17 +1253,17 @@ final class CourierApi extends BaseService
         $checked = 0;
         $updated = 0;
         foreach ($rows as $row) {
-            $trackingCode = trim((string) ($row['steadfast_consignment_id'] ?? ''));
-            if ($trackingCode === '') {
+            $consignmentId = trim((string) ($row['steadfast_consignment_id'] ?? ''));
+            if ($consignmentId === '') {
                 continue;
             }
             $checked += 1;
 
-            $details = $this->fetchSteadfastStatusByTrackingCode([
+            $details = $this->fetchSteadfastStatusByConsignmentId([
                 'baseUrl' => $baseUrl,
                 'apiKey' => $apiKey,
                 'secretKey' => $secretKey,
-                'trackingCode' => $trackingCode,
+                'consignmentId' => $consignmentId,
             ]);
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
                 continue;
@@ -1285,15 +1325,15 @@ final class CourierApi extends BaseService
                    AND status IN ('Exchange processing', 'Exchange picked')"
             );
             foreach ($rows as $row) {
-                $trackingCode = trim((string) ($row['exchange_steadfast_consignment_id'] ?? ''));
-                if ($trackingCode === '') continue;
+                $consignmentId = trim((string) ($row['exchange_steadfast_consignment_id'] ?? ''));
+                if ($consignmentId === '') continue;
                 $checked += 1;
 
-                $details = $this->fetchSteadfastStatusByTrackingCode([
+                $details = $this->fetchSteadfastStatusByConsignmentId([
                     'baseUrl' => $steadfastBaseUrl,
                     'apiKey' => $steadfastApiKey,
                     'secretKey' => $steadfastSecretKey,
-                    'trackingCode' => $trackingCode,
+                    'consignmentId' => $consignmentId,
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 

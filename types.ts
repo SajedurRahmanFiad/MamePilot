@@ -418,7 +418,8 @@ export interface VoiceSurveyIntegrationSettings {
 
 export interface CourierSettings {
   automaticallyDeductShippingCosts: boolean;
-  steadfast: { baseUrl: string; apiKey: string; secretKey: string };
+  automaticallyMarkPaidAfterDelivery: boolean;
+  steadfast: { baseUrl: string; apiKey: string; secretKey: string; invoice: string };
   carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; webhookSignature: string };
   paperfly: {
     baseUrl: string;
@@ -592,6 +593,8 @@ export interface Order {
   pageSnapshot?: CompanyPage | null;
   carrybeeConsignmentId?: string;
   steadfastConsignmentId?: string;
+  steadfastInvoice?: string;
+  steadfastTrackingLink?: string;
   paperflyTrackingNumber?: string;
   pathaoConsignmentId?: string;
   // Exchange consignment fields — for shipping replacement items after an exchange

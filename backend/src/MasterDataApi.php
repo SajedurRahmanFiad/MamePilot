@@ -3577,7 +3577,14 @@ final class MasterDataApi extends BaseService
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $currentEnd = $this->parseDateTimeValue((string) ($settings['current_period_end'] ?? $settings['due_at'] ?? ''), new \DateTimeZone('UTC'));
         $base = $currentEnd instanceof \DateTimeImmutable && $currentEnd > $now ? $currentEnd : $now;
-        $nextEnd = $base->modify($interval === 'yearly' ? '+365 days' : '+30 days');
+        $nextEnd = new \DateTimeImmutable(
+            RecurringTransactionSchedule::nextOccurrence(
+                $base->format('Y-m-d H:i:s'),
+                $interval,
+                $base->format('Y-m-d H:i:s')
+            ),
+            new \DateTimeZone('UTC')
+        );
         $settingsId = (string) ($settings['id'] ?? 'service-subscriptions-default');
         $billingVersion = max(1, (int) ($settings['billing_version'] ?? 1)) + 1;
 
@@ -3612,10 +3619,12 @@ final class MasterDataApi extends BaseService
         $hasFraudCheckerColumn = $this->columnExists('courier_settings', 'fraud_checker_api_key');
         return [
             'automaticallyDeductShippingCosts' => (bool) ($row['automatically_deduct_shipping_costs'] ?? false),
+            'automaticallyMarkPaidAfterDelivery' => (bool) ($row['automatically_mark_paid_after_delivery'] ?? false),
             'steadfast' => [
                 'baseUrl' => (string) ($row['steadfast_base_url'] ?? ''),
                 'apiKey' => (string) ($row['steadfast_api_key'] ?? ''),
                 'secretKey' => (string) ($row['steadfast_secret_key'] ?? ''),
+                'invoice' => (string) ($row['steadfast_invoice'] ?? ''),
             ],
             'carryBee' => [
                 'baseUrl' => (string) ($row['carrybee_base_url'] ?? ''),
@@ -3667,6 +3676,31 @@ final class MasterDataApi extends BaseService
         $pathao = is_array($params['pathao'] ?? null) ? $params['pathao'] : [];
         $fraudChecker = is_array($params['fraudChecker'] ?? null) ? $params['fraudChecker'] : [];
         $hasFraudCheckerColumn = $this->columnExists('courier_settings', 'fraud_checker_api_key');
+        $invoice = array_key_exists('invoice', $steadfast)
+            ? trim((string) $steadfast['invoice'])
+            : trim((string) ($current['steadfast']['invoice'] ?? ''));
+        if ($invoice !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $invoice) !== 1) {
+            throw new RuntimeException('Steadfast invoice can only contain letters, numbers, hyphens, and underscores.');
+        }
+        if (strlen($invoice) > 100) {
+            throw new RuntimeException('Steadfast invoice cannot exceed 100 characters.');
+        }
+
+        $automaticallyMarkPaid = array_key_exists('automaticallyMarkPaidAfterDelivery', $params)
+            ? (bool) $params['automaticallyMarkPaidAfterDelivery']
+            : (bool) ($current['automaticallyMarkPaidAfterDelivery'] ?? false);
+        if ($automaticallyMarkPaid) {
+            $account = $this->database->fetchOne(
+                'SELECT a.id
+                 FROM accounts a
+                 LEFT JOIN system_defaults d ON d.default_account_id = a.id
+                 ORDER BY CASE WHEN d.default_account_id = a.id THEN 0 ELSE 1 END, a.created_at ASC, a.id ASC
+                 LIMIT 1'
+            );
+            if ($account === null) {
+                throw new RuntimeException('Create an account before enabling automatic payment after courier delivery.');
+            }
+        }
 
         if (
             !$hasFraudCheckerColumn
@@ -3680,9 +3714,11 @@ final class MasterDataApi extends BaseService
             'automatically_deduct_shipping_costs' => array_key_exists('automaticallyDeductShippingCosts', $params)
                 ? ((bool) $params['automaticallyDeductShippingCosts'] ? 1 : 0)
                 : (($current['automaticallyDeductShippingCosts'] ?? false) ? 1 : 0),
+            'automatically_mark_paid_after_delivery' => $automaticallyMarkPaid ? 1 : 0,
             'steadfast_base_url' => $steadfast['baseUrl'] ?? $current['steadfast']['baseUrl'],
             'steadfast_api_key' => $steadfast['apiKey'] ?? $current['steadfast']['apiKey'],
             'steadfast_secret_key' => $steadfast['secretKey'] ?? $current['steadfast']['secretKey'],
+            'steadfast_invoice' => $invoice !== '' ? $invoice : null,
             'carrybee_base_url' => $carryBee['baseUrl'] ?? $current['carryBee']['baseUrl'],
             'carrybee_client_id' => $carryBee['clientId'] ?? $current['carryBee']['clientId'],
             'carrybee_client_secret' => $carryBee['clientSecret'] ?? $current['carryBee']['clientSecret'],

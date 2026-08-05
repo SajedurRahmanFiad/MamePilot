@@ -285,7 +285,7 @@ final class AgentToolRegistry
             ],
             'courier' => [
                 'capability' => 'courier_automation',
-                'reads' => ['fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones', 'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails', 'fetchSteadfastStatusByTrackingCode', 'fetchPaperflyOrderTracking', 'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo'],
+                'reads' => ['fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones', 'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails', 'fetchSteadfastStatusByConsignmentId', 'fetchPaperflyOrderTracking', 'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo'],
                 'actions' => ['submitCarryBeeOrder', 'submitCarryBeeExchangeOrder', 'syncCarryBeeTransferStatuses', 'submitSteadfastOrder', 'syncSteadfastDeliveryStatuses', 'submitPaperflyOrder', 'submitPaperflyExchangeOrder', 'syncPaperflyOrderStatuses', 'submitPathaoOrder', 'syncPathaoDeliveryStatuses', 'syncExchangeConsignmentStatuses'],
             ],
             'fraud' => [
@@ -611,7 +611,7 @@ final class AgentToolRegistry
         if ($action === 'fetchCarryBeeZones') return $strictObject(['cityId' => ['type' => 'string', 'minLength' => 1]], ['cityId']);
         if ($action === 'fetchCarryBeeAreas') return $strictObject(['cityId' => ['type' => 'string', 'minLength' => 1], 'zoneId' => ['type' => 'string', 'minLength' => 1]], ['cityId', 'zoneId']);
         if ($action === 'fetchCarryBeeOrderDetails') return $strictObject(['orderId' => ['type' => 'string'], 'consignmentId' => ['type' => 'string']]);
-        if ($action === 'fetchSteadfastStatusByTrackingCode') return $strictObject(['orderId' => ['type' => 'string'], 'trackingCode' => ['type' => 'string']]);
+        if ($action === 'fetchSteadfastStatusByConsignmentId') return $strictObject(['orderId' => ['type' => 'string'], 'consignmentId' => ['type' => 'string']]);
         if ($action === 'fetchPaperflyOrderTracking') return $strictObject(['orderId' => ['type' => 'string'], 'referenceNumber' => ['type' => 'string']]);
         if ($action === 'fetchPathaoCities') return $strictObject();
         if ($action === 'fetchPathaoZones') return $strictObject(['cityId' => ['type' => 'string', 'minLength' => 1]], ['cityId']);

@@ -137,7 +137,7 @@ final class BusinessActionDispatcher
 
             $result = $service->{$action}($payload);
             if ($agentCourierOrderId !== '' && is_array($result) && empty($result['error'])) {
-                return $this->finalizeCourierSubmission($action, $agentCourierOrderId, $result);
+                return $this->finalizeCourierSubmission($action, $agentCourierOrderId, $result, $payload);
             }
             if ($action === 'createOrder' && is_array($result)) {
                 $this->postCreateEffects->schedule($result);
@@ -161,7 +161,7 @@ final class BusinessActionDispatcher
         return in_array($action, [
             'fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones',
             'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails',
-            'fetchSteadfastStatusByTrackingCode', 'fetchPaperflyOrderTracking',
+            'fetchSteadfastStatusByTrackingCode', 'fetchSteadfastStatusByConsignmentId', 'fetchPaperflyOrderTracking',
             'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo',
         ], true);
     }
@@ -184,8 +184,8 @@ final class BusinessActionDispatcher
             if (!is_array($order)) throw new RuntimeException('The selected order no longer exists.');
             if ($action === 'fetchCarryBeeOrderDetails') {
                 $payload['consignmentId'] = trim((string) ($payload['consignmentId'] ?? $order['carrybeeConsignmentId'] ?? ''));
-            } elseif ($action === 'fetchSteadfastStatusByTrackingCode') {
-                $payload['trackingCode'] = trim((string) ($payload['trackingCode'] ?? $order['steadfastConsignmentId'] ?? ''));
+            } elseif ($action === 'fetchSteadfastStatusByConsignmentId') {
+                $payload['consignmentId'] = trim((string) ($payload['consignmentId'] ?? $order['steadfastConsignmentId'] ?? ''));
             } elseif ($action === 'fetchPaperflyOrderTracking') {
                 $payload['referenceNumber'] = trim((string) ($payload['referenceNumber'] ?? $order['orderNumber'] ?? $order['paperflyTrackingNumber'] ?? ''));
             } elseif ($action === 'fetchPathaoOrderInfo') {
@@ -218,8 +218,9 @@ final class BusinessActionDispatcher
         ];
 
         if ($action === 'submitSteadfastOrder') {
+            $steadfast = (array) ($settings['steadfast'] ?? []);
             return array_merge($payload, (array) ($settings['steadfast'] ?? []), $common, [
-                'invoice' => (string) ($order['orderNumber'] ?? ''),
+                'invoice' => trim((string) ($steadfast['invoice'] ?? '')) ?: (string) ($order['orderNumber'] ?? ''),
                 'codAmount' => (float) ($order['total'] ?? 0),
             ]);
         }
@@ -268,11 +269,13 @@ final class BusinessActionDispatcher
     }
 
     /** @return array<string, mixed> */
-    private function finalizeCourierSubmission(string $action, string $orderId, array $providerResult): array
+    private function finalizeCourierSubmission(string $action, string $orderId, array $providerResult, array $requestPayload = []): array
     {
         $updates = [];
         if ($action === 'submitSteadfastOrder') {
             $updates['steadfastConsignmentId'] = $this->firstCourierValue($providerResult, ['consignment_id', 'consignmentId']);
+            $updates['steadfastTrackingLink'] = $this->firstCourierValue($providerResult, ['tracking_link', 'trackingLink']);
+            $updates['steadfastInvoice'] = trim((string) ($requestPayload['invoice'] ?? '')) ?: null;
             $updates['status'] = 'Courier assigned';
         } elseif ($action === 'submitCarryBeeOrder') {
             $updates['carrybeeConsignmentId'] = $this->firstCourierValue($providerResult, ['consignment_id', 'consignmentId']);
@@ -315,4 +318,5 @@ final class BusinessActionDispatcher
         }
         return null;
     }
+
 }

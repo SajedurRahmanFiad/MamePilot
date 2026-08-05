@@ -46,6 +46,8 @@ const fieldLabels: Record<string, string> = {
   history: 'Order history',
   carrybee_consignment_id: 'Carrybee consignment',
   steadfast_consignment_id: 'Steadfast consignment',
+  steadfast_invoice: 'Steadfast invoice',
+  steadfast_tracking_link: 'Steadfast tracking link',
   paperfly_tracking_number: 'Paperfly tracking',
   pathao_consignment_id: 'Pathao consignment',
   exchange_courier: 'Exchange courier',

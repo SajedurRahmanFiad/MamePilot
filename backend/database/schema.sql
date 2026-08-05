@@ -256,6 +256,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   steadfast_base_url VARCHAR(255) NULL,
   steadfast_api_key VARCHAR(500) NULL,
   steadfast_secret_key VARCHAR(500) NULL,
+  steadfast_invoice VARCHAR(100) NULL,
   carrybee_enabled TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_base_url VARCHAR(255) NULL,
   carrybee_client_id VARCHAR(255) NULL,
@@ -284,6 +285,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   pathao_refresh_token TEXT NULL,
   pathao_token_expires_at VARCHAR(64) NULL,
   automatically_deduct_shipping_costs TINYINT(1) NOT NULL DEFAULT 0,
+  automatically_mark_paid_after_delivery TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_webhook_signature VARCHAR(500) NULL,
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
@@ -309,6 +311,8 @@ ALTER TABLE `courier_settings`
   ADD COLUMN IF NOT EXISTS `pathao_token_expires_at` VARCHAR(64) NULL;
 ALTER TABLE `courier_settings`
   ADD COLUMN IF NOT EXISTS `automatically_deduct_shipping_costs` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `automatically_mark_paid_after_delivery` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `steadfast_invoice` VARCHAR(100) NULL,
   ADD COLUMN IF NOT EXISTS `carrybee_webhook_signature` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `paperfly_webhook_secret` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `pathao_webhook_header` VARCHAR(128) NULL,
@@ -721,6 +725,8 @@ CREATE TABLE IF NOT EXISTS orders (
   page_snapshot LONGTEXT NULL,
   carrybee_consignment_id VARCHAR(255) NULL,
   steadfast_consignment_id VARCHAR(255) NULL,
+  steadfast_invoice VARCHAR(100) NULL,
+  steadfast_tracking_link VARCHAR(1000) NULL,
   paperfly_tracking_number VARCHAR(255) NULL,
   pathao_consignment_id VARCHAR(255) NULL,
   exchange_courier VARCHAR(32) NULL,
@@ -748,6 +754,7 @@ CREATE TABLE IF NOT EXISTS orders (
   PRIMARY KEY (id),
   UNIQUE KEY uq_orders_order_number (order_number),
   UNIQUE KEY uq_orders_order_seq (order_seq),
+  UNIQUE KEY uq_orders_steadfast_invoice (steadfast_invoice),
   KEY idx_orders_customer_id (customer_id),
   KEY idx_orders_page_id (page_id),
   KEY idx_orders_created_by (created_by),
@@ -1109,9 +1116,13 @@ DROP VIEW IF EXISTS orders_with_customer_creator;
 ALTER TABLE `orders`
   ADD COLUMN IF NOT EXISTS `pathao_consignment_id` VARCHAR(255) NULL,
   ADD COLUMN IF NOT EXISTS `exchange_pathao_consignment_id` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `steadfast_invoice` VARCHAR(100) NULL,
+  ADD COLUMN IF NOT EXISTS `steadfast_tracking_link` VARCHAR(1000) NULL,
   ADD COLUMN IF NOT EXISTS `source_ad` VARCHAR(64) NULL;
 ALTER TABLE `orders`
   ADD KEY IF NOT EXISTS `idx_orders_pathao_consignment_id` (`pathao_consignment_id`);
+ALTER TABLE `orders`
+  ADD UNIQUE KEY IF NOT EXISTS `uq_orders_steadfast_invoice` (`steadfast_invoice`);
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,
@@ -1139,6 +1150,8 @@ SELECT
   o.deleted_by AS deletedBy,
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
   o.paperfly_tracking_number AS paperflyTrackingNumber,
   o.pathao_consignment_id AS pathaoConsignmentId,
   o.exchange_courier AS exchangeCourier,

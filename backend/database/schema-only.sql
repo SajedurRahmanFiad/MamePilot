@@ -342,6 +342,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   steadfast_base_url VARCHAR(255) NULL,
   steadfast_api_key VARCHAR(500) NULL,
   steadfast_secret_key VARCHAR(500) NULL,
+  steadfast_invoice VARCHAR(100) NULL,
   carrybee_enabled TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_base_url VARCHAR(255) NULL,
   carrybee_client_id VARCHAR(255) NULL,
@@ -370,6 +371,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   pathao_refresh_token TEXT NULL,
   pathao_token_expires_at VARCHAR(64) NULL,
   automatically_deduct_shipping_costs TINYINT(1) NOT NULL DEFAULT 0,
+  automatically_mark_paid_after_delivery TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_webhook_signature VARCHAR(500) NULL,
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
@@ -395,6 +397,8 @@ CALL sp_add_col('courier_settings', 'pathao_refresh_token', 'TEXT NULL');
 CALL sp_add_col('courier_settings', 'pathao_token_expires_at', 'VARCHAR(64) NULL');
 
 CALL sp_add_col('courier_settings', 'automatically_deduct_shipping_costs', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('courier_settings', 'automatically_mark_paid_after_delivery', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('courier_settings', 'steadfast_invoice', 'VARCHAR(100) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_signature', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'paperfly_webhook_secret', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'pathao_webhook_header', 'VARCHAR(128) NULL');
@@ -826,6 +830,8 @@ CREATE TABLE IF NOT EXISTS orders (
   page_snapshot LONGTEXT NULL,
   carrybee_consignment_id VARCHAR(255) NULL,
   steadfast_consignment_id VARCHAR(255) NULL,
+  steadfast_invoice VARCHAR(100) NULL,
+  steadfast_tracking_link VARCHAR(1000) NULL,
   paperfly_tracking_number VARCHAR(255) NULL,
   pathao_consignment_id VARCHAR(255) NULL,
   exchange_courier VARCHAR(32) NULL,
@@ -853,6 +859,7 @@ CREATE TABLE IF NOT EXISTS orders (
   PRIMARY KEY (id),
   UNIQUE KEY uq_orders_order_number (order_number),
   UNIQUE KEY uq_orders_order_seq (order_seq),
+  UNIQUE KEY uq_orders_steadfast_invoice (steadfast_invoice),
   KEY idx_orders_customer_id (customer_id),
   KEY idx_orders_page_id (page_id),
   KEY idx_orders_created_by (created_by),
@@ -1227,9 +1234,13 @@ DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CALL sp_add_col('orders', 'pathao_consignment_id', 'VARCHAR(255) NULL');
 CALL sp_add_col('orders', 'exchange_pathao_consignment_id', 'VARCHAR(255) NULL');
+CALL sp_add_col('orders', 'steadfast_invoice', 'VARCHAR(100) NULL');
+CALL sp_add_col('orders', 'steadfast_tracking_link', 'VARCHAR(1000) NULL');
 CALL sp_add_col('orders', 'source_ad', 'VARCHAR(64) NULL');
 
 CALL sp_create_idx('orders', 'idx_orders_pathao_consignment_id', '`pathao_consignment_id`');
+
+CALL sp_create_unique_idx('orders', 'uq_orders_steadfast_invoice', '`steadfast_invoice`');
 
 CREATE VIEW orders_with_customer_creator AS
 SELECT
@@ -1258,6 +1269,8 @@ SELECT
   o.deleted_by AS deletedBy,
   o.carrybee_consignment_id AS carrybeeConsignmentId,
   o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
   o.paperfly_tracking_number AS paperflyTrackingNumber,
   o.pathao_consignment_id AS pathaoConsignmentId,
   o.exchange_courier AS exchangeCourier,
@@ -2714,6 +2727,60 @@ CALL sp_create_idx('transactions', 'idx_transactions_recurring_transaction', 're
 -- Add product selection mode setting for order/bill product dropdowns.
 
 CALL sp_add_col('system_defaults', 'product_selection_mode', 'VARCHAR(16) NOT NULL DEFAULT ''simple''');
+
+-- Migration: 2026-08-05_steadfast_tracking_invoice_auto_payment.sql
+CALL sp_add_col('courier_settings', 'steadfast_invoice', 'VARCHAR(100) NULL');
+CALL sp_add_col('courier_settings', 'automatically_mark_paid_after_delivery', 'TINYINT(1) NOT NULL DEFAULT 0');
+
+CALL sp_add_col('orders', 'steadfast_tracking_link', 'VARCHAR(1000) NULL');
+CALL sp_add_col('orders', 'steadfast_invoice', 'VARCHAR(100) NULL');
+
+CALL sp_create_unique_idx('orders', 'uq_orders_steadfast_invoice', '`steadfast_invoice`');
+
+DROP VIEW IF EXISTS `orders_with_customer_creator`;
+
+CREATE VIEW `orders_with_customer_creator` AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.page_id AS pageId,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.pathao_consignment_id AS pathaoConsignmentId,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

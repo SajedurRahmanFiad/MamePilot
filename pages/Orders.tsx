@@ -25,7 +25,6 @@ import {
   buildLocalDateTime,
   decodeDynamicTextFilterValue,
   encodeDynamicTextFilterValue,
-  extractSteadfastTrackingFromHistory,
   formatDate,
   formatDateTimeParts,
   getDateTimeFilters,
@@ -920,21 +919,15 @@ const Orders: React.FC = () => {
     const sentToCarryBee = courierHistory.includes('carrybee') || !!order.carrybeeConsignmentId;
     const sentToPaperfly = courierHistory.includes('paperfly') || !!order.paperflyTrackingNumber;
     const sentToPathao = courierHistory.includes('pathao') || !!order.pathaoConsignmentId;
-    const steadfastTracking = String(
-      order.steadfastConsignmentId || extractSteadfastTrackingFromHistory(order.history?.courier) || ''
-    ).trim();
+    const steadfastTrackingLink = String(order.steadfastTrackingLink || '').trim();
     const carryBeeConsignment = String(order.carrybeeConsignmentId || '').trim();
     const paperflyReference = getPaperflyReferenceNumber(order);
     const pathaoConsignment = String(order.pathaoConsignmentId || '').trim();
 
     const openSteadfastTracking = (): boolean => {
-      if (!sentToSteadfast || !steadfastTracking) return false;
+      if (!sentToSteadfast || !steadfastTrackingLink) return false;
 
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(steadfastTracking).catch(() => undefined);
-      }
-      toast.success(`Steadfast tracking code copied: ${steadfastTracking}`);
-      window.open('https://steadfast.com.bd/tracking', '_blank', 'noopener,noreferrer');
+      window.open(steadfastTrackingLink, '_blank', 'noopener,noreferrer');
       return true;
     };
 
@@ -973,7 +966,7 @@ const Orders: React.FC = () => {
     if (openSteadfastTracking()) return;
 
     if (courierHistory.includes('steadfast')) {
-      toast.warning('Steadfast tracking code is missing for this order');
+      toast.warning('Steadfast tracking link is missing for this order');
       return;
     }
 

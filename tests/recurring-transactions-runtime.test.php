@@ -28,16 +28,30 @@ $assert(
     RecurringTransactionSchedule::nextOccurrence('2024-02-29 08:00:00', 'yearly', '2024-02-29 08:00:00') === '2025-02-28 08:00:00',
     'Leap-day yearly schedules must clamp safely in non-leap years.'
 );
+$assert(
+    RecurringTransactionSchedule::nextOccurrence('2026-07-15 00:00:00', 'monthly', '2026-07-15 00:00:00') === '2026-08-15 00:00:00',
+    'An early monthly renewal payment must retain the current renewal day.'
+);
+$assert(
+    RecurringTransactionSchedule::nextOccurrence('2026-07-15 00:00:00', 'yearly', '2026-07-15 00:00:00') === '2027-07-15 00:00:00',
+    'An early yearly renewal payment must retain the current renewal month and day.'
+);
 
 $schemaOnly = (string) file_get_contents($root . '/backend/database/schema-only.sql');
 $featureAccess = (string) file_get_contents($root . '/backend/src/FeatureAccess.php');
 $publicIndex = (string) file_get_contents($root . '/backend/public/index.php');
+$masterData = (string) file_get_contents($root . '/backend/src/MasterDataApi.php');
 $cpanelIndex = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/api/index.php');
 $page = (string) file_get_contents($root . '/pages/RecurringTransactions.tsx');
 $assert(str_contains($schemaOnly, '-- Migration: 2026-08-04_recurring_transactions.sql'), 'schema-only.sql must contain the recurring transaction migration.');
 $assert(str_contains($schemaOnly, 'uq_transactions_recurring_occurrence'), 'Generated occurrences need a database idempotency constraint.');
 $assert(str_contains($featureAccess, "'fetchRecurringTransactionsPage' => 'recurring_transactions'"), 'Recurring API reads must be capability-gated.');
 $assert(str_contains($publicIndex, 'RecurringTransactionScheduler'), 'Normal API traffic must self-start the internal recurring worker.');
+$assert(
+    str_contains($masterData, 'RecurringTransactionSchedule::nextOccurrence')
+        && !str_contains($masterData, "\$base->modify(\$interval === 'yearly' ? '+365 days' : '+30 days')"),
+    'Subscription renewal still advances by payment-relative fixed day counts.'
+);
 $assert(
     str_contains($cpanelIndex, 'new RecurringTransactionScheduler') && str_contains($cpanelIndex, '$recurringTransactions'),
     'The cPanel API wrapper must start and dispatch the recurring transaction module.'

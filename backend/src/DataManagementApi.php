@@ -2020,10 +2020,11 @@ final class DataManagementApi extends BaseService
             'paperfly_tracking_number' => $this->nullableString($previous['paperfly_tracking_number'] ?? null),
             'pathao_consignment_id' => $this->nullableString($previous['pathao_consignment_id'] ?? null),
         ];
+        $steadfastTrackingLink = $this->nullableString($previous['steadfast_tracking_link'] ?? null);
         $courier = strtolower($this->text($row, 'courier'));
         $tracking = $this->text($row, 'trackingNumber');
         if ($courier === '' && $tracking === '') {
-            return $columns;
+            return $columns + ['steadfast_tracking_link' => $steadfastTrackingLink];
         }
         if ($courier === '' || $tracking === '') {
             throw new RuntimeException('Courier and Tracking Number must both be provided.');
@@ -2038,7 +2039,7 @@ final class DataManagementApi extends BaseService
         foreach ($columns as $column => $_value) {
             $columns[$column] = $column === $targetColumn ? $tracking : null;
         }
-        return $columns;
+        return $columns + ['steadfast_tracking_link' => null];
     }
 
     /** @return array{0: array<int, array<string, mixed>>, 1: float, 2: float} */

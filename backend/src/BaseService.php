@@ -1157,6 +1157,8 @@ abstract class BaseService
             'pageSnapshot' => $pageSnapshot !== [] ? $pageSnapshot : null,
             'carrybeeConsignmentId' => $this->nullableString($row['carrybee_consignment_id'] ?? $row['carrybeeConsignmentId'] ?? null),
             'steadfastConsignmentId' => $this->nullableString($row['steadfast_consignment_id'] ?? $row['steadfastConsignmentId'] ?? null),
+            'steadfastInvoice' => $this->nullableString($row['steadfast_invoice'] ?? $row['steadfastInvoice'] ?? null),
+            'steadfastTrackingLink' => $this->nullableString($row['steadfast_tracking_link'] ?? $row['steadfastTrackingLink'] ?? null),
             'paperflyTrackingNumber' => $this->nullableString($row['paperfly_tracking_number'] ?? $row['paperflyTrackingNumber'] ?? null),
             'pathaoConsignmentId' => $this->nullableString($row['pathao_consignment_id'] ?? $row['pathaoConsignmentId'] ?? null),
             'exchangeCourier' => $this->nullableString($row['exchange_courier'] ?? $row['exchangeCourier'] ?? null),

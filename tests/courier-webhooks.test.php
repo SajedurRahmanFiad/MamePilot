@@ -59,13 +59,13 @@ function createCourierWebhookOrder(
     $database->execute(
         'INSERT INTO orders (
             id, order_number, order_seq, order_date, customer_id, created_by, status,
-            items, total, history, carrybee_consignment_id, paperfly_tracking_number,
+            items, total, paid_amount, history, carrybee_consignment_id, paperfly_tracking_number,
             steadfast_consignment_id, pathao_consignment_id,
             exchange_carrybee_consignment_id, exchange_paperfly_tracking_number,
             exchange_steadfast_consignment_id, exchange_pathao_consignment_id
          ) VALUES (
             :id, :order_number, :order_seq, CURRENT_DATE, :customer_id, :created_by, :status,
-            :items, 0, :history, :carrybee, :paperfly, :steadfast, :pathao,
+            :items, :total, :paid_amount, :history, :carrybee, :paperfly, :steadfast, :pathao,
             :exchange_carrybee, :exchange_paperfly, :exchange_steadfast, :exchange_pathao
          )',
         [
@@ -76,6 +76,8 @@ function createCourierWebhookOrder(
             ':created_by' => (string) $actor['id'],
             ':status' => $status,
             ':items' => '[]',
+            ':total' => $extra['total'] ?? 0,
+            ':paid_amount' => $extra['paidAmount'] ?? 0,
             ':history' => courierWebhookJson(is_array($history) ? $history : []),
             ':carrybee' => $extra['carrybee'] ?? null,
             ':paperfly' => $extra['paperfly'] ?? null,
@@ -103,6 +105,19 @@ function courierWebhookExpense(Database $database, string $orderId): ?array
     return $database->fetchOne(
         "SELECT * FROM transactions
          WHERE reference_id = :order_id AND type = 'Expense' AND category = 'expense_shipping'
+           AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC LIMIT 1",
+        [':order_id' => $orderId]
+    );
+}
+
+/** @return array<string, mixed>|null */
+function courierWebhookPayment(Database $database, string $orderId): ?array
+{
+    return $database->fetchOne(
+        "SELECT * FROM transactions
+         WHERE reference_id = :order_id AND type = 'Income'
+           AND description LIKE 'Automatic courier delivery payment%'
            AND deleted_at IS NULL
          ORDER BY created_at ASC, id ASC LIMIT 1",
         [':order_id' => $orderId]
@@ -159,6 +174,7 @@ try {
     $database->execute(
         'UPDATE courier_settings SET
             automatically_deduct_shipping_costs = 0,
+            automatically_mark_paid_after_delivery = 0,
             carrybee_webhook_signature = :carrybee,
             paperfly_webhook_secret = :paperfly,
             steadfast_api_key = :steadfast,
@@ -217,6 +233,7 @@ try {
     $carryOffNumber = 'CWH-CARRY-OFF-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $carryOffId, $carryOffNumber, 'Processing', $customerId, [
         'carrybee' => 'CB-OFF-' . $stamp,
+        'total' => 1500,
     ]);
     $carryCreated = courierWebhookJson([
         'event' => 'order.created',
@@ -267,6 +284,8 @@ try {
         'timestamptz' => '2026-08-01T13:00:00+00:00',
     ]), $carryHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $carryOffId) === 'Completed', 'Older CarryBee picked event regressed Completed.');
+    $carryOffPaymentState = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $carryOffId]);
+    courierWebhookAssert((float) ($carryOffPaymentState['paid_amount'] ?? -1) === 0.0, 'Toggle-off courier delivery was marked paid.');
 
     $carryReturnId = 'cwh-carry-return-' . $stamp;
     $carryReturnNumber = 'CWH-CARRY-RETURN-' . $stamp;
@@ -284,11 +303,12 @@ try {
 
     // Enable accounting automation. A delivery now creates one linked Shipping
     // Costs transaction and includes it in the status Undoer restore point.
-    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1');
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1, automatically_mark_paid_after_delivery = 1');
     $carryAutoId = 'cwh-carry-auto-' . $stamp;
     $carryAutoNumber = 'CWH-CARRY-AUTO-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $carryAutoId, $carryAutoNumber, 'Picked', $customerId, [
         'carrybee' => 'CB-AUTO-' . $stamp,
+        'total' => 2000,
     ]);
     $courier->handleWebhook('carrybee', courierWebhookJson([
         'event' => 'order.created',
@@ -308,9 +328,14 @@ try {
     ]);
     $courier->handleWebhook('carrybee', $carryAutoDelivered, $carryHeaders);
     $carryExpense = courierWebhookExpense($database, $carryAutoId);
+    $carryPayment = courierWebhookPayment($database, $carryAutoId);
     courierWebhookAssert($carryExpense !== null, 'CarryBee automatic Shipping Costs expense was not created.');
     courierWebhookAssert(abs((float) $carryExpense['amount'] - 98.46) < 0.001, 'CarryBee automatic expense amount is incorrect.');
     courierWebhookAssert(strlen((string) $carryExpense['id']) <= 64, 'Automatic courier transaction id exceeds the database limit.');
+    courierWebhookAssert($carryPayment !== null && abs((float) $carryPayment['amount'] - 2000.00) < 0.001, 'Courier delivery did not record the full outstanding payment.');
+    $carryPaidState = $database->fetchOne('SELECT paid_amount, history FROM orders WHERE id = :id', [':id' => $carryAutoId]);
+    courierWebhookAssert(abs((float) ($carryPaidState['paid_amount'] ?? 0) - 2000.00) < 0.001, 'Courier delivery did not mark the order fully paid.');
+    courierWebhookAssert(str_contains((string) ($carryPaidState['history'] ?? ''), 'Automatically marked paid after courier delivery'), 'Automatic payment history is missing.');
     $carryUndo = $database->fetchOne(
         "SELECT transaction_ids FROM order_status_undo_events
          WHERE order_id = :order_id AND to_status = 'Completed' AND undone_at IS NULL
@@ -319,8 +344,10 @@ try {
     );
     $carryUndoIds = json_decode((string) ($carryUndo['transaction_ids'] ?? '[]'), true);
     courierWebhookAssert(
-        is_array($carryUndoIds) && in_array((string) $carryExpense['id'], $carryUndoIds, true),
-        'CarryBee automatic expense is missing from the Undoer event.'
+        is_array($carryUndoIds)
+            && in_array((string) $carryExpense['id'], $carryUndoIds, true)
+            && in_array((string) $carryPayment['id'], $carryUndoIds, true),
+        'CarryBee automatic payment/expense is missing from the Undoer event.'
     );
     $carryExpenseCountBeforeRetry = (int) (($database->fetchOne(
         "SELECT COUNT(*) AS total FROM transactions WHERE reference_id = :order_id AND category = 'expense_shipping'",
@@ -341,6 +368,11 @@ try {
     ) ?? [])['total'] ?? 0);
     courierWebhookAssert($carryExpenseCountAfterRetry === $carryExpenseCountBeforeRetry, 'CarryBee retry duplicated the expense.');
     courierWebhookAssert($carryUndoCountAfterRetry === $carryUndoCountBeforeRetry, 'CarryBee retry duplicated status effects.');
+    $carryPaymentCountAfterRetry = (int) (($database->fetchOne(
+        "SELECT COUNT(*) AS total FROM transactions WHERE reference_id = :order_id AND type = 'Income' AND description LIKE 'Automatic courier delivery payment%'",
+        [':order_id' => $carryAutoId]
+    ) ?? [])['total'] ?? 0);
+    courierWebhookAssert($carryPaymentCountAfterRetry === 1, 'CarryBee retry duplicated the automatic payment.');
 
     try {
         $operations->addCourierCompletionExpense([
@@ -720,13 +752,18 @@ try {
          WHERE account_id = :account_id AND type = 'Expense' AND deleted_at IS NULL AND account_effect_applied = 1",
         [':account_id' => $accountId]
     ) ?? [])['total'] ?? 0);
+    $linkedIncomeTotal = (float) (($database->fetchOne(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
+         WHERE account_id = :account_id AND type = 'Income' AND deleted_at IS NULL AND account_effect_applied = 1",
+        [':account_id' => $accountId]
+    ) ?? [])['total'] ?? 0);
     $endingBalance = (float) (($database->fetchOne(
         'SELECT current_balance FROM accounts WHERE id = :account_id',
         [':account_id' => $accountId]
     ) ?? [])['current_balance'] ?? 0);
     courierWebhookAssert(
-        abs($endingBalance - ($startingBalance - $linkedExpenseTotal)) < 0.001,
-        'Automatic and manual courier expenses did not deduct the account exactly once.'
+        abs($endingBalance - ($startingBalance + $linkedIncomeTotal - $linkedExpenseTotal)) < 0.001,
+        'Automatic courier payments and expenses did not affect the account exactly once.'
     );
 
     $realtimeProvider = (string) file_get_contents($root . '/src/contexts/RealtimeProvider.tsx');

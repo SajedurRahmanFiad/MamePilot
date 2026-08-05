@@ -29,7 +29,8 @@ const defaultSettings: Settings = {
   paymentMethods: [],
   courier: {
     automaticallyDeductShippingCosts: false,
-    steadfast: { baseUrl: '', apiKey: '', secretKey: '' },
+    automaticallyMarkPaidAfterDelivery: false,
+    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '' },
     carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
     paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
     pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
@@ -83,6 +84,7 @@ const mergedSettings: Settings = _storedSettings
       paymentMethods: Array.isArray((_storedSettings as any).paymentMethods) ? (_storedSettings as any).paymentMethods : defaultSettings.paymentMethods,
       courier: {
         automaticallyDeductShippingCosts: (_storedSettings as any).courier?.automaticallyDeductShippingCosts ?? defaultSettings.courier.automaticallyDeductShippingCosts,
+        automaticallyMarkPaidAfterDelivery: (_storedSettings as any).courier?.automaticallyMarkPaidAfterDelivery ?? defaultSettings.courier.automaticallyMarkPaidAfterDelivery,
         steadfast: { ...defaultSettings.courier.steadfast, ...(_storedSettings as any).courier?.steadfast },
         carryBee: { ...defaultSettings.courier.carryBee, ...(_storedSettings as any).courier?.carryBee },
         paperfly: { ...defaultSettings.courier.paperfly, ...(_storedSettings as any).courier?.paperfly },
