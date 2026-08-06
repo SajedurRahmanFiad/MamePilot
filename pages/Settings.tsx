@@ -2245,7 +2245,7 @@ const SettingsPage: React.FC = () => {
                       value={courierSettings.steadfast.invoice}
                       onChange={e => setCourierSettings({ ...courierSettings, steadfast: { ...courierSettings.steadfast, invoice: e.target.value } })}
                       maxLength={100}
-                      pattern="[A-Za-z0-9_-]*"
+                      pattern="[A-Za-z0-9_\-]*"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                       placeholder="MAMEPILOT"
                     />

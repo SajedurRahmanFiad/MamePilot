@@ -3170,9 +3170,12 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('PipraPay payment id is required for verification.');
         }
 
+        // PipraPay V3 verification requires the transaction id in a JSON
+        // `pp_id` field and authenticates with the exact API-key header.
         $verify = $this->httpJson('POST', $this->pipraPayApiUrl($baseUrl, 'verify-payment'), [
             'MHS-PIPRAPAY-API-KEY' => $apiKey,
-            'Accept' => 'application/json',
+            'accept' => 'application/json',
+            'content-type' => 'application/json',
         ], ['pp_id' => $eventId]);
         if ($verify['status'] < 200 || $verify['status'] >= 300 || !is_array($verify['json'])) {
             throw new RuntimeException('PipraPay verification failed.');
@@ -3484,7 +3487,8 @@ final class MasterDataApi extends BaseService
             foreach ($headers as $name => $value) {
                 $headerList[] = $name . ': ' . $value;
             }
-            if ($body !== null) {
+            $hasContentType = array_key_exists('content-type', array_change_key_case($headers, CASE_LOWER));
+            if ($body !== null && !$hasContentType) {
                 $headerList[] = 'Content-Type: application/json';
             }
 
@@ -3517,7 +3521,8 @@ final class MasterDataApi extends BaseService
             foreach ($headers as $name => $value) {
                 $headerList[] = $name . ': ' . $value;
             }
-            if ($body !== null) {
+            $hasContentType = array_key_exists('content-type', array_change_key_case($headers, CASE_LOWER));
+            if ($body !== null && !$hasContentType) {
                 $headerList[] = 'Content-Type: application/json';
             }
 

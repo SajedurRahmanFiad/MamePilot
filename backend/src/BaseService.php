@@ -1897,16 +1897,20 @@ abstract class BaseService
 
     protected function pipraPayApiUrl(string $configuredBaseUrl, string $endpoint): string
     {
-        $baseUrl = rtrim(trim($configuredBaseUrl), '/');
-        $path = '/' . ltrim($endpoint, '/');
+        $baseUrl = trim($configuredBaseUrl);
+        $path = '/' . ltrim(trim($endpoint), '/');
 
-        // PipraPay V3 documents routes under /api. Accept either the host URL
-        // or a URL already ending in /api so existing deployments keep working.
-        if (preg_match('#/api$#i', $baseUrl) === 1) {
-            return $baseUrl . $path;
+        // Settings historically accepted a host URL, a URL ending in /api, or
+        // (for checkout) the complete provider endpoint. Normalize all three
+        // forms to the PipraPay V3 API root so verification always resolves to
+        // e.g. https://sandbox.piprapay.com/api/verify-payment exactly once.
+        $baseUrl = preg_replace('#/(?:api/)?(?:checkout/redirect|verify-payment)/?$#i', '', $baseUrl) ?? $baseUrl;
+        $baseUrl = rtrim($baseUrl, '/');
+        if (preg_match('#/api$#i', $baseUrl) !== 1) {
+            $baseUrl .= '/api';
         }
 
-        return $baseUrl . '/api' . $path;
+        return $baseUrl . $path;
     }
 
     protected function appendUrlQueryParameter(string $url, string $name, string $value): string

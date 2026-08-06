@@ -40,9 +40,9 @@ if ($data) {
 ```
 
 ## 4. Payment verification
-- After the user returns from the gateway, or when the webhook arrives, call the verification endpoint:
-  - /api/verify-payment
-- The request must include the PipraPay payment id as `pp_id`.
+- After the user returns from the gateway, or when the webhook arrives, send a `POST` request to `/api/verify-payment` on the configured PipraPay host. The sandbox URL is `https://sandbox.piprapay.com/api/verify-payment`.
+- Send the API key in the `MHS-PIPRAPAY-API-KEY` header and request JSON with `accept: application/json` and `content-type: application/json`.
+- Send the PipraPay transaction ID in the JSON body as `{ "pp_id": "<transaction-id>" }`.
 - The response should be checked for a completed payment before updating the subscription.
 
 ## 5. Recommended implementation behavior
