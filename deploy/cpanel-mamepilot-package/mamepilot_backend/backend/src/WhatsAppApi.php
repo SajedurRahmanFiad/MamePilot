@@ -93,8 +93,8 @@ final class WhatsAppApi extends BaseService
         if ($appSecret === '' || strlen($appSecret) > 500) {
             throw new RuntimeException('Enter the Meta app secret.');
         }
-        if ($verifyToken === '' || strlen($verifyToken) < 16 || strlen($verifyToken) > 255) {
-            throw new RuntimeException('Enter a webhook verify token containing at least 16 characters.');
+        if ($verifyToken === '' || strlen($verifyToken) > 255) {
+            throw new RuntimeException('Enter the webhook verify token configured in Meta.');
         }
         if (!$this->isValidWebhookUrl($webhookUrl)) {
             throw new RuntimeException('Enter the public HTTPS URL for this deployment\'s WhatsApp webhook.');
@@ -166,6 +166,17 @@ final class WhatsAppApi extends BaseService
             throw new RuntimeException('WhatsApp login could not be completed. Please open the login window again.');
         }
 
+        // The authorization code is single-use. Persist its exchanged token
+        // immediately so a later phone lookup or subscription failure cannot
+        // make a successful Meta authorization appear to have done nothing.
+        $this->upsertSettings([
+            'access_token' => $businessToken,
+            'business_account_id' => $wabaId,
+            'verify_token' => $verifyToken,
+            'graph_version' => $graphVersion,
+            'connection_status' => 'connecting',
+        ]);
+
         $phone = null;
         if ($phoneNumberId !== '') {
             $phone = $this->graphRequestWithToken('GET', '/' . rawurlencode($phoneNumberId), null, $businessToken, $graphVersion, [
@@ -193,8 +204,8 @@ final class WhatsAppApi extends BaseService
             throw new RuntimeException('WhatsApp did not return a usable phone connection.');
         }
 
-        // Persist the exchanged business token before subsequent Meta calls so
-        // an already-consumed code never has to be reused after a partial error.
+        // Persist the selected phone metadata before subscription and final
+        // Coexistence verification so partial progress remains inspectable.
         $this->upsertSettings([
             'access_token' => $businessToken,
             'phone_number_id' => $phoneNumberId,
@@ -730,6 +741,7 @@ final class WhatsAppApi extends BaseService
             'embeddedSignupAppId' => $appId,
             'embeddedSignupConfigId' => $configId,
             'embeddedSignupEnvironmentFields' => $this->embeddedSignupEnvironmentFields(),
+            'embeddedSignupConfigurationUpdatedAt' => $this->toIso($row['updated_at'] ?? null),
             'contactsSyncRequested' => trim((string) ($row['contacts_sync_request_id'] ?? '')) !== '' || !empty($row['contacts_sync_requested_at']),
             'historySyncRequested' => trim((string) ($row['history_sync_request_id'] ?? '')) !== '' || !empty($row['history_sync_requested_at']),
             'lastWebhookAt' => $this->toIso($row['last_webhook_at'] ?? null),

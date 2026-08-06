@@ -55,14 +55,15 @@ try {
         'embeddedSignupConfigId' => '987654321098765',
         'appSecret' => 'coexistence-embedded-app-secret',
         'webhookUrl' => 'https://example.com/api/whatsapp-webhook.php',
-        'verifyToken' => 'coexistence-embedded-verify-token',
+        'verifyToken' => 'meta-token',
         'graphVersion' => 'v25.0',
     ]);
     whatsappCoexistenceAssert(($embeddedConfiguration['appSecret'] ?? null) === '' && ($embeddedConfiguration['verifyToken'] ?? null) === '', 'Embedded Signup secrets leaked through the settings response.');
     whatsappCoexistenceAssert(!empty($embeddedConfiguration['hasAppSecret']) && !empty($embeddedConfiguration['hasVerifyToken']), 'Embedded Signup secret-presence flags were not returned.');
+    whatsappCoexistenceAssert(!empty($embeddedConfiguration['embeddedSignupConfigurationUpdatedAt']), 'Embedded Signup save confirmation time was not returned.');
     $storedConfiguration = $database->fetchOne('SELECT embedded_signup_app_id, embedded_signup_config_id, app_secret, webhook_url, verify_token FROM whatsapp_settings WHERE id = :id', [':id' => 'whatsapp-default']);
     whatsappCoexistenceAssert(($storedConfiguration['embedded_signup_app_id'] ?? '') === '123456789012345' && ($storedConfiguration['embedded_signup_config_id'] ?? '') === '987654321098765', 'Embedded Signup identifiers were not persisted.');
-    whatsappCoexistenceAssert(($storedConfiguration['app_secret'] ?? '') === 'coexistence-embedded-app-secret' && ($storedConfiguration['verify_token'] ?? '') === 'coexistence-embedded-verify-token', 'Embedded Signup write-only secrets were not persisted.');
+    whatsappCoexistenceAssert(($storedConfiguration['app_secret'] ?? '') === 'coexistence-embedded-app-secret' && ($storedConfiguration['verify_token'] ?? '') === 'meta-token', 'Embedded Signup write-only secrets were not persisted, including a valid short Meta verify token.');
     $whatsapp->updateWhatsAppEmbeddedSignupConfiguration([
         'embeddedSignupAppId' => '123456789012345',
         'embeddedSignupConfigId' => '987654321098765',
@@ -72,7 +73,7 @@ try {
         'graphVersion' => 'v25.0',
     ]);
     $preservedConfiguration = $database->fetchOne('SELECT app_secret, verify_token FROM whatsapp_settings WHERE id = :id', [':id' => 'whatsapp-default']);
-    whatsappCoexistenceAssert(($preservedConfiguration['app_secret'] ?? '') === 'coexistence-embedded-app-secret' && ($preservedConfiguration['verify_token'] ?? '') === 'coexistence-embedded-verify-token', 'Blank Embedded Signup secrets did not preserve stored values.');
+    whatsappCoexistenceAssert(($preservedConfiguration['app_secret'] ?? '') === 'coexistence-embedded-app-secret' && ($preservedConfiguration['verify_token'] ?? '') === 'meta-token', 'Blank Embedded Signup secrets did not preserve stored values.');
     $savedSettings = $whatsapp->updateWhatsAppSettings([
         'accessToken' => 'coexistence-test-token', 'phoneNumberId' => '8801700000000',
         'businessAccountId' => '8801700000001', 'verifyToken' => 'coexistence-verify-token',

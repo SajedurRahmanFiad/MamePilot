@@ -79,6 +79,22 @@ them in the protected setup card, or manage them through server environment
 values. If any are missing, the login button reports the exact missing setup
 instead of silently doing nothing.
 
+The app secret and verify-token inputs intentionally become blank after a
+successful save because the API never returns either secret. The settings card
+must show **Saved securely on the server** for both fields and a server record
+time. If the request is rejected, the card keeps a persistent error instead of
+relying only on a temporary toast. Meta accepts a developer-chosen verify-token
+string; MamePilot requires it to be non-empty but does not impose an
+undocumented minimum length.
+
+Embedded Signup completion has two browser signals: the one-time authorization
+code from Facebook Login for Business and the `WA_EMBEDDED_SIGNUP` finish event
+containing the WABA. MamePilot visibly waits for the other signal when only one
+arrives and reports a timeout after 30 seconds. Once the code is exchanged, the
+backend stores the resulting token immediately, before phone lookup and WABA
+subscription, so a later Meta failure is shown as partial connection progress
+instead of appearing unchanged.
+
 ## Webhook fields
 
 The webhook handler accepts normal `messages` and delivery statuses plus

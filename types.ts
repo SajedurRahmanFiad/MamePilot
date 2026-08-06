@@ -1482,6 +1482,7 @@ export interface WhatsAppSettings {
   embeddedSignupAppId?: string;
   embeddedSignupConfigId?: string;
   embeddedSignupEnvironmentFields?: Array<'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>;
+  embeddedSignupConfigurationUpdatedAt?: string | null;
   connectionMode?: 'none' | 'cloud_api' | 'coexistence';
   contactsSyncRequested?: boolean;
   historySyncRequested?: boolean;

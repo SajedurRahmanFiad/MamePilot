@@ -13,6 +13,11 @@ type FacebookSdk = {
   __mamePilotInitialized?: boolean;
 };
 
+type FeedbackState = {
+  type: 'idle' | 'progress' | 'success' | 'warning' | 'error';
+  message: string;
+};
+
 const EMPTY_SETTINGS: WhatsAppSettings = {
   accessToken: '', phoneNumberId: '', businessAccountId: '', verifyToken: '', appSecret: '', graphVersion: 'v25.0',
   displayPhoneNumber: '', verifiedName: '', qualityRating: '', webhookUrl: '', configured: false, webhookConfigured: false,
@@ -28,7 +33,7 @@ const WhatsAppSettingsPanel: React.FC = () => {
   const toast = useToastNotifications();
   const { user } = useAuth();
   const isDeveloper = isDeveloperRole(user?.role);
-  const { data, isPending, error } = useWhatsAppSettings(true);
+  const { data, isPending, error, refetch: refetchSettings } = useWhatsAppSettings(true);
   const configurationMutation = useUpdateWhatsAppEmbeddedSignupConfiguration();
   const connectMutation = useConnectWhatsAppEmbeddedSignup();
   const syncMutation = useSyncWhatsAppBusinessAppData();
@@ -38,6 +43,8 @@ const WhatsAppSettingsPanel: React.FC = () => {
   const [sdkLoading, setSdkLoading] = useState(false);
   const [popupOpening, setPopupOpening] = useState(false);
   const [signupEvent, setSignupEvent] = useState('');
+  const [configurationFeedback, setConfigurationFeedback] = useState<FeedbackState>({ type: 'idle', message: '' });
+  const [connectionFeedback, setConnectionFeedback] = useState<FeedbackState>({ type: 'idle', message: '' });
   const [developerConfiguration, setDeveloperConfiguration] = useState({
     embeddedSignupAppId: '',
     embeddedSignupConfigId: '',
@@ -50,6 +57,11 @@ const WhatsAppSettingsPanel: React.FC = () => {
   const pendingCodeRef = useRef<string | null>(null);
   const pendingSessionRef = useRef<{ event: string; wabaId: string; phoneNumberId?: string } | null>(null);
   const completingRef = useRef(false);
+  const completionTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (data) {
@@ -140,20 +152,61 @@ const WhatsAppSettingsPanel: React.FC = () => {
     }
   };
 
+  const clearCompletionTimer = () => {
+    if (completionTimerRef.current === null) return;
+    window.clearTimeout(completionTimerRef.current);
+    completionTimerRef.current = null;
+  };
+
+  const scheduleCompletionTimeout = () => {
+    clearCompletionTimer();
+    completionTimerRef.current = window.setTimeout(() => {
+      completionTimerRef.current = null;
+      if (completingRef.current || (pendingCodeRef.current && pendingSessionRef.current?.wabaId)) return;
+      const missingAuthorization = !pendingCodeRef.current;
+      const message = missingAuthorization
+        ? 'Meta finished the business selection but did not return the authorization code. Please open WhatsApp login and try again.'
+        : 'Meta returned authorization but did not return the selected WhatsApp business account. Please open WhatsApp login and try again.';
+      pendingCodeRef.current = null;
+      pendingSessionRef.current = null;
+      setPopupOpening(false);
+      setConnectionFeedback({ type: 'error', message });
+      toast.error(message);
+    }, 30000);
+  };
+
   const completeSignup = async () => {
     const code = pendingCodeRef.current;
     const session = pendingSessionRef.current;
-    if (!code || !session || completingRef.current || !session.wabaId) return;
+    if (completingRef.current) return;
+    if (!code || !session?.wabaId) {
+      setConnectionFeedback({
+        type: 'progress',
+        message: code
+          ? 'Meta authorization was received. Waiting for the selected WhatsApp business account...'
+          : 'The WhatsApp business account was selected. Waiting for Meta authorization...',
+      });
+      scheduleCompletionTimeout();
+      return;
+    }
+    clearCompletionTimer();
     completingRef.current = true;
+    setPopupOpening(false);
+    setConnectionFeedback({ type: 'progress', message: 'Meta login finished. Verifying and saving the WhatsApp Business connection...' });
     const toastId = toast.loading('Finishing WhatsApp Business connection...');
     try {
       const saved = await connectMutation.mutateAsync({ code, wabaId: session.wabaId, phoneNumberId: session.phoneNumberId });
       setSettings({ ...EMPTY_SETTINGS, ...saved });
       pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
       const warning = saved.warnings?.join(' ');
+      setConnectionFeedback({ type: warning ? 'warning' : 'success', message: warning ? `WhatsApp connected with a warning: ${warning}` : 'WhatsApp Business and Cloud API are connected and saved.' });
       toast.update(toastId, warning ? `WhatsApp is connected. ${warning}` : 'WhatsApp Business and Cloud API are connected.', warning ? 'warning' : 'success');
     } catch (connectError) {
-      toast.update(toastId, connectError instanceof Error ? connectError.message : 'WhatsApp could not be connected. Please try again.', 'error');
+      const message = connectError instanceof Error ? connectError.message : 'WhatsApp could not be connected. Please try again.';
+      const refreshed = await refetchSettings();
+      if (refreshed.data) setSettings({ ...EMPTY_SETTINGS, ...refreshed.data });
+      setConnectionFeedback({ type: 'error', message });
+      toast.update(toastId, message, 'error');
       pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
     } finally {
       completingRef.current = false;
@@ -170,15 +223,30 @@ const WhatsAppSettingsPanel: React.FC = () => {
       const eventName = String(payload.event || '');
       setSignupEvent(eventName);
       if (eventName === 'CANCEL' || eventName === 'ERROR') {
+        clearCompletionTimer();
         pendingCodeRef.current = null; pendingSessionRef.current = null;
-        toast.warning(eventName === 'CANCEL' ? 'WhatsApp login was cancelled.' : 'WhatsApp could not complete the login flow.');
+        setPopupOpening(false);
+        const message = eventName === 'CANCEL' ? 'WhatsApp login was cancelled.' : 'Meta reported that WhatsApp login could not be completed.';
+        setConnectionFeedback({ type: eventName === 'CANCEL' ? 'warning' : 'error', message });
+        toast.warning(message);
         return;
       }
       if (!eventName.startsWith('FINISH')) return;
       const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+      const wabaId = String(data.waba_id || data.wabaId || '');
+      if (!/^\d{5,32}$/.test(wabaId)) {
+        clearCompletionTimer();
+        pendingCodeRef.current = null;
+        pendingSessionRef.current = null;
+        setPopupOpening(false);
+        const message = 'Meta finished the login window but did not return a usable WhatsApp business account. Please try again.';
+        setConnectionFeedback({ type: 'error', message });
+        toast.error(message);
+        return;
+      }
       pendingSessionRef.current = {
         event: eventName,
-        wabaId: String(data.waba_id || data.wabaId || ''),
+        wabaId,
         phoneNumberId: data.phone_number_id || data.phoneNumberId ? String(data.phone_number_id || data.phoneNumberId) : undefined,
       };
       void completeSignup();
@@ -198,20 +266,30 @@ const WhatsAppSettingsPanel: React.FC = () => {
   const connect = async () => {
     if (!settings.embeddedSignupAvailable) {
       const missing = settings.embeddedSignupMissing?.filter(Boolean) || [];
-      toast.error(missing.length > 0
+      const message = missing.length > 0
         ? `WhatsApp login cannot open yet. Missing server setup: ${missing.join(', ')}.`
-        : 'WhatsApp login is not enabled on this server yet.');
+        : 'WhatsApp login is not enabled on this server yet.';
+      setConnectionFeedback({ type: 'error', message });
+      toast.error(message);
       return;
     }
+    clearCompletionTimer();
     pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
+    setConnectionFeedback({ type: 'progress', message: 'Opening Meta login. Complete every step in the popup window...' });
     setPopupOpening(true);
     try {
       const sdk = sdkRef.current || await initializeSdk();
+      setConnectionFeedback({ type: 'progress', message: 'Meta login is open. Finish the account and mobile-app confirmation in that window.' });
       sdk.login((response) => {
         setPopupOpening(false);
         const code = response?.authResponse?.code;
         if (!code) {
-          if (response?.status !== 'unknown') toast.warning('WhatsApp login was cancelled.');
+          clearCompletionTimer();
+          const message = response?.status === 'unknown'
+            ? 'Meta login closed without returning authorization. Allow popups and cross-site tracking for this site, then try again.'
+            : 'WhatsApp login was cancelled before authorization finished.';
+          setConnectionFeedback({ type: response?.status === 'unknown' ? 'error' : 'warning', message });
+          if (response?.status === 'unknown') toast.error(message); else toast.warning(message);
           return;
         }
         pendingCodeRef.current = String(code);
@@ -226,15 +304,26 @@ const WhatsAppSettingsPanel: React.FC = () => {
       });
     } catch (connectError) {
       setPopupOpening(false);
-      toast.error(connectError instanceof Error ? connectError.message : 'Meta login could not be opened.');
+      const message = connectError instanceof Error ? connectError.message : 'Meta login could not be opened.';
+      setConnectionFeedback({ type: 'error', message });
+      toast.error(message);
     }
   };
 
   const saveDeveloperConfiguration = async () => {
+    setConfigurationFeedback({ type: 'progress', message: 'Saving and verifying the Meta credentials on the server...' });
     const toastId = toast.loading('Saving the WhatsApp login configuration...');
     try {
       const saved = await configurationMutation.mutateAsync(developerConfiguration);
-      const next = { ...EMPTY_SETTINGS, ...saved };
+      const refreshed = await refetchSettings();
+      const confirmed = refreshed.data || saved;
+      if ((developerConfiguration.appSecret || !settings.hasAppSecret) && !confirmed.hasAppSecret) {
+        throw new Error('The server did not confirm that the Meta app secret was saved.');
+      }
+      if ((developerConfiguration.verifyToken || !settings.hasVerifyToken) && !confirmed.hasVerifyToken) {
+        throw new Error('The server did not confirm that the webhook verify token was saved.');
+      }
+      const next = { ...EMPTY_SETTINGS, ...confirmed };
       setSettings(next);
       setDeveloperConfiguration({
         embeddedSignupAppId: next.embeddedSignupAppId || '',
@@ -247,16 +336,22 @@ const WhatsAppSettingsPanel: React.FC = () => {
       sdkRef.current = null;
       const existingSdk = (window as any).FB as FacebookSdk | undefined;
       if (existingSdk) existingSdk.__mamePilotInitialized = false;
-      const ready = Boolean(saved.embeddedSignupAvailable);
+      const ready = Boolean(confirmed.embeddedSignupAvailable);
+      const savedMessage = ready
+        ? 'Saved and verified by the server. The Meta app secret and webhook verify token are stored securely.'
+        : `Saved, but setup is still missing: ${confirmed.embeddedSignupMissing?.join(', ') || 'required Meta settings'}.`;
+      setConfigurationFeedback({ type: ready ? 'success' : 'warning', message: savedMessage });
       toast.update(
         toastId,
         ready
           ? 'WhatsApp login is ready. You can open the Meta login window now.'
-          : `Configuration saved, but setup is still missing: ${saved.embeddedSignupMissing?.join(', ') || 'required Meta settings'}.`,
+          : savedMessage,
         ready ? 'success' : 'warning',
       );
     } catch (configurationError) {
-      toast.update(toastId, configurationError instanceof Error ? configurationError.message : 'The WhatsApp login configuration could not be saved.', 'error');
+      const message = configurationError instanceof Error ? configurationError.message : 'The WhatsApp login configuration could not be saved.';
+      setConfigurationFeedback({ type: 'error', message });
+      toast.update(toastId, message, 'error');
     }
   };
 
@@ -302,6 +397,7 @@ const WhatsAppSettingsPanel: React.FC = () => {
   if (isPending) return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading WhatsApp settings...</div>;
   const coexistenceConnected = settings.configured && settings.isOnBizApp && String(settings.platformType || '').toUpperCase() === 'CLOUD_API';
   const cloudApiOnly = settings.configured && !coexistenceConnected;
+  const connectionInProgress = settings.connectionStatus === 'connecting' && !settings.configured;
   const isMetaTestNumber = /test\s*number/i.test(settings.verifiedName || '');
   const qualityRating = String(settings.qualityRating || '').trim();
   const showQuality = qualityRating !== '' && qualityRating.toUpperCase() !== 'UNKNOWN';
@@ -322,11 +418,11 @@ const WhatsAppSettingsPanel: React.FC = () => {
 
       {error && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">WhatsApp settings could not be loaded. Please refresh the page.</div>}
 
-      <div className={`rounded-xl border p-4 ${coexistenceConnected ? 'border-emerald-100 bg-emerald-50' : cloudApiOnly ? 'border-amber-100 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+      <div className={`rounded-xl border p-4 ${coexistenceConnected ? 'border-emerald-100 bg-emerald-50' : cloudApiOnly ? 'border-amber-100 bg-amber-50' : connectionInProgress ? 'border-blue-100 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
         <div className="flex items-start gap-3">
-          {coexistenceConnected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className={`mt-0.5 ${cloudApiOnly ? 'text-amber-600' : 'text-gray-500'}`} size={20} />}
+          {coexistenceConnected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className={`mt-0.5 ${cloudApiOnly ? 'text-amber-600' : connectionInProgress ? 'text-blue-600' : 'text-gray-500'}`} size={20} />}
           <div>
-            <p className={`text-sm font-bold ${coexistenceConnected ? 'text-emerald-800' : cloudApiOnly ? 'text-amber-800' : 'text-gray-800'}`}>{coexistenceConnected ? 'WhatsApp Business app + Cloud API are connected.' : cloudApiOnly ? (isMetaTestNumber ? 'A Meta Cloud API test number is saved. It is not a WhatsApp Business app connection.' : 'A Cloud API-only number is saved. WhatsApp Business app coexistence is not connected.') : 'Connect WhatsApp Business to start.'}</p>
+            <p className={`text-sm font-bold ${coexistenceConnected ? 'text-emerald-800' : cloudApiOnly ? 'text-amber-800' : connectionInProgress ? 'text-blue-800' : 'text-gray-800'}`}>{coexistenceConnected ? 'WhatsApp Business app + Cloud API are connected.' : cloudApiOnly ? (isMetaTestNumber ? 'A Meta Cloud API test number is saved. It is not a WhatsApp Business app connection.' : 'A Cloud API-only number is saved. WhatsApp Business app coexistence is not connected.') : connectionInProgress ? 'Meta authorization was saved, but phone setup did not finish.' : 'Connect WhatsApp Business to start.'}</p>
             {(settings.verifiedName || settings.displayPhoneNumber) && <p className="mt-1 text-xs font-semibold text-gray-600">{settings.verifiedName || 'WhatsApp Business'}{settings.displayPhoneNumber ? ` · ${settings.displayPhoneNumber}` : ''}{showQuality ? ` · Quality ${qualityRating}` : ''}</p>}
             {cloudApiOnly && <p className="mt-1 text-xs text-amber-700">Use Open WhatsApp login below and complete the Business app mobile prompt to replace this legacy connection with Coexistence.</p>}
             {settings.lastWebhookAt && <p className="mt-1 text-xs text-gray-500">Last message delivery: {new Date(settings.lastWebhookAt).toLocaleString()}</p>}
@@ -339,11 +435,13 @@ const WhatsAppSettingsPanel: React.FC = () => {
           <div><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-violet-700" /><h4 className="text-base font-black text-violet-950">Developer setup for WhatsApp login</h4></div><p className="mt-2 max-w-3xl text-sm text-violet-800">Configure the Meta app and this deployment's webhook once. The app secret and verify token are write-only: saved values are never sent back to the browser.</p></div>
           <Button type="button" onClick={saveDeveloperConfiguration} loading={configurationMutation.isPending} icon={<Save size={17} />}>Save login setup</Button>
         </div>
+        {configurationFeedback.type !== 'idle' && <div className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold ${configurationFeedback.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : configurationFeedback.type === 'error' ? 'border-red-200 bg-red-50 text-red-800' : configurationFeedback.type === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>{configurationFeedback.message}</div>}
+        {settings.hasAppSecret && settings.hasVerifyToken && settings.embeddedSignupConfigurationUpdatedAt && <p className="mt-3 text-xs font-semibold text-violet-700">Server record confirmed: {new Date(settings.embeddedSignupConfigurationUpdatedAt).toLocaleString()}</p>}
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta app ID</span><input value={developerConfiguration.embeddedSignupAppId} onChange={(event) => configurationField('embeddedSignupAppId', event.target.value)} disabled={environmentFields.has('embeddedSignupAppId')} inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="Numeric app ID" />{environmentFields.has('embeddedSignupAppId') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
           <label className="space-y-2 text-sm font-bold text-gray-700"><span>Embedded Signup v4 configuration ID</span><input value={developerConfiguration.embeddedSignupConfigId} onChange={(event) => configurationField('embeddedSignupConfigId', event.target.value)} disabled={environmentFields.has('embeddedSignupConfigId')} inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="Numeric configuration ID" />{environmentFields.has('embeddedSignupConfigId') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
-          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta app secret</span><input type="password" value={developerConfiguration.appSecret} onChange={(event) => configurationField('appSecret', event.target.value)} disabled={environmentFields.has('appSecret')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasAppSecret ? 'Saved — leave blank to keep it' : 'Enter the app secret'} />{environmentFields.has('appSecret') && <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span>}</label>
-          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Webhook verify token</span><input type="password" value={developerConfiguration.verifyToken} onChange={(event) => configurationField('verifyToken', event.target.value)} disabled={environmentFields.has('verifyToken')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasVerifyToken ? 'Saved — leave blank to keep it' : 'At least 16 random characters'} />{environmentFields.has('verifyToken') && <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta app secret</span><input type="password" value={developerConfiguration.appSecret} onChange={(event) => configurationField('appSecret', event.target.value)} disabled={environmentFields.has('appSecret')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasAppSecret ? 'Saved - leave blank to keep it' : 'Enter the app secret'} />{environmentFields.has('appSecret') ? <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span> : settings.hasAppSecret ? <span className="flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> Saved securely on the server</span> : <span className="block text-xs font-medium text-amber-700">Not saved yet.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Webhook verify token</span><input type="password" value={developerConfiguration.verifyToken} onChange={(event) => configurationField('verifyToken', event.target.value)} disabled={environmentFields.has('verifyToken')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasVerifyToken ? 'Saved - leave blank to keep it' : 'Enter the token configured in Meta'} />{environmentFields.has('verifyToken') ? <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span> : settings.hasVerifyToken ? <span className="flex items-center gap-1 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> Saved securely on the server</span> : <span className="block text-xs font-medium text-amber-700">Not saved yet.</span>}</label>
           <label className="space-y-2 text-sm font-bold text-gray-700 md:col-span-2"><span>Public HTTPS webhook URL</span><input type="url" value={developerConfiguration.webhookUrl} onChange={(event) => configurationField('webhookUrl', event.target.value)} disabled={environmentFields.has('webhookUrl')} autoComplete="url" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="https://your-domain.example/api/whatsapp-webhook.php" />{environmentFields.has('webhookUrl') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
           <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta Graph API version</span><input value={developerConfiguration.graphVersion} onChange={(event) => configurationField('graphVersion', event.target.value)} disabled={environmentFields.has('graphVersion')} autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="v25.0" />{environmentFields.has('graphVersion') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
         </div>
@@ -353,7 +451,7 @@ const WhatsAppSettingsPanel: React.FC = () => {
       <section className="rounded-xl border border-gray-100 bg-white p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-base font-black text-gray-900">Connect with WhatsApp Business</h4><p className="mt-1 max-w-2xl text-sm text-gray-500">A secure Meta login window will open. Sign in, choose the existing WhatsApp Business account, and use the mobile app prompt to connect it to the Business Platform. No business access token or phone ID needs to be pasted here.</p></div><Button type="button" onClick={connect} loading={popupOpening || connectMutation.isPending || sdkLoading} icon={<LogIn size={17} />}>Open WhatsApp login</Button></div>
         {!settings.embeddedSignupAvailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><p className="font-bold">WhatsApp login is not ready on this deployment.</p><p className="mt-1">{isDeveloper ? 'Complete the developer setup above, save it, and then open the login again.' : 'A Developer must complete the Meta app and webhook setup before this login can open.'}</p>{Boolean(settings.embeddedSignupMissing?.length) && <p className="mt-2 text-xs font-semibold">Missing setup: {settings.embeddedSignupMissing?.join(', ')}.</p>}</div>}
-        {signupEvent && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">Meta login status: {signupEvent.replaceAll('_', ' ').toLowerCase()}.</div>}
+        {connectionFeedback.type !== 'idle' && <div className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold ${connectionFeedback.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : connectionFeedback.type === 'error' ? 'border-red-200 bg-red-50 text-red-800' : connectionFeedback.type === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}><p>{connectionFeedback.message}</p>{signupEvent && connectionFeedback.type === 'progress' && <p className="mt-1 text-xs opacity-75">Meta event received: {signupEvent.replaceAll('_', ' ').toLowerCase()}.</p>}</div>}
         <ol className="mt-5 grid gap-3 text-sm text-gray-600 md:grid-cols-3"><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">1. Sign in</strong><span className="mt-1 block">Use the Meta account that administers the business.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">2. Confirm on mobile</strong><span className="mt-1 block">In WhatsApp Business, tap Connect to the Business Platform.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">3. Choose chat sharing</strong><span className="mt-1 block">Allow or decline history sharing; the mobile app remains usable either way.</span></li></ol>
         {coexistenceConnected && <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{settings.contactsSyncRequested && settings.historySyncRequested ? 'Contact and message-history synchronization requests have been sent.' : 'The connection is verified. MamePilot will request the one-time contact and history synchronization.'}</div>}
       </section>
