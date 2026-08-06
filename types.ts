@@ -1469,6 +1469,7 @@ export interface WhatsAppSettings {
   appSecret: string;
   hasAccessToken?: boolean;
   hasAppSecret?: boolean;
+  hasVerifyToken?: boolean;
   graphVersion: string;
   displayPhoneNumber: string;
   verifiedName: string;
@@ -1477,8 +1478,11 @@ export interface WhatsAppSettings {
   isOnBizApp?: boolean;
   connectionStatus?: string;
   embeddedSignupAvailable?: boolean;
+  embeddedSignupMissing?: string[];
   embeddedSignupAppId?: string;
   embeddedSignupConfigId?: string;
+  embeddedSignupEnvironmentFields?: Array<'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>;
+  connectionMode?: 'none' | 'cloud_api' | 'coexistence';
   contactsSyncRequested?: boolean;
   historySyncRequested?: boolean;
   lastWebhookAt?: string | null;

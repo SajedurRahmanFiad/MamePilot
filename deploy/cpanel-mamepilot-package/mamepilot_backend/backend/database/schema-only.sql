@@ -2792,6 +2792,11 @@ CALL sp_add_col('whatsapp_settings', 'history_sync_request_id', 'VARCHAR(255) NU
 CALL sp_add_col('whatsapp_settings', 'history_sync_requested_at', 'DATETIME NULL AFTER history_sync_request_id');
 CALL sp_add_col('whatsapp_settings', 'last_webhook_at', 'DATETIME NULL AFTER history_sync_requested_at');
 
+-- Migration: 2026-08-06_whatsapp_embedded_signup_configuration.sql
+CALL sp_add_col('whatsapp_settings', 'embedded_signup_app_id', 'VARCHAR(64) NULL AFTER business_account_id');
+CALL sp_add_col('whatsapp_settings', 'embedded_signup_config_id', 'VARCHAR(64) NULL AFTER embedded_signup_app_id');
+CALL sp_add_col('whatsapp_settings', 'webhook_url', 'VARCHAR(500) NULL AFTER app_secret');
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;

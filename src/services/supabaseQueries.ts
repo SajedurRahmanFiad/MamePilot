@@ -437,6 +437,7 @@ export async function fetchMetaAdById(id: string): Promise<any | null> { return 
 
 export async function fetchWhatsAppSettings(): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('fetchWhatsAppSettings'); }
 export async function updateWhatsAppSettings(updates: Partial<WhatsAppSettings>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppSettings', updates); }
+export async function updateWhatsAppEmbeddedSignupConfiguration(updates: Pick<WhatsAppSettings, 'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppEmbeddedSignupConfiguration', updates); }
 export async function connectWhatsAppEmbeddedSignup(payload: { code: string; wabaId: string; phoneNumberId?: string }): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('connectWhatsAppEmbeddedSignup', payload, { timeoutMs: 120000 }); }
 export async function syncWhatsAppBusinessAppData(type: 'all' | 'contacts' | 'history' = 'all'): Promise<{ ok: boolean; results: Record<string, unknown>; warnings?: string[]; settings: WhatsAppSettings }> { return call<any>('syncWhatsAppBusinessAppData', { type }, { timeoutMs: 120000 }); }
 export async function updateWhatsAppWelcomeExperience(updates: Pick<WhatsAppSettings, 'welcomeMessage' | 'getStartedEnabled' | 'iceBreakers'>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppWelcomeExperience', updates, { timeoutMs: 60000 }); }

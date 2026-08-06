@@ -6,8 +6,16 @@ Business mobile app while MamePilot sends and receives Cloud API messages.
 
 ## Developer-only Meta configuration
 
-Set these values in the deployment's server environment (never in React or a
-customer-facing settings form):
+Sign in with the **Developer** role and open the WhatsApp credential settings.
+The **Developer setup for WhatsApp login** card accepts the Meta app ID,
+Embedded Signup v4 configuration ID, app secret, public HTTPS webhook URL,
+verify token, and Graph API version. The app secret and verify token are
+write-only: the browser can save replacements and see presence indicators, but
+can never read the stored values back. Admin users can operate Embedded Signup
+after setup but cannot change these developer-owned credentials.
+
+For deployments managed through server configuration, the same values may be
+set in the environment:
 
 ```dotenv
 WHATSAPP_EMBEDDED_SIGNUP_APP_ID=<Meta app ID>
@@ -17,6 +25,9 @@ WHATSAPP_GRAPH_VERSION=v25.0
 WHATSAPP_WEBHOOK_URL=https://<deployment>/api/whatsapp-webhook.php
 WHATSAPP_VERIFY_TOKEN=<long random value also entered in Meta App Dashboard>
 ```
+
+Non-empty environment values take precedence over saved database values and the
+corresponding fields are shown as environment-managed in Developer settings.
 
 The Meta app must have WhatsApp configured, Facebook Login for Business with the
 deployment domain allowed, and a Coexistence-enabled **Embedded Signup v4**
@@ -54,6 +65,19 @@ deployment (or that an external central callback securely forwards the event).
    may send zero or more history webhooks when the business declines history
    sharing. These requests must be started within 24 hours and cannot be
    repeated unless the business offboards and onboards again.
+
+## Troubleshooting the settings card
+
+If the card shows a Meta **Test Number** or says that a Cloud API-only number is
+saved, the deployment still contains credentials from the older manual Cloud
+API setup. That does not mean WhatsApp Business app Coexistence is connected.
+Complete Embedded Signup with the intended existing Business app number.
+
+The Meta app ID, app secret, Embedded Signup configuration ID, webhook URL, and
+verify token are developer-owned deployment settings. A Developer can enter
+them in the protected setup card, or manage them through server environment
+values. If any are missing, the login button reports the exact missing setup
+instead of silently doing nothing.
 
 ## Webhook fields
 

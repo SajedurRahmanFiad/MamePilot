@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Clipboard, ExternalLink, KeyRound, LogIn, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clipboard, ExternalLink, KeyRound, LogIn, Plus, RefreshCw, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from './Button';
 import { useWhatsAppSettings } from '../src/hooks/useQueries';
-import { useConnectWhatsAppEmbeddedSignup, useSyncWhatsAppBusinessAppData, useTestWhatsAppConnection, useUpdateWhatsAppWelcomeExperience } from '../src/hooks/useMutations';
+import { useConnectWhatsAppEmbeddedSignup, useSyncWhatsAppBusinessAppData, useTestWhatsAppConnection, useUpdateWhatsAppEmbeddedSignupConfiguration, useUpdateWhatsAppWelcomeExperience } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import type { WhatsAppSettings } from '../types';
+import { useAuth } from '../src/contexts/AuthProvider';
+import { isDeveloperRole, type WhatsAppSettings } from '../types';
 
 type FacebookSdk = {
   init: (options: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string }) => void;
@@ -17,6 +18,7 @@ const EMPTY_SETTINGS: WhatsAppSettings = {
   displayPhoneNumber: '', verifiedName: '', qualityRating: '', webhookUrl: '', configured: false, webhookConfigured: false,
   welcomeMessage: '', getStartedEnabled: false, iceBreakers: [], welcomeActive: false,
   embeddedSignupAvailable: false, embeddedSignupAppId: '', embeddedSignupConfigId: '', isOnBizApp: false,
+  embeddedSignupMissing: [], embeddedSignupEnvironmentFields: [], connectionMode: 'none',
   connectionStatus: 'disconnected', contactsSyncRequested: false, historySyncRequested: false,
 };
 
@@ -24,7 +26,10 @@ const isMetaOrigin = (origin: string): boolean => origin === 'https://facebook.c
 
 const WhatsAppSettingsPanel: React.FC = () => {
   const toast = useToastNotifications();
+  const { user } = useAuth();
+  const isDeveloper = isDeveloperRole(user?.role);
   const { data, isPending, error } = useWhatsAppSettings(true);
+  const configurationMutation = useUpdateWhatsAppEmbeddedSignupConfiguration();
   const connectMutation = useConnectWhatsAppEmbeddedSignup();
   const syncMutation = useSyncWhatsAppBusinessAppData();
   const testMutation = useTestWhatsAppConnection();
@@ -33,13 +38,32 @@ const WhatsAppSettingsPanel: React.FC = () => {
   const [sdkLoading, setSdkLoading] = useState(false);
   const [popupOpening, setPopupOpening] = useState(false);
   const [signupEvent, setSignupEvent] = useState('');
+  const [developerConfiguration, setDeveloperConfiguration] = useState({
+    embeddedSignupAppId: '',
+    embeddedSignupConfigId: '',
+    appSecret: '',
+    webhookUrl: '',
+    verifyToken: '',
+    graphVersion: 'v25.0',
+  });
   const sdkRef = useRef<FacebookSdk | null>(null);
   const pendingCodeRef = useRef<string | null>(null);
   const pendingSessionRef = useRef<{ event: string; wabaId: string; phoneNumberId?: string } | null>(null);
   const completingRef = useRef(false);
 
   useEffect(() => {
-    if (data) setSettings({ ...EMPTY_SETTINGS, ...data });
+    if (data) {
+      const next = { ...EMPTY_SETTINGS, ...data };
+      setSettings(next);
+      setDeveloperConfiguration({
+        embeddedSignupAppId: next.embeddedSignupAppId || '',
+        embeddedSignupConfigId: next.embeddedSignupConfigId || '',
+        appSecret: '',
+        webhookUrl: next.webhookUrl || '',
+        verifyToken: '',
+        graphVersion: next.graphVersion || 'v25.0',
+      });
+    }
   }, [data]);
 
   const setField = <K extends keyof WhatsAppSettings>(key: K, value: WhatsAppSettings[K]) => {
@@ -61,29 +85,52 @@ const WhatsAppSettingsPanel: React.FC = () => {
     setSdkLoading(true);
     try {
       const sdk = await new Promise<FacebookSdk>((resolve, reject) => {
+        let settled = false;
+        let activeScript: HTMLScriptElement | null = null;
+        const timeoutId = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          if (!(window as any).FB) activeScript?.remove();
+          reject(new Error('Meta login took too long to load. Check browser tracking protection and try again.'));
+        }, 15000);
+        const succeed = (loaded: FacebookSdk) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          resolve(loaded);
+        };
+        const fail = (message: string) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeoutId);
+          if (!(window as any).FB) activeScript?.remove();
+          reject(new Error(message));
+        };
         const previous = (window as any).fbAsyncInit;
         (window as any).fbAsyncInit = () => {
           try { if (typeof previous === 'function') previous(); } catch { /* another integration must not block WhatsApp */ }
           const loaded = (window as any).FB as FacebookSdk | undefined;
-          if (!loaded) { reject(new Error('Meta login could not be loaded.')); return; }
+          if (!loaded) { fail('Meta login could not be loaded.'); return; }
           try {
             loaded.init({ appId, autoLogAppEvents: true, xfbml: true, version: settings.graphVersion || 'v25.0' });
             loaded.__mamePilotInitialized = true;
-            resolve(loaded);
-          } catch { reject(new Error('Meta login could not be initialized.')); }
+            succeed(loaded);
+          } catch { fail('Meta login could not be initialized.'); }
         };
         const existingScript = document.getElementById('facebook-jssdk') as HTMLScriptElement | null;
         if (existingScript) {
+          activeScript = existingScript;
           const loaded = (window as any).FB as FacebookSdk | undefined;
           if (loaded) (window as any).fbAsyncInit();
           else existingScript.addEventListener('load', () => (window as any).fbAsyncInit(), { once: true });
-          existingScript.addEventListener('error', () => reject(new Error('Meta login could not be loaded.')), { once: true });
+          existingScript.addEventListener('error', () => fail('Meta login could not be loaded.'), { once: true });
           return;
         }
         const script = document.createElement('script');
+        activeScript = script;
         script.id = 'facebook-jssdk'; script.async = true; script.defer = true; script.crossOrigin = 'anonymous';
         script.src = 'https://connect.facebook.net/en_US/sdk.js';
-        script.onerror = () => reject(new Error('Meta login could not be loaded.'));
+        script.onerror = () => fail('Meta login could not be loaded.');
         document.body.appendChild(script);
       });
       sdkRef.current = sdk;
@@ -150,7 +197,10 @@ const WhatsAppSettingsPanel: React.FC = () => {
 
   const connect = async () => {
     if (!settings.embeddedSignupAvailable) {
-      toast.error('WhatsApp login is not enabled on this server yet.');
+      const missing = settings.embeddedSignupMissing?.filter(Boolean) || [];
+      toast.error(missing.length > 0
+        ? `WhatsApp login cannot open yet. Missing server setup: ${missing.join(', ')}.`
+        : 'WhatsApp login is not enabled on this server yet.');
       return;
     }
     pendingCodeRef.current = null; pendingSessionRef.current = null; setSignupEvent('');
@@ -177,6 +227,36 @@ const WhatsAppSettingsPanel: React.FC = () => {
     } catch (connectError) {
       setPopupOpening(false);
       toast.error(connectError instanceof Error ? connectError.message : 'Meta login could not be opened.');
+    }
+  };
+
+  const saveDeveloperConfiguration = async () => {
+    const toastId = toast.loading('Saving the WhatsApp login configuration...');
+    try {
+      const saved = await configurationMutation.mutateAsync(developerConfiguration);
+      const next = { ...EMPTY_SETTINGS, ...saved };
+      setSettings(next);
+      setDeveloperConfiguration({
+        embeddedSignupAppId: next.embeddedSignupAppId || '',
+        embeddedSignupConfigId: next.embeddedSignupConfigId || '',
+        appSecret: '',
+        webhookUrl: next.webhookUrl || '',
+        verifyToken: '',
+        graphVersion: next.graphVersion || 'v25.0',
+      });
+      sdkRef.current = null;
+      const existingSdk = (window as any).FB as FacebookSdk | undefined;
+      if (existingSdk) existingSdk.__mamePilotInitialized = false;
+      const ready = Boolean(saved.embeddedSignupAvailable);
+      toast.update(
+        toastId,
+        ready
+          ? 'WhatsApp login is ready. You can open the Meta login window now.'
+          : `Configuration saved, but setup is still missing: ${saved.embeddedSignupMissing?.join(', ') || 'required Meta settings'}.`,
+        ready ? 'success' : 'warning',
+      );
+    } catch (configurationError) {
+      toast.update(toastId, configurationError instanceof Error ? configurationError.message : 'The WhatsApp login configuration could not be saved.', 'error');
     }
   };
 
@@ -221,6 +301,14 @@ const WhatsAppSettingsPanel: React.FC = () => {
 
   if (isPending) return <div className="py-16 text-center text-sm font-medium text-gray-500">Loading WhatsApp settings...</div>;
   const coexistenceConnected = settings.configured && settings.isOnBizApp && String(settings.platformType || '').toUpperCase() === 'CLOUD_API';
+  const cloudApiOnly = settings.configured && !coexistenceConnected;
+  const isMetaTestNumber = /test\s*number/i.test(settings.verifiedName || '');
+  const qualityRating = String(settings.qualityRating || '').trim();
+  const showQuality = qualityRating !== '' && qualityRating.toUpperCase() !== 'UNKNOWN';
+  const environmentFields = new Set(settings.embeddedSignupEnvironmentFields || []);
+  const configurationField = (field: keyof typeof developerConfiguration, value: string) => {
+    setDeveloperConfiguration((current) => ({ ...current, [field]: value }));
+  };
 
   return (
     <div className="space-y-7 animate-in fade-in duration-300">
@@ -234,20 +322,37 @@ const WhatsAppSettingsPanel: React.FC = () => {
 
       {error && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">WhatsApp settings could not be loaded. Please refresh the page.</div>}
 
-      <div className={`rounded-xl border p-4 ${coexistenceConnected ? 'border-emerald-100 bg-emerald-50' : 'border-amber-100 bg-amber-50'}`}>
+      <div className={`rounded-xl border p-4 ${coexistenceConnected ? 'border-emerald-100 bg-emerald-50' : cloudApiOnly ? 'border-amber-100 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
         <div className="flex items-start gap-3">
-          {coexistenceConnected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className="mt-0.5 text-amber-600" size={20} />}
+          {coexistenceConnected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <KeyRound className={`mt-0.5 ${cloudApiOnly ? 'text-amber-600' : 'text-gray-500'}`} size={20} />}
           <div>
-            <p className={`text-sm font-bold ${coexistenceConnected ? 'text-emerald-800' : 'text-amber-800'}`}>{coexistenceConnected ? 'WhatsApp Business app + Cloud API are connected.' : settings.configured ? 'Cloud API is connected; Business app coexistence still needs verification.' : 'Connect WhatsApp Business to start.'}</p>
-            {(settings.verifiedName || settings.displayPhoneNumber) && <p className="mt-1 text-xs font-semibold text-gray-600">{settings.verifiedName || 'WhatsApp Business'}{settings.displayPhoneNumber ? ` · ${settings.displayPhoneNumber}` : ''}{settings.qualityRating ? ` · Quality ${settings.qualityRating}` : ''}</p>}
+            <p className={`text-sm font-bold ${coexistenceConnected ? 'text-emerald-800' : cloudApiOnly ? 'text-amber-800' : 'text-gray-800'}`}>{coexistenceConnected ? 'WhatsApp Business app + Cloud API are connected.' : cloudApiOnly ? (isMetaTestNumber ? 'A Meta Cloud API test number is saved. It is not a WhatsApp Business app connection.' : 'A Cloud API-only number is saved. WhatsApp Business app coexistence is not connected.') : 'Connect WhatsApp Business to start.'}</p>
+            {(settings.verifiedName || settings.displayPhoneNumber) && <p className="mt-1 text-xs font-semibold text-gray-600">{settings.verifiedName || 'WhatsApp Business'}{settings.displayPhoneNumber ? ` · ${settings.displayPhoneNumber}` : ''}{showQuality ? ` · Quality ${qualityRating}` : ''}</p>}
+            {cloudApiOnly && <p className="mt-1 text-xs text-amber-700">Use Open WhatsApp login below and complete the Business app mobile prompt to replace this legacy connection with Coexistence.</p>}
             {settings.lastWebhookAt && <p className="mt-1 text-xs text-gray-500">Last message delivery: {new Date(settings.lastWebhookAt).toLocaleString()}</p>}
           </div>
         </div>
       </div>
 
+      {isDeveloper && <section className="rounded-xl border border-violet-100 bg-violet-50/40 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-violet-700" /><h4 className="text-base font-black text-violet-950">Developer setup for WhatsApp login</h4></div><p className="mt-2 max-w-3xl text-sm text-violet-800">Configure the Meta app and this deployment's webhook once. The app secret and verify token are write-only: saved values are never sent back to the browser.</p></div>
+          <Button type="button" onClick={saveDeveloperConfiguration} loading={configurationMutation.isPending} icon={<Save size={17} />}>Save login setup</Button>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta app ID</span><input value={developerConfiguration.embeddedSignupAppId} onChange={(event) => configurationField('embeddedSignupAppId', event.target.value)} disabled={environmentFields.has('embeddedSignupAppId')} inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="Numeric app ID" />{environmentFields.has('embeddedSignupAppId') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Embedded Signup v4 configuration ID</span><input value={developerConfiguration.embeddedSignupConfigId} onChange={(event) => configurationField('embeddedSignupConfigId', event.target.value)} disabled={environmentFields.has('embeddedSignupConfigId')} inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="Numeric configuration ID" />{environmentFields.has('embeddedSignupConfigId') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta app secret</span><input type="password" value={developerConfiguration.appSecret} onChange={(event) => configurationField('appSecret', event.target.value)} disabled={environmentFields.has('appSecret')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasAppSecret ? 'Saved — leave blank to keep it' : 'Enter the app secret'} />{environmentFields.has('appSecret') && <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Webhook verify token</span><input type="password" value={developerConfiguration.verifyToken} onChange={(event) => configurationField('verifyToken', event.target.value)} disabled={environmentFields.has('verifyToken')} autoComplete="new-password" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder={settings.hasVerifyToken ? 'Saved — leave blank to keep it' : 'At least 16 random characters'} />{environmentFields.has('verifyToken') && <span className="block text-xs font-medium text-violet-600">Saved in the server environment and never exposed here.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700 md:col-span-2"><span>Public HTTPS webhook URL</span><input type="url" value={developerConfiguration.webhookUrl} onChange={(event) => configurationField('webhookUrl', event.target.value)} disabled={environmentFields.has('webhookUrl')} autoComplete="url" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="https://your-domain.example/api/whatsapp-webhook.php" />{environmentFields.has('webhookUrl') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
+          <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta Graph API version</span><input value={developerConfiguration.graphVersion} onChange={(event) => configurationField('graphVersion', event.target.value)} disabled={environmentFields.has('graphVersion')} autoComplete="off" className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2.5 font-medium outline-none focus:border-violet-500 disabled:bg-gray-100" placeholder="v25.0" />{environmentFields.has('graphVersion') && <span className="block text-xs font-medium text-violet-600">Managed by the server environment.</span>}</label>
+        </div>
+        <p className="mt-4 text-xs font-semibold leading-5 text-violet-700">Use the same callback URL and verify token in the Meta app's WhatsApp webhook configuration. Subscribe the default callback to account updates as well as message events so mobile disconnects reach this deployment.</p>
+      </section>}
+
       <section className="rounded-xl border border-gray-100 bg-white p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-base font-black text-gray-900">Connect with WhatsApp Business</h4><p className="mt-1 max-w-2xl text-sm text-gray-500">A secure Meta login window will open. Sign in, choose the existing WhatsApp Business account, and use the mobile app prompt to connect it to the Business Platform. No token or phone ID needs to be pasted here.</p></div><Button type="button" onClick={connect} loading={popupOpening || connectMutation.isPending || sdkLoading} disabled={!settings.embeddedSignupAvailable} icon={<LogIn size={17} />}>Open WhatsApp login</Button></div>
-        {!settings.embeddedSignupAvailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Embedded Signup is not enabled on this deployment. A developer must configure the Meta app ID, v4 Facebook Login for Business configuration ID, app secret, HTTPS webhook URL, and webhook verify token in the server environment.</div>}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="text-base font-black text-gray-900">Connect with WhatsApp Business</h4><p className="mt-1 max-w-2xl text-sm text-gray-500">A secure Meta login window will open. Sign in, choose the existing WhatsApp Business account, and use the mobile app prompt to connect it to the Business Platform. No business access token or phone ID needs to be pasted here.</p></div><Button type="button" onClick={connect} loading={popupOpening || connectMutation.isPending || sdkLoading} icon={<LogIn size={17} />}>Open WhatsApp login</Button></div>
+        {!settings.embeddedSignupAvailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><p className="font-bold">WhatsApp login is not ready on this deployment.</p><p className="mt-1">{isDeveloper ? 'Complete the developer setup above, save it, and then open the login again.' : 'A Developer must complete the Meta app and webhook setup before this login can open.'}</p>{Boolean(settings.embeddedSignupMissing?.length) && <p className="mt-2 text-xs font-semibold">Missing setup: {settings.embeddedSignupMissing?.join(', ')}.</p>}</div>}
         {signupEvent && <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">Meta login status: {signupEvent.replaceAll('_', ' ').toLowerCase()}.</div>}
         <ol className="mt-5 grid gap-3 text-sm text-gray-600 md:grid-cols-3"><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">1. Sign in</strong><span className="mt-1 block">Use the Meta account that administers the business.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">2. Confirm on mobile</strong><span className="mt-1 block">In WhatsApp Business, tap Connect to the Business Platform.</span></li><li className="rounded-xl bg-gray-50 p-4"><strong className="block text-gray-900">3. Choose chat sharing</strong><span className="mt-1 block">Allow or decline history sharing; the mobile app remains usable either way.</span></li></ol>
         {coexistenceConnected && <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{settings.contactsSyncRequested && settings.historySyncRequested ? 'Contact and message-history synchronization requests have been sent.' : 'The connection is verified. MamePilot will request the one-time contact and history synchronization.'}</div>}

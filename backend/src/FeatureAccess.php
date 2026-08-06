@@ -222,6 +222,7 @@ final class FeatureAccess
         'fetchRechargeHistory' => 'auto_calling',
         'fetchWhatsAppSettings' => 'whatsapp',
         'updateWhatsAppSettings' => 'whatsapp',
+        'updateWhatsAppEmbeddedSignupConfiguration' => 'whatsapp',
         'connectWhatsAppEmbeddedSignup' => 'whatsapp',
         'syncWhatsAppBusinessAppData' => 'whatsapp',
         'updateWhatsAppWelcomeExperience' => 'whatsapp',

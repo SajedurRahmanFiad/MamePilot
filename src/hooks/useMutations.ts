@@ -105,6 +105,7 @@ import {
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
   updateWhatsAppSettings,
+  updateWhatsAppEmbeddedSignupConfiguration,
   connectWhatsAppEmbeddedSignup,
   syncWhatsAppBusinessAppData,
   updateWhatsAppWelcomeExperience,
@@ -2891,6 +2892,11 @@ export function useCheckFraudCourierHistory(): UseMutationResult<FraudCheckResul
 export function useUpdateWhatsAppSettings(): UseMutationResult<WhatsAppSettings, Error, Partial<WhatsAppSettings>, unknown> {
   const queryClient = useQueryClient();
   return useMutation({ mutationFn: updateWhatsAppSettings, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
+}
+
+export function useUpdateWhatsAppEmbeddedSignupConfiguration(): UseMutationResult<WhatsAppSettings, Error, Pick<WhatsAppSettings, 'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateWhatsAppEmbeddedSignupConfiguration, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
 }
 
 export function useUpdateWhatsAppWelcomeExperience(): UseMutationResult<WhatsAppSettings, Error, Pick<WhatsAppSettings, 'welcomeMessage' | 'getStartedEnabled' | 'iceBreakers'>, unknown> {

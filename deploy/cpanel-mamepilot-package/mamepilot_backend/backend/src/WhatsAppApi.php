@@ -34,7 +34,7 @@ final class WhatsAppApi extends BaseService
 
     public function updateWhatsAppSettings(array $params): array
     {
-        $this->requireAdmin();
+        $this->requireDeveloperUser();
         $this->ensureTables();
         $existing = $this->settingsRow() ?? [];
         $preserveBlank = static function (array $source, string $key, $fallback) {
@@ -52,6 +52,67 @@ final class WhatsAppApi extends BaseService
         ];
 
         $this->upsertSettings($updates);
+        return $this->settingsResponse($this->settingsRow());
+    }
+
+    /**
+     * Saves the developer-owned Meta application configuration used to launch
+     * Embedded Signup. Secrets are accepted write-only and a blank secret
+     * preserves the value already stored on the server.
+     */
+    public function updateWhatsAppEmbeddedSignupConfiguration(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $this->ensureTables();
+
+        $stored = $this->database->fetchOne(
+            'SELECT * FROM whatsapp_settings WHERE id = :id LIMIT 1',
+            [':id' => self::SETTINGS_ID]
+        ) ?? [];
+        $effective = $this->settingsRow() ?? [];
+
+        $appId = trim((string) ($params['embeddedSignupAppId'] ?? ''));
+        $configId = trim((string) ($params['embeddedSignupConfigId'] ?? ''));
+        $webhookUrl = trim((string) ($params['webhookUrl'] ?? ''));
+        $graphVersion = trim((string) ($params['graphVersion'] ?? ''));
+        $submittedAppSecret = trim((string) ($params['appSecret'] ?? ''));
+        $submittedVerifyToken = trim((string) ($params['verifyToken'] ?? ''));
+        $appSecret = $submittedAppSecret !== ''
+            ? $submittedAppSecret
+            : trim((string) ($effective['app_secret'] ?? ($stored['app_secret'] ?? '')));
+        $verifyToken = $submittedVerifyToken !== ''
+            ? $submittedVerifyToken
+            : trim((string) ($effective['verify_token'] ?? ($stored['verify_token'] ?? '')));
+
+        if (preg_match('/^\d{5,32}$/', $appId) !== 1) {
+            throw new RuntimeException('Enter a valid numeric Meta app ID.');
+        }
+        if (preg_match('/^\d{5,64}$/', $configId) !== 1) {
+            throw new RuntimeException('Enter a valid numeric Embedded Signup v4 configuration ID.');
+        }
+        if ($appSecret === '' || strlen($appSecret) > 500) {
+            throw new RuntimeException('Enter the Meta app secret.');
+        }
+        if ($verifyToken === '' || strlen($verifyToken) < 16 || strlen($verifyToken) > 255) {
+            throw new RuntimeException('Enter a webhook verify token containing at least 16 characters.');
+        }
+        if (!$this->isValidWebhookUrl($webhookUrl)) {
+            throw new RuntimeException('Enter the public HTTPS URL for this deployment\'s WhatsApp webhook.');
+        }
+        if (preg_match('/^v\d+(?:\.\d+)?$/i', $graphVersion) !== 1) {
+            throw new RuntimeException('Enter a valid Meta Graph API version, such as v25.0.');
+        }
+
+        $updates = [
+            'embedded_signup_app_id' => $appId,
+            'embedded_signup_config_id' => $configId,
+            'webhook_url' => $webhookUrl,
+            'graph_version' => $graphVersion,
+        ];
+        if ($submittedAppSecret !== '') $updates['app_secret'] = $submittedAppSecret;
+        if ($submittedVerifyToken !== '') $updates['verify_token'] = $submittedVerifyToken;
+        $this->upsertSettings($updates);
+
         return $this->settingsResponse($this->settingsRow());
     }
 
@@ -80,21 +141,21 @@ final class WhatsAppApi extends BaseService
             throw new RuntimeException('WhatsApp returned an invalid phone connection. Please open the login window again.');
         }
 
-        $appId = trim((string) ($this->config->get('WHATSAPP_EMBEDDED_SIGNUP_APP_ID', '') ?? ''));
-        $configId = trim((string) ($this->config->get('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID', '') ?? ''));
-        $appSecret = trim((string) ($this->config->get('WHATSAPP_APP_SECRET', '') ?? ''));
+        $existing = $this->settingsRow() ?? [];
+        $appId = trim((string) ($existing['embedded_signup_app_id'] ?? ''));
+        $configId = trim((string) ($existing['embedded_signup_config_id'] ?? ''));
+        $appSecret = trim((string) ($existing['app_secret'] ?? ''));
         if ($appId === '' || $configId === '' || $appSecret === '') {
             throw new RuntimeException('WhatsApp login is not enabled on this server yet. Ask the developer to finish the Meta app configuration.');
         }
 
-        $existing = $this->settingsRow() ?? [];
-        $verifyToken = trim((string) ($existing['verify_token'] ?? ($this->config->get('WHATSAPP_VERIFY_TOKEN', '') ?? '')));
-        $webhookUrl = $this->webhookUrl();
+        $verifyToken = trim((string) ($existing['verify_token'] ?? ''));
+        $webhookUrl = $this->webhookUrl($existing);
         if ($verifyToken === '' || !$this->isValidWebhookUrl($webhookUrl)) {
             throw new RuntimeException('WhatsApp login requires a public HTTPS webhook and verify token. Ask the developer to finish the server configuration.');
         }
 
-        $graphVersion = $this->normalizeGraphVersion($this->config->get('WHATSAPP_GRAPH_VERSION', self::DEFAULT_GRAPH_VERSION));
+        $graphVersion = $this->normalizeGraphVersion($existing['graph_version'] ?? self::DEFAULT_GRAPH_VERSION);
         $tokenResponse = $this->graphRequestWithToken('GET', '/oauth/access_token', null, null, $graphVersion, [
             'client_id' => $appId,
             'client_secret' => $appSecret,
@@ -607,16 +668,20 @@ final class WhatsAppApi extends BaseService
             'access_token' => $this->config->get('WHATSAPP_ACCESS_TOKEN'),
             'phone_number_id' => $this->config->get('WHATSAPP_PHONE_NUMBER_ID'),
             'business_account_id' => $this->config->get('WHATSAPP_BUSINESS_ACCOUNT_ID'),
+            'embedded_signup_app_id' => $this->config->get('WHATSAPP_EMBEDDED_SIGNUP_APP_ID'),
+            'embedded_signup_config_id' => $this->config->get('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID'),
             'verify_token' => $this->config->get('WHATSAPP_VERIFY_TOKEN'),
             'app_secret' => $this->config->get('WHATSAPP_APP_SECRET'),
-            'graph_version' => $this->config->get('WHATSAPP_GRAPH_VERSION', self::DEFAULT_GRAPH_VERSION),
+            'webhook_url' => $this->config->get('WHATSAPP_WEBHOOK_URL'),
+            'graph_version' => $this->config->get('WHATSAPP_GRAPH_VERSION'),
         ];
         if ($row === null) {
             return array_filter($envValues, static fn($value): bool => $value !== null && trim((string) $value) !== '') === [] ? null : $envValues;
         }
         foreach ($envValues as $key => $value) {
             if ($value === null || trim((string) $value) === '') continue;
-            if (in_array($key, ['app_secret', 'graph_version'], true) || trim((string) ($row[$key] ?? '')) === '') {
+            if (in_array($key, ['embedded_signup_app_id', 'embedded_signup_config_id', 'verify_token', 'app_secret', 'webhook_url', 'graph_version'], true)
+                || trim((string) ($row[$key] ?? '')) === '') {
                 $row[$key] = $value;
             }
         }
@@ -627,12 +692,22 @@ final class WhatsAppApi extends BaseService
     private function settingsResponse(?array $row): array
     {
         $row = $row ?? [];
-        $appId = trim((string) ($this->config->get('WHATSAPP_EMBEDDED_SIGNUP_APP_ID', '') ?? ''));
-        $configId = trim((string) ($this->config->get('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID', '') ?? ''));
+        $appId = trim((string) ($row['embedded_signup_app_id'] ?? ''));
+        $configId = trim((string) ($row['embedded_signup_config_id'] ?? ''));
         $appSecret = trim((string) ($row['app_secret'] ?? ''));
         $verifyToken = trim((string) ($row['verify_token'] ?? ''));
-        $webhookUrl = $this->webhookUrl();
+        $webhookUrl = $this->webhookUrl($row);
         $webhookReady = $verifyToken !== '' && $appSecret !== '' && $this->isValidWebhookUrl($webhookUrl);
+        $embeddedSignupMissing = [];
+        if ($appId === '') $embeddedSignupMissing[] = 'Meta app ID';
+        if ($configId === '') $embeddedSignupMissing[] = 'Embedded Signup v4 configuration ID';
+        if ($appSecret === '') $embeddedSignupMissing[] = 'Meta app secret';
+        if ($verifyToken === '') $embeddedSignupMissing[] = 'webhook verify token';
+        if (!$this->isValidWebhookUrl($webhookUrl)) $embeddedSignupMissing[] = 'public HTTPS webhook URL';
+        $configured = $this->isConfigured($row);
+        $isCoexistence = $configured
+            && !empty($row['is_on_biz_app'])
+            && strtoupper(trim((string) ($row['platform_type'] ?? ''))) === 'CLOUD_API';
         return [
             // Never return provider secrets or business tokens to the browser.
             'accessToken' => '',
@@ -642,6 +717,7 @@ final class WhatsAppApi extends BaseService
             'appSecret' => '',
             'hasAccessToken' => trim((string) ($row['access_token'] ?? '')) !== '',
             'hasAppSecret' => $appSecret !== '',
+            'hasVerifyToken' => $verifyToken !== '',
             'graphVersion' => $this->normalizeGraphVersion($row['graph_version'] ?? self::DEFAULT_GRAPH_VERSION),
             'displayPhoneNumber' => (string) ($row['display_phone_number'] ?? ''),
             'verifiedName' => (string) ($row['verified_name'] ?? ''),
@@ -649,14 +725,17 @@ final class WhatsAppApi extends BaseService
             'platformType' => (string) ($row['platform_type'] ?? ''),
             'isOnBizApp' => !empty($row['is_on_biz_app']),
             'connectionStatus' => (string) ($row['connection_status'] ?? ($this->isConfigured($row) ? 'cloud_api_only' : 'disconnected')),
-            'embeddedSignupAvailable' => $appId !== '' && $configId !== '' && $webhookReady,
+            'embeddedSignupAvailable' => $embeddedSignupMissing === [],
+            'embeddedSignupMissing' => $embeddedSignupMissing,
             'embeddedSignupAppId' => $appId,
             'embeddedSignupConfigId' => $configId,
+            'embeddedSignupEnvironmentFields' => $this->embeddedSignupEnvironmentFields(),
             'contactsSyncRequested' => trim((string) ($row['contacts_sync_request_id'] ?? '')) !== '' || !empty($row['contacts_sync_requested_at']),
             'historySyncRequested' => trim((string) ($row['history_sync_request_id'] ?? '')) !== '' || !empty($row['history_sync_requested_at']),
             'lastWebhookAt' => $this->toIso($row['last_webhook_at'] ?? null),
             'webhookUrl' => $webhookUrl,
-            'configured' => $this->isConfigured($row),
+            'configured' => $configured,
+            'connectionMode' => $isCoexistence ? 'coexistence' : ($configured ? 'cloud_api' : 'none'),
             'webhookConfigured' => $webhookReady,
             'welcomeMessage' => (string) ($row['welcome_message'] ?? ''),
             'getStartedEnabled' => !empty($row['get_started_enabled']),
@@ -665,9 +744,13 @@ final class WhatsAppApi extends BaseService
         ];
     }
 
-    private function webhookUrl(): string
+    /** @param array<string, mixed>|null $settings */
+    private function webhookUrl(?array $settings = null): string
     {
-        return trim((string) ($this->config->get('WHATSAPP_WEBHOOK_URL', '') ?? '')) ?: $this->inferredWebhookUrl();
+        $environmentUrl = trim((string) ($this->config->get('WHATSAPP_WEBHOOK_URL', '') ?? ''));
+        if ($environmentUrl !== '') return $environmentUrl;
+        $savedUrl = trim((string) (($settings ?? $this->settingsRow())['webhook_url'] ?? ''));
+        return $savedUrl !== '' ? $savedUrl : $this->inferredWebhookUrl();
     }
 
     private function inferredWebhookUrl(): string
@@ -681,9 +764,26 @@ final class WhatsAppApi extends BaseService
 
     private function isValidWebhookUrl(string $url): bool
     {
-        return strlen($url) <= 200
+        return strlen($url) <= 500
             && filter_var($url, FILTER_VALIDATE_URL) !== false
             && strtolower((string) parse_url($url, PHP_URL_SCHEME)) === 'https';
+    }
+
+    /** @return array<int, string> */
+    private function embeddedSignupEnvironmentFields(): array
+    {
+        $fields = [];
+        foreach ([
+            'embeddedSignupAppId' => 'WHATSAPP_EMBEDDED_SIGNUP_APP_ID',
+            'embeddedSignupConfigId' => 'WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID',
+            'appSecret' => 'WHATSAPP_APP_SECRET',
+            'webhookUrl' => 'WHATSAPP_WEBHOOK_URL',
+            'verifyToken' => 'WHATSAPP_VERIFY_TOKEN',
+            'graphVersion' => 'WHATSAPP_GRAPH_VERSION',
+        ] as $field => $configKey) {
+            if (trim((string) ($this->config->get($configKey, '') ?? '')) !== '') $fields[] = $field;
+        }
+        return $fields;
     }
 
     private function normalizeGraphVersion($value): string
@@ -1114,7 +1214,7 @@ final class WhatsAppApi extends BaseService
 
     private function ensureTables(): void
     {
-        if (!$this->tableExists('whatsapp_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_settings (id VARCHAR(64) NOT NULL, access_token TEXT NULL, phone_number_id VARCHAR(64) NULL, business_account_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0', display_phone_number VARCHAR(64) NULL, verified_name VARCHAR(191) NULL, quality_rating VARCHAR(32) NULL, platform_type VARCHAR(32) NULL, is_on_biz_app TINYINT(1) NULL, connection_status VARCHAR(32) NOT NULL DEFAULT 'disconnected', contacts_sync_request_id VARCHAR(255) NULL, contacts_sync_requested_at DATETIME NULL, history_sync_request_id VARCHAR(255) NULL, history_sync_requested_at DATETIME NULL, last_webhook_at DATETIME NULL, welcome_message TEXT NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        if (!$this->tableExists('whatsapp_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_settings (id VARCHAR(64) NOT NULL, access_token TEXT NULL, phone_number_id VARCHAR(64) NULL, business_account_id VARCHAR(64) NULL, embedded_signup_app_id VARCHAR(64) NULL, embedded_signup_config_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, webhook_url VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0', display_phone_number VARCHAR(64) NULL, verified_name VARCHAR(191) NULL, quality_rating VARCHAR(32) NULL, platform_type VARCHAR(32) NULL, is_on_biz_app TINYINT(1) NULL, connection_status VARCHAR(32) NOT NULL DEFAULT 'disconnected', contacts_sync_request_id VARCHAR(255) NULL, contacts_sync_requested_at DATETIME NULL, history_sync_request_id VARCHAR(255) NULL, history_sync_requested_at DATETIME NULL, last_webhook_at DATETIME NULL, welcome_message TEXT NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('whatsapp_contacts')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_contacts (id VARCHAR(64) NOT NULL, wa_id VARCHAR(32) NOT NULL, phone_number VARCHAR(32) NOT NULL, name VARCHAR(191) NULL, profile_name VARCHAR(191) NULL, unread_count INT NOT NULL DEFAULT 0, last_message_preview VARCHAR(500) NULL, last_message_type VARCHAR(32) NULL, last_message_at DATETIME NULL, welcome_sent_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_whatsapp_contacts_wa_id (wa_id), KEY idx_whatsapp_contacts_last_message_at (last_message_at), KEY idx_whatsapp_contacts_unread (unread_count), KEY idx_whatsapp_contacts_welcome_sent (welcome_sent_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('whatsapp_messages')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_messages (id VARCHAR(64) NOT NULL, contact_id VARCHAR(64) NOT NULL, wa_message_id VARCHAR(255) NULL, direction VARCHAR(16) NOT NULL, message_type VARCHAR(32) NOT NULL DEFAULT 'text', message_text LONGTEXT NULL, caption TEXT NULL, media_id VARCHAR(255) NULL, media_url VARCHAR(500) NULL, media_mime_type VARCHAR(127) NULL, file_name VARCHAR(255) NULL, status VARCHAR(32) NOT NULL DEFAULT 'received', error_code VARCHAR(64) NULL, error_message TEXT NULL, reply_to_message_id VARCHAR(255) NULL, payload_json LONGTEXT NULL, message_at DATETIME NOT NULL, created_by VARCHAR(64) NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_whatsapp_messages_wa_message_id (wa_message_id), KEY idx_whatsapp_messages_contact_time (contact_id, message_at), KEY idx_whatsapp_messages_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->columnExists('whatsapp_settings', 'welcome_message')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN welcome_message TEXT NULL AFTER quality_rating');
@@ -1128,6 +1228,19 @@ final class WhatsAppApi extends BaseService
         if (!$this->columnExists('whatsapp_settings', 'history_sync_request_id')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN history_sync_request_id VARCHAR(255) NULL AFTER contacts_sync_requested_at');
         if (!$this->columnExists('whatsapp_settings', 'history_sync_requested_at')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN history_sync_requested_at DATETIME NULL AFTER history_sync_request_id');
         if (!$this->columnExists('whatsapp_settings', 'last_webhook_at')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN last_webhook_at DATETIME NULL AFTER history_sync_requested_at');
+        if (!$this->columnExists('whatsapp_settings', 'embedded_signup_app_id')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN embedded_signup_app_id VARCHAR(64) NULL AFTER business_account_id');
+        if (!$this->columnExists('whatsapp_settings', 'embedded_signup_config_id')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN embedded_signup_config_id VARCHAR(64) NULL AFTER embedded_signup_app_id');
+        if (!$this->columnExists('whatsapp_settings', 'webhook_url')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN webhook_url VARCHAR(500) NULL AFTER app_secret');
         if (!$this->columnExists('whatsapp_contacts', 'welcome_sent_at')) $this->database->execute('ALTER TABLE whatsapp_contacts ADD COLUMN welcome_sent_at DATETIME NULL AFTER last_message_at');
+    }
+
+    /** @return array<string, mixed> */
+    private function requireDeveloperUser(): array
+    {
+        $user = $this->currentUser();
+        if (trim((string) ($user['role'] ?? '')) !== 'Developer') {
+            throw new ApiException('Developer access required.', 403, 'DEVELOPER_ACCESS_REQUIRED');
+        }
+        return $user;
     }
 }

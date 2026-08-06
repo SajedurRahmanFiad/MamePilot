@@ -96,6 +96,7 @@ final class ServiceLifecycle
         'sendWhatsAppTemplate',
         'testWhatsAppConnection',
         'updateWhatsAppSettings',
+        'updateWhatsAppEmbeddedSignupConfiguration',
         'connectWhatsAppEmbeddedSignup',
         'syncWhatsAppBusinessAppData',
         'updateWhatsAppWelcomeExperience',
