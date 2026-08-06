@@ -2040,6 +2040,21 @@ final class CourierApi extends BaseService
         if (!in_array($provider, ['carrybee', 'paperfly', 'steadfast', 'pathao'], true)) {
             throw new RuntimeException('Unsupported courier webhook provider.');
         }
+
+        // Carrybee webhook integration handshake — bypasses secret verification
+        // because this event fires before the user has stored the secret in our app.
+        if ($provider === 'carrybee') {
+            $earlyPayload = json_decode($rawBody, true);
+            if (is_array($earlyPayload) && ($earlyPayload['event'] ?? '') === 'webhook.integration') {
+                return [
+                    'status' => 'success',
+                    'provider' => 'carrybee',
+                    'event' => 'webhook.integration',
+                    'integrationVerified' => true,
+                ];
+            }
+        }
+
         if (!$this->tableExists('courier_webhook_events') || !$this->tableExists('courier_order_charges')) {
             throw new RuntimeException('Courier webhook database upgrade has not been applied.');
         }
