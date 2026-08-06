@@ -3739,7 +3739,7 @@ final class MasterDataApi extends BaseService
             'steadfast_base_url' => $steadfast['baseUrl'] ?? $current['steadfast']['baseUrl'],
             'steadfast_api_key' => $steadfast['apiKey'] ?? $current['steadfast']['apiKey'],
             'steadfast_secret_key' => $steadfast['secretKey'] ?? $current['steadfast']['secretKey'],
-            'steadfast_invoice' => $invoice !== '' ? $invoice : null,
+            'steadfast_invoice' => $invoice,
             'steadfast_default_account_id' => $this->nullableString($steadfast['defaultAccountId'] ?? $current['steadfast']['defaultAccountId'] ?? null),
             'steadfast_default_expense_category_id' => $this->nullableString($steadfast['defaultExpenseCategoryId'] ?? $current['steadfast']['defaultExpenseCategoryId'] ?? null),
             'steadfast_default_income_category_id' => $this->nullableString($steadfast['defaultIncomeCategoryId'] ?? $current['steadfast']['defaultIncomeCategoryId'] ?? null),
