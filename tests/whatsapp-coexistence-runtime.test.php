@@ -113,6 +113,20 @@ try {
     $whatsapp->handleWebhook($disconnectRaw, 'sha256=' . hash_hmac('sha256', $disconnectRaw, 'coexistence-app-secret'));
     $disconnectedSettings = $whatsapp->fetchWhatsAppSettings();
     whatsappCoexistenceAssert(($disconnectedSettings['connectionStatus'] ?? '') === 'disconnected' && empty($disconnectedSettings['isOnBizApp']), 'WhatsApp Business app disconnect state was not persisted.');
+
+    $reconnectPayload = ['entry' => [['changes' => [['field' => 'account_update', 'value' => ['event' => 'ACCOUNT_RECONNECTED']]]]]];
+    $reconnectRaw = json_encode($reconnectPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($reconnectRaw)) throw new RuntimeException('Could not encode WhatsApp reconnect payload.');
+    $whatsapp->handleWebhook($reconnectRaw, 'sha256=' . hash_hmac('sha256', $reconnectRaw, 'coexistence-app-secret'));
+    $reconnectedSettings = $whatsapp->fetchWhatsAppSettings();
+    whatsappCoexistenceAssert(($reconnectedSettings['connectionStatus'] ?? '') === 'connected' && !empty($reconnectedSettings['isOnBizApp']), 'WhatsApp Business app reconnect state was not persisted.');
+
+    $offboardPayload = ['entry' => [['changes' => [['field' => 'account_update', 'value' => ['event' => 'ACCOUNT_OFFBOARDED']]]]]];
+    $offboardRaw = json_encode($offboardPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($offboardRaw)) throw new RuntimeException('Could not encode WhatsApp offboard payload.');
+    $whatsapp->handleWebhook($offboardRaw, 'sha256=' . hash_hmac('sha256', $offboardRaw, 'coexistence-app-secret'));
+    $offboardedSettings = $whatsapp->fetchWhatsAppSettings();
+    whatsappCoexistenceAssert(($offboardedSettings['connectionStatus'] ?? '') === 'disconnected' && empty($offboardedSettings['isOnBizApp']), 'WhatsApp Business app offboarding state was not persisted.');
     $pdo->rollBack();
     echo "WhatsApp Coexistence runtime checks passed.\n";
 } catch (Throwable $exception) {
