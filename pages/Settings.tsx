@@ -166,10 +166,10 @@ const SettingsPage: React.FC = () => {
   const [courierSettings, setCourierSettings] = useState<CourierSettings>({
     automaticallyDeductShippingCosts: false,
     automaticallyMarkPaidAfterDelivery: false,
-    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '' },
-    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
-    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
-    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
+    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     fraudChecker: { apiKey: '' },
   });
   const courierWebhookEndpoint = (provider: string) => {
@@ -2212,7 +2212,7 @@ const SettingsPage: React.FC = () => {
                     <span className="block mt-1 text-xs leading-5 text-gray-600">When any configured courier confirms delivery, MamePilot records the remaining order value as an Income payment and marks the order fully paid. Leave this off to keep payments manual.</span>
                   </span>
                 </label>
-                <p className="text-[11px] leading-5 text-blue-800">The default account and payment method from General Settings are used. A fallback account is used only when no default account is selected.</p>
+                <p className="text-[11px] leading-5 text-blue-800">Configure default account, category, and payment method per courier below. If left blank, the defaults from General Settings are used as fallback.</p>
               </section>
               {!canUseSteadfast && !canUseCarryBee && !canUsePaperfly && !canUsePathao && (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm font-medium text-gray-500">
@@ -2254,21 +2254,72 @@ const SettingsPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">API Key</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={courierSettings.steadfast.apiKey}
                         onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, apiKey: e.target.value}})}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Secret Key</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={courierSettings.steadfast.secretKey}
                         onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, secretKey: e.target.value}})}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
                       />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-bold text-gray-700">Steadfast Defaults</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
+                      <select
+                        value={courierSettings.steadfast.defaultAccountId}
+                        onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, defaultAccountId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
+                      <select
+                        value={courierSettings.steadfast.defaultPaymentMethod}
+                        onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, defaultPaymentMethod: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expense Category (Shipping Costs)</label>
+                      <select
+                        value={courierSettings.steadfast.defaultExpenseCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, defaultExpenseCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Shipping Costs (default)</option>
+                        {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Income Category (Delivery Payment)</label>
+                      <select
+                        value={courierSettings.steadfast.defaultIncomeCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, defaultIncomeCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Sales Income (default)</option>
+                        {categories.filter(c => c.type === 'Income').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -2342,6 +2393,57 @@ const SettingsPage: React.FC = () => {
                         {carryBeeStores.map(store => (
                           <option key={store.id} value={store.id}>{store.name}</option>
                         ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-bold text-gray-700">CarryBee Defaults</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
+                      <select
+                        value={courierSettings.carryBee.defaultAccountId}
+                        onChange={e => setCourierSettings({...courierSettings, carryBee: {...courierSettings.carryBee, defaultAccountId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
+                      <select
+                        value={courierSettings.carryBee.defaultPaymentMethod}
+                        onChange={e => setCourierSettings({...courierSettings, carryBee: {...courierSettings.carryBee, defaultPaymentMethod: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expense Category (Shipping Costs)</label>
+                      <select
+                        value={courierSettings.carryBee.defaultExpenseCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, carryBee: {...courierSettings.carryBee, defaultExpenseCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Shipping Costs (default)</option>
+                        {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Income Category (Delivery Payment)</label>
+                      <select
+                        value={courierSettings.carryBee.defaultIncomeCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, carryBee: {...courierSettings.carryBee, defaultIncomeCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Sales Income (default)</option>
+                        {categories.filter(c => c.type === 'Income').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -2427,6 +2529,57 @@ const SettingsPage: React.FC = () => {
                       allowDecimals={true}
                       decimalPlaces={2}
                     />
+                  </div>
+                </div>
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-bold text-gray-700">Paperfly Defaults</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
+                      <select
+                        value={courierSettings.paperfly.defaultAccountId}
+                        onChange={e => setCourierSettings({...courierSettings, paperfly: {...courierSettings.paperfly, defaultAccountId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
+                      <select
+                        value={courierSettings.paperfly.defaultPaymentMethod}
+                        onChange={e => setCourierSettings({...courierSettings, paperfly: {...courierSettings.paperfly, defaultPaymentMethod: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expense Category (Shipping Costs)</label>
+                      <select
+                        value={courierSettings.paperfly.defaultExpenseCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, paperfly: {...courierSettings.paperfly, defaultExpenseCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Shipping Costs (default)</option>
+                        {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Income Category (Delivery Payment)</label>
+                      <select
+                        value={courierSettings.paperfly.defaultIncomeCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, paperfly: {...courierSettings.paperfly, defaultIncomeCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Sales Income (default)</option>
+                        {categories.filter(c => c.type === 'Income').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -2572,6 +2725,57 @@ const SettingsPage: React.FC = () => {
                       </p>
                     </div>
                   )}
+                </div>
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <h4 className="text-sm font-bold text-gray-700">Pathao Defaults</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Account</label>
+                      <select
+                        value={courierSettings.pathao.defaultAccountId}
+                        onChange={e => setCourierSettings({...courierSettings, pathao: {...courierSettings.pathao, defaultAccountId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Payment Method</label>
+                      <select
+                        value={courierSettings.pathao.defaultPaymentMethod}
+                        onChange={e => setCourierSettings({...courierSettings, pathao: {...courierSettings.pathao, defaultPaymentMethod: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Use system default</option>
+                        {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expense Category (Shipping Costs)</label>
+                      <select
+                        value={courierSettings.pathao.defaultExpenseCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, pathao: {...courierSettings.pathao, defaultExpenseCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Shipping Costs (default)</option>
+                        {categories.filter(c => c.type === 'Expense').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Income Category (Delivery Payment)</label>
+                      <select
+                        value={courierSettings.pathao.defaultIncomeCategoryId}
+                        onChange={e => setCourierSettings({...courierSettings, pathao: {...courierSettings.pathao, defaultIncomeCategoryId: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      >
+                        <option value="">Sales Income (default)</option>
+                        {categories.filter(c => c.type === 'Income').map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </section>
               )}

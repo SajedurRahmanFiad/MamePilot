@@ -2252,6 +2252,14 @@ final class CourierApi extends BaseService
             $totalCharge = round($directTotal, 2);
         }
 
+        // Collected amount from courier: Steadfast uses cod_amount, others use collected_amount.
+        $collectedAmount = 0.0;
+        if ($provider === 'steadfast') {
+            $collectedAmount = $this->firstWebhookNumber($containers, ['cod_amount']);
+        } else {
+            $collectedAmount = $this->firstWebhookNumber($containers, ['collected_amount']);
+        }
+
         $rawStatus = $this->firstWebhookValue($containers, [
             'order_status_slug', 'order_status', 'delivery_status', 'status', 'tracking_status',
         ]);
@@ -2265,6 +2273,7 @@ final class CourierApi extends BaseService
             'codFee' => max(0, round($codFee, 2)),
             'deliveryFee' => max(0, round($deliveryFee, 2)),
             'totalCharge' => max(0, $totalCharge),
+            'collectedAmount' => max(0, round($collectedAmount, 2)),
             'currency' => strtoupper($this->firstWebhookValue($containers, ['currency'])) ?: 'BDT',
             'rawStatus' => $rawStatus !== '' ? $rawStatus : $eventName,
             'mappedStatus' => $mappedStatus,
@@ -2454,11 +2463,11 @@ final class CourierApi extends BaseService
         $this->database->execute(
             "INSERT INTO courier_order_charges (
                 id, provider, charge_key, order_id, consignment_id, merchant_reference,
-                cod_fee, delivery_fee, total_charge, currency, source_event_id,
+                cod_fee, delivery_fee, total_charge, collected_amount, currency, source_event_id,
                 provider_updated_at, created_at, updated_at
              ) VALUES (
                 :id, :provider, :charge_key, :order_id, :consignment_id, :merchant_reference,
-                :cod_fee, :delivery_fee, :total_charge, :currency, :source_event_id,
+                :cod_fee, :delivery_fee, :total_charge, :collected_amount, :currency, :source_event_id,
                 :provider_updated_at, :created_at, :updated_at
              ) ON DUPLICATE KEY UPDATE
                 order_id = COALESCE(VALUES(order_id), order_id),
@@ -2467,6 +2476,7 @@ final class CourierApi extends BaseService
                 cod_fee = IF(VALUES(cod_fee) > 0, VALUES(cod_fee), cod_fee),
                 delivery_fee = IF(VALUES(delivery_fee) > 0, VALUES(delivery_fee), delivery_fee),
                 total_charge = IF(VALUES(total_charge) > 0, VALUES(total_charge), total_charge),
+                collected_amount = IF(VALUES(collected_amount) > 0, VALUES(collected_amount), collected_amount),
                 currency = VALUES(currency), source_event_id = VALUES(source_event_id),
                 provider_updated_at = COALESCE(VALUES(provider_updated_at), provider_updated_at),
                 updated_at = VALUES(updated_at)",
@@ -2480,6 +2490,7 @@ final class CourierApi extends BaseService
                 ':cod_fee' => $this->formatMoney($details['codFee']),
                 ':delivery_fee' => $this->formatMoney($details['deliveryFee']),
                 ':total_charge' => $this->formatMoney($details['totalCharge']),
+                ':collected_amount' => $this->formatMoney($details['collectedAmount']),
                 ':currency' => $details['currency'],
                 ':source_event_id' => $eventId,
                 ':provider_updated_at' => $details['eventAt'],

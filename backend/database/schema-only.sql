@@ -376,6 +376,22 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
   pathao_webhook_secret VARCHAR(500) NULL,
+  steadfast_default_account_id VARCHAR(64) NULL,
+  steadfast_default_expense_category_id VARCHAR(64) NULL,
+  steadfast_default_income_category_id VARCHAR(64) NULL,
+  steadfast_default_payment_method VARCHAR(255) NULL,
+  carrybee_default_account_id VARCHAR(64) NULL,
+  carrybee_default_expense_category_id VARCHAR(64) NULL,
+  carrybee_default_income_category_id VARCHAR(64) NULL,
+  carrybee_default_payment_method VARCHAR(255) NULL,
+  paperfly_default_account_id VARCHAR(64) NULL,
+  paperfly_default_expense_category_id VARCHAR(64) NULL,
+  paperfly_default_income_category_id VARCHAR(64) NULL,
+  paperfly_default_payment_method VARCHAR(255) NULL,
+  pathao_default_account_id VARCHAR(64) NULL,
+  pathao_default_expense_category_id VARCHAR(64) NULL,
+  pathao_default_income_category_id VARCHAR(64) NULL,
+  pathao_default_payment_method VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id)
@@ -1094,6 +1110,7 @@ CREATE TABLE IF NOT EXISTS `courier_order_charges` (
   cod_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   delivery_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   total_charge DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  collected_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   currency VARCHAR(8) NOT NULL DEFAULT 'BDT',
   source_event_id VARCHAR(64) NULL,
   provider_updated_at DATETIME NULL,
@@ -2781,6 +2798,26 @@ FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by
 WHERE o.deleted_at IS NULL;
+
+-- Migration: 2026-08-06_courier_per_courier_defaults.sql
+CALL sp_add_col('courier_settings', 'steadfast_default_account_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'steadfast_default_expense_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'steadfast_default_income_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'steadfast_default_payment_method', 'VARCHAR(255) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_default_account_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_default_expense_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_default_income_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_default_payment_method', 'VARCHAR(255) NULL');
+CALL sp_add_col('courier_settings', 'paperfly_default_account_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'paperfly_default_expense_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'paperfly_default_income_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'paperfly_default_payment_method', 'VARCHAR(255) NULL');
+CALL sp_add_col('courier_settings', 'pathao_default_account_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'pathao_default_expense_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'pathao_default_income_category_id', 'VARCHAR(64) NULL');
+CALL sp_add_col('courier_settings', 'pathao_default_payment_method', 'VARCHAR(255) NULL');
+
+CALL sp_add_col('courier_order_charges', 'collected_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
 
 -- Migration: 2026-08-06_whatsapp_embedded_signup_coexistence.sql
 CALL sp_add_col('whatsapp_settings', 'platform_type', 'VARCHAR(32) NULL AFTER quality_rating');

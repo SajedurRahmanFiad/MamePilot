@@ -419,8 +419,8 @@ export interface VoiceSurveyIntegrationSettings {
 export interface CourierSettings {
   automaticallyDeductShippingCosts: boolean;
   automaticallyMarkPaidAfterDelivery: boolean;
-  steadfast: { baseUrl: string; apiKey: string; secretKey: string; invoice: string };
-  carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; webhookSignature: string };
+  steadfast: { baseUrl: string; apiKey: string; secretKey: string; invoice: string; defaultAccountId: string; defaultExpenseCategoryId: string; defaultIncomeCategoryId: string; defaultPaymentMethod: string };
+  carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; webhookSignature: string; defaultAccountId: string; defaultExpenseCategoryId: string; defaultIncomeCategoryId: string; defaultPaymentMethod: string };
   paperfly: {
     baseUrl: string;
     username: string;
@@ -429,6 +429,10 @@ export interface CourierSettings {
     defaultShopName: string;
     maxWeightKg: number;
     webhookSecret: string;
+    defaultAccountId: string;
+    defaultExpenseCategoryId: string;
+    defaultIncomeCategoryId: string;
+    defaultPaymentMethod: string;
   };
   pathao: {
     baseUrl: string;
@@ -446,6 +450,10 @@ export interface CourierSettings {
     tokenExpiresAt: string;
     webhookHeader: string;
     webhookSecret: string;
+    defaultAccountId: string;
+    defaultExpenseCategoryId: string;
+    defaultIncomeCategoryId: string;
+    defaultPaymentMethod: string;
   };
   fraudChecker: FraudCheckerSettings;
 }

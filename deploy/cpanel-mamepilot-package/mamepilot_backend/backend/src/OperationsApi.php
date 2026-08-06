@@ -4251,14 +4251,14 @@ final class OperationsApi extends BaseService
         if (!str_contains($completionHistory, 'marked delivered automatically from')) {
             return null;
         }
-        $knownCourier = false;
+        $provider = '';
         foreach (['carrybee', 'paperfly', 'steadfast', 'pathao'] as $courier) {
             if (str_contains($completionHistory, $courier)) {
-                $knownCourier = true;
+                $provider = $courier;
                 break;
             }
         }
-        if (!$knownCourier) {
+        if ($provider === '') {
             return null;
         }
 
@@ -4269,15 +4269,41 @@ final class OperationsApi extends BaseService
             return null;
         }
 
-        $remainingDue = round(max(0.0, $orderTotal - $paidAmount), 2);
-        if ($remainingDue <= 0) {
+        // Use the collected amount from the courier webhook (cod_amount for Steadfast,
+        // collected_amount for others) instead of the remaining order balance.
+        $orderId = trim((string) ($orderRow['id'] ?? ''));
+        $collectedAmount = 0.0;
+        if ($orderId !== '' && $this->tableExists('courier_order_charges')) {
+            $charge = $this->database->fetchOne(
+                'SELECT collected_amount FROM courier_order_charges
+                 WHERE order_id = :order_id AND provider = :provider
+                 ORDER BY updated_at DESC, created_at DESC LIMIT 1',
+                [':order_id' => $orderId, ':provider' => $provider]
+            );
+            $collectedAmount = round((float) ($charge['collected_amount'] ?? 0), 2);
+        }
+
+        // Fall back to remainingDue when no collected_amount is available from the webhook.
+        $paymentAmount = $collectedAmount > 0
+            ? $collectedAmount
+            : round(max(0.0, $orderTotal - $paidAmount), 2);
+        if ($paymentAmount <= 0) {
             return null;
         }
 
-        $defaults = $this->database->fetchOne(
+        // Use per-courier defaults; fall back to system defaults, then to the oldest account.
+        $prefix = $provider;
+        $courierSettings = $this->database->fetchOne(
+            "SELECT {$prefix}_default_account_id, {$prefix}_default_income_category_id, {$prefix}_default_payment_method
+             FROM courier_settings LIMIT 1"
+        ) ?? [];
+        $systemDefaults = $this->database->fetchOne(
             'SELECT default_account_id, default_payment_method, income_category_id FROM system_defaults LIMIT 1'
         ) ?? [];
-        $accountId = trim((string) ($defaults['default_account_id'] ?? ''));
+        $accountId = trim((string) ($courierSettings["{$prefix}_default_account_id"] ?? ''));
+        if ($accountId === '') {
+            $accountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+        }
         if ($accountId === '' || $this->database->fetchOne('SELECT id FROM accounts WHERE id = :id LIMIT 1', [':id' => $accountId]) === null) {
             $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
             $accountId = trim((string) ($fallbackAccount['id'] ?? ''));
@@ -4286,16 +4312,17 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Configure an account before automatic courier delivery payments can be recorded.');
         }
 
-        $paymentMethod = trim((string) ($defaults['default_payment_method'] ?? '')) ?: 'Cash';
-        $incomeCategory = trim((string) ($defaults['income_category_id'] ?? '')) ?: 'income_sales';
-        $orderId = trim((string) ($orderRow['id'] ?? ''));
+        $paymentMethod = trim((string) ($courierSettings["{$prefix}_default_payment_method"] ?? ''))
+            ?: (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
+        $incomeCategory = trim((string) ($courierSettings["{$prefix}_default_income_category_id"] ?? ''))
+            ?: (trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_sales');
         $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
         $transaction = $this->createTransactionRecord([
             'date' => $this->database->nowUtc(),
             'type' => 'Income',
             'category' => $incomeCategory,
             'accountId' => $accountId,
-            'amount' => $remainingDue,
+            'amount' => $paymentAmount,
             'description' => "Automatic courier delivery payment for Order #{$orderNumber}",
             'referenceId' => $orderId,
             'contactId' => (string) ($orderRow['customer_id'] ?? ''),
@@ -4304,8 +4331,8 @@ final class OperationsApi extends BaseService
         ], (string) ($actor['id'] ?? ''), $actor);
 
         return [
-            'paidAmount' => $paidAmount + $remainingDue,
-            'historyText' => 'Automatically marked paid after courier delivery: ' . $this->formatMoney($remainingDue) . '.',
+            'paidAmount' => $paidAmount + $paymentAmount,
+            'historyText' => 'Automatically marked paid after courier delivery: ' . $this->formatMoney($paymentAmount) . '.',
             'transaction' => $transaction,
         ];
     }
@@ -9192,10 +9219,20 @@ final class OperationsApi extends BaseService
             return null;
         }
 
-        $defaults = $this->database->fetchOne(
+        // Use per-courier defaults; fall back to system defaults, then to the oldest account.
+        $prefix = $provider;
+        $courierSettings = $this->database->fetchOne(
+            "SELECT {$prefix}_default_account_id, {$prefix}_default_expense_category_id, {$prefix}_default_payment_method,
+                    automatically_deduct_shipping_costs
+             FROM courier_settings LIMIT 1"
+        ) ?? [];
+        $systemDefaults = $this->database->fetchOne(
             'SELECT default_account_id, default_payment_method FROM system_defaults LIMIT 1'
         ) ?? [];
-        $accountId = trim((string) ($defaults['default_account_id'] ?? ''));
+        $accountId = trim((string) ($courierSettings["{$prefix}_default_account_id"] ?? ''));
+        if ($accountId === '') {
+            $accountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+        }
         if ($accountId === '') {
             $fallback = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
             $accountId = trim((string) ($fallback['id'] ?? ''));
@@ -9203,14 +9240,16 @@ final class OperationsApi extends BaseService
         if ($accountId === '') {
             throw new RuntimeException('Configure an account before automatic courier expenses can be recorded.');
         }
-        $paymentMethod = trim((string) ($defaults['default_payment_method'] ?? '')) ?: 'Cash';
+        $paymentMethod = trim((string) ($courierSettings["{$prefix}_default_payment_method"] ?? ''))
+            ?: (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
+        $expenseCategory = trim((string) ($courierSettings["{$prefix}_default_expense_category_id"] ?? '')) ?: 'expense_shipping';
         $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
         $transactionId = 'courier-expense-' . substr(hash('sha256', $chargeId), 0, 48);
         $transaction = $this->createTransactionRecord([
             'id' => $transactionId,
             'date' => $recordedAt !== '' ? $recordedAt : $this->database->nowUtc(),
             'type' => 'Expense',
-            'category' => 'expense_shipping',
+            'category' => $expenseCategory,
             'accountId' => $accountId,
             'amount' => $amount,
             'description' => sprintf('Courier shipping cost (%s) for Order #%s', ucfirst($provider), $orderNumber),
