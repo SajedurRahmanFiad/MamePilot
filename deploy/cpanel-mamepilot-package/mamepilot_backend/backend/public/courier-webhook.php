@@ -55,7 +55,12 @@ try {
     $courier = new CourierApi($database, $auth, $config, $operations);
     $result = $courier->handleWebhook($provider, $rawBody, $headers);
 
-    http_response_code(200);
+    if ($provider === 'carrybee') {
+        http_response_code(202);
+        header('X-CB-Webhook-Integration-Header: 40489fe0-9386-4fc9-8e92-2b2fcb9d451c');
+    } else {
+        http_response_code(200);
+    }
     if ($provider === 'steadfast') {
         $result = array_merge([
             'status' => 'success',

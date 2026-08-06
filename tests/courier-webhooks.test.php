@@ -160,7 +160,7 @@ $nextSequence = (int) (($database->fetchOne(
     'SELECT COALESCE(MAX(order_seq), 0) + 1 AS next_sequence FROM orders'
 ) ?? [])['next_sequence'] ?? 1);
 
-$carryHeaders = ['X-Carrybee-Webhook-Signature' => 'carrybee-test-signature'];
+$carryHeaders = ['X-CB-Webhook-Integration-Header' => 'carrybee-test-signature'];
 $paperflyHeaders = ['X-Paperfly-Webhook-Secret' => 'paperfly-test-secret'];
 $steadfastHeaders = ['Authorization' => 'Bearer steadfast-test-api-key'];
 $pathaoHeaders = ['X-Test-Pathao-Secret' => 'pathao-test-secret'];
@@ -211,7 +211,7 @@ try {
 
     $minimalPayload = courierWebhookJson(['event' => 'order.picked', 'consignment_id' => 'invalid-signature-test']);
     expectCourierWebhookSignatureFailure(
-        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-Carrybee-Webhook-Signature' => 'wrong']),
+        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-CB-Webhook-Integration-Header' => 'wrong']),
         'carrybee'
     );
     expectCourierWebhookSignatureFailure(

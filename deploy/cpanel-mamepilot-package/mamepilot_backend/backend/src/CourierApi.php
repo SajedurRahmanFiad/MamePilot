@@ -2167,7 +2167,7 @@ final class CourierApi extends BaseService
         $authorization = $this->webhookHeader($headers, 'Authorization');
         if ($provider === 'carrybee') {
             $expected = trim((string) ($settings['carrybee_webhook_signature'] ?? ''));
-            $provided = $this->webhookHeader($headers, 'X-Carrybee-Webhook-Signature');
+            $provided = $this->webhookHeader($headers, 'X-CB-Webhook-Integration-Header');
         } elseif ($provider === 'steadfast') {
             $expected = trim((string) ($settings['steadfast_api_key'] ?? ''));
             $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';

@@ -2282,10 +2282,10 @@ const SettingsPage: React.FC = () => {
                   <span className="">CarryBee</span> Secrets
                 </h3>
                 <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('carrybee')}</code>. Paste the signature shown by CarryBee in the field below.</p>
+                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('carrybee')}</code>. Paste the webhook secret from the CarryBee dashboard below.</p>
                   <div className="space-y-2">
-                    <label className="font-bold uppercase tracking-widest">Webhook signature</label>
-                    <input type="password" value={courierSettings.carryBee.webhookSignature} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookSignature: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="X-Carrybee-Webhook-Signature value" />
+                    <label className="font-bold uppercase tracking-widest">Webhook secret</label>
+                    <input type="password" value={courierSettings.carryBee.webhookSignature} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookSignature: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Webhook secret from CarryBee dashboard" />
                   </div>
                 </div>
                 <div className="space-y-4">

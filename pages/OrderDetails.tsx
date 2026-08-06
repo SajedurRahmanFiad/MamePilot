@@ -478,6 +478,7 @@ const OrderDetails: React.FC = () => {
       { key: 'exchangeReturned', label: 'Exchange returned', icon: ICONS.Close, text: history.exchangeReturned, timestamp: order.statusTimestamps?.exchangeReturned },
       { key: 'exchangeCourier', label: 'Exchange courier', icon: ICONS.Courier, text: history.exchangeCourier },
       { key: 'cancelled', label: 'Cancelled', icon: ICONS.Close, text: history.cancelled, timestamp: order.statusTimestamps?.cancelled },
+      { key: 'expense', label: 'Expense', icon: ICONS.Banking, text: history.expense },
     ].filter((entry) => entry.text);
 
     const paymentLines = String(history.payment || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -583,6 +584,7 @@ const OrderDetails: React.FC = () => {
       exchangeReturned: 11,
       returned: 12,
       cancelled: 13,
+      expense: 14,
     };
 
     const entries: ActivityTimelineEntry[] = [...baseEntries, ...paymentEntries]
