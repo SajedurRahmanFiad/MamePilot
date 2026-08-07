@@ -18,6 +18,7 @@ export { Table, TableCell, TableHeader, TableBody, TableRow } from './Table';
 export { Input, Select, TextArea, NumericInput } from './Input';
 
 export { Modal, Dialog } from './Modal';
+export { CustomerCreateModal, VendorCreateModal } from './ContactCreateModal';
 
 export { DuplicateOrderModal } from './DuplicateOrderModal';
 
@@ -43,6 +44,9 @@ export { default as CarryBeeModal } from './CarryBeeModal';
 export { default as PaperflyModal } from './PaperflyModal';
 export { default as PathaoModal } from './PathaoModal';
 export { default as PermissionsSettingsPanel } from './PermissionsSettingsPanel';
+export { default as InfoTooltip } from './InfoTooltip';
+export { default as TransferModal } from './TransferModal';
+export { default as DashboardSettingsPanel } from './DashboardSettingsPanel';
 export { default as FraudCheckResults } from './FraudCheckResults';
 export { default as FraudCheckModal } from './FraudCheckModal';
 export { default as OrderReturnExchangeModal } from './OrderReturnExchangeModal';

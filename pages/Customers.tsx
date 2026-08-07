@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Customer, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, Table, TableCell, IconButton, TableLoadingSkeleton } from '../components';
+import { Button, CustomerCreateModal, Table, TableCell, IconButton, TableLoadingSkeleton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import Pagination from '../src/components/Pagination';
@@ -20,6 +20,8 @@ import { isTempId } from '../src/utils/optimisticIdMap';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
+import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
@@ -27,6 +29,9 @@ const Customers: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
   const { user } = useAuth();
+  const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
+  const openCreateRequested = Boolean((location.state as { openCreateCustomer?: boolean } | null)?.openCreateCustomer);
+  const [isCreateCustomerOpen, setIsCreateCustomerOpen] = React.useState(openCreateRequested);
   const {
     data: systemDefaults,
     isPending: systemDefaultsLoading,
@@ -47,6 +52,23 @@ const Customers: React.FC = () => {
   const handleRefreshCustomers = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['customers'], exact: false, type: 'active' });
   }, [queryClient]);
+  const handleOpenCreateCustomer = useCallback(() => {
+    if (isReadOnly) {
+      showReadOnlyWarning();
+      return;
+    }
+    if (!WRITE_FREEZE_ENABLED) setIsCreateCustomerOpen(true);
+  }, [isReadOnly, showReadOnlyWarning]);
+  const handleCloseCreateCustomer = useCallback(() => {
+    setIsCreateCustomerOpen(false);
+    const currentState = (location.state || {}) as Record<string, unknown>;
+    if (!currentState.openCreateCustomer) return;
+    const { openCreateCustomer: _ignored, ...remainingState } = currentState;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: Object.keys(remainingState).length > 0 ? remainingState : null,
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
   const deleteCustomerMutation = useDeleteCustomer();
   const { data: customerFilterOpts } = useCustomerFilterOptions();
   const isAdmin = hasAdminAccess(user?.role);
@@ -54,6 +76,10 @@ const Customers: React.FC = () => {
   const canCreateCustomers = can('customers.create');
   const canEditCustomers = can('customers.edit');
   const canDeleteCustomers = can('customers.delete');
+
+  useEffect(() => {
+    if (openCreateRequested) setIsCreateCustomerOpen(true);
+  }, [location.key, openCreateRequested]);
 
   const [createdByFilter, setCreatedByFilter] = React.useState<string>('all');
   const [createdByNotFilter, setCreatedByNotFilter] = React.useState<string>('');
@@ -367,10 +393,12 @@ const Customers: React.FC = () => {
         </button>
         {canCreateCustomers && (
           <Button
-            onClick={() => navigate('/customers/new')}
+            onClick={handleOpenCreateCustomer}
             variant="primary"
             size="md"
             icon={ICONS.Plus}
+            disabled={WRITE_FREEZE_ENABLED}
+            title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : undefined}
           >
             New Customer
           </Button>
@@ -478,6 +506,7 @@ const Customers: React.FC = () => {
         emptyMessage="No customers found"
       />
       <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} disabled={isFetching} />
+      {isCreateCustomerOpen && <CustomerCreateModal isOpen onClose={handleCloseCreateCustomer} />}
     </div>
   );
 };

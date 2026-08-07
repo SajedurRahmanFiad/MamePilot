@@ -6,6 +6,7 @@ import {
   type PermissionsSettings,
   type RolePermissionMap,
 } from '../../types';
+import { ADMIN_DEFAULT_DASHBOARD_ID, EMPLOYEE_DEFAULT_DASHBOARD_ID } from '../dashboardConfig';
 
 export const RESERVED_PERMISSION_ROLES = [UserRole.ADMIN, UserRole.DEVELOPER] as const;
 export const BUILT_IN_PERMISSION_ROLES = [UserRole.EMPLOYEE] as const;
@@ -731,6 +732,7 @@ export const DEFAULT_ROLE_PERMISSION_SETTINGS: PermissionsSettings = {
     {
       roleName: UserRole.EMPLOYEE,
       isCustom: false,
+      dashboardId: EMPLOYEE_DEFAULT_DASHBOARD_ID,
       permissions: createPermissionMap([
         'dashboard.viewEmployee',
         'orders.view',
@@ -832,6 +834,11 @@ export function normalizePermissionRoleConfig(
   return {
     roleName,
     isCustom: !isBuiltInPermissionRole(roleName),
+    dashboardId: String(value?.dashboardId || (
+      value?.permissions?.['dashboard.viewAdmin']
+        ? ADMIN_DEFAULT_DASHBOARD_ID
+        : EMPLOYEE_DEFAULT_DASHBOARD_ID
+    )),
     permissions: normalizeRolePermissionMap(value?.permissions, getDefaultPermissionsForRole(roleName), roleName),
     createdAt: value?.createdAt ?? null,
     updatedAt: value?.updatedAt ?? null,
@@ -844,6 +851,7 @@ export function normalizePermissionsSettings(value: Partial<PermissionsSettings>
   for (const role of DEFAULT_ROLE_PERMISSION_SETTINGS.roles) {
     mergedByRole.set(role.roleName, {
       ...role,
+      dashboardId: role.dashboardId,
       permissions: normalizeRolePermissionMap(role.permissions, undefined, role.roleName),
     });
   }
@@ -880,6 +888,7 @@ export function clonePermissionsSettings(value: Partial<PermissionsSettings> | n
   return {
     roles: normalized.roles.map((role) => ({
       ...role,
+      dashboardId: role.dashboardId,
       permissions: { ...role.permissions },
     })),
   };

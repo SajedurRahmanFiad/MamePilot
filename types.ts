@@ -131,6 +131,7 @@ export interface PermissionDefinition {
 export interface PermissionRoleConfig {
   roleName: string;
   isCustom: boolean;
+  dashboardId: string;
   permissions: RolePermissionMap;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -138,6 +139,26 @@ export interface PermissionRoleConfig {
 
 export interface PermissionsSettings {
   roles: PermissionRoleConfig[];
+}
+
+export interface DashboardItemSetting {
+  key: string;
+  enabled: boolean;
+}
+
+export interface DashboardConfiguration {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  systemKey?: 'admin' | 'employee' | null;
+  kpiCards: DashboardItemSetting[];
+  widgets: DashboardItemSetting[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface DashboardSettings {
+  dashboards: DashboardConfiguration[];
 }
 
 export enum OrderStatus {
@@ -956,7 +977,8 @@ export interface DashboardEmployeeSnapshot {
 }
 
 export interface DashboardSnapshot {
-  role: 'admin' | 'employee';
+  role: 'admin' | 'employee' | 'mixed';
+  dashboardId?: string;
   admin?: DashboardAdminSnapshot;
   employee?: DashboardEmployeeSnapshot;
   refreshedAt: string;

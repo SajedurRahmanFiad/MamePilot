@@ -3,13 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db, saveDb } from '../db';
 import { ICONS, formatCurrency } from '../constants';
-import { Button, PermissionsSettingsPanel, NumericInput } from '../components';
+import { Button, DashboardSettingsPanel, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
+import { OrderStatus, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
 import {
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings,
-  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus,
+  useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useDashboardSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus,
   useVoiceSurveySettings, useBeSmartSettings
 } from '../src/hooks/useQueries';
 import {
@@ -18,6 +18,7 @@ import {
   useCreateUnit, useDeleteUnit,
   useBatchUpdateSettings,
   useUpdatePermissionsSettings,
+  useUpdateDashboardSettings,
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
@@ -30,6 +31,7 @@ import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
 import { compressImage, formatDateTime } from '../utils';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
+import { EMPLOYEE_DEFAULT_DASHBOARD_ID, cloneDashboardSettings, dashboardHasScope, normalizeDashboardSettings } from '../src/dashboardConfig';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import WhatsAppSettingsPanel from '../components/WhatsAppSettingsPanel';
@@ -79,6 +81,7 @@ const SettingsPage: React.FC = () => {
   const { data: walletSettingsData, isPending: walletPending } = useWalletSettings({ enabled: canUsePayroll });
   const walletLoading = canUsePayroll && walletPending;
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
+  const { data: dashboardSettingsData, isPending: dashboardSettingsLoading } = useDashboardSettings(hasCapability('custom_roles') && canManagePermissions);
   const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
@@ -114,6 +117,7 @@ const SettingsPage: React.FC = () => {
   const deleteUnitMutation = useDeleteUnit();
   const batchUpdateMutation = useBatchUpdateSettings();
   const updatePermissionsSettingsMutation = useUpdatePermissionsSettings();
+  const updateDashboardSettingsMutation = useUpdateDashboardSettings();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
@@ -207,6 +211,9 @@ const SettingsPage: React.FC = () => {
   );
   const permissionsDirtyRef = useRef(false);
   const [permissionsDirty, setPermissionsDirty] = useState(false);
+  const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() => normalizeDashboardSettings());
+  const dashboardDirtyRef = useRef(false);
+  const [dashboardDirty, setDashboardDirty] = useState(false);
   const [metaAdsSettings, setMetaAdsSettings] = useState<MetaAdsSettings>({
     appId: '',
     appSecret: '',
@@ -300,6 +307,12 @@ const SettingsPage: React.FC = () => {
       setPermissionsSettings(clonePermissionsSettings(permissionsSettingsData));
     }
   }, [permissionsSettingsData]);
+
+  React.useEffect(() => {
+    if (dashboardSettingsData && !dashboardDirtyRef.current) {
+      setDashboardSettings(cloneDashboardSettings(dashboardSettingsData));
+    }
+  }, [dashboardSettingsData]);
 
   React.useEffect(() => {
     if (metaAdsSettingsData) {
@@ -439,7 +452,7 @@ const SettingsPage: React.FC = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams, toast, queryClient]);
 
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
     setCompanySettings((current) => normalizeCompanySettings({
       ...current,
@@ -554,10 +567,59 @@ const SettingsPage: React.FC = () => {
     setPermissionsSettings(next);
   }, []);
 
+  const handleDashboardChange = useCallback((next: DashboardSettings) => {
+    dashboardDirtyRef.current = true;
+    setDashboardDirty(true);
+    setDashboardSettings(next);
+    setPermissionsSettings((current) => {
+      const fallback = next.dashboards.find((dashboard) => dashboard.id === EMPLOYEE_DEFAULT_DASHBOARD_ID)
+        || next.dashboards[0];
+      if (!fallback) return current;
+      return {
+        roles: current.roles.map((role) => {
+          const assigned = next.dashboards.find((dashboard) => dashboard.id === role.dashboardId) || fallback;
+          return {
+            ...role,
+            dashboardId: assigned.id,
+            permissions: {
+              ...role.permissions,
+              'dashboard.viewAdmin': dashboardHasScope(assigned, 'admin'),
+              'dashboard.viewEmployee': dashboardHasScope(assigned, 'employee'),
+            },
+          };
+        }),
+      };
+    });
+  }, []);
+
   const handleSave = async () => {
+    if (activeTab === 'dashboard') {
+      const toastId = toast.loading('Saving dashboard layouts...');
+      try {
+        const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
+        const persisted = cloneDashboardSettings(saved);
+        dashboardDirtyRef.current = false;
+        setDashboardDirty(false);
+        setDashboardSettings(persisted);
+        queryClient.setQueryData(['settings', 'dashboards'], persisted);
+        toast.update(toastId, 'Dashboard layouts saved successfully!', 'success');
+      } catch (err) {
+        console.error('Failed to save dashboard layouts:', err);
+        toast.update(toastId, err instanceof Error ? err.message : 'Could not save dashboard layouts. Please try again.', 'error');
+      }
+      return;
+    }
+
     if (activeTab === 'permissions') {
       const toastId = toast.loading('Saving permissions...');
       try {
+        if (dashboardDirtyRef.current) {
+          const savedDashboards = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
+          const persistedDashboards = cloneDashboardSettings(savedDashboards);
+          dashboardDirtyRef.current = false;
+          setDashboardDirty(false);
+          setDashboardSettings(persistedDashboards);
+        }
         const savedPermissions = await updatePermissionsSettingsMutation.mutateAsync(
           clonePermissionsSettings(permissionsSettings),
         );
@@ -961,6 +1023,7 @@ const SettingsPage: React.FC = () => {
     hasCapability('whatsapp') && hasAdminAccess(user?.role) ? { id: 'whatsapp', label: 'WhatsApp', icon: ICONS.WhatsApp } : null,
     hasCapability('messenger') && hasAdminAccess(user?.role) ? { id: 'messenger', label: 'Messenger', icon: ICONS.Messenger } : null,
     hasCapability('woocommerce') && hasAdminAccess(user?.role) ? { id: 'woocommerce', label: 'WooCommerce', icon: ICONS.Sales } : null,
+    hasCapability('custom_roles') && canManagePermissions ? { id: 'dashboard', label: 'Dashboard', icon: ICONS.Dashboard } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
     canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
@@ -1013,15 +1076,19 @@ const SettingsPage: React.FC = () => {
         >
           {updateBeSmartSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
         </Button>}
-        {['company', 'order', 'defaults', 'wallet', 'courier', 'permissions'].includes(activeTab) && <Button
+        {['company', 'order', 'defaults', 'wallet', 'courier', 'dashboard', 'permissions'].includes(activeTab) && <Button
           onClick={handleSave}
           variant="primary"
           size="md"
           disabled={activeTab === 'permissions'
-            ? !permissionsDirty || updatePermissionsSettingsMutation.isPending
+            ? (!permissionsDirty && !dashboardDirty) || updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending
+            : activeTab === 'dashboard'
+              ? !dashboardDirty || updateDashboardSettingsMutation.isPending
             : batchUpdateMutation.isPending}
         >
-          {(activeTab === 'permissions' ? updatePermissionsSettingsMutation.isPending : batchUpdateMutation.isPending)
+          {((activeTab === 'permissions' && (updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending))
+            || (activeTab === 'dashboard' && updateDashboardSettingsMutation.isPending)
+            || (!['permissions', 'dashboard'].includes(activeTab) && batchUpdateMutation.isPending))
             ? 'Saving...'
             : 'Save Changes'}
         </Button>}
@@ -2051,7 +2118,16 @@ const SettingsPage: React.FC = () => {
             <PermissionsSettingsPanel
               value={permissionsSettings}
               onChange={handlePermissionsChange}
+              dashboards={dashboardSettings.dashboards}
               hasUnsavedChanges={permissionsDirty}
+            />
+          )}
+
+          {activeTab === 'dashboard' && (
+            <DashboardSettingsPanel
+              value={dashboardSettings}
+              onChange={handleDashboardChange}
+              hasUnsavedChanges={dashboardDirty}
             />
           )}
 

@@ -81,6 +81,7 @@ final class ServiceLifecycle
         'updatePaymentMethod',
         'updatePayrollSettings',
         'updatePermissionsSettings',
+        'updateDashboardSettings',
         'updateProduct',
         'updateSystemDefaults',
         'updateTransaction',

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Customer, Order, OrderStatus, OrderItem, DynamicPricingRule } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, NumericInput, DuplicateOrderModal } from '../components';
+import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
@@ -180,6 +180,8 @@ const OrderForm: React.FC = () => {
   
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [custSearchTerm, setCustSearchTerm] = useState('');
+  const [isCustomerCreateOpen, setIsCustomerCreateOpen] = useState(false);
+  const [customerCreateInitialValues, setCustomerCreateInitialValues] = useState<Partial<Pick<Customer, 'name' | 'phone' | 'address'>>>();
   const [showSourceAdSearch, setShowSourceAdSearch] = useState(false);
   const [sourceAdSearchTerm, setSourceAdSearchTerm] = useState('');
   const [debouncedCustSearch, setDebouncedCustSearch] = React.useState('');
@@ -849,22 +851,19 @@ const OrderForm: React.FC = () => {
                       ))
                     )}
                   </div>
-                  <button 
-                    onClick={() => {
-                      const preFilledPhone = sanitizePhoneInput(custSearchTerm);
-                      setShowCustomerSearch(false);
-                      navigate('/customers/new', {
-                        state: {
-                          fromOrderForm: true,
-                          redirectPath: isEdit ? `/orders/edit/${id}` : '/orders/new',
-                          ...(preFilledPhone ? { preFill: { phone: preFilledPhone } } : {}),
-                        },
-                      });
-                    }} 
-                    className="w-full mt-2 py-3 ${theme.colors.primary[600]} text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors"
-                  >
-                    + Add New Customer
-                  </button>
+                  {can('customers.create') && (
+                    <button
+                      onClick={() => {
+                        const preFilledPhone = sanitizePhoneInput(custSearchTerm);
+                        setCustomerCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
+                        setShowCustomerSearch(false);
+                        setIsCustomerCreateOpen(true);
+                      }}
+                      className="w-full mt-2 py-3 ${theme.colors.primary[600]} text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors"
+                    >
+                      + Add New Customer
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1196,6 +1195,14 @@ const OrderForm: React.FC = () => {
         onCancel={handleCancelDuplicate}
         isLoading={saving}
       />
+      {isCustomerCreateOpen && (
+        <CustomerCreateModal
+          isOpen
+          onClose={() => setIsCustomerCreateOpen(false)}
+          initialValues={customerCreateInitialValues}
+          onCreated={handleCustomerSelect}
+        />
+      )}
     </div>
   );
 };

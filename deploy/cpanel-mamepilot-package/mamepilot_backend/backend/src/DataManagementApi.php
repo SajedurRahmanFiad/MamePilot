@@ -431,6 +431,11 @@ final class DataManagementApi extends BaseService
                 'description' => 'Configured WooCommerce stores and webhook settings.',
                 'tables' => ['woocommerce_stores'],
             ],
+            'dashboard' => [
+                'key' => 'dashboard', 'label' => 'Dashboard',
+                'description' => 'Fixed and custom dashboard card and widget layouts. Custom dashboards are appended on import.',
+                'tables' => ['dashboard_configurations'],
+            ],
             'permissions' => [
                 'key' => 'permissions', 'label' => 'Permissions',
                 'description' => 'Built-in and custom role permission settings.',
@@ -614,6 +619,8 @@ final class DataManagementApi extends BaseService
                 $tableCounts = $this->importSettingsUnits($rows);
             } elseif ($table === 'role_permissions') {
                 $tableCounts = $this->importSettingsPermissions($rows);
+            } elseif ($table === 'dashboard_configurations') {
+                $tableCounts = $this->importSettingsDashboards($rows);
             } elseif ($table === 'woocommerce_stores') {
                 $references = is_array($payload['references'] ?? null) ? $payload['references'] : [];
                 $tableCounts = $this->importSettingsWooCommerceStores($rows, $references);
@@ -932,7 +939,49 @@ final class DataManagementApi extends BaseService
             $this->insertSettingsRow('role_permissions', [
                 'role_name' => $roleName,
                 'permissions' => $row['permissions'] ?? null,
+                'dashboard_id' => $this->tableExists('dashboard_configurations')
+                    && trim((string) ($row['dashboard_id'] ?? '')) !== ''
+                    && $this->database->fetchOne('SELECT id FROM dashboard_configurations WHERE id = :id LIMIT 1', [':id' => trim((string) $row['dashboard_id'])]) !== null
+                        ? trim((string) $row['dashboard_id'])
+                        : self::EMPLOYEE_DEFAULT_DASHBOARD_ID,
                 'is_custom' => !empty($row['is_custom']) ? 1 : 0,
+            ]);
+            $counts['created']++;
+        }
+        return $counts;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsDashboards(array $rows): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            if (!empty($row['is_system']) || in_array((string) ($row['system_key'] ?? ''), ['admin', 'employee'], true)) {
+                $counts['skipped']++;
+                continue;
+            }
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') throw new RuntimeException('A dashboard is missing its name.');
+            if ($this->database->fetchOne('SELECT id FROM dashboard_configurations WHERE LOWER(name) = LOWER(:name) LIMIT 1', [':name' => $name]) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            $id = trim((string) ($row['id'] ?? ''));
+            if ($id === '' || preg_match('/^[A-Za-z0-9_-]{1,64}$/', $id) !== 1
+                || $this->database->fetchOne('SELECT id FROM dashboard_configurations WHERE id = :id LIMIT 1', [':id' => $id]) !== null) {
+                $id = 'dashboard-' . $this->uuid4();
+            }
+            $now = $this->database->nowUtc();
+            $this->insertSettingsRow('dashboard_configurations', [
+                'id' => $id,
+                'name' => $name,
+                'is_system' => 0,
+                'system_key' => null,
+                'kpi_cards' => $row['kpi_cards'] ?? '[]',
+                'widgets' => $row['widgets'] ?? '[]',
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
             $counts['created']++;
         }

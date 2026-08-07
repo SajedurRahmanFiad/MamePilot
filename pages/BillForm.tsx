@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { db } from '../db';
-import { BillStatus, OrderItem } from '../types';
+import { BillStatus, OrderItem, Vendor } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, NumericInput } from '../components';
+import { Button, NumericInput, VendorCreateModal } from '../components';
 import { theme } from '../theme';
 import { useBill, useSystemDefaults, useVendor } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -19,7 +19,7 @@ const BillForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = db.currentUser;
-  const { canAccessRecord } = useRolePermissions();
+  const { can, canAccessRecord } = useRolePermissions();
   const isEdit = Boolean(id);
 
   // Safety check
@@ -99,6 +99,8 @@ const BillForm: React.FC = () => {
 
   // Form state
   const [vendorId, setVendorId] = useState('');
+  const [isVendorCreateOpen, setIsVendorCreateOpen] = useState(false);
+  const [vendorCreateInitialValues, setVendorCreateInitialValues] = useState<Partial<Pick<Vendor, 'name' | 'phone' | 'address'>>>();
   const [billDate, setBillDate] = useState(getTodayDate());
   const [billNumber, setBillNumber] = useState('Generating...');
   const [billNumberLoading, setBillNumberLoading] = useState(false);
@@ -390,17 +392,14 @@ const BillForm: React.FC = () => {
                       ))
                     )}
                   </div>
-                  <Button onClick={() => {
-                    const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
-                    setShowVendorSearch(false);
-                    navigate('/vendors/new', {
-                      state: {
-                        fromBillForm: true,
-                        redirectPath: isEdit ? `/bills/edit/${id}` : '/bills/new',
-                        ...(preFilledPhone ? { preFill: { phone: preFilledPhone } } : {}),
-                      },
-                    });
-                  }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                  {can('vendors.create') && (
+                    <Button onClick={() => {
+                      const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
+                      setVendorCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
+                      setShowVendorSearch(false);
+                      setIsVendorCreateOpen(true);
+                    }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                  )}
                 </div>
               )}
             </div>
@@ -570,6 +569,18 @@ const BillForm: React.FC = () => {
           </div>
         </div>
       </div>
+      {isVendorCreateOpen && (
+        <VendorCreateModal
+          isOpen
+          onClose={() => setIsVendorCreateOpen(false)}
+          initialValues={vendorCreateInitialValues}
+          onCreated={(vendor) => {
+            setVendorId(vendor.id);
+            setShowVendorSearch(false);
+            setVendorSearchTerm('');
+          }}
+        />
+      )}
     </div>
   );
 };

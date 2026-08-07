@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { ICONS } from '../constants';
 import { Button } from './Button';
-import type { PermissionKey, PermissionsSettings, RolePermissionMap } from '../types';
+import type { DashboardConfiguration, PermissionKey, PermissionsSettings, RolePermissionMap } from '../types';
 import {
   PERMISSION_DEFINITIONS,
   STORED_PERMISSION_KEYS,
@@ -12,10 +12,12 @@ import {
   isReservedPermissionRole,
   normalizeRoleName,
 } from '../src/utils/permissions';
+import { EMPLOYEE_DEFAULT_DASHBOARD_ID, dashboardHasScope } from '../src/dashboardConfig';
 
 type PermissionsSettingsPanelProps = {
   value: PermissionsSettings;
   onChange: (next: PermissionsSettings) => void;
+  dashboards: DashboardConfiguration[];
   hasUnsavedChanges?: boolean;
 };
 
@@ -24,12 +26,16 @@ const SECTION_ORDER = ['Overview', 'Orders', 'Customers', 'Bills', 'Transactions
 const checkboxClassName =
   'h-4 w-4 rounded border border-gray-300 accent-[var(--primary-color,#0f2f57)] focus:ring-[var(--primary-medium,#3c5a82)] focus:ring-offset-0';
 
-const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false }) => {
+const DISPLAYED_PERMISSION_KEYS = STORED_PERMISSION_KEYS.filter((key) => key !== 'dashboard.viewAdmin' && key !== 'dashboard.viewEmployee');
+
+const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange, dashboards, hasUnsavedChanges = false }) => {
   const roles = useMemo(() => getPermissionRoles(value), [value]);
   const groupedDefinitions = useMemo(() => {
     return SECTION_ORDER.map((section) => ({
       section,
-      items: PERMISSION_DEFINITIONS.filter((definition) => definition.section === section),
+      items: PERMISSION_DEFINITIONS.filter((definition) => definition.section === section
+        && definition.key !== 'dashboard.viewAdmin'
+        && definition.key !== 'dashboard.viewEmployee'),
     })).filter((group) => group.items.length > 0);
   }, []);
 
@@ -38,6 +44,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
   const [draftPermissions, setDraftPermissions] = useState<RolePermissionMap>(() =>
     getDefaultPermissionsForRole('Employee'),
   );
+  const [draftDashboardId, setDraftDashboardId] = useState(EMPLOYEE_DEFAULT_DASHBOARD_ID);
   const [roleError, setRoleError] = useState('');
   const [rolePendingRemoval, setRolePendingRemoval] = useState<string | null>(null);
   const [roleRemovalConfirmText, setRoleRemovalConfirmText] = useState('');
@@ -67,7 +74,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       .filter((group) => group.items.length > 0);
   }, [groupedDefinitions, permissionSearch]);
   const enabledPermissionCount = selectedRole
-    ? STORED_PERMISSION_KEYS.filter((key) => selectedRole.permissions[key]).length
+    ? DISPLAYED_PERMISSION_KEYS.filter((key) => selectedRole.permissions[key]).length
     : 0;
 
   useEffect(() => {
@@ -137,9 +144,30 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     });
   };
 
+  const updateRoleDashboard = (roleName: string, dashboardId: string) => {
+    const dashboard = dashboards.find((candidate) => candidate.id === dashboardId);
+    if (!dashboard) return;
+    const next = clonePermissionsSettings(value);
+    next.roles = next.roles.map((role) => role.roleName === roleName
+      ? {
+          ...role,
+          dashboardId,
+          permissions: {
+            ...role.permissions,
+            'dashboard.viewAdmin': dashboardHasScope(dashboard, 'admin'),
+            'dashboard.viewEmployee': dashboardHasScope(dashboard, 'employee'),
+          },
+        }
+      : role);
+    onChange(next);
+  };
+
   const resetRoleModal = () => {
     setDraftRoleName('');
     setDraftPermissions(getDefaultPermissionsForRole('Employee'));
+    setDraftDashboardId(dashboards.some((dashboard) => dashboard.id === EMPLOYEE_DEFAULT_DASHBOARD_ID)
+      ? EMPLOYEE_DEFAULT_DASHBOARD_ID
+      : dashboards[0]?.id || '');
     setRoleError('');
     setIsRoleModalOpen(false);
   };
@@ -170,8 +198,9 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       return;
     }
 
-    if (!draftPermissions['dashboard.viewAdmin'] && !draftPermissions['dashboard.viewEmployee']) {
-      setRoleError('Please enable at least one dashboard permission for the new role.');
+    const selectedDashboard = dashboards.find((dashboard) => dashboard.id === draftDashboardId);
+    if (!selectedDashboard) {
+      setRoleError('Please select a dashboard for the new role.');
       return;
     }
 
@@ -179,7 +208,12 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     next.roles.push({
       roleName: normalizedRoleName,
       isCustom: true,
-      permissions: { ...draftPermissions },
+      dashboardId: draftDashboardId,
+      permissions: {
+        ...draftPermissions,
+        'dashboard.viewAdmin': dashboardHasScope(selectedDashboard, 'admin'),
+        'dashboard.viewEmployee': dashboardHasScope(selectedDashboard, 'employee'),
+      },
       createdAt: null,
       updatedAt: null,
     });
@@ -274,7 +308,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
 
           <div className="mt-4 hidden max-h-[68vh] space-y-1 overflow-y-auto pr-1 lg:block">
             {filteredRoles.map((role) => {
-              const enabledCount = STORED_PERMISSION_KEYS.filter((key) => role.permissions[key]).length;
+              const enabledCount = DISPLAYED_PERMISSION_KEYS.filter((key) => role.permissions[key]).length;
               const isSelected = selectedRole?.roleName === role.roleName;
               return (
                 <button
@@ -289,7 +323,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                 >
                   <span className="block truncate text-sm font-black">{role.roleName}</span>
                   <span className={`mt-1 block text-xs font-semibold ${isSelected ? 'text-white/75' : 'text-gray-400'}`}>
-                    {enabledCount} of {STORED_PERMISSION_KEYS.length} enabled
+                    {enabledCount} of {DISPLAYED_PERMISSION_KEYS.length} enabled
                   </span>
                 </button>
               );
@@ -309,7 +343,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Editing role</p>
                     <h4 className="mt-2 truncate text-xl font-black text-gray-900">{selectedRole.roleName}</h4>
                     <p className="mt-1 text-sm font-medium text-gray-500">
-                      {enabledPermissionCount} of {STORED_PERMISSION_KEYS.length} permissions enabled
+                      {enabledPermissionCount} of {DISPLAYED_PERMISSION_KEYS.length} permissions enabled
                     </p>
                   </div>
                   {selectedRole.isCustom && (
@@ -318,6 +352,18 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                     </Button>
                   )}
                 </div>
+
+                <label className="mt-5 block space-y-2">
+                  <span className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">Dashboard</span>
+                  <select
+                    value={selectedRole.dashboardId}
+                    onChange={(event) => updateRoleDashboard(selectedRole.roleName, event.target.value)}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-4 focus:ring-[var(--primary-soft,#ebf4ff)]"
+                  >
+                    {dashboards.map((dashboard) => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
+                  </select>
+                  <span className="block text-xs font-medium text-gray-500">This single selection replaces the Admin Dashboard and Employee Dashboard permission checkboxes.</span>
+                </label>
 
                 <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
                   <label className="relative block min-w-0 flex-1">
@@ -443,6 +489,17 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                   <p className="text-xs font-medium text-gray-500">
                     New roles start from the current Employee defaults so you can adjust from a practical baseline.
                   </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black uppercase tracking-[0.18em] text-gray-400">Dashboard</label>
+                  <select
+                    value={draftDashboardId}
+                    onChange={(event) => { setDraftDashboardId(event.target.value); setRoleError(''); }}
+                    className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold text-gray-900 outline-none transition-all focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-4 focus:ring-[var(--primary-soft,#ebf4ff)]"
+                  >
+                    {dashboards.map((dashboard) => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
+                  </select>
                 </div>
 
                 {roleError && (

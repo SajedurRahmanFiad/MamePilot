@@ -139,13 +139,6 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.Banking,
         visible: ({ can, hasSubCapability }) => can('transactions.view') && hasSubCapability('transactions'),
       },
-      {
-        key: 'transfer',
-        label: 'Transfer',
-        to: '/banking/transfer',
-        icon: ICONS.PlusCircle,
-        visible: ({ can, hasSubCapability }) => can('transfers.create') && hasSubCapability('transfer'),
-      },
     ],
   },
   {

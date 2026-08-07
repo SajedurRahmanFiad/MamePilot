@@ -19,6 +19,65 @@ abstract class BaseService
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';
     protected const RESERVED_PERMISSION_ROLES = ['Admin', 'Developer'];
     protected const BUILT_IN_PERMISSION_ROLES = ['Employee'];
+    protected const ADMIN_DEFAULT_DASHBOARD_ID = 'admin-default';
+    protected const EMPLOYEE_DEFAULT_DASHBOARD_ID = 'employee-default';
+    protected const DASHBOARD_KPI_SCOPES = [
+        'admin.totalSales' => 'admin',
+        'admin.totalPurchases' => 'admin',
+        'admin.otherExpenses' => 'admin',
+        'admin.totalProfit' => 'admin',
+        'admin.totalOrders' => 'admin',
+        'admin.onHoldOrders' => 'admin',
+        'admin.processingOrders' => 'admin',
+        'admin.pickedOrders' => 'admin',
+        'admin.deliveredOrders' => 'admin',
+        'admin.returnedOrders' => 'admin',
+        'admin.cancelledOrders' => 'admin',
+        'employee.allTimeOrders' => 'employee',
+        'employee.createdToday' => 'employee',
+        'employee.activeOrders' => 'employee',
+        'employee.availableBalance' => 'employee',
+    ];
+    protected const DASHBOARD_WIDGET_SCOPES = [
+        'admin.cashFlow' => 'admin',
+        'admin.topSoldProducts' => 'admin',
+        'admin.topCustomers' => 'admin',
+        'admin.profitLoss' => 'admin',
+        'admin.expensesByCategory' => 'admin',
+        'employee.ordersByStatus' => 'employee',
+        'employee.performanceOverview' => 'employee',
+        'employee.orderActivity' => 'employee',
+    ];
+    protected const ADMIN_DEFAULT_DASHBOARD_KPIS = [
+        'admin.totalSales',
+        'admin.totalPurchases',
+        'admin.otherExpenses',
+        'admin.totalProfit',
+        'admin.totalOrders',
+        'admin.onHoldOrders',
+        'admin.processingOrders',
+        'admin.pickedOrders',
+        'admin.deliveredOrders',
+        'admin.cancelledOrders',
+    ];
+    protected const ADMIN_DEFAULT_DASHBOARD_WIDGETS = [
+        'admin.cashFlow',
+        'admin.topSoldProducts',
+        'admin.topCustomers',
+        'admin.profitLoss',
+        'admin.expensesByCategory',
+    ];
+    protected const EMPLOYEE_DEFAULT_DASHBOARD_KPIS = [
+        'employee.allTimeOrders',
+        'employee.createdToday',
+        'employee.activeOrders',
+        'employee.availableBalance',
+    ];
+    protected const EMPLOYEE_DEFAULT_DASHBOARD_WIDGETS = [
+        'employee.ordersByStatus',
+        'employee.performanceOverview',
+        'employee.orderActivity',
+    ];
     protected const ROLE_PERMISSION_KEYS = [
         'dashboard.viewAdmin',
         'dashboard.viewEmployee',
@@ -1680,11 +1739,221 @@ abstract class BaseService
             return [];
         }
 
+        $dashboardColumn = $this->columnExists('role_permissions', 'dashboard_id')
+            ? 'dashboard_id'
+            : 'NULL AS dashboard_id';
         return $this->database->fetchAll(
-            'SELECT role_name, permissions, is_custom, created_at, updated_at
+            'SELECT role_name, permissions, ' . $dashboardColumn . ', is_custom, created_at, updated_at
              FROM role_permissions
              ORDER BY is_custom ASC, role_name ASC'
         );
+    }
+
+    /**
+     * @param mixed $value
+     * @param array<string, string> $registry
+     * @return array<int, array{key: string, enabled: bool}>
+     */
+    protected function normalizeDashboardItems($value, array $registry, ?string $systemKey = null): array
+    {
+        $raw = is_array($value) ? $value : $this->jsonDecodeList($value);
+        $normalized = [];
+        $seen = [];
+        foreach ($raw as $item) {
+            if (!is_array($item)) continue;
+            $key = trim((string) ($item['key'] ?? ''));
+            if ($key === '' || !isset($registry[$key]) || isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $normalized[] = ['key' => $key, 'enabled' => !empty($item['enabled'])];
+        }
+
+        $defaultKeys = [];
+        if ($systemKey === 'admin') {
+            $defaultKeys = $registry === self::DASHBOARD_KPI_SCOPES
+                ? self::ADMIN_DEFAULT_DASHBOARD_KPIS
+                : self::ADMIN_DEFAULT_DASHBOARD_WIDGETS;
+        } elseif ($systemKey === 'employee') {
+            $defaultKeys = $registry === self::DASHBOARD_KPI_SCOPES
+                ? self::EMPLOYEE_DEFAULT_DASHBOARD_KPIS
+                : self::EMPLOYEE_DEFAULT_DASHBOARD_WIDGETS;
+        }
+
+        foreach ($registry as $key => $_scope) {
+            if (isset($seen[$key])) continue;
+            $normalized[] = ['key' => $key, 'enabled' => in_array($key, $defaultKeys, true)];
+        }
+        return $normalized;
+    }
+
+    /** @return array<int, array{key: string, enabled: bool}> */
+    protected function defaultDashboardItems(array $registry, string $systemKey): array
+    {
+        return $this->normalizeDashboardItems([], $registry, $systemKey);
+    }
+
+    protected function ensureSystemDashboardConfigurations(): void
+    {
+        if (!$this->tableExists('dashboard_configurations')) return;
+        $now = $this->database->nowUtc();
+        $rows = [
+            [
+                'id' => self::ADMIN_DEFAULT_DASHBOARD_ID,
+                'name' => 'Admin Dashboard (Default)',
+                'systemKey' => 'admin',
+                'kpis' => $this->defaultDashboardItems(self::DASHBOARD_KPI_SCOPES, 'admin'),
+                'widgets' => $this->defaultDashboardItems(self::DASHBOARD_WIDGET_SCOPES, 'admin'),
+            ],
+            [
+                'id' => self::EMPLOYEE_DEFAULT_DASHBOARD_ID,
+                'name' => 'Employee Dashboard (Default)',
+                'systemKey' => 'employee',
+                'kpis' => $this->defaultDashboardItems(self::DASHBOARD_KPI_SCOPES, 'employee'),
+                'widgets' => $this->defaultDashboardItems(self::DASHBOARD_WIDGET_SCOPES, 'employee'),
+            ],
+        ];
+        foreach ($rows as $row) {
+            $this->database->execute(
+                'INSERT IGNORE INTO dashboard_configurations
+                    (id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at)
+                 VALUES
+                    (:id, :name, 1, :system_key, :kpi_cards, :widgets, :created_at, :updated_at)',
+                [
+                    ':id' => $row['id'],
+                    ':name' => $row['name'],
+                    ':system_key' => $row['systemKey'],
+                    ':kpi_cards' => $this->jsonEncode($row['kpis']),
+                    ':widgets' => $this->jsonEncode($row['widgets']),
+                    ':created_at' => $now,
+                    ':updated_at' => $now,
+                ]
+            );
+        }
+    }
+
+    /** @return array<string, mixed> */
+    protected function normalizeDashboardConfigurationRow(array $row): array
+    {
+        $id = trim((string) ($row['id'] ?? ''));
+        $systemKey = match ($id) {
+            self::ADMIN_DEFAULT_DASHBOARD_ID => 'admin',
+            self::EMPLOYEE_DEFAULT_DASHBOARD_ID => 'employee',
+            default => in_array(($row['system_key'] ?? null), ['admin', 'employee'], true)
+                ? (string) $row['system_key']
+                : null,
+        };
+        $name = match ($systemKey) {
+            'admin' => 'Admin Dashboard (Default)',
+            'employee' => 'Employee Dashboard (Default)',
+            default => trim((string) ($row['name'] ?? '')),
+        };
+        return [
+            'id' => $id,
+            'name' => $name,
+            'isSystem' => $systemKey !== null,
+            'systemKey' => $systemKey,
+            'kpiCards' => $this->normalizeDashboardItems($row['kpi_cards'] ?? null, self::DASHBOARD_KPI_SCOPES, $systemKey),
+            'widgets' => $this->normalizeDashboardItems($row['widgets'] ?? null, self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+            'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+        ];
+    }
+
+    /** @return array{dashboards: array<int, array<string, mixed>>} */
+    protected function buildDashboardSettingsPayload(): array
+    {
+        if (!$this->tableExists('dashboard_configurations')) {
+            return ['dashboards' => []];
+        }
+        $rows = $this->database->fetchAll(
+            'SELECT id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at
+             FROM dashboard_configurations
+             ORDER BY is_system DESC, CASE system_key WHEN \'admin\' THEN 0 WHEN \'employee\' THEN 1 ELSE 2 END, name ASC'
+        );
+        $dashboards = array_values(array_map(
+            fn(array $row): array => $this->normalizeDashboardConfigurationRow($row),
+            $rows
+        ));
+        $ids = array_fill_keys(array_map(static fn(array $dashboard): string => (string) $dashboard['id'], $dashboards), true);
+        foreach ([
+            [self::ADMIN_DEFAULT_DASHBOARD_ID, 'Admin Dashboard (Default)', 'admin'],
+            [self::EMPLOYEE_DEFAULT_DASHBOARD_ID, 'Employee Dashboard (Default)', 'employee'],
+        ] as [$id, $name, $systemKey]) {
+            if (isset($ids[$id])) continue;
+            $dashboards[] = $this->normalizeDashboardConfigurationRow([
+                'id' => $id,
+                'name' => $name,
+                'is_system' => 1,
+                'system_key' => $systemKey,
+                'kpi_cards' => [],
+                'widgets' => [],
+                'created_at' => null,
+                'updated_at' => null,
+            ]);
+        }
+        usort($dashboards, static function (array $left, array $right): int {
+            if ((bool) ($left['isSystem'] ?? false) !== (bool) ($right['isSystem'] ?? false)) {
+                return !empty($left['isSystem']) ? -1 : 1;
+            }
+            $systemOrder = ['admin' => 0, 'employee' => 1];
+            $leftOrder = $systemOrder[(string) ($left['systemKey'] ?? '')] ?? 2;
+            $rightOrder = $systemOrder[(string) ($right['systemKey'] ?? '')] ?? 2;
+            return $leftOrder !== $rightOrder
+                ? $leftOrder <=> $rightOrder
+                : strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+        return ['dashboards' => $dashboards];
+    }
+
+    /** @return array<string, mixed>|null */
+    protected function dashboardConfigurationById(string $dashboardId): ?array
+    {
+        $dashboardId = trim($dashboardId);
+        if ($dashboardId === '') return null;
+        foreach ($this->buildDashboardSettingsPayload()['dashboards'] as $dashboard) {
+            if ((string) ($dashboard['id'] ?? '') === $dashboardId) return $dashboard;
+        }
+        return null;
+    }
+
+    /** @return array{admin: bool, employee: bool}|null */
+    protected function dashboardScopesForId(string $dashboardId): ?array
+    {
+        $dashboard = $this->dashboardConfigurationById($dashboardId);
+        if ($dashboard === null) return null;
+        $scopes = ['admin' => false, 'employee' => false];
+        foreach ([
+            [$dashboard['kpiCards'] ?? [], self::DASHBOARD_KPI_SCOPES],
+            [$dashboard['widgets'] ?? [], self::DASHBOARD_WIDGET_SCOPES],
+        ] as [$items, $registry]) {
+            foreach ((array) $items as $item) {
+                if (!is_array($item) || empty($item['enabled'])) continue;
+                $scope = $registry[(string) ($item['key'] ?? '')] ?? null;
+                if ($scope !== null) $scopes[$scope] = true;
+            }
+        }
+        return $scopes;
+    }
+
+    protected function fallbackDashboardIdForPermissions(array $permissions): string
+    {
+        return !empty($permissions['dashboard.viewAdmin'])
+            ? self::ADMIN_DEFAULT_DASHBOARD_ID
+            : self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
+    }
+
+    /** @param array<string, bool> $permissions */
+    protected function applyDashboardPermissions(array &$permissions, string $dashboardId): string
+    {
+        $scopes = $this->dashboardScopesForId($dashboardId);
+        if ($scopes === null) {
+            $dashboardId = $this->fallbackDashboardIdForPermissions($permissions);
+            $scopes = $this->dashboardScopesForId($dashboardId);
+        }
+        if ($scopes !== null) {
+            $permissions['dashboard.viewAdmin'] = $scopes['admin'];
+            $permissions['dashboard.viewEmployee'] = $scopes['employee'];
+        }
+        return $dashboardId;
     }
 
     /**
@@ -1699,10 +1968,13 @@ abstract class BaseService
         $rolesByName = [];
 
         foreach (self::BUILT_IN_PERMISSION_ROLES as $roleName) {
+            $defaultPermissions = $this->defaultRolePermissions($roleName);
+            $dashboardId = $this->applyDashboardPermissions($defaultPermissions, self::EMPLOYEE_DEFAULT_DASHBOARD_ID);
             $rolesByName[$roleName] = [
                 'roleName' => $roleName,
                 'isCustom' => false,
-                'permissions' => $this->defaultRolePermissions($roleName),
+                'dashboardId' => $dashboardId,
+                'permissions' => $defaultPermissions,
                 'createdAt' => null,
                 'updatedAt' => null,
             ];
@@ -1729,10 +2001,15 @@ abstract class BaseService
                 ? $rolesByName[$roleName]['permissions']
                 : $this->defaultRolePermissions($roleName);
 
+            $normalizedPermissions = $this->normalizeRolePermissions($row['permissions'] ?? null, $defaultPermissions, $roleName);
+            $dashboardId = trim((string) ($row['dashboard_id'] ?? ''));
+            if ($dashboardId === '') $dashboardId = $this->fallbackDashboardIdForPermissions($normalizedPermissions);
+            $dashboardId = $this->applyDashboardPermissions($normalizedPermissions, $dashboardId);
             $rolesByName[$roleName] = [
                 'roleName' => $roleName,
                 'isCustom' => !$this->isBuiltInPermissionRole($roleName),
-                'permissions' => $this->normalizeRolePermissions($row['permissions'] ?? null, $defaultPermissions, $roleName),
+                'dashboardId' => $dashboardId,
+                'permissions' => $normalizedPermissions,
                 'createdAt' => $this->toIso($row['created_at'] ?? null),
                 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
             ];
@@ -1749,6 +2026,18 @@ abstract class BaseService
 
         $this->permissionsSettingsPayloadCache = ['roles' => $roles];
         return $this->permissionsSettingsPayloadCache;
+    }
+
+    protected function dashboardIdForRole(string $role): string
+    {
+        $normalizedRole = $this->normalizeRoleName($role);
+        if ($this->isReservedPermissionRole($normalizedRole)) return self::ADMIN_DEFAULT_DASHBOARD_ID;
+        foreach ($this->buildPermissionsSettingsPayload()['roles'] as $roleConfig) {
+            if ((string) ($roleConfig['roleName'] ?? '') === $normalizedRole) {
+                return (string) ($roleConfig['dashboardId'] ?? self::EMPLOYEE_DEFAULT_DASHBOARD_ID);
+            }
+        }
+        return self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
     }
 
     /**

@@ -3825,12 +3825,147 @@ final class MasterDataApi extends BaseService
         return $this->buildPermissionsSettingsPayload();
     }
 
+    public function fetchDashboardSettings(array $params = []): array
+    {
+        $this->currentUser();
+        if (!$this->tableExists('dashboard_configurations')) {
+            throw new RuntimeException('Dashboard settings table is missing. Run the dashboard configuration migration first.');
+        }
+        return $this->buildDashboardSettingsPayload();
+    }
+
+    public function updateDashboardSettings(array $params): array
+    {
+        $this->requireAdmin();
+        if (!$this->tableExists('dashboard_configurations')) {
+            throw new RuntimeException('Dashboard settings table is missing. Run the dashboard configuration migration first.');
+        }
+
+        $dashboards = is_array($params['dashboards'] ?? null) ? $params['dashboards'] : [];
+        $normalized = [];
+        $names = [];
+        foreach ($dashboards as $dashboard) {
+            if (!is_array($dashboard)) continue;
+            $id = trim((string) ($dashboard['id'] ?? ''));
+            if ($id === '' || preg_match('/^[A-Za-z0-9_-]{1,64}$/', $id) !== 1) {
+                throw new RuntimeException('Every dashboard needs a valid identifier.');
+            }
+            $systemKey = match ($id) {
+                self::ADMIN_DEFAULT_DASHBOARD_ID => 'admin',
+                self::EMPLOYEE_DEFAULT_DASHBOARD_ID => 'employee',
+                default => null,
+            };
+            $name = match ($systemKey) {
+                'admin' => 'Admin Dashboard (Default)',
+                'employee' => 'Employee Dashboard (Default)',
+                default => trim((string) ($dashboard['name'] ?? '')),
+            };
+            if ($name === '' || mb_strlen($name) > 120) {
+                throw new RuntimeException('Dashboard names are required and may contain up to 120 characters.');
+            }
+            $nameKey = mb_strtolower($name, 'UTF-8');
+            if (isset($names[$nameKey])) {
+                throw new RuntimeException('Dashboard names must be unique.');
+            }
+            $names[$nameKey] = true;
+            $normalized[$id] = [
+                'id' => $id,
+                'name' => $name,
+                'isSystem' => $systemKey !== null,
+                'systemKey' => $systemKey,
+                'kpiCards' => $this->normalizeDashboardItems($dashboard['kpiCards'] ?? [], self::DASHBOARD_KPI_SCOPES, $systemKey),
+                'widgets' => $this->normalizeDashboardItems($dashboard['widgets'] ?? [], self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+            ];
+        }
+
+        foreach (['admin', 'employee'] as $systemKey) {
+            $systemId = $systemKey === 'admin' ? self::ADMIN_DEFAULT_DASHBOARD_ID : self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
+            if (!isset($normalized[$systemId])) {
+                $normalized[$systemId] = [
+                    'id' => $systemId,
+                    'name' => $systemKey === 'admin' ? 'Admin Dashboard (Default)' : 'Employee Dashboard (Default)',
+                    'isSystem' => true,
+                    'systemKey' => $systemKey,
+                    'kpiCards' => $this->defaultDashboardItems(self::DASHBOARD_KPI_SCOPES, $systemKey),
+                    'widgets' => $this->defaultDashboardItems(self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+                ];
+            }
+        }
+
+        $this->database->transaction(function () use ($normalized): void {
+            $this->ensureSystemDashboardConfigurations();
+            $this->database->execute(
+                "UPDATE dashboard_configurations SET name = CONCAT('__dashboard_update__', id) WHERE is_system = 0"
+            );
+            $now = $this->database->nowUtc();
+            foreach ($normalized as $dashboard) {
+                $this->database->execute(
+                    'INSERT INTO dashboard_configurations
+                        (id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at)
+                     VALUES
+                        (:id, :name, :is_system, :system_key, :kpi_cards, :widgets, :created_at, :updated_at)
+                     ON DUPLICATE KEY UPDATE
+                        name = VALUES(name),
+                        is_system = VALUES(is_system),
+                        system_key = VALUES(system_key),
+                        kpi_cards = VALUES(kpi_cards),
+                        widgets = VALUES(widgets),
+                        updated_at = VALUES(updated_at)',
+                    [
+                        ':id' => $dashboard['id'],
+                        ':name' => $dashboard['name'],
+                        ':is_system' => $dashboard['isSystem'] ? 1 : 0,
+                        ':system_key' => $dashboard['systemKey'],
+                        ':kpi_cards' => $this->jsonEncode($dashboard['kpiCards']),
+                        ':widgets' => $this->jsonEncode($dashboard['widgets']),
+                        ':created_at' => $now,
+                        ':updated_at' => $now,
+                    ]
+                );
+            }
+
+            $customIds = array_values(array_map(
+                static fn(array $dashboard): string => (string) $dashboard['id'],
+                array_filter($normalized, static fn(array $dashboard): bool => !$dashboard['isSystem'])
+            ));
+            $deleteBindings = [];
+            $deleteSql = 'SELECT id FROM dashboard_configurations WHERE is_system = 0';
+            if ($customIds !== []) {
+                [$placeholders, $deleteBindings] = $this->inClause($customIds, 'dashboard_keep');
+                $deleteSql .= ' AND id NOT IN (' . implode(', ', $placeholders) . ')';
+            }
+            $removedIds = array_map(
+                static fn(array $row): string => (string) ($row['id'] ?? ''),
+                $this->database->fetchAll($deleteSql, $deleteBindings)
+            );
+            if ($removedIds !== []) {
+                [$placeholders, $bindings] = $this->inClause($removedIds, 'dashboard_remove');
+                if ($this->columnExists('role_permissions', 'dashboard_id')) {
+                    $this->database->execute(
+                        'UPDATE role_permissions SET dashboard_id = :fallback_dashboard_id WHERE dashboard_id IN (' . implode(', ', $placeholders) . ')',
+                        array_merge([':fallback_dashboard_id' => self::EMPLOYEE_DEFAULT_DASHBOARD_ID], $bindings)
+                    );
+                }
+                $this->database->execute(
+                    'DELETE FROM dashboard_configurations WHERE is_system = 0 AND id IN (' . implode(', ', $placeholders) . ')',
+                    $bindings
+                );
+            }
+        });
+
+        $this->permissionsSettingsPayloadCache = null;
+        return $this->fetchDashboardSettings();
+    }
+
     public function updatePermissionsSettings(array $params): array
     {
         $this->requireAdmin();
         $roles = is_array($params['roles'] ?? null) ? $params['roles'] : [];
         if (!$this->tableExists('role_permissions')) {
             throw new RuntimeException('Permissions table is missing. Run the permissions migration first.');
+        }
+        if (!$this->columnExists('role_permissions', 'dashboard_id')) {
+            throw new RuntimeException('Dashboard role assignment column is missing. Run the dashboard configuration migration first.');
         }
 
         $customRoleNames = [];
@@ -3849,6 +3984,12 @@ final class MasterDataApi extends BaseService
                 $this->defaultRolePermissions($roleName),
                 $roleName
             );
+            $dashboardId = trim((string) ($roleConfig['dashboardId'] ?? ''));
+            if ($dashboardId === '') $dashboardId = $this->fallbackDashboardIdForPermissions($permissions);
+            if ($this->dashboardConfigurationById($dashboardId) === null) {
+                throw new RuntimeException('Select a valid dashboard for every role.');
+            }
+            $dashboardId = $this->applyDashboardPermissions($permissions, $dashboardId);
             $now = $this->database->nowUtc();
             $isCustom = !$this->isBuiltInPermissionRole($roleName);
             if ($isCustom) {
@@ -3856,15 +3997,17 @@ final class MasterDataApi extends BaseService
             }
 
             $this->database->execute(
-                'INSERT INTO role_permissions (role_name, permissions, is_custom, created_at, updated_at)
-                 VALUES (:role_name, :permissions, :is_custom, :created_at, :updated_at)
+                'INSERT INTO role_permissions (role_name, permissions, dashboard_id, is_custom, created_at, updated_at)
+                 VALUES (:role_name, :permissions, :dashboard_id, :is_custom, :created_at, :updated_at)
                  ON DUPLICATE KEY UPDATE
                    permissions = VALUES(permissions),
+                   dashboard_id = VALUES(dashboard_id),
                    is_custom = VALUES(is_custom),
                    updated_at = VALUES(updated_at)',
                 [
                     ':role_name' => $roleName,
                     ':permissions' => $this->jsonEncode($permissions),
+                    ':dashboard_id' => $dashboardId,
                     ':is_custom' => $isCustom ? 1 : 0,
                     ':created_at' => $now,
                     ':updated_at' => $now,

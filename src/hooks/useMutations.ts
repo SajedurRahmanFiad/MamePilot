@@ -19,6 +19,7 @@ import {
   updateAccount,
   deleteAccount,
   createTransaction,
+  createTransfer,
   updateTransaction,
   deleteTransaction,
   markNotificationRead,
@@ -88,6 +89,7 @@ import {
   updateCourierSettings,
   checkFraudCourierHistory,
   updatePermissionsSettings,
+  updateDashboardSettings,
   updateVoiceSurveySettings,
   updateVoiceSurveyIntegrationSettings,
   triggerSurveyCall,
@@ -146,6 +148,7 @@ import type {
   CompanySettings,
   OrderStatus,
   PermissionsSettings,
+  DashboardSettings,
   PayrollPayment,
   PayrollSettings,
   ServiceSubscriptionOverview,
@@ -1329,6 +1332,80 @@ export function useCreateTransaction(): UseMutationResult<Transaction, Error, Pa
   });
 }
 
+/**
+ * Create a balance transfer through the dedicated transfer capability.
+ *
+ * The backend still records the transfer using the shared transaction
+ * implementation, but authorizing it as a transfer keeps users who only have
+ * `transfers.create` from being blocked by the broader transactions module.
+ */
+export function useCreateTransfer(): UseMutationResult<Transaction, Error, Partial<Transaction>, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createTransfer,
+    onMutate: async (newTransaction) => {
+      await queryClient.cancelQueries({ queryKey: ['transactions'] });
+      await queryClient.cancelQueries({ queryKey: ['orders'] });
+
+      const previousTransactions = queryClient.getQueryData<Transaction[]>(['transactions']);
+      const previousOrders = queryClient.getQueryData<Order[]>(['orders']);
+
+      if (previousTransactions) {
+        const optimisticTransaction = {
+          ...newTransaction,
+          id: `temp-${Date.now()}`,
+        } as Transaction;
+        queryClient.setQueryData(['transactions'], [...previousTransactions, optimisticTransaction]);
+
+        const txPage1 = queryClient.getQueryData<any>(['transactions', 1]);
+        if (txPage1 && Array.isArray(txPage1.data)) {
+          const { pageSize: sz } = parsePageKey(['transactions', 1]);
+          queryClient.setQueryData(['transactions', 1], {
+            ...txPage1,
+            data: [optimisticTransaction, ...txPage1.data].slice(0, sz),
+            count: (txPage1.count || 0) + 1,
+          });
+        }
+      }
+
+      return { previousTransactions, previousOrders };
+    },
+    onError: (_err, _newTransaction, context) => {
+      if (context?.previousTransactions) {
+        queryClient.setQueryData(['transactions'], context.previousTransactions);
+      }
+      if (context?.previousOrders) {
+        queryClient.setQueryData(['orders'], context.previousOrders);
+      }
+    },
+    onSuccess: (data) => {
+      const pages = queryClient.getQueriesData({ queryKey: ['transactions'] });
+      pages.forEach(([key, value]) => {
+        try {
+          const k = key as any[];
+          const { page: pageNum, pageSize: sz, filters } = parsePageKey(k);
+          if (pageNum !== 1) return;
+          if (value && (value as any).data && Array.isArray((value as any).data)) {
+            const matches = matchesFiltersForResource('transactions', data, filters);
+            if (!matches) return;
+            const newData = [data, ...((value as any).data)].slice(0, sz);
+            queryClient.setQueryData(key as any, {
+              ...(value as any),
+              data: newData,
+              count: (value as any).count ? (value as any).count + 1 : 1,
+            });
+          }
+        } catch (_e) {
+          // Ignore per-page patch errors; the invalidation below will recover.
+        }
+      });
+      invalidateResourceQueries(queryClient, 'transactions');
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateRecycleBin(queryClient);
+    },
+  });
+}
+
 export function useUpdateTransaction(): UseMutationResult<Transaction, Error, { id: string; updates: Partial<Transaction> }, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
@@ -1689,6 +1766,8 @@ export function useCreateVendor(): UseMutationResult<Vendor, Error, Partial<Vend
       }
     },
     onSuccess: (data) => {
+      queryClient.setQueryData(['vendor', data.id], data);
+
       // Ensure root vendors cache is updated: replace any optimistic entries and dedupe
       try {
         const previous = queryClient.getQueryData<Vendor[]>(['vendors']);
@@ -2892,6 +2971,32 @@ export function useCheckFraudCourierHistory(): UseMutationResult<FraudCheckResul
 export function useUpdateWhatsAppSettings(): UseMutationResult<WhatsAppSettings, Error, Partial<WhatsAppSettings>, unknown> {
   const queryClient = useQueryClient();
   return useMutation({ mutationFn: updateWhatsAppSettings, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp'] }) });
+}
+
+export function useUpdateDashboardSettings(): UseMutationResult<
+  DashboardSettings,
+  Error,
+  DashboardSettings,
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateDashboardSettings,
+    onMutate: async (newSettings) => {
+      await queryClient.cancelQueries({ queryKey: ['settings', 'dashboards'] });
+      const previousSettings = queryClient.getQueryData<DashboardSettings>(['settings', 'dashboards']);
+      queryClient.setQueryData(['settings', 'dashboards'], newSettings);
+      return { previousSettings };
+    },
+    onError: (_err, _newSettings, context) => {
+      if (context?.previousSettings) queryClient.setQueryData(['settings', 'dashboards'], context.previousSettings);
+    },
+    onSuccess: (savedSettings) => {
+      queryClient.setQueryData(['settings', 'dashboards'], savedSettings);
+      queryClient.invalidateQueries({ queryKey: ['settings', 'permissions'] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
 }
 
 export function useUpdateWhatsAppEmbeddedSignupConfiguration(): UseMutationResult<WhatsAppSettings, Error, Pick<WhatsAppSettings, 'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>, unknown> {

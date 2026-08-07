@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Account } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, NumericInput } from '../components';
+import { Button, NumericInput, TransferModal } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
@@ -11,6 +12,9 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
+import { WRITE_FREEZE_ENABLED } from '../src/config/incidentMode';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 
 const Banking: React.FC = () => {
@@ -19,9 +23,14 @@ const Banking: React.FC = () => {
   const createAccountMutation = useCreateAccount();
   const deleteAccountMutation = useDeleteAccount();
   const toast = useToastNotifications();
-  const { canCreateAccounts, canDeleteAccounts } = useRolePermissions();
+  const { can, canCreateAccounts, canDeleteAccounts } = useRolePermissions();
+  const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const canCreateTransfer = can('transfers.create');
+  const { hasSubCapability } = useCapabilities(true);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(() => searchParams.get('transfer') === 'open');
   const [openDeleteMenu, setOpenDeleteMenu] = useState<string | null>(null);
   const [newAcc, setNewAcc] = useState<{ name: string; type: 'Bank' | 'Cash'; openingBalance: number }>({
     name: '',
@@ -103,6 +112,23 @@ const Banking: React.FC = () => {
 
   const totalBalance = filteredAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
 
+  const openTransferModal = () => {
+    if (WRITE_FREEZE_ENABLED || isReadOnly) {
+      showReadOnlyWarning();
+      return;
+    }
+    setShowTransferModal(true);
+  };
+
+  const closeTransferModal = () => {
+    setShowTransferModal(false);
+    if (searchParams.has('transfer')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('transfer');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
+
   const accountFilterDefinitions = useMemo(() => {
     return [
       {
@@ -167,17 +193,30 @@ const Banking: React.FC = () => {
             }}
           />
         </div>
-        {canCreateAccounts && (
-          <Button
-            onClick={() => setShowAddModal(true)}
-            variant="primary"
-            size="md"
-            icon={ICONS.Plus}
-            disabled={createAccountMutation.isPending}
-          >
-            Add Account
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {canCreateTransfer && hasSubCapability('transfer') && (
+            <Button
+              onClick={openTransferModal}
+              variant="secondary"
+              size="md"
+              icon={ICONS.Transfer}
+              disabled={WRITE_FREEZE_ENABLED || createAccountMutation.isPending}
+            >
+              Transfer
+            </Button>
+          )}
+          {canCreateAccounts && (
+            <Button
+              onClick={() => setShowAddModal(true)}
+              variant="primary"
+              size="md"
+              icon={ICONS.Plus}
+              disabled={createAccountMutation.isPending}
+            >
+              Add Account
+            </Button>
+          )}
+        </div>
       </div>
       {/* Summary Card */}
       <div className={`${theme.colors.primary[600]} rounded-xl p-8 text-white shadow-xl shadow-[#0f2f57]/20 relative overflow-hidden`}>
@@ -315,6 +354,7 @@ const Banking: React.FC = () => {
           </div>
         </div>
       )}
+      <TransferModal isOpen={showTransferModal} onClose={closeTransferModal} />
     </div>
   );
 };

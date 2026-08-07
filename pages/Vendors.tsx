@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { Vendor } from '../types';
 import { formatCurrency, ICONS } from '../constants';
-import { Button, Table, TableCell, IconButton } from '../components';
+import { Button, VendorCreateModal, Table, TableCell, IconButton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
@@ -17,12 +17,17 @@ import { DEFAULT_PAGE_SIZE, fetchVendorById, getErrorMessage } from '../src/serv
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
+import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
 
 const Vendors: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
+  const openCreateRequested = Boolean((location.state as { openCreateVendor?: boolean } | null)?.openCreateVendor);
+  const [isCreateVendorOpen, setIsCreateVendorOpen] = useState(openCreateRequested);
   const { canCreateVendors, canEditVendors, canDeleteVendors } = useRolePermissions();
   const {
     data: systemDefaults,
@@ -61,6 +66,23 @@ const Vendors: React.FC = () => {
   const handleRefreshVendors = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['vendors'], exact: false, type: 'active' });
   }, [queryClient]);
+  const handleOpenCreateVendor = useCallback(() => {
+    if (isReadOnly) {
+      showReadOnlyWarning();
+      return;
+    }
+    if (!WRITE_FREEZE_ENABLED) setIsCreateVendorOpen(true);
+  }, [isReadOnly, showReadOnlyWarning]);
+  const handleCloseCreateVendor = useCallback(() => {
+    setIsCreateVendorOpen(false);
+    const currentState = (location.state || {}) as Record<string, unknown>;
+    if (!currentState.openCreateVendor) return;
+    const { openCreateVendor: _ignored, ...remainingState } = currentState;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: Object.keys(remainingState).length > 0 ? remainingState : null,
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
   const vendors = vendorsPage.data || [];
   const total = vendorsPage.count || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -69,6 +91,10 @@ const Vendors: React.FC = () => {
   const vendorNameOptions = useMemo(() => vendorFilterOpts?.names || [], [vendorFilterOpts]);
   const vendorPhoneOptions = useMemo(() => vendorFilterOpts?.phones || [], [vendorFilterOpts]);
   const vendorAddressOptions = useMemo(() => vendorFilterOpts?.addresses || [], [vendorFilterOpts]);
+
+  useEffect(() => {
+    if (openCreateRequested) setIsCreateVendorOpen(true);
+  }, [location.key, openCreateRequested]);
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;
@@ -221,10 +247,12 @@ const Vendors: React.FC = () => {
         </button>
         {canCreateVendors && (
           <Button
-            onClick={() => navigate('/vendors/new')}
+            onClick={handleOpenCreateVendor}
             variant="primary"
             size="md"
             icon={ICONS.Plus}
+            disabled={WRITE_FREEZE_ENABLED}
+            title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : undefined}
           >
             New Vendor
           </Button>
@@ -322,6 +350,7 @@ const Vendors: React.FC = () => {
         emptyMessage="No vendors found"
       />
       <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} disabled={isFetching} />
+      {isCreateVendorOpen && <VendorCreateModal isOpen onClose={handleCloseCreateVendor} />}
     </div>
   );
 };

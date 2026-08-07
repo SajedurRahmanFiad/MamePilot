@@ -4,7 +4,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Vendor } from '../types';
 import { Button } from '../components';
-import { theme } from '../theme';
+import InfoTooltip from '../components/InfoTooltip';
 import { useBeSmartSettings, useVendor } from '../src/hooks/useQueries';
 import { useCreateVendor, useUpdateVendor } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -144,12 +144,11 @@ const VendorForm: React.FC = () => {
             )}
             {smartMode ? (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
-                  <p className="text-sm font-black text-blue-900">Paste exactly what the vendor sent you</p>
-                  <p className="mt-1 text-sm font-medium text-blue-700">Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save.</p>
-                </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400">Vendor details</label>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-black uppercase tracking-widest text-gray-400">Vendor details</label>
+                    <InfoTooltip message="Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save." />
+                  </div>
                   <textarea
                     autoFocus
                     className="min-h-[240px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5 font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"

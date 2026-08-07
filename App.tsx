@@ -70,7 +70,6 @@ const FraudCheckerPage = lazyPage(() => import('./pages/FraudChecker'));
 const Transactions = lazyPage(() => import('./pages/Transactions'));
 const TransactionForm = lazyPage(() => import('./pages/TransactionForm'));
 const RecurringTransactions = lazyPage(() => import('./pages/RecurringTransactions'));
-const Transfer = lazyPage(() => import('./pages/Transfer'));
 const Products = lazyPage(() => import('./pages/Products'));
 const ProductForm = lazyPage(() => import('./pages/ProductForm'));
 const Users = lazyPage(() => import('./pages/Users'));
@@ -154,9 +153,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
                   ? '/banking/accounts'
                   : can('fraudChecker.check') && hasCapability('fraud_checker')
                     ? '/fraud-checker'
-                  : can('transfers.create') && hasSubCapability('transfer')
-                    ? '/banking/transfer'
-                    : canAccessEmployeeWallet
+                  : canAccessEmployeeWallet
                       ? '/wallet'
                       : can('reports.view') && hasCapability('advanced_reports')
                         ? '/reports'
@@ -195,14 +192,14 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       preloaders.add(Customers.preload);
       preloaders.add(CustomerDetails.preload);
     }
-    if (can('customers.create') || can('customers.edit')) {
+    if (can('customers.edit')) {
       preloaders.add(CustomerForm.preload);
     }
     if (can('vendors.view')) {
       preloaders.add(Vendors.preload);
       preloaders.add(VendorDetails.preload);
     }
-    if (can('vendors.create') || can('vendors.edit')) {
+    if (can('vendors.edit')) {
       preloaders.add(VendorForm.preload);
     }
     if (can('products.view')) preloaders.add(Products.preload);
@@ -214,7 +211,6 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (can('fraudChecker.check')) preloaders.add(FraudCheckerPage.preload);
     if (hasCapability('grow_your_business')) preloaders.add(GrowYourBusiness.preload);
     if (hasCapability('auto_calling')) preloaders.add(AutoCalling.preload);
-    if (can('transfers.create') && hasSubCapability('transfer')) preloaders.add(Transfer.preload);
     if (can('users.view') && hasSubCapability('hr_management')) {
       preloaders.add(Users.preload);
       preloaders.add(UserDetails.preload);
@@ -368,7 +364,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (hasCapability('auto_calling') ? <Layout><AutoCalling /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transfer" element={
-        isAuthenticated ? (can('transfers.create') && hasSubCapability('transfer') ? (writeDisabled ? <Navigate to={defaultProtectedRoute} replace /> : <Layout><Transfer /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('transfers.create') && can('accounts.view') && hasSubCapability('transfer') && hasSubCapability('accounts') ? <Navigate to="/banking/accounts?transfer=open" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transactions" element={
         isAuthenticated ? (can('transactions.view') && hasSubCapability('transactions') ? <Layout><Transactions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -392,7 +388,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('customers.view') ? <Layout><Customers /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/customers/new" element={
-        isAuthenticated ? (can('customers.create') ? (writeDisabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('customers.create') ? (writeDisabled ? <Navigate to="/customers" replace /> : <Navigate to="/customers" replace state={{ openCreateCustomer: true }} />) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/customers/edit/:id" element={
         isAuthenticated ? (can('customers.edit') ? (writeDisabled ? <Navigate to="/customers" replace /> : <Layout><CustomerForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
@@ -405,7 +401,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('vendors.view') ? <Layout><Vendors /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/vendors/new" element={
-        isAuthenticated ? (can('vendors.create') ? (writeDisabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('vendors.create') ? (writeDisabled ? <Navigate to="/vendors" replace /> : <Navigate to="/vendors" replace state={{ openCreateVendor: true }} />) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/vendors/edit/:id" element={
         isAuthenticated ? (can('vendors.edit') ? (writeDisabled ? <Navigate to="/vendors" replace /> : <Layout><VendorForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

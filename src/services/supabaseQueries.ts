@@ -17,6 +17,7 @@ import type {
   PayrollSummaryRow,
   Product,
   DashboardSnapshot,
+  DashboardSettings,
   ExpenseSummaryCsvRow,
   ExpenseSummaryReport,
   IncomeSummaryReport,
@@ -194,6 +195,7 @@ export async function fetchTransactionFilterOptions(params?: { search?: string; 
 }
 export async function fetchTransactionById(id: string) { return call<Transaction | null>('fetchTransactionById', { id }); }
 export async function createTransaction(transaction: Omit<Transaction, 'id'>) { return call<Transaction>('createTransaction', transaction); }
+export async function createTransfer(transaction: Omit<Transaction, 'id'>) { return call<Transaction>('createTransfer', transaction); }
 export async function updateTransaction(id: string, updates: Partial<Transaction>) { return call<Transaction>('updateTransaction', { id, updates }); }
 export async function deleteTransaction(id: string) { await remove('deleteTransaction', id); }
 
@@ -482,6 +484,10 @@ export async function checkFraudCourierHistory(phone: string, customerId?: strin
 export async function fetchPermissionsSettings(): Promise<PermissionsSettings> { return call<PermissionsSettings>('fetchPermissionsSettings'); }
 export async function updatePermissionsSettings(updates: PermissionsSettings): Promise<PermissionsSettings> {
   return call<PermissionsSettings>('updatePermissionsSettings', updates);
+}
+export async function fetchDashboardSettings(): Promise<DashboardSettings> { return call<DashboardSettings>('fetchDashboardSettings'); }
+export async function updateDashboardSettings(updates: DashboardSettings): Promise<DashboardSettings> {
+  return call<DashboardSettings>('updateDashboardSettings', updates);
 }
 
 // Voice Survey (Auto Calling)

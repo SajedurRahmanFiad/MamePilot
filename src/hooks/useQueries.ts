@@ -10,6 +10,7 @@ import {
   fetchOrders,
   fetchOrderSearchPreview,
   fetchDashboardSnapshot,
+  fetchDashboardSettings,
   fetchIncomeSummaryReport,
   fetchExpenseSummaryReport,
   fetchExpenseSummaryCsv,
@@ -152,6 +153,7 @@ import type {
   CapabilitySettings,
   CustomerSalesReportData,
   DashboardSnapshot,
+  DashboardSettings,
   ExpenseSummaryCsvRow,
   ExpenseSummaryReport,
   IncomeSummaryReport,
@@ -1573,6 +1575,15 @@ export function usePermissionsSettings(enabled: boolean = true): UseQueryResult<
   return useQuery({
     queryKey: ['settings', 'permissions'],
     queryFn: fetchPermissionsSettings,
+    staleTime: 60 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useDashboardSettings(enabled: boolean = true): UseQueryResult<DashboardSettings, Error> {
+  return useQuery({
+    queryKey: ['settings', 'dashboards'],
+    queryFn: fetchDashboardSettings,
     staleTime: 60 * 60 * 1000,
     enabled,
   });

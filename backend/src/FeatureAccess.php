@@ -60,6 +60,7 @@ final class FeatureAccess
 
     private const ACTION_CAPABILITIES = [
         'fetchDashboardSnapshot' => 'dashboard',
+        'fetchDashboardSettings' => 'dashboard',
         'fetchProducts' => 'inventory',
         'fetchProductById' => 'inventory',
         'fetchProductImagesByIds' => 'inventory',
@@ -185,6 +186,7 @@ final class FeatureAccess
         'syncPathaoDeliveryStatuses' => 'pathao_courier',
         'fetchPathaoOrderInfo' => 'pathao_courier',
         'updatePermissionsSettings' => 'custom_roles',
+        'updateDashboardSettings' => 'custom_roles',
         'fetchAgentSettings' => 'enterprise_ai_agent',
         'updateAgentSettings' => 'enterprise_ai_agent',
         'mameChat' => 'enterprise_ai_agent',

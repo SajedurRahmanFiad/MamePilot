@@ -18,6 +18,7 @@ import NotificationCenterButton from './NotificationCenterButton';
 import ServiceAnnouncementBar from './ServiceAnnouncementBar';
 import MameChat from './MameChat';
 import { useAppBranding } from '../src/contexts/BrandingProvider';
+import { CustomerCreateModal, VendorCreateModal } from './ContactCreateModal';
 
 type SidebarConfigItemWithActive = SidebarConfigItem & {
   active: boolean;
@@ -130,6 +131,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isCustomerCreateOpen, setIsCustomerCreateOpen] = useState(false);
+  const [isVendorCreateOpen, setIsVendorCreateOpen] = useState(false);
   const isSidebarExpanded = isSidebarOpen || isSidebarHovered;
   const sidebarWidth = isSidebarOpen || isSidebarExpanded ? 288 : 80;
   const sidebarTransitionStyle = {
@@ -361,11 +364,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const quickActions = [
     can('orders.create') && hasCapability('sales') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
     can('bills.create') && hasCapability('purchases') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
-    can('customers.create') && hasCapability('sales') ? { label: 'New Customer', to: '/customers/new', icon: ICONS.Customers } : null,
-    can('vendors.create') && hasCapability('purchases') ? { label: 'New Vendor', to: '/vendors/new', icon: ICONS.Vendors } : null,
+    can('customers.create') && hasCapability('sales') ? { label: 'New Customer', onClick: () => setIsCustomerCreateOpen(true), icon: ICONS.Customers } : null,
+    can('vendors.create') && hasCapability('purchases') ? { label: 'New Vendor', onClick: () => setIsVendorCreateOpen(true), icon: ICONS.Vendors } : null,
     can('transactions.create') && hasCapability('banking') ? { label: 'Add Income', to: '/transactions/new/income', icon: ICONS.PlusCircle } : null,
     can('transactions.create') && hasCapability('banking') ? { label: 'Add Expense', to: '/transactions/new/expense', icon: ICONS.Delete } : null,
-  ].filter(Boolean) as { label: string; to: string; icon: React.ReactNode }[];
+  ].filter(Boolean) as { label: string; to?: string; onClick?: () => void; icon: React.ReactNode }[];
 
   return (
     <div className={`${theme.colors.bg.secondary} flex overflow-hidden`} style={{ minHeight: '100vh' }}>
@@ -514,11 +517,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <div className="fixed inset-0 z-40" onClick={() => setIsPlusOpen(false)}></div>
                   <div className={`absolute right-0 mt-3 w-56 ${theme.colors.bg.primary} border ${theme.colors.border.primary} rounded-2xl shadow-2xl z-50 py-2 animate-in fade-in zoom-in slide-in-from-top-2 duration-200 origin-top-right`}>
                     <div className={`px-4 py-2 text-[10px] font-bold ${theme.colors.text.tertiary} uppercase tracking-widest border-b ${theme.colors.border.primary} mb-1`}>Quick Actions</div>
-                      {quickActions.map((item) => (
+                      {quickActions.map((item) => item.to ? (
                         <Link key={item.label} to={item.to} onClick={() => setIsPlusOpen(false)} className={`flex items-center gap-3 px-4 py-3 text-sm font-bold ${theme.colors.text.primary} hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text} ${theme.transitions.normal}`}>
                           <span className="opacity-70">{item.icon}</span>
                           {item.label}
                         </Link>
+                      ) : (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            setIsPlusOpen(false);
+                            item.onClick?.();
+                          }}
+                          className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-bold ${theme.colors.text.primary} hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text} ${theme.transitions.normal}`}
+                        >
+                          <span className="opacity-70">{item.icon}</span>
+                          {item.label}
+                        </button>
                       ))}
                   </div>
                 </>
@@ -582,6 +598,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </footer>}
         </main>
         {hasCapability('enterprise_ai_agent') && !isConversationPage && <MameChat />}
+        {isCustomerCreateOpen && (
+          <CustomerCreateModal isOpen onClose={() => setIsCustomerCreateOpen(false)} />
+        )}
+        {isVendorCreateOpen && (
+          <VendorCreateModal isOpen onClose={() => setIsVendorCreateOpen(false)} />
+        )}
       </div>
     </div>
   );
