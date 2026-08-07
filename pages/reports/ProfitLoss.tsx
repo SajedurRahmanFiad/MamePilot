@@ -1,5 +1,5 @@
 
-import React, { Fragment, useMemo, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../db';
 import { formatCurrency, ICONS } from '../../constants';
@@ -17,32 +17,77 @@ const PLRow: React.FC<{ label: string; amount: number; isBold?: boolean; isTotal
 
 const ProfitLoss: React.FC = () => {
   const navigate = useNavigate();
-  // Date range filter state
   type DateRangeType = 'currentYear' | 'currentMonth' | 'custom';
   const [dateRange, setDateRange] = useState<DateRangeType>('currentYear');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [companyPageId, setCompanyPageId] = useState('all');
+  const [appliedCompanyIds, setAppliedCompanyIds] = useState<string[]>([]);
+  const [pendingCompanyIds, setPendingCompanyIds] = useState<string[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const reportFilterRange = dateRange === 'currentMonth' ? 'This Month' : dateRange === 'custom' ? 'Custom' : 'This Year';
+
   const { data: companySettingsData, isPending: isCompanyLoading } = useCompanySettings();
   const companySettings = useMemo(
     () => normalizeCompanySettings(companySettingsData || db.settings.company),
     [companySettingsData],
   );
-  const selectedCompanyId = companyPageId === 'all' ? '' : companyPageId;
+  const allCompanyIds = useMemo(() => companySettings.pages.map((p) => p.id), [companySettings.pages]);
+
   const { data: plData, isPending: isReportLoading } = useProfitLossReport(
     reportFilterRange,
     { from: customFrom, to: customTo },
-    selectedCompanyId,
+    appliedCompanyIds,
   );
-  const brandedCompanies = companyPageId === 'all'
+
+  const brandedCompanies = appliedCompanyIds.length === 0
     ? companySettings.pages
-    : companySettings.pages.filter((company) => company.id === companyPageId);
+    : companySettings.pages.filter((company) => appliedCompanyIds.includes(company.id));
   const brandingNames = brandedCompanies.map((company) => company.name).filter(Boolean);
   const expenseRows = plData?.expenses || [];
 
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+        setPendingCompanyIds(appliedCompanyIds);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen, appliedCompanyIds]);
+
+  const openDropdown = () => {
+    setPendingCompanyIds(appliedCompanyIds);
+    setDropdownOpen(true);
+  };
+
+  const togglePending = (id: string) => {
+    setPendingCompanyIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const selectAll = () => setPendingCompanyIds(allCompanyIds);
+  const deselectAll = () => setPendingCompanyIds([]);
+
+  const confirmSelection = () => {
+    setAppliedCompanyIds(pendingCompanyIds);
+    setDropdownOpen(false);
+  };
+
+  const allSelected = pendingCompanyIds.length === allCompanyIds.length;
+  const selectionLabel = appliedCompanyIds.length === 0
+    ? 'All Companies'
+    : appliedCompanyIds.length === allCompanyIds.length
+      ? 'All Companies'
+      : appliedCompanyIds.length === 1
+        ? companySettings.pages.find((p) => p.id === appliedCompanyIds[0])?.name || '1 Company'
+        : `${appliedCompanyIds.length} Companies`;
+
   if (isCompanyLoading || isReportLoading) {
-    return <ReportPageSkeleton cards={4} showChart={false} showFilters tableColumns={2} tableRows={8} />;
+    return <ReportPageSkeleton cards={6} showChart={false} showFilters tableColumns={2} tableRows={8} />;
   }
 
   return (
@@ -63,19 +108,58 @@ const ProfitLoss: React.FC = () => {
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-end">
-        <div className="flex-1 min-w-0">
-          <label htmlFor="profit-loss-company" className="block text-xs font-bold text-gray-500 mb-1.5">Company</label>
-          <select
-            id="profit-loss-company"
-            value={companyPageId}
-            onChange={(event) => setCompanyPageId(event.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
+        <div className="flex-1 min-w-0 relative" ref={dropdownRef}>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5">Company</label>
+          <button
+            type="button"
+            onClick={() => (dropdownOpen ? setDropdownOpen(false) : openDropdown())}
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition text-left flex items-center justify-between focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
           >
-            <option value="all">All Companies</option>
-            {companySettings.pages.map((company) => (
-              <option key={company.id} value={company.id}>{company.name}</option>
-            ))}
-          </select>
+            <span className="truncate">{selectionLabel}</span>
+            <svg className={`w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {dropdownOpen && (
+            <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                <button
+                  type="button"
+                  onClick={allSelected ? deselectAll : selectAll}
+                  className="text-xs font-bold text-[var(--primary-medium,#3c5a82)] hover:underline"
+                >
+                  {allSelected ? 'Deselect All' : 'Select All'}
+                </button>
+                <span className="text-xs text-gray-400">{pendingCompanyIds.length}/{allCompanyIds.length}</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto py-1">
+                {companySettings.pages.map((company) => (
+                  <label
+                    key={company.id}
+                    className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pendingCompanyIds.includes(company.id)}
+                      onChange={() => togglePending(company.id)}
+                      className="w-4 h-4 rounded border-gray-300 text-[var(--primary-medium,#3c5a82)] focus:ring-[var(--primary-soft,#ebf4ff)]"
+                    />
+                    {company.logo && (
+                      <img src={company.logo} alt="" className="w-6 h-6 rounded object-contain shrink-0" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700 truncate">{company.name}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="px-3 py-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={confirmSelection}
+                  className={`w-full py-1.5 rounded-lg text-sm font-bold text-white transition-colors ${theme.colors.primary[600]} hover:${theme.colors.primary[700]}`}
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <span className="block text-xs font-bold text-gray-500 mb-1.5">Period</span>
@@ -132,10 +216,6 @@ const ProfitLoss: React.FC = () => {
                     <img src={company.logo} alt={`${company.name} logo`} className="w-16 h-16 rounded-xl object-contain mx-auto mb-3" />
                   )}
                   <h3 className="text-lg font-bold text-gray-900">{company.name}</h3>
-                  {company.address && <p className="mt-2 text-xs font-medium text-gray-500">{company.address}</p>}
-                  {(company.phone || company.email) && (
-                    <p className="mt-1 text-xs font-medium text-gray-500">{[company.phone, company.email].filter(Boolean).join(' · ')}</p>
-                  )}
                 </div>
               </Fragment>
             ))}
@@ -143,9 +223,25 @@ const ProfitLoss: React.FC = () => {
         </div>
 
         <div className="p-8 space-y-2">
+          <div className="flex gap-6 pb-6 mb-2 border-b border-gray-100">
+            <div className="flex-1 text-center">
+              <p className="text-2xl font-black text-gray-900">{plData?.orderCount ?? 0}</p>
+              <p className="text-xs font-bold text-gray-500 mt-1">Orders Delivered</p>
+            </div>
+            <div className="flex-1 text-center border-l border-gray-100 pl-6">
+              <p className="text-2xl font-black text-gray-900">{plData?.productsSold ?? 0}</p>
+              <p className="text-xs font-bold text-gray-500 mt-1">Products Sold</p>
+            </div>
+          </div>
+
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Revenue</h4>
-          <PLRow label="Gross Sales (Delivered Orders)" amount={plData?.grossSales || 0} />
-          <PLRow label="Other Operating Income" amount={0} />
+          {(plData?.incomeCategories ?? []).length > 0 ? (
+            plData!.incomeCategories.map((e, i) => (
+              <PLRow key={i} label={e.categoryName} amount={e.amount} />
+            ))
+          ) : (
+            <PLRow label="Gross Sales (Delivered Orders)" amount={plData?.grossSales || 0} />
+          )}
           <PLRow label="Total Revenue" amount={plData?.grossSales || 0} isBold isTotal />
 
           <div className="pt-8">
@@ -161,18 +257,9 @@ const ProfitLoss: React.FC = () => {
           <div className="pt-8">
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Operating Expenses</h4>
             {expenseRows.length > 0 ? (
-              <>
-                {expenseRows.slice(0, 5).map((e, i) => (
-                  <PLRow key={i} label={e.categoryName} amount={e.amount} indent />
-                ))}
-                {expenseRows.length > 5 && (
-                  <PLRow 
-                    label="Other Expenses" 
-                    amount={expenseRows.slice(5).reduce((s,e) => s+e.amount, 0)} 
-                    indent 
-                  />
-                )}
-              </>
+              expenseRows.map((e, i) => (
+                <PLRow key={i} label={e.categoryName} amount={e.amount} indent />
+              ))
             ) : (
               <PLRow label="None" amount={0} indent />
             )}
@@ -186,13 +273,13 @@ const ProfitLoss: React.FC = () => {
             </div>
           </div>
 
-          {plData?.sharedCostsConsolidated && companyPageId !== 'all' && (
+          {plData?.sharedCostsConsolidated && appliedCompanyIds.length > 0 && (
             <p className="pt-5 text-xs font-medium leading-5 text-gray-500">
-              Shared purchases and operating costs have no company assignment in existing records, so they remain consolidated in this company view. Order-linked revenue and expenses are filtered to the selected company.
+              Shared purchases and operating costs have no company assignment in existing records, so they remain consolidated in this company view. Order-linked revenue and expenses are filtered to the selected companies.
             </p>
           )}
         </div>
-        
+
         <div className="p-8 text-center text-[10px] text-gray-300 italic border-t border-gray-50">
           This report is generated automatically by {brandingNames.join(' + ') || 'Mame Pilot'} Financial Management System.
         </div>

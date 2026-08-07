@@ -149,7 +149,7 @@ export async function fetchExpenseSummaryCsv() {
 export async function fetchIncomeVsExpenseReport() {
   return call<IncomeVsExpenseReport>('fetchIncomeVsExpenseReport');
 }
-export async function fetchProfitLossReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageId?: string }) {
+export async function fetchProfitLossReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[] }) {
   return call<ProfitLossReport>('fetchProfitLossReport', params || {});
 }
 export async function fetchProductQuantitySoldReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {

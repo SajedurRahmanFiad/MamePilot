@@ -341,21 +341,22 @@ export function useIncomeVsExpenseReport(
 export function useProfitLossReport(
   filterRange: string = 'This Year',
   customDates: { from: string; to: string } = { from: '', to: '' },
-  companyPageId: string = '',
+  companyPageIds: string[] = [],
   options?: { enabled?: boolean }
 ): UseQueryResult<ProfitLossReport, Error> {
   const normalizedCustomDates = {
     from: String(customDates?.from || ''),
     to: String(customDates?.to || ''),
   };
+  const sortedIds = [...companyPageIds].sort().join(',');
 
   return useQuery({
-    queryKey: ['reports', 'profit-loss', filterRange, normalizedCustomDates.from, normalizedCustomDates.to, companyPageId],
+    queryKey: ['reports', 'profit-loss', filterRange, normalizedCustomDates.from, normalizedCustomDates.to, sortedIds],
     queryFn: () =>
       fetchProfitLossReport({
         filterRange,
         customDates: normalizedCustomDates,
-        companyPageId,
+        companyPageIds,
       }),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,

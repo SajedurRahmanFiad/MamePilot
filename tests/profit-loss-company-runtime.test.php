@@ -34,11 +34,12 @@ profitLossCompanyAssert($companyPages !== [], 'No company page is available for 
 
 $allCompanies = $operations->fetchProfitLossReport([
     'filterRange' => 'All Time',
-    'companyPageId' => '',
+    'companyPageIds' => [],
 ]);
 profitLossCompanyAssert(
-    array_key_exists('companyPageId', $allCompanies)
-        && $allCompanies['companyPageId'] === null
+    array_key_exists('companyPageIds', $allCompanies)
+        && is_array($allCompanies['companyPageIds'])
+        && $allCompanies['companyPageIds'] === []
         && ($allCompanies['sharedCostsConsolidated'] ?? true) === false,
     'All Companies did not return the expected unscoped report metadata.',
 );
@@ -47,21 +48,37 @@ $firstCompanyId = (string) ($companyPages[0]['id'] ?? '');
 profitLossCompanyAssert($firstCompanyId !== '', 'The first company page has no identifier.');
 $selectedCompany = $operations->fetchProfitLossReport([
     'filterRange' => 'All Time',
-    'companyPageId' => $firstCompanyId,
+    'companyPageIds' => [$firstCompanyId],
 ]);
 profitLossCompanyAssert(
-    ($selectedCompany['companyPageId'] ?? null) === $firstCompanyId
+    is_array($selectedCompany['companyPageIds'] ?? null)
+        && in_array($firstCompanyId, $selectedCompany['companyPageIds'], true)
         && ($selectedCompany['sharedCostsConsolidated'] ?? false) === true
         && is_numeric($selectedCompany['grossSales'] ?? null)
         && is_numeric($selectedCompany['netProfit'] ?? null),
     'The selected-company Profit/Loss response is incomplete.',
 );
 
+if (count($companyPages) >= 2) {
+    $secondCompanyId = (string) ($companyPages[1]['id'] ?? '');
+    $multiCompany = $operations->fetchProfitLossReport([
+        'filterRange' => 'All Time',
+        'companyPageIds' => [$firstCompanyId, $secondCompanyId],
+    ]);
+    profitLossCompanyAssert(
+        is_array($multiCompany['companyPageIds'] ?? null)
+            && count($multiCompany['companyPageIds']) === 2
+            && ($multiCompany['sharedCostsConsolidated'] ?? false) === true
+            && is_numeric($multiCompany['grossSales'] ?? null),
+        'Multi-company Profit/Loss response is incomplete.',
+    );
+}
+
 $invalidRejected = false;
 try {
     $operations->fetchProfitLossReport([
         'filterRange' => 'All Time',
-        'companyPageId' => 'missing-company-page',
+        'companyPageIds' => ['missing-company-page'],
     ]);
 } catch (RuntimeException $error) {
     $invalidRejected = str_contains($error->getMessage(), 'Select a valid company');

@@ -102,7 +102,7 @@ const Reports: React.FC = () => {
         onPrefetch: () => {
           void queryClient.prefetchQuery({
             queryKey: ['reports', 'profit-loss', 'This Year', '', '', ''],
-            queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageId: '' }),
+            queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageIds: [] }),
           });
         }
       },

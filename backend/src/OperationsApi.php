@@ -3012,10 +3012,22 @@ final class OperationsApi extends BaseService
             $filterRange = 'This Year';
         }
 
+        $rawCompanyIds = $params['companyPageIds'] ?? $params['companyPageId'] ?? $params['company_page_id'] ?? '';
+        if (is_string($rawCompanyIds)) {
+            $rawCompanyIds = $rawCompanyIds !== '' ? array_map('trim', explode(',', $rawCompanyIds)) : [];
+        }
+        if (!is_array($rawCompanyIds)) {
+            $rawCompanyIds = [];
+        }
+        $companyPageIds = array_values(array_filter(array_map(
+            static fn($id) => trim((string) $id),
+            $rawCompanyIds,
+        ), static fn($id) => $id !== ''));
+
         return [
             'filterRange' => $filterRange,
             'customDates' => $customDates,
-            'companyPageId' => trim((string) ($params['companyPageId'] ?? $params['company_page_id'] ?? '')),
+            'companyPageIds' => $companyPageIds,
         ];
     }
 
@@ -3887,42 +3899,42 @@ final class OperationsApi extends BaseService
         $this->ensureReportsViewPermission();
 
         $normalizedParams = $this->normalizeProfitLossFilterParams($params);
-        $companyPageId = (string) ($normalizedParams['companyPageId'] ?? '');
-        if (strcasecmp($companyPageId, 'all') === 0) $companyPageId = '';
-        if ($companyPageId !== '') {
-            $companyPageExists = false;
+        $companyPageIds = $normalizedParams['companyPageIds'] ?? [];
+        if (!empty($companyPageIds)) {
+            $validPages = [];
             foreach ($this->fetchCompanyPages() as $companyPage) {
-                if ((string) ($companyPage['id'] ?? '') === $companyPageId) {
-                    $companyPageExists = true;
-                    break;
-                }
+                $validPages[(string) ($companyPage['id'] ?? '')] = true;
             }
-            if (!$companyPageExists) {
-                throw new RuntimeException('Select a valid company for the Profit and Loss statement.');
+            foreach ($companyPageIds as $cid) {
+                if (!isset($validPages[$cid])) {
+                    throw new RuntimeException('Select a valid company for the Profit and Loss statement.');
+                }
             }
         }
 
         $filters = $this->buildDashboardDateFilters($normalizedParams);
+        $hasCompanyFilter = !empty($companyPageIds);
 
         $transactionConditions = ['t.deleted_at IS NULL'];
         $transactionBindings = [];
         $this->applyDashboardDateTimeBounds('t.date', $filters, $transactionConditions, $transactionBindings, 'profit_loss_txn');
         $transactionIncomeCompanyCondition = '1 = 1';
-        if ($companyPageId !== '') {
+        if ($hasCompanyFilter) {
+            $orClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $orClauses[] = '(company_income_order.page_id = :profit_loss_txn_page_' . $i . ' OR (
+                    NULLIF(TRIM(company_income_order.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(company_income_order.page_snapshot, \'$.id\')) = :profit_loss_txn_snap_' . $i . '
+                ))';
+                $transactionBindings[':profit_loss_txn_page_' . $i] = $cid;
+                $transactionBindings[':profit_loss_txn_snap_' . $i] = $cid;
+            }
             $transactionIncomeCompanyCondition = 'EXISTS (
                 SELECT 1 FROM orders company_income_order
                 WHERE company_income_order.id = t.reference_id
                   AND company_income_order.deleted_at IS NULL
-                  AND (
-                    company_income_order.page_id = :profit_loss_income_company_page_id
-                    OR (
-                      NULLIF(TRIM(company_income_order.page_id), \'\') IS NULL
-                      AND JSON_UNQUOTE(JSON_EXTRACT(company_income_order.page_snapshot, \'$.id\')) = :profit_loss_income_snapshot_page_id
-                    )
-                  )
+                  AND (' . implode(' OR ', $orClauses) . ')
             )';
-            $transactionBindings[':profit_loss_income_company_page_id'] = $companyPageId;
-            $transactionBindings[':profit_loss_income_snapshot_page_id'] = $companyPageId;
         }
 
         $transactionSummary = $this->database->fetchOne(
@@ -3944,21 +3956,41 @@ final class OperationsApi extends BaseService
             ':profit_loss_exchange_delivered_status' => 'Exchange delivered',
         ];
         $this->applyDashboardDateBounds('o.order_date', $filters, $orderConditions, $orderBindings, 'profit_loss_order');
-        if ($companyPageId !== '') {
-            $orderConditions[] = '(o.page_id = :profit_loss_order_company_page_id OR (
-                NULLIF(TRIM(o.page_id), \'\') IS NULL
-                AND JSON_UNQUOTE(JSON_EXTRACT(o.page_snapshot, \'$.id\')) = :profit_loss_order_snapshot_page_id
-            ))';
-            $orderBindings[':profit_loss_order_company_page_id'] = $companyPageId;
-            $orderBindings[':profit_loss_order_snapshot_page_id'] = $companyPageId;
+        if ($hasCompanyFilter) {
+            $orClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $orClauses[] = '(o.page_id = :profit_loss_order_page_' . $i . ' OR (
+                    NULLIF(TRIM(o.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(o.page_snapshot, \'$.id\')) = :profit_loss_order_snap_' . $i . '
+                ))';
+                $orderBindings[':profit_loss_order_page_' . $i] = $cid;
+                $orderBindings[':profit_loss_order_snap_' . $i] = $cid;
+            }
+            $orderConditions[] = '(' . implode(' OR ', $orClauses) . ')';
         }
 
         $orderSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(total), 0) AS grossSales
+            'SELECT COALESCE(SUM(total), 0) AS grossSales, COUNT(*) AS orderCount
              FROM orders o
              WHERE ' . implode(' AND ', $orderConditions),
             $orderBindings
         ) ?? [];
+
+        $orderItemsRows = $this->database->fetchAll(
+            'SELECT o.items
+             FROM orders o
+             WHERE ' . implode(' AND ', $orderConditions),
+            $orderBindings
+        );
+        $productsSold = 0;
+        foreach ($orderItemsRows as $orderRow) {
+            $decodedItems = $this->jsonDecodeList($orderRow['items'] ?? null);
+            foreach ($decodedItems as $item) {
+                if (is_array($item)) {
+                    $productsSold += (int) ($item['quantity'] ?? 0);
+                }
+            }
+        }
 
         $billConditions = ['deleted_at IS NULL'];
         $billBindings = [];
@@ -3978,7 +4010,16 @@ final class OperationsApi extends BaseService
         ];
         $expenseBindings = [];
         $this->applyDashboardDateTimeBounds('t.date', $filters, $expenseConditions, $expenseBindings, 'profit_loss_expense');
-        if ($companyPageId !== '') {
+        if ($hasCompanyFilter) {
+            $orClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $orClauses[] = '(company_expense_order.page_id = :profit_loss_exp_page_' . $i . ' OR (
+                    NULLIF(TRIM(company_expense_order.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(company_expense_order.page_snapshot, \'$.id\')) = :profit_loss_exp_snap_' . $i . '
+                ))';
+                $expenseBindings[':profit_loss_exp_page_' . $i] = $cid;
+                $expenseBindings[':profit_loss_exp_snap_' . $i] = $cid;
+            }
             $expenseConditions[] = '(
                 t.reference_id IS NULL
                 OR NOT EXISTS (SELECT 1 FROM orders linked_expense_order WHERE linked_expense_order.id = t.reference_id)
@@ -3986,17 +4027,9 @@ final class OperationsApi extends BaseService
                   SELECT 1 FROM orders company_expense_order
                   WHERE company_expense_order.id = t.reference_id
                     AND company_expense_order.deleted_at IS NULL
-                    AND (
-                      company_expense_order.page_id = :profit_loss_expense_company_page_id
-                      OR (
-                        NULLIF(TRIM(company_expense_order.page_id), \'\') IS NULL
-                        AND JSON_UNQUOTE(JSON_EXTRACT(company_expense_order.page_snapshot, \'$.id\')) = :profit_loss_expense_snapshot_page_id
-                      )
-                    )
+                    AND (' . implode(' OR ', $orClauses) . ')
                 )
             )';
-            $expenseBindings[':profit_loss_expense_company_page_id'] = $companyPageId;
-            $expenseBindings[':profit_loss_expense_snapshot_page_id'] = $companyPageId;
         }
 
         $expenseRows = $this->database->fetchAll(
@@ -4009,6 +4042,46 @@ final class OperationsApi extends BaseService
              GROUP BY categoryName
              ORDER BY amount DESC',
             $expenseBindings
+        );
+
+        $incomeConditions = [
+            't.deleted_at IS NULL',
+            "t.type = 'Income'",
+        ];
+        $incomeBindings = [];
+        $this->applyDashboardDateTimeBounds('t.date', $filters, $incomeConditions, $incomeBindings, 'profit_loss_income');
+        if ($hasCompanyFilter) {
+            $orClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $orClauses[] = '(company_income_cat_order.page_id = :profit_loss_inc_page_' . $i . ' OR (
+                    NULLIF(TRIM(company_income_cat_order.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(company_income_cat_order.page_snapshot, \'$.id\')) = :profit_loss_inc_snap_' . $i . '
+                ))';
+                $incomeBindings[':profit_loss_inc_page_' . $i] = $cid;
+                $incomeBindings[':profit_loss_inc_snap_' . $i] = $cid;
+            }
+            $incomeConditions[] = '(
+                t.reference_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM orders linked_income_order WHERE linked_income_order.id = t.reference_id)
+                OR EXISTS (
+                  SELECT 1 FROM orders company_income_cat_order
+                  WHERE company_income_cat_order.id = t.reference_id
+                    AND company_income_cat_order.deleted_at IS NULL
+                    AND (' . implode(' OR ', $orClauses) . ')
+                )
+            )';
+        }
+
+        $incomeRows = $this->database->fetchAll(
+            'SELECT
+                COALESCE(NULLIF(c.name, \'\'), NULLIF(t.category, \'\'), \'Uncategorized\') AS categoryName,
+                COALESCE(SUM(t.amount), 0) AS amount
+             FROM transactions t
+             LEFT JOIN categories c ON c.id = t.category
+             WHERE ' . implode(' AND ', $incomeConditions) . '
+             GROUP BY categoryName
+             ORDER BY amount DESC',
+            $incomeBindings
         );
 
         $salesFromTransactions = (float) ($transactionSummary['salesFromTransactions'] ?? 0);
@@ -4033,12 +4106,23 @@ final class OperationsApi extends BaseService
             0.0
         );
 
+        $incomeCategories = array_map(
+            static fn(array $row): array => [
+                'categoryName' => (string) ($row['categoryName'] ?? 'Uncategorized'),
+                'amount' => (float) ($row['amount'] ?? 0),
+            ],
+            $incomeRows
+        );
+
         return [
-            'companyPageId' => $companyPageId !== '' ? $companyPageId : null,
-            'sharedCostsConsolidated' => $companyPageId !== '',
+            'companyPageIds' => $companyPageIds,
+            'sharedCostsConsolidated' => $hasCompanyFilter,
+            'orderCount' => (int) ($orderSummary['orderCount'] ?? 0),
+            'productsSold' => $productsSold,
             'grossSales' => $grossSales,
             'costOfPurchases' => $costOfPurchases,
             'grossProfit' => $grossProfit,
+            'incomeCategories' => $incomeCategories,
             'expenses' => $expenses,
             'totalOperatingExpenses' => $totalOperatingExpenses,
             'netProfit' => $grossProfit - $totalOperatingExpenses,

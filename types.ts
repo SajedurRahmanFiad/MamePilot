@@ -1069,11 +1069,14 @@ export interface ProfitLossExpenseLine {
 }
 
 export interface ProfitLossReport {
-  companyPageId: string | null;
+  companyPageIds: string[];
   sharedCostsConsolidated: boolean;
+  orderCount: number;
+  productsSold: number;
   grossSales: number;
   costOfPurchases: number;
   grossProfit: number;
+  incomeCategories: ProfitLossExpenseLine[];
   expenses: ProfitLossExpenseLine[];
   totalOperatingExpenses: number;
   netProfit: number;
