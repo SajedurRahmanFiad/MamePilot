@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Account } from '../types';
+import type { Account } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, TransferModal } from '../components';
+import AccountBalanceAdjustmentModal, { type AccountBalanceAction } from '../components/AccountBalanceAdjustmentModal';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import { theme } from '../theme';
 import { useAccounts } from '../src/hooks/useQueries';
@@ -31,7 +32,8 @@ const Banking: React.FC = () => {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(() => searchParams.get('transfer') === 'open');
-  const [openDeleteMenu, setOpenDeleteMenu] = useState<string | null>(null);
+  const [openAccountMenu, setOpenAccountMenu] = useState<string | null>(null);
+  const [balanceAdjustment, setBalanceAdjustment] = useState<{ account: Account; action: AccountBalanceAction } | null>(null);
   const [newAcc, setNewAcc] = useState<{ name: string; type: 'Bank' | 'Cash'; openingBalance: number }>({
     name: '',
     type: 'Bank',
@@ -103,7 +105,7 @@ const Banking: React.FC = () => {
     try {
       await deleteAccountMutation.mutateAsync(accountId);
       // Mutation hook will update the accounts list automatically
-      setOpenDeleteMenu(null);
+      setOpenAccountMenu(null);
     } catch (err) {
       console.error('Failed to delete account:', err);
       toast.error('Failed to delete account. Please try again.');
@@ -111,6 +113,17 @@ const Banking: React.FC = () => {
   };
 
   const totalBalance = filteredAccounts.reduce((sum, acc) => sum + acc.currentBalance, 0);
+
+  const canAdjustAccountBalance = can('transactions.create') && hasSubCapability('transactions');
+
+  const openBalanceAdjustment = (account: Account, action: AccountBalanceAction) => {
+    setOpenAccountMenu(null);
+    if (WRITE_FREEZE_ENABLED || isReadOnly) {
+      showReadOnlyWarning();
+      return;
+    }
+    setBalanceAdjustment({ account, action });
+  };
 
   const openTransferModal = () => {
     if (WRITE_FREEZE_ENABLED || isReadOnly) {
@@ -248,28 +261,51 @@ const Banking: React.FC = () => {
                 {acc.type === 'Bank' ? ICONS.Banking : ICONS.Banking}
               </div>
               <div className="relative">
-                {canDeleteAccounts && (
+                {(canAdjustAccountBalance || canDeleteAccounts) && (
                   <>
                     <button
-                      onClick={() => setOpenDeleteMenu(openDeleteMenu === acc.id ? null : acc.id)}
+                      onClick={() => setOpenAccountMenu(openAccountMenu === acc.id ? null : acc.id)}
                       className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-lg transition-all"
+                      aria-label={`Open actions for ${acc.name}`}
                     >
                       {ICONS.More}
                     </button>
-                    {openDeleteMenu === acc.id && (
-                      <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-100 rounded-lg shadow-lg z-50 py-1">
-                        <button
-                          onClick={() => handleDeleteAccount(acc.id)}
-                          disabled={acc.currentBalance !== 0 || deleteAccountMutation.isPending}
-                          className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 font-bold ${
-                            acc.currentBalance !== 0 || deleteAccountMutation.isPending
-                              ? 'text-gray-400 cursor-not-allowed'
-                              : 'text-red-600 hover:bg-red-50'
-                          }`}
-                          title={acc.currentBalance !== 0 ? 'Account must have zero balance to delete' : 'Delete account'}
-                        >
-                          {ICONS.Delete} Delete
-                        </button>
+                    {openAccountMenu === acc.id && (
+                      <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-100 rounded-lg shadow-lg z-50 py-1">
+                        {canAdjustAccountBalance && (
+                          <>
+                            <button
+                              onClick={() => openBalanceAdjustment(acc, 'withdraw')}
+                              disabled={WRITE_FREEZE_ENABLED}
+                              className="w-full px-4 py-2.5 text-left text-sm font-bold text-orange-700 hover:bg-orange-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-white flex items-center gap-2"
+                            >
+                              {ICONS.Minus} Withdraw
+                            </button>
+                            <button
+                              onClick={() => openBalanceAdjustment(acc, 'deposit')}
+                              disabled={WRITE_FREEZE_ENABLED}
+                              className="w-full px-4 py-2.5 text-left text-sm font-bold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-white flex items-center gap-2"
+                            >
+                              {ICONS.Plus} Deposit
+                            </button>
+                          </>
+                        )}
+                        {canDeleteAccounts && (
+                          <div className={canAdjustAccountBalance ? 'mt-1 border-t border-gray-100 pt-1' : ''}>
+                            <button
+                              onClick={() => handleDeleteAccount(acc.id)}
+                              disabled={acc.currentBalance !== 0 || deleteAccountMutation.isPending}
+                              className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 font-bold ${
+                                acc.currentBalance !== 0 || deleteAccountMutation.isPending
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-red-600 hover:bg-red-50'
+                              }`}
+                              title={acc.currentBalance !== 0 ? 'Account must have zero balance to delete' : 'Delete account'}
+                            >
+                              {ICONS.Delete} Delete
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -354,6 +390,12 @@ const Banking: React.FC = () => {
           </div>
         </div>
       )}
+      <AccountBalanceAdjustmentModal
+        isOpen={!!balanceAdjustment}
+        account={balanceAdjustment?.account ?? null}
+        action={balanceAdjustment?.action ?? 'deposit'}
+        onClose={() => setBalanceAdjustment(null)}
+      />
       <TransferModal isOpen={showTransferModal} onClose={closeTransferModal} />
     </div>
   );

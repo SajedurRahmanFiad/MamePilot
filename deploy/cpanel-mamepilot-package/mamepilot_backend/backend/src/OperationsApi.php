@@ -6278,6 +6278,9 @@ final class OperationsApi extends BaseService
         $accountId = trim((string) ($params['accountId'] ?? ''));
         $toAccountId = $this->nullableString($params['toAccountId'] ?? null);
         $amount = (float) ($params['amount'] ?? 0);
+        if (!is_finite($amount) || $amount <= 0.0) {
+            throw new RuntimeException('Transaction amount must be greater than zero.');
+        }
         $actorRow = is_array($actor) ? $actor : $this->currentUser();
         $transactionDraft = [
             'id' => $id,

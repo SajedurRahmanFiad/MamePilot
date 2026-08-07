@@ -4,10 +4,11 @@
 INSERT INTO payment_methods (id, name, description, is_active)
 VALUES
   ('cash', 'Cash', 'Cash payment', 1),
-  ('card', 'Card', 'Credit or debit card', 1),
   ('bank_transfer', 'Bank Transfer', 'Bank transfer or wire', 1),
-  ('cheque', 'Cheque', 'Cheque payment', 1),
-  ('digital_wallet', 'Digital Wallet', 'Digital wallet (Nagad, Bkash, etc.)', 1)
+  ('bkash', 'bKash', 'Mobile Banking', 1),
+  ('nagad', 'Nagad', 'Mobile Banking', 1),
+  ('rocket', 'Rocket', 'Mobile Banking', 1),
+  ('upay', 'Upay', 'Mobile Banking', 1)
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO units (id, name, short_name, description)
@@ -16,30 +17,18 @@ VALUES
   ('kilogram', 'Kilogram', 'kg', NULL),
   ('gram', 'Gram', 'g', NULL),
   ('liter', 'Liter', 'L', NULL),
-  ('milliliter', 'Milliliter', 'ml', NULL),
-  ('meter', 'Meter', 'm', NULL),
-  ('centimeter', 'Centimeter', 'cm', NULL),
   ('box', 'Box', 'box', NULL),
-  ('pack', 'Pack', 'pack', NULL),
-  ('dozen', 'Dozen', 'dz', NULL)
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO categories (id, name, type, color, parent_id)
 VALUES
   ('income_sales', 'Sales', 'Income', '#10B981', NULL),
-  ('income_services', 'Services', 'Income', '#3B82F6', NULL),
   ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL),
   ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL),
   ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL),
-  ('expense_utilities', 'Utilities', 'Expense', '#F59E0B', NULL),
-  ('expense_salaries', 'Salaries', 'Expense', '#EC4899', NULL),
-  ('expense_rent', 'Rent', 'Expense', '#6366F1', NULL),
   ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL),
   ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL),
-  ('product_electronics', 'Electronics', 'Product', '#3B82F6', NULL),
-  ('product_clothing', 'Clothing', 'Product', '#EC4899', NULL),
-  ('product_food', 'Food & Beverage', 'Product', '#10B981', NULL),
-  ('product_other', 'Other Products', 'Product', '#8B5CF6', NULL)
+  ('product_other', 'General', 'Product', '#8B5CF6', NULL)
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO company_settings (id, name, phone, email, address, logo)
@@ -92,7 +81,7 @@ VALUES
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO users (id, name, phone, role, image, password_hash, created_at, updated_at)
-VALUES ('developer-1', 'Developer', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+VALUES ('developer-1', 'Fiad', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
   id = id;
 
