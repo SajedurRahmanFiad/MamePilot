@@ -1,11 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../db';
 import { formatCurrency, ICONS } from '../../constants';
 import { ReportPageSkeleton } from '../../components';
 import { theme } from '../../theme';
-import { useProfitLossReport } from '../../src/hooks/useQueries';
+import { useCompanySettings, useProfitLossReport } from '../../src/hooks/useQueries';
+import { normalizeCompanySettings } from '../../src/utils/companyPages';
 
 const PLRow: React.FC<{ label: string; amount: number; isBold?: boolean; isTotal?: boolean; indent?: boolean }> = ({ label, amount, isBold, isTotal, indent }) => (
   <div className={`flex justify-between py-2 ${isBold ? 'font-bold text-gray-900' : 'text-gray-600'} ${isTotal ? 'border-t-2 border-gray-100 pt-4 mt-2' : ''} ${indent ? 'pl-6' : ''}`}>
@@ -21,11 +22,26 @@ const ProfitLoss: React.FC = () => {
   const [dateRange, setDateRange] = useState<DateRangeType>('currentYear');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [companyPageId, setCompanyPageId] = useState('all');
   const reportFilterRange = dateRange === 'currentMonth' ? 'This Month' : dateRange === 'custom' ? 'Custom' : 'This Year';
-  const { data: plData, isPending: isLoading } = useProfitLossReport(reportFilterRange, { from: customFrom, to: customTo });
+  const { data: companySettingsData, isPending: isCompanyLoading } = useCompanySettings();
+  const companySettings = useMemo(
+    () => normalizeCompanySettings(companySettingsData || db.settings.company),
+    [companySettingsData],
+  );
+  const selectedCompanyId = companyPageId === 'all' ? '' : companyPageId;
+  const { data: plData, isPending: isReportLoading } = useProfitLossReport(
+    reportFilterRange,
+    { from: customFrom, to: customTo },
+    selectedCompanyId,
+  );
+  const brandedCompanies = companyPageId === 'all'
+    ? companySettings.pages
+    : companySettings.pages.filter((company) => company.id === companyPageId);
+  const brandingNames = brandedCompanies.map((company) => company.name).filter(Boolean);
   const expenseRows = plData?.expenses || [];
 
-  if (isLoading) {
+  if (isCompanyLoading || isReportLoading) {
     return <ReportPageSkeleton cards={4} showChart={false} showFilters tableColumns={2} tableRows={8} />;
   }
 
@@ -46,82 +62,89 @@ const ProfitLoss: React.FC = () => {
         </button>
       </div>
 
-      {/* Date Range Selector */}
-      <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Period</h3>
-        <div className="flex gap-4 items-end">
-          <div className="flex gap-3">
-            <label className="flex items-center gap-2">
-              <input 
-                type="radio" 
-                name="dateRange" 
-                value="currentYear" 
-                checked={dateRange === 'currentYear'}
-                onChange={(e) => setDateRange(e.target.value as DateRangeType)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm font-medium text-gray-700">Current Year</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input 
-                type="radio" 
-                name="dateRange" 
-                value="currentMonth" 
-                checked={dateRange === 'currentMonth'}
-                onChange={(e) => setDateRange(e.target.value as DateRangeType)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm font-medium text-gray-700">Current Month</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input 
-                type="radio" 
-                name="dateRange" 
-                value="custom" 
-                checked={dateRange === 'custom'}
-                onChange={(e) => setDateRange(e.target.value as DateRangeType)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm font-medium text-gray-700">Custom Range</span>
-            </label>
-          </div>
-          
-          {dateRange === 'custom' && (
-            <div className="flex gap-3 ml-auto">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-bold text-gray-600">From:</label>
-                <input 
-                  type="date" 
+      <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div className="flex-1 min-w-0">
+          <label htmlFor="profit-loss-company" className="block text-xs font-bold text-gray-500 mb-1.5">Company</label>
+          <select
+            id="profit-loss-company"
+            value={companyPageId}
+            onChange={(event) => setCompanyPageId(event.target.value)}
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
+          >
+            <option value="all">All Companies</option>
+            {companySettings.pages.map((company) => (
+              <option key={company.id} value={company.id}>{company.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="block text-xs font-bold text-gray-500 mb-1.5">Period</span>
+          <div className="flex flex-wrap gap-2 items-center">
+            {(['currentYear', 'currentMonth', 'custom'] as DateRangeType[]).map((opt) => (
+              <label
+                key={opt}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors border ${
+                  dateRange === opt
+                    ? 'bg-[var(--primary-soft,#ebf4ff)] border-[var(--primary-medium,#3c5a82)] text-[var(--primary-medium,#3c5a82)]'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="dateRange"
+                  value={opt}
+                  checked={dateRange === opt}
+                  onChange={(e) => setDateRange(e.target.value as DateRangeType)}
+                  className="sr-only"
+                />
+                {opt === 'currentYear' ? 'This Year' : opt === 'currentMonth' ? 'This Month' : 'Custom Range'}
+              </label>
+            ))}
+            {dateRange === 'custom' && (
+              <div className="flex gap-2 items-center ml-1">
+                <input
+                  type="date"
                   value={customFrom}
                   onChange={(e) => setCustomFrom(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs"
                 />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-bold text-gray-600">To:</label>
-                <input 
-                  type="date" 
+                <span className="text-xs text-gray-400">–</span>
+                <input
+                  type="date"
                   value={customTo}
                   onChange={(e) => setCustomTo(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs"
                 />
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-8 bg-gray-50 border-b border-gray-100 text-center">
-          {db.settings.company.logo && (
-            <img src={db.settings.company.logo} className="w-16 h-16 rounded-xl mx-auto mb-4" />
-          )}
-          <h3 className="text-xl font-bold text-gray-900">{db.settings.company.name}</h3>
+        <div className="p-8 bg-gray-50 border-b border-gray-100">
+          <div className="flex flex-col items-stretch justify-center gap-4 sm:flex-row sm:items-center">
+            {brandedCompanies.map((company, index) => (
+              <Fragment key={company.id}>
+                {index > 0 && <span className="self-center text-2xl font-black text-gray-300" aria-hidden="true">+</span>}
+                <div className="min-w-0 flex-1 text-center">
+                  {company.logo && (
+                    <img src={company.logo} alt={`${company.name} logo`} className="w-16 h-16 rounded-xl object-contain mx-auto mb-3" />
+                  )}
+                  <h3 className="text-lg font-bold text-gray-900">{company.name}</h3>
+                  {company.address && <p className="mt-2 text-xs font-medium text-gray-500">{company.address}</p>}
+                  {(company.phone || company.email) && (
+                    <p className="mt-1 text-xs font-medium text-gray-500">{[company.phone, company.email].filter(Boolean).join(' · ')}</p>
+                  )}
+                </div>
+              </Fragment>
+            ))}
+          </div>
         </div>
 
         <div className="p-8 space-y-2">
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Revenue</h4>
-          <PLRow label="Gross Sales (Completed Orders)" amount={plData?.grossSales || 0} />
+          <PLRow label="Gross Sales (Delivered Orders)" amount={plData?.grossSales || 0} />
           <PLRow label="Other Operating Income" amount={0} />
           <PLRow label="Total Revenue" amount={plData?.grossSales || 0} isBold isTotal />
 
@@ -162,10 +185,16 @@ const ProfitLoss: React.FC = () => {
               <span className="text-lg font-black">{formatCurrency(plData?.netProfit || 0)}</span>
             </div>
           </div>
+
+          {plData?.sharedCostsConsolidated && companyPageId !== 'all' && (
+            <p className="pt-5 text-xs font-medium leading-5 text-gray-500">
+              Shared purchases and operating costs have no company assignment in existing records, so they remain consolidated in this company view. Order-linked revenue and expenses are filtered to the selected company.
+            </p>
+          )}
         </div>
         
         <div className="p-8 text-center text-[10px] text-gray-300 italic border-t border-gray-50">
-          This report is generated automatically by {db.settings.company.name || 'Mame Pilot'} Financial Management System.
+          This report is generated automatically by {brandingNames.join(' + ') || 'Mame Pilot'} Financial Management System.
         </div>
       </div>
     </div>

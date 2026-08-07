@@ -154,10 +154,8 @@ const Dashboard: React.FC = () => {
   const canLoadDashboard = Boolean(user) && (canViewAdminDashboard || canViewEmployeeDashboard);
   const { data: dashboardSettingsData } = useDashboardSettings(canLoadDashboard);
   const dashboardSettings = useMemo(() => normalizeDashboardSettings(dashboardSettingsData), [dashboardSettingsData]);
-  const assignedDashboardId = hasAdminAccess(user?.role)
-    ? ADMIN_DEFAULT_DASHBOARD_ID
-    : permissionsSettings?.roles.find((candidate) => candidate.roleName === role)?.dashboardId
-      || (canViewAdminDashboard ? ADMIN_DEFAULT_DASHBOARD_ID : EMPLOYEE_DEFAULT_DASHBOARD_ID);
+  const assignedDashboardId = permissionsSettings?.roles.find((candidate) => candidate.roleName === role)?.dashboardId
+    || (hasAdminAccess(user?.role) || canViewAdminDashboard ? ADMIN_DEFAULT_DASHBOARD_ID : EMPLOYEE_DEFAULT_DASHBOARD_ID);
   const dashboard = dashboardSettings.dashboards.find((candidate) => candidate.id === assignedDashboardId)
     || dashboardSettings.dashboards.find((candidate) => candidate.id === (canViewAdminDashboard ? ADMIN_DEFAULT_DASHBOARD_ID : EMPLOYEE_DEFAULT_DASHBOARD_ID))
     || dashboardSettings.dashboards[0];
@@ -177,6 +175,14 @@ const Dashboard: React.FC = () => {
 
   const handleOpenOrdersByStatus = (status: OrderStatus) => {
     const params = new URLSearchParams({ status });
+    if (filterRange !== 'All Time') params.set('range', filterRange);
+    if (customDates.from) params.set('from', customDates.from);
+    if (customDates.to) params.set('to', customDates.to);
+    if (includeTime) params.set('includeTime', 'true');
+    navigate(`/orders?${params.toString()}`);
+  };
+  const handleOpenOrdersByPaymentStatus = (paymentStatus: string) => {
+    const params = new URLSearchParams({ paymentStatus });
     if (filterRange !== 'All Time') params.set('range', filterRange);
     if (customDates.from) params.set('from', customDates.from);
     if (customDates.to) params.set('to', customDates.to);
@@ -225,6 +231,9 @@ const Dashboard: React.FC = () => {
     const orderCard = (title: string, countKey: keyof NonNullable<typeof adminSnapshot>['orderCounts'], status: OrderStatus, bgColor: string, iconBgColor: string, icon: React.ReactNode) => (
       <StatCard title={title} value={adminSnapshot ? adminSnapshot.orderCounts[countKey] : inlinePlaceholder} icon={icon} bgColor={bgColor} textColor="text-white" iconBgColor={iconBgColor} subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals[countKey]) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals[countKey] : undefined} onClick={canViewOrders ? () => handleOpenOrdersByStatus(status) : undefined} />
     );
+    const paymentCard = (title: string, countKey: keyof NonNullable<typeof adminSnapshot>['paymentCounts'], paymentStatus: string, bgColor: string, iconBgColor: string, icon: React.ReactNode) => (
+      <StatCard title={title} value={adminSnapshot ? adminSnapshot.paymentCounts[countKey] : inlinePlaceholder} icon={icon} bgColor={bgColor} textColor="text-white" iconBgColor={iconBgColor} subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.paymentTotals[countKey]) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.paymentTotals[countKey] : undefined} onClick={canViewOrders ? () => handleOpenOrdersByPaymentStatus(paymentStatus) : undefined} />
+    );
     switch (key) {
       case 'admin.totalSales': return <StatCard title="Total Sales" value={adminSnapshot ? formatCurrency(adminSnapshot.totalSales) : inlinePlaceholder} numericValue={adminSnapshot?.totalSales} showAbbreviated={!isMobile && adminSnapshot !== undefined} icon={ICONS.Sales} bgColor="bg-blue-600" textColor="text-white" iconBgColor="bg-blue-700" />;
       case 'admin.totalPurchases': return <StatCard title="Total Purchases" value={adminSnapshot ? formatCurrency(adminSnapshot.totalPurchases) : inlinePlaceholder} numericValue={adminSnapshot?.totalPurchases} showAbbreviated={!isMobile && adminSnapshot !== undefined} icon={ICONS.Briefcase} bgColor="bg-purple-600" textColor="text-white" iconBgColor="bg-purple-700" />;
@@ -233,10 +242,22 @@ const Dashboard: React.FC = () => {
       case 'admin.totalOrders': return <StatCard title="Total Orders" value={adminSnapshot ? adminSnapshot.orderCounts.total : inlinePlaceholder} icon={ICONS.Dashboard} bgColor="bg-indigo-700" textColor="text-white" iconBgColor="bg-indigo-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.total) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.total : undefined} />;
       case 'admin.onHoldOrders': return orderCard('On Hold Orders', 'onHold', OrderStatus.ON_HOLD, 'bg-orange-500', 'bg-orange-600', ICONS.More);
       case 'admin.processingOrders': return orderCard('Processing Orders', 'processing', OrderStatus.PROCESSING, 'bg-sky-500', 'bg-sky-600', ICONS.More);
+      case 'admin.courierAssignedOrders': return orderCard('Courier Assigned Orders', 'courierAssigned', OrderStatus.COURIER_ASSIGNED, 'bg-blue-600', 'bg-blue-700', ICONS.Courier);
       case 'admin.pickedOrders': return orderCard('Picked Orders', 'picked', OrderStatus.PICKED, 'bg-cyan-500', 'bg-cyan-600', ICONS.Courier);
       case 'admin.deliveredOrders': return orderCard('Delivered Orders', 'completed', OrderStatus.COMPLETED, 'bg-teal-600', 'bg-teal-700', ICONS.PlusCircle);
+      case 'admin.exchangedOrders': return <StatCard title="Exchanged Orders" value={adminSnapshot ? adminSnapshot.orderCounts.exchangeTotal : inlinePlaceholder} icon={ICONS.Transfer} bgColor="bg-violet-700" textColor="text-white" iconBgColor="bg-violet-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.exchangeTotal) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.exchangeTotal : undefined} />;
+      case 'admin.exchangeProcessingOrders': return orderCard('Exchange Processing Orders', 'exchangeProcessing', OrderStatus.EXCHANGE_PROCESSING, 'bg-indigo-500', 'bg-indigo-600', ICONS.Transfer);
+      case 'admin.exchangePickedOrders': return orderCard('Exchange Picked Orders', 'exchangePicked', OrderStatus.EXCHANGE_PICKED, 'bg-purple-500', 'bg-purple-600', ICONS.Courier);
+      case 'admin.exchangeDeliveredOrders': return orderCard('Exchange Delivered Orders', 'exchangeDelivered', OrderStatus.EXCHANGE_DELIVERED, 'bg-emerald-600', 'bg-emerald-700', ICONS.PlusCircle);
+      case 'admin.exchangeReturnedOrders': return orderCard('Exchange Returned Orders', 'exchangeReturned', OrderStatus.EXCHANGE_RETURNED, 'bg-orange-600', 'bg-orange-700', ICONS.Transfer);
+      case 'admin.exchangeCancelledOrders': return orderCard('Exchange Cancelled Orders', 'exchangeCancelled', OrderStatus.EXCHANGE_CANCELLED, 'bg-rose-600', 'bg-rose-700', ICONS.AlertCircle);
       case 'admin.returnedOrders': return orderCard('Returned Orders', 'returned', OrderStatus.RETURNED, 'bg-orange-600', 'bg-orange-700', ICONS.Transfer);
       case 'admin.cancelledOrders': return orderCard('Cancelled Orders', 'cancelled', OrderStatus.CANCELLED, 'bg-red-500', 'bg-red-600', ICONS.AlertCircle);
+      case 'admin.paidOrders': return paymentCard('Paid Orders', 'paid', 'Paid', 'bg-emerald-600', 'bg-emerald-700', ICONS.PlusCircle);
+      case 'admin.partiallyPaidOrders': return paymentCard('Partially Paid Orders', 'partiallyPaid', 'Partially Paid', 'bg-amber-500', 'bg-amber-600', ICONS.Clock);
+      case 'admin.unpaidOrders': return paymentCard('Unpaid Orders', 'unpaid', 'Unpaid', 'bg-red-600', 'bg-red-700', ICONS.AlertCircle);
+      case 'admin.overpaidOrders': return paymentCard('Overpaid Orders', 'overpaid', 'Overpaid', 'bg-green-700', 'bg-green-800', ICONS.Sales);
+      case 'admin.refundedOrders': return paymentCard('Refunded Orders', 'refunded', 'Refunded', 'bg-orange-700', 'bg-orange-800', ICONS.Transfer);
       case 'employee.allTimeOrders': return <EmployeeSummaryCard title="All-time orders" value={employeeSnapshot ? employeeSnapshot.myTotalCreated : inlinePlaceholder} hint="Every order you have created" icon={ICONS.Sales} cardClassName="bg-gradient-to-br from-[#2d5fe6] to-[#366ae8]" iconClassName="bg-[#2452cb]" onClick={canViewOrders ? () => handleOpenMyOrders(undefined, false) : undefined} />;
       case 'employee.createdToday': return <EmployeeSummaryCard title="Created today" value={employeeSnapshot ? employeeSnapshot.myCreatedToday : inlinePlaceholder} hint="Your output since midnight" icon={ICONS.Dashboard} cardClassName="bg-gradient-to-br from-[#159b96] to-[#2bbdb2]" iconClassName="bg-[#0f817c]" onClick={canViewOrders ? () => navigate(`/orders?${new URLSearchParams({ createdBy: String(user.id), range: 'Today' })}`) : undefined} />;
       case 'employee.activeOrders': return <EmployeeSummaryCard title="Active in this view" value={employeeSnapshot ? employeeActiveOrders : inlinePlaceholder} hint="On hold, processing, or picked" icon={ICONS.Clock} cardClassName="bg-gradient-to-br from-[#ef6c00] to-[#f59e0b]" iconClassName="bg-[#d65f00]" onClick={canViewOrders ? () => handleOpenMyOrders() : undefined} />;

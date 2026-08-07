@@ -9,7 +9,7 @@ import {
 import { ADMIN_DEFAULT_DASHBOARD_ID, EMPLOYEE_DEFAULT_DASHBOARD_ID } from '../dashboardConfig';
 
 export const RESERVED_PERMISSION_ROLES = [UserRole.ADMIN, UserRole.DEVELOPER] as const;
-export const BUILT_IN_PERMISSION_ROLES = [UserRole.EMPLOYEE] as const;
+export const BUILT_IN_PERMISSION_ROLES = [UserRole.ADMIN, UserRole.EMPLOYEE] as const;
 
 const LEGACY_SCOPED_PERMISSION_KEYS: Array<{
   legacyKey: string;
@@ -730,6 +730,12 @@ function createPermissionMap(enabledKeys: PermissionKey[]): RolePermissionMap {
 export const DEFAULT_ROLE_PERMISSION_SETTINGS: PermissionsSettings = {
   roles: [
     {
+      roleName: UserRole.ADMIN,
+      isCustom: false,
+      dashboardId: ADMIN_DEFAULT_DASHBOARD_ID,
+      permissions: createPermissionMap(STORED_PERMISSION_KEYS),
+    },
+    {
       roleName: UserRole.EMPLOYEE,
       isCustom: false,
       dashboardId: EMPLOYEE_DEFAULT_DASHBOARD_ID,
@@ -827,9 +833,11 @@ export function normalizePermissionRoleConfig(
   value: Partial<PermissionRoleConfig> | null | undefined,
 ): PermissionRoleConfig | null {
   const roleName = normalizeRoleName(String(value?.roleName || ''));
-  if (!roleName || isReservedPermissionRole(roleName)) {
+  if (!roleName || roleName === UserRole.DEVELOPER) {
     return null;
   }
+
+  const isAdmin = roleName === UserRole.ADMIN;
 
   return {
     roleName,
@@ -839,7 +847,9 @@ export function normalizePermissionRoleConfig(
         ? ADMIN_DEFAULT_DASHBOARD_ID
         : EMPLOYEE_DEFAULT_DASHBOARD_ID
     )),
-    permissions: normalizeRolePermissionMap(value?.permissions, getDefaultPermissionsForRole(roleName), roleName),
+    permissions: isAdmin
+      ? getDefaultPermissionsForRole(roleName)
+      : normalizeRolePermissionMap(value?.permissions, getDefaultPermissionsForRole(roleName), roleName),
     createdAt: value?.createdAt ?? null,
     updatedAt: value?.updatedAt ?? null,
   };

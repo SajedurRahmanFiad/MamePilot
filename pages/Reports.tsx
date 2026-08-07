@@ -101,8 +101,8 @@ const Reports: React.FC = () => {
         requiredCapabilities: ['sales', 'purchases', 'banking'] as AppCapabilityKey[],
         onPrefetch: () => {
           void queryClient.prefetchQuery({
-            queryKey: ['reports', 'profit-loss', 'This Year', '', ''],
-            queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' } }),
+            queryKey: ['reports', 'profit-loss', 'This Year', '', '', ''],
+            queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageId: '' }),
           });
         }
       },

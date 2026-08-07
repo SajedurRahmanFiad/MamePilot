@@ -84,8 +84,9 @@ permissionsSettingsAssert(
     'The successful mutation must retain the server-confirmed permission payload instead of replacing it via invalidation.'
 );
 permissionsSettingsAssert(
-    str_contains($backendSource, 'INSERT INTO role_permissions (role_name, permissions, is_custom, created_at, updated_at)')
+    str_contains($backendSource, 'INSERT INTO role_permissions (role_name, permissions, dashboard_id, is_custom, created_at, updated_at)')
         && str_contains($backendSource, 'permissions = VALUES(permissions)')
+        && str_contains($backendSource, 'dashboard_id = VALUES(dashboard_id)')
         && str_contains($backendSource, '$this->permissionsSettingsPayloadCache = null;')
         && str_contains($backendSource, 'return $this->fetchPermissionsSettings();'),
     'The backend must upsert permission JSON and return a fresh persisted payload.'

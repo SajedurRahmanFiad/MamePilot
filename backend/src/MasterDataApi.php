@@ -3942,8 +3942,17 @@ final class MasterDataApi extends BaseService
                 [$placeholders, $bindings] = $this->inClause($removedIds, 'dashboard_remove');
                 if ($this->columnExists('role_permissions', 'dashboard_id')) {
                     $this->database->execute(
-                        'UPDATE role_permissions SET dashboard_id = :fallback_dashboard_id WHERE dashboard_id IN (' . implode(', ', $placeholders) . ')',
-                        array_merge([':fallback_dashboard_id' => self::EMPLOYEE_DEFAULT_DASHBOARD_ID], $bindings)
+                        'UPDATE role_permissions
+                         SET dashboard_id = CASE
+                           WHEN role_name = :admin_role_name THEN :admin_fallback_dashboard_id
+                           ELSE :employee_fallback_dashboard_id
+                         END
+                         WHERE dashboard_id IN (' . implode(', ', $placeholders) . ')',
+                        array_merge([
+                            ':admin_role_name' => 'Admin',
+                            ':admin_fallback_dashboard_id' => self::ADMIN_DEFAULT_DASHBOARD_ID,
+                            ':employee_fallback_dashboard_id' => self::EMPLOYEE_DEFAULT_DASHBOARD_ID,
+                        ], $bindings)
                     );
                 }
                 $this->database->execute(
@@ -3975,21 +3984,25 @@ final class MasterDataApi extends BaseService
             }
 
             $roleName = $this->normalizeRoleName((string) ($roleConfig['roleName'] ?? ''));
-            if ($roleName === '' || $this->isReservedPermissionRole($roleName)) {
+            if ($roleName === '' || $roleName === 'Developer') {
                 continue;
             }
 
-            $permissions = $this->normalizeRolePermissions(
-                $roleConfig['permissions'] ?? null,
-                $this->defaultRolePermissions($roleName),
-                $roleName
-            );
+            $permissions = $roleName === 'Admin'
+                ? $this->allEnabledRolePermissions()
+                : $this->normalizeRolePermissions(
+                    $roleConfig['permissions'] ?? null,
+                    $this->defaultRolePermissions($roleName),
+                    $roleName
+                );
             $dashboardId = trim((string) ($roleConfig['dashboardId'] ?? ''));
             if ($dashboardId === '') $dashboardId = $this->fallbackDashboardIdForPermissions($permissions);
             if ($this->dashboardConfigurationById($dashboardId) === null) {
                 throw new RuntimeException('Select a valid dashboard for every role.');
             }
-            $dashboardId = $this->applyDashboardPermissions($permissions, $dashboardId);
+            if ($roleName !== 'Admin') {
+                $dashboardId = $this->applyDashboardPermissions($permissions, $dashboardId);
+            }
             $now = $this->database->nowUtc();
             $isCustom = !$this->isBuiltInPermissionRole($roleName);
             if ($isCustom) {

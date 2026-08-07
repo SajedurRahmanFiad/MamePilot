@@ -18,7 +18,7 @@ abstract class BaseService
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';
     protected const RESERVED_PERMISSION_ROLES = ['Admin', 'Developer'];
-    protected const BUILT_IN_PERMISSION_ROLES = ['Employee'];
+    protected const BUILT_IN_PERMISSION_ROLES = ['Admin', 'Employee'];
     protected const ADMIN_DEFAULT_DASHBOARD_ID = 'admin-default';
     protected const EMPLOYEE_DEFAULT_DASHBOARD_ID = 'employee-default';
     protected const DASHBOARD_KPI_SCOPES = [
@@ -29,10 +29,22 @@ abstract class BaseService
         'admin.totalOrders' => 'admin',
         'admin.onHoldOrders' => 'admin',
         'admin.processingOrders' => 'admin',
+        'admin.courierAssignedOrders' => 'admin',
         'admin.pickedOrders' => 'admin',
         'admin.deliveredOrders' => 'admin',
+        'admin.exchangedOrders' => 'admin',
+        'admin.exchangeProcessingOrders' => 'admin',
+        'admin.exchangePickedOrders' => 'admin',
+        'admin.exchangeDeliveredOrders' => 'admin',
+        'admin.exchangeReturnedOrders' => 'admin',
+        'admin.exchangeCancelledOrders' => 'admin',
         'admin.returnedOrders' => 'admin',
         'admin.cancelledOrders' => 'admin',
+        'admin.paidOrders' => 'admin',
+        'admin.partiallyPaidOrders' => 'admin',
+        'admin.unpaidOrders' => 'admin',
+        'admin.overpaidOrders' => 'admin',
+        'admin.refundedOrders' => 'admin',
         'employee.allTimeOrders' => 'employee',
         'employee.createdToday' => 'employee',
         'employee.activeOrders' => 'employee',
@@ -1969,7 +1981,9 @@ abstract class BaseService
 
         foreach (self::BUILT_IN_PERMISSION_ROLES as $roleName) {
             $defaultPermissions = $this->defaultRolePermissions($roleName);
-            $dashboardId = $this->applyDashboardPermissions($defaultPermissions, self::EMPLOYEE_DEFAULT_DASHBOARD_ID);
+            $dashboardId = $roleName === 'Admin'
+                ? self::ADMIN_DEFAULT_DASHBOARD_ID
+                : $this->applyDashboardPermissions($defaultPermissions, self::EMPLOYEE_DEFAULT_DASHBOARD_ID);
             $rolesByName[$roleName] = [
                 'roleName' => $roleName,
                 'isCustom' => false,
@@ -1982,7 +1996,7 @@ abstract class BaseService
 
         foreach ($this->fetchStoredRolePermissionRows() as $row) {
             $roleName = $this->normalizeRoleName((string) ($row['role_name'] ?? ''));
-            if ($roleName === '' || $this->isReservedPermissionRole($roleName)) {
+            if ($roleName === '' || $roleName === 'Developer') {
                 continue;
             }
 
@@ -2001,10 +2015,17 @@ abstract class BaseService
                 ? $rolesByName[$roleName]['permissions']
                 : $this->defaultRolePermissions($roleName);
 
-            $normalizedPermissions = $this->normalizeRolePermissions($row['permissions'] ?? null, $defaultPermissions, $roleName);
+            $normalizedPermissions = $roleName === 'Admin'
+                ? $this->allEnabledRolePermissions()
+                : $this->normalizeRolePermissions($row['permissions'] ?? null, $defaultPermissions, $roleName);
             $dashboardId = trim((string) ($row['dashboard_id'] ?? ''));
             if ($dashboardId === '') $dashboardId = $this->fallbackDashboardIdForPermissions($normalizedPermissions);
-            $dashboardId = $this->applyDashboardPermissions($normalizedPermissions, $dashboardId);
+            if ($this->dashboardConfigurationById($dashboardId) === null) {
+                $dashboardId = $roleName === 'Admin' ? self::ADMIN_DEFAULT_DASHBOARD_ID : self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
+            }
+            if ($roleName !== 'Admin') {
+                $dashboardId = $this->applyDashboardPermissions($normalizedPermissions, $dashboardId);
+            }
             $rolesByName[$roleName] = [
                 'roleName' => $roleName,
                 'isCustom' => !$this->isBuiltInPermissionRole($roleName),
@@ -2031,13 +2052,13 @@ abstract class BaseService
     protected function dashboardIdForRole(string $role): string
     {
         $normalizedRole = $this->normalizeRoleName($role);
-        if ($this->isReservedPermissionRole($normalizedRole)) return self::ADMIN_DEFAULT_DASHBOARD_ID;
+        if ($normalizedRole === 'Developer') return self::ADMIN_DEFAULT_DASHBOARD_ID;
         foreach ($this->buildPermissionsSettingsPayload()['roles'] as $roleConfig) {
             if ((string) ($roleConfig['roleName'] ?? '') === $normalizedRole) {
                 return (string) ($roleConfig['dashboardId'] ?? self::EMPLOYEE_DEFAULT_DASHBOARD_ID);
             }
         }
-        return self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
+        return $normalizedRole === 'Admin' ? self::ADMIN_DEFAULT_DASHBOARD_ID : self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
     }
 
     /**

@@ -909,10 +909,25 @@ export interface DashboardOrderMetrics {
   total: number;
   onHold: number;
   processing: number;
+  courierAssigned: number;
   picked: number;
   completed: number;
+  exchangeTotal: number;
+  exchangeProcessing: number;
+  exchangePicked: number;
+  exchangeDelivered: number;
+  exchangeReturned: number;
+  exchangeCancelled: number;
   returned: number;
   cancelled: number;
+}
+
+export interface DashboardPaymentMetrics {
+  paid: number;
+  partiallyPaid: number;
+  unpaid: number;
+  overpaid: number;
+  refunded: number;
 }
 
 export interface DashboardCashFlowPoint {
@@ -947,6 +962,8 @@ export interface DashboardAdminSnapshot {
   totalProfit: number;
   orderCounts: DashboardOrderMetrics;
   orderTotals: DashboardOrderMetrics;
+  paymentCounts: DashboardPaymentMetrics;
+  paymentTotals: DashboardPaymentMetrics;
   monthlyData: DashboardCashFlowPoint[];
   expenseByCategory: DashboardExpenseCategory[];
   topSoldProducts: DashboardTopProduct[];
@@ -1052,6 +1069,8 @@ export interface ProfitLossExpenseLine {
 }
 
 export interface ProfitLossReport {
+  companyPageId: string | null;
+  sharedCostsConsolidated: boolean;
   grossSales: number;
   costOfPurchases: number;
   grossProfit: number;

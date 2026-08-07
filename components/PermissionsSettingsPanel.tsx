@@ -55,6 +55,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set([SECTION_ORDER[0]]));
 
   const selectedRole = roles.find((role) => role.roleName === selectedRoleName) || roles[0] || null;
+  const isAdminRole = selectedRole?.roleName === 'Admin';
   const filteredRoles = useMemo(() => {
     const query = roleSearch.trim().toLowerCase();
     if (!query) return roles;
@@ -129,6 +130,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
   };
 
   const togglePermission = (roleName: string, permissionKey: PermissionKey) => {
+    if (roleName === 'Admin') return;
     updateRolePermissions(roleName, (current) => ({
       ...current,
       [permissionKey]: !current[permissionKey],
@@ -136,6 +138,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
   };
 
   const toggleSection = (roleName: string, permissionKeys: PermissionKey[]) => {
+    if (roleName === 'Admin') return;
     updateRolePermissions(roleName, (current) => {
       const shouldEnable = !permissionKeys.every((key) => current[key]);
       const next = { ...current };
@@ -152,7 +155,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       ? {
           ...role,
           dashboardId,
-          permissions: {
+          permissions: roleName === 'Admin' ? role.permissions : {
             ...role.permissions,
             'dashboard.viewAdmin': dashboardHasScope(dashboard, 'admin'),
             'dashboard.viewEmployee': dashboardHasScope(dashboard, 'employee'),
@@ -343,7 +346,9 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Editing role</p>
                     <h4 className="mt-2 truncate text-xl font-black text-gray-900">{selectedRole.roleName}</h4>
                     <p className="mt-1 text-sm font-medium text-gray-500">
-                      {enabledPermissionCount} of {DISPLAYED_PERMISSION_KEYS.length} permissions enabled
+                      {isAdminRole
+                        ? 'All permissions are permanently enabled; only the dashboard can be changed.'
+                        : `${enabledPermissionCount} of ${DISPLAYED_PERMISSION_KEYS.length} permissions enabled`}
                     </p>
                   </div>
                   {selectedRole.isCustom && (
@@ -418,9 +423,10 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                         <button
                           type="button"
                           onClick={() => toggleSection(selectedRole.roleName, permissionKeys)}
-                          className="m-2 shrink-0 self-center rounded-xl border border-transparent px-3 py-2 text-xs font-black text-[var(--primary-color,#0f2f57)] transition hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)] sm:mr-3"
+                          disabled={isAdminRole}
+                          className={`m-2 shrink-0 self-center rounded-xl border border-transparent px-3 py-2 text-xs font-black transition sm:mr-3 ${isAdminRole ? 'cursor-not-allowed text-gray-400' : 'text-[var(--primary-color,#0f2f57)] hover:border-[var(--primary-medium,#3c5a82)] hover:bg-[var(--primary-soft,#ebf4ff)]'}`}
                         >
-                          {sectionEnabled ? 'Clear section' : 'Enable section'}
+                          {isAdminRole ? 'Always enabled' : sectionEnabled ? 'Clear section' : 'Enable section'}
                         </button>
                       </div>
                       {isExpanded && (
@@ -428,11 +434,12 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                           {group.items.map((definition) => {
                             const permissionKey = definition.key as PermissionKey;
                             return (
-                              <label key={definition.key} className="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-3.5 transition hover:bg-[var(--primary-soft,#ebf4ff)]">
+                              <label key={definition.key} className={`flex items-start gap-3 rounded-xl px-3 py-3.5 transition ${isAdminRole ? 'cursor-not-allowed bg-gray-50/70 opacity-60' : 'cursor-pointer hover:bg-[var(--primary-soft,#ebf4ff)]'}`}>
                                 <input
                                   type="checkbox"
                                   className={`${checkboxClassName} mt-0.5 shrink-0`}
                                   checked={selectedRole.permissions[permissionKey]}
+                                  disabled={isAdminRole}
                                   onChange={() => togglePermission(selectedRole.roleName, permissionKey)}
                                 />
                                 <span className="min-w-0">

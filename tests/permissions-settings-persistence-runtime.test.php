@@ -47,7 +47,9 @@ $pdo->beginTransaction();
 try {
     $current = $masterData->fetchPermissionsSettings();
     $employee = permissionsPersistenceRole($current, 'Employee');
+    $admin = permissionsPersistenceRole($current, 'Admin');
     permissionsPersistenceAssert($employee !== null, 'Employee permission role is unavailable.');
+    permissionsPersistenceAssert($admin !== null, 'Admin permission role is unavailable.');
 
     $next = $current;
     foreach ($next['roles'] as &$role) {
@@ -80,7 +82,39 @@ try {
         'A fresh permissions fetch did not retain the checked permission.'
     );
 
-    echo "Permissions save/read-back persistence test passed.\n";
+    $adminUpdate = $saved;
+    foreach ($adminUpdate['roles'] as &$role) {
+        if (($role['roleName'] ?? null) === 'Admin') {
+            $role['dashboardId'] = 'employee-default';
+            $role['permissions'][$permissionKey] = false;
+        }
+    }
+    unset($role);
+
+    $savedWithAdminDashboard = $masterData->updatePermissionsSettings($adminUpdate);
+    $savedAdmin = permissionsPersistenceRole($savedWithAdminDashboard, 'Admin');
+    permissionsPersistenceAssert(
+        ($savedAdmin['dashboardId'] ?? null) === 'employee-default',
+        'The Admin dashboard assignment was not persisted.'
+    );
+    permissionsPersistenceAssert(
+        ($savedAdmin['permissions'][$permissionKey] ?? false) === true,
+        'An Admin permission was allowed to become unchecked.'
+    );
+
+    $storedAdminRow = $database->fetchOne(
+        'SELECT permissions, dashboard_id FROM role_permissions WHERE role_name = :role_name LIMIT 1',
+        [':role_name' => 'Admin']
+    );
+    $storedAdminPermissions = json_decode((string) ($storedAdminRow['permissions'] ?? ''), true);
+    permissionsPersistenceAssert(
+        ($storedAdminRow['dashboard_id'] ?? null) === 'employee-default'
+            && is_array($storedAdminPermissions)
+            && ($storedAdminPermissions[$permissionKey] ?? false) === true,
+        'The database did not retain the Admin dashboard with immutable permissions.'
+    );
+
+    echo "Permissions and Admin dashboard save/read-back persistence test passed.\n";
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

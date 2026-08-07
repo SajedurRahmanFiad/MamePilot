@@ -3015,6 +3015,7 @@ final class OperationsApi extends BaseService
         return [
             'filterRange' => $filterRange,
             'customDates' => $customDates,
+            'companyPageId' => trim((string) ($params['companyPageId'] ?? $params['company_page_id'] ?? '')),
         ];
     }
 
@@ -3031,27 +3032,43 @@ final class OperationsApi extends BaseService
 
         $statusKeyMap = [
             'On Hold' => 'onHold',
+            'Created' => 'onHold',
             'Processing' => 'processing',
-            'Courier assigned' => 'processing',
-            'Exchange processing' => 'processing',
+            'Courier assigned' => 'courierAssigned',
             'Picked' => 'picked',
-            'Exchange picked' => 'picked',
             'Completed' => 'completed',
-            'Exchange delivered' => 'completed',
+            'Exchange processing' => 'exchangeProcessing',
+            'Exchange picked' => 'exchangePicked',
+            'Exchange delivered' => 'exchangeDelivered',
+            'Exchange returned' => 'exchangeReturned',
+            'Exchange cancelled' => 'exchangeCancelled',
             'Returned' => 'returned',
-            'Exchange returned' => 'returned',
             'Cancelled' => 'cancelled',
-            'Exchange cancelled' => 'cancelled',
         ];
 
         $baseMetrics = [
             'total' => 0,
             'onHold' => 0,
             'processing' => 0,
+            'courierAssigned' => 0,
             'picked' => 0,
             'completed' => 0,
+            'exchangeTotal' => 0,
+            'exchangeProcessing' => 0,
+            'exchangePicked' => 0,
+            'exchangeDelivered' => 0,
+            'exchangeReturned' => 0,
+            'exchangeCancelled' => 0,
             'returned' => 0,
             'cancelled' => 0,
+        ];
+
+        $basePaymentMetrics = [
+            'paid' => 0,
+            'partiallyPaid' => 0,
+            'unpaid' => 0,
+            'overpaid' => 0,
+            'refunded' => 0,
         ];
 
         $orderConditions = ['deleted_at IS NULL'];
@@ -3086,10 +3103,48 @@ final class OperationsApi extends BaseService
             $count = (int) ($row['count'] ?? 0);
             $total = (float) ($row['total'] ?? 0);
 
-            $orderCounts[$key] = $count;
-            $orderTotals[$key] = $total;
+            $orderCounts[$key] += $count;
+            $orderTotals[$key] += $total;
+            if (str_starts_with($key, 'exchange')) {
+                $orderCounts['exchangeTotal'] += $count;
+                $orderTotals['exchangeTotal'] += $total;
+            }
             $orderCounts['total'] += $count;
             $orderTotals['total'] += $total;
+        }
+
+        $orderSettlementTotalSql = "(CASE WHEN status = 'Cancelled' THEN 0 ELSE total END)";
+        $paymentStatusSql = "(CASE
+            WHEN paid_amount > {$orderSettlementTotalSql} THEN 'Overpaid'
+            WHEN paid_amount <= 0 AND LOWER(COALESCE(history, '')) LIKE '%refund%' THEN 'Refunded'
+            WHEN {$orderSettlementTotalSql} <= 0 THEN 'Paid'
+            WHEN paid_amount <= 0 THEN 'Unpaid'
+            WHEN paid_amount < {$orderSettlementTotalSql} THEN 'Partially Paid'
+            ELSE 'Paid'
+        END)";
+        $paymentStatusKeyMap = [
+            'Paid' => 'paid',
+            'Partially Paid' => 'partiallyPaid',
+            'Unpaid' => 'unpaid',
+            'Overpaid' => 'overpaid',
+            'Refunded' => 'refunded',
+        ];
+        $paymentRows = $this->database->fetchAll(
+            'SELECT ' . $paymentStatusSql . ' AS paymentStatus,
+                    COUNT(*) AS count,
+                    COALESCE(SUM(total), 0) AS total
+             FROM orders
+             WHERE ' . implode(' AND ', $orderConditions) . '
+             GROUP BY paymentStatus',
+            $orderBindings
+        );
+        $paymentCounts = $basePaymentMetrics;
+        $paymentTotals = $basePaymentMetrics;
+        foreach ($paymentRows as $row) {
+            $key = $paymentStatusKeyMap[(string) ($row['paymentStatus'] ?? '')] ?? null;
+            if ($key === null) continue;
+            $paymentCounts[$key] = (int) ($row['count'] ?? 0);
+            $paymentTotals[$key] = (float) ($row['total'] ?? 0);
         }
 
         $salesFromTransactions = 0.0;
@@ -3124,7 +3179,8 @@ final class OperationsApi extends BaseService
             $billPurchases = (float) ($billSummary['totalPurchases'] ?? 0);
         }
 
-        $completedOrderSales = (float) ($orderTotals['completed'] ?? 0);
+        $completedOrderSales = (float) ($orderTotals['completed'] ?? 0)
+            + (float) ($orderTotals['exchangeDelivered'] ?? 0);
 
         $totalSales = $salesFromTransactions > 0 ? $salesFromTransactions : $completedOrderSales;
         $totalPurchases = $hasPurchases ? ($purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases) : 0;
@@ -3362,6 +3418,8 @@ final class OperationsApi extends BaseService
             'totalProfit' => $totalProfit,
             'orderCounts' => $orderCounts,
             'orderTotals' => $orderTotals,
+            'paymentCounts' => $paymentCounts,
+            'paymentTotals' => $paymentTotals,
             'monthlyData' => array_values($monthlyData),
             'expenseByCategory' => $expenseByCategory,
             'topSoldProducts' => $topSoldProducts,
@@ -3828,32 +3886,76 @@ final class OperationsApi extends BaseService
     {
         $this->ensureReportsViewPermission();
 
-        $filters = $this->buildDashboardDateFilters($this->normalizeProfitLossFilterParams($params));
+        $normalizedParams = $this->normalizeProfitLossFilterParams($params);
+        $companyPageId = (string) ($normalizedParams['companyPageId'] ?? '');
+        if (strcasecmp($companyPageId, 'all') === 0) $companyPageId = '';
+        if ($companyPageId !== '') {
+            $companyPageExists = false;
+            foreach ($this->fetchCompanyPages() as $companyPage) {
+                if ((string) ($companyPage['id'] ?? '') === $companyPageId) {
+                    $companyPageExists = true;
+                    break;
+                }
+            }
+            if (!$companyPageExists) {
+                throw new RuntimeException('Select a valid company for the Profit and Loss statement.');
+            }
+        }
 
-        $transactionConditions = ['deleted_at IS NULL'];
+        $filters = $this->buildDashboardDateFilters($normalizedParams);
+
+        $transactionConditions = ['t.deleted_at IS NULL'];
         $transactionBindings = [];
-        $this->applyDashboardDateTimeBounds('date', $filters, $transactionConditions, $transactionBindings, 'profit_loss_txn');
+        $this->applyDashboardDateTimeBounds('t.date', $filters, $transactionConditions, $transactionBindings, 'profit_loss_txn');
+        $transactionIncomeCompanyCondition = '1 = 1';
+        if ($companyPageId !== '') {
+            $transactionIncomeCompanyCondition = 'EXISTS (
+                SELECT 1 FROM orders company_income_order
+                WHERE company_income_order.id = t.reference_id
+                  AND company_income_order.deleted_at IS NULL
+                  AND (
+                    company_income_order.page_id = :profit_loss_income_company_page_id
+                    OR (
+                      NULLIF(TRIM(company_income_order.page_id), \'\') IS NULL
+                      AND JSON_UNQUOTE(JSON_EXTRACT(company_income_order.page_snapshot, \'$.id\')) = :profit_loss_income_snapshot_page_id
+                    )
+                  )
+            )';
+            $transactionBindings[':profit_loss_income_company_page_id'] = $companyPageId;
+            $transactionBindings[':profit_loss_income_snapshot_page_id'] = $companyPageId;
+        }
 
         $transactionSummary = $this->database->fetchOne(
             'SELECT
-                COALESCE(SUM(CASE WHEN type = \'Income\' AND reference_id IS NOT NULL THEN amount ELSE 0 END), 0) AS salesFromTransactions,
-                COALESCE(SUM(CASE WHEN type = \'Expense\' AND category = \'expense_purchases\' THEN amount ELSE 0 END), 0) AS purchasesFromTransactions,
-                COALESCE(SUM(CASE WHEN type = \'Expense\' AND COALESCE(category, \'\') <> \'expense_purchases\' THEN amount ELSE 0 END), 0) AS otherExpenses
-             FROM transactions
+                COALESCE(SUM(CASE WHEN t.type = \'Income\' AND t.reference_id IS NOT NULL AND ' . $transactionIncomeCompanyCondition . ' THEN t.amount ELSE 0 END), 0) AS salesFromTransactions,
+                COALESCE(SUM(CASE WHEN t.type = \'Expense\' AND t.category = \'expense_purchases\' THEN t.amount ELSE 0 END), 0) AS purchasesFromTransactions,
+                COALESCE(SUM(CASE WHEN t.type = \'Expense\' AND COALESCE(t.category, \'\') <> \'expense_purchases\' THEN t.amount ELSE 0 END), 0) AS otherExpenses
+             FROM transactions t
              WHERE ' . implode(' AND ', $transactionConditions),
             $transactionBindings
         ) ?? [];
 
         $orderConditions = [
-            'deleted_at IS NULL',
-            'status = :profit_loss_completed_status',
+            'o.deleted_at IS NULL',
+            'o.status IN (:profit_loss_completed_status, :profit_loss_exchange_delivered_status)',
         ];
-        $orderBindings = [':profit_loss_completed_status' => 'Completed'];
-        $this->applyDashboardDateBounds('order_date', $filters, $orderConditions, $orderBindings, 'profit_loss_order');
+        $orderBindings = [
+            ':profit_loss_completed_status' => 'Completed',
+            ':profit_loss_exchange_delivered_status' => 'Exchange delivered',
+        ];
+        $this->applyDashboardDateBounds('o.order_date', $filters, $orderConditions, $orderBindings, 'profit_loss_order');
+        if ($companyPageId !== '') {
+            $orderConditions[] = '(o.page_id = :profit_loss_order_company_page_id OR (
+                NULLIF(TRIM(o.page_id), \'\') IS NULL
+                AND JSON_UNQUOTE(JSON_EXTRACT(o.page_snapshot, \'$.id\')) = :profit_loss_order_snapshot_page_id
+            ))';
+            $orderBindings[':profit_loss_order_company_page_id'] = $companyPageId;
+            $orderBindings[':profit_loss_order_snapshot_page_id'] = $companyPageId;
+        }
 
         $orderSummary = $this->database->fetchOne(
             'SELECT COALESCE(SUM(total), 0) AS grossSales
-             FROM orders
+             FROM orders o
              WHERE ' . implode(' AND ', $orderConditions),
             $orderBindings
         ) ?? [];
@@ -3876,6 +3978,26 @@ final class OperationsApi extends BaseService
         ];
         $expenseBindings = [];
         $this->applyDashboardDateTimeBounds('t.date', $filters, $expenseConditions, $expenseBindings, 'profit_loss_expense');
+        if ($companyPageId !== '') {
+            $expenseConditions[] = '(
+                t.reference_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM orders linked_expense_order WHERE linked_expense_order.id = t.reference_id)
+                OR EXISTS (
+                  SELECT 1 FROM orders company_expense_order
+                  WHERE company_expense_order.id = t.reference_id
+                    AND company_expense_order.deleted_at IS NULL
+                    AND (
+                      company_expense_order.page_id = :profit_loss_expense_company_page_id
+                      OR (
+                        NULLIF(TRIM(company_expense_order.page_id), \'\') IS NULL
+                        AND JSON_UNQUOTE(JSON_EXTRACT(company_expense_order.page_snapshot, \'$.id\')) = :profit_loss_expense_snapshot_page_id
+                      )
+                    )
+                )
+            )';
+            $expenseBindings[':profit_loss_expense_company_page_id'] = $companyPageId;
+            $expenseBindings[':profit_loss_expense_snapshot_page_id'] = $companyPageId;
+        }
 
         $expenseRows = $this->database->fetchAll(
             'SELECT
@@ -3912,6 +4034,8 @@ final class OperationsApi extends BaseService
         );
 
         return [
+            'companyPageId' => $companyPageId !== '' ? $companyPageId : null,
+            'sharedCostsConsolidated' => $companyPageId !== '',
             'grossSales' => $grossSales,
             'costOfPurchases' => $costOfPurchases,
             'grossProfit' => $grossProfit,
