@@ -117,11 +117,17 @@ const RecurringTransactions: React.FC = () => {
   const filters = useMemo(() => ({
     search: search || undefined,
     type: searchParams.get('type') || undefined,
+    typeNot: searchParams.get('typeNot') || undefined,
     interval: searchParams.get('interval') || undefined,
+    intervalNot: searchParams.get('intervalNot') || undefined,
     status: searchParams.get('status') || undefined,
+    statusNot: searchParams.get('statusNot') || undefined,
     accountId: searchParams.get('accountId') || undefined,
+    accountIdNot: searchParams.get('accountIdNot') || undefined,
     categoryId: searchParams.get('categoryId') || undefined,
+    categoryIdNot: searchParams.get('categoryIdNot') || undefined,
     paymentMethod: searchParams.get('paymentMethod') || undefined,
+    paymentMethodNot: searchParams.get('paymentMethodNot') || undefined,
   }), [search, searchParams]);
 
   const { data: pageData, isFetching, error } = useRecurringTransactionsPage(page, pageSize, filters);
@@ -150,43 +156,71 @@ const RecurringTransactions: React.FC = () => {
   );
 
   const filterDefinitions = useMemo<FilterDefinition[]>(() => [
-    { type: 'Type', values: ['Income', 'Expense'], operators: ['='] },
-    { type: 'Frequency', values: Object.entries(INTERVAL_LABELS).map(([value, label]) => ({ value, label })), operators: ['='] },
-    { type: 'Status', values: [{ value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'error', label: 'Needs attention' }], operators: ['='] },
+    { type: 'Type', values: ['Income', 'Expense'], operators: ['=', '≠'] },
+    { type: 'Frequency', values: Object.entries(INTERVAL_LABELS).map(([value, label]) => ({ value, label })), operators: ['=', '≠'] },
+    { type: 'Status', values: [{ value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'error', label: 'Needs attention' }], operators: ['=', '≠'] },
     {
       type: 'Account',
       values: (options?.accounts ?? []).map((account) => ({ value: account.id, label: account.name })),
-      operators: ['='],
+      operators: ['=', '≠'],
     },
     {
       type: 'Category',
       values: (options?.categories ?? []).map((category) => ({ value: category.id, label: category.name })),
-      operators: ['='],
+      operators: ['=', '≠'],
     },
     {
       type: 'Payment Method',
       values: (options?.paymentMethods ?? []).map((method) => ({ value: method.name, label: method.name })),
-      operators: ['='],
+      operators: ['=', '≠'],
     },
   ], [options]);
 
   const initialFilters = useMemo<CombinedFilter[]>(() => {
     const result: CombinedFilter[] = [];
-    const add = (id: string, type: string, value: string | null, display?: string) => {
-      if (value) result.push({ id, type, operator: '=', value, display });
+    const add = (
+      id: string,
+      type: string,
+      operator: CombinedFilter['operator'],
+      value: string | null,
+      display?: string,
+    ) => {
+      if (value) result.push({ id, type, operator, value, display });
     };
+    const displayInterval = (value: string | null) => value
+      ? INTERVAL_LABELS[value as RecurringTransactionInterval]
+      : undefined;
+    const displayStatus = (value: string | null) => value === 'error'
+      ? 'Needs attention'
+      : value ? `${value[0].toUpperCase()}${value.slice(1)}` : undefined;
+    const displayAccount = (value: string | null) => options?.accounts.find((account) => account.id === value)?.name;
+    const displayCategory = (value: string | null) => options?.categories.find((category) => category.id === value)?.name;
+
     const type = searchParams.get('type');
+    const typeNot = searchParams.get('typeNot');
     const interval = searchParams.get('interval');
+    const intervalNot = searchParams.get('intervalNot');
     const status = searchParams.get('status');
+    const statusNot = searchParams.get('statusNot');
     const accountId = searchParams.get('accountId');
+    const accountIdNot = searchParams.get('accountIdNot');
     const categoryId = searchParams.get('categoryId');
+    const categoryIdNot = searchParams.get('categoryIdNot');
     const paymentMethod = searchParams.get('paymentMethod');
-    add('type', 'Type', type);
-    add('interval', 'Frequency', interval, interval ? INTERVAL_LABELS[interval as RecurringTransactionInterval] : undefined);
-    add('status', 'Status', status, status === 'error' ? 'Needs attention' : status ? `${status[0].toUpperCase()}${status.slice(1)}` : undefined);
-    add('account', 'Account', accountId, options?.accounts.find((account) => account.id === accountId)?.name);
-    add('category', 'Category', categoryId, options?.categories.find((category) => category.id === categoryId)?.name);
-    add('payment', 'Payment Method', paymentMethod);
+    const paymentMethodNot = searchParams.get('paymentMethodNot');
+
+    add('type', 'Type', '=', type);
+    add('type-not', 'Type', '≠', typeNot);
+    add('interval', 'Frequency', '=', interval, displayInterval(interval));
+    add('interval-not', 'Frequency', '≠', intervalNot, displayInterval(intervalNot));
+    add('status', 'Status', '=', status, displayStatus(status));
+    add('status-not', 'Status', '≠', statusNot, displayStatus(statusNot));
+    add('account', 'Account', '=', accountId, displayAccount(accountId));
+    add('account-not', 'Account', '≠', accountIdNot, displayAccount(accountIdNot));
+    add('category', 'Category', '=', categoryId, displayCategory(categoryId));
+    add('category-not', 'Category', '≠', categoryIdNot, displayCategory(categoryIdNot));
+    add('payment', 'Payment Method', '=', paymentMethod);
+    add('payment-not', 'Payment Method', '≠', paymentMethodNot);
     return result;
   }, [options, searchParams]);
 
@@ -201,10 +235,13 @@ const RecurringTransactions: React.FC = () => {
     };
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      Object.values(mapping).forEach((key) => next.delete(key));
+      Object.values(mapping).forEach((key) => { next.delete(key); next.delete(key + 'Not'); });
       applied.forEach((filter) => {
         const key = mapping[filter.type];
-        if (key) next.set(key, filter.value);
+        if (key) {
+          if (filter.operator === '≠') next.set(key + 'Not', filter.value);
+          else next.set(key, filter.value);
+        }
       });
       next.delete('page');
       return next;

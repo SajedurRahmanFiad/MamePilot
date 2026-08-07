@@ -2852,6 +2852,19 @@ CREATE TABLE IF NOT EXISTS dashboard_configurations (
 CALL sp_add_col('role_permissions', 'dashboard_id', 'VARCHAR(64) NULL AFTER permissions');
 CALL sp_create_idx('role_permissions', 'idx_role_permissions_dashboard_id', 'dashboard_id');
 
+-- Migration: 2026-08-08_fix_expense_shipping_category.sql
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;

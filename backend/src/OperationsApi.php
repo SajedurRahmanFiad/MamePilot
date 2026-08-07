@@ -798,15 +798,20 @@ final class OperationsApi extends BaseService
     {
         $stateSql = $this->deletedStateSql($deletedState);
         $shippingDescription = "Shipping costs for Order #{$orderNumber}";
+        $shippingCat = $this->database->fetchOne(
+            "SELECT id FROM categories WHERE name = 'Shipping Costs' AND type = 'Expense' LIMIT 1"
+        );
+        $shippingCategoryId = trim((string) ($shippingCat['id'] ?? '')) ?: 'expense_shipping';
 
         $rows = $this->database->fetchAll(
             "SELECT id, date, type, category, account_id, to_account_id, amount, description,
                     payment_method, approval_status, account_effect_applied
              FROM transactions
              WHERE {$stateSql}
-               AND (reference_id = :reference_id OR (type = 'Expense' AND category = 'expense_shipping' AND description = :shipping_description))",
+               AND (reference_id = :reference_id OR (type = 'Expense' AND category = :shipping_category AND description = :shipping_description))",
             [
                 ':reference_id' => $orderId,
+                ':shipping_category' => $shippingCategoryId,
                 ':shipping_description' => $shippingDescription,
             ]
         );
@@ -9457,7 +9462,13 @@ final class OperationsApi extends BaseService
         }
         $paymentMethod = trim((string) ($courierSettings["{$prefix}_default_payment_method"] ?? ''))
             ?: (trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash');
-        $expenseCategory = trim((string) ($courierSettings["{$prefix}_default_expense_category_id"] ?? '')) ?: 'expense_shipping';
+        $expenseCategory = trim((string) ($courierSettings["{$prefix}_default_expense_category_id"] ?? ''));
+        if ($expenseCategory === '') {
+            $shippingCat = $this->database->fetchOne(
+                "SELECT id FROM categories WHERE name = 'Shipping Costs' AND type = 'Expense' LIMIT 1"
+            );
+            $expenseCategory = trim((string) ($shippingCat['id'] ?? '')) ?: 'expense_shipping';
+        }
         $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
         $transactionId = 'courier-expense-' . substr(hash('sha256', $chargeId), 0, 48);
         $transaction = $this->createTransactionRecord([

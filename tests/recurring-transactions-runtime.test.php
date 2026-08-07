@@ -57,6 +57,12 @@ $assert(
     'The cPanel API wrapper must start and dispatch the recurring transaction module.'
 );
 $assert(str_contains($page, '<DynamicFilterBar') && str_contains($page, '<Pagination'), 'The recurring page must retain dynamic filters and server pagination.');
+$assert(
+    str_contains($page, "operators: ['=', '≠']")
+        && str_contains($page, "searchParams.get('typeNot')")
+        && str_contains($page, "add('type-not', 'Type', '≠', typeNot)"),
+    'Recurring comparison filters must expose and rehydrate their operator/value chips.'
+);
 
 $config = Config::load($root);
 $database = new Database($config);
@@ -93,6 +99,25 @@ try {
         'startAt' => gmdate('c'),
         'isActive' => true,
     ]);
+
+    $excludedIncome = $api->fetchRecurringTransactionsPage([
+        'page' => 1,
+        'pageSize' => 200,
+        'filters' => ['typeNot' => 'Income'],
+    ]);
+    $assert(
+        !in_array((string) $created['id'], array_column($excludedIncome['data'], 'id'), true),
+        'The recurring not-equal filter must exclude the selected comparison value.'
+    );
+    $includedIncome = $api->fetchRecurringTransactionsPage([
+        'page' => 1,
+        'pageSize' => 200,
+        'filters' => ['typeNot' => 'Expense'],
+    ]);
+    $assert(
+        in_array((string) $created['id'], array_column($includedIncome['data'], 'id'), true),
+        'The recurring not-equal filter must retain rows with other values.'
+    );
 
     $processor = new RecurringTransactionProcessor($database, $auth, $config);
     $result = $processor->processDueBatch(5);
