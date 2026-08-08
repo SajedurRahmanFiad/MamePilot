@@ -31,6 +31,14 @@ $productId = substr('product-' . $stamp, 0, 64);
 $orderId = substr('order-' . $stamp, 0, 64);
 $historicalId = substr('historical-' . $stamp, 0, 64);
 
+$dashboardSource = file_get_contents($root . '/pages/Dashboard.tsx');
+orderCogsAssert(is_string($dashboardSource), 'Dashboard source could not be read.');
+orderCogsAssert(
+    str_contains($dashboardSource, "definition.key === 'admin.totalPurchases'")
+    && str_contains($dashboardSource, 'systemDefaults?.calculateCogsFromPurchasePrice'),
+    'The Total Purchases dashboard card is not available through the purchase-price COGS setting.'
+);
+
 $pdo->beginTransaction();
 try {
     $capabilityRow = $database->fetchOne('SELECT id, capabilities FROM app_capability_settings LIMIT 1');

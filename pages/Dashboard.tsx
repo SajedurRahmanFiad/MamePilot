@@ -7,7 +7,7 @@ import { FilterBar } from '../components';
 import type { FilterRange } from '../utils';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { useDashboardSettings, useDashboardSnapshot } from '../src/hooks/useQueries';
+import { useDashboardSettings, useDashboardSnapshot, useSystemDefaults } from '../src/hooks/useQueries';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import {
   ADMIN_DEFAULT_DASHBOARD_ID,
@@ -153,6 +153,7 @@ const Dashboard: React.FC = () => {
 
   const canLoadDashboard = Boolean(user) && (canViewAdminDashboard || canViewEmployeeDashboard);
   const { data: dashboardSettingsData } = useDashboardSettings(canLoadDashboard);
+  const { data: systemDefaults } = useSystemDefaults();
   const dashboardSettings = useMemo(() => normalizeDashboardSettings(dashboardSettingsData), [dashboardSettingsData]);
   const assignedDashboardId = permissionsSettings?.roles.find((candidate) => candidate.roleName === role)?.dashboardId
     || (hasAdminAccess(user?.role) || canViewAdminDashboard ? ADMIN_DEFAULT_DASHBOARD_ID : EMPLOYEE_DEFAULT_DASHBOARD_ID);
@@ -218,6 +219,10 @@ const Dashboard: React.FC = () => {
     definition,
     hasCapability,
     (key) => hasSubCapability(key as any),
+  ) || (
+    definition.key === 'admin.totalPurchases'
+    && !hasCapability('purchases')
+    && Boolean(systemDefaults?.calculateCogsFromPurchasePrice)
   );
   const kpiDefinitionByKey = new Map(DASHBOARD_KPI_DEFINITIONS.map((definition) => [definition.key, definition]));
   const widgetDefinitionByKey = new Map(DASHBOARD_WIDGET_DEFINITIONS.map((definition) => [definition.key, definition]));
