@@ -1529,6 +1529,7 @@ final class MasterDataApi extends BaseService
             'whiteLabel' => (bool) (($capabilitySettings['capabilities']['whitelabel'] ?? null) ?? ($row['white_label'] ?? 0)),
             'themeColor' => trim((string) ($row['theme_color'] ?? '#0f2f57')),
             'productSelectionMode' => (string) ($row['product_selection_mode'] ?? 'simple'),
+            'calculateCogsFromPurchasePrice' => (bool) ($row['calculate_cogs_from_purchase_price'] ?? false),
         ];
     }
 
@@ -1579,6 +1580,19 @@ final class MasterDataApi extends BaseService
                 );
             }
             $payload['product_selection_mode'] = $productSelectionMode;
+        }
+        if (array_key_exists('calculateCogsFromPurchasePrice', $params)) {
+            $enabled = (bool) $params['calculateCogsFromPurchasePrice'];
+            $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
+            if ($enabled && !empty($capabilities['purchases'])) {
+                throw new ApiException('Purchase-price COGS can only be enabled when Bills & Purchases is not active.', 422, 'PURCHASE_PRICE_COGS_NOT_AVAILABLE');
+            }
+            if (!$this->columnExists('system_defaults', 'calculate_cogs_from_purchase_price')) {
+                $this->database->execute(
+                    "ALTER TABLE `system_defaults` ADD COLUMN `calculate_cogs_from_purchase_price` TINYINT(1) NOT NULL DEFAULT 0"
+                );
+            }
+            $payload['calculate_cogs_from_purchase_price'] = (int) $enabled;
         }
 
         $row = $this->database->fetchOne('SELECT id FROM system_defaults LIMIT 1');

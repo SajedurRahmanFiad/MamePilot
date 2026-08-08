@@ -1129,6 +1129,7 @@ export interface Settings {
     whiteLabel: boolean;
     themeColor: string;
     productSelectionMode: string;
+    calculateCogsFromPurchasePrice: boolean;
   };
   categories: {
     id: string;

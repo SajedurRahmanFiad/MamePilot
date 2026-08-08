@@ -2927,6 +2927,32 @@ CALL sp_create_idx('role_permissions', 'idx_role_permissions_dashboard_id', 'das
 
 -- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
 
+-- Migration: 2026-08-08_order_cogs_purchase_price.sql
+-- Record one idempotent purchase-price COGS calculation per order.
+CREATE TABLE IF NOT EXISTS order_cogs_expenses (
+  id VARCHAR(64) NOT NULL,
+  order_id VARCHAR(64) NOT NULL,
+  transaction_id VARCHAR(64) NULL,
+  amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  status VARCHAR(32) NOT NULL DEFAULT 'recorded',
+  breakdown LONGTEXT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT 'automatic',
+  created_by VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_order_cogs_expenses_order (order_id),
+  UNIQUE KEY uq_order_cogs_expenses_transaction (transaction_id),
+  KEY idx_order_cogs_expenses_status (status),
+  CONSTRAINT fk_order_cogs_expenses_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+  CONSTRAINT fk_order_cogs_expenses_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE SET NULL,
+  CONSTRAINT fk_order_cogs_expenses_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Skipped data-mutating statement from 2026-08-08_order_cogs_purchase_price.sql.
+
+CALL sp_add_col('system_defaults', 'calculate_cogs_from_purchase_price', 'TINYINT(1) NOT NULL DEFAULT 0');
+
 -- Migration: 2026-08-08_performance_scaling.sql
 CALL sp_create_idx('users', 'idx_users_active_created_id', '`deleted_at`, `is_system`, `created_at`, `id`');
 CALL sp_create_idx('users', 'idx_users_active_role_name_id', '`deleted_at`, `is_system`, `role`, `name`, `id`');

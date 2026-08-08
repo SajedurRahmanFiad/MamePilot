@@ -24,6 +24,7 @@ const defaultSettings: Settings = {
     whiteLabel: false,
     themeColor: '#0f2f57',
     productSelectionMode: 'simple',
+    calculateCogsFromPurchasePrice: false,
   },
   categories: [],
   paymentMethods: [],

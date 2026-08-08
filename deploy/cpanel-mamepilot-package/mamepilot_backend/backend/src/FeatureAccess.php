@@ -84,6 +84,8 @@ final class FeatureAccess
         'deleteOrder' => 'sales',
         'addCourierCompletionExpense' => 'sales',
         'completePickedOrder' => 'sales',
+        'fetchOrderCogsBackfillStatus' => 'sales',
+        'backfillOrderCogsExpenses' => 'sales',
         'fetchCustomers' => 'sales',
         'fetchLeadsPage' => 'automatic_leads',
         'fetchLeadById' => 'automatic_leads',

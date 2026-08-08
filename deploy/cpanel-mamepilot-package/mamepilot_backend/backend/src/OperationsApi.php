@@ -3110,6 +3110,8 @@ final class OperationsApi extends BaseService
         $capabilities = $featureAccess->fetchCapabilities();
         $hasPurchases = !empty($capabilities['purchases']);
         $hasBanking = !empty($capabilities['banking']);
+        $cogsDefaults = $this->database->fetchOne('SELECT calculate_cogs_from_purchase_price FROM system_defaults LIMIT 1') ?? [];
+        $hasDirectPurchasePriceCogs = !$hasPurchases && (bool) ($cogsDefaults['calculate_cogs_from_purchase_price'] ?? false);
 
         $statusKeyMap = [
             'On Hold' => 'onHold',
@@ -3232,7 +3234,7 @@ final class OperationsApi extends BaseService
         $purchasesFromTransactions = 0.0;
         $otherExpenses = 0.0;
 
-        if ($hasBanking) {
+        if ($hasBanking || $hasDirectPurchasePriceCogs) {
             $transactionSummary = $this->database->fetchOne(
                 'SELECT
                     COALESCE(SUM(CASE WHEN type = \'Income\' AND reference_id IS NOT NULL THEN amount ELSE 0 END), 0) AS salesFromTransactions,
@@ -3264,8 +3266,8 @@ final class OperationsApi extends BaseService
             + (float) ($orderTotals['exchangeDelivered'] ?? 0);
 
         $totalSales = $salesFromTransactions > 0 ? $salesFromTransactions : $completedOrderSales;
-        $totalPurchases = $hasPurchases ? ($purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases) : 0;
-        $totalProfit = ($hasPurchases && $hasBanking) ? ($totalSales - $totalPurchases - $otherExpenses) : 0;
+        $totalPurchases = ($hasPurchases || $hasDirectPurchasePriceCogs) ? ($purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases) : 0;
+        $totalProfit = ($hasPurchases || $hasDirectPurchasePriceCogs) ? ($totalSales - $totalPurchases - $otherExpenses) : 0;
 
         $expenseByCategory = [];
         $monthlyData = [];
@@ -4051,7 +4053,7 @@ final class OperationsApi extends BaseService
         }
 
         $orderSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(total), 0) AS grossSales, COUNT(*) AS orderCount
+            'SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0) AS grossSales, COUNT(*) AS orderCount
              FROM orders o
              WHERE ' . implode(' AND ', $orderConditions),
             $orderBindings
@@ -4085,7 +4087,7 @@ final class OperationsApi extends BaseService
         $this->applyDashboardDateBounds('bill_date', $filters, $billConditions, $billBindings, 'profit_loss_bill');
 
         $billSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(total), 0) AS totalPurchases
+            'SELECT COALESCE(SUM(CASE WHEN COALESCE(paid_amount, 0) > 0 THEN paid_amount ELSE 0 END), 0) AS totalPurchases
              FROM bills
              WHERE ' . implode(' AND ', $billConditions),
             $billBindings
@@ -4532,6 +4534,11 @@ final class OperationsApi extends BaseService
                 'createdAt' => $this->toIso($now),
             ]);
 
+            if (in_array($status, ['Completed', 'Exchange delivered'], true)) {
+                $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $id]);
+                if ($freshForCogs !== null) $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
+            }
+
             $row = $this->fetchOrderRowById($id);
             if ($row === null) {
                 throw new RuntimeException('Created order could not be loaded.');
@@ -4911,6 +4918,12 @@ final class OperationsApi extends BaseService
                 );
                 $automaticExpenseTransactionId = trim((string) ($automaticExpense['id'] ?? ''));
             }
+            if ($nextStatus !== $previousStatus || array_key_exists('items', $updates)) {
+                $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $id]);
+                if ($freshForCogs !== null) {
+                    $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
+                }
+            }
             if ($affectsCustomerSummary) {
                 $this->syncCustomerOrderSummaries([
                     $previousCustomerId,
@@ -5218,6 +5231,14 @@ final class OperationsApi extends BaseService
 
             $this->touchUpdate('orders', $orderId, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
+
+            if ($outcome === 'Delivered') {
+                $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
+                if ($freshForCogs !== null) {
+                    $cogsTransaction = $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
+                    if ($cogsTransaction !== null) $createdTransactions[] = $cogsTransaction;
+                }
+            }
 
             $row = $this->fetchOrderRowById($orderId);
             if ($row === null) {
@@ -5632,6 +5653,8 @@ final class OperationsApi extends BaseService
                 $payload['status'] = $nextStatus;
             }
             $this->touchUpdate('orders', $orderId, $payload);
+            $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
+            if ($freshForCogs !== null) $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
 
             // Sync customer summary
             $this->syncCustomerOrderSummaries([$customerId]);
@@ -6590,7 +6613,7 @@ final class OperationsApi extends BaseService
      * @param array<string, mixed> $params
      * @return array<string, mixed>
      */
-    private function createTransactionRecord(array $params, string $actorId, ?array $actor = null): array
+    private function createTransactionRecord(array $params, string $actorId, ?array $actor = null, bool $applyAccountEffect = true): array
     {
         $id = $this->stringId($params['id'] ?? null);
         $now = $this->database->nowUtc();
@@ -6611,8 +6634,13 @@ final class OperationsApi extends BaseService
             'description' => trim((string) ($params['description'] ?? '')),
         ];
         $approvalState = $this->buildTransactionApprovalState($actorRow, $transactionDraft);
+        if (!$applyAccountEffect) {
+            $approvalState['account_effect_applied'] = 0;
+        }
 
-        $this->assertTransactionHasAvailableBalance($transactionDraft);
+        if ($applyAccountEffect) {
+            $this->assertTransactionHasAvailableBalance($transactionDraft);
+        }
 
         $this->database->execute(
             'INSERT INTO transactions (
@@ -6670,6 +6698,171 @@ final class OperationsApi extends BaseService
         }
 
         return $record;
+    }
+
+    private function purchasePriceCogsEnabled(): bool
+    {
+        if (!$this->tableExists('order_cogs_expenses')) {
+            return false;
+        }
+        $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
+        if (!empty($capabilities['purchases'])) {
+            return false;
+        }
+        $row = $this->database->fetchOne('SELECT calculate_cogs_from_purchase_price FROM system_defaults LIMIT 1') ?? [];
+        return (bool) ($row['calculate_cogs_from_purchase_price'] ?? false);
+    }
+
+    /** @return array{amount:float, breakdown:array<int, array<string,mixed>>} */
+    private function calculateOrderPurchasePriceCogs(array $orderRow): array
+    {
+        $status = trim((string) ($orderRow['status'] ?? ''));
+        $items = $this->jsonDecodeList($orderRow['items'] ?? []);
+        $amount = 0.0;
+        $breakdown = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) continue;
+            if (!empty($item['isExchangeReplacement']) && $status !== 'Exchange delivered') continue;
+            $quantity = max(0.0, (float) ($item['quantity'] ?? 0));
+            if (empty($item['isExchangeReplacement'])) {
+                $quantity = max(0.0, $quantity - (float) ($item['returnedQty'] ?? 0) - (float) ($item['exchangedQty'] ?? 0));
+            }
+            if ($quantity <= 0) continue;
+            $productId = trim((string) ($item['productId'] ?? ''));
+            $product = $productId === '' ? null : $this->database->fetchOne(
+                'SELECT purchase_price FROM products WHERE id = :id LIMIT 1',
+                [':id' => $productId]
+            );
+            $purchasePrice = max(0.0, (float) ($product['purchase_price'] ?? 0));
+            $lineAmount = round($purchasePrice * $quantity, 2);
+            $amount += $lineAmount;
+            $breakdown[] = [
+                'productId' => $productId,
+                'productName' => trim((string) ($item['productName'] ?? '')),
+                'quantity' => $quantity,
+                'purchasePrice' => $purchasePrice,
+                'amount' => $lineAmount,
+            ];
+        }
+        return ['amount' => round($amount, 2), 'breakdown' => $breakdown];
+    }
+
+    /** Create or reconcile the single purchase-price COGS record for an order. */
+    private function syncOrderPurchasePriceCogs(array $actor, array $orderRow, string $source = 'automatic'): ?array
+    {
+        if (!$this->purchasePriceCogsEnabled()) return null;
+        $orderId = trim((string) ($orderRow['id'] ?? ''));
+        $status = trim((string) ($orderRow['status'] ?? ''));
+        if ($orderId === '') return null;
+        $record = $this->database->fetchOne(
+            'SELECT * FROM order_cogs_expenses WHERE order_id = :order_id LIMIT 1 FOR UPDATE',
+            [':order_id' => $orderId]
+        );
+        if ($record === null && !in_array($status, ['Completed', 'Exchange delivered'], true)) return null;
+
+        $calculated = in_array($status, ['Returned', 'Exchange returned', 'Cancelled', 'Exchange cancelled'], true)
+            ? ['amount' => 0.0, 'breakdown' => []]
+            : $this->calculateOrderPurchasePriceCogs($orderRow);
+        $amount = (float) $calculated['amount'];
+        $transactionId = trim((string) ($record['transaction_id'] ?? ''));
+        $transaction = $transactionId !== ''
+            ? $this->database->fetchOne('SELECT * FROM transactions WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $transactionId])
+            : null;
+        $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
+        $systemDefaults = $this->database->fetchOne('SELECT default_account_id, default_payment_method FROM system_defaults LIMIT 1') ?? [];
+        $accountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+        if ($accountId === '') {
+            $fallback = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+            $accountId = trim((string) ($fallback['id'] ?? ''));
+        }
+        $paymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash';
+        if ($amount > 0 && $accountId === '') throw new RuntimeException('Configure a default account before purchase-price COGS can be recorded.');
+
+        if ($transaction !== null) {
+            $wasDeleted = ($transaction['deleted_at'] ?? null) !== null;
+            $amountChanged = abs((float) ($transaction['amount'] ?? 0) - $amount) > 0.001;
+            if ($amount <= 0) {
+                if (!$wasDeleted) {
+                    $this->applyTransactionAccountEffect([$transaction], 'reverse');
+                    $this->softDeleteTransactionRowsByIds([$transactionId], $this->database->nowUtc(), (string) ($actor['id'] ?? ''));
+                }
+            } else {
+                if (!$wasDeleted && $amountChanged) $this->applyTransactionAccountEffect([$transaction], 'reverse');
+                if ($amountChanged) {
+                    $this->database->execute(
+                        'UPDATE transactions SET amount = :amount, description = :description, updated_at = :updated_at WHERE id = :id',
+                        [':amount' => $this->formatMoney($amount), ':description' => "Purchase-price COGS for Order #{$orderNumber}", ':updated_at' => $this->database->nowUtc(), ':id' => $transactionId]
+                    );
+                    $transaction['amount'] = $amount;
+                }
+                if ($wasDeleted) {
+                    $this->database->execute('UPDATE transactions SET deleted_at = NULL, deleted_by = NULL, updated_at = :updated_at WHERE id = :id', [':updated_at' => $this->database->nowUtc(), ':id' => $transactionId]);
+                }
+                if ($wasDeleted || $amountChanged) $this->applyTransactionAccountEffect([$transaction], 'apply');
+            }
+        }
+
+        if ($record === null) {
+            $recordId = 'order-cogs-' . substr(hash('sha256', $orderId), 0, 48);
+            if ($amount > 0) {
+                $newTransactionId = 'order-cogs-tx-' . substr(hash('sha256', $orderId), 0, 46);
+                $transaction = $this->createTransactionRecord([
+                    'id' => $newTransactionId, 'date' => $this->database->nowUtc(), 'type' => 'Expense', 'category' => 'expense_purchases',
+                    'accountId' => $accountId, 'amount' => $amount, 'description' => "Purchase-price COGS for Order #{$orderNumber}",
+                    'referenceId' => $orderId, 'contactId' => (string) ($orderRow['customer_id'] ?? ''), 'paymentMethod' => $paymentMethod, 'history' => [],
+                ], (string) ($actor['id'] ?? ''), $actor, false);
+                $transactionId = (string) ($transaction['id'] ?? $newTransactionId);
+            }
+            $this->database->execute(
+                'INSERT INTO order_cogs_expenses (id, order_id, transaction_id, amount, status, breakdown, source, created_by, created_at, updated_at)
+                 VALUES (:id, :order_id, :transaction_id, :amount, :status, :breakdown, :source, :created_by, :created_at, :updated_at)',
+                [':id' => $recordId, ':order_id' => $orderId, ':transaction_id' => $transactionId !== '' ? $transactionId : null, ':amount' => $this->formatMoney($amount), ':status' => $amount > 0 ? 'recorded' : 'zero_cost', ':breakdown' => $this->jsonEncode($calculated['breakdown']), ':source' => $source, ':created_by' => $actor['id'] ?? null, ':created_at' => $this->database->nowUtc(), ':updated_at' => $this->database->nowUtc()]
+            );
+        } else {
+            $this->database->execute(
+                'UPDATE order_cogs_expenses SET amount = :amount, status = :status, breakdown = :breakdown, source = :source, updated_at = :updated_at WHERE order_id = :order_id',
+                [':amount' => $this->formatMoney($amount), ':status' => $amount > 0 ? 'recorded' : ($transactionId !== '' ? 'reversed' : 'zero_cost'), ':breakdown' => $this->jsonEncode($calculated['breakdown']), ':source' => $source, ':updated_at' => $this->database->nowUtc(), ':order_id' => $orderId]
+            );
+        }
+        return $transaction;
+    }
+
+    public function fetchOrderCogsBackfillStatus(array $params = []): array
+    {
+        $this->requireAdmin();
+        $available = $this->tableExists('order_cogs_expenses');
+        $enabled = $this->purchasePriceCogsEnabled();
+        if (!$available) return ['enabled' => $enabled, 'available' => false, 'missingOrders' => 0, 'processedOrders' => 0];
+        $counts = $this->database->fetchOne(
+            "SELECT
+                COALESCE(SUM(CASE WHEN c.order_id IS NULL THEN 1 ELSE 0 END), 0) AS missing_orders,
+                COUNT(c.order_id) AS processed_orders
+             FROM orders o LEFT JOIN order_cogs_expenses c ON c.order_id = o.id
+             WHERE o.deleted_at IS NULL AND o.status IN ('Completed', 'Exchange delivered')"
+        ) ?? [];
+        return ['enabled' => $enabled, 'available' => true, 'missingOrders' => (int) ($counts['missing_orders'] ?? 0), 'processedOrders' => (int) ($counts['processed_orders'] ?? 0)];
+    }
+
+    public function backfillOrderCogsExpenses(array $params = []): array
+    {
+        $this->requireAdmin();
+        $actor = $this->currentUser();
+        if (!$this->purchasePriceCogsEnabled()) throw new RuntimeException('Enable purchase-price COGS first, and keep Bills & Purchases inactive.');
+        $limit = max(1, min(500, (int) ($params['limit'] ?? 200)));
+        return $this->database->transaction(function () use ($actor, $limit): array {
+            $rows = $this->database->fetchAll(
+                "SELECT o.* FROM orders o LEFT JOIN order_cogs_expenses c ON c.order_id = o.id
+                 WHERE o.deleted_at IS NULL AND o.status IN ('Completed', 'Exchange delivered') AND c.order_id IS NULL
+                 ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC LIMIT {$limit} FOR UPDATE"
+            );
+            $generated = 0; $zero = 0;
+            foreach ($rows as $row) {
+                $transaction = $this->syncOrderPurchasePriceCogs($actor, $row, 'backfill');
+                if ($transaction !== null) $generated++; else $zero++;
+            }
+            $status = $this->fetchOrderCogsBackfillStatus();
+            return [...$status, 'generatedTransactions' => $generated, 'zeroCostOrders' => $zero];
+        });
     }
 
     public function createTransaction(array $params): array

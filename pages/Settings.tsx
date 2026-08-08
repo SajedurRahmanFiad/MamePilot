@@ -27,7 +27,7 @@ import {
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay } from '../components';
-import { fetchCarryBeeStores } from '../src/services/supabaseQueries';
+import { backfillOrderCogsExpenses, fetchCarryBeeStores, fetchOrderCogsBackfillStatus, type OrderCogsBackfillStatus } from '../src/services/supabaseQueries';
 import { compressImage, formatDateTime } from '../utils';
 import { normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
 import { clonePermissionsSettings, DEFAULT_ROLE_PERMISSION_SETTINGS } from '../src/utils/permissions';
@@ -71,6 +71,7 @@ const SettingsPage: React.FC = () => {
   const canUsePathao = hasSubCapability('pathao_courier');
   const canUseAccounts = hasSubCapability('accounts');
   const canUsePayroll = hasSubCapability('payroll');
+  const canUsePurchasePriceCogs = !hasCapability('purchases');
 
   // Query data from React Query hooks
   const { data: companySettingsData, isPending: companyLoading } = useCompanySettings();
@@ -203,7 +204,10 @@ const SettingsPage: React.FC = () => {
     whiteLabel: false,
     themeColor: '#0f2f57',
     productSelectionMode: 'simple',
+    calculateCogsFromPurchasePrice: false,
   });
+  const [cogsBackfillStatus, setCogsBackfillStatus] = useState<OrderCogsBackfillStatus | null>(null);
+  const [cogsBackfillRunning, setCogsBackfillRunning] = useState(false);
   const systemDefaultsDirtyFieldsRef = useRef<Set<SystemDefaultField>>(new Set());
   const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
@@ -279,6 +283,37 @@ const SettingsPage: React.FC = () => {
       });
     }
   }, [systemDefaultsData]);
+
+  React.useEffect(() => {
+    if (!canUsePurchasePriceCogs || !systemDefaultsData?.calculateCogsFromPurchasePrice) {
+      setCogsBackfillStatus(null);
+      return;
+    }
+    fetchOrderCogsBackfillStatus().then(setCogsBackfillStatus).catch(() => setCogsBackfillStatus(null));
+  }, [canUsePurchasePriceCogs, systemDefaultsData?.calculateCogsFromPurchasePrice]);
+
+  const runCogsBackfill = useCallback(async () => {
+    setCogsBackfillRunning(true);
+    const toastId = toast.loading('Generating COGS expenses for past delivered orders...');
+    try {
+      let status = await backfillOrderCogsExpenses();
+      let generated = status.generatedTransactions;
+      let zeroCost = status.zeroCostOrders;
+      while (status.missingOrders > 0) {
+        status = await backfillOrderCogsExpenses();
+        generated += status.generatedTransactions;
+        zeroCost += status.zeroCostOrders;
+      }
+      setCogsBackfillStatus(status);
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['reports'], exact: false });
+      toast.update(toastId, `Historical COGS completed: ${generated} expense transaction(s), ${zeroCost} zero-cost order(s).`, 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Historical COGS generation failed.', 'error');
+    } finally {
+      setCogsBackfillRunning(false);
+    }
+  }, [queryClient, toast]);
 
   const setSystemDefaultField = useCallback(<K extends SystemDefaultField,>(field: K, value: Settings['defaults'][K]) => {
     systemDefaultsDirtyFieldsRef.current.add(field);
@@ -1402,6 +1437,35 @@ const SettingsPage: React.FC = () => {
                     <option value="multi">Multi-select — select then add</option>
                   </select>
                 </div>
+                {canUsePurchasePriceCogs && (
+                  <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-4">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={systemDefaults.calculateCogsFromPurchasePrice}
+                        onChange={e => setSystemDefaultField('calculateCogsFromPurchasePrice', e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <span>
+                        <span className="block text-sm font-bold text-gray-800">Calculate COGS from product purchase prices</span>
+                        <span className="mt-1 block text-xs leading-5 text-gray-600">
+                          When an order is delivered, create one Purchases expense using each delivered product's current purchase price × quantity. This option is available because Bills &amp; Purchases is not active.
+                        </span>
+                      </span>
+                    </label>
+                    {systemDefaultsData?.calculateCogsFromPurchasePrice && cogsBackfillStatus && cogsBackfillStatus.missingOrders > 0 && (
+                      <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-gray-800">Repair historical delivered orders</p>
+                          <p className="mt-1 text-xs text-gray-600">{cogsBackfillStatus.missingOrders.toLocaleString()} delivered order(s) do not have a purchase-price COGS record yet. Current product purchase prices will be used.</p>
+                        </div>
+                        <Button onClick={runCogsBackfill} disabled={cogsBackfillRunning}>
+                          {cogsBackfillRunning ? 'Generating...' : 'Generate Past COGS'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Records Per Page</label>
                   <NumericInput 

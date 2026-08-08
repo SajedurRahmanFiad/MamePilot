@@ -19,6 +19,7 @@ export type SystemDefaultsSnapshot = {
   whiteLabel: boolean;
   themeColor: string;
   productSelectionMode: string;
+  calculateCogsFromPurchasePrice: boolean;
 };
 
 function readEntry<T>(key: string): CacheEntry<T> | null {
