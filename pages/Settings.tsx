@@ -71,7 +71,7 @@ const SettingsPage: React.FC = () => {
   const canUsePathao = hasSubCapability('pathao_courier');
   const canUseAccounts = hasSubCapability('accounts');
   const canUsePayroll = hasSubCapability('payroll');
-  const canUsePurchasePriceCogs = !hasCapability('purchases');
+  const canUsePurchasePriceCogs = !hasCapability('purchases') || user?.role === 'Developer';
 
   // Query data from React Query hooks
   const { data: companySettingsData, isPending: companyLoading } = useCompanySettings();
