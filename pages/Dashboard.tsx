@@ -220,7 +220,7 @@ const Dashboard: React.FC = () => {
     hasCapability,
     (key) => hasSubCapability(key as any),
   ) || (
-    definition.key === 'admin.totalPurchases'
+    ['admin.totalPurchases', 'admin.totalProfit'].includes(definition.key)
     && !hasCapability('purchases')
     && Boolean(systemDefaults?.calculateCogsFromPurchasePrice)
   );

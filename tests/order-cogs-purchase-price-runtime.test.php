@@ -34,9 +34,9 @@ $historicalId = substr('historical-' . $stamp, 0, 64);
 $dashboardSource = file_get_contents($root . '/pages/Dashboard.tsx');
 orderCogsAssert(is_string($dashboardSource), 'Dashboard source could not be read.');
 orderCogsAssert(
-    str_contains($dashboardSource, "definition.key === 'admin.totalPurchases'")
+    str_contains($dashboardSource, "['admin.totalPurchases', 'admin.totalProfit'].includes(definition.key)")
     && str_contains($dashboardSource, 'systemDefaults?.calculateCogsFromPurchasePrice'),
-    'The Total Purchases dashboard card is not available through the purchase-price COGS setting.'
+    'The Total Purchases and Total Profit dashboard cards are not available through the purchase-price COGS setting.'
 );
 
 $pdo->beginTransaction();
