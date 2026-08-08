@@ -1945,6 +1945,12 @@ final class DataManagementApi extends BaseService
                 [':name' => $name]
             );
         }
+        if ($existing !== null && $slug === null) {
+            // Plain CSV/package imports are append-only. A name match without
+            // an explicit slug is not sufficient authority to replace product
+            // pricing, stock, category, unit, or image data.
+            return 'skipped';
+        }
 
         $dynamicPricing = $this->text($row, 'dynamicPricing');
         if ($dynamicPricing !== '') {

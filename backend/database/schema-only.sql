@@ -206,6 +206,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 CALL sp_add_col('units', 'is_fraction', 'TINYINT(1) NOT NULL DEFAULT 0');
 
+CALL sp_add_col('products', 'slug', 'VARCHAR(255) NULL');
 CALL sp_add_col('products', 'unit_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('products', 'dynamic_pricing', 'LONGTEXT NULL');
 
@@ -1482,6 +1483,67 @@ LEFT JOIN accounts a ON a.id = wp.account_id
 LEFT JOIN categories c ON c.id = wp.category_id
 LEFT JOIN users creator_user ON creator_user.id = we.created_by
 LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
+
+CALL sp_create_idx('users', 'idx_users_active_created_id', '`deleted_at`, `is_system`, `created_at`, `id`');
+CALL sp_create_idx('users', 'idx_users_active_role_name_id', '`deleted_at`, `is_system`, `role`, `name`, `id`');
+
+CALL sp_create_idx('customers', 'idx_customers_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('customers', 'idx_customers_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('vendors', 'idx_vendors_active_created_id', '`deleted_at`, `created_at`, `id`');
+
+CALL sp_create_idx('products', 'idx_products_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('products', 'idx_products_active_category_created_id', '`deleted_at`, `category`, `created_at`, `id`');
+CALL sp_create_idx('products', 'idx_products_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('orders', 'idx_orders_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_status_created_id', '`deleted_at`, `status`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_customer_created_id', '`deleted_at`, `customer_id`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_source_ad_created_id', '`deleted_at`, `source_ad`, `created_at`, `id`');
+
+CALL sp_create_idx('bills', 'idx_bills_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_status_created_id', '`deleted_at`, `status`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_vendor_created_id', '`deleted_at`, `vendor_id`, `created_at`, `id`');
+
+CALL sp_create_idx('transactions', 'idx_transactions_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_date_id', '`deleted_at`, `date`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_type_created_id', '`deleted_at`, `type`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_approval_created_id', '`deleted_at`, `approval_status`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_updated_id', '`archived_at`, `updated_at`, `id`');
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_status_updated_id', '`archived_at`, `status`, `updated_at`, `id`');
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_channel_updated_id', '`archived_at`, `source_channel`, `updated_at`, `id`');
+
+CALL sp_create_idx('notifications', 'idx_notifications_active_updated_id', '`is_active`, `updated_at`, `id`');
+
+CALL sp_create_idx('notification_receipts', 'idx_notification_receipts_user_updated', '`user_id`, `updated_at`, `notification_id`');
+
+CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
+CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
+
+CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
+CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
+
+CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
+CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
+
+CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
+CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
+
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_status_updated_id', '`effective_status`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_account_updated_id', '`ad_account_id`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_business_updated_id', '`business_id`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_campaign_updated_id', '`campaign_id`, `updated_time`, `id`');
+
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_created_id', '`employee_id`, `created_at`, `id`');
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_type_order', '`employee_id`, `entry_type`, `source_order_id`, `created_at`, `id`');
+
+CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_type_employee_paid_id', '`compensation_type`, `employee_id`, `paid_at`, `id`');
+
+CALL sp_create_idx('recurring_transactions', 'idx_recurring_active_next_run_id', '`is_active`, `next_run_at`, `id`');
 
 -- Migration: 2026-06-21_capabilities_subscriptions.sql
 CREATE TABLE IF NOT EXISTS app_capability_settings (
@@ -2864,6 +2926,69 @@ CALL sp_create_idx('role_permissions', 'idx_role_permissions_dashboard_id', 'das
 -- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
 
 -- Skipped data-mutating statement from 2026-08-08_fix_expense_shipping_category.sql.
+
+-- Migration: 2026-08-08_performance_scaling.sql
+CALL sp_create_idx('users', 'idx_users_active_created_id', '`deleted_at`, `is_system`, `created_at`, `id`');
+CALL sp_create_idx('users', 'idx_users_active_role_name_id', '`deleted_at`, `is_system`, `role`, `name`, `id`');
+
+CALL sp_create_idx('customers', 'idx_customers_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('customers', 'idx_customers_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('vendors', 'idx_vendors_active_created_id', '`deleted_at`, `created_at`, `id`');
+
+CALL sp_add_col('products', 'slug', 'VARCHAR(255) NULL');
+CALL sp_create_idx('products', 'idx_products_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('products', 'idx_products_active_category_created_id', '`deleted_at`, `category`, `created_at`, `id`');
+CALL sp_create_idx('products', 'idx_products_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('orders', 'idx_orders_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_status_created_id', '`deleted_at`, `status`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_customer_created_id', '`deleted_at`, `customer_id`, `created_at`, `id`');
+CALL sp_create_idx('orders', 'idx_orders_active_source_ad_created_id', '`deleted_at`, `source_ad`, `created_at`, `id`');
+
+CALL sp_create_idx('bills', 'idx_bills_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_status_created_id', '`deleted_at`, `status`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+CALL sp_create_idx('bills', 'idx_bills_active_vendor_created_id', '`deleted_at`, `vendor_id`, `created_at`, `id`');
+
+CALL sp_create_idx('transactions', 'idx_transactions_active_created_id', '`deleted_at`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_date_id', '`deleted_at`, `date`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_type_created_id', '`deleted_at`, `type`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_approval_created_id', '`deleted_at`, `approval_status`, `created_at`, `id`');
+CALL sp_create_idx('transactions', 'idx_transactions_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
+
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_updated_id', '`archived_at`, `updated_at`, `id`');
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_status_updated_id', '`archived_at`, `status`, `updated_at`, `id`');
+CALL sp_create_idx('lead_profiles', 'idx_leads_active_channel_updated_id', '`archived_at`, `source_channel`, `updated_at`, `id`');
+
+CALL sp_create_idx('notifications', 'idx_notifications_active_updated_id', '`is_active`, `updated_at`, `id`');
+
+CALL sp_create_idx('notification_receipts', 'idx_notification_receipts_user_updated', '`user_id`, `updated_at`, `notification_id`');
+
+CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
+CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
+
+CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
+CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
+
+CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
+CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
+
+CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
+CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
+
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_status_updated_id', '`effective_status`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_account_updated_id', '`ad_account_id`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_business_updated_id', '`business_id`, `updated_time`, `id`');
+CALL sp_create_idx('meta_ads', 'idx_meta_ads_campaign_updated_id', '`campaign_id`, `updated_time`, `id`');
+
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_created_id', '`employee_id`, `created_at`, `id`');
+CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_type_order', '`employee_id`, `entry_type`, `source_order_id`, `created_at`, `id`');
+
+CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_type_employee_paid_id', '`compensation_type`, `employee_id`, `paid_at`, `id`');
+
+CALL sp_create_idx('recurring_transactions', 'idx_recurring_active_next_run_id', '`is_active`, `next_run_at`, `id`');
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

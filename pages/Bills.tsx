@@ -10,7 +10,7 @@ import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
 import { theme } from '../theme';
-import { useBillsPage, useUsers, useSystemDefaults, useBillFilterOptions } from '../src/hooks/useQueries';
+import { useBillsPage, useUsersMini, useSystemDefaults, useBillFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useCreateBill, useDeleteBill } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -85,7 +85,7 @@ const Bills: React.FC = () => {
   const [paymentStatusNotFilter, setPaymentStatusNotFilter] = useState('');
   const previousSearchQueryRef = React.useRef(searchQuery);
   
-  const { data: users = [] } = useUsers();
+  const { data: users = [] } = useUsersMini();
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;

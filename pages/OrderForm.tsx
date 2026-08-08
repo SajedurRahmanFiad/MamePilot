@@ -6,7 +6,7 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { useCompanySettings, useCustomer, useMetaAds, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
@@ -152,7 +152,6 @@ const OrderForm: React.FC = () => {
   }, [products]);
 
   const { data: existingOrderData, isPending: existingOrderLoading } = useOrder(isEdit ? id : undefined);
-  const { data: metaAdsData } = useMetaAds({ status: 'ACTIVE' }, true);
   const { data: orderSettings } = useOrderSettings();
   const { data: companySettings, isPending: companySettingsLoading } = useCompanySettings();
   const { data: systemDefaults } = useSystemDefaults();
@@ -194,6 +193,11 @@ const OrderForm: React.FC = () => {
     const t = setTimeout(() => setDebouncedSourceAdSearch(sourceAdSearchTerm.trim()), 300);
     return () => clearTimeout(t);
   }, [sourceAdSearchTerm]);
+  const { data: metaAdsData } = useMetaAdOptions(true, {
+    search: debouncedSourceAdSearch || undefined,
+    activeOnly: true,
+    limit: 100,
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -206,7 +210,7 @@ const OrderForm: React.FC = () => {
   const custPageSize = 20;
   const { data: customersPage, isFetching: customersFetching } = useQuery({
     queryKey: ['customers', 1, custPageSize, debouncedCustSearch],
-    queryFn: () => fetchCustomersPage(1, custPageSize, debouncedCustSearch),
+    queryFn: ({ signal }) => fetchCustomersPage(1, custPageSize, debouncedCustSearch, undefined, { signal }),
     enabled: showCustomerSearch,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,

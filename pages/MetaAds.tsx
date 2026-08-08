@@ -143,9 +143,11 @@ const MetaAdsList: React.FC = () => {
   const [dynamicFilters, setDynamicFilters] = useState<any[]>(restoredListState.dynamicFilters || []);
   const [filterRange, setFilterRange] = useState<FilterRange>(restoredListState.filterRange || 'Last 7 days');
   const [customDates, setCustomDates] = useState(restoredListState.customDates || { from: '', to: '' });
+  const [page, setPage] = useState(Math.max(1, Number(restoredListState.page || 1)));
+  const pageSize = 24;
   const { data: metaAdsSettings, isPending: settingsPending } = useMetaAdsSettings();
   const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
-  const { data, isPending, error, refetch } = useMetaAds(queryFilters, isMetaAdsConfigured);
+  const { data, isPending, error, refetch } = useMetaAds({ ...queryFilters, page, pageSize }, isMetaAdsConfigured);
   const { data: syncStatus, refetch: refetchSyncStatus } = useMetaAdsSyncStatus(true);
   const syncMutation = useSyncMetaAds();
   const queryClient = useQueryClient();
@@ -280,6 +282,7 @@ const MetaAdsList: React.FC = () => {
     const adNameFilter = normalizedFilters.find((filter) => filter.type === 'Ad Name');
 
     setDynamicFilters(normalizedFilters);
+    setPage(1);
     setQueryFilters((current) => ({
       ...current,
       businessId: businessFilter?.value || '',
@@ -296,6 +299,7 @@ const MetaAdsList: React.FC = () => {
   };
 
   const applyDateRange = useCallback((nextRange: FilterRange, nextCustomDates: { from: string; to: string }) => {
+    setPage(1);
     setQueryFilters((current) => ({ ...current, ...getDateRange(nextRange, nextCustomDates) }));
   }, []);
 
@@ -422,7 +426,7 @@ const MetaAdsList: React.FC = () => {
           initialFilters={dynamicFilters}
           freeTextLabel="Meta Ads"
           rawSearchValue={queryFilters.rawSearch}
-          onRawSearchChange={(value) => setQueryFilters((current) => ({ ...current, rawSearch: value }))}
+          onRawSearchChange={(value) => { setPage(1); setQueryFilters((current) => ({ ...current, rawSearch: value })); }}
           onApply={applyDynamicFilters}
           className="w-full"
         />
@@ -494,9 +498,9 @@ const MetaAdsList: React.FC = () => {
               key={ad.id}
               onClick={() => navigate(`/meta-ads/${ad.id}`, {
                 state: {
-                  from: '/meta-ads',
+                  from: `${location.pathname}${location.search}`,
                   backLabel: 'Meta Ads',
-                  metaAdsListState: { queryFilters, dynamicFilters, filterRange, customDates },
+                  metaAdsListState: { queryFilters, dynamicFilters, filterRange, customDates, page },
                 },
               })}
               className="group overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
@@ -543,11 +547,7 @@ const MetaAdsList: React.FC = () => {
             </button>
           ))}
         </div>
-        {(summary.totalAds ?? 0) > ads.length && (
-          <p className="text-center text-xs font-semibold text-amber-700">
-            Showing the first {formatNumber(ads.length)} of {formatNumber(summary.totalAds)} matching ads. Narrow the filters to see a specific ad.
-          </p>
-        )}
+        {(data?.totalPages || 0) > 1 && <div className="flex items-center justify-center gap-3 pt-2 text-xs font-bold text-gray-600"><button type="button" disabled={page <= 1 || isPending} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-gray-200 bg-white px-4 py-2 disabled:opacity-40">Previous</button><span>Page {data.page} of {data.totalPages}</span><button type="button" disabled={page >= data.totalPages || isPending} onClick={() => setPage((current) => Math.min(data.totalPages, current + 1))} className="rounded-lg border border-gray-200 bg-white px-4 py-2 disabled:opacity-40">Next</button></div>}
         </>
       )}
     </div>

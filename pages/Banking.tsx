@@ -188,6 +188,7 @@ const Banking: React.FC = () => {
             initialFilters={initialFilters}
             freeTextLabel="Accounts"
             rawSearchValue={searchQuery}
+            rawSearchDebounceMs={0}
             onRawSearchChange={setSearchQuery}
             onApply={(appliedFilters) => {
               const encodeTextValue = (filter: { operator: string; value: string }) => encodeDynamicTextFilterValue(filter.value, filter.operator.includes('contain'));

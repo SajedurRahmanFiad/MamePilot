@@ -46,9 +46,11 @@ $fixedUser = $invoke($api, 'mapUser', [[
 $assert(($legacyUser['compensationType'] ?? '') === 'commission', 'legacy compensation fallback');
 $assert(($fixedUser['compensationType'] ?? '') === 'fixed', 'positive fixed salary classification');
 
-// Every public order status accepted by the UI must survive server normalization.
+// The legacy UI label Created persists canonically as On Hold; every other
+// public status accepted by the UI must survive server normalization.
 $statuses = ['Created', 'Exchange processing', 'Exchange picked', 'Exchange returned', 'Returned'];
-$assert($invoke($api, 'normalizePayrollStatuses', [$statuses, false]) === $statuses, 'complete order-status allowlist');
+$expectedStatuses = ['On Hold', 'Exchange processing', 'Exchange picked', 'Exchange returned', 'Returned'];
+$assert($invoke($api, 'normalizePayrollStatuses', [$statuses, false]) === $expectedStatuses, 'complete order-status allowlist');
 
 // Status toggles append balanced events: credit -> reversal -> later re-credit.
 $credit = $invoke($api, 'walletOrderTransition', [0.0, true, 100.0]);
@@ -86,4 +88,3 @@ $net = $base + $bonus - $deduction;
 $assertMoney($bonus - $deduction - $net, -$base, 'bonus/deduction/payout wallet equation');
 
 fwrite(STDOUT, "Payroll/wallet invariant tests passed\n");
-

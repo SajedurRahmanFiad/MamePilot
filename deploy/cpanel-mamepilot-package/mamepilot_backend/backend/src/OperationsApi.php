@@ -19,6 +19,35 @@ final class OperationsApi extends BaseService
         return ($page - 1) * $this->pageSize($params);
     }
 
+    /**
+     * MariaDB 10.2+ set-based projection support for the legacy JSON order-items
+     * column. Sequence tables are built into MariaDB and avoid loading every
+     * matching order into PHP on the MariaDB 10.4 versions common on cPanel.
+     */
+    private function orderItemsSequenceJoin(string $orderAlias = 'o', string $sequenceAlias = 'item_seq'): string
+    {
+        return "seq_0_to_10000 {$sequenceAlias}
+            ON {$sequenceAlias}.seq < CASE
+                WHEN JSON_VALID({$orderAlias}.items) THEN JSON_LENGTH({$orderAlias}.items)
+                ELSE 0
+            END";
+    }
+
+    private function orderItemJsonValue(
+        string $orderAlias,
+        string $sequenceAlias,
+        string $field
+    ): string {
+        if (!in_array($field, ['productId', 'productName', 'quantity', 'amount'], true)) {
+            throw new RuntimeException('Unsupported order-item JSON field.');
+        }
+
+        return "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(
+            {$orderAlias}.items,
+            CONCAT('$[', {$sequenceAlias}.seq, '].{$field}')
+        )), 'null')";
+    }
+
     private function updateAccountBalanceByDelta(?string $accountId, float $delta): void
     {
         $normalizedAccountId = trim((string) ($accountId ?? ''));
@@ -1551,7 +1580,7 @@ final class OperationsApi extends BaseService
              WHERE orderNumber LIKE :search_order
                 OR customerName LIKE :search_customer
                 OR customerPhone LIKE :search_phone
-             ORDER BY createdAt DESC
+             ORDER BY createdAt DESC, id DESC
              LIMIT {$limit}",
             $bindings
         );
@@ -1781,7 +1810,7 @@ final class OperationsApi extends BaseService
                 id, orderNumber, orderDate, customerId, customerName, customerPhone, customerAddress,
                 createdBy, creatorName, status, items, CAST(subtotal AS CHAR), CAST(discount AS CHAR),
                 CAST(shipping AS CHAR), CAST(total AS CHAR), CAST(paidAmount AS CHAR), notes, history,
-                pageSnapshot, carrybeeConsignmentId, steadfastConsignmentId, paperflyTrackingNumber,
+                JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, '$.name')), carrybeeConsignmentId, steadfastConsignmentId, paperflyTrackingNumber,
                 pathaoConsignmentId, exchangeCourier, exchangeSteadfastConsignmentId,
                 exchangeCarrybeeConsignmentId, exchangePaperflyTrackingNumber,
                 exchangePathaoConsignmentId, exchangeCourierHistory, sourceAd, createdAt
@@ -1791,10 +1820,45 @@ final class OperationsApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT *
+            "SELECT
+                id,
+                orderNumber,
+                orderDate,
+                customerId,
+                pageId,
+                customerName,
+                customerPhone,
+                customerAddress,
+                createdBy,
+                creatorName,
+                status,
+                items,
+                subtotal,
+                discount,
+                shipping,
+                total,
+                paidAmount,
+                notes,
+                history,
+                createdAt,
+                deletedAt,
+                deletedBy,
+                carrybeeConsignmentId,
+                steadfastConsignmentId,
+                steadfastInvoice,
+                steadfastTrackingLink,
+                paperflyTrackingNumber,
+                pathaoConsignmentId,
+                exchangeCourier,
+                exchangeSteadfastConsignmentId,
+                exchangeCarrybeeConsignmentId,
+                exchangePaperflyTrackingNumber,
+                exchangePathaoConsignmentId,
+                exchangeCourierHistory,
+                sourceAd
              FROM orders_with_customer_creator
              {$where}
-             ORDER BY createdAt DESC
+             ORDER BY createdAt DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -3356,52 +3420,64 @@ final class OperationsApi extends BaseService
         $topProductBindings = [':dashboard_top_product_status' => 'Completed'];
         $this->applyDashboardDateBounds('order_date', $filters, $topProductConditions, $topProductBindings, 'dashboard_top_product');
 
-        $topProductRows = $this->database->fetchAll(
-            'SELECT items
-             FROM orders
-             WHERE ' . implode(' AND ', $topProductConditions),
-            $topProductBindings
-        );
-
-        $productMap = [];
-        foreach ($topProductRows as $row) {
-            foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
-                if (!is_array($item)) {
-                    continue;
+        try {
+            $topProductIdSql = $this->orderItemJsonValue('o', 'top_product_seq', 'productId');
+            $topProductNameSql = $this->orderItemJsonValue('o', 'top_product_seq', 'productName');
+            $topProductQuantitySql = $this->orderItemJsonValue('o', 'top_product_seq', 'quantity');
+            $topSoldProducts = array_map(
+                static fn(array $row): array => [
+                    'productId' => (string) ($row['productId'] ?? ''),
+                    'name' => (string) ($row['name'] ?? 'Unnamed Product'),
+                    'qty' => (int) ($row['qty'] ?? 0),
+                ],
+                $this->database->fetchAll(
+                    'SELECT
+                        MIN(NULLIF(' . $topProductIdSql . ', \'\')) AS productId,
+                        COALESCE(NULLIF(' . $topProductNameSql . ', \'\'), \'Unnamed Product\') AS name,
+                        SUM(CAST(COALESCE(NULLIF(' . $topProductQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))) AS qty
+                     FROM orders o
+                     INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'top_product_seq') . '
+                     WHERE ' . implode(' AND ', array_map(static fn(string $condition): string => 'o.' . $condition, $topProductConditions)) . '
+                       AND COALESCE(NULLIF(' . $topProductIdSql . ', \'\'), NULLIF(' . $topProductNameSql . ', \'\')) IS NOT NULL
+                     GROUP BY COALESCE(NULLIF(' . $topProductIdSql . ', \'\'), NULLIF(' . $topProductNameSql . ', \'\')), COALESCE(NULLIF(' . $topProductNameSql . ', \'\'), \'Unnamed Product\')
+                     HAVING qty > 0
+                     ORDER BY qty DESC, name ASC
+                     LIMIT 5',
+                    $topProductBindings
+                )
+            );
+        } catch (\Throwable) {
+            // Retain a compatibility path for non-MariaDB engines or hosts where
+            // the built-in sequence engine is unavailable.
+            $topProductRows = $this->database->fetchAll(
+                'SELECT items FROM orders WHERE ' . implode(' AND ', $topProductConditions),
+                $topProductBindings
+            );
+            $productMap = [];
+            foreach ($topProductRows as $row) {
+                foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                    if (!is_array($item)) continue;
+                    $key = trim((string) ($item['productId'] ?? $item['productName'] ?? ''));
+                    $quantity = (int) ($item['quantity'] ?? 0);
+                    if ($key === '' || $quantity <= 0) continue;
+                    if (!isset($productMap[$key])) {
+                        $productMap[$key] = [
+                            'productId' => trim((string) ($item['productId'] ?? '')),
+                            'name' => trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Product',
+                            'qty' => 0,
+                        ];
+                    }
+                    $productMap[$key]['qty'] += $quantity;
                 }
-
-                $key = trim((string) ($item['productId'] ?? $item['productName'] ?? ''));
-                if ($key === '') {
-                    continue;
-                }
-
-                $productName = trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Product';
-                $quantity = (int) ($item['quantity'] ?? 0);
-                if ($quantity <= 0) {
-                    continue;
-                }
-
-                if (!isset($productMap[$key])) {
-                    $productMap[$key] = [
-                        'productId' => trim((string) ($item['productId'] ?? '')),
-                        'name' => $productName,
-                        'qty' => 0,
-                    ];
-                }
-
-                $productMap[$key]['qty'] += $quantity;
             }
+            $topSoldProducts = array_values($productMap);
+            usort($topSoldProducts, static fn(array $left, array $right): int =>
+                (int) $right['qty'] !== (int) $left['qty']
+                    ? (int) $right['qty'] <=> (int) $left['qty']
+                    : strcmp((string) $left['name'], (string) $right['name'])
+            );
+            $topSoldProducts = array_slice($topSoldProducts, 0, 5);
         }
-
-        $topSoldProducts = array_values($productMap);
-        usort($topSoldProducts, static function (array $left, array $right): int {
-            if ((int) $right['qty'] !== (int) $left['qty']) {
-                return (int) $right['qty'] <=> (int) $left['qty'];
-            }
-
-            return strcmp((string) $left['name'], (string) $right['name']);
-        });
-        $topSoldProducts = array_slice($topSoldProducts, 0, 5);
 
         $productIds = array_filter(array_column($topSoldProducts, 'productId'));
         if ($productIds) {
@@ -3981,18 +4057,25 @@ final class OperationsApi extends BaseService
             $orderBindings
         ) ?? [];
 
-        $orderItemsRows = $this->database->fetchAll(
-            'SELECT o.items
-             FROM orders o
-             WHERE ' . implode(' AND ', $orderConditions),
-            $orderBindings
-        );
-        $productsSold = 0;
-        foreach ($orderItemsRows as $orderRow) {
-            $decodedItems = $this->jsonDecodeList($orderRow['items'] ?? null);
-            foreach ($decodedItems as $item) {
-                if (is_array($item)) {
-                    $productsSold += (int) ($item['quantity'] ?? 0);
+        try {
+            $profitLossQuantitySql = $this->orderItemJsonValue('o', 'profit_loss_item_seq', 'quantity');
+            $productsSoldRow = $this->database->fetchOne(
+                'SELECT COALESCE(SUM(CAST(COALESCE(NULLIF(' . $profitLossQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS productsSold
+                 FROM orders o
+                 INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'profit_loss_item_seq') . '
+                 WHERE ' . implode(' AND ', $orderConditions),
+                $orderBindings
+            );
+            $productsSold = (float) ($productsSoldRow['productsSold'] ?? 0);
+        } catch (\Throwable) {
+            $orderItemsRows = $this->database->fetchAll(
+                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions),
+                $orderBindings
+            );
+            $productsSold = 0;
+            foreach ($orderItemsRows as $orderRow) {
+                foreach ($this->jsonDecodeList($orderRow['items'] ?? null) as $item) {
+                    if (is_array($item)) $productsSold += (float) ($item['quantity'] ?? 0);
                 }
             }
         }
@@ -4147,54 +4230,65 @@ final class OperationsApi extends BaseService
         $bindings = [':product_quantity_completed_status' => 'Completed'];
         $this->applyDashboardDateBounds('order_date', $filters, $conditions, $bindings, 'product_quantity');
 
-        $rows = $this->database->fetchAll(
-            'SELECT items, discount
-             FROM orders
-             WHERE ' . implode(' AND ', $conditions),
-            $bindings
-        );
-
-        $productMap = [];
-        foreach ($rows as $row) {
-            $orderDiscount = max(0.0, (float) ($row['discount'] ?? 0));
-            $decodedItems = $this->jsonDecodeList($row['items'] ?? null);
-            $subtotal = 0.0;
-
-            foreach ($decodedItems as $item) {
-                if (!is_array($item)) {
-                    continue;
+        try {
+            $productQuantityIdSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'productId');
+            $productQuantityNameSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'productName');
+            $productQuantityValueSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'quantity');
+            $productQuantityAmountSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'amount');
+            $reportRows = array_map(
+                static fn(array $row): array => [
+                    'productName' => (string) ($row['productName'] ?? 'Unnamed Product'),
+                    'quantity' => (float) ($row['quantity'] ?? 0),
+                    'revenue' => (float) ($row['revenue'] ?? 0),
+                ],
+                $this->database->fetchAll(
+                    'SELECT
+                        exploded.productName,
+                        SUM(exploded.quantity) AS quantity,
+                        SUM(exploded.amount * (1 - CASE
+                            WHEN exploded.itemSubtotal > 0 THEN LEAST(1, exploded.orderDiscount / exploded.itemSubtotal)
+                            ELSE 0
+                        END)) AS revenue
+                     FROM (
+                        SELECT
+                            o.id,
+                            COALESCE(NULLIF(' . $productQuantityIdSql . ', \'\'), NULLIF(' . $productQuantityNameSql . ', \'\'), \'Unnamed Product\') AS productKey,
+                            COALESCE(NULLIF(' . $productQuantityNameSql . ', \'\'), \'Unnamed Product\') AS productName,
+                            CAST(COALESCE(NULLIF(' . $productQuantityValueSql . ', \'\'), \'0\') AS DECIMAL(18,4)) AS quantity,
+                            CAST(COALESCE(NULLIF(' . $productQuantityAmountSql . ', \'\'), \'0\') AS DECIMAL(18,4)) AS amount,
+                            GREATEST(COALESCE(o.discount, 0), 0) AS orderDiscount,
+                            SUM(CAST(COALESCE(NULLIF(' . $productQuantityAmountSql . ', \'\'), \'0\') AS DECIMAL(18,4))) OVER (PARTITION BY o.id) AS itemSubtotal
+                        FROM orders o
+                        INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'product_quantity_item_seq') . '
+                        WHERE ' . implode(' AND ', array_map(static fn(string $condition): string => 'o.' . $condition, $conditions)) . '
+                     ) exploded
+                     GROUP BY exploded.productKey, exploded.productName',
+                    $bindings
+                )
+            );
+        } catch (\Throwable) {
+            $rows = $this->database->fetchAll(
+                'SELECT items, discount FROM orders WHERE ' . implode(' AND ', $conditions),
+                $bindings
+            );
+            $productMap = [];
+            foreach ($rows as $row) {
+                $orderDiscount = max(0.0, (float) ($row['discount'] ?? 0));
+                $decodedItems = $this->jsonDecodeList($row['items'] ?? null);
+                $subtotal = array_reduce($decodedItems, static fn(float $sum, $item): float =>
+                    $sum + (is_array($item) ? (float) ($item['amount'] ?? 0) : 0.0), 0.0);
+                $discountRatio = $subtotal > 0 ? min(1.0, $orderDiscount / $subtotal) : 0.0;
+                foreach ($decodedItems as $item) {
+                    if (!is_array($item)) continue;
+                    $productName = trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Product';
+                    $key = trim((string) ($item['productId'] ?? '')) ?: $productName;
+                    if (!isset($productMap[$key])) $productMap[$key] = ['productName' => $productName, 'quantity' => 0.0, 'revenue' => 0.0];
+                    $productMap[$key]['quantity'] += (float) ($item['quantity'] ?? 0);
+                    $productMap[$key]['revenue'] += (float) ($item['amount'] ?? 0) * (1.0 - $discountRatio);
                 }
-
-                $subtotal += (float) ($item['amount'] ?? 0);
             }
-
-            $discountRatio = $subtotal > 0 ? min(1.0, $orderDiscount / $subtotal) : 0.0;
-
-            foreach ($decodedItems as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-
-                $productName = trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Product';
-                $key = trim((string) ($item['productId'] ?? '')) ?: $productName;
-                $quantity = (float) ($item['quantity'] ?? 0);
-                $amount = (float) ($item['amount'] ?? 0);
-                $revenue = $amount * (1.0 - $discountRatio);
-
-                if (!isset($productMap[$key])) {
-                    $productMap[$key] = [
-                        'productName' => $productName,
-                        'quantity' => 0.0,
-                        'revenue' => 0.0,
-                    ];
-                }
-
-                $productMap[$key]['quantity'] += $quantity;
-                $productMap[$key]['revenue'] += $revenue;
-            }
+            $reportRows = array_values($productMap);
         }
-
-        $reportRows = array_values($productMap);
         usort($reportRows, static function (array $left, array $right): int {
             if ((float) $right['quantity'] !== (float) $left['quantity']) {
                 return (float) $right['quantity'] <=> (float) $left['quantity'];
@@ -4249,46 +4343,59 @@ final class OperationsApi extends BaseService
         $bindings = [':customer_sales_completed_status' => 'Completed'];
         $this->applyDashboardDateBounds('o.order_date', $filters, $conditions, $bindings, 'customer_sales');
 
-        $rows = $this->database->fetchAll(
-            'SELECT
-                o.customer_id AS customerId,
-                COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
-                o.total,
-                o.items
-             FROM orders o
-             LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE ' . implode(' AND ', $conditions),
-            $bindings
-        );
-
-        $customerMap = [];
-        foreach ($rows as $row) {
-            $customerId = trim((string) ($row['customerId'] ?? ''));
-            $customerName = trim((string) ($row['customerName'] ?? '')) ?: 'Unknown Customer';
-            $key = $customerId !== '' ? $customerId : $customerName;
-
-            if (!isset($customerMap[$key])) {
-                $customerMap[$key] = [
-                    'name' => $customerName,
-                    'orders' => 0,
-                    'quantity' => 0.0,
-                    'amount' => 0.0,
-                ];
-            }
-
-            $customerMap[$key]['orders'] += 1;
-            $customerMap[$key]['amount'] += (float) ($row['total'] ?? 0);
-
-            foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
-                if (!is_array($item)) {
-                    continue;
+        try {
+            $customerSalesQuantitySql = $this->orderItemJsonValue('o', 'customer_sales_item_seq', 'quantity');
+            $reportRows = array_map(
+                static fn(array $row): array => [
+                    'name' => (string) ($row['name'] ?? 'Unknown Customer'),
+                    'orders' => (int) ($row['orders'] ?? 0),
+                    'quantity' => (float) ($row['quantity'] ?? 0),
+                    'amount' => (float) ($row['amount'] ?? 0),
+                ],
+                $this->database->fetchAll(
+                    'SELECT
+                        per_order.customerName AS name,
+                        COUNT(*) AS orders,
+                        COALESCE(SUM(per_order.quantity), 0) AS quantity,
+                        COALESCE(SUM(per_order.total), 0) AS amount
+                     FROM (
+                        SELECT
+                            o.id,
+                            COALESCE(NULLIF(o.customer_id, \'\'), COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\')) AS customerKey,
+                            COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
+                            o.total,
+                            COALESCE(SUM(CAST(COALESCE(NULLIF(' . $customerSalesQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS quantity
+                        FROM orders o
+                        LEFT JOIN customers c ON c.id = o.customer_id
+                        LEFT JOIN ' . $this->orderItemsSequenceJoin('o', 'customer_sales_item_seq') . '
+                        WHERE ' . implode(' AND ', $conditions) . '
+                        GROUP BY o.id, o.customer_id, c.name, o.total
+                     ) per_order
+                     GROUP BY per_order.customerKey, per_order.customerName',
+                    $bindings
+                )
+            );
+        } catch (\Throwable) {
+            $rows = $this->database->fetchAll(
+                'SELECT o.customer_id AS customerId, COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName, o.total, o.items
+                 FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+                 WHERE ' . implode(' AND ', $conditions),
+                $bindings
+            );
+            $customerMap = [];
+            foreach ($rows as $row) {
+                $customerId = trim((string) ($row['customerId'] ?? ''));
+                $customerName = trim((string) ($row['customerName'] ?? '')) ?: 'Unknown Customer';
+                $key = $customerId !== '' ? $customerId : $customerName;
+                if (!isset($customerMap[$key])) $customerMap[$key] = ['name' => $customerName, 'orders' => 0, 'quantity' => 0.0, 'amount' => 0.0];
+                $customerMap[$key]['orders']++;
+                $customerMap[$key]['amount'] += (float) ($row['total'] ?? 0);
+                foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                    if (is_array($item)) $customerMap[$key]['quantity'] += (float) ($item['quantity'] ?? 0);
                 }
-
-                $customerMap[$key]['quantity'] += (float) ($item['quantity'] ?? 0);
             }
+            $reportRows = array_values($customerMap);
         }
-
-        $reportRows = array_values($customerMap);
         usort($reportRows, static function (array $left, array $right): int {
             if ((float) $right['amount'] !== (float) $left['amount']) {
                 return (float) $right['amount'] <=> (float) $left['amount'];
@@ -5752,7 +5859,7 @@ final class OperationsApi extends BaseService
                 deletedBy
              FROM bills_with_vendor_creator
              {$where}
-             ORDER BY createdAt DESC
+             ORDER BY createdAt DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -6413,9 +6520,9 @@ final class OperationsApi extends BaseService
             $bindings += $notBindings;
         }
 
-        $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM transactions_with_relations twr {$where}", $bindings);
-        $summaryRow = $this->database->fetchOne(
+        $aggregateRow = $this->database->fetchOne(
             "SELECT
+                COUNT(*) AS count,
                 COALESCE(SUM(CASE WHEN twr.type = 'Income' THEN twr.amount ELSE 0 END), 0) AS income,
                 COALESCE(SUM(CASE WHEN twr.type = 'Expense' THEN twr.amount ELSE 0 END), 0) AS expense,
                 COALESCE(SUM(CASE WHEN twr.type = 'Transfer' THEN twr.amount ELSE 0 END), 0) AS transfer
@@ -6453,18 +6560,18 @@ final class OperationsApi extends BaseService
                 twr.deletedBy
              FROM transactions_with_relations twr
              {$where}
-             ORDER BY twr.createdAt DESC
+             ORDER BY twr.createdAt DESC, twr.id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
 
         return [
             'data' => array_map(fn(array $row): array => $this->mapTransaction($row), $rows),
-            'count' => (int) ($countRow['count'] ?? 0),
+            'count' => (int) ($aggregateRow['count'] ?? 0),
             'summary' => [
-                'income' => (float) ($summaryRow['income'] ?? 0),
-                'expense' => (float) ($summaryRow['expense'] ?? 0),
-                'transfer' => (float) ($summaryRow['transfer'] ?? 0),
+                'income' => (float) ($aggregateRow['income'] ?? 0),
+                'expense' => (float) ($aggregateRow['expense'] ?? 0),
+                'transfer' => (float) ($aggregateRow['transfer'] ?? 0),
             ],
         ];
     }
@@ -7311,12 +7418,15 @@ final class OperationsApi extends BaseService
 
         [$placeholders, $bindings] = $this->inClause($employeeIds, 'commission_employee');
         $rows = $this->database->fetchAll(
-            "SELECT we.employee_id, we.source_order_id, we.entry_type, we.amount_delta,
-                    we.created_at AS entry_created_at, o.deleted_at AS order_deleted_at
+            "SELECT we.employee_id, we.source_order_id,
+                    SUM(we.amount_delta) AS amount_delta,
+                    MAX(CASE WHEN we.entry_type = 'order_credit' THEN we.created_at ELSE NULL END) AS credit_created_at,
+                    o.deleted_at AS order_deleted_at
              FROM wallet_entries we
              INNER JOIN orders o ON o.id = we.source_order_id
              WHERE we.employee_id IN (" . implode(', ', $placeholders) . ")
-               AND we.entry_type IN ('order_credit', 'order_reversal')",
+               AND we.entry_type IN ('order_credit', 'order_reversal')
+             GROUP BY we.employee_id, we.source_order_id, o.deleted_at",
             $bindings
         );
 
@@ -7328,17 +7438,12 @@ final class OperationsApi extends BaseService
                 continue;
             }
             $key = $employeeId . "\0" . $orderId;
-            if (!isset($orders[$key])) {
-                $orders[$key] = ['employeeId' => $employeeId, 'amount' => 0.0, 'accrualDate' => ''];
-            }
-            $orders[$key]['amount'] += (float) ($row['amount_delta'] ?? 0);
-            if ((string) ($row['entry_type'] ?? '') === 'order_credit') {
-                $entryAt = $this->toIso($row['entry_created_at'] ?? null) ?? (string) ($row['entry_created_at'] ?? '');
-                $accrualDate = $this->localDateFromUtc($entryAt);
-                if ($accrualDate > (string) $orders[$key]['accrualDate']) {
-                    $orders[$key]['accrualDate'] = $accrualDate;
-                }
-            }
+            $entryAt = $this->toIso($row['credit_created_at'] ?? null) ?? (string) ($row['credit_created_at'] ?? '');
+            $orders[$key] = [
+                'employeeId' => $employeeId,
+                'amount' => (float) ($row['amount_delta'] ?? 0),
+                'accrualDate' => $this->localDateFromUtc($entryAt),
+            ];
         }
 
         $buckets = [];
@@ -7500,84 +7605,46 @@ final class OperationsApi extends BaseService
 
         [$placeholders, $bindings] = $this->inClause($employeeIds, 'wallet_employee');
         $rows = $this->database->fetchAll(
-            'SELECT we.employee_id, we.entry_type, we.amount_delta, we.created_at, o.order_date, o.created_at AS order_created_at
+            "SELECT
+                we.employee_id,
+                COALESCE(SUM(we.amount_delta), 0) AS current_balance,
+                COALESCE(SUM(CASE WHEN we.entry_type IN ('order_credit', 'order_reversal') THEN we.amount_delta ELSE 0 END), 0) AS base_earned,
+                COALESCE(SUM(CASE WHEN we.entry_type = 'payroll_bonus' THEN GREATEST(we.amount_delta, 0) ELSE 0 END), 0) AS total_bonuses,
+                COALESCE(SUM(CASE WHEN we.entry_type = 'payroll_deduction' THEN ABS(we.amount_delta) ELSE 0 END), 0) AS total_deductions,
+                COALESCE(SUM(CASE WHEN we.entry_type = 'payout' THEN ABS(we.amount_delta) ELSE 0 END), 0) AS total_paid,
+                MAX(we.created_at) AS last_activity_at
              FROM wallet_entries we
              LEFT JOIN orders o ON o.id = we.source_order_id
-             WHERE we.employee_id IN (' . implode(', ', $placeholders) . ')',
-            $bindings
+             WHERE we.employee_id IN (" . implode(', ', $placeholders) . ")
+               AND (
+                    (we.entry_type IN ('order_credit', 'order_reversal') AND o.created_at >= :wallet_live_order_cutoff)
+                    OR
+                    (we.entry_type NOT IN ('order_credit', 'order_reversal') AND we.created_at >= :wallet_live_entry_cutoff)
+               )
+             GROUP BY we.employee_id",
+            $bindings + [
+                ':wallet_live_order_cutoff' => $this->walletCutoffAtUtc(),
+                ':wallet_live_entry_cutoff' => $this->walletCutoffAtUtc(),
+            ]
         );
 
-        $cutoffAtUtc = $this->walletCutoffAtUtc();
         $aggregates = [];
         foreach ($rows as $row) {
             $employeeId = trim((string) ($row['employee_id'] ?? ''));
-            $entryType = trim((string) ($row['entry_type'] ?? ''));
-            if ($employeeId === '' || $entryType === '') {
+            if ($employeeId === '') {
                 continue;
             }
-
-            $entryCreatedAt = $this->toIso($row['created_at'] ?? null) ?? (string) ($row['created_at'] ?? '');
-            $includeEntry = false;
-            if (in_array($entryType, ['order_credit', 'order_reversal'], true)) {
-                $orderCreatedAt = $this->toIso($row['order_created_at'] ?? null) ?? (string) ($row['order_created_at'] ?? '');
-                $includeEntry = $this->isWalletEligibleOrderDate((string) ($row['order_date'] ?? ''), $orderCreatedAt);
-            } elseif ($entryCreatedAt !== '') {
-                $includeEntry = $this->normalizeDateTimeInput($entryCreatedAt) >= $cutoffAtUtc;
-            }
-
-            if (!$includeEntry) {
-                continue;
-            }
-
-            if (!isset($aggregates[$employeeId])) {
-                $aggregates[$employeeId] = [
-                    'currentBalance' => 0.0,
-                    'baseEarned' => 0.0,
-                    'totalEarned' => 0.0,
-                    'totalPaid' => 0.0,
-                    'totalBonuses' => 0.0,
-                    'totalDeductions' => 0.0,
-                    'lastActivityAt' => null,
-                ];
-            }
-
-            $amount = (float) ($row['amount_delta'] ?? 0);
-            $aggregates[$employeeId]['currentBalance'] += $amount;
-            if (in_array($entryType, ['order_credit', 'order_reversal'], true)) {
-                $aggregates[$employeeId]['baseEarned'] += $amount;
-            }
-            if ($entryType === 'payroll_bonus') {
-                $aggregates[$employeeId]['totalBonuses'] += max(0.0, $amount);
-            }
-            if ($entryType === 'payroll_deduction') {
-                $aggregates[$employeeId]['totalDeductions'] += abs($amount);
-            }
-            if ($entryType === 'payout') {
-                $aggregates[$employeeId]['totalPaid'] += abs($amount);
-            }
-            if (
-                $entryCreatedAt !== ''
-                && (
-                    !isset($aggregates[$employeeId]['lastActivityAt'])
-                    || !is_string($aggregates[$employeeId]['lastActivityAt'])
-                    || $aggregates[$employeeId]['lastActivityAt'] === ''
-                    || $entryCreatedAt > $aggregates[$employeeId]['lastActivityAt']
-                )
-            ) {
-                $aggregates[$employeeId]['lastActivityAt'] = $entryCreatedAt;
-            }
-        }
-
-        foreach ($aggregates as $employeeId => $aggregate) {
-            $aggregates[$employeeId]['currentBalance'] = round((float) ($aggregate['currentBalance'] ?? 0), 2);
-            $aggregates[$employeeId]['baseEarned'] = round((float) ($aggregate['baseEarned'] ?? 0), 2);
-            $aggregates[$employeeId]['totalBonuses'] = round((float) ($aggregate['totalBonuses'] ?? 0), 2);
-            $aggregates[$employeeId]['totalDeductions'] = round((float) ($aggregate['totalDeductions'] ?? 0), 2);
-            $aggregates[$employeeId]['totalEarned'] = round(
-                (float) $aggregates[$employeeId]['baseEarned'] + (float) $aggregates[$employeeId]['totalBonuses'],
-                2
-            );
-            $aggregates[$employeeId]['totalPaid'] = round((float) ($aggregate['totalPaid'] ?? 0), 2);
+            $baseEarned = round((float) ($row['base_earned'] ?? 0), 2);
+            $bonuses = round((float) ($row['total_bonuses'] ?? 0), 2);
+            $aggregates[$employeeId] = [
+                'currentBalance' => round((float) ($row['current_balance'] ?? 0), 2),
+                'baseEarned' => $baseEarned,
+                'totalEarned' => round($baseEarned + $bonuses, 2),
+                'totalPaid' => round((float) ($row['total_paid'] ?? 0), 2),
+                'totalBonuses' => $bonuses,
+                'totalDeductions' => round((float) ($row['total_deductions'] ?? 0), 2),
+                'lastActivityAt' => $this->toIso($row['last_activity_at'] ?? null),
+            ];
         }
 
         return $aggregates;
@@ -7956,7 +8023,9 @@ final class OperationsApi extends BaseService
     {
         $currentUser = $this->currentUser();
         $rows = $this->database->fetchAll(
-            "SELECT * FROM users
+            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality,
+                    is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+             FROM users
              WHERE deleted_at IS NULL AND role IN ('Employee')
              ORDER BY name ASC"
         );
@@ -9163,6 +9232,205 @@ final class OperationsApi extends BaseService
         return $this->buildRecycleBinItems();
     }
 
+    /**
+     * Canonical, compact recycle-bin projection used for true SQL pagination.
+     * The legacy unpaginated endpoint remains untouched for compatibility.
+     */
+    private function recycleBinUnionSql(): string
+    {
+        return <<<'SQL'
+SELECT
+    c.id,
+    'customer' AS entity_type,
+    COALESCE(NULLIF(c.name, ''), 'Unnamed Customer') AS title,
+    CONCAT_WS(' • ', NULLIF(c.phone, ''), NULLIF(c.address, '')) AS description,
+    JSON_ARRAY(CONCAT('Orders: ', COALESCE(c.total_orders, 0)), CONCAT('Due: ', COALESCE(c.due_amount, 0))) AS details_json,
+    c.deleted_at,
+    c.deleted_by,
+    deleter.name AS deleted_by_name,
+    c.created_at,
+    c.created_by,
+    creator.name AS created_by_name,
+    CAST(NULL AS CHAR(64) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS status,
+    c.due_amount AS amount
+FROM customers c
+LEFT JOIN users deleter ON deleter.id = c.deleted_by
+LEFT JOIN users creator ON creator.id = c.created_by
+WHERE c.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    o.id,
+    'order' AS entity_type,
+    COALESCE(NULLIF(o.order_number, ''), o.id) AS title,
+    CONCAT_WS(' • ', NULLIF(customer.name, ''), NULLIF(customer.phone, '')) AS description,
+    JSON_ARRAY(
+        IF(o.order_date IS NULL OR o.order_date = '', '', CONCAT('Order Date: ', o.order_date)),
+        IF(o.status IS NULL OR o.status = '', '', CONCAT('Status: ', o.status))
+    ) AS details_json,
+    o.deleted_at,
+    o.deleted_by,
+    deleter.name AS deleted_by_name,
+    o.created_at,
+    o.created_by,
+    creator.name AS created_by_name,
+    o.status,
+    o.total AS amount
+FROM orders o
+LEFT JOIN customers customer ON customer.id = o.customer_id
+LEFT JOIN users deleter ON deleter.id = o.deleted_by
+LEFT JOIN users creator ON creator.id = o.created_by
+WHERE o.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    b.id,
+    'bill' AS entity_type,
+    COALESCE(NULLIF(b.bill_number, ''), b.id) AS title,
+    CONCAT_WS(' • ', NULLIF(vendor.name, ''), NULLIF(vendor.phone, '')) AS description,
+    JSON_ARRAY(
+        IF(b.bill_date IS NULL OR b.bill_date = '', '', CONCAT('Bill Date: ', b.bill_date)),
+        IF(b.status IS NULL OR b.status = '', '', CONCAT('Status: ', b.status))
+    ) AS details_json,
+    b.deleted_at,
+    b.deleted_by,
+    deleter.name AS deleted_by_name,
+    b.created_at,
+    b.created_by,
+    creator.name AS created_by_name,
+    b.status,
+    b.total AS amount
+FROM bills b
+LEFT JOIN vendors vendor ON vendor.id = b.vendor_id
+LEFT JOIN users deleter ON deleter.id = b.deleted_by
+LEFT JOIN users creator ON creator.id = b.created_by
+WHERE b.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    t.id,
+    'transaction' AS entity_type,
+    COALESCE(NULLIF(t.description, ''), CONCAT(COALESCE(NULLIF(t.type, ''), 'Transaction'), ' Transaction')) AS title,
+    CONCAT_WS(' • ', NULLIF(t.type, ''), NULLIF(t.category, ''), NULLIF(account.name, '')) AS description,
+    JSON_ARRAY(
+        COALESCE(NULLIF(customer.name, ''), NULLIF(vendor.name, ''), ''),
+        IF(to_account.name IS NULL OR to_account.name = '', '', CONCAT('To: ', to_account.name)),
+        IF(t.date IS NULL OR t.date = '', '', CONCAT('Date: ', t.date)),
+        IF(t.payment_method IS NULL OR t.payment_method = '', '', CONCAT('Method: ', t.payment_method))
+    ) AS details_json,
+    t.deleted_at,
+    t.deleted_by,
+    deleter.name AS deleted_by_name,
+    COALESCE(t.date, t.created_at) AS created_at,
+    t.created_by,
+    creator.name AS created_by_name,
+    t.type AS status,
+    t.amount
+FROM transactions t
+LEFT JOIN accounts account ON account.id = t.account_id
+LEFT JOIN accounts to_account ON to_account.id = t.to_account_id
+LEFT JOIN customers customer ON customer.id = t.contact_id
+LEFT JOIN vendors vendor ON vendor.id = t.contact_id
+LEFT JOIN users deleter ON deleter.id = t.deleted_by
+LEFT JOIN users creator ON creator.id = t.created_by
+WHERE t.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    u.id,
+    'user' AS entity_type,
+    COALESCE(NULLIF(u.name, ''), 'Unnamed User') AS title,
+    CONCAT_WS(' • ', NULLIF(u.role, ''), NULLIF(u.phone, '')) AS description,
+    JSON_ARRAY(IF(u.created_at IS NULL, '', CONCAT('Created: ', DATE(u.created_at)))) AS details_json,
+    u.deleted_at,
+    u.deleted_by,
+    deleter.name AS deleted_by_name,
+    u.created_at,
+    CAST(NULL AS CHAR(64) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS created_by,
+    CAST(NULL AS CHAR(255) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS created_by_name,
+    u.role AS status,
+    CAST(NULL AS DECIMAL(18,2)) AS amount
+FROM users u
+LEFT JOIN users deleter ON deleter.id = u.deleted_by
+WHERE u.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    v.id,
+    'vendor' AS entity_type,
+    COALESCE(NULLIF(v.name, ''), 'Unnamed Vendor') AS title,
+    CONCAT_WS(' • ', NULLIF(v.phone, ''), NULLIF(v.address, '')) AS description,
+    JSON_ARRAY(CONCAT('Purchases: ', COALESCE(v.total_purchases, 0)), CONCAT('Due: ', COALESCE(v.due_amount, 0))) AS details_json,
+    v.deleted_at,
+    v.deleted_by,
+    deleter.name AS deleted_by_name,
+    v.created_at,
+    v.created_by,
+    creator.name AS created_by_name,
+    CAST(NULL AS CHAR(64) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS status,
+    v.due_amount AS amount
+FROM vendors v
+LEFT JOIN users deleter ON deleter.id = v.deleted_by
+LEFT JOIN users creator ON creator.id = v.created_by
+WHERE v.deleted_at IS NOT NULL
+
+UNION ALL
+
+SELECT
+    p.id,
+    'product' AS entity_type,
+    COALESCE(NULLIF(p.name, ''), 'Unnamed Product') AS title,
+    COALESCE(NULLIF(p.category, ''), 'Uncategorized') AS description,
+    JSON_ARRAY(CONCAT('Stock: ', COALESCE(p.stock, 0))) AS details_json,
+    p.deleted_at,
+    p.deleted_by,
+    deleter.name AS deleted_by_name,
+    p.created_at,
+    p.created_by,
+    creator.name AS created_by_name,
+    CAST(NULL AS CHAR(64) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci AS status,
+    CAST(NULL AS DECIMAL(18,2)) AS amount
+FROM products p
+LEFT JOIN users deleter ON deleter.id = p.deleted_by
+LEFT JOIN users creator ON creator.id = p.created_by
+WHERE p.deleted_at IS NOT NULL
+SQL;
+    }
+
+    private function mapRecycleBinSqlRow(array $row): array
+    {
+        $item = [
+            'id' => (string) ($row['id'] ?? ''),
+            'entityType' => (string) ($row['entity_type'] ?? ''),
+            'title' => (string) ($row['title'] ?? ''),
+            'description' => (string) ($row['description'] ?? ''),
+            'details' => array_values(array_filter(
+                array_map('strval', $this->jsonDecodeList($row['details_json'] ?? [])),
+                static fn(string $value): bool => trim($value) !== ''
+            )),
+            'deletedAt' => $this->toIso($row['deleted_at'] ?? null) ?? (string) ($row['deleted_at'] ?? ''),
+        ];
+        foreach ([
+            'deletedBy' => 'deleted_by',
+            'deletedByName' => 'deleted_by_name',
+            'createdBy' => 'created_by',
+            'createdByName' => 'created_by_name',
+            'status' => 'status',
+        ] as $target => $source) {
+            $value = $this->nullableString($row[$source] ?? null);
+            if ($value !== null) $item[$target] = $value;
+        }
+        $createdAt = $this->toIso($row['created_at'] ?? null);
+        if ($createdAt !== null) $item['createdAt'] = $createdAt;
+        if (($row['amount'] ?? null) !== null) $item['amount'] = (float) $row['amount'];
+        return $item;
+    }
+
     public function fetchRecycleBinPage(array $params = []): array
     {
         $this->requireAdmin();
@@ -9171,41 +9439,77 @@ final class OperationsApi extends BaseService
         $offset = $this->pageOffset($params);
         $search = $this->normalizeReportSearchTerm((string) ($params['search'] ?? ''));
         $entityType = trim((string) ($params['entityType'] ?? 'all'));
-        $items = $this->filterRecycleBinItems($this->buildRecycleBinItems(), $search, $entityType);
         $entityTypeNot = trim((string) ($params['entityTypeNot'] ?? ''));
         $deletedBy = trim((string) ($params['deletedBy'] ?? ''));
         $deletedByNot = trim((string) ($params['deletedByNot'] ?? ''));
         $title = trim((string) ($params['title'] ?? ''));
         $titleNot = trim((string) ($params['titleNot'] ?? ''));
         $deletedDate = is_array($params['deletedDate'] ?? null) ? $params['deletedDate'] : [];
-        $items = array_values(array_filter($items, function (array $item) use ($entityTypeNot, $deletedBy, $deletedByNot, $title, $titleNot, $deletedDate): bool {
-            if ($entityTypeNot !== '' && (string) ($item['entityType'] ?? '') === $entityTypeNot) return false;
-            $deletedByName = mb_strtolower(trim((string) ($item['deletedByName'] ?? '')));
-            if ($deletedBy !== '' && $deletedByName !== mb_strtolower($deletedBy)) return false;
-            if ($deletedByNot !== '' && $deletedByName === mb_strtolower($deletedByNot)) return false;
-            $itemTitle = mb_strtolower(trim((string) ($item['title'] ?? '')));
-            foreach ([[$title, false], [$titleNot, true]] as [$encoded, $negative]) {
-                if ($encoded === '') continue;
-                [$expectedValue, $contains] = $this->decodeEncodedTextFilterValue($encoded);
-                $expected = mb_strtolower($expectedValue);
-                $match = $contains ? str_contains($itemTitle, $expected) : $itemTitle === $expected;
-                if ((!$negative && !$match) || ($negative && $match)) return false;
+        $where = 'WHERE 1=1';
+        $bindings = [];
+
+        if ($entityType !== '' && $entityType !== 'all') {
+            $where .= ' AND recycle.entity_type = :recycle_entity_type';
+            $bindings[':recycle_entity_type'] = $entityType;
+        }
+        if ($entityTypeNot !== '') {
+            $where .= ' AND recycle.entity_type <> :recycle_entity_type_not';
+            $bindings[':recycle_entity_type_not'] = $entityTypeNot;
+        }
+        if ($deletedBy !== '') {
+            $where .= " AND LOWER(COALESCE(recycle.deleted_by_name, '')) = :recycle_deleted_by";
+            $bindings[':recycle_deleted_by'] = mb_strtolower($deletedBy);
+        }
+        if ($deletedByNot !== '') {
+            $where .= " AND LOWER(COALESCE(recycle.deleted_by_name, '')) <> :recycle_deleted_by_not";
+            $bindings[':recycle_deleted_by_not'] = mb_strtolower($deletedByNot);
+        }
+        $this->appendEncodedTextFilter($where, $bindings, 'recycle.title', $title, 'recycle_title');
+        $this->appendEncodedTextFilter($where, $bindings, 'recycle.title', $titleNot, 'recycle_title_not', true);
+
+        $dateValue = trim((string) ($deletedDate['value'] ?? ''));
+        $dateOperator = (string) ($deletedDate['operator'] ?? '');
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateValue) && in_array($dateOperator, ['on', 'before', 'after'], true)) {
+            $dateStart = $dateValue . ' 00:00:00';
+            $dateEnd = gmdate('Y-m-d H:i:s', strtotime($dateStart . ' UTC +1 day'));
+            if ($dateOperator === 'on') {
+                $where .= ' AND recycle.deleted_at >= :recycle_deleted_start AND recycle.deleted_at < :recycle_deleted_end';
+                $bindings[':recycle_deleted_start'] = $dateStart;
+                $bindings[':recycle_deleted_end'] = $dateEnd;
+            } elseif ($dateOperator === 'before') {
+                $where .= ' AND recycle.deleted_at < :recycle_deleted_start';
+                $bindings[':recycle_deleted_start'] = $dateStart;
+            } else {
+                $where .= ' AND recycle.deleted_at >= :recycle_deleted_end';
+                $bindings[':recycle_deleted_end'] = $dateEnd;
             }
-            $dateValue = trim((string) ($deletedDate['value'] ?? ''));
-            $dateOperator = (string) ($deletedDate['operator'] ?? '');
-            if ($dateValue !== '' && in_array($dateOperator, ['on', 'before', 'after'], true)) {
-                $itemDate = substr((string) ($item['deletedAt'] ?? ''), 0, 10);
-                if ($itemDate === '') return false;
-                if ($dateOperator === 'on' && $itemDate !== $dateValue) return false;
-                if ($dateOperator === 'before' && $itemDate >= $dateValue) return false;
-                if ($dateOperator === 'after' && $itemDate <= $dateValue) return false;
-            }
-            return true;
-        }));
+        }
+        if ($search !== '') {
+            $where .= " AND CONVERT(CONCAT_WS(' ',
+                recycle.id, recycle.entity_type, recycle.title, recycle.description,
+                recycle.details_json, recycle.deleted_by_name, recycle.created_by_name,
+                recycle.status, CAST(recycle.amount AS CHAR), recycle.deleted_at, recycle.created_at
+            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :recycle_search ESCAPE '='";
+            $bindings[':recycle_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
+        }
+
+        $unionSql = $this->recycleBinUnionSql();
+        $countRow = $this->database->fetchOne(
+            "SELECT COUNT(*) AS count FROM ({$unionSql}) recycle {$where}",
+            $bindings
+        );
+        $rows = $this->database->fetchAll(
+            "SELECT recycle.*
+             FROM ({$unionSql}) recycle
+             {$where}
+             ORDER BY recycle.deleted_at DESC, recycle.id DESC
+             LIMIT {$pageSize} OFFSET {$offset}",
+            $bindings
+        );
 
         return [
-            'data' => array_slice($items, $offset, $pageSize),
-            'count' => count($items),
+            'data' => array_map(fn(array $row): array => $this->mapRecycleBinSqlRow($row), $rows),
+            'count' => (int) ($countRow['count'] ?? 0),
         ];
     }
 

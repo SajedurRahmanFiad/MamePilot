@@ -208,7 +208,7 @@ final class MasterDataApi extends BaseService
     public function fetchUsers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, role, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
              ORDER BY created_at DESC, name ASC'
@@ -268,16 +268,25 @@ final class MasterDataApi extends BaseService
         $joinedValue = trim((string) ($joined['value'] ?? ''));
         $joinedOperator = ['on' => '=', 'before' => '<', 'after' => '>'][(string) ($joined['operator'] ?? '')] ?? null;
         if ($joinedOperator !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $joinedValue)) {
-            $where .= " AND DATE(created_at) {$joinedOperator} :joined_date";
-            $bindings[':joined_date'] = $joinedValue;
+            if ($joinedOperator === '=') {
+                $where .= ' AND created_at >= :joined_start AND created_at < :joined_end';
+                $bindings[':joined_start'] = $joinedValue . ' 00:00:00';
+                $bindings[':joined_end'] = gmdate('Y-m-d H:i:s', strtotime($joinedValue . ' 00:00:00 UTC +1 day'));
+            } elseif ($joinedOperator === '<') {
+                $where .= ' AND created_at < :joined_start';
+                $bindings[':joined_start'] = $joinedValue . ' 00:00:00';
+            } else {
+                $where .= ' AND created_at >= :joined_end';
+                $bindings[':joined_end'] = gmdate('Y-m-d H:i:s', strtotime($joinedValue . ' 00:00:00 UTC +1 day'));
+            }
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM users {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, role, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              {$where}
-             ORDER BY created_at DESC, name ASC
+             ORDER BY created_at DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -298,8 +307,36 @@ final class MasterDataApi extends BaseService
     public function fetchUsersMini(array $params = []): array
     {
         return $this->database->fetchAll(
-            'SELECT id, name FROM users WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY created_at DESC, name ASC'
+            'SELECT id, name, phone, role FROM users WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY role ASC, name ASC, id ASC'
         );
+    }
+
+    public function fetchUserFilterOptions(array $params = []): array
+    {
+        $result = [];
+        foreach ([
+            'names' => 'name',
+            'phones' => 'phone',
+            'roles' => 'role',
+            'genders' => 'gender',
+            'nationalities' => 'nationality',
+            'bloodGroups' => 'blood_group',
+        ] as $key => $column) {
+            $rows = $this->database->fetchAll(
+                "SELECT DISTINCT {$column} AS value
+                 FROM users
+                 WHERE deleted_at IS NULL
+                   AND COALESCE(is_system, 0) = 0
+                   AND TRIM(COALESCE({$column}, '')) <> ''
+                 ORDER BY {$column} ASC
+                 LIMIT 500"
+            );
+            $result[$key] = array_values(array_filter(array_map(
+                static fn(array $row): string => trim((string) ($row['value'] ?? '')),
+                $rows
+            )));
+        }
+        return $result;
     }
 
     public function fetchUserByPhone(array $params): ?array
@@ -605,7 +642,7 @@ final class MasterDataApi extends BaseService
             "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
              {$where}
-             ORDER BY created_at DESC
+             ORDER BY created_at DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -746,7 +783,7 @@ final class MasterDataApi extends BaseService
             "SELECT id, name, phone, address, total_purchases, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM vendors
              {$where}
-             ORDER BY created_at DESC
+             ORDER BY created_at DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -862,7 +899,7 @@ final class MasterDataApi extends BaseService
         if ($search !== '') {
             $where .= " AND CONVERT(CONCAT_WS(' ',
                 id, name, category, unit_id, CAST(sale_price AS CHAR), CAST(purchase_price AS CHAR),
-                CAST(stock AS CHAR), dynamic_pricing, created_by, created_at
+                CAST(stock AS CHAR), created_by, created_at
             ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
             $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
@@ -898,10 +935,10 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, category, unit_id, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
              FROM products
              {$where}
-             ORDER BY created_at DESC
+             ORDER BY created_at DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
@@ -2239,6 +2276,37 @@ final class MasterDataApi extends BaseService
         return array_values(array_filter($response['notifications'], static fn($item): bool => is_array($item)));
     }
 
+    /** Coordinate central notification refreshes across concurrent PHP requests. */
+    private function claimCentralNotificationSyncWindow(string $scope): bool
+    {
+        $interval = max(10, (int) ($this->config->get('CENTRAL_NOTIFICATION_SYNC_SECONDS', '30') ?? '30'));
+        $databaseName = trim((string) ($this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot'));
+        $marker = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'mamepilot-notification-sync-'
+            . substr(hash('sha256', $databaseName . ':' . $scope), 0, 24)
+            . '.lock';
+        $handle = @fopen($marker, 'c+');
+        if (!is_resource($handle)) return true;
+        if (!@flock($handle, LOCK_EX | LOCK_NB)) {
+            @fclose($handle);
+            return false;
+        }
+        try {
+            @rewind($handle);
+            $lastSync = (int) trim((string) @stream_get_contents($handle));
+            if ($lastSync > 0 && $lastSync >= time() - $interval) return false;
+            @ftruncate($handle, 0);
+            @rewind($handle);
+            @fwrite($handle, (string) time());
+            @fflush($handle);
+            return true;
+        } finally {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+        }
+    }
+
     private function syncCentralNotifications(array $targetRoles = []): void
     {
         if (!$this->tableExists('notifications')) {
@@ -2344,6 +2412,39 @@ final class MasterDataApi extends BaseService
                 ':metadata' => $this->jsonEncode($metadata),
                 ':created_at' => $this->normalizeDateTimeInput($notification['createdAt'] ?? $notification['created_at'] ?? $now),
                 ':updated_at' => $this->normalizeDateTimeInput($notification['updatedAt'] ?? $notification['updated_at'] ?? $now),
+            ]
+        );
+    }
+
+    private function upsertCentralNotificationReceiptLocally(array $notification, string $userId): void
+    {
+        $notificationId = trim((string) ($notification['id'] ?? ''));
+        if ($notificationId === '' || $userId === '' || !$this->tableExists('notification_receipts')) return;
+        $isRead = !empty($notification['isRead'] ?? $notification['is_read'] ?? false);
+        $readAt = $this->nullableString($notification['readAt'] ?? $notification['read_at'] ?? null);
+        $actionResult = $this->nullableString($notification['actionResult'] ?? $notification['action_result'] ?? null);
+        $actedAt = $this->nullableString($notification['actedAt'] ?? $notification['acted_at'] ?? null);
+        $this->database->execute(
+            'INSERT INTO notification_receipts (
+                notification_id, user_id, is_read, read_at, action_result, acted_at, created_at, updated_at
+             ) VALUES (
+                :notification_id, :user_id, :is_read, :read_at, :action_result, :acted_at, :created_at, :updated_at
+             )
+             ON DUPLICATE KEY UPDATE
+                is_read = VALUES(is_read),
+                read_at = VALUES(read_at),
+                action_result = VALUES(action_result),
+                acted_at = VALUES(acted_at),
+                updated_at = VALUES(updated_at)',
+            [
+                ':notification_id' => $notificationId,
+                ':user_id' => $userId,
+                ':is_read' => $isRead ? 1 : 0,
+                ':read_at' => $readAt !== null ? $this->normalizeDateTimeInput($readAt) : null,
+                ':action_result' => $actionResult,
+                ':acted_at' => $actedAt !== null ? $this->normalizeDateTimeInput($actedAt) : null,
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
             ]
         );
     }
@@ -5333,6 +5434,9 @@ PROMPT;
         }
 
         try {
+            if (!$this->claimCentralNotificationSyncWindow('user-' . (string) ($user['id'] ?? ''))) {
+                throw new RuntimeException('Central notification cache is still fresh.');
+            }
             $centralNotifications = $this->fetchCentralNotifications([
                 'targetRoles' => [trim((string) ($user['role'] ?? ''))],
                 'userId' => (string) ($user['id'] ?? ''),
@@ -5417,50 +5521,13 @@ PROMPT;
             $queryBindings[':user_id'] = (string) ($user['id'] ?? '');
         }
 
-        $localRows = [];
         try {
-            $localRows = $this->database->fetchAll(
-                $hasReceiptsTable
-                ? "SELECT
-                            n.*,
-                            creator.name AS created_by_name,
-                            IFNULL(nr.is_read, 0) AS is_read,
-                            nr.read_at,
-                            nr.action_result,
-                            nr.acted_at
-                         FROM notifications n
-                         LEFT JOIN users creator ON creator.id = n.created_by
-                         LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id
-                        WHERE n.target_roles LIKE :role_needle
-                          AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
-                          AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
-                          AND n.is_active = 1
-                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC"
-                : "SELECT
-                            n.*,
-                            creator.name AS created_by_name,
-                            0 AS is_read,
-                            NULL AS read_at,
-                            NULL AS action_result,
-                            NULL AS acted_at
-                         FROM notifications n
-                         LEFT JOIN users creator ON creator.id = n.created_by
-                        WHERE n.target_roles LIKE :role_needle
-                          AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
-                          AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
-                          AND n.is_active = 1
-                         ORDER BY COALESCE(n.starts_at, n.created_at) DESC, n.created_at DESC",
-                $queryBindings
-            );
-        } catch (\Throwable $e) {
-            // Ignore local fetch failures and fall back to remote-only result set.
-        }
-
-        $items = array_map(fn(array $row): array => $this->mapNotification($row), $localRows);
-        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
-
-        $remoteItems = [];
-        try {
+            // The unread-summary and paginated feed are requested together by
+            // the notification center. Share one per-user throttle so opening
+            // it cannot issue two central-server reads in the same window.
+            if (!$this->claimCentralNotificationSyncWindow('user-' . (string) ($user['id'] ?? ''))) {
+                throw new RuntimeException('Central notification cache is still fresh.');
+            }
             $centralNotifications = $this->fetchCentralNotifications([
                 'targetRoles' => [trim((string) ($user['role'] ?? ''))],
                 'userId' => (string) ($user['id'] ?? ''),
@@ -5471,45 +5538,57 @@ PROMPT;
                 }
                 // Cache central notification locally so it persists even if central fetch fails later.
                 $this->upsertCentralNotificationLocally($notification);
-                $remoteItems[] = $notification;
+                if ($hasReceiptsTable) {
+                    $this->upsertCentralNotificationReceiptLocally($notification, (string) ($user['id'] ?? ''));
+                }
             }
         } catch (Throwable) {
-            // Ignore central fetch failures and continue with local notifications.
+            // Cached central notifications remain available locally.
         }
 
-        if ($remoteItems !== []) {
-            $existingIndexesById = [];
-            foreach ($items as $index => $item) {
-                $existingId = trim((string) ($item['id'] ?? ''));
-                if ($existingId !== '') {
-                    $existingIndexesById[$existingId] = $index;
-                }
-            }
-
-            foreach ($remoteItems as $notification) {
-                $notificationId = trim((string) ($notification['id'] ?? ''));
-                if ($notificationId === '') {
-                    continue;
-                }
-
-                $mappedNotification = $this->mapCentralNotification($notification);
-                if (array_key_exists($notificationId, $existingIndexesById)) {
-                    $items[$existingIndexesById[$notificationId]] = $mappedNotification;
-                    continue;
-                }
-
-                $existingIndexesById[$notificationId] = count($items);
-                $items[] = $mappedNotification;
-            }
-            usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
-        }
-
-        $total = count($items);
+        $notificationWhere = 'WHERE n.target_roles LIKE :role_needle
+            AND (n.starts_at IS NULL OR n.starts_at <= :starts_now)
+            AND (n.ends_at IS NULL OR n.ends_at >= :ends_now)
+            AND n.is_active = 1';
+        $countRow = $this->database->fetchOne(
+            "SELECT COUNT(*) AS count FROM notifications n {$notificationWhere}",
+            $baseBindings
+        );
+        $localRows = $this->database->fetchAll(
+            $hasReceiptsTable
+            ? "SELECT
+                    n.*,
+                    creator.name AS created_by_name,
+                    IFNULL(nr.is_read, 0) AS is_read,
+                    nr.read_at,
+                    nr.action_result,
+                    nr.acted_at
+                 FROM notifications n
+                 LEFT JOIN users creator ON creator.id = n.created_by
+                 LEFT JOIN notification_receipts nr ON nr.notification_id = n.id AND nr.user_id = :user_id
+                 {$notificationWhere}
+                 ORDER BY COALESCE(n.updated_at, n.starts_at, n.created_at) DESC, n.id DESC
+                 LIMIT {$pageSize} OFFSET {$offset}"
+            : "SELECT
+                    n.*,
+                    creator.name AS created_by_name,
+                    0 AS is_read,
+                    NULL AS read_at,
+                    NULL AS action_result,
+                    NULL AS acted_at
+                 FROM notifications n
+                 LEFT JOIN users creator ON creator.id = n.created_by
+                 {$notificationWhere}
+                 ORDER BY COALESCE(n.updated_at, n.starts_at, n.created_at) DESC, n.id DESC
+                 LIMIT {$pageSize} OFFSET {$offset}",
+            $queryBindings
+        );
+        $items = array_map(fn(array $row): array => $this->mapNotification($row), $localRows);
+        $total = (int) ($countRow['count'] ?? 0);
         $totalPages = max(1, (int) ceil($total / $pageSize));
-        $pageItems = array_slice($items, $offset, $pageSize);
 
         return [
-            'items' => $pageItems,
+            'items' => $items,
             'total' => $total,
             'page' => $page,
             'pageSize' => $pageSize,
@@ -5525,7 +5604,9 @@ PROMPT;
         }
 
         try {
-            $this->syncCentralNotifications([]);
+            if ($this->claimCentralNotificationSyncWindow('developer-all')) {
+                $this->syncCentralNotifications([]);
+            }
         } catch (Throwable) {
             // Ignore central sync failures and continue with local notifications.
         }
@@ -5565,41 +5646,36 @@ PROMPT;
         $pageSize = max(1, min(100, (int) ($params['pageSize'] ?? 12)));
         $offset = ($page - 1) * $pageSize;
 
-        $items = [];
         try {
-            $rows = $this->database->fetchAll(
-                "SELECT n.*, creator.name AS created_by_name
-                 FROM notifications n
-                 LEFT JOIN users creator ON creator.id = n.created_by
-                 WHERE (n.system_key IS NULL OR n.system_key NOT LIKE 'central:%')
-                 ORDER BY n.created_at DESC"
-            );
-            $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
-        } catch (\Throwable $e) {
-            // Ignore local fetch failures and continue with remote results only.
-        }
-
-        try {
+            $historyUserId = (string) ($this->currentUser()['id'] ?? '');
+            if (!$this->claimCentralNotificationSyncWindow('history-' . $historyUserId)) {
+                throw new RuntimeException('Central notification cache is still fresh.');
+            }
             $centralNotifications = $this->fetchCentralNotifications([
-                'userId' => (string) ($this->currentUser()['id'] ?? ''),
+                'userId' => $historyUserId,
                 'includeAll' => true,
             ]);
             foreach ($centralNotifications as $notification) {
-                if (!is_array($notification)) {
-                    continue;
-                }
-                $items[] = $this->mapCentralNotification($notification);
+                if (is_array($notification)) $this->upsertCentralNotificationLocally($notification);
             }
         } catch (Throwable $e) {
-            // Ignore central fetch failures.
+            // Cached central notifications remain available locally.
         }
 
-        usort($items, static fn(array $a, array $b): int => strcmp((string) ($b['updatedAt'] ?? ''), (string) ($a['updatedAt'] ?? '')));
-        $total = count($items);
+        $countRow = $this->database->fetchOne('SELECT COUNT(*) AS count FROM notifications');
+        $rows = $this->database->fetchAll(
+            "SELECT n.*, creator.name AS created_by_name
+             FROM notifications n
+             LEFT JOIN users creator ON creator.id = n.created_by
+             ORDER BY COALESCE(n.updated_at, n.created_at) DESC, n.id DESC
+             LIMIT {$pageSize} OFFSET {$offset}"
+        );
+        $items = array_map(fn(array $row): array => $this->mapNotification($row), $rows);
+        $total = (int) ($countRow['count'] ?? 0);
         $totalPages = $total > 0 ? (int) ceil($total / $pageSize) : 0;
 
         return [
-            'items' => array_slice($items, $offset, $pageSize),
+            'items' => $items,
             'total' => $total,
             'page' => $page,
             'pageSize' => $pageSize,

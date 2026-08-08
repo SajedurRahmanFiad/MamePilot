@@ -8,7 +8,7 @@ import { Button, Table, TableCell, IconButton } from '../components';
 import DynamicFilterBar from '../components/DynamicFilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsers, useProductFilterOptions, useUnits } from '../src/hooks/useQueries';
+import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsersMini, useProductFilterOptions, useUnits } from '../src/hooks/useQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
 import { useDeleteProduct } from '../src/hooks/useMutations';
@@ -48,7 +48,7 @@ const Products: React.FC = () => {
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = useState<number>(urlPage);
-  const { data: users = [] } = useUsers();
+  const { data: users = [] } = useUsersMini();
   const { data: units = [] } = useUnits();
 
   const [createdByFilter, setCreatedByFilter] = useState<string>('all');

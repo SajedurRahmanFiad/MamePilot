@@ -2347,6 +2347,7 @@ final class CourierApi extends BaseService
             str_contains($combined, 'pick') || str_contains($combined, 'transit')
             || str_contains($combined, 'assigned') || str_contains($combined, 'out for delivery')
             || str_contains($combined, 'received at')
+            || str_contains($combined, 'pending')
         ) return 'Picked';
         return null;
     }

@@ -9,7 +9,7 @@ import DynamicFilterBar from '../components/DynamicFilterBar';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
-import { useCustomersPage, useSystemDefaults, useUsers, useCustomerFilterOptions } from '../src/hooks/useQueries';
+import { useCustomersPage, useSystemDefaults, useUsersMini, useCustomerFilterOptions } from '../src/hooks/useQueries';
 import { useDeleteCustomer } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -48,7 +48,7 @@ const Customers: React.FC = () => {
   const [page, setPage] = React.useState<number>(urlPage);
   const previousSearchQueryRef = React.useRef(searchQuery);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
-  const { data: users = [] } = useUsers();
+  const { data: users = [] } = useUsersMini();
   const handleRefreshCustomers = useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['customers'], exact: false, type: 'active' });
   }, [queryClient]);

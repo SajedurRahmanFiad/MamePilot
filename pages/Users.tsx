@@ -9,7 +9,7 @@ import DynamicFilterBar, { formatDateDisplay } from '../components/DynamicFilter
 import Pagination from '../src/components/Pagination';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
-import { useSystemDefaults, useUsers, useUsersPage } from '../src/hooks/useQueries';
+import { useSystemDefaults, useUserFilterOptions, useUsersPage } from '../src/hooks/useQueries';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { DEFAULT_PAGE_SIZE, fetchUserById } from '../src/services/supabaseQueries';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
@@ -42,7 +42,7 @@ const Users: React.FC = () => {
   const roleFilter = (searchParams.get('role') as RoleFilter | null) || 'All';
   const previousRoleFilterRef = React.useRef(roleFilter);
   const effectivePage = shouldHydrateFromUrl ? urlPage : page;
-  const { data: allUsers = [] } = useUsers();
+  const { data: userFilterOptions } = useUserFilterOptions();
   const [roleNotFilter, setRoleNotFilter] = React.useState<string>('');
   const [nameFilter, setNameFilter] = React.useState<string>('');
   const [nameNotFilter, setNameNotFilter] = React.useState<string>('');
@@ -164,34 +164,34 @@ const Users: React.FC = () => {
   );
 
   const nameOptions = useMemo(() => {
-    return Array.from(new Set(allUsers.map((u) => u.name).filter(Boolean))) as string[];
-  }, [allUsers]);
+    return userFilterOptions?.names || [];
+  }, [userFilterOptions?.names]);
 
   const phoneOptions = useMemo(() => {
-    return Array.from(new Set(allUsers.map((u) => u.phone).filter(Boolean))) as string[];
-  }, [allUsers]);
+    return userFilterOptions?.phones || [];
+  }, [userFilterOptions?.phones]);
 
   const genderOptions = useMemo(() => {
-    const fromData = Array.from(new Set(allUsers.map((u) => u.gender).filter(Boolean))) as string[];
+    const fromData = userFilterOptions?.genders || [];
     const values = fromData.length > 0 ? fromData : ['Male', 'Female', 'Other'];
     return [
       ...values.map((value) => ({ value, label: value })),
       { value: '__not_specified__', label: 'Not Specified' },
     ];
-  }, [allUsers]);
+  }, [userFilterOptions?.genders]);
 
   const nationalityOptions = useMemo(() => {
-    return Array.from(new Set(allUsers.map((u) => u.nationality).filter(Boolean))) as string[];
-  }, [allUsers]);
+    return userFilterOptions?.nationalities || [];
+  }, [userFilterOptions?.nationalities]);
 
   const bloodGroupOptions = useMemo(() => {
-    const fromData = Array.from(new Set(allUsers.map((u) => u.bloodGroup).filter(Boolean))) as string[];
+    const fromData = userFilterOptions?.bloodGroups || [];
     const values = fromData.length > 0 ? fromData : ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
     return [
       ...values.map((value) => ({ value, label: value })),
       { value: '__not_specified__', label: 'Not Specified' },
     ];
-  }, [allUsers]);
+  }, [userFilterOptions?.bloodGroups]);
 
   const userFilterDefinitions = useMemo(() => {
     const roleOptions = (usersPage?.roles || []).filter(Boolean).sort().map((r) => ({ value: r, label: r }));

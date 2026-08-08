@@ -300,6 +300,10 @@ final class MetaAdsApi extends BaseService
         $search = trim((string) ($params['search'] ?? ''));
         $searchOperator = trim((string) ($params['searchOperator'] ?? 'contains'));
         $rawSearch = trim((string) ($params['rawSearch'] ?? ''));
+        $paginationRequested = array_key_exists('page', $params) || array_key_exists('pageSize', $params);
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $pageSize = max(1, min(100, (int) ($params['pageSize'] ?? 24)));
+        $offset = ($page - 1) * $pageSize;
 
         $where = [];
         $bindings = [];
@@ -389,6 +393,14 @@ final class MetaAdsApi extends BaseService
         }
 
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
+        $limitSql = $paginationRequested ? "LIMIT {$pageSize} OFFSET {$offset}" : 'LIMIT 500';
+        $countRow = $paginationRequested ? $this->database->fetchOne(
+            "SELECT COUNT(*) AS count
+             FROM meta_ads ma
+             INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
+             {$whereSql}",
+            $bindings
+        ) : null;
         $rows = $this->database->fetchAll(
             "SELECT ma.*, mb.name AS business_name, mb.meta_business_id,
                     maa.name AS ad_account_name, maa.meta_ad_account_id, maa.currency,
@@ -398,8 +410,8 @@ final class MetaAdsApi extends BaseService
              INNER JOIN meta_ad_accounts maa ON maa.id = ma.ad_account_id
              LEFT JOIN meta_campaigns mc ON mc.id = ma.campaign_id
              {$whereSql}
-             ORDER BY COALESCE(ma.updated_time, ma.last_synced_at, ma.updated_at) DESC, ma.name ASC
-             LIMIT 500",
+             ORDER BY COALESCE(ma.updated_time, ma.last_synced_at, ma.updated_at) DESC, ma.name ASC, ma.id ASC
+             {$limitSql}",
             $bindings
         );
 
@@ -431,10 +443,54 @@ final class MetaAdsApi extends BaseService
             return array_merge($card, $rangeMetrics);
         }, $rows);
 
-        return [
+        $result = [
             'ads' => $cards,
             'summary' => $this->buildSummary($whereSql, $bindings, $from, $to, $insightsFrom, $insightsTo),
             'filters' => $this->fetchMetaAdsFilters(),
+        ];
+        if ($paginationRequested) {
+            $total = (int) ($countRow['count'] ?? 0);
+            $result['count'] = $total;
+            $result['page'] = $page;
+            $result['pageSize'] = $pageSize;
+            $result['totalPages'] = $total > 0 ? (int) ceil($total / $pageSize) : 0;
+        }
+        return $result;
+    }
+
+    /** Lightweight source-ad labels for Orders. Never synchronizes or builds metrics. */
+    public function fetchMetaAdOptions(array $params = []): array
+    {
+        $this->currentUser();
+        $search = trim((string) ($params['search'] ?? ''));
+        $activeOnly = !empty($params['activeOnly']);
+        $limit = max(1, min(1000, (int) ($params['limit'] ?? ($search !== '' ? 100 : 1000))));
+        $where = [];
+        $bindings = [];
+        if ($activeOnly) {
+            $where[] = "UPPER(COALESCE(effective_status, status, configured_status, '')) IN ('ACTIVE', 'ENABLED', 'LIVE', 'RUNNING')";
+        }
+        if ($search !== '') {
+            $where[] = "CONCAT_WS(' ', name, meta_ad_id) LIKE :search ESCAPE '='";
+            $bindings[':search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
+        }
+        $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
+        $rows = $this->database->fetchAll(
+            'SELECT id, meta_ad_id, name, status, effective_status, configured_status
+             FROM meta_ads
+             ' . $whereSql . '
+             ORDER BY COALESCE(updated_time, last_synced_at, updated_at) DESC, name ASC, id ASC
+             LIMIT ' . $limit,
+            $bindings
+        );
+        return [
+            'ads' => array_map(static fn(array $row): array => [
+                'id' => (string) ($row['id'] ?? ''),
+                'metaAdId' => (string) ($row['meta_ad_id'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'status' => (string) ($row['effective_status'] ?? $row['status'] ?? $row['configured_status'] ?? ''),
+                'platformName' => 'Meta',
+            ], $rows),
         ];
     }
 
@@ -1580,6 +1636,14 @@ final class MetaAdsApi extends BaseService
 
     private function ensureMetaAdsSyncCacheTable(): void
     {
+        static $ensuredForRequest = false;
+        if ($ensuredForRequest) return;
+        $marker = $this->schemaCheckMarker('sync-cache-v2');
+        if ($this->schemaCheckIsFresh($marker)) {
+            $ensuredForRequest = true;
+            return;
+        }
+        $ensuredForRequest = true;
         $this->database->execute(
             'CREATE TABLE IF NOT EXISTS meta_ads_sync_cache (
                 id VARCHAR(36) PRIMARY KEY,
@@ -1597,6 +1661,7 @@ final class MetaAdsApi extends BaseService
         $this->database->execute(
             'ALTER TABLE meta_ads_sync_cache ADD COLUMN IF NOT EXISTS last_manual_sync_at DATETIME DEFAULT NULL'
         );
+        @touch($marker);
     }
 
     private function saveSyncResultsToCache(array $syncResult, bool $isManual = false): void
@@ -1963,6 +2028,14 @@ final class MetaAdsApi extends BaseService
 
     private function ensureMetaAdsInsightsDailyTable(): void
     {
+        static $ensuredForRequest = false;
+        if ($ensuredForRequest) return;
+        $marker = $this->schemaCheckMarker('insights-daily-v2');
+        if ($this->schemaCheckIsFresh($marker)) {
+            $ensuredForRequest = true;
+            return;
+        }
+        $ensuredForRequest = true;
         $this->database->execute(
             'CREATE TABLE IF NOT EXISTS meta_ads_insights_daily (
                 id VARCHAR(64) NOT NULL,
@@ -1995,6 +2068,20 @@ final class MetaAdsApi extends BaseService
         if (!$this->columnExists('meta_ads_insights_daily', 'purchase_roas')) {
             $this->database->execute('ALTER TABLE meta_ads_insights_daily ADD COLUMN purchase_roas DECIMAL(14,6) DEFAULT NULL AFTER purchase_value');
         }
+        @touch($marker);
+    }
+
+    private function schemaCheckMarker(string $schema): string
+    {
+        $databaseName = trim((string) ($this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot'));
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . 'mamepilot-meta-ads-' . $schema . '-' . substr(hash('sha256', $databaseName), 0, 24) . '.lock';
+    }
+
+    private function schemaCheckIsFresh(string $marker): bool
+    {
+        $interval = max(60, (int) ($this->config->get('META_ADS_SCHEMA_CHECK_SECONDS', '300') ?? '300'));
+        return is_file($marker) && (int) @filemtime($marker) >= time() - $interval;
     }
 
     /**

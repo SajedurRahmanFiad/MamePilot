@@ -32,7 +32,7 @@ final class LeadApi extends BaseService
         $whereSql = implode(' AND ', $where);
         $count = $this->database->fetchOne('SELECT COUNT(*) AS total FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
-        $rows = $this->database->fetchAll('SELECT l.*, mc.name AS messenger_name, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, mc.last_message_preview AS messenger_preview, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql . ' ORDER BY l.updated_at DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset, $bindings);
+        $rows = $this->database->fetchAll('SELECT l.*, mc.name AS messenger_name, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, mc.last_message_preview AS messenger_preview, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql . ' ORDER BY l.updated_at DESC, l.id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset, $bindings);
         return ['data' => array_map(fn(array $row): array => $this->mapLead($row), $rows), 'count' => (int) ($count['total'] ?? 0)];
     }
 
@@ -366,11 +366,36 @@ final class LeadApi extends BaseService
 
     private function syncChannelLeads(): void
     {
+        $profile = $this->jsonEncode([
+            'schemaVersion' => 1,
+            'identity' => [],
+            'interest' => [],
+            'missingInformation' => [],
+            'orderConfirmation' => ['status' => 'not_detected'],
+        ]);
+        $now = $this->database->nowUtc();
+
         if ($this->tableExists('messenger_contacts')) {
-            foreach ($this->database->fetchAll('SELECT id FROM messenger_contacts') as $row) $this->resolveLead(['channel' => 'messenger', 'contactId' => (string) $row['id']]);
+            $this->database->execute(
+                "INSERT IGNORE INTO lead_profiles
+                    (id, source_channel, messenger_contact_id, profile_json, created_at, updated_at)
+                 SELECT UUID(), 'messenger', mc.id, :profile, :created, :updated
+                 FROM messenger_contacts mc
+                 LEFT JOIN lead_profiles existing ON existing.messenger_contact_id = mc.id
+                 WHERE existing.id IS NULL",
+                [':profile' => $profile, ':created' => $now, ':updated' => $now]
+            );
         }
         if ($this->tableExists('whatsapp_contacts')) {
-            foreach ($this->database->fetchAll('SELECT id FROM whatsapp_contacts') as $row) $this->resolveLead(['channel' => 'whatsapp', 'contactId' => (string) $row['id']]);
+            $this->database->execute(
+                "INSERT IGNORE INTO lead_profiles
+                    (id, source_channel, whatsapp_contact_id, profile_json, created_at, updated_at)
+                 SELECT UUID(), 'whatsapp', wc.id, :profile, :created, :updated
+                 FROM whatsapp_contacts wc
+                 LEFT JOIN lead_profiles existing ON existing.whatsapp_contact_id = wc.id
+                 WHERE existing.id IS NULL",
+                [':profile' => $profile, ':created' => $now, ':updated' => $now]
+            );
         }
     }
 }

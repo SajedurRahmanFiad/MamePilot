@@ -17,6 +17,7 @@ final class RecurringTransactionScheduler
     public function triggerIfNeeded(): void
     {
         try {
+            if (!$this->claimSchedulerCheckWindow()) return;
             if (!$this->tableExists('recurring_transactions') || !$this->tableExists('recurring_transaction_worker_state')) return;
             $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
             if (empty($capabilities['recurring_transactions'])) return;
@@ -60,6 +61,40 @@ final class RecurringTransactionScheduler
             }
         } catch (\Throwable $exception) {
             error_log('Could not start the recurring transaction worker: ' . $exception->getMessage());
+        }
+    }
+
+    /**
+     * Request shutdown remains a fallback for deployments without cron, but a
+     * shared filesystem marker prevents every API request from repeating the
+     * schema, capability, lifecycle and worker-state queries.
+     */
+    private function claimSchedulerCheckWindow(): bool
+    {
+        $interval = max(5, (int) ($this->config->get('RECURRING_TRANSACTION_REQUEST_CHECK_SECONDS', '15') ?? '15'));
+        $databaseName = trim((string) ($this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot'));
+        $marker = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'mamepilot-recurring-check-' . substr(hash('sha256', $databaseName), 0, 24) . '.lock';
+        $handle = @fopen($marker, 'c+');
+        if (!is_resource($handle)) return true;
+        if (!@flock($handle, LOCK_EX | LOCK_NB)) {
+            @fclose($handle);
+            return false;
+        }
+
+        try {
+            @rewind($handle);
+            $lastCheck = (int) trim((string) @stream_get_contents($handle));
+            if ($lastCheck > 0 && $lastCheck >= time() - $interval) return false;
+            @ftruncate($handle, 0);
+            @rewind($handle);
+            @fwrite($handle, (string) time());
+            @fflush($handle);
+            return true;
+        } finally {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
         }
     }
 

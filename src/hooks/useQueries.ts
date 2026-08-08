@@ -1,4 +1,5 @@
 ﻿import { useQuery, UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   fetchAllNotifications,
   fetchDeployments,
@@ -33,6 +34,8 @@ import {
   fetchTransactions,
   fetchTransactionById,
   fetchUsers,
+  fetchUsersMini,
+  fetchUserFilterOptions,
   fetchUsersPage,
   fetchUserActivityPerformanceLog,
   fetchUserActivityPerformanceReportPage,
@@ -66,6 +69,7 @@ import {
   fetchAgentSettings,
   fetchCourierSettings,
   fetchMetaAdById,
+  fetchMetaAdOptions,
   fetchMetaAds,
   fetchMarketingDashboard,
   fetchMetaAdsSettings,
@@ -221,7 +225,7 @@ export function useCustomersPage(
 ): UseQueryResult<{ data: Customer[]; count: number }, Error> {
   return useQuery({
     queryKey: ['customers', page, pageSize, search, filters],
-    queryFn: () => fetchCustomersPage(page, pageSize, search, filters),
+    queryFn: ({ signal }) => fetchCustomersPage(page, pageSize, search, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -442,7 +446,7 @@ export function useOrdersPage(
 ): UseQueryResult<{ data: Order[]; count: number }, Error> {
   return useQuery({
     queryKey: ['orders', page, pageSize, filters],
-    queryFn: () => fetchOrdersPage(page, pageSize, filters),
+    queryFn: ({ signal }) => fetchOrdersPage(page, pageSize, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -507,7 +511,7 @@ export function useBillsPage(
 ): UseQueryResult<{ data: Bill[]; count: number }, Error> {
   return useQuery({
     queryKey: ['bills', page, pageSize, filters],
-    queryFn: () => fetchBillsPage(page, pageSize, filters),
+    queryFn: ({ signal }) => fetchBillsPage(page, pageSize, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -582,7 +586,7 @@ export function useTransactionsPage(
 ): UseQueryResult<{ data: Transaction[]; count: number; summary?: { income: number; expense: number; transfer: number } }, Error> {
   return useQuery({
     queryKey: ['transactions', page, pageSize, filters],
-    queryFn: () => fetchTransactionsPage(page, pageSize, filters),
+    queryFn: ({ signal }) => fetchTransactionsPage(page, pageSize, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -613,7 +617,7 @@ export function useRecurringTransactionsPage(
 ): UseQueryResult<{ data: RecurringTransaction[]; count: number }, Error> {
   return useQuery({
     queryKey: ['recurringTransactions', page, pageSize, filters],
-    queryFn: () => fetchRecurringTransactionsPage(page, pageSize, filters),
+    queryFn: ({ signal }) => fetchRecurringTransactionsPage(page, pageSize, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 30 * 1000,
     refetchInterval: 30 * 1000,
@@ -640,6 +644,25 @@ export function useUsers(): UseQueryResult<User[], Error> {
   });
 }
 
+export function useUsersMini(): UseQueryResult<Array<{ id: string; name: string; phone?: string; role: string }>, Error> {
+  return useQuery({
+    queryKey: ['users', 'mini'],
+    queryFn: fetchUsersMini,
+    staleTime: 15 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useUserFilterOptions(): UseQueryResult<{ names: string[]; phones: string[]; roles: string[]; genders: string[]; nationalities: string[]; bloodGroups: string[] }, Error> {
+  return useQuery({
+    queryKey: ['users', 'filter-options'],
+    queryFn: fetchUserFilterOptions,
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useUsersPage(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
@@ -648,7 +671,7 @@ export function useUsersPage(
 ): UseQueryResult<{ data: User[]; count: number; roles: string[] }, Error> {
   return useQuery({
     queryKey: ['users', page, pageSize, filters],
-    queryFn: () => fetchUsersPage(page, pageSize, filters),
+    queryFn: ({ signal }) => fetchUsersPage(page, pageSize, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -758,7 +781,7 @@ export function useVendorsPage(
 ): UseQueryResult<{ data: Vendor[]; count: number }, Error> {
   return useQuery({
     queryKey: ['vendors', page, pageSize, search, filters],
-    queryFn: () => fetchVendorsPage(page, pageSize, search, filters),
+    queryFn: ({ signal }) => fetchVendorsPage(page, pageSize, search, filters, { signal }),
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
@@ -811,7 +834,7 @@ export function useProductsPage(
     (string | number | boolean | undefined)[]
   > & { keepPreviousData?: boolean } = {
     queryKey: ['products', page, pageSize, category, search, JSON.stringify(createdByIds || []), JSON.stringify(filters || {})],
-    queryFn: () => fetchProductsPage(page, pageSize, search, category, createdByIds, filters),
+    queryFn: ({ signal }) => fetchProductsPage(page, pageSize, search, category, createdByIds, filters, { signal }),
     placeholderData: (previousData) => previousData as any,
     staleTime: 15 * 60 * 1000,
     keepPreviousData: true,
@@ -870,7 +893,7 @@ export function useRecycleBinPage(
 
   return useQuery({
     queryKey: ['recycle-bin', 'page', page, pageSize, normalizedSearch, normalizedEntityType, options?.entityTypeNot, options?.deletedBy, options?.deletedByNot, options?.title, options?.titleNot, options?.deletedDate],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       fetchRecycleBinPage(page, pageSize, {
         search: normalizedSearch,
         entityType: normalizedEntityType,
@@ -880,7 +903,7 @@ export function useRecycleBinPage(
         title: options?.title,
         titleNot: options?.titleNot,
         deletedDate: options?.deletedDate,
-      }),
+      }, { signal }),
     enabled: options?.enabled ?? true,
     placeholderData: (previousData) => previousData,
     staleTime: 60 * 1000,
@@ -1113,7 +1136,7 @@ export function useLlmSettings(enabled: boolean = true): UseQueryResult<LlmSetti
 }
 
 export function useLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}, enabled: boolean = true): UseQueryResult<{ data: Lead[]; count: number }, Error> {
-  return useQuery({ queryKey: ['leads', params], queryFn: () => fetchLeadsPage(params), staleTime: 2_000, refetchInterval: enabled ? 5_000 : false, enabled });
+  return useQuery({ queryKey: ['leads', params], queryFn: ({ signal }) => fetchLeadsPage(params, { signal }), staleTime: 2_000, refetchInterval: enabled ? 5_000 : false, enabled });
 }
 
 export function useLead(leadId: string | null | undefined, enabled: boolean = true): UseQueryResult<Lead, Error> {
@@ -1337,20 +1360,32 @@ export function useWhatsAppSettings(enabled: boolean = true): UseQueryResult<Wha
   });
 }
 
-export function useWhatsAppContacts(params?: { search?: string; filter?: 'all' | 'unread' }, enabled: boolean = true): UseQueryResult<{ data: WhatsAppContact[]; count: number; configured: boolean }, Error> {
+export function useWhatsAppContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }, enabled: boolean = true): UseQueryResult<{ data: WhatsAppContact[]; count: number; configured: boolean }, Error> {
   return useQuery({
     queryKey: ['whatsapp', 'contacts', params || {}],
-    queryFn: () => fetchWhatsAppContacts(params),
+    queryFn: ({ signal }) => fetchWhatsAppContacts(params, { signal }),
     staleTime: 2 * 1000,
     refetchInterval: enabled ? 5000 : false,
     enabled,
   });
 }
 
-export function useWhatsAppMessages(contactId: string | null, enabled: boolean = true): UseQueryResult<{ contact: WhatsAppContact; data: WhatsAppMessage[] }, Error> {
+export function useWhatsAppMessages(contactId: string | null, enabled: boolean = true): UseQueryResult<{ contact: WhatsAppContact; data: WhatsAppMessage[]; incremental?: boolean; cursor?: { updatedAt: string; id: string } }, Error> {
+  const queryClient = useQueryClient();
+  const queryKey = ['whatsapp', 'messages', contactId] as const;
   return useQuery({
-    queryKey: ['whatsapp', 'messages', contactId],
-    queryFn: () => fetchWhatsAppMessages(contactId || ''),
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const cached = queryClient.getQueryData<{ contact: WhatsAppContact; data: WhatsAppMessage[]; cursor?: { updatedAt: string; id: string } }>(queryKey);
+      const response = await fetchWhatsAppMessages(contactId || '', cached?.cursor, { signal });
+      if (!response.incremental || !cached) return response;
+      const messages = new Map(cached.data.map((message) => [message.id, message]));
+      response.data.forEach((message) => messages.set(message.id, message));
+      const data = Array.from(messages.values())
+        .sort((left, right) => String(left.messageAt || left.createdAt || '').localeCompare(String(right.messageAt || right.createdAt || '')))
+        .slice(-150);
+      return { ...response, contact: response.contact || cached.contact, data };
+    },
     staleTime: 2 * 1000,
     refetchInterval: enabled && Boolean(contactId) ? 5000 : false,
     enabled: enabled && Boolean(contactId),
@@ -1374,12 +1409,30 @@ export function useMessengerProfile(enabled: boolean = true): UseQueryResult<Mes
   return useQuery({ queryKey: ['messenger', 'profile'], queryFn: fetchMessengerProfile, staleTime: 60 * 1000, enabled });
 }
 
-export function useMessengerContacts(params?: { search?: string; filter?: 'all' | 'unread' }, enabled: boolean = true): UseQueryResult<{ data: MessengerContact[]; count: number; configured: boolean }, Error> {
-  return useQuery({ queryKey: ['messenger', 'contacts', params || {}], queryFn: () => fetchMessengerContacts(params), staleTime: 2 * 1000, refetchInterval: enabled ? 5000 : false, enabled });
+export function useMessengerContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }, enabled: boolean = true): UseQueryResult<{ data: MessengerContact[]; count: number; configured: boolean }, Error> {
+  return useQuery({ queryKey: ['messenger', 'contacts', params || {}], queryFn: ({ signal }) => fetchMessengerContacts(params, { signal }), staleTime: 2 * 1000, refetchInterval: enabled ? 5000 : false, enabled });
 }
 
-export function useMessengerMessages(contactId: string | null, enabled: boolean = true): UseQueryResult<{ contact: MessengerContact; data: MessengerMessage[] }, Error> {
-  return useQuery({ queryKey: ['messenger', 'messages', contactId], queryFn: () => fetchMessengerMessages(contactId || ''), staleTime: 2 * 1000, refetchInterval: enabled && Boolean(contactId) ? 4000 : false, enabled: enabled && Boolean(contactId) });
+export function useMessengerMessages(contactId: string | null, enabled: boolean = true): UseQueryResult<{ contact: MessengerContact; data: MessengerMessage[]; incremental?: boolean; cursor?: { updatedAt: string; id: string } }, Error> {
+  const queryClient = useQueryClient();
+  const queryKey = ['messenger', 'messages', contactId] as const;
+  return useQuery({
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const cached = queryClient.getQueryData<{ contact: MessengerContact; data: MessengerMessage[]; cursor?: { updatedAt: string; id: string } }>(queryKey);
+      const response = await fetchMessengerMessages(contactId || '', cached?.cursor, { signal });
+      if (!response.incremental || !cached) return response;
+      const messages = new Map(cached.data.map((message) => [message.id, message]));
+      response.data.forEach((message) => messages.set(message.id, message));
+      const data = Array.from(messages.values())
+        .sort((left, right) => String(left.messageAt || left.createdAt || '').localeCompare(String(right.messageAt || right.createdAt || '')))
+        .slice(-200);
+      return { ...response, contact: response.contact || cached.contact, data };
+    },
+    staleTime: 2 * 1000,
+    refetchInterval: enabled && Boolean(contactId) ? 4000 : false,
+    enabled: enabled && Boolean(contactId),
+  });
 }
 
 export function useMetaAdsSettings(enabled: boolean = true): UseQueryResult<MetaAdsSettings, Error> {
@@ -1422,6 +1475,9 @@ export function useMetaAds(
     to?: string;
     search?: string;
     searchOperator?: string;
+    rawSearch?: string;
+    page?: number;
+    pageSize?: number;
   },
   enabled: boolean = true
 ): UseQueryResult<any, Error> {
@@ -1438,13 +1494,29 @@ export function useMetaAds(
     to: String(filters?.to || ''),
     search: String(filters?.search || '').trim(),
     searchOperator: String(filters?.searchOperator || 'contains'),
+    rawSearch: String(filters?.rawSearch || '').trim(),
+    page: Math.max(1, Number(filters?.page || 1)),
+    pageSize: Math.max(1, Math.min(100, Number(filters?.pageSize || 24))),
   };
 
   return useQuery({
     queryKey: ['meta-ads', 'list', normalizedFilters],
-    queryFn: () => fetchMetaAds(normalizedFilters),
+    queryFn: ({ signal }) => fetchMetaAds(normalizedFilters, { signal }),
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
+    enabled,
+  });
+}
+
+export function useMetaAdOptions(
+  enabled: boolean = true,
+  params: { search?: string; activeOnly?: boolean; limit?: number } = {},
+): UseQueryResult<{ ads: Array<{ id: string; metaAdId: string; name: string; status: string; platformName: string }> }, Error> {
+  return useQuery({
+    queryKey: ['meta-ads', 'options', params],
+    queryFn: ({ signal }) => fetchMetaAdOptions(params, { signal }),
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
     enabled,
   });
 }

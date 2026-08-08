@@ -9,7 +9,7 @@ import { theme } from '../../theme';
 import { useAuth } from '../../src/contexts/AuthProvider';
 import { useToastNotifications } from '../../src/contexts/ToastContext';
 import { useCapabilities } from '../../src/hooks/useCapabilities';
-import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage, useUsers } from '../../src/hooks/useQueries';
+import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage, useUsersMini } from '../../src/hooks/useQueries';
 import { UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
 import { formatDate, formatDateTime as formatDisplayDateTime } from '../../utils';
 import Pagination from '../../src/components/Pagination';
@@ -833,7 +833,7 @@ const UserActivityPerformanceReport: React.FC = () => {
   const toast = useToastNotifications();
   const { hasCapability } = useCapabilities();
   const { data: companySettings } = useCompanySettings();
-  const { data: allUsers = [] } = useUsers();
+  const { data: allUsers = [] } = useUsersMini();
   const hasSales = hasCapability('sales');
   const hasPurchases = hasCapability('purchases');
   const hasBanking = hasCapability('banking');

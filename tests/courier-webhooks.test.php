@@ -450,6 +450,21 @@ try {
     ]), $steadfastHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastCancelledId) === 'Cancelled', 'Steadfast cancelled did not map to Cancelled.');
 
+    $steadfastPendingId = 'cwh-sf-pending-' . $stamp;
+    $steadfastPendingNumber = 'CWH-SF-PENDING-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $steadfastPendingId, $steadfastPendingNumber, 'Processing', $customerId, [
+        'steadfast' => 'SF-PENDING-' . $stamp,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-PENDING-' . $stamp,
+        'invoice' => $steadfastPendingNumber,
+        'status' => 'pending',
+        'delivery_charge' => 0,
+        'updated_at' => '2026-08-03 14:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastPendingId) === 'Picked', 'Steadfast pending did not map to Picked.');
+
     // Paperfly: package_price and collected_amount are not courier fees. An
     // explicit fee field is saved and later recorded on delivery.
     $paperflyId = 'cwh-paperfly-' . $stamp;

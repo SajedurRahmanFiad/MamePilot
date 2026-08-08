@@ -37,6 +37,7 @@ import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
 type WhatsAppTemplate = { id: string; name: string; language: string; status: string; category: string; components?: any[] };
+const CONTACT_PAGE_SIZE = 50;
 
 const EMOJIS = ['😀', '😂', '😍', '🙏', '👍', '❤️', '🎉', '✅', '📦', '🚚', '💳', '☎️'];
 
@@ -246,6 +247,7 @@ const WhatsApp: React.FC = () => {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState<ContactFilter>('all');
+  const [contactPage, setContactPage] = useState(1);
   const [text, setText] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showEmojiMenu, setShowEmojiMenu] = useState(false);
@@ -260,12 +262,15 @@ const WhatsApp: React.FC = () => {
   const previousContactId = useRef<string | null>(null);
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { setContactPage(1); }, [debouncedSearch, filter]);
 
-  const contactsQuery = useWhatsAppContacts({ search: debouncedSearch, filter }, true);
+  const contactsQuery = useWhatsAppContacts({ search: debouncedSearch, filter, page: contactPage, pageSize: CONTACT_PAGE_SIZE }, true);
   const contacts = contactsQuery.data?.data || [];
   const configured = contactsQuery.data?.configured ?? true;
-  const selectedContact = contacts.find((contact) => contact.id === selectedContactId) || null;
   const messagesQuery = useWhatsAppMessages(selectedContactId, Boolean(selectedContactId));
+  const selectedContact = contacts.find((contact) => contact.id === selectedContactId) || messagesQuery.data?.contact || null;
+  const contactCount = contactsQuery.data?.count || 0;
+  const contactPageCount = Math.max(1, Math.ceil(contactCount / CONTACT_PAGE_SIZE));
   const leadIntelligence = useLeadIntelligence({ channel: 'whatsapp', contactId: selectedContactId || undefined }, showLeadPanel && Boolean(selectedContactId));
   const messages = messagesQuery.data?.data || [];
   const templatesQuery = useWhatsAppTemplates(showTemplates);
@@ -371,7 +376,7 @@ const WhatsApp: React.FC = () => {
           <div className="p-6 text-center"><AlertCircle className="mx-auto text-red-400" /><p className="mt-3 text-sm font-bold text-gray-700">Could not load chats</p><p className="mt-1 text-xs text-red-600">Please try again. If it still does not work, ask an administrator for help.</p></div>
         ) : contacts.length === 0 ? (
           <div className="flex h-full min-h-56 flex-col items-center justify-center px-8 text-center"><MessageSquare size={36} className="text-gray-200" /><p className="mt-4 text-sm font-bold text-gray-700">No conversations yet</p><p className="mt-1 text-xs leading-relaxed text-gray-400">New messages will appear here. You can also start a chat with a customer.</p></div>
-        ) : contacts.map((contact) => (
+        ) : <>{contacts.map((contact) => (
           <button key={contact.id} onClick={() => { setSelectedContactId(contact.id); shouldStickToBottom.current = true; }} className={`flex w-full items-center gap-3 border-b border-gray-50 px-4 py-3 text-left hover:bg-gray-50 ${selectedContactId === contact.id ? 'bg-emerald-50' : ''}`}>
             <ContactAvatar contact={contact} />
             <div className="min-w-0 flex-1">
@@ -379,7 +384,7 @@ const WhatsApp: React.FC = () => {
               <div className="mt-1 flex items-center justify-between gap-2"><p className="truncate text-xs text-gray-500">{contact.lastMessageType === 'template' ? 'Saved message' : (contact.lastMessagePreview || contact.phoneNumber)}</p>{contact.unreadCount > 0 && <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white">{contact.unreadCount > 99 ? '99+' : contact.unreadCount}</span>}</div>
             </div>
           </button>
-        ))}
+        ))}{contactPageCount > 1 && <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-100 bg-white/95 px-3 py-2 text-xs font-bold text-gray-600 backdrop-blur"><button type="button" disabled={contactPage <= 1 || contactsQuery.isFetching} onClick={() => setContactPage((page) => Math.max(1, page - 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40">Previous</button><span>{contactPage} / {contactPageCount}</span><button type="button" disabled={contactPage >= contactPageCount || contactsQuery.isFetching} onClick={() => setContactPage((page) => Math.min(contactPageCount, page + 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40">Next</button></div>}</>}
       </div>
     </div>
   );

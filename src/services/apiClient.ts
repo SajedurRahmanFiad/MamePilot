@@ -5,6 +5,7 @@ const AUTH_TOKEN_KEY = 'authToken';
 
 export type ApiActionOptions = {
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 type ApiErrorCode = 'TIMEOUT' | 'NETWORK' | 'HTTP_ERROR';
@@ -62,8 +63,15 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
   const token = getAuthToken();
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutMs = Math.max(0, Number(options?.timeoutMs || 0));
+  let timedOut = false;
+  const abortFromCaller = () => controller?.abort();
+  if (options?.signal?.aborted) abortFromCaller();
+  else options?.signal?.addEventListener('abort', abortFromCaller, { once: true });
   const timeoutId = controller && timeoutMs > 0
-    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    ? window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
     : null;
 
   let response: Response;
@@ -83,9 +91,13 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
       window.clearTimeout(timeoutId);
     }
 
-    if (error?.name === 'AbortError') {
+    options?.signal?.removeEventListener('abort', abortFromCaller);
+
+    if (error?.name === 'AbortError' && timedOut) {
       throw new ApiError('This is taking longer than expected. Please try again.', { code: 'TIMEOUT' });
     }
+
+    if (error?.name === 'AbortError') throw error;
 
     if (error instanceof TypeError) {
       throw new ApiError('Could not connect. Check your internet connection and try again.', { code: 'NETWORK' });
@@ -97,6 +109,7 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
   if (timeoutId !== null) {
     window.clearTimeout(timeoutId);
   }
+  options?.signal?.removeEventListener('abort', abortFromCaller);
 
   const rawText = await response.text();
   let parsed: any = null;

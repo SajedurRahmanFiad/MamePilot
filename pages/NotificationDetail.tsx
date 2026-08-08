@@ -306,6 +306,7 @@ const NotificationDetail: React.FC = () => {
                 filterDefinitions={filterDefinitions}
                 freeTextLabel="Recipients"
                 rawSearchValue={rawSearch}
+                rawSearchDebounceMs={0}
                 onRawSearchChange={(value) => {
                   setRawSearch(value);
                   setFilters([]);

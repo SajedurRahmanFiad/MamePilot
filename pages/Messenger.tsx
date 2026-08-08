@@ -39,6 +39,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
+const CONTACT_PAGE_SIZE = 50;
 
 const EMOJIS = ['😀', '😂', '😍', '🙏', '👍', '❤️', '🎉', '✅', '📦', '🚚', '💳', '☎️'];
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
@@ -147,6 +148,7 @@ const MessengerPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState<ContactFilter>('all');
+  const [contactPage, setContactPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -165,8 +167,10 @@ const MessengerPage: React.FC = () => {
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  const contactsQuery = useMessengerContacts({ search: debouncedSearch, filter }, true);
+  const contactsQuery = useMessengerContacts({ search: debouncedSearch, filter, page: contactPage, pageSize: CONTACT_PAGE_SIZE }, true);
   const contacts = contactsQuery.data?.data || [];
+  const contactCount = contactsQuery.data?.count || 0;
+  const contactPageCount = Math.max(1, Math.ceil(contactCount / CONTACT_PAGE_SIZE));
   const messagesQuery = useMessengerMessages(selectedId, Boolean(selectedId));
   const leadIntelligence = useLeadIntelligence({ channel: 'messenger', contactId: selectedId || undefined }, infoOpen && Boolean(selectedId));
   const messages = messagesQuery.data?.data || [];
@@ -182,6 +186,7 @@ const MessengerPage: React.FC = () => {
   const busy = sendText.isPending || sendMedia.isPending || sendChoices.isPending || sendCard.isPending;
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { setContactPage(1); }, [debouncedSearch, filter]);
   useEffect(() => { if (!selectedId && contacts.length > 0) setSelectedId(contacts[0].id); }, [contacts, selectedId]);
   useEffect(() => { if (selectedId && selectedContact?.unreadCount) markRead.mutate(selectedId); }, [selectedId, selectedContact?.unreadCount]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, selectedId]);
@@ -253,7 +258,7 @@ const MessengerPage: React.FC = () => {
         <div className="px-4 py-2"><div className="flex items-center gap-2 rounded-full bg-[#f0f2f5] px-3 py-2.5"><Search size={17} className="text-gray-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" placeholder="Search Messenger" />{search && <button type="button" onClick={() => setSearch('')}><X size={15} /></button>}</div></div>
         <div className="flex gap-2 px-4 py-2">{(['all', 'unread'] as ContactFilter[]).map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-black capitalize ${filter === item ? 'bg-blue-50 text-[#0866ff]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{item}</button>)}</div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {contactsQuery.isPending ? <div className="space-y-2 p-2">{Array.from({ length: 7 }).map((_, index) => <div key={index} className="flex animate-pulse gap-3 rounded-xl p-2"><div className="h-14 w-14 rounded-full bg-gray-100" /><div className="flex-1 space-y-2 py-1"><div className="h-3 w-2/3 rounded bg-gray-100" /><div className="h-3 w-full rounded bg-gray-100" /></div></div>)}</div> : contacts.length === 0 ? <div className="px-6 py-16 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-[#0866ff]"><Search /></div><p className="mt-4 font-black">No chats yet</p><p className="mt-1 text-sm text-gray-500">New messages will appear here.</p></div> : contacts.map((contact) => <button key={contact.id} type="button" onClick={() => selectContact(contact)} className={`flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition ${selectedId === contact.id ? 'bg-[#f0f2f5]' : 'hover:bg-gray-50'}`}><ContactAvatar contact={contact} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className={`truncate text-[15px] ${contact.unreadCount ? 'font-black' : 'font-semibold'}`}>{contact.name}</p><span className={`shrink-0 text-xs ${contact.unreadCount ? 'font-black text-[#0866ff]' : 'text-gray-400'}`}>{formatTime(contact.lastMessageAt)}</span></div><div className="mt-0.5 flex items-center gap-2"><p className={`min-w-0 flex-1 truncate text-sm ${contact.unreadCount ? 'font-bold text-gray-900' : 'text-gray-500'}`}>{contact.lastMessagePreview || 'Messenger conversation'}</p>{contact.unreadCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0866ff] px-1.5 text-[10px] font-black text-white">{contact.unreadCount}</span>}</div></div></button>)}
+          {contactsQuery.isPending ? <div className="space-y-2 p-2">{Array.from({ length: 7 }).map((_, index) => <div key={index} className="flex animate-pulse gap-3 rounded-xl p-2"><div className="h-14 w-14 rounded-full bg-gray-100" /><div className="flex-1 space-y-2 py-1"><div className="h-3 w-2/3 rounded bg-gray-100" /><div className="h-3 w-full rounded bg-gray-100" /></div></div>)}</div> : contacts.length === 0 ? <div className="px-6 py-16 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-[#0866ff]"><Search /></div><p className="mt-4 font-black">No chats yet</p><p className="mt-1 text-sm text-gray-500">New messages will appear here.</p></div> : <>{contacts.map((contact) => <button key={contact.id} type="button" onClick={() => selectContact(contact)} className={`flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition ${selectedId === contact.id ? 'bg-[#f0f2f5]' : 'hover:bg-gray-50'}`}><ContactAvatar contact={contact} /><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className={`truncate text-[15px] ${contact.unreadCount ? 'font-black' : 'font-semibold'}`}>{contact.name}</p><span className={`shrink-0 text-xs ${contact.unreadCount ? 'font-black text-[#0866ff]' : 'text-gray-400'}`}>{formatTime(contact.lastMessageAt)}</span></div><div className="mt-0.5 flex items-center gap-2"><p className={`min-w-0 flex-1 truncate text-sm ${contact.unreadCount ? 'font-bold text-gray-900' : 'text-gray-500'}`}>{contact.lastMessagePreview || 'Messenger conversation'}</p>{contact.unreadCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0866ff] px-1.5 text-[10px] font-black text-white">{contact.unreadCount}</span>}</div></div></button>)}{contactPageCount > 1 && <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-100 bg-white/95 px-2 py-2 text-xs font-bold text-gray-600 backdrop-blur"><button type="button" disabled={contactPage <= 1 || contactsQuery.isFetching} onClick={() => setContactPage((page) => Math.max(1, page - 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40">Previous</button><span>{contactPage} / {contactPageCount}</span><button type="button" disabled={contactPage >= contactPageCount || contactsQuery.isFetching} onClick={() => setContactPage((page) => Math.min(contactPageCount, page + 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40">Next</button></div>}</>}
         </div>
       </aside>
 

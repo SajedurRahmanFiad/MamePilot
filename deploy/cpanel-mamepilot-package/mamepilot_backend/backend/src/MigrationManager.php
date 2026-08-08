@@ -131,9 +131,12 @@ final class MigrationManager
             $pdo->exec("SET NAMES utf8mb4");
             foreach ($this->statements($sql) as $statement) {
                 try {
+                    if ($this->executeCompatibilityStatement($pdo, $statement)) {
+                        continue;
+                    }
                     $pdo->exec($statement);
                 } catch (\PDOException $e) {
-                    $code = (int) $e->getCode();
+                    $code = (int) ($e->errorInfo[1] ?? $e->getCode());
                     $safeCodes = [1050, 1051, 1060, 1061, 1062, 1146];
                     if (in_array($code, $safeCodes, true)) {
                         continue;
@@ -163,6 +166,45 @@ final class MigrationManager
             }
             throw new RuntimeException("Migration failed: {$migration['name']} - " . $exception->getMessage(), 0, $exception);
         }
+    }
+
+    /**
+     * A small number of packaged migrations use the schema-only helper name
+     * sp_add_col. Execute that operation directly when running migrations so
+     * fresh installs do not depend on a temporary stored procedure.
+     */
+    private function executeCompatibilityStatement(\PDO $pdo, string $statement): bool
+    {
+        $normalized = preg_replace('/\A(?:\s*--[^\r\n]*(?:\r?\n|$))+/', '', $statement) ?? $statement;
+        if (preg_match(
+            "/^\s*CALL\s+sp_add_col\(\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*\)\s*$/is",
+            $normalized,
+            $matches
+        ) !== 1) {
+            return false;
+        }
+
+        $table = str_replace("''", "'", $matches[1]);
+        $column = str_replace("''", "'", $matches[2]);
+        $definition = str_replace("''", "'", $matches[3]);
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+            throw new RuntimeException('Invalid identifier in sp_add_col compatibility migration.');
+        }
+
+        $check = $pdo->prepare(
+            'SELECT 1 FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column LIMIT 1'
+        );
+        $check->execute([':table' => $table, ':column' => $column]);
+        if ($check->fetchColumn() !== false) return true;
+
+        $pdo->exec(sprintf(
+            'ALTER TABLE `%s` ADD COLUMN `%s` %s',
+            str_replace('`', '``', $table),
+            str_replace('`', '``', $column),
+            $definition
+        ));
+        return true;
     }
 
     private function ensureMigrationTable(): void

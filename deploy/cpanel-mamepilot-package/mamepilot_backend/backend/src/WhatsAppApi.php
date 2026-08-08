@@ -387,7 +387,7 @@ final class WhatsAppApi extends BaseService
         $rows = $this->database->fetchAll(
             'SELECT id, wa_id, phone_number, name, profile_name, unread_count, last_message_preview,
                     last_message_type, last_message_at, created_at, updated_at
-             FROM whatsapp_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+             FROM whatsapp_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
             $bindings
         );
 
@@ -411,15 +411,50 @@ final class WhatsAppApi extends BaseService
         if ($contact === null) {
             throw new RuntimeException('WhatsApp contact not found.');
         }
-        $limit = min(200, max(20, (int) ($params['limit'] ?? 100)));
-        $rows = $this->database->fetchAll(
-            'SELECT * FROM whatsapp_messages WHERE contact_id = :contact_id ORDER BY message_at DESC, created_at DESC LIMIT ' . $limit,
-            [':contact_id' => $contactId]
-        );
-        $rows = array_reverse($rows);
+        $limit = min(250, max(20, (int) ($params['limit'] ?? 100)));
+        $updatedAfter = trim((string) ($params['updatedAfter'] ?? ''));
+        $updatedAfterId = trim((string) ($params['updatedAfterId'] ?? ''));
+        $incremental = $updatedAfter !== '';
+        if ($incremental) {
+            $updatedAfter = $this->normalizeDateTimeInput($updatedAfter);
+            $rows = $this->database->fetchAll(
+                'SELECT * FROM whatsapp_messages
+                 WHERE contact_id = :contact_id
+                   AND (updated_at > :updated_after_gt OR (updated_at = :updated_after_eq AND id > :updated_after_id))
+                 ORDER BY updated_at ASC, id ASC
+                 LIMIT ' . $limit,
+                [
+                    ':contact_id' => $contactId,
+                    ':updated_after_gt' => $updatedAfter,
+                    ':updated_after_eq' => $updatedAfter,
+                    ':updated_after_id' => $updatedAfterId,
+                ]
+            );
+        } else {
+            $rows = $this->database->fetchAll(
+                'SELECT * FROM whatsapp_messages WHERE contact_id = :contact_id ORDER BY message_at DESC, created_at DESC, id DESC LIMIT ' . $limit,
+                [':contact_id' => $contactId]
+            );
+            $rows = array_reverse($rows);
+        }
+        $cursorAt = $updatedAfter;
+        $cursorId = $updatedAfterId;
+        foreach ($rows as $row) {
+            $candidateAt = (string) ($row['updated_at'] ?? $row['created_at'] ?? '');
+            $candidateId = (string) ($row['id'] ?? '');
+            if ($candidateAt > $cursorAt || ($candidateAt === $cursorAt && $candidateId > $cursorId)) {
+                $cursorAt = $candidateAt;
+                $cursorId = $candidateId;
+            }
+        }
         return [
             'contact' => $this->mapContact($contact),
             'data' => array_map(fn(array $row): array => $this->mapMessage($row), $rows),
+            'incremental' => $incremental,
+            'cursor' => [
+                'updatedAt' => $this->toIso($cursorAt) ?? $updatedAfter,
+                'id' => $cursorId,
+            ],
         ];
     }
 
@@ -1213,7 +1248,7 @@ final class WhatsAppApi extends BaseService
     /** @return array<string, mixed> */
     private function mapMessage(array $row): array
     {
-        return ['id' => (string) ($row['id'] ?? ''), 'waMessageId' => (string) ($row['wa_message_id'] ?? ''), 'contactId' => (string) ($row['contact_id'] ?? ''), 'direction' => (string) ($row['direction'] ?? ''), 'type' => (string) ($row['message_type'] ?? 'text'), 'text' => (string) ($row['message_text'] ?? ''), 'caption' => (string) ($row['caption'] ?? ''), 'mediaId' => (string) ($row['media_id'] ?? ''), 'mediaUrl' => (string) ($row['media_url'] ?? ''), 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'fileName' => (string) ($row['file_name'] ?? ''), 'status' => (string) ($row['status'] ?? ''), 'errorCode' => (string) ($row['error_code'] ?? ''), 'errorMessage' => (string) ($row['error_message'] ?? ''), 'messageAt' => $this->toIso($row['message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null)];
+        return ['id' => (string) ($row['id'] ?? ''), 'waMessageId' => (string) ($row['wa_message_id'] ?? ''), 'contactId' => (string) ($row['contact_id'] ?? ''), 'direction' => (string) ($row['direction'] ?? ''), 'type' => (string) ($row['message_type'] ?? 'text'), 'text' => (string) ($row['message_text'] ?? ''), 'caption' => (string) ($row['caption'] ?? ''), 'mediaId' => (string) ($row['media_id'] ?? ''), 'mediaUrl' => (string) ($row['media_url'] ?? ''), 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'fileName' => (string) ($row['file_name'] ?? ''), 'status' => (string) ($row['status'] ?? ''), 'errorCode' => (string) ($row['error_code'] ?? ''), 'errorMessage' => (string) ($row['error_message'] ?? ''), 'messageAt' => $this->toIso($row['message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
     }
 
     private function preview(string $text): string
@@ -1230,6 +1265,17 @@ final class WhatsAppApi extends BaseService
 
     private function ensureTables(): void
     {
+        static $ensuredForRequest = false;
+        if ($ensuredForRequest) return;
+        $databaseName = trim((string) ($this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot'));
+        $marker = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . 'mamepilot-whatsapp-schema-' . substr(hash('sha256', $databaseName), 0, 24) . '.lock';
+        $interval = max(60, (int) ($this->config->get('MESSAGING_SCHEMA_CHECK_SECONDS', '300') ?? '300'));
+        if (is_file($marker) && (int) @filemtime($marker) >= time() - $interval) {
+            $ensuredForRequest = true;
+            return;
+        }
+        $ensuredForRequest = true;
         if (!$this->tableExists('whatsapp_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_settings (id VARCHAR(64) NOT NULL, access_token TEXT NULL, phone_number_id VARCHAR(64) NULL, business_account_id VARCHAR(64) NULL, embedded_signup_app_id VARCHAR(64) NULL, embedded_signup_config_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, webhook_url VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v26.0', display_phone_number VARCHAR(64) NULL, verified_name VARCHAR(191) NULL, quality_rating VARCHAR(32) NULL, platform_type VARCHAR(32) NULL, is_on_biz_app TINYINT(1) NULL, connection_status VARCHAR(32) NOT NULL DEFAULT 'disconnected', contacts_sync_request_id VARCHAR(255) NULL, contacts_sync_requested_at DATETIME NULL, history_sync_request_id VARCHAR(255) NULL, history_sync_requested_at DATETIME NULL, last_webhook_at DATETIME NULL, welcome_message TEXT NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('whatsapp_contacts')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_contacts (id VARCHAR(64) NOT NULL, wa_id VARCHAR(32) NOT NULL, phone_number VARCHAR(32) NOT NULL, name VARCHAR(191) NULL, profile_name VARCHAR(191) NULL, unread_count INT NOT NULL DEFAULT 0, last_message_preview VARCHAR(500) NULL, last_message_type VARCHAR(32) NULL, last_message_at DATETIME NULL, welcome_sent_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_whatsapp_contacts_wa_id (wa_id), KEY idx_whatsapp_contacts_last_message_at (last_message_at), KEY idx_whatsapp_contacts_unread (unread_count), KEY idx_whatsapp_contacts_welcome_sent (welcome_sent_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('whatsapp_messages')) $this->database->execute("CREATE TABLE IF NOT EXISTS whatsapp_messages (id VARCHAR(64) NOT NULL, contact_id VARCHAR(64) NOT NULL, wa_message_id VARCHAR(255) NULL, direction VARCHAR(16) NOT NULL, message_type VARCHAR(32) NOT NULL DEFAULT 'text', message_text LONGTEXT NULL, caption TEXT NULL, media_id VARCHAR(255) NULL, media_url VARCHAR(500) NULL, media_mime_type VARCHAR(127) NULL, file_name VARCHAR(255) NULL, status VARCHAR(32) NOT NULL DEFAULT 'received', error_code VARCHAR(64) NULL, error_message TEXT NULL, reply_to_message_id VARCHAR(255) NULL, payload_json LONGTEXT NULL, message_at DATETIME NOT NULL, created_by VARCHAR(64) NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_whatsapp_messages_wa_message_id (wa_message_id), KEY idx_whatsapp_messages_contact_time (contact_id, message_at), KEY idx_whatsapp_messages_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -1248,6 +1294,7 @@ final class WhatsAppApi extends BaseService
         if (!$this->columnExists('whatsapp_settings', 'embedded_signup_config_id')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN embedded_signup_config_id VARCHAR(64) NULL AFTER embedded_signup_app_id');
         if (!$this->columnExists('whatsapp_settings', 'webhook_url')) $this->database->execute('ALTER TABLE whatsapp_settings ADD COLUMN webhook_url VARCHAR(500) NULL AFTER app_secret');
         if (!$this->columnExists('whatsapp_contacts', 'welcome_sent_at')) $this->database->execute('ALTER TABLE whatsapp_contacts ADD COLUMN welcome_sent_at DATETIME NULL AFTER last_message_at');
+        @touch($marker);
     }
 
     /** @return array<string, mixed> */

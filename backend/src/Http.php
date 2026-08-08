@@ -7,6 +7,7 @@ namespace App;
 final class Http
 {
     private const GENERIC_ERROR = 'We could not complete this action. Please try again. If the problem continues, ask an administrator for help.';
+    private static ?string $requestId = null;
 
     /**
      * @return array<string, mixed>
@@ -32,7 +33,30 @@ final class Http
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Mh-Piprapay-Api-Key, mh-piprapay-api-key, X-Piprapay-Signature');
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        header('Access-Control-Expose-Headers: Server-Timing, X-Request-ID');
+        header('X-Request-ID: ' . self::requestId());
+        $metrics = Database::timingMetrics();
+        $requestStartedAt = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
+        $applicationMs = max(0.0, (microtime(true) - $requestStartedAt) * 1000);
+        header(sprintf(
+            'Server-Timing: app;dur=%.2f, db;dur=%.2f, db-slowest;dur=%.2f, db-queries;desc="%d"',
+            $applicationMs,
+            (float) $metrics['durationMs'],
+            (float) $metrics['slowestMs'],
+            (int) $metrics['count']
+        ));
         echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    public static function requestId(): string
+    {
+        if (self::$requestId !== null) return self::$requestId;
+        try {
+            self::$requestId = substr(bin2hex(random_bytes(8)), 0, 12);
+        } catch (\Throwable) {
+            self::$requestId = substr(hash('sha256', uniqid('', true)), 0, 12);
+        }
+        return self::$requestId;
     }
 
     /**
@@ -66,7 +90,7 @@ final class Http
 
     public static function unexpectedError(\Throwable $exception): void
     {
-        $requestId = substr(bin2hex(random_bytes(8)), 0, 12);
+        $requestId = self::requestId();
         error_log(sprintf('[MamePilot %s] %s in %s:%d\n%s', $requestId, $exception->getMessage(), $exception->getFile(), $exception->getLine(), $exception->getTraceAsString()));
         $message = $exception->getMessage();
         if ($message === 'Authentication required.') {

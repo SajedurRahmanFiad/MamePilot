@@ -122,8 +122,8 @@ export async function fetchCustomerById(id: string) { return call<Customer | nul
 export async function createCustomer(customer: Omit<Customer, 'id'>) { return call<Customer>('createCustomer', customer); }
 export async function updateCustomer(id: string, updates: Partial<Customer>) { return call<Customer>('updateCustomer', { id, updates }); }
 export async function deleteCustomer(id: string) { await remove('deleteCustomer', id); }
-export async function fetchCustomersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { createdByIds?: string[]; createdByNotIds?: string[]; name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; totalOrders?: { operator: string; value: string }; dueAmount?: { operator: string; value: string } }) {
-  return call<{ data: Customer[]; count: number }>('fetchCustomersPage', { page, pageSize, search, ...(filters || {}) });
+export async function fetchCustomersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { createdByIds?: string[]; createdByNotIds?: string[]; name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; totalOrders?: { operator: string; value: string }; dueAmount?: { operator: string; value: string } }, options?: ApiActionOptions) {
+  return call<{ data: Customer[]; count: number }>('fetchCustomersPage', { page, pageSize, search, ...(filters || {}) }, options);
 }
 export async function fetchCustomerFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ names?: string[]; phones?: string[]; addresses?: string[] }>('fetchCustomerFilterOptions', params || {});
@@ -158,8 +158,8 @@ export async function fetchProductQuantitySoldReport(params?: { filterRange?: st
 export async function fetchCustomerSalesReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<CustomerSalesReportData>('fetchCustomerSalesReport', params || {});
 }
-export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[] }) {
-  return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters });
+export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[] }, options?: ApiActionOptions) {
+  return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters }, options);
 }
 export async function fetchOrderFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }>('fetchOrderFilterOptions', params || {});
@@ -187,8 +187,8 @@ export async function updateAccount(id: string, updates: Partial<Account>) { ret
 export async function deleteAccount(id: string) { await remove('deleteAccount', id); }
 
 export async function fetchTransactions() { return call<Transaction[]>('fetchTransactions'); }
-export async function fetchTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { type?: string; typeNot?: string; category?: string; categoryNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; account?: string; accountNot?: string; contact?: string; contactNot?: string; paymentMethod?: string; paymentMethodNot?: string; approvalStatus?: string; approvalStatusNot?: string }) {
-  return call<{ data: Transaction[]; count: number; summary?: { income: number; expense: number; transfer: number } }>('fetchTransactionsPage', { page, pageSize, filters });
+export async function fetchTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { type?: string; typeNot?: string; category?: string; categoryNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; account?: string; accountNot?: string; contact?: string; contactNot?: string; paymentMethod?: string; paymentMethodNot?: string; approvalStatus?: string; approvalStatusNot?: string }, options?: ApiActionOptions) {
+  return call<{ data: Transaction[]; count: number; summary?: { income: number; expense: number; transfer: number } }>('fetchTransactionsPage', { page, pageSize, filters }, options);
 }
 export async function fetchTransactionFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ accounts?: string[]; contacts?: string[]; paymentMethods?: string[] }>('fetchTransactionFilterOptions', params || {});
@@ -215,8 +215,8 @@ export type RecurringTransactionFilters = {
   paymentMethodNot?: string;
 };
 
-export async function fetchRecurringTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: RecurringTransactionFilters) {
-  return call<{ data: RecurringTransaction[]; count: number }>('fetchRecurringTransactionsPage', { page, pageSize, filters });
+export async function fetchRecurringTransactionsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: RecurringTransactionFilters, options?: ApiActionOptions) {
+  return call<{ data: RecurringTransaction[]; count: number }>('fetchRecurringTransactionsPage', { page, pageSize, filters }, options);
 }
 export async function fetchRecurringTransactionById(id: string) {
   return call<RecurringTransaction | null>('fetchRecurringTransactionById', { id });
@@ -235,10 +235,13 @@ export async function deleteRecurringTransaction(id: string) {
 }
 
 export async function fetchUsers() { return call<User[]>('fetchUsers'); }
-export async function fetchUsersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { search?: string; role?: string; roleNot?: string; name?: string; nameNot?: string; phone?: string; phoneNot?: string; joined?: { operator: string; value: string }; gender?: string; genderNot?: string; nationality?: string; nationalityNot?: string; bloodGroup?: string; bloodGroupNot?: string }) {
-  return call<{ data: User[]; count: number; roles: string[] }>('fetchUsersPage', { page, pageSize, ...(filters || {}) });
+export async function fetchUsersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { search?: string; role?: string; roleNot?: string; name?: string; nameNot?: string; phone?: string; phoneNot?: string; joined?: { operator: string; value: string }; gender?: string; genderNot?: string; nationality?: string; nationalityNot?: string; bloodGroup?: string; bloodGroupNot?: string }, options?: ApiActionOptions) {
+  return call<{ data: User[]; count: number; roles: string[] }>('fetchUsersPage', { page, pageSize, ...(filters || {}) }, options);
 }
-export async function fetchUsersMini() { return call<Array<{ id: string; name: string }>>('fetchUsersMini'); }
+export async function fetchUsersMini() { return call<Array<{ id: string; name: string; phone?: string; role: string }>>('fetchUsersMini'); }
+export async function fetchUserFilterOptions() {
+  return call<{ names: string[]; phones: string[]; roles: string[]; genders: string[]; nationalities: string[]; bloodGroups: string[] }>('fetchUserFilterOptions');
+}
 export async function fetchUserByPhone(phone: string) { return call<User | null>('fetchUserByPhone', { phone }); }
 export async function fetchUserById(id: string) { return call<User | null>('fetchUserById', { id }); }
 export async function fetchBootstrapSession(options?: ApiActionOptions) {
@@ -271,14 +274,14 @@ export async function createUser(user: Omit<User, 'id'> & { password?: string })
 export async function updateUser(id: string, updates: Partial<User>) { return call<User>('updateUser', { id, updates }); }
 export async function deleteUser(id: string) { await remove('deleteUser', id); }
 
-export async function fetchVendorsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; purchases?: { operator: string; value: string }; payable?: { operator: string; value: string } }) {
-  return call<{ data: Vendor[]; count: number }>('fetchVendorsPage', { page, pageSize, search, ...(filters || {}) });
+export async function fetchVendorsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; purchases?: { operator: string; value: string }; payable?: { operator: string; value: string } }, options?: ApiActionOptions) {
+  return call<{ data: Vendor[]; count: number }>('fetchVendorsPage', { page, pageSize, search, ...(filters || {}) }, options);
 }
 export async function fetchVendorFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ names?: string[]; phones?: string[]; addresses?: string[] }>('fetchVendorFilterOptions', params || {});
 }
-export async function fetchBillsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; billNumber?: string; billNumberNot?: string; vendorName?: string; vendorNameNot?: string; vendorPhone?: string; vendorPhoneNot?: string; billStatus?: string; billStatusNot?: string; paymentStatus?: string; paymentStatusNot?: string }) {
-  return call<{ data: Bill[]; count: number }>('fetchBillsPage', { page, pageSize, filters });
+export async function fetchBillsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; billNumber?: string; billNumberNot?: string; vendorName?: string; vendorNameNot?: string; vendorPhone?: string; vendorPhoneNot?: string; billStatus?: string; billStatusNot?: string; paymentStatus?: string; paymentStatusNot?: string }, options?: ApiActionOptions) {
+  return call<{ data: Bill[]; count: number }>('fetchBillsPage', { page, pageSize, filters }, options);
 }
 export async function fetchBillFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ billNumbers?: string[]; vendorNames?: string[]; vendorPhones?: string[] }>('fetchBillFilterOptions', params || {});
@@ -301,8 +304,8 @@ export async function deleteVendor(id: string) { await remove('deleteVendor', id
 export async function fetchProducts(category?: string) { return call<Product[]>('fetchProducts', { category }); }
 export async function fetchProductById(id: string) { return call<Product | null>('fetchProductById', { id }); }
 export async function fetchProductImagesByIds(productIds: string[]) { return call<Array<{ id: string; image: string }>>('fetchProductImagesByIds', { productIds }); }
-export async function fetchProductsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, category?: string, createdByIds?: string[], filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } }) {
-  return call<{ data: Product[]; count: number }>('fetchProductsPage', { page, pageSize, search, category, createdByIds, ...(filters || {}) });
+export async function fetchProductsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, category?: string, createdByIds?: string[], filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } }, options?: ApiActionOptions) {
+  return call<{ data: Product[]; count: number }>('fetchProductsPage', { page, pageSize, search, category, createdByIds, ...(filters || {}) }, options);
 }
 export async function fetchProductFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ names?: string[]; categories?: string[] }>('fetchProductFilterOptions', params || {});
@@ -314,8 +317,8 @@ export async function updateProduct(id: string, updates: Partial<Product>) { ret
 export async function deleteProduct(id: string) { await remove('deleteProduct', id); }
 
 export async function fetchRecycleBinItems(): Promise<RecycleBinItem[]> { return call<RecycleBinItem[]>('fetchRecycleBinItems'); }
-export async function fetchRecycleBinPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, params?: { search?: string; entityType?: string; entityTypeNot?: string; deletedBy?: string; deletedByNot?: string; title?: string; titleNot?: string; deletedDate?: { operator: string; value: string } }): Promise<RecycleBinPage> {
-  return call<RecycleBinPage>('fetchRecycleBinPage', { page, pageSize, ...(params || {}) });
+export async function fetchRecycleBinPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, params?: { search?: string; entityType?: string; entityTypeNot?: string; deletedBy?: string; deletedByNot?: string; title?: string; titleNot?: string; deletedDate?: { operator: string; value: string } }, options?: ApiActionOptions): Promise<RecycleBinPage> {
+  return call<RecycleBinPage>('fetchRecycleBinPage', { page, pageSize, ...(params || {}) }, options);
 }
 export async function fetchRecycleBinFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ deletedByNames?: string[]; titles?: string[] }>('fetchRecycleBinFilterOptions', params || {});
@@ -396,7 +399,7 @@ export async function fetchLlmSettings(): Promise<LlmSettings> { return call<Llm
 export async function updateLlmSettings(settings: LlmSettings): Promise<LlmSettings> { return call<LlmSettings>('updateLlmSettings', settings); }
 export async function discoverLlmModels(configuration: LlmConfiguration): Promise<{ models: string[] }> { return call<{ models: string[] }>('discoverLlmModels', { configuration }, { timeoutMs: 30000 }); }
 
-export async function fetchLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}): Promise<{ data: Lead[]; count: number }> { return call<{ data: Lead[]; count: number }>('fetchLeadsPage', params); }
+export async function fetchLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}, options?: ApiActionOptions): Promise<{ data: Lead[]; count: number }> { return call<{ data: Lead[]; count: number }>('fetchLeadsPage', params, options); }
 export async function fetchLeadById(leadId: string): Promise<Lead> { return call<Lead>('fetchLeadById', { leadId }); }
 export async function fetchLeadIntelligence(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('fetchLeadIntelligence', params, { timeoutMs: 90000 }); }
 export async function analyzeLead(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('analyzeLead', params, { timeoutMs: 90000 }); }
@@ -434,7 +437,12 @@ export async function fetchMetaAdInsightsDemographics(id: string): Promise<any> 
 export async function fetchMetaAdInsightsPlacements(id: string): Promise<any> { return call<any>('fetchMetaAdInsightsPlacements', { id }, { timeoutMs: 60000 }); }
 export async function fetchMetaAdInsightsDevices(id: string): Promise<any> { return call<any>('fetchMetaAdInsightsDevices', { id }, { timeoutMs: 60000 }); }
 
-export async function fetchMetaAds(filters?: { businessId?: string; businessOperator?: string; adAccountId?: string; adAccountOperator?: string; campaignId?: string; campaignOperator?: string; status?: string; statusOperator?: string; from?: string; to?: string; search?: string; searchOperator?: string; rawSearch?: string }): Promise<any> { return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000 }); }
+export async function fetchMetaAds(filters?: { businessId?: string; businessOperator?: string; adAccountId?: string; adAccountOperator?: string; campaignId?: string; campaignOperator?: string; status?: string; statusOperator?: string; from?: string; to?: string; search?: string; searchOperator?: string; rawSearch?: string; page?: number; pageSize?: number }, options?: ApiActionOptions): Promise<any> {
+  return call<any>('fetchMetaAds', filters || {}, { timeoutMs: 60000, ...options });
+}
+export async function fetchMetaAdOptions(params?: { search?: string; activeOnly?: boolean; limit?: number }, options?: ApiActionOptions): Promise<{ ads: Array<{ id: string; metaAdId: string; name: string; status: string; platformName: string }> }> {
+  return call('fetchMetaAdOptions', params || {}, options);
+}
 export async function fetchMetaAdById(id: string): Promise<any | null> { return call<any | null>('fetchMetaAdById', { id }); }
 
 export async function fetchWhatsAppSettings(): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('fetchWhatsAppSettings'); }
@@ -444,8 +452,8 @@ export async function connectWhatsAppEmbeddedSignup(payload: { code: string; wab
 export async function syncWhatsAppBusinessAppData(type: 'all' | 'contacts' | 'history' = 'all'): Promise<{ ok: boolean; results: Record<string, unknown>; warnings?: string[]; settings: WhatsAppSettings }> { return call<any>('syncWhatsAppBusinessAppData', { type }, { timeoutMs: 120000 }); }
 export async function updateWhatsAppWelcomeExperience(updates: Pick<WhatsAppSettings, 'welcomeMessage' | 'getStartedEnabled' | 'iceBreakers'>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppWelcomeExperience', updates, { timeoutMs: 60000 }); }
 export async function testWhatsAppConnection(): Promise<{ ok: boolean; phoneNumberId: string; displayPhoneNumber: string; verifiedName: string; qualityRating: string; platformType?: string; isOnBizApp?: boolean }> { return call<any>('testWhatsAppConnection'); }
-export async function fetchWhatsAppContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }): Promise<{ data: WhatsAppContact[]; count: number; configured: boolean }> { return call<any>('fetchWhatsAppContacts', params || {}); }
-export async function fetchWhatsAppMessages(contactId: string): Promise<{ contact: WhatsAppContact; data: WhatsAppMessage[] }> { return call<any>('fetchWhatsAppMessages', { contactId, limit: 150 }); }
+export async function fetchWhatsAppContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }, options?: ApiActionOptions): Promise<{ data: WhatsAppContact[]; count: number; configured: boolean }> { return call<any>('fetchWhatsAppContacts', params || {}, options); }
+export async function fetchWhatsAppMessages(contactId: string, cursor?: { updatedAt?: string; id?: string }, options?: ApiActionOptions): Promise<{ contact: WhatsAppContact; data: WhatsAppMessage[]; incremental?: boolean; cursor?: { updatedAt: string; id: string } }> { return call<any>('fetchWhatsAppMessages', { contactId, limit: 150, ...(cursor?.updatedAt ? { updatedAfter: cursor.updatedAt, updatedAfterId: cursor.id || '' } : {}) }, options); }
 export async function createWhatsAppConversation(payload: { phoneNumber: string; name?: string }): Promise<WhatsAppContact> { return call<WhatsAppContact>('createWhatsAppConversation', payload); }
 export async function markWhatsAppConversationRead(contactId: string): Promise<{ ok: boolean; contactId: string }> { return call<any>('markWhatsAppConversationRead', { contactId }); }
 export async function sendWhatsAppMessage(payload: { contactId: string; text: string }): Promise<WhatsAppMessage> { return call<WhatsAppMessage>('sendWhatsAppMessage', payload, { timeoutMs: 60000 }); }
@@ -458,8 +466,8 @@ export async function testMessengerConnection(): Promise<{ ok: boolean; pageId: 
 export async function subscribeMessengerPage(): Promise<{ ok: boolean; subscribed: boolean; subscribedFields: string[] }> { return call<any>('subscribeMessengerPage', {}, { timeoutMs: 60000 }); }
 export async function fetchMessengerProfile(): Promise<MessengerProfileSettings> { return call<MessengerProfileSettings>('fetchMessengerProfile'); }
 export async function updateMessengerProfile(updates: MessengerProfileSettings): Promise<MessengerProfileSettings> { return call<MessengerProfileSettings>('updateMessengerProfile', updates, { timeoutMs: 60000 }); }
-export async function fetchMessengerContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }): Promise<{ data: MessengerContact[]; count: number; configured: boolean }> { return call<any>('fetchMessengerContacts', params || {}); }
-export async function fetchMessengerMessages(contactId: string): Promise<{ contact: MessengerContact; data: MessengerMessage[] }> { return call<any>('fetchMessengerMessages', { contactId, limit: 200 }); }
+export async function fetchMessengerContacts(params?: { search?: string; filter?: 'all' | 'unread'; page?: number; pageSize?: number }, options?: ApiActionOptions): Promise<{ data: MessengerContact[]; count: number; configured: boolean }> { return call<any>('fetchMessengerContacts', params || {}, options); }
+export async function fetchMessengerMessages(contactId: string, cursor?: { updatedAt?: string; id?: string }, options?: ApiActionOptions): Promise<{ contact: MessengerContact; data: MessengerMessage[]; incremental?: boolean; cursor?: { updatedAt: string; id: string } }> { return call<any>('fetchMessengerMessages', { contactId, limit: 200, ...(cursor?.updatedAt ? { updatedAfter: cursor.updatedAt, updatedAfterId: cursor.id || '' } : {}) }, options); }
 export async function markMessengerConversationRead(contactId: string): Promise<{ ok: boolean; contactId: string }> { return call<any>('markMessengerConversationRead', { contactId }); }
 export async function sendMessengerSenderAction(payload: { contactId: string; senderAction: 'typing_on' | 'typing_off' | 'mark_seen' }): Promise<{ ok: boolean }> { return call<any>('sendMessengerSenderAction', payload); }
 export async function sendMessengerMessage(payload: { contactId: string; text: string; replyToMid?: string }): Promise<MessengerMessage> { return call<MessengerMessage>('sendMessengerMessage', payload, { timeoutMs: 60000 }); }

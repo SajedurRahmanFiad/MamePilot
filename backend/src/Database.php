@@ -10,6 +10,9 @@ use PDOStatement;
 
 final class Database
 {
+    private static int $queryCount = 0;
+    private static float $queryTimeMs = 0.0;
+    private static float $slowestQueryMs = 0.0;
     private Config $config;
     private ?PDO $pdo = null;
     private ?PDO $serverPdo = null;
@@ -120,9 +123,27 @@ final class Database
      */
     public function run(string $sql, array $params = []): PDOStatement
     {
-        $statement = $this->connect()->prepare($sql);
-        $statement->execute($params);
-        return $statement;
+        $startedAt = microtime(true);
+        try {
+            $statement = $this->connect()->prepare($sql);
+            $statement->execute($params);
+            return $statement;
+        } finally {
+            $durationMs = (microtime(true) - $startedAt) * 1000;
+            self::$queryCount++;
+            self::$queryTimeMs += $durationMs;
+            self::$slowestQueryMs = max(self::$slowestQueryMs, $durationMs);
+        }
+    }
+
+    /** @return array{count: int, durationMs: float, slowestMs: float} */
+    public static function timingMetrics(): array
+    {
+        return [
+            'count' => self::$queryCount,
+            'durationMs' => round(self::$queryTimeMs, 2),
+            'slowestMs' => round(self::$slowestQueryMs, 2),
+        ];
     }
 
     /**

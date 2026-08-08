@@ -1580,6 +1580,7 @@ export interface WhatsAppMessage {
   errorMessage: string;
   messageAt: string | null;
   createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface MessengerSettings {
@@ -1645,6 +1646,7 @@ export interface MessengerMessage {
   quickReplies: Array<{ title: string; payload?: string; imageUrl?: string }>;
   messageAt: string | null;
   createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface VoiceSurveyEvent {

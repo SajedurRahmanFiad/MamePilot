@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { StatCard } from '../components';
-import { useCustomer, useOrdersByCustomerId, useOrderSettings, useUsers } from '../src/hooks/useQueries';
+import { useCustomer, useOrdersByCustomerId, useOrderSettings, useUsersMini } from '../src/hooks/useQueries';
 import { useCreateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -23,7 +23,7 @@ const CustomerDetails: React.FC = () => {
   const { data: customer } = useCustomer(id || '');
   const { data: customerOrders = [] } = useOrdersByCustomerId(id || '');
   const { data: orderSettings } = useOrderSettings();
-  const { data: users = [] } = useUsers();
+  const { data: users = [] } = useUsersMini();
   
   // Mutations
   const createMutation = useCreateOrder();

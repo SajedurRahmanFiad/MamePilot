@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ICONS } from '../constants';
 import { formatDate } from '../utils';
 
@@ -47,6 +47,11 @@ interface DynamicFilterBarProps {
    * search query. Structured filters remain unchanged and still use onApply.
    */
   onRawSearchChange?: (value: string) => void;
+  /**
+   * Keep the text input responsive while delaying expensive server-backed
+   * searches. Clearing remains immediate. Set to 0 for local-only consumers.
+   */
+  rawSearchDebounceMs?: number;
   freeTextLabel?: string;
   onApply?: (filters: CombinedFilter[]) => void;
   className?: string;
@@ -71,8 +76,9 @@ const filterPresentationSignature = (items: CombinedFilter[] | undefined): strin
     .sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')))
 );
 
-const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', filterDefinitions, initialFilters, rawSearchValue, onRawSearchChange, onApply, className }) => {
+const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], customers = [], orderNumberOptions = [], suggestionValues = [], companies = [], couriers = [], freeTextLabel = 'Free text', filterDefinitions, initialFilters, rawSearchValue, onRawSearchChange, rawSearchDebounceMs = 350, onApply, className }) => {
   const [inputValue, setInputValue] = useState(rawSearchValue ?? '');
+  const rawSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   // stage: 0=pick type,1=pick operator,2=pick value
   const [stage, setStage] = useState(0);
@@ -124,8 +130,34 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     // Raw search is controlled by the page so URL hydration and browser
     // history can restore it without disturbing an in-progress chip.
     if (currentType || filters.length > 0 || rawSearchValue === undefined) return;
+    // An external replacement (including back/forward navigation) wins over
+    // any older keystroke that is still waiting in the debounce window.
+    if (rawSearchTimerRef.current !== null) {
+      clearTimeout(rawSearchTimerRef.current);
+      rawSearchTimerRef.current = null;
+    }
     setInputValue((current) => current === rawSearchValue ? current : rawSearchValue);
   }, [currentType, filters.length, rawSearchValue]);
+
+  const emitRawSearchChange = useCallback((nextValue: string, immediate = false) => {
+    if (rawSearchTimerRef.current !== null) {
+      clearTimeout(rawSearchTimerRef.current);
+      rawSearchTimerRef.current = null;
+    }
+    if (!onRawSearchChange) return;
+    if (immediate || rawSearchDebounceMs <= 0 || nextValue === '') {
+      onRawSearchChange?.(nextValue);
+      return;
+    }
+    rawSearchTimerRef.current = setTimeout(() => {
+      rawSearchTimerRef.current = null;
+      onRawSearchChange(nextValue);
+    }, rawSearchDebounceMs);
+  }, [onRawSearchChange, rawSearchDebounceMs]);
+
+  useEffect(() => () => {
+    if (rawSearchTimerRef.current !== null) clearTimeout(rawSearchTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -481,7 +513,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       if (isRawSearchMode && inputValue.trim()) {
         e.preventDefault();
         setInputValue('');
-        onRawSearchChange?.('');
+        emitRawSearchChange('', true);
         setIsOpen(true);
         return;
       }
@@ -497,7 +529,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       // The empty bar is intentionally a normal search field while the user
       // types. Hide the type dropdown immediately; clearing the text restores
       // the structured-filter picker.
-      onRawSearchChange?.(nextValue);
+      emitRawSearchChange(nextValue);
       // Keep the input focused while the dropdown is visually suppressed by
       // the raw-search guard in the render below.
       setIsOpen(true);

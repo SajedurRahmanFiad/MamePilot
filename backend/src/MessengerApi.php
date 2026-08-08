@@ -193,7 +193,7 @@ final class MessengerApi extends BaseService
         $count = $this->database->fetchOne('SELECT COUNT(*) AS total FROM messenger_contacts ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
         $rows = $this->database->fetchAll(
-            'SELECT * FROM messenger_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+            'SELECT * FROM messenger_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
             $bindings
         );
         $settings = $this->settingsRow();
@@ -212,13 +212,48 @@ final class MessengerApi extends BaseService
         $contact = $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE id = :id LIMIT 1', [':id' => $contactId]);
         if ($contact === null) throw new RuntimeException('Messenger conversation not found.');
         $limit = min(250, max(20, (int) ($params['limit'] ?? 150)));
-        $rows = array_reverse($this->database->fetchAll(
-            'SELECT * FROM messenger_messages WHERE contact_id = :contact ORDER BY message_at DESC, created_at DESC LIMIT ' . $limit,
-            [':contact' => $contactId]
-        ));
+        $updatedAfter = trim((string) ($params['updatedAfter'] ?? ''));
+        $updatedAfterId = trim((string) ($params['updatedAfterId'] ?? ''));
+        $incremental = $updatedAfter !== '';
+        if ($incremental) {
+            $updatedAfter = $this->normalizeDateTimeInput($updatedAfter);
+            $rows = $this->database->fetchAll(
+                'SELECT * FROM messenger_messages
+                 WHERE contact_id = :contact
+                   AND (updated_at > :updated_after_gt OR (updated_at = :updated_after_eq AND id > :updated_after_id))
+                 ORDER BY updated_at ASC, id ASC
+                 LIMIT ' . $limit,
+                [
+                    ':contact' => $contactId,
+                    ':updated_after_gt' => $updatedAfter,
+                    ':updated_after_eq' => $updatedAfter,
+                    ':updated_after_id' => $updatedAfterId,
+                ]
+            );
+        } else {
+            $rows = array_reverse($this->database->fetchAll(
+                'SELECT * FROM messenger_messages WHERE contact_id = :contact ORDER BY message_at DESC, created_at DESC, id DESC LIMIT ' . $limit,
+                [':contact' => $contactId]
+            ));
+        }
+        $cursorAt = $updatedAfter;
+        $cursorId = $updatedAfterId;
+        foreach ($rows as $row) {
+            $candidateAt = (string) ($row['updated_at'] ?? $row['created_at'] ?? '');
+            $candidateId = (string) ($row['id'] ?? '');
+            if ($candidateAt > $cursorAt || ($candidateAt === $cursorAt && $candidateId > $cursorId)) {
+                $cursorAt = $candidateAt;
+                $cursorId = $candidateId;
+            }
+        }
         return [
             'contact' => $this->mapContact($contact, $this->settingsRow()),
             'data' => array_map(fn(array $row): array => $this->mapMessage($row), $rows),
+            'incremental' => $incremental,
+            'cursor' => [
+                'updatedAt' => $this->toIso($cursorAt) ?? $updatedAfter,
+                'id' => $cursorId,
+            ],
         ];
     }
 
@@ -847,7 +882,7 @@ final class MessengerApi extends BaseService
             'attachments' => $attachments, 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'fileName' => (string) ($row['file_name'] ?? ''),
             'status' => (string) ($row['status'] ?? ''), 'errorCode' => (string) ($row['error_code'] ?? ''), 'errorMessage' => (string) ($row['error_message'] ?? ''),
             'replyToMid' => (string) ($row['reply_to_mid'] ?? ''), 'reaction' => (string) ($row['reaction'] ?? ''), 'reactionActor' => (string) ($row['reaction_actor'] ?? ''),
-            'quickReplies' => $quickReplies, 'messageAt' => $this->toIso($row['message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null),
+            'quickReplies' => $quickReplies, 'messageAt' => $this->toIso($row['message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
         ];
     }
 
@@ -865,8 +900,20 @@ final class MessengerApi extends BaseService
 
     private function ensureTables(): void
     {
+        static $ensuredForRequest = false;
+        if ($ensuredForRequest) return;
+        $databaseName = trim((string) ($this->config->get('DB_NAME', 'mamepilot') ?? 'mamepilot'));
+        $marker = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . 'mamepilot-messenger-schema-' . substr(hash('sha256', $databaseName), 0, 24) . '.lock';
+        $interval = max(60, (int) ($this->config->get('MESSAGING_SCHEMA_CHECK_SECONDS', '300') ?? '300'));
+        if (is_file($marker) && (int) @filemtime($marker) >= time() - $interval) {
+            $ensuredForRequest = true;
+            return;
+        }
+        $ensuredForRequest = true;
         if (!$this->tableExists('messenger_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_settings (id VARCHAR(64) NOT NULL, page_access_token TEXT NULL, page_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0', page_name VARCHAR(191) NULL, page_username VARCHAR(191) NULL, page_picture_url VARCHAR(1000) NULL, human_agent_enabled TINYINT(1) NOT NULL DEFAULT 0, subscribed TINYINT(1) NOT NULL DEFAULT 0, subscribed_fields LONGTEXT NULL, greeting VARCHAR(160) NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('messenger_contacts')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_contacts (id VARCHAR(64) NOT NULL, psid VARCHAR(191) NOT NULL, name VARCHAR(191) NULL, first_name VARCHAR(100) NULL, last_name VARCHAR(100) NULL, profile_picture_url VARCHAR(1000) NULL, locale VARCHAR(32) NULL, unread_count INT NOT NULL DEFAULT 0, last_message_preview VARCHAR(500) NULL, last_message_type VARCHAR(32) NULL, last_message_at DATETIME NULL, last_user_message_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_messenger_contacts_psid (psid), KEY idx_messenger_contacts_last_message (last_message_at), KEY idx_messenger_contacts_unread (unread_count)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('messenger_messages')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_messages (id VARCHAR(64) NOT NULL, contact_id VARCHAR(64) NOT NULL, mid VARCHAR(255) NULL, direction VARCHAR(16) NOT NULL, message_type VARCHAR(32) NOT NULL DEFAULT 'text', message_text LONGTEXT NULL, attachment_url VARCHAR(1500) NULL, attachment_id VARCHAR(255) NULL, attachments_json LONGTEXT NULL, media_mime_type VARCHAR(127) NULL, file_name VARCHAR(255) NULL, status VARCHAR(32) NOT NULL DEFAULT 'received', error_code VARCHAR(64) NULL, error_message TEXT NULL, reply_to_mid VARCHAR(255) NULL, reaction VARCHAR(64) NULL, reaction_actor VARCHAR(16) NULL, quick_reply_payload VARCHAR(500) NULL, quick_replies_json LONGTEXT NULL, payload_json LONGTEXT NULL, message_at DATETIME NOT NULL, created_by VARCHAR(64) NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_messenger_messages_mid (mid), KEY idx_messenger_messages_contact_time (contact_id, message_at), KEY idx_messenger_messages_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        @touch($marker);
     }
 }

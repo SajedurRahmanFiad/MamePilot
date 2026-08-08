@@ -11,7 +11,7 @@ import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletio
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
-import { useAccounts, useOrdersPage, useUsers, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAds, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
+import { useAccounts, useOrdersPage, useUsersMini, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAdOptions, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
 import { useAddCourierCompletionExpense, useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
@@ -182,7 +182,7 @@ const Orders: React.FC = () => {
     paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
   });
 
-  const { data: users = [] } = useUsers();
+  const { data: users = [] } = useUsersMini();
   const { data: accounts = [] } = useAccounts();
   const { data: courierSettings } = useCourierSettings();
   const { data: paymentMethods = [] } = usePaymentMethods();
@@ -345,7 +345,7 @@ const Orders: React.FC = () => {
   const orders = ordersPage?.data ?? [];
 
   const { data: companySettings } = useCompanySettings();
-  const { data: allMetaAds = [] } = useMetaAds({}, true);
+  const { data: allMetaAds = [] } = useMetaAdOptions(true);
   const { data: orderFilterOpts } = useOrderFilterOptions();
 
   const sourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => {

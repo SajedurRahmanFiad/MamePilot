@@ -7,7 +7,7 @@ import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type Confir
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
-import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAds, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -93,13 +93,12 @@ const OrderDetails: React.FC = () => {
   } as React.CSSProperties;
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const { data: metaAdsData } = useMetaAds({}, true);
+  const { data: sourceAdDetails } = useMetaAd(order?.sourceAd || undefined, Boolean(order?.sourceAd));
   const { data: courierSettings } = useCourierSettings();
   const sourceAdInfo = useMemo(() => {
-    if (!order?.sourceAd || !metaAdsData?.ads) return null;
-    const ads = Array.isArray(metaAdsData.ads) ? metaAdsData.ads : [];
-    return ads.find((ad: any) => ad?.id === order.sourceAd) || null;
-  }, [order?.sourceAd, metaAdsData?.ads]);
+    if (!order?.sourceAd || !sourceAdDetails) return null;
+    return sourceAdDetails;
+  }, [order?.sourceAd, sourceAdDetails]);
   
   // Mutations
   const updateMutation = useUpdateOrder();
