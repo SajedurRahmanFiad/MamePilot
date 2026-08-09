@@ -748,6 +748,75 @@ final class OperationsApi extends BaseService
         }
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function validateOrderItemProductMatches(array $items, string $documentLabel = 'Order'): void
+    {
+        $productIds = [];
+        $productNames = [];
+        foreach ($items as $item) {
+            $productId = trim((string) ($item['productId'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+            $productIds[] = $productId;
+            $productName = trim((string) ($item['productName'] ?? ''));
+            if ($productName !== '') {
+                $productNames[] = $this->normalizeOrderItemProductNameForComparison($productName);
+            }
+        }
+
+        $productIds = array_values(array_unique($productIds));
+        if ($productIds === []) {
+            return;
+        }
+
+        [$idPlaceholders, $idBindings] = $this->inClause($productIds, 'product');
+        $rows = $this->database->fetchAll(
+            'SELECT id, name FROM products WHERE id IN (' . implode(', ', $idPlaceholders) . ')',
+            $idBindings
+        );
+        $productsById = $this->keyBy($rows, 'id');
+
+        foreach ($items as $itemIndex => $item) {
+            $productId = trim((string) ($item['productId'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+            $productRow = $productsById[$productId] ?? null;
+            if ($productRow === null) {
+                throw new RuntimeException("{$documentLabel} item references a missing product ID {$productId}.");
+            }
+
+            $productName = trim((string) ($item['productName'] ?? ''));
+            if ($productName === '') {
+                continue;
+            }
+
+            $itemNameNormalized = $this->normalizeOrderItemProductNameForComparison($productName);
+            $expectedNameNormalized = $this->normalizeOrderItemProductNameForComparison((string) ($productRow['name'] ?? ''));
+            if ($itemNameNormalized !== '' && $expectedNameNormalized !== '' && $itemNameNormalized !== $expectedNameNormalized) {
+                $expectedName = trim((string) ($productRow['name'] ?? ''));
+                throw new RuntimeException("{$documentLabel} item productName does not match the product record for ID {$productId}. Expected \"{$expectedName}\", received \"{$productName}\".");
+            }
+        }
+    }
+
+    private function normalizeOrderItemProductNameForComparison(string $value): string
+    {
+        $normalized = trim($value);
+        if ($normalized === '') {
+            return '';
+        }
+        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?: $normalized;
+        if (function_exists('mb_strtolower')) {
+            return mb_strtolower($normalized, 'UTF-8');
+        }
+
+        return strtolower($normalized);
+    }
+
     private function deletedStateSql(string $deletedState): string
     {
         if ($deletedState === 'deleted') {
@@ -4477,6 +4546,7 @@ final class OperationsApi extends BaseService
             );
             $items = is_array($params['items'] ?? null) ? $params['items'] : [];
             $this->validateDocumentAmounts($params, $items, 'Order');
+            $this->validateOrderItemProductMatches($items, 'Order');
             $pageSelection = $this->resolveOrderPageSelection($params);
             $stockUpdates = $this->applyOrderStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
@@ -4704,6 +4774,9 @@ final class OperationsApi extends BaseService
                 ? $this->canonicalOrderStatus((string) $updates['status'], $nextHistory)
                 : $previousStatus;
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
+            if (array_key_exists('items', $updates) || array_key_exists('status', $updates)) {
+                $this->validateOrderItemProductMatches($nextItems, 'Order');
+            }
             $stockUpdates = [];
             $beforeUndoEffects = $nextStatus !== $previousStatus
                 ? $this->orderUndoEffectIds($id, $orderNumber)
@@ -5070,6 +5143,7 @@ final class OperationsApi extends BaseService
             $orderTotal = (float) ($orderRow['total'] ?? 0);
             $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
+            $this->validateOrderItemProductMatches($previousItems, 'Order');
             $nextStatus = $outcome === 'Returned' ? 'Returned' : ($previousStatus === 'Exchange picked' ? 'Exchange delivered' : 'Completed');
             $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
