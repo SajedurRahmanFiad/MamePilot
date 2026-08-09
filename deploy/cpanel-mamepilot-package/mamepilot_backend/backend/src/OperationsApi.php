@@ -3235,6 +3235,10 @@ final class OperationsApi extends BaseService
         $billBindings = [];
         $this->applyDashboardDateTimeBounds('created_at', $filters, $billConditions, $billBindings, 'dashboard_bill');
 
+        // Only consider bills that are finalized/received or effectively paid.
+        // Exclude bills that are in 'On Hold' or 'Processing' statuses from purchase totals.
+        $billConditions[] = "(COALESCE(status, '') = 'Received' OR COALESCE(status, '') = 'Paid' OR paid_amount >= total)";
+
         $orderRows = $this->database->fetchAll(
             'SELECT status, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
              FROM orders
