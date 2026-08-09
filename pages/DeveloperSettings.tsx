@@ -71,6 +71,10 @@ const emptyVoiceSurveyIntegration: VoiceSurveyIntegrationSettings = {
   templateName: '',
   webhookSecret: '',
   webhookUrl: '',
+  balance: 0,
+  pulseSeconds: 60,
+  takaPerPulse: 0.55,
+  rechargeNotificationEnabled: true,
 };
 
 const DeveloperSettings: React.FC = () => {
@@ -897,6 +901,49 @@ const DeveloperSettings: React.FC = () => {
                     placeholder="Published survey template name"
                   />
                 </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Stored Balance (৳)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.balance}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, balance: Number(event.target.value) || 0 })}
+                    placeholder="Opening balance or manual correction"
+                  />
+                  <p className="text-xs text-gray-500">Used locally for the dashboard wallet. Successful in-app recharges add automatically.</p>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Pulse (seconds)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.pulseSeconds}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, pulseSeconds: Math.max(1, Number(event.target.value) || 1) })}
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Taka per pulse (৳)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={voiceSurveyIntegrationForm.takaPerPulse}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, takaPerPulse: Math.max(0, Number(event.target.value) || 0) })}
+                  />
+                </label>
+                <label className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={voiceSurveyIntegrationForm.rechargeNotificationEnabled}
+                    onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, rechargeNotificationEnabled: event.target.checked })}
+                  />
+                  <span className="text-sm font-semibold text-gray-700">Notify all deployments and Developer users after a successful recharge</span>
+                </label>
               </div>
 
               <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50 p-5">
@@ -939,6 +986,10 @@ const DeveloperSettings: React.FC = () => {
                   />
                   <p className="text-xs text-blue-700">This exact URL is sent as <code>webhook_url</code> in every create-survey request. It is not configured in the AwajDigital dashboard.</p>
                 </div>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                <h4 className="font-black text-amber-950">cPanel cron setup required</h4>
+                <p className="mt-1 text-sm text-amber-800">The automatic calling worker still requires a cPanel Cron Job on each deployment. Set it to run every minute and execute the packaged <code>backend/bin/process_survey_queue.php</code> with the deployment PHP binary. This is developer setup guidance only; the general Voice Survey tab and Auto Calling page intentionally show only an attention notice when it is not running.</p>
               </div>
             </section>
           )}

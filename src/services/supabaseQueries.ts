@@ -525,6 +525,8 @@ export type SurveyHistoryEntry = {
   callStatus: string;
   confirmationStatus: string;
   createdAt: string;
+  durationSeconds: number;
+  cost: number;
 };
 export type SurveyHistoryResponse = {
   success: boolean;
@@ -534,7 +536,7 @@ export type SurveyHistoryResponse = {
   message?: string;
 };
 export async function fetchSurveyHistory(params: { startDate?: string; endDate?: string; page?: number; pageSize?: number }): Promise<SurveyHistoryResponse> { return call<SurveyHistoryResponse>('fetchSurveyHistory', params); }
-export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string; workerHealth: VoiceSurveyWorkerHealth }> { return call<any>('fetchSurveySummary'); }
+export async function fetchSurveySummary(): Promise<{ totalCalls: number; pendingCalls: number; sender: string; balance: number; pulseSeconds: number; takaPerPulse: number; workerHealth: VoiceSurveyWorkerHealth }> { return call<any>('fetchSurveySummary'); }
 export async function initiateRechargeCheckout(payload: { amount: number }): Promise<{ checkoutUrl: string; localReference: string; gatewayPaymentId?: string | null }> { return call<any>('initiateRechargeCheckout', payload, { timeoutMs: 30000 }); }
 export async function fetchRechargeHistory(): Promise<Array<{ id: string; localReference: string; gatewayPaymentId: string; amount: number; status: string; submittedAt: string; processedAt: string; createdAt: string }>> { return call<any>('fetchRechargeHistory'); }
 

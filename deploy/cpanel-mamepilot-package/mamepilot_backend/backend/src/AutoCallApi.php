@@ -90,6 +90,10 @@ final class AutoCallApi extends BaseService
             'templateName' => (string) ($row['template_name'] ?? ''),
             'webhookSecret' => (string) ($row['webhook_secret'] ?? ''),
             'webhookUrl' => $this->buildWebhookUrl($row ?? []),
+            'balance' => (float) ($row['balance'] ?? 0),
+            'pulseSeconds' => (int) ($row['pulse_seconds'] ?? 60),
+            'takaPerPulse' => (float) ($row['taka_per_pulse'] ?? 0.55),
+            'rechargeNotificationEnabled' => (bool) ($row['recharge_notification_enabled'] ?? true),
         ];
     }
 
@@ -115,13 +119,19 @@ final class AutoCallApi extends BaseService
             'template_name' => $this->nullableString($params['templateName'] ?? $existing['template_name'] ?? null),
             'webhook_secret' => $webhookSecret,
             'webhook_url' => $webhookUrl,
+            'balance' => max(0, (float) ($params['balance'] ?? $existing['balance'] ?? 0)),
+            'pulse_seconds' => max(1, (int) ($params['pulseSeconds'] ?? $existing['pulse_seconds'] ?? 60)),
+            'taka_per_pulse' => max(0, (float) ($params['takaPerPulse'] ?? $existing['taka_per_pulse'] ?? 0.55)),
+            'recharge_notification_enabled' => array_key_exists('rechargeNotificationEnabled', $params)
+                ? (int) (bool) $params['rechargeNotificationEnabled']
+                : (int) ($existing['recharge_notification_enabled'] ?? 1),
         ];
 
         if ($existing === null) {
             $now = $this->database->nowUtc();
             $insertParams = $this->insertBindings($data);
             $this->database->execute(
-                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, webhook_url, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, 0, 5, :api_token, :sender, :template_name, :webhook_secret, :webhook_url, 120, 30, 3, 10, 2, :trigger_statuses, :created_at, :updated_at)',
+                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, webhook_url, balance, pulse_seconds, taka_per_pulse, recharge_notification_enabled, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, 0, 5, :api_token, :sender, :template_name, :webhook_secret, :webhook_url, :balance, :pulse_seconds, :taka_per_pulse, :recharge_notification_enabled, 120, 30, 3, 10, 2, :trigger_statuses, :created_at, :updated_at)',
                 array_merge($insertParams, [':id' => $this->stringId(null), ':trigger_statuses' => '["On Hold"]', ':created_at' => $now, ':updated_at' => $now])
             );
         } else {
@@ -297,37 +307,9 @@ final class AutoCallApi extends BaseService
     {
         $this->requireAdmin();
         $settings = $this->fetchSettingsRow();
-        $token = (string) ($settings['api_token'] ?? '');
-        if ($token === '') {
-            return ['success' => false, 'balance' => 0, 'message' => 'Balance is unavailable until automatic calling is set up.'];
-        }
-
-        $ch = curl_init('https://api.awajdigital.com/api/balance');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $token,
-                'Accept: application/json',
-            ],
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($response === false || $httpCode >= 400) {
-            return ['success' => false, 'balance' => 0, 'message' => 'Balance is temporarily unavailable.'];
-        }
-
-        $decoded = json_decode((string) $response, true);
-        if (!is_array($decoded)) {
-            return ['success' => false, 'balance' => 0, 'message' => 'Balance is temporarily unavailable.'];
-        }
-
         return [
-            'success' => (bool) ($decoded['success'] ?? false),
-            'balance' => (float) ($decoded['balance'] ?? 0),
+            'success' => true,
+            'balance' => (float) ($settings['balance'] ?? 0),
         ];
     }
 
@@ -387,7 +369,8 @@ final class AutoCallApi extends BaseService
 
         $rows = $this->database->fetchAll(
             "SELECT o.id AS order_id, o.order_number, o.survey_id, o.survey_status, o.survey_call_status,
-                    o.confirmation_status, o.survey_triggered_at, o.created_at, c.name AS customer_name
+                    o.confirmation_status, o.survey_triggered_at, o.survey_duration_seconds, o.survey_cost,
+                    o.created_at, c.name AS customer_name
              FROM orders o
              LEFT JOIN customers c ON c.id = o.customer_id
              WHERE {$whereSql}
@@ -406,6 +389,8 @@ final class AutoCallApi extends BaseService
                 'callStatus' => strtolower(trim((string) ($row['survey_call_status'] ?? ''))),
                 'confirmationStatus' => strtolower(trim((string) ($row['confirmation_status'] ?? ''))),
                 'createdAt' => $this->toIso($row['survey_triggered_at'] ?? $row['created_at'] ?? null),
+                'durationSeconds' => (int) ($row['survey_duration_seconds'] ?? 0),
+                'cost' => (float) ($row['survey_cost'] ?? 0),
             ];
         }, $rows);
 
@@ -470,6 +455,9 @@ final class AutoCallApi extends BaseService
             'totalCalls' => $totalCalls,
             'pendingCalls' => $pendingCalls,
             'sender' => $sender,
+            'balance' => (float) ($settings['balance'] ?? 0),
+            'pulseSeconds' => (int) ($settings['pulse_seconds'] ?? 60),
+            'takaPerPulse' => (float) ($settings['taka_per_pulse'] ?? 0.55),
             'workerHealth' => $this->buildWorkerHealth($settings),
         ];
     }
@@ -785,6 +773,8 @@ final class AutoCallApi extends BaseService
             }
             $status = strtolower(trim((string) ($result['status'] ?? '')));
             $response = $result['response'] ?? (($result['responses'][0] ?? null));
+            $duration = max(0, (int) ($result['duration'] ?? 0));
+            $cost = $this->calculateSurveyCost($duration, $settings);
 
             $confirmationStatus = 'waiting';
             $surveyCallStatus = $status;
@@ -810,16 +800,24 @@ final class AutoCallApi extends BaseService
                 ':response' => $this->nullableString($response !== null ? (string) $response : null),
                 ':call_status' => $surveyCallStatus,
                 ':confirmation' => $confirmationStatus,
+                ':duration' => $duration,
+                ':cost' => $this->formatMoney($cost),
                 ':updated_at' => $this->database->nowUtc(),
                 ':id' => $orderId,
             ];
             if ($surveyId !== '') {
                 $bindings[':survey_id'] = $surveyId;
             }
-            $updated = $this->database->execute(
-                "UPDATE orders SET survey_status = 'completed', survey_response = :response, survey_call_status = :call_status, confirmation_status = :confirmation, updated_at = :updated_at WHERE id = :id AND survey_status IN ('initiated', 'triggered'){$surveyMatchSql}",
-                $bindings
-            );
+            $updated = $this->database->transaction(function () use ($bindings, $surveyMatchSql, $cost): int {
+                $changed = $this->database->execute(
+                    "UPDATE orders SET survey_status = 'completed', survey_response = :response, survey_call_status = :call_status, confirmation_status = :confirmation, survey_duration_seconds = :duration, survey_cost = :cost, updated_at = :updated_at WHERE id = :id AND survey_status IN ('initiated', 'triggered'){$surveyMatchSql}",
+                    $bindings
+                );
+                if ($changed === 1) {
+                    $this->deductSurveyCost($cost);
+                }
+                return $changed;
+            });
 
             if ($updated === 1) {
                 $details = $confirmationStatus === 'confirmed'
@@ -1042,7 +1040,7 @@ final class AutoCallApi extends BaseService
             $status = 'stopped';
             $message = $overdueCount > 0
                 ? sprintf('%d overdue call%s waiting. Automatic calling needs attention.', $overdueCount, $overdueCount === 1 ? ' is' : 's are')
-                : 'The scheduled task is not running. Set up the cron job in cPanel to enable automatic calling.';
+                : 'Automatic calling is not running yet. Developer attention is required.';
         } else {
             $status = 'healthy';
             $message = $overdueCount > 0
@@ -1212,6 +1210,10 @@ final class AutoCallApi extends BaseService
                 template_name VARCHAR(191) NULL,
                 webhook_secret VARCHAR(255) NULL,
                 webhook_url VARCHAR(1000) NULL,
+                balance DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+                pulse_seconds INT NOT NULL DEFAULT 60,
+                taka_per_pulse DECIMAL(12,4) NOT NULL DEFAULT 0.5500,
+                recharge_notification_enabled TINYINT(1) NOT NULL DEFAULT 1,
                 max_survey_time_seconds INT NOT NULL DEFAULT 120,
                 missed_call_retry_minutes INT NOT NULL DEFAULT 30,
                 missed_call_retry_count INT NOT NULL DEFAULT 3,
@@ -1226,6 +1228,43 @@ final class AutoCallApi extends BaseService
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        $this->database->execute("ALTER TABLE voice_survey_settings
+            ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(1000) NULL,
+            ADD COLUMN IF NOT EXISTS balance DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+            ADD COLUMN IF NOT EXISTS pulse_seconds INT NOT NULL DEFAULT 60,
+            ADD COLUMN IF NOT EXISTS taka_per_pulse DECIMAL(12,4) NOT NULL DEFAULT 0.5500,
+            ADD COLUMN IF NOT EXISTS recharge_notification_enabled TINYINT(1) NOT NULL DEFAULT 1,
+            ADD COLUMN IF NOT EXISTS cron_last_success_at DATETIME NULL,
+            ADD COLUMN IF NOT EXISTS cron_last_error TEXT NULL,
+            ADD COLUMN IF NOT EXISTS cron_last_processed_count INT NOT NULL DEFAULT 0");
+        if ($this->tableExists('orders')) {
+            $this->database->execute("ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS survey_duration_seconds INT NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS survey_cost DECIMAL(12,2) NOT NULL DEFAULT 0.00");
+        }
+    }
+
+    private function calculateSurveyCost(int $durationSeconds, array $settings): float
+    {
+        if ($durationSeconds <= 0) {
+            return 0.0;
+        }
+
+        $pulseSeconds = max(1, (int) ($settings['pulse_seconds'] ?? 60));
+        $takaPerPulse = max(0, (float) ($settings['taka_per_pulse'] ?? 0.55));
+        return round((float) ceil($durationSeconds / $pulseSeconds) * $takaPerPulse, 2);
+    }
+
+    private function deductSurveyCost(float $cost): void
+    {
+        if ($cost <= 0) {
+            return;
+        }
+
+        $this->database->execute(
+            'UPDATE voice_survey_settings SET balance = balance - :cost, updated_at = :updated_at',
+            [':cost' => $this->formatMoney($cost), ':updated_at' => $this->database->nowUtc()]
         );
     }
 

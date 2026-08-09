@@ -164,7 +164,7 @@ const AutoCalling: React.FC = () => {
           }
 
           if (['completed', 'complete', 'success', 'successful', 'paid'].includes(paymentOutcome) || result?.paid) {
-            toast.success(result?.message || 'Recharge payment verified. The balance top-up is ready for processing.');
+            toast.success(result?.message || 'Recharge payment verified and added to your balance.');
             queryClient.invalidateQueries({ queryKey: ['survey'], exact: false });
           } else if (paymentOutcome === 'canceled' || paymentOutcome === 'cancelled') {
             toast.warning(result?.message || 'Payment was cancelled. No charges were made.');
@@ -268,8 +268,8 @@ const AutoCalling: React.FC = () => {
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Pulse Info</p>
           <div className="mt-2 space-y-1.5">
-            <p className="text-xl font-bold leading-none tracking-tight text-gray-900">60 <span className="text-xs font-semibold tracking-normal text-gray-500">seconds</span></p>
-            <p className="text-sm font-semibold text-gray-600"><span className="tabular-nums text-gray-900">৳0.55</span> / pulse</p>
+            <p className="text-xl font-bold leading-none tracking-tight text-gray-900">{summaryData?.pulseSeconds ?? 60} <span className="text-xs font-semibold tracking-normal text-gray-500">seconds</span></p>
+            <p className="text-sm font-semibold text-gray-600"><span className="tabular-nums text-gray-900">৳{(summaryData?.takaPerPulse ?? 0.55).toFixed(2)}</span> / pulse</p>
           </div>
         </div>
 
@@ -391,6 +391,7 @@ const AutoCalling: React.FC = () => {
                       <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Order</th>
                       <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
                       <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Outcome</th>
+                      <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Cost</th>
                       <th className="px-5 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Started</th>
                     </tr>
                   </thead>
@@ -410,6 +411,7 @@ const AutoCalling: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-sm font-medium text-gray-600">{getCallOutcome(entry.status, entry.callStatus, entry.confirmationStatus)}</td>
+                        <td className="px-5 py-4 text-sm font-semibold tabular-nums text-gray-700">৳{(entry.cost ?? 0).toFixed(2)}</td>
                         <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDateTime(entry.createdAt)}</td>
                       </tr>
                     ))}
@@ -484,7 +486,7 @@ const AutoCalling: React.FC = () => {
             </div>
             <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
               <p className="text-xs text-blue-700">
-                <span className="font-bold">Note:</span> Pulse rate is ৳0.55 per 60 seconds. A ৳100 recharge gives approximately 181 pulses (minutes of call time).
+                <span className="font-bold">Note:</span> The current rate is ৳{(summaryData?.takaPerPulse ?? 0.55).toFixed(2)} per {summaryData?.pulseSeconds ?? 60}-second pulse. Successful payment is added to the balance immediately.
               </p>
             </div>
             <div className="flex gap-3 justify-end">

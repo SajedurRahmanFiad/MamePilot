@@ -435,6 +435,10 @@ export interface VoiceSurveyIntegrationSettings {
   templateName: string;
   webhookSecret: string;
   webhookUrl: string;
+  balance: number;
+  pulseSeconds: number;
+  takaPerPulse: number;
+  rechargeNotificationEnabled: boolean;
 }
 
 export interface CourierSettings {

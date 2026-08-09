@@ -3407,6 +3407,15 @@ final class MasterDataApi extends BaseService
                     'processed_at' => $processedAt,
                     'raw_payload' => $storedPayload,
                 ]);
+                if ($newlyApproved && $this->tableExists('voice_survey_settings') && $this->columnExists('voice_survey_settings', 'balance')) {
+                    $this->database->execute(
+                        'UPDATE voice_survey_settings SET balance = balance + :recharge_amount, updated_at = :recharge_updated_at',
+                        [
+                            ':recharge_amount' => $this->formatMoney((float) ($payment['amount'] ?? 0)),
+                            ':recharge_updated_at' => $this->database->nowUtc(),
+                        ]
+                    );
+                }
             } else {
                 $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
                     'gateway_payment_id' => $eventId,
@@ -3451,9 +3460,12 @@ final class MasterDataApi extends BaseService
         $emailSent = false;
         if ($isSuccess && (bool) $applyResult['newlyApproved']) {
             $emailSent = $this->sendPaymentConfirmationEmail($paymentKind, $applyResult['payment'], $reference, $eventId);
+            if ($paymentKind === 'recharge') {
+                $this->sendRechargeDeveloperNotification($applyResult['payment'], $reference);
+            }
         }
         if ($isSuccess && $paymentKind === 'recharge') {
-            $paymentMessage = 'Recharge payment verified. The balance top-up request is ready for processing.';
+            $paymentMessage = 'Recharge payment verified and added to the auto-calling balance.';
         }
 
         return [
@@ -6691,7 +6703,7 @@ PROMPT;
         $isRecharge = $kind === 'recharge';
         $subject = $isRecharge ? 'Auto-calling recharge payment confirmed' : 'Subscription renewal payment confirmed';
         $nextStep = $isRecharge
-            ? 'The payment is verified. Process the corresponding AwajDigital balance top-up.'
+            ? 'The payment is verified and the deployment auto-calling balance was updated automatically.'
             : 'The subscription period has been renewed automatically.';
         $html = '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172033">'
             . '<h2 style="margin:0 0 16px">' . htmlspecialchars($subject, ENT_QUOTES, 'UTF-8') . '</h2>'
@@ -6703,6 +6715,97 @@ PROMPT;
             . '</table></body></html>';
 
         return $this->sendEmailNotification($subject, $html);
+    }
+
+    private function sendRechargeDeveloperNotification(array $payment, string $reference): bool
+    {
+        if (!$this->tableExists('voice_survey_settings') || !$this->columnExists('voice_survey_settings', 'recharge_notification_enabled')) {
+            return false;
+        }
+        $voiceSettings = $this->database->fetchOne('SELECT recharge_notification_enabled FROM voice_survey_settings LIMIT 1');
+        if (empty($voiceSettings['recharge_notification_enabled'])) {
+            return false;
+        }
+
+        $settingsRow = $this->capabilityRow();
+        $clientName = trim((string) ($settingsRow['client_name'] ?? '')) ?: 'MamePilot Client';
+        $amount = number_format((float) ($payment['amount'] ?? 0), 2, '.', ',');
+        $safeClient = htmlspecialchars($clientName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeAmount = htmlspecialchars($amount, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeReference = htmlspecialchars($reference, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $payload = [
+            'subject' => 'Auto-calling balance recharged',
+            'contentHtml' => '<p><strong>' . $safeClient . '</strong> recharged the auto-calling balance by <strong>BDT ' . $safeAmount . '</strong>.</p><p>Reference: ' . $safeReference . '</p>',
+            'targetRoles' => ['Developer'],
+            'targetDeployments' => [],
+            'deploymentScope' => 'all',
+            'startsAt' => $this->database->nowUtc(),
+            'endsAt' => null,
+            'actionConfig' => [],
+            'metadata' => [
+                'type' => 'auto_calling_recharge',
+                'clientName' => $clientName,
+                'amount' => (float) ($payment['amount'] ?? 0),
+                'reference' => $reference,
+            ],
+        ];
+
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        if ($apiUrl !== '') {
+            try {
+                $response = $this->centralLicenseRequest($apiUrl, $ownerToken, 'create_notification', $payload);
+                if (is_array($response['notification'] ?? null)) {
+                    $this->upsertCentralNotificationLocally($response['notification']);
+                    return true;
+                }
+            } catch (\Throwable $exception) {
+                error_log('[Auto Calling] Recharge notification failed: ' . $exception->getMessage());
+            }
+        }
+
+        if (!$this->tableExists('notifications')) {
+            return false;
+        }
+
+        $id = $this->uuid4();
+        $now = $this->database->nowUtc();
+        try {
+            $this->database->execute(
+                'INSERT INTO notifications (
+                    id, system_key, subject, content_html, target_roles, starts_at, ends_at,
+                    action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
+                 ) VALUES (
+                    :id, :system_key, :subject, :content_html, :target_roles, :starts_at, NULL,
+                    :action_config, :metadata, NULL, 1, 1, :created_at, :updated_at
+                 )',
+                [
+                    ':id' => $id,
+                    ':system_key' => 'auto_calling_recharge_' . $id,
+                    ':subject' => $payload['subject'],
+                    ':content_html' => $payload['contentHtml'],
+                    ':target_roles' => $this->jsonEncode(['Developer']),
+                    ':starts_at' => $now,
+                    ':action_config' => '{}',
+                    ':metadata' => $this->jsonEncode($payload['metadata']),
+                    ':created_at' => $now,
+                    ':updated_at' => $now,
+                ]
+            );
+            $this->broadcastNotificationEvent([
+                'id' => $id,
+                'subject' => $payload['subject'],
+                'contentHtml' => $payload['contentHtml'],
+                'targetRoles' => ['Developer'],
+                'startsAt' => $now,
+                'isActive' => true,
+                'isRead' => false,
+            ]);
+            return true;
+        } catch (\Throwable $exception) {
+            error_log('[Auto Calling] Local recharge notification failed: ' . $exception->getMessage());
+            return false;
+        }
     }
 
     public function sendEmailNotification(string $subject, string $htmlBody): bool

@@ -862,6 +862,8 @@ CREATE TABLE IF NOT EXISTS orders (
   survey_status VARCHAR(32) NULL DEFAULT NULL,
   survey_response VARCHAR(16) NULL,
   survey_call_status VARCHAR(32) NULL,
+  survey_duration_seconds INT NOT NULL DEFAULT 0,
+  survey_cost DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   confirmation_status VARCHAR(32) NULL,
   survey_result_fetch_at DATETIME NULL,
   survey_next_retry_at DATETIME NULL,
@@ -907,6 +909,10 @@ CREATE TABLE IF NOT EXISTS voice_survey_settings (
   template_name VARCHAR(191) NULL,
   webhook_secret VARCHAR(255) NULL,
   webhook_url VARCHAR(1000) NULL,
+  balance DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+  pulse_seconds INT NOT NULL DEFAULT 60,
+  taka_per_pulse DECIMAL(12,4) NOT NULL DEFAULT 0.5500,
+  recharge_notification_enabled TINYINT(1) NOT NULL DEFAULT 1,
   max_survey_time_seconds INT NOT NULL DEFAULT 120,
   missed_call_retry_minutes INT NOT NULL DEFAULT 30,
   missed_call_retry_count INT NOT NULL DEFAULT 3,
@@ -3015,6 +3021,15 @@ CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_type_order', '
 CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_type_employee_paid_id', '`compensation_type`, `employee_id`, `paid_at`, `id`');
 
 CALL sp_create_idx('recurring_transactions', 'idx_recurring_active_next_run_id', '`is_active`, `next_run_at`, `id`');
+
+-- Migration: 2026-08-09_awajdigital_local_wallet.sql
+CALL sp_add_col('voice_survey_settings', 'balance', 'DECIMAL(14,2) NOT NULL DEFAULT 0.00 AFTER webhook_url');
+CALL sp_add_col('voice_survey_settings', 'pulse_seconds', 'INT NOT NULL DEFAULT 60 AFTER balance');
+CALL sp_add_col('voice_survey_settings', 'taka_per_pulse', 'DECIMAL(12,4) NOT NULL DEFAULT 0.5500 AFTER pulse_seconds');
+CALL sp_add_col('voice_survey_settings', 'recharge_notification_enabled', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER taka_per_pulse');
+
+CALL sp_add_col('orders', 'survey_duration_seconds', 'INT NOT NULL DEFAULT 0 AFTER survey_call_status');
+CALL sp_add_col('orders', 'survey_cost', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER survey_duration_seconds');
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
