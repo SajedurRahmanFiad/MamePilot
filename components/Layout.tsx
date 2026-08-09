@@ -594,7 +594,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <span className="mx-2">|</span>
               All rights reserved.
             </p>
-            <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by Mame Studios</p>
+            <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by <a href="https://facebook.com/mamestudios" target="_blank" rel="noopener noreferrer" className="hover:underline">Mame Studios</a></p>
           </footer>}
         </main>
         {hasCapability('enterprise_ai_agent') && !isConversationPage && <MameChat />}
