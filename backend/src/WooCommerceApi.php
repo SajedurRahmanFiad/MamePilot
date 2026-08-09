@@ -662,7 +662,7 @@ final class WooCommerceApi extends BaseService
             $amount = round($rate * $quantity, 2);
             $result[] = [
                 'productId' => (string) $product['id'],
-                'productName' => trim((string) ($line['name'] ?? $product['name'] ?? 'WooCommerce Product')) ?: 'WooCommerce Product',
+                'productName' => trim((string) ($product['name'] ?? $line['name'] ?? 'WooCommerce Product')) ?: 'WooCommerce Product',
                 'rate' => $rate, 'quantity' => $quantity, 'amount' => $amount,
             ];
         }

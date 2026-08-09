@@ -34,6 +34,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
+    if (submitting) return;
     setError(null);
 
     if (!order || !customer) {

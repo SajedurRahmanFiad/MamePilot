@@ -251,6 +251,7 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
             </Button>
             <Button
               onClick={async () => {
+                if (submitting) return;
                 if (!selectedCity || !selectedZone) {
                   toast.warning('Please select both a city and a zone.');
                   return;

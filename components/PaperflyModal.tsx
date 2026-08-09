@@ -54,6 +54,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
   const normalizedCustomerAddress = !looksLikePhone(rawPhone) && looksLikePhone(rawAddress) ? rawPhone : rawAddress;
 
   const handleSubmit = async () => {
+    if (submitting) return;
     setError(null);
 
     if (!order || !customer) {

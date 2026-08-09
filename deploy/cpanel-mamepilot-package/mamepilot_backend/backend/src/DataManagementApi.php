@@ -2003,6 +2003,7 @@ final class DataManagementApi extends BaseService
             if (!is_array($itemRow)) {
                 throw new RuntimeException($documentLabel . ' contains an invalid item row.');
             }
+            $productId = trim((string) ($itemRow['productId'] ?? ''));
             $productName = $this->requiredText($itemRow, 'productName', 'Product Name');
             $quantity = $this->number($itemRow, 'quantity');
             $rate = $this->number($itemRow, 'rate');
@@ -2012,10 +2013,20 @@ final class DataManagementApi extends BaseService
             if ($rate < 0) {
                 throw new RuntimeException('Rate cannot be negative.');
             }
-            $product = $this->database->fetchOne(
-                'SELECT id, name FROM products WHERE LOWER(name) = LOWER(:name) AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1',
-                [':name' => $productName]
-            );
+
+            $product = null;
+            if ($productId !== '') {
+                $product = $this->database->fetchOne(
+                    'SELECT id, name FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                    [':id' => $productId]
+                );
+            }
+            if ($product === null) {
+                $product = $this->database->fetchOne(
+                    'SELECT id, name FROM products WHERE LOWER(name) = LOWER(:name) AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1',
+                    [':name' => $productName]
+                );
+            }
             if ($product === null) {
                 $productId = $this->uuid4();
                 $this->insertRow('products', [

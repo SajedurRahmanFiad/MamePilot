@@ -186,6 +186,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
+    if (submitting) return;
     setError(null);
 
     if (!order || !customer) {
