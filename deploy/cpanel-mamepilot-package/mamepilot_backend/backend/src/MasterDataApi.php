@@ -897,10 +897,10 @@ final class MasterDataApi extends BaseService
         $where = 'WHERE deleted_at IS NULL';
         $bindings = [];
         if ($search !== '') {
-            $where .= " AND CONVERT(CONCAT_WS(' ',
-                id, name, sku, category, unit_id, CAST(sale_price AS CHAR), CAST(purchase_price AS CHAR),
-                CAST(stock AS CHAR), created_by, created_at
-            ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
+            // The Products page free-text box is intentionally a product-name
+            // search. Structured chips remain available for category, prices,
+            // stock, creator, and other fields.
+            $where .= " AND CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
             $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
         if ($category !== '') {

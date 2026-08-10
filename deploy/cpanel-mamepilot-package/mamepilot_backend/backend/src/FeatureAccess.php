@@ -42,6 +42,12 @@ final class FeatureAccess
     private const PREVIEW_ACTIONS = [
         'getNextOrderNumber',
         'getNextBillNumber',
+        // Product pickers are required scaffolding for sales/purchase forms.
+        // Keep these bounded read-only lookups available even when the
+        // standalone inventory module is disabled.
+        'fetchProductsMini',
+        'fetchProductsSearch',
+        'fetchProductsSearchPage',
     ];
 
     // Maps sub-capability keys to their parent capability keys

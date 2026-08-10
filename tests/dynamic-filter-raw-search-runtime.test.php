@@ -134,8 +134,10 @@ try {
     $transactionPage = $operations->fetchTransactionsPage(['page' => 1, 'pageSize' => 50, 'filters' => ['search' => '45']]);
     rawSearchRuntimeAssert(in_array($transactionId, array_column($transactionPage['data'], 'id'), true), 'Transaction search did not match the linked account name.');
 
-    $productPage = $masterData->fetchProductsPage(['page' => 1, 'pageSize' => 50, 'search' => '45']);
-    rawSearchRuntimeAssert(in_array($productId, array_column($productPage['data'], 'id'), true), 'Product search did not match its category.');
+    $productPage = $masterData->fetchProductsPage(['page' => 1, 'pageSize' => 50, 'search' => 'Raw Search Product']);
+    rawSearchRuntimeAssert(in_array($productId, array_column($productPage['data'], 'id'), true), 'Product search did not match its name.');
+    $productCategoryPage = $masterData->fetchProductsPage(['page' => 1, 'pageSize' => 50, 'search' => '45']);
+    rawSearchRuntimeAssert(!in_array($productId, array_column($productCategoryPage['data'], 'id'), true), 'Product free-text search still matches non-name fields.');
 
     $updatedExchangeOrder = $operations->updateOrder([
         'id' => $exchangeOrderId,

@@ -1045,7 +1045,11 @@ const OrderForm: React.FC = () => {
                 />
               </div>
               <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                {products.length === 0 && (!productSearchSettled || productsSearchQuery.isFetching) ? (
+                {productsSearchQuery.isError && productSearchSettled ? (
+                  <div className="p-4 text-center text-red-500 text-sm font-medium">
+                    Unable to search products. Please try again.
+                  </div>
+                ) : products.length === 0 && (!productSearchSettled || productsSearchQuery.isFetching) ? (
                   <div className="p-4 space-y-3">
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
