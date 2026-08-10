@@ -22,6 +22,22 @@ BEGIN
 END $$
 DELIMITER ;
 
+DROP PROCEDURE IF EXISTS sp_modify_col;
+DELIMITER $$
+CREATE PROCEDURE sp_modify_col(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT)
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` MODIFY COLUMN `', p_column, '` ', p_definition);
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DELIMITER $$
 CREATE PROCEDURE sp_create_idx(IN p_table VARCHAR(64), IN p_index VARCHAR(64), IN p_columns TEXT)
@@ -179,6 +195,7 @@ CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
   slug VARCHAR(255) NULL,
+  sku VARCHAR(191) NULL,
   image LONGTEXT NULL,
   category VARCHAR(255) NULL,
   unit_id VARCHAR(64) NULL,
@@ -193,6 +210,7 @@ CREATE TABLE IF NOT EXISTS products (
   deleted_by VARCHAR(64) NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_products_slug (slug),
+  UNIQUE KEY uq_products_sku (sku),
   KEY idx_products_name (name),
   KEY idx_products_category (category),
   KEY idx_products_created_by (created_by),
@@ -996,6 +1014,100 @@ CREATE TABLE IF NOT EXISTS woocommerce_product_links (
   KEY idx_wc_product_links_product (product_id),
   CONSTRAINT fk_wc_product_links_store FOREIGN KEY (store_id) REFERENCES woocommerce_stores(id) ON DELETE CASCADE,
   CONSTRAINT fk_wc_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_stores (
+  id VARCHAR(64) NOT NULL,
+  store_name VARCHAR(191) NOT NULL,
+  store_url VARCHAR(500) NOT NULL,
+  access_token VARCHAR(255) NULL,
+  api_secret VARCHAR(255) NULL,
+  webhook_secret VARCHAR(255) NULL,
+  webhook_base_url VARCHAR(1000) NULL,
+  webhook_id VARCHAR(255) NULL,
+  company_page_id VARCHAR(64) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME NULL,
+  last_products_synced_at DATETIME NULL,
+  last_orders_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(32) NULL,
+  last_sync_message VARCHAR(1000) NULL,
+  products_synced INT NOT NULL DEFAULT 0,
+  orders_synced INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_shopify_stores_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_order_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  shopify_order_id VARCHAR(255) NOT NULL,
+  shopify_order_number VARCHAR(64) NULL,
+  dedupe_key VARCHAR(191) NULL,
+  order_id VARCHAR(64) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'imported',
+  message VARCHAR(1000) NULL,
+  payload_hash VARCHAR(64) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_order_links_store_order (store_id, shopify_order_id),
+  UNIQUE KEY uq_shopify_order_links_store_dedupe (store_id, dedupe_key),
+  KEY idx_shopify_order_links_store_created (store_id, created_at),
+  CONSTRAINT fk_shopify_order_links_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_product_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  shopify_product_id VARCHAR(255) NOT NULL,
+  shopify_variant_id VARCHAR(255) NOT NULL DEFAULT '0',
+  sku VARCHAR(191) NULL,
+  product_id VARCHAR(64) NOT NULL,
+  auto_created TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_product_links_remote (store_id, shopify_product_id, shopify_variant_id),
+  KEY idx_shopify_product_links_product (product_id),
+  CONSTRAINT fk_shopify_product_links_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE,
+  CONSTRAINT fk_shopify_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_webhook_subscriptions (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  topic VARCHAR(64) NOT NULL,
+  remote_id VARCHAR(255) NOT NULL,
+  uri VARCHAR(1000) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_webhook_subscriptions_store_topic (store_id, topic),
+  UNIQUE KEY uq_shopify_webhook_subscriptions_remote (store_id, remote_id),
+  KEY idx_shopify_webhook_subscriptions_store (store_id),
+  CONSTRAINT fk_shopify_webhook_subscriptions_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_webhook_events (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  webhook_id VARCHAR(255) NOT NULL,
+  event_id VARCHAR(255) NULL,
+  topic VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(255) NULL,
+  payload_hash VARCHAR(64) NOT NULL,
+  payload LONGTEXT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'processing',
+  message VARCHAR(1000) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_webhook_events_store_webhook (store_id, webhook_id),
+  KEY idx_shopify_webhook_events_status_created (status, created_at),
+  CONSTRAINT fk_shopify_webhook_events_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS bills (
@@ -3031,7 +3143,127 @@ CALL sp_add_col('voice_survey_settings', 'recharge_notification_enabled', 'TINYI
 CALL sp_add_col('orders', 'survey_duration_seconds', 'INT NOT NULL DEFAULT 0 AFTER survey_call_status');
 CALL sp_add_col('orders', 'survey_cost', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER survey_duration_seconds');
 
+-- Migration: 2026-08-10_shopify_integration.sql
+CALL sp_add_col('products', 'sku', 'VARCHAR(191) NULL AFTER slug');
+
+CALL sp_create_unique_idx('products', 'uq_products_sku', 'sku');
+
+CREATE TABLE IF NOT EXISTS shopify_stores (
+  id VARCHAR(64) NOT NULL,
+  store_name VARCHAR(191) NOT NULL,
+  store_url VARCHAR(500) NOT NULL,
+  access_token VARCHAR(255) NULL,
+  api_secret VARCHAR(255) NULL,
+  webhook_secret VARCHAR(255) NULL,
+  webhook_base_url VARCHAR(1000) NULL,
+  webhook_id VARCHAR(255) NULL,
+  company_page_id VARCHAR(64) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_synced_at DATETIME NULL,
+  last_products_synced_at DATETIME NULL,
+  last_orders_synced_at DATETIME NULL,
+  last_sync_status VARCHAR(32) NULL,
+  last_sync_message VARCHAR(1000) NULL,
+  products_synced INT NOT NULL DEFAULT 0,
+  orders_synced INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_shopify_stores_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_order_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  shopify_order_id VARCHAR(255) NOT NULL,
+  shopify_order_number VARCHAR(64) NULL,
+  dedupe_key VARCHAR(191) NULL,
+  order_id VARCHAR(64) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'imported',
+  message VARCHAR(1000) NULL,
+  payload_hash VARCHAR(64) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_order_links_store_order (store_id, shopify_order_id),
+  UNIQUE KEY uq_shopify_order_links_store_dedupe (store_id, dedupe_key),
+  KEY idx_shopify_order_links_store_created (store_id, created_at),
+  CONSTRAINT fk_shopify_order_links_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_product_links (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  shopify_product_id VARCHAR(255) NOT NULL,
+  shopify_variant_id VARCHAR(255) NOT NULL DEFAULT '0',
+  sku VARCHAR(191) NULL,
+  product_id VARCHAR(64) NOT NULL,
+  auto_created TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_product_links_remote (store_id, shopify_product_id, shopify_variant_id),
+  KEY idx_shopify_product_links_product (product_id),
+  CONSTRAINT fk_shopify_product_links_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE,
+  CONSTRAINT fk_shopify_product_links_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('shopify_stores', 'api_secret', 'VARCHAR(255) NULL AFTER access_token');
+
+CALL sp_modify_col('shopify_stores', 'webhook_id', 'VARCHAR(255) NULL');
+
+CALL sp_add_col('shopify_stores', 'last_products_synced_at', 'DATETIME NULL AFTER last_synced_at');
+
+CALL sp_add_col('shopify_stores', 'last_orders_synced_at', 'DATETIME NULL AFTER last_products_synced_at');
+
+CALL sp_add_col('shopify_stores', 'products_synced', 'INT NOT NULL DEFAULT 0 AFTER last_sync_message');
+
+CALL sp_modify_col('shopify_order_links', 'shopify_order_id', 'VARCHAR(255) NOT NULL');
+
+CALL sp_add_col('shopify_order_links', 'dedupe_key', 'VARCHAR(191) NULL AFTER shopify_order_number');
+
+CALL sp_create_unique_idx('shopify_order_links', 'uq_shopify_order_links_store_dedupe', 'store_id, dedupe_key');
+
+CALL sp_modify_col('shopify_product_links', 'shopify_product_id', 'VARCHAR(255) NOT NULL');
+
+CALL sp_modify_col('shopify_product_links', 'shopify_variant_id', 'VARCHAR(255) NOT NULL DEFAULT ''0''');
+
+CREATE TABLE IF NOT EXISTS shopify_webhook_subscriptions (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  topic VARCHAR(64) NOT NULL,
+  remote_id VARCHAR(255) NOT NULL,
+  uri VARCHAR(1000) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_webhook_subscriptions_store_topic (store_id, topic),
+  UNIQUE KEY uq_shopify_webhook_subscriptions_remote (store_id, remote_id),
+  KEY idx_shopify_webhook_subscriptions_store (store_id),
+  CONSTRAINT fk_shopify_webhook_subscriptions_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shopify_webhook_events (
+  id VARCHAR(64) NOT NULL,
+  store_id VARCHAR(64) NOT NULL,
+  webhook_id VARCHAR(255) NOT NULL,
+  event_id VARCHAR(255) NULL,
+  topic VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(255) NULL,
+  payload_hash VARCHAR(64) NOT NULL,
+  payload LONGTEXT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'processing',
+  message VARCHAR(1000) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shopify_webhook_events_store_webhook (store_id, webhook_id),
+  KEY idx_shopify_webhook_events_status_created (status, created_at),
+  CONSTRAINT fk_shopify_webhook_events_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 DROP PROCEDURE IF EXISTS sp_add_col;
+DROP PROCEDURE IF EXISTS sp_modify_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
 DROP PROCEDURE IF EXISTS sp_create_unique_idx;
 DROP PROCEDURE IF EXISTS sp_drop_idx;

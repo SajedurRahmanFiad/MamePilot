@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db, saveDb } from '../db';
@@ -37,6 +37,7 @@ import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import WhatsAppSettingsPanel from '../components/WhatsAppSettingsPanel';
 import MessengerSettingsPanel from '../components/MessengerSettingsPanel';
 import WooCommerceSettingsPanel from '../components/WooCommerceSettingsPanel';
+import ShopifySettingsPanel from '../components/ShopifySettingsPanel';
 import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
 import { writeSystemDefaultsCache } from '../src/utils/startupCache';
 
@@ -1058,6 +1059,7 @@ const SettingsPage: React.FC = () => {
     hasCapability('whatsapp') && hasAdminAccess(user?.role) ? { id: 'whatsapp', label: 'WhatsApp', icon: ICONS.WhatsApp } : null,
     hasCapability('messenger') && hasAdminAccess(user?.role) ? { id: 'messenger', label: 'Messenger', icon: ICONS.Messenger } : null,
     hasCapability('woocommerce') && hasAdminAccess(user?.role) ? { id: 'woocommerce', label: 'WooCommerce', icon: ICONS.Sales } : null,
+    hasCapability('shopify') && hasAdminAccess(user?.role) ? { id: 'shopify', label: 'Shopify', icon: ICONS.Sales } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'dashboard', label: 'Dashboard', icon: ICONS.Dashboard } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
@@ -2026,6 +2028,7 @@ const SettingsPage: React.FC = () => {
           {activeTab === 'whatsapp' && <WhatsAppSettingsPanel />}
           {activeTab === 'messenger' && <MessengerSettingsPanel />}
           {activeTab === 'woocommerce' && <WooCommerceSettingsPanel companyPages={companySettings.pages} />}
+          {activeTab === 'shopify' && <ShopifySettingsPanel companyPages={companySettings.pages} />}
           {activeTab === 'data-management' && <DataManagementSettingsPanel />}
 
           {activeTab === 'voice-survey' && (

@@ -24,6 +24,7 @@ final class BusinessActionDispatcher
     private MessengerApi $messenger;
     private LeadApi $leads;
     private WooCommerceApi $woocommerce;
+    private ShopifyApi $shopify;
     private RecurringTransactionApi $recurringTransactions;
     private OrderPostCreateEffects $postCreateEffects;
 
@@ -45,6 +46,7 @@ final class BusinessActionDispatcher
         $this->leads = new LeadApi($database, $auth, $config, $this->master, $this->operations);
         $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall);
         $this->woocommerce = new WooCommerceApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
+        $this->shopify = new ShopifyApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
         $this->recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
     }
 
@@ -67,6 +69,7 @@ final class BusinessActionDispatcher
             'messenger' => $this->messenger,
             'leads' => $this->leads,
             'woocommerce' => $this->woocommerce,
+            'shopify' => $this->shopify,
             'recurringTransactions' => $this->recurringTransactions,
         ];
     }

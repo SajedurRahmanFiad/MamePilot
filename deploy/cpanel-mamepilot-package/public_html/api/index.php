@@ -22,6 +22,7 @@ use App\RecurringTransactionApi;
 use App\RecurringTransactionScheduler;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
+use App\ShopifyApi;
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'app-root.php';
 
@@ -82,6 +83,7 @@ try {
     $autoCall = new AutoCallApi($database, $auth, $config);
     $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
+    $shopify = new ShopifyApi($database, $auth, $config, $operations, $postCreateEffects);
     $recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
 
     if ($action === 'health') {
@@ -140,7 +142,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $recurringTransactions];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $shopify, $recurringTransactions];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;

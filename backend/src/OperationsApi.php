@@ -2057,6 +2057,14 @@ final class OperationsApi extends BaseService
             $result['categories'] = array_column($this->database->fetchAll($sql, $bindings), 'category');
         }
 
+        if ($field === '' || $field === 'skus') {
+            $sql = 'SELECT DISTINCT sku FROM products WHERE deleted_at IS NULL AND TRIM(COALESCE(sku, "")) <> ""';
+            $bindings = [];
+            if ($like && $field === 'skus') { $sql .= ' AND sku LIKE :q'; $bindings[':q'] = $like; }
+            $sql .= ' ORDER BY sku LIMIT ' . $limit;
+            $result['skus'] = array_column($this->database->fetchAll($sql, $bindings), 'sku');
+        }
+
         return $result;
     }
 
@@ -3305,6 +3313,7 @@ final class OperationsApi extends BaseService
 
         $salesFromTransactions = 0.0;
         $purchasesFromTransactions = 0.0;
+        $purchaseTransactionCount = 0;
         $otherExpenses = 0.0;
 
         if ($hasBanking || $hasDirectPurchasePriceCogs) {
@@ -3312,6 +3321,7 @@ final class OperationsApi extends BaseService
                 'SELECT
                     COALESCE(SUM(CASE WHEN type = \'Income\' AND reference_id IS NOT NULL THEN amount ELSE 0 END), 0) AS salesFromTransactions,
                     COALESCE(SUM(CASE WHEN type = \'Expense\' AND category = \'expense_purchases\' THEN amount ELSE 0 END), 0) AS purchasesFromTransactions,
+                    COALESCE(SUM(CASE WHEN type = \'Expense\' AND category = \'expense_purchases\' THEN 1 ELSE 0 END), 0) AS purchaseTransactionCount,
                     COALESCE(SUM(CASE WHEN type = \'Expense\' AND COALESCE(category, \'\') <> \'expense_purchases\' THEN amount ELSE 0 END), 0) AS otherExpenses
                  FROM transactions
                  WHERE ' . implode(' AND ', $transactionConditions),
@@ -3320,6 +3330,7 @@ final class OperationsApi extends BaseService
 
             $salesFromTransactions = (float) ($transactionSummary['salesFromTransactions'] ?? 0);
             $purchasesFromTransactions = (float) ($transactionSummary['purchasesFromTransactions'] ?? 0);
+            $purchaseTransactionCount = (int) ($transactionSummary['purchaseTransactionCount'] ?? 0);
             $otherExpenses = (float) ($transactionSummary['otherExpenses'] ?? 0);
         }
 
@@ -3339,8 +3350,10 @@ final class OperationsApi extends BaseService
             + (float) ($orderTotals['exchangeDelivered'] ?? 0);
 
         $totalSales = $salesFromTransactions > 0 ? $salesFromTransactions : $completedOrderSales;
-        $totalPurchases = ($hasPurchases || $hasDirectPurchasePriceCogs) ? ($purchasesFromTransactions > 0 ? $purchasesFromTransactions : $billPurchases) : 0;
-        $totalProfit = ($hasPurchases || $hasDirectPurchasePriceCogs) ? ($totalSales - $totalPurchases - $otherExpenses) : 0;
+        $hasRecordedPurchaseCosts = $purchaseTransactionCount > 0;
+        $hasProfitCostBasis = $hasPurchases || $hasDirectPurchasePriceCogs || $hasRecordedPurchaseCosts;
+        $totalPurchases = $hasRecordedPurchaseCosts ? $purchasesFromTransactions : ($hasProfitCostBasis ? $billPurchases : 0);
+        $totalProfit = $hasProfitCostBasis ? ($totalSales - $totalPurchases - $otherExpenses) : 0;
 
         $expenseByCategory = [];
         $monthlyData = [];

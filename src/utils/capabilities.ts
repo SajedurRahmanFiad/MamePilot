@@ -23,6 +23,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   messenger: 'Messenger',
   auto_calling: 'Auto Calling (Voice Survey)',
   woocommerce: 'WooCommerce Order Sync',
+  shopify: 'Shopify Order Sync',
   recurring_transactions: 'Recurring Transactions',
 };
 
@@ -49,6 +50,7 @@ export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
   messenger: 'Facebook Messenger chat interface — message customers, send images and files, manage quick replies, with lead insights on the side.',
   auto_calling: 'Automated voice calls to customers for order confirmation and follow-up, with call history, success rates, and prepaid balance.',
   woocommerce: 'Connect WooCommerce stores to sync orders automatically, manage webhooks, and test connection health from Settings.',
+  shopify: 'Connect Shopify stores to sync orders automatically, manage webhooks, and test connection health from Settings.',
   recurring_transactions: 'Schedule income and expense transactions to be created automatically on daily, weekly, monthly, or yearly intervals.',
 };
 
@@ -75,6 +77,7 @@ export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
   messenger: false,
   auto_calling: false,
   woocommerce: false,
+  shopify: false,
   recurring_transactions: false,
 };
 

@@ -303,6 +303,11 @@ final class AgentToolRegistry
                 'reads' => ['fetchWooCommerceStores', 'checkWebhookHealth'],
                 'actions' => ['syncWooCommerceOrders'],
             ],
+            'shopify' => [
+                'capability' => 'shopify',
+                'reads' => ['fetchShopifyStores', 'checkShopifyWebhookHealth'],
+                'actions' => ['syncShopifyProducts', 'syncShopifyOrders'],
+            ],
             'auto_calling' => [
                 'capability' => 'auto_calling',
                 'reads' => ['fetchOrderSurveyStatus', 'fetchSurveyBalance', 'fetchSurveyHistory', 'fetchSurveyBroadcasts', 'fetchSurveySummary'],
@@ -424,9 +429,9 @@ final class AgentToolRegistry
         $adminOnly = [
             'createAccount', 'updateAccount', 'createCategory', 'updateCategory', 'createUnit', 'updateUnit',
             'fetchRecycleBinItems', 'fetchRecycleBinPage', 'restoreDeletedItem',
-            'triggerSurveyCall', 'retrySurveyCall', 'cancelSurveyCall', 'syncMetaAds', 'syncWooCommerceOrders',
+            'triggerSurveyCall', 'retrySurveyCall', 'cancelSurveyCall', 'syncMetaAds', 'syncWooCommerceOrders', 'syncShopifyProducts', 'syncShopifyOrders',
             'fetchSurveyBalance', 'fetchSurveyHistory', 'fetchSurveyBroadcasts', 'fetchSurveySummary',
-            'fetchWooCommerceStores', 'checkWebhookHealth', 'fetchMetaAdsConnectionStatus',
+            'fetchWooCommerceStores', 'fetchShopifyStores', 'checkWebhookHealth', 'checkShopifyWebhookHealth', 'fetchMetaAdsConnectionStatus',
             'fetchMessengerProfile',
             'fetchUserActivityPerformanceReportPage', 'fetchUserActivityPerformanceLog',
             'syncCarryBeeTransferStatuses', 'syncPaperflyOrderStatuses', 'syncSteadfastDeliveryStatuses',
@@ -485,6 +490,7 @@ final class AgentToolRegistry
             'fraud' => ['fraud_checks', 'customers'],
             'marketing' => ['meta_ads', 'meta_ads_insights_daily'],
             'woocommerce' => ['woocommerce_stores', 'orders'],
+            'shopify' => ['shopify_stores', 'orders'],
             'auto_calling' => ['voice_survey_calls', 'voice_survey_events', 'orders'],
             'recycle_bin' => ['orders', 'customers', 'products', 'bills', 'vendors', 'transactions', 'accounts', 'users'],
         ];
@@ -619,10 +625,16 @@ final class AgentToolRegistry
         if ($action === 'fetchPathaoOrderInfo') return $strictObject(['orderId' => ['type' => 'string'], 'consignmentId' => ['type' => 'string']]);
 
         if ($action === 'fetchWooCommerceStores') return $strictObject();
+        if ($action === 'fetchShopifyStores') return $strictObject();
         if ($action === 'checkWebhookHealth') return $strictObject(['storeId' => ['type' => 'string', 'minLength' => 1]], ['storeId']);
+        if ($action === 'checkShopifyWebhookHealth') return $strictObject(['storeId' => ['type' => 'string', 'minLength' => 1]], ['storeId']);
         if ($action === 'syncWooCommerceOrders') return $strictObject([
             'storeId' => ['type' => 'string', 'minLength' => 1], 'maxOrders' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 1000],
         ], ['storeId']);
+        if ($action === 'syncShopifyOrders') return $strictObject([
+            'storeId' => ['type' => 'string', 'minLength' => 1], 'maxOrders' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 1000],
+        ], ['storeId']);
+        if ($action === 'syncShopifyProducts') return $strictObject(['storeId' => ['type' => 'string', 'minLength' => 1]], ['storeId']);
 
         if ($action === 'fetchOrderSurveyStatus') return $strictObject(['orderId' => ['type' => 'string', 'minLength' => 1]], ['orderId']);
         if ($action === 'fetchSurveyBalance' || $action === 'fetchSurveySummary') return $strictObject();

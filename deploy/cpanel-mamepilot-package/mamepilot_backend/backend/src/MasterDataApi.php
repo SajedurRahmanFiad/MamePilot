@@ -871,7 +871,7 @@ final class MasterDataApi extends BaseService
     public function fetchProducts(array $params = []): array
     {
         $category = trim((string) ($params['category'] ?? ''));
-        $sql = 'SELECT id, name, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
+        $sql = 'SELECT id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
                 FROM products
                 WHERE deleted_at IS NULL';
         $bindings = [];
@@ -898,7 +898,7 @@ final class MasterDataApi extends BaseService
         $bindings = [];
         if ($search !== '') {
             $where .= " AND CONVERT(CONCAT_WS(' ',
-                id, name, category, unit_id, CAST(sale_price AS CHAR), CAST(purchase_price AS CHAR),
+                id, name, sku, category, unit_id, CAST(sale_price AS CHAR), CAST(purchase_price AS CHAR),
                 CAST(stock AS CHAR), created_by, created_at
             ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
             $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
@@ -912,6 +912,10 @@ final class MasterDataApi extends BaseService
         $this->appendEncodedTextFilter($where, $bindings, 'name', $name, 'name_filter');
         $nameNot = trim((string) ($params['nameNot'] ?? ''));
         $this->appendEncodedTextFilter($where, $bindings, 'name', $nameNot, 'name_not', true);
+        $sku = trim((string) ($params['sku'] ?? ''));
+        $this->appendEncodedTextFilter($where, $bindings, 'sku', $sku, 'sku_filter');
+        $skuNot = trim((string) ($params['skuNot'] ?? ''));
+        $this->appendEncodedTextFilter($where, $bindings, 'sku', $skuNot, 'sku_not', true);
         $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
             [$placeholders, $inBindings] = $this->inClause($createdByIds, 'created_by');
@@ -935,7 +939,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, category, unit_id, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, slug, sku, category, unit_id, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
              FROM products
              {$where}
              ORDER BY created_at DESC, id DESC
@@ -952,7 +956,7 @@ final class MasterDataApi extends BaseService
     public function fetchProductsMini(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, image, sale_price, purchase_price, stock, dynamic_pricing FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
+            'SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
         );
 
         return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
@@ -967,9 +971,9 @@ final class MasterDataApi extends BaseService
         }
 
         $rows = $this->database->fetchAll(
-            "SELECT id, name, image, sale_price, purchase_price, stock, dynamic_pricing
+            "SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing
              FROM products
-             WHERE deleted_at IS NULL AND name LIKE :search
+             WHERE deleted_at IS NULL AND (name LIKE :search OR sku LIKE :search)
              ORDER BY created_at DESC
              LIMIT {$limit}",
             [':search' => '%' . $query . '%']
@@ -1014,13 +1018,15 @@ final class MasterDataApi extends BaseService
         $id = $this->stringId($params['id'] ?? null);
         $name = trim((string) ($params['name'] ?? ''));
         $slug = $this->generateProductSlug($params['slug'] ?? null, $name);
+        $sku = $this->normalizeProductSku($params['sku'] ?? null);
         $this->database->execute(
-            'INSERT INTO products (id, name, slug, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
-             VALUES (:id, :name, :slug, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
+            'INSERT INTO products (id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :sku, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => $name,
                 ':slug' => $slug,
+                ':sku' => $sku,
                 ':image' => $this->normalizeUploadedFileValue($params['image'] ?? null, 'product-images', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
                 ':category' => $this->nullableString($params['category'] ?? null),
                 ':unit_id' => $this->nullableString($params['unitId'] ?? null),
@@ -1050,6 +1056,9 @@ final class MasterDataApi extends BaseService
         if (array_key_exists('slug', $updates)) {
             $slugValue = trim((string) ($updates['slug'] ?? ''));
             $payload['slug'] = $slugValue !== '' ? $this->slugify($slugValue) : null;
+        }
+        if (array_key_exists('sku', $updates)) {
+            $payload['sku'] = $this->normalizeProductSku($updates['sku']);
         }
         if (array_key_exists('image', $updates)) {
             $payload['image'] = $this->normalizeUploadedFileValue($updates['image'] ?? null, 'product-images', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
@@ -6988,5 +6997,15 @@ PROMPT;
         }
         $fromName = $this->slugify($name);
         return $fromName !== '' ? $fromName : null;
+    }
+
+    private function normalizeProductSku(mixed $value): ?string
+    {
+        $sku = trim((string) ($value ?? ''));
+        if ($sku === '') return null;
+        if (mb_strlen($sku) > 191) {
+            throw new RuntimeException('Product SKU cannot be longer than 191 characters.');
+        }
+        return $sku;
     }
 }

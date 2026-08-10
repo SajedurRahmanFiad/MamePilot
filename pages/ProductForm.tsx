@@ -82,6 +82,7 @@ const ProductForm: React.FC = () => {
   const [form, setForm] = useState<Partial<Product>>({
     name: '',
     slug: '',
+    sku: '',
     category: '',
     image: '',
     unitId: undefined,
@@ -180,6 +181,7 @@ const ProductForm: React.FC = () => {
       const productData: Omit<Product, 'id'> = {
         name: form.name || '',
         slug: form.slug ? slugify(form.slug) : undefined,
+        sku: form.sku?.trim() || undefined,
         category: form.category || '',
         image: form.image || '/uploads/Empty_product.png',
         unitId: form.unitId || undefined,
@@ -272,6 +274,18 @@ const ProductForm: React.FC = () => {
               {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">SKU</label>
+          <input
+            type="text"
+            className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]"
+            value={form.sku || ''}
+            onChange={e => setForm({ ...form, sku: e.target.value })}
+            placeholder="e.g. SHIRT-BLACK-L"
+          />
+          <p className="text-xs text-gray-400">Shopify uses the SKU to match this product and prevent duplicate imports.</p>
         </div>
 
         <div className="space-y-1">

@@ -82,6 +82,8 @@ import type {
   ProcessBillReturnPayload,
   WooCommerceStore,
   WooCommerceSyncResult,
+  ShopifyStore,
+  ShopifySyncResult,
   RecurringTransaction,
   RecurringTransactionFormOptions,
   RecurringTransactionInput,
@@ -304,11 +306,11 @@ export async function deleteVendor(id: string) { await remove('deleteVendor', id
 export async function fetchProducts(category?: string) { return call<Product[]>('fetchProducts', { category }); }
 export async function fetchProductById(id: string) { return call<Product | null>('fetchProductById', { id }); }
 export async function fetchProductImagesByIds(productIds: string[]) { return call<Array<{ id: string; image: string }>>('fetchProductImagesByIds', { productIds }); }
-export async function fetchProductsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, category?: string, createdByIds?: string[], filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } }, options?: ApiActionOptions) {
+export async function fetchProductsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, category?: string, createdByIds?: string[], filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; sku?: string; skuNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } }, options?: ApiActionOptions) {
   return call<{ data: Product[]; count: number }>('fetchProductsPage', { page, pageSize, search, category, createdByIds, ...(filters || {}) }, options);
 }
 export async function fetchProductFilterOptions(params?: { search?: string; field?: string }) {
-  return call<{ names?: string[]; categories?: string[] }>('fetchProductFilterOptions', params || {});
+  return call<{ names?: string[]; categories?: string[]; skus?: string[] }>('fetchProductFilterOptions', params || {});
 }
 export async function fetchProductsMini() { return call<Product[]>('fetchProductsMini'); }
 export async function fetchProductsSearch(q: string, limit: number = 50) { return call<Product[]>('fetchProductsSearch', { q, limit }); }
@@ -486,6 +488,15 @@ export async function registerWooCommerceWebhook(id: string): Promise<WooCommerc
 export async function syncWooCommerceOrders(id: string, maxOrders: number = 250): Promise<WooCommerceSyncResult> { return call<WooCommerceSyncResult>('syncWooCommerceOrders', { id, maxOrders }, { timeoutMs: 180000 }); }
 export async function checkWooCommerceWebhookHealth(id: string): Promise<{ healthy: boolean; status: string; message: string; deliveryUrl?: string; expectedUrl?: string }> { return call<any>('checkWebhookHealth', { id }); }
 export async function repairWooCommerceWebhook(id: string): Promise<{ success: boolean; message: string }> { return call<any>('repairWebhook', { id }, { timeoutMs: 60000 }); }
+export async function fetchShopifyStores(): Promise<ShopifyStore[]> { return call<ShopifyStore[]>('fetchShopifyStores'); }
+export async function saveShopifyStore(payload: Partial<ShopifyStore>): Promise<ShopifyStore> { return call<ShopifyStore>('saveShopifyStore', payload); }
+export async function deleteShopifyStore(id: string): Promise<{ success: boolean; warning?: string | null }> { return call<{ success: boolean; warning?: string | null }>('deleteShopifyStore', { id }); }
+export async function testShopifyStore(id: string): Promise<{ success: boolean; message: string; ordersVisible: boolean; productsVisible: boolean; missingScopes?: string[] }> { return call<any>('testShopifyStore', { id }, { timeoutMs: 60000 }); }
+export async function registerShopifyWebhook(id: string): Promise<ShopifyStore> { return call<ShopifyStore>('registerShopifyWebhook', { id }, { timeoutMs: 60000 }); }
+export async function syncShopifyProducts(id: string): Promise<ShopifySyncResult> { return call<ShopifySyncResult>('syncShopifyProducts', { id }, { timeoutMs: 300000 }); }
+export async function syncShopifyOrders(id: string, maxOrders?: number): Promise<ShopifySyncResult> { return call<ShopifySyncResult>('syncShopifyOrders', { id, ...(maxOrders ? { maxOrders } : {}) }, { timeoutMs: 300000 }); }
+export async function checkShopifyWebhookHealth(id: string): Promise<{ healthy: boolean; status: string; message: string; deliveryUrl?: string; expectedUrl?: string; topics?: string[] }> { return call<any>('checkShopifyWebhookHealth', { id }); }
+export async function repairShopifyWebhook(id: string): Promise<{ success: boolean; message: string }> { return call<any>('repairShopifyWebhook', { id }, { timeoutMs: 60000 }); }
 export async function fetchMarketingDashboard(filters?: { from?: string; to?: string }): Promise<MarketingDashboardResponse> {
   return call<MarketingDashboardResponse>('fetchMarketingDashboard', filters || {}, { timeoutMs: 60000 });
 }

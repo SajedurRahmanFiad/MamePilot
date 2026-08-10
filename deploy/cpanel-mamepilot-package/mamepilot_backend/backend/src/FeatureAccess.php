@@ -29,6 +29,7 @@ final class FeatureAccess
         'mamecx' => false,
         'auto_calling' => false,
         'woocommerce' => false,
+        'shopify' => false,
         'recurring_transactions' => false,
     ];
 
@@ -261,6 +262,15 @@ final class FeatureAccess
         'testWooCommerceStore' => 'woocommerce',
         'registerWooCommerceWebhook' => 'woocommerce',
         'syncWooCommerceOrders' => 'woocommerce',
+        'fetchShopifyStores' => 'shopify',
+        'saveShopifyStore' => 'shopify',
+        'deleteShopifyStore' => 'shopify',
+        'testShopifyStore' => 'shopify',
+        'registerShopifyWebhook' => 'shopify',
+        'syncShopifyProducts' => 'shopify',
+        'syncShopifyOrders' => 'shopify',
+        'checkShopifyWebhookHealth' => 'shopify',
+        'repairShopifyWebhook' => 'shopify',
         'checkWebhookHealth' => 'woocommerce',
         'repairWebhook' => 'woocommerce',
         'fetchMetaAdsConnectionStatus' => 'marketing',

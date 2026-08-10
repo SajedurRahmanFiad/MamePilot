@@ -431,6 +431,11 @@ final class DataManagementApi extends BaseService
                 'description' => 'Configured WooCommerce stores and webhook settings.',
                 'tables' => ['woocommerce_stores'],
             ],
+            'shopify' => [
+                'key' => 'shopify', 'label' => 'Shopify',
+                'description' => 'Configured Shopify stores and webhook settings.',
+                'tables' => ['shopify_stores'],
+            ],
             'dashboard' => [
                 'key' => 'dashboard', 'label' => 'Dashboard',
                 'description' => 'Fixed and custom dashboard card and widget layouts. Custom dashboards are appended on import.',
@@ -509,7 +514,7 @@ final class DataManagementApi extends BaseService
             ];
             if ($key === 'defaults') {
                 $tab['references'] = $this->exportDefaultSettingReferences($tables['system_defaults'][0] ?? []);
-            } elseif ($key === 'woocommerce') {
+            } elseif ($key === 'woocommerce' || $key === 'shopify') {
                 $tab['references'] = ['companyPages' => $this->companyPageNames()];
             }
             $tabs[$key] = $tab;
@@ -624,6 +629,9 @@ final class DataManagementApi extends BaseService
             } elseif ($table === 'woocommerce_stores') {
                 $references = is_array($payload['references'] ?? null) ? $payload['references'] : [];
                 $tableCounts = $this->importSettingsWooCommerceStores($rows, $references);
+            } elseif ($table === 'shopify_stores') {
+                $references = is_array($payload['references'] ?? null) ? $payload['references'] : [];
+                $tableCounts = $this->importSettingsShopifyStores($rows, $references);
             } else {
                 $row = isset($rows[0]) && is_array($rows[0]) ? $rows[0] : [];
                 if ($table === 'system_defaults') {
@@ -1022,6 +1030,55 @@ final class DataManagementApi extends BaseService
             $row['store_url'] = $storeUrl;
             $row['company_page_id'] = $targetPageId;
             $this->insertSettingsRow('woocommerce_stores', $row);
+            $counts['created']++;
+        }
+        return $counts;
+    }
+
+    /** @return array{created: int, skipped: int} */
+    private function importSettingsShopifyStores(array $rows, array $references): array
+    {
+        $counts = ['created' => 0, 'skipped' => 0];
+        $sourcePages = is_array($references['companyPages'] ?? null) ? $references['companyPages'] : [];
+        $targetPages = $this->companyPageNames();
+        foreach ($rows as $row) {
+            $row = is_array($row) ? $row : [];
+            $storeUrl = rtrim(trim((string) ($row['store_url'] ?? '')), '/');
+            if ($storeUrl === '') {
+                throw new RuntimeException('A Shopify store is missing its URL.');
+            }
+            if ($this->database->fetchOne(
+                'SELECT id FROM shopify_stores WHERE LOWER(TRIM(TRAILING \'/\' FROM store_url)) = LOWER(:url) LIMIT 1',
+                [':url' => $storeUrl]
+            ) !== null) {
+                $counts['skipped']++;
+                continue;
+            }
+            $sourcePageId = trim((string) ($row['company_page_id'] ?? ''));
+            $targetPageId = isset($targetPages[$sourcePageId]) ? $sourcePageId : null;
+            if ($targetPageId === null && isset($sourcePages[$sourcePageId])) {
+                foreach ($targetPages as $candidateId => $candidateName) {
+                    if (strcasecmp((string) $candidateName, (string) $sourcePages[$sourcePageId]) === 0) {
+                        $targetPageId = $candidateId;
+                        break;
+                    }
+                }
+            }
+            unset($row['id'], $row['created_at'], $row['updated_at']);
+            $row['id'] = $this->uuid4();
+            $row['store_url'] = $storeUrl;
+            $row['company_page_id'] = $targetPageId;
+            // Webhook subscription IDs are installation-specific. Imported
+            // connections must be tested and registered again in the target.
+            $row['webhook_id'] = null;
+            $row['last_synced_at'] = null;
+            $row['last_products_synced_at'] = null;
+            $row['last_orders_synced_at'] = null;
+            $row['products_synced'] = 0;
+            $row['orders_synced'] = 0;
+            $row['last_sync_status'] = null;
+            $row['last_sync_message'] = null;
+            $this->insertSettingsRow('shopify_stores', $row);
             $counts['created']++;
         }
         return $counts;

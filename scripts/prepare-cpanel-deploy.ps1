@@ -57,6 +57,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\webhook-survey.
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\whatsapp-webhook.php') -Destination (Join-Path $publicRoot 'api\whatsapp-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\messenger-webhook.php') -Destination (Join-Path $publicRoot 'api\messenger-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\woocommerce-webhook.php') -Destination (Join-Path $publicRoot 'api\woocommerce-webhook.php') -Force
+Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\shopify-webhook.php') -Destination (Join-Path $publicRoot 'api\shopify-webhook.php') -Force
 Copy-Item -LiteralPath (Join-Path $templateRoot 'public_html\api\courier-webhook.php') -Destination (Join-Path $publicRoot 'api\courier-webhook.php') -Force
 
 Write-Host 'Copying backend app...'
@@ -82,6 +83,12 @@ if (Test-Path $courierWebhookGuide) {
   $docsDir = Join-Path $packageRoot 'docs'
   if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
   Copy-Item -LiteralPath $courierWebhookGuide -Destination (Join-Path $docsDir 'COURIER_WEBHOOKS_AND_AUTOMATIC_SHIPPING_COSTS.md') -Force
+}
+$shopifyGuide = Join-Path $repoRoot 'docs\SHOPIFY_INTEGRATION.md'
+if (Test-Path $shopifyGuide) {
+  $docsDir = Join-Path $packageRoot 'docs'
+  if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
+  Copy-Item -LiteralPath $shopifyGuide -Destination (Join-Path $docsDir 'SHOPIFY_INTEGRATION.md') -Force
 }
 $whatsappCoexistenceGuide = Join-Path $repoRoot 'docs\whatsapp-business-app-coexistence.md'
 if (Test-Path $whatsappCoexistenceGuide) {

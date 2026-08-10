@@ -1107,6 +1107,7 @@ abstract class BaseService
             'id' => (string) $row['id'],
             'name' => (string) ($row['name'] ?? ''),
             'slug' => $this->nullableString($row['slug'] ?? null),
+            'sku' => $this->nullableString($row['sku'] ?? null),
             'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
             'category' => (string) ($row['category'] ?? ''),
             'unitId' => $this->nullableString($row['unit_id'] ?? null),

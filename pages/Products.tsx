@@ -374,6 +374,7 @@ const Products: React.FC = () => {
                 />
                 <div>
                   <p className="font-bold text-gray-900">{product.name}</p>
+                  {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {product.sku}</p>}
                 </div>
               </div>
             ),

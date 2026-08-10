@@ -824,7 +824,7 @@ export function useProductsPage(
   search?: string,
   category?: string,
   createdByIds?: string[],
-  filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } },
+  filters?: { createdByNotIds?: string[]; category?: string; categoryNot?: string; name?: string; nameNot?: string; sku?: string; skuNot?: string; stock?: { operator: string; value: string }; salePrice?: { operator: string; value: string }; purchasePrice?: { operator: string; value: string } },
   queryOptions?: { enabled?: boolean }
 ): UseQueryResult<{ data: Product[]; count: number }, Error> {
   const options: UseQueryOptions<
@@ -845,7 +845,7 @@ export function useProductsPage(
   return useQuery(options);
 }
 
-export function useProductFilterOptions(): UseQueryResult<{ names?: string[]; categories?: string[] }, Error> {
+export function useProductFilterOptions(): UseQueryResult<{ names?: string[]; categories?: string[]; skus?: string[] }, Error> {
   return useQuery({
     queryKey: ['productFilterOptions'],
     queryFn: () => fetchProductFilterOptions(),

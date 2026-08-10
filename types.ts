@@ -1,4 +1,4 @@
-﻿
+
 export enum UserRole {
   ADMIN = 'Admin',
   DEVELOPER = 'Developer',
@@ -250,6 +250,7 @@ export interface Product {
   id: string;
   name: string;
   slug?: string;
+  sku?: string | null;
   image: string;
   category: string;
   unitId?: string;
@@ -424,6 +425,44 @@ export interface WooCommerceSyncResult {
   message: string;
   processed: number;
   imported: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
+export interface ShopifyStore {
+  id: string;
+  storeName: string;
+  storeUrl: string;
+  accessToken: string;
+  apiSecret: string;
+  accessTokenConfigured?: boolean;
+  apiSecretConfigured?: boolean;
+  webhookBaseUrl: string;
+  webhookId?: string | null;
+  webhookUrl: string;
+  webhookSubscriptions?: Array<{ topic: string; id: string }>;
+  companyPageId: string;
+  enabled: boolean;
+  lastSyncedAt?: string | null;
+  lastProductsSyncedAt?: string | null;
+  lastOrdersSyncedAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncMessage?: string | null;
+  productsSynced: number;
+  ordersSynced: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ShopifySyncResult {
+  success: boolean;
+  message: string;
+  processed: number;
+  imported: number;
+  created?: number;
+  matched?: number;
+  updated?: number;
   skipped: number;
   failed: number;
   errors: string[];
@@ -1179,6 +1218,7 @@ export type AppCapabilityKey =
   | 'messenger'
   | 'auto_calling'
   | 'woocommerce'
+  | 'shopify'
   | 'recurring_transactions';
 
 export type AppCapabilityMap = Record<AppCapabilityKey, boolean>;

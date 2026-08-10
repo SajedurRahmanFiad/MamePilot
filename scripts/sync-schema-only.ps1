@@ -154,6 +154,13 @@ function Convert-AlterTable([string]$Statement, [string]$SourceName) {
       continue
     }
 
+    $modifyColumn = [regex]::Match($clause, '(?is)^\s*MODIFY\s+(?:COLUMN\s+)?`?([A-Za-z0-9_]+)`?\s+(.+)$')
+    if ($modifyColumn.Success) {
+      $definition = Quote-SqlLiteral $modifyColumn.Groups[2].Value.Trim()
+      $output.Add("CALL sp_modify_col('$table', '$($modifyColumn.Groups[1].Value)', '$definition');")
+      continue
+    }
+
     $dropIndex = [regex]::Match($clause, '(?is)^\s*DROP\s+(?:KEY|INDEX)\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?$')
     if ($dropIndex.Success) {
       $output.Add("CALL sp_drop_idx('$table', '$($dropIndex.Groups[1].Value)');")
@@ -205,6 +212,22 @@ BEGIN
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
   ) THEN
     SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_modify_col;
+DELIMITER $$
+CREATE PROCEDURE sp_modify_col(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT)
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` MODIFY COLUMN `', p_column, '` ', p_definition);
     PREPARE stmt FROM @sql;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
@@ -274,7 +297,7 @@ foreach ($migration in (Get-ChildItem -LiteralPath $migrationsPath -File -Filter
   $sections.Add("-- Migration: $($migration.Name)`r`n" + (Convert-SchemaSource $migrationSql $migration.Name))
 }
 
-$sections.Add("DROP PROCEDURE IF EXISTS sp_add_col;`r`nDROP PROCEDURE IF EXISTS sp_create_idx;`r`nDROP PROCEDURE IF EXISTS sp_create_unique_idx;`r`nDROP PROCEDURE IF EXISTS sp_drop_idx;")
+$sections.Add("DROP PROCEDURE IF EXISTS sp_add_col;`r`nDROP PROCEDURE IF EXISTS sp_modify_col;`r`nDROP PROCEDURE IF EXISTS sp_create_idx;`r`nDROP PROCEDURE IF EXISTS sp_create_unique_idx;`r`nDROP PROCEDURE IF EXISTS sp_drop_idx;")
 $content = ($sections -join "`r`n`r`n").TrimEnd() + "`r`n"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($outputPath, $content, $utf8NoBom)

@@ -117,7 +117,12 @@ final class ServiceLifecycle
         'deleteWooCommerceStore',
         'registerWooCommerceWebhook',
         'syncWooCommerceOrders',
-        'checkWebhookHealth',
+        'saveShopifyStore',
+        'deleteShopifyStore',
+        'registerShopifyWebhook',
+        'syncShopifyProducts',
+        'syncShopifyOrders',
+        'repairShopifyWebhook',
         'repairWebhook',
     ];
 

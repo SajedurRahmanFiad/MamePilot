@@ -13,7 +13,7 @@ final class AgentExecutor extends BaseService
     private const ROUTE_DOMAINS = [
         'dashboard', 'reports', 'sales', 'leads', 'inventory', 'purchases', 'banking',
         'payroll', 'whatsapp', 'messenger', 'courier', 'fraud', 'marketing',
-        'woocommerce', 'auto_calling', 'recycle_bin',
+        'woocommerce', 'shopify', 'auto_calling', 'recycle_bin',
     ];
 
     public function startRun(array $params): array
@@ -1036,7 +1036,7 @@ final class AgentExecutor extends BaseService
             'purchases' => ['bill', 'vendor', 'purchase'], 'banking' => ['account', 'transaction', 'balance', 'income', 'expense'],
             'payroll' => ['payroll', 'salary', 'employee', 'wallet'], 'reports' => ['profit', 'report', 'trend', 'compare'],
             'whatsapp' => ['whatsapp'], 'messenger' => ['messenger'], 'courier' => ['courier', 'steadfast', 'pathao', 'paperfly', 'carrybee'],
-            'marketing' => ['meta ad', 'campaign'], 'auto_calling' => ['survey', 'call'], 'woocommerce' => ['woocommerce'], 'leads' => ['lead'],
+            'marketing' => ['meta ad', 'campaign'], 'auto_calling' => ['survey', 'call'], 'woocommerce' => ['woocommerce'], 'shopify' => ['shopify'], 'leads' => ['lead'],
         ];
         $domains = [];
         foreach ($map as $domain => $needles) foreach ($needles as $needle) if (str_contains($lower, $needle)) { $domains[$domain] = true; break; }
@@ -1045,7 +1045,7 @@ final class AgentExecutor extends BaseService
 
     private function looksLikeDataRequest(string $message): bool
     {
-        return preg_match('/\b(order|customer|product|stock|bill|vendor|transaction|account|profit|sales|expense|income|payroll|wallet|courier|message|lead|campaign|survey|woocommerce|how many|total|this month)\b/i', $message) === 1;
+        return preg_match('/\b(order|customer|product|stock|bill|vendor|transaction|account|profit|sales|expense|income|payroll|wallet|courier|message|lead|campaign|survey|woocommerce|shopify|how many|total|this month)\b/i', $message) === 1;
     }
 
     private function analyzeAttachments(array $run, string $message, array $settings): string

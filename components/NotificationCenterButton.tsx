@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ICONS } from '../constants';
@@ -55,6 +56,8 @@ const haveSameNotificationSnapshot = (left: AppNotification[], right: AppNotific
   return true;
 };
 
+type NotificationFilter = 'all' | 'unread' | 'read';
+
 const NotificationCenterButton: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,17 +67,15 @@ const NotificationCenterButton: React.FC = () => {
   const markReadMutation = useMarkNotificationRead();
   const respondMutation = useRespondToNotification();
   const [isOpen, setIsOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
   const [page, setPage] = useState(1);
   const [allNotifications, setAllNotifications] = useState<AppNotification[]>([]);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const knownNotificationIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedNotificationFeedRef = useRef(false);
   const previousUnreadCountRef = useRef<number | null>(null);
   const attentionTimeoutRef = useRef<number | null>(null);
-  const hasMoreRef = useRef(true);
-  const isLoadingMoreRef = useRef(false);
+  const [hasMore, setHasMore] = useState(true);
   const [showAttentionCue, setShowAttentionCue] = useState(false);
   const markNotificationsSeen = markReadMutation.mutateAsync;
 
@@ -99,16 +100,15 @@ const NotificationCenterButton: React.FC = () => {
     data: nextPageData,
     isFetching: isNextPageFetching,
     isError: isNextPageError,
-    error: nextPageError,
+    refetch: refetchNextPage,
   } = useMyNotificationsPaginated(page, PAGE_SIZE, {
     enabled: isOpen && page > 1,
   });
 
-  const paginatedData = page === 1 ? firstPageData : nextPageData;
   const isPaginatedFetching = page === 1 ? isFirstPageFetching : isNextPageFetching;
-  const isPaginatedError = page === 1 ? isFirstPageError : isNextPageError;
-  const paginatedError = page === 1 ? firstPageError : nextPageError;
   const unreadCount = unreadData?.unreadCount ?? 0;
+  const isLoadingMore = page > 1 && isNextPageFetching;
+  const hasLoadMoreError = page > 1 && isNextPageError;
 
   const triggerAttentionCue = useCallback(() => {
     setShowAttentionCue(true);
@@ -141,8 +141,7 @@ const NotificationCenterButton: React.FC = () => {
       return applyCachedReadState(firstPageData.items);
     });
 
-    hasMoreRef.current = firstPageData.page < firstPageData.totalPages;
-    isLoadingMoreRef.current = false;
+    setHasMore(firstPageData.page < firstPageData.totalPages);
   }, [firstPageData, page]);
 
   useEffect(() => {
@@ -186,9 +185,9 @@ const NotificationCenterButton: React.FC = () => {
     previousUnreadCountRef.current = unreadCount;
   }, [triggerAttentionCue, unreadCount]);
 
-  // Append extra pages only when the panel is open and the user scrolls.
+  // Append extra pages only when the panel is open and the user requests more.
   useEffect(() => {
-    if (!isOpen || page === 1 || !nextPageData?.items) return;
+    if (!isOpen || page === 1 || !nextPageData?.items || nextPageData.page !== page) return;
 
     setAllNotifications((prev) => {
       const existingIds = new Set(prev.map((notification) => notification.id));
@@ -200,23 +199,8 @@ const NotificationCenterButton: React.FC = () => {
       return applyCachedReadState([...prev, ...onlyNew]);
     });
 
-    hasMoreRef.current = nextPageData.page < nextPageData.totalPages;
-    isLoadingMoreRef.current = false;
+    setHasMore(nextPageData.page < nextPageData.totalPages);
   }, [isOpen, nextPageData, page]);
-
-  // Handle infinite scroll
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const target = event.currentTarget;
-    const scrollTop = target.scrollTop;
-    const clientHeight = target.clientHeight;
-    const scrollHeight = target.scrollHeight;
-
-    // Trigger load when user scrolls near the bottom
-    if (scrollHeight - (scrollTop + clientHeight) < 100 && !isLoadingMoreRef.current && hasMoreRef.current) {
-      isLoadingMoreRef.current = true;
-      setPage((prev) => prev + 1);
-    }
-  }, []);
 
   // Reset on close
   useEffect(() => {
@@ -227,22 +211,24 @@ const NotificationCenterButton: React.FC = () => {
         return haveSameNotificationSnapshot(prev, next) ? prev : next;
       });
       seenNotificationIdsRef.current.clear();
-      hasMoreRef.current = firstPageData ? firstPageData.page < firstPageData.totalPages : true;
-      isLoadingMoreRef.current = false;
+      setHasMore(firstPageData ? firstPageData.page < firstPageData.totalPages : true);
     }
   }, [firstPageData, isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) return undefined;
 
-    const handlePointerDown = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -251,7 +237,7 @@ const NotificationCenterButton: React.FC = () => {
 
     const syncNotifications = () => {
       if (!mounted) return;
-      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchInactive: true });
+      queryClient.invalidateQueries({ queryKey: ['notifications'], exact: false, refetchType: 'all' });
     };
 
     const handleStorage = (event: StorageEvent) => {
@@ -280,39 +266,6 @@ const NotificationCenterButton: React.FC = () => {
       channel?.close();
     };
   }, [queryClient]);
-
-  // Mark newly visible notifications as read
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const unseenIds = allNotifications
-      .map((notification) => notification.id)
-      .filter((notificationId) => !seenNotificationIdsRef.current.has(notificationId));
-
-    if (unseenIds.length === 0) {
-      return;
-    }
-
-    unseenIds.forEach((notificationId) => seenNotificationIdsRef.current.add(notificationId));
-    const readAt = new Date().toISOString();
-    
-    setAllNotifications((current) =>
-      current.map((notification) =>
-        unseenIds.includes(notification.id)
-          ? {
-              ...notification,
-              isRead: true,
-              readAt: notification.readAt || readAt,
-            }
-          : notification,
-      )
-    );
-
-    void markNotificationsSeen({ notificationIds: unseenIds }).catch((error) => {
-      unseenIds.forEach((notificationId) => seenNotificationIdsRef.current.delete(notificationId));
-      console.error('Failed to mark notifications as seen:', error);
-    });
-  }, [isOpen, allNotifications, markNotificationsSeen]);
 
   const pendingDecisionId = useMemo(() => {
     if (!respondMutation.variables?.notificationId) return null;
@@ -388,8 +341,23 @@ const NotificationCenterButton: React.FC = () => {
       await openNotificationLink(notification, href);
     };
 
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === 'unread') return allNotifications.filter((notification) => !notification.isRead);
+    if (activeFilter === 'read') return allNotifications.filter((notification) => notification.isRead);
+    return allNotifications;
+  }, [activeFilter, allNotifications]);
+
+  const handleSeeMore = useCallback(() => {
+    if (isLoadingMore || !hasMore) return;
+    if (hasLoadMoreError) {
+      void refetchNextPage();
+      return;
+    }
+    setPage((current) => current + 1);
+  }, [hasLoadMoreError, hasMore, isLoadingMore, refetchNextPage]);
+
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative">
       {showAttentionCue && !isOpen && (
         <>
           <span className="pointer-events-none absolute inset-0 z-0 rounded-xl ring-4 ring-[#0f2f57]/15 animate-pulse" />
@@ -417,15 +385,30 @@ const NotificationCenterButton: React.FC = () => {
         )}
       </button>
 
-      {isOpen && (
+      {typeof document !== 'undefined' && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="fixed inset-x-0 top-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_rgba(15,47,87,0.18)] sm:absolute sm:right-0 sm:left-auto sm:top-full sm:mt-3 sm:h-auto sm:max-h-[70vh] sm:w-[380px] sm:max-w-[calc(100vw-2rem)] sm:overflow-hidden sm:rounded-[1.5rem] sm:border sm:border-[#e4eef8] sm:pt-0 sm:pb-0">
-            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
+          <button
+            type="button"
+            aria-label="Close notifications"
+            tabIndex={isOpen ? 0 : -1}
+            className={`fixed inset-0 z-[70] bg-gray-950/35 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+            onClick={() => setIsOpen(false)}
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Notifications"
+            aria-hidden={!isOpen}
+            inert={!isOpen}
+            className={`fixed inset-y-0 right-0 z-[80] flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden border-l border-[#e4eef8] bg-white pt-[env(safe-area-inset-top)] shadow-[-24px_0_70px_rgba(15,47,87,0.18)] transition-transform duration-[360ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
               <div>
-                <h3 className="mt-1 text-lg font-black text-gray-900">All Notifications</h3>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Inbox</p>
+                <h3 className="mt-1 text-lg font-black text-gray-900">Notifications</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsOpen(false)}
                 className="rounded-full p-2 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
                 title="Close"
@@ -434,19 +417,36 @@ const NotificationCenterButton: React.FC = () => {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 sm:px-3 sm:py-3" ref={scrollContainerRef} onScroll={handleScroll}>
+            <div className="flex shrink-0 gap-2 border-b border-gray-100 px-5 py-3" role="tablist" aria-label="Notification filters">
+              {(['all', 'unread', 'read'] as NotificationFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeFilter === filter}
+                  onClick={() => setActiveFilter(filter)}
+                  className={`rounded-full border px-3.5 py-2 text-xs font-black capitalize transition-all ${activeFilter === filter ? 'border-[#0f2f57] bg-[#0f2f57] text-white shadow-sm' : 'border-gray-200 bg-white text-gray-500 hover:border-[#c7dff5] hover:bg-[#f8fbff] hover:text-[#0f2f57]'}`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
               {page === 1 && isPaginatedFetching && allNotifications.length === 0 ? (
                 <div className="px-3 py-10 text-center text-sm font-medium text-gray-400">Loading notifications...</div>
-              ) : isPaginatedError ? (
+              ) : isFirstPageError && allNotifications.length === 0 ? (
                 <div className="px-3 py-10 text-center text-sm font-medium text-red-500">
-                  Failed to load notifications: {paginatedError?.message ?? 'Unknown error'}
+                  Failed to load notifications: {firstPageError?.message ?? 'Unknown error'}
                 </div>
-              ) : allNotifications.length === 0 ? (
-                <div className="px-3 py-10 text-center text-sm font-medium text-gray-400">No notifications yet.</div>
+              ) : filteredNotifications.length === 0 ? (
+                <div className="px-3 py-10 text-center text-sm font-medium text-gray-400">
+                  {allNotifications.length === 0 ? 'No notifications yet.' : `No ${activeFilter} notifications.`}
+                </div>
               ) : (
                 <>
                   <div className="space-y-3">
-                    {allNotifications.map((notification) => {
+                    {filteredNotifications.map((notification) => {
                       const actionConfig = notification.actionConfig || { kind: 'none' };
                       const canDecide = ['decision', 'link_and_decision'].includes(actionConfig.kind);
                       const canLink = ['link', 'link_and_decision'].includes(actionConfig.kind) && actionConfig.linkUrl;
@@ -455,10 +455,11 @@ const NotificationCenterButton: React.FC = () => {
                       return (
                         <div
                           key={notification.id}
+                          onClick={() => void markAsRead(notification)}
                           className={`rounded-[1.25rem] border px-3 py-3 transition-all sm:px-4 sm:py-4 ${
                             notification.isRead
                               ? 'border-gray-100 bg-gray-50/60'
-                              : 'border-[#c7dff5] bg-[#f8fbff] shadow-sm'
+                              : 'cursor-pointer border-[#c7dff5] bg-[#f8fbff] shadow-sm'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -525,17 +526,31 @@ const NotificationCenterButton: React.FC = () => {
                     );
                   })}
                   </div>
-                  {isPaginatedFetching && page > 1 && (
-                    <div className="py-3 text-center text-sm font-medium text-gray-400">Loading more...</div>
-                  )}
-                  {hasMoreRef.current === false && allNotifications.length > 0 && (
-                    <div className="py-3 text-center text-xs font-medium text-gray-400">No more notifications</div>
-                  )}
                 </>
               )}
             </div>
-          </div>
+            {!(page === 1 && isFirstPageFetching && allNotifications.length === 0) && (
+              <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3">
+                {hasLoadMoreError && (
+                  <p className="mb-2 text-center text-xs font-medium text-red-500">Failed to load more notifications.</p>
+                )}
+                {hasMore ? (
+                  <button
+                    type="button"
+                    onClick={handleSeeMore}
+                    disabled={isLoadingMore || (isFirstPageError && allNotifications.length === 0)}
+                    className="w-full rounded-xl border border-[#c7dff5] bg-[#f8fbff] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-[#0f2f57] transition-all hover:bg-[#ebf4ff] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isLoadingMore ? 'Loading...' : hasLoadMoreError ? 'Try again' : 'See more'}
+                  </button>
+                ) : (
+                  <p className="text-center text-xs font-medium text-gray-400">No more notifications</p>
+                )}
+              </div>
+            )}
+          </aside>
         </>
+        , document.body,
       )}
     </div>
   );
