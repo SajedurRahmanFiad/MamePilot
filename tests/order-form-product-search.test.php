@@ -21,6 +21,7 @@ orderProductSearchAssert(str_contains($service, "fetchProductsSearchPage(q: stri
 orderProductSearchAssert(str_contains($backend, 'public function fetchProductsSearchPage'), 'The backend has no paginated product search action.');
 orderProductSearchAssert(str_contains($backend, 'ORDER BY name ASC, id ASC'), 'Paginated product search is not deterministic.');
 orderProductSearchAssert(str_contains($backend, '($pageSize + 1)'), 'Product autocomplete still needs a full result count to determine whether another page exists.');
+orderProductSearchAssert(str_contains($backend, 'name LIKE :search_name OR sku LIKE :search_sku'), 'Product autocomplete reuses a named PDO placeholder and fails for typed searches.');
 orderProductSearchAssert(str_contains($featureAccess, "'fetchProductsSearchPage',"), 'Order product search is blocked when inventory is disabled.');
 orderProductSearchAssert(str_contains($orderForm, 'productsSearchQuery.isError'), 'Order product search errors are still disguised as empty results.');
 

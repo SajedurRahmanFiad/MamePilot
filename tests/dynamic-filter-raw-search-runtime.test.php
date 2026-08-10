@@ -138,6 +138,10 @@ try {
     rawSearchRuntimeAssert(in_array($productId, array_column($productPage['data'], 'id'), true), 'Product search did not match its name.');
     $productCategoryPage = $masterData->fetchProductsPage(['page' => 1, 'pageSize' => 50, 'search' => '45']);
     rawSearchRuntimeAssert(!in_array($productId, array_column($productCategoryPage['data'], 'id'), true), 'Product free-text search still matches non-name fields.');
+    $productAutocompletePage = $masterData->fetchProductsSearchPage(['page' => 1, 'pageSize' => 30, 'q' => 'Raw Search Product']);
+    rawSearchRuntimeAssert(in_array($productId, array_column($productAutocompletePage['data'], 'id'), true), 'Typed order-form product autocomplete failed.');
+    $productAutocomplete = $masterData->fetchProductsSearch(['q' => 'Raw Search Product', 'limit' => 30]);
+    rawSearchRuntimeAssert(in_array($productId, array_column($productAutocomplete, 'id'), true), 'Typed shared product autocomplete failed.');
 
     $updatedExchangeOrder = $operations->updateOrder([
         'id' => $exchangeOrderId,

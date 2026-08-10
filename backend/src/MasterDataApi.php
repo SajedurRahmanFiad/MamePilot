@@ -973,10 +973,13 @@ final class MasterDataApi extends BaseService
         $rows = $this->database->fetchAll(
             "SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing
              FROM products
-             WHERE deleted_at IS NULL AND (name LIKE :search OR sku LIKE :search)
+             WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
              ORDER BY created_at DESC
              LIMIT {$limit}",
-            [':search' => '%' . $query . '%']
+            [
+                ':search_name' => '%' . $query . '%',
+                ':search_sku' => '%' . $query . '%',
+            ]
         );
 
         return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
@@ -997,8 +1000,11 @@ final class MasterDataApi extends BaseService
         $where = 'WHERE deleted_at IS NULL';
         $bindings = [];
         if ($query !== '') {
-            $where .= ' AND (name LIKE :search OR sku LIKE :search)';
-            $bindings[':search'] = '%' . $query . '%';
+            // Native PDO prepares do not allow one named placeholder to be
+            // reused multiple times in the same statement.
+            $where .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
+            $bindings[':search_name'] = '%' . $query . '%';
+            $bindings[':search_sku'] = '%' . $query . '%';
         }
         // Fetch one extra row instead of running a full COUNT(*) scan for
         // every autocomplete keystroke. The dropdown only needs to know
