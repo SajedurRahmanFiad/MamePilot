@@ -4,7 +4,7 @@ import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings } from '../src/hooks/useMutations';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings, useConnectFraudspySteadfast } from '../src/hooks/useMutations';
 import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
 import { theme } from '../theme';
 import { compressImage, formatDateTime } from '../utils';
@@ -98,6 +98,7 @@ const DeveloperSettings: React.FC = () => {
   const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
   const updateEmail = useUpdateEmailSettings();
   const updateVoiceSurveyIntegration = useUpdateVoiceSurveyIntegrationSettings();
+  const connectFraudspySteadfast = useConnectFraudspySteadfast();
 
   const [maintenanceModeEnabled, setMaintenanceModeEnabled] = useState(false);
   const [maintenanceDeploymentScope, setMaintenanceDeploymentScope] = useState<DeploymentScope>('all');
@@ -116,7 +117,11 @@ const DeveloperSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
-  const [fraudSettings, setFraudSettings] = useState({ apiKey: '' });
+  const [fraudSettings, setFraudSettings] = useState<{ provider: 'bdcourier' | 'fraudspy'; apiKey: string; fraudspyApiKey: string }>({
+    provider: 'bdcourier',
+    apiKey: '',
+    fraudspyApiKey: '',
+  });
   const [emailForm, setEmailForm] = useState({
     recipientEmail: '',
     smtpHost: '',
@@ -156,7 +161,11 @@ const DeveloperSettings: React.FC = () => {
 
   useEffect(() => {
     if (courierSettings) {
-      setFraudSettings(courierSettings.fraudChecker || { apiKey: '' });
+      setFraudSettings({
+        provider: (courierSettings.fraudChecker?.provider as 'bdcourier' | 'fraudspy') || 'bdcourier',
+        apiKey: courierSettings.fraudChecker?.apiKey || '',
+        fraudspyApiKey: courierSettings.fraudChecker?.fraudspyApiKey || '',
+      });
     }
   }, [courierSettings]);
 
@@ -259,6 +268,16 @@ const DeveloperSettings: React.FC = () => {
       toast.update(toastId, 'Fraud checker settings saved.', 'success');
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'Failed to save fraud checker settings.', 'error');
+    }
+  };
+
+  const handleConnectSteadfast = async () => {
+    const toastId = toast.loading('Connecting Steadfast to FraudSpy...');
+    try {
+      const res = await connectFraudspySteadfast.mutateAsync();
+      toast.update(toastId, res.message || 'Steadfast connected successfully.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Failed to connect Steadfast.', 'error');
     }
   };
 
@@ -707,19 +726,116 @@ const DeveloperSettings: React.FC = () => {
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">Fraud Checker</h3>
-                <p className="mt-1 text-sm text-gray-500">Manage the fraud checker API key for courier history checks.</p>
+                <p className="mt-1 text-sm text-gray-500">Configure your preferred fraud checker provider and API credentials.</p>
               </div>
+
+              {/* Provider Selection */}
+              <div className="space-y-3">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-400">Select Fraud Checker Provider</span>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label
+                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                      fraudSettings.provider === 'bdcourier'
+                        ? 'border-[var(--primary-color,#0f2f57)] bg-blue-50/40 ring-1 ring-[var(--primary-color,#0f2f57)]'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="fraud_provider"
+                      value="bdcourier"
+                      checked={fraudSettings.provider === 'bdcourier'}
+                      onChange={() => setFraudSettings((prev) => ({ ...prev, provider: 'bdcourier' }))}
+                      className="h-4 w-4 text-[var(--primary-color,#0f2f57)] focus:ring-[var(--primary-color,#0f2f57)]"
+                    />
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">BDCourier</div>
+                      <div className="text-xs text-gray-500">api.bdcourier.com</div>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                      fraudSettings.provider === 'fraudspy'
+                        ? 'border-[var(--primary-color,#0f2f57)] bg-blue-50/40 ring-1 ring-[var(--primary-color,#0f2f57)]'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="fraud_provider"
+                      value="fraudspy"
+                      checked={fraudSettings.provider === 'fraudspy'}
+                      onChange={() => setFraudSettings((prev) => ({ ...prev, provider: 'fraudspy' }))}
+                      className="h-4 w-4 text-[var(--primary-color,#0f2f57)] focus:ring-[var(--primary-color,#0f2f57)]"
+                    />
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">FraudSpy</div>
+                      <div className="text-xs text-gray-500">fraudspy.com.bd</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* API Key Inputs */}
               <div className="grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 md:col-span-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Fraud Checker API Key</span>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">BDCourier API Key</span>
                   <input
                     type="password"
                     className="w-full rounded-xl border border-gray-200 px-4 py-3"
                     value={fraudSettings.apiKey}
-                    onChange={(e) => setFraudSettings({ apiKey: e.target.value })}
-                    placeholder="Paste your fraud checker API key"
+                    onChange={(e) => setFraudSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
+                    placeholder="Paste BDCourier API key"
                   />
                 </label>
+
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">FraudSpy API Key</span>
+                  <input
+                    type="password"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                    value={fraudSettings.fraudspyApiKey}
+                    onChange={(e) => setFraudSettings((prev) => ({ ...prev, fraudspyApiKey: e.target.value }))}
+                    placeholder="Paste FraudSpy API key"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button onClick={saveFraudSettings} loading={updateCourierSettings.isPending}>
+                  Save Fraud Settings
+                </Button>
+              </div>
+
+              {/* Connect Steadfast Section */}
+              <div className="pt-6 border-t border-gray-100 space-y-4">
+                <div>
+                  <h4 className="text-base font-bold text-gray-900">Connect Steadfast with FraudSpy</h4>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Synchronize your Steadfast courier account data directly with FraudSpy.
+                  </p>
+                </div>
+
+                {Boolean(courierSettings?.steadfast?.apiKey && courierSettings?.steadfast?.secretKey) ? (
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Steadfast Credentials Available</p>
+                      <p className="text-xs text-gray-500">API Key and Secret Key are configured in Courier Settings.</p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      onClick={handleConnectSteadfast}
+                      loading={connectFraudspySteadfast.isPending}
+                    >
+                      Connect Steadfast
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                    To connect Steadfast with FraudSpy, please configure your Steadfast API Key and Secret Key in Courier Settings first.
+                  </div>
+                )}
               </div>
             </section>
           )}

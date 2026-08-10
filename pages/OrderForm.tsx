@@ -7,8 +7,8 @@ import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { fetchProductsMini, fetchProductsSearch, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
+import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
 import { useCreateOrder, useUpdateOrder } from '../src/hooks/useMutations';
 import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
@@ -103,25 +103,6 @@ const OrderForm: React.FC = () => {
   // Ensures addItem can find products even after the search filter changes the visible list.
   const allProductsRef = React.useRef<Map<string, any>>(new Map());
 
-  // Lightweight fetch used only when the product search dropdown opens.
-  const { data: productsMini = [], isFetching: productsMiniLoading } = useQuery({
-    queryKey: ['productsMini'],
-    queryFn: () => fetchProductsMini(),
-    staleTime: 5 * 60 * 1000,
-    enabled: false, // we'll trigger by setting `showProductSearch` below
-    refetchOnWindowFocus: false,
-  });
-
-  // When user opens the product search, enable fetching lightweight list if no full cache exists.
-  React.useEffect(() => {
-    if (!showProductSearch) return;
-    const full = queryClient.getQueryData<any[]>(['products']);
-    if (!full || full.length === 0) {
-      // trigger the lightweight fetch
-      queryClient.fetchQuery({ queryKey: ['productsMini'], queryFn: () => fetchProductsMini() }).catch(() => {});
-    }
-  }, [showProductSearch, queryClient]);
-
   // Debounced search term to avoid firing on every keystroke
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   React.useEffect(() => {
@@ -129,20 +110,22 @@ const OrderForm: React.FC = () => {
     return () => clearTimeout(t);
   }, [searchTerm]);
 
-  // Query server for matching products when user types; otherwise use mini list
-  const { data: productsSearch = [], isFetching: productsSearchLoading } = useQuery({
-    queryKey: ['productsSearch', debouncedSearch],
-    queryFn: () => fetchProductsSearch(debouncedSearch, 100),
-    enabled: showProductSearch && !!debouncedSearch,
+  // Bounded server-side catalog search. Pages are fetched only as the user
+  // asks for more, so opening an order never downloads the whole catalog.
+  const productsSearchQuery = useInfiniteQuery({
+    queryKey: ['productsSearchPage', debouncedSearch],
+    queryFn: ({ pageParam = 1, signal }) => fetchProductsSearchPage(debouncedSearch, pageParam, 30, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.page + 1 : undefined,
+    enabled: showProductSearch,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
-
-  // Prefer full products cache if present, otherwise use search results when typing, or mini list when empty.
-  const fullProducts = queryClient.getQueryData<any[]>(['products']);
-  const products = (fullProducts && fullProducts.length > 0)
-    ? fullProducts
-    : (debouncedSearch ? productsSearch : (productsMini || []));
+  const productSearchSettled = searchTerm.trim() === debouncedSearch;
+  const products = React.useMemo(
+    () => productSearchSettled ? (productsSearchQuery.data?.pages || []).flatMap((page) => page.data || []) : [],
+    [productSearchSettled, productsSearchQuery.data?.pages],
+  );
 
   // Accumulate all seen products into the ref so addItem can find them after search changes
   React.useEffect(() => {
@@ -496,7 +479,7 @@ const OrderForm: React.FC = () => {
     item.quantity = newQty;
 
     // Re-evaluate dynamic pricing based on new quantity
-    const product = products.find(p => p.id === item.productId);
+    const product = allProductsRef.current.get(item.productId) ?? products.find(p => p.id === item.productId);
     const baseRate = product?.salePrice ?? item.rate;
     const pricing = applyDynamicPricing(product?.dynamicPricing, newQty, baseRate);
 
@@ -1062,16 +1045,16 @@ const OrderForm: React.FC = () => {
                 />
               </div>
               <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                {products.length === 0 && (productsMiniLoading || productsSearchLoading) ? (
+                {products.length === 0 && (!productSearchSettled || productsSearchQuery.isFetching) ? (
                   <div className="p-4 space-y-3">
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                   </div>
-                ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                ) : products.length === 0 ? (
                   <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
                 ) : (
-                  products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                  products.map(p => (
                     <button
                       key={p.id}
                       onClick={() => isMultiSelectMode ? toggleProductSelection(p.id) : addItem(p.id)}
@@ -1102,6 +1085,16 @@ const OrderForm: React.FC = () => {
                   ))
                 )}
               </div>
+              {productsSearchQuery.hasNextPage && (
+                <button
+                  type="button"
+                  onClick={() => productsSearchQuery.fetchNextPage()}
+                  disabled={productsSearchQuery.isFetchingNextPage}
+                  className="w-full mt-2 border-t border-gray-100 pt-2 pb-1 text-xs font-bold text-gray-500 hover:text-gray-800 disabled:opacity-50"
+                >
+                  {productsSearchQuery.isFetchingNextPage ? 'Loading more…' : 'Load more products'}
+                </button>
+              )}
               {isMultiSelectMode && selectedProductIds.size > 0 && (
                 <div className="mt-2 pt-2 border-t border-gray-100 px-1">
                   <button

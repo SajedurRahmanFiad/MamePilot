@@ -178,12 +178,14 @@ try {
             carrybee_webhook_signature = :carrybee,
             paperfly_webhook_secret = :paperfly,
             steadfast_api_key = :steadfast,
+            steadfast_secret_key = :steadfast_secret,
             pathao_webhook_header = :pathao_header,
             pathao_webhook_secret = :pathao_secret',
         [
             ':carrybee' => 'carrybee-test-signature',
             ':paperfly' => 'paperfly-test-secret',
             ':steadfast' => 'steadfast-test-api-key',
+            ':steadfast_secret' => 'steadfast-test-secret-key',
             ':pathao_header' => 'X-Test-Pathao-Secret',
             ':pathao_secret' => 'pathao-test-secret',
         ]
@@ -222,6 +224,12 @@ try {
         fn() => $courier->handleWebhook('steadfast', $minimalPayload, ['Authorization' => 'Bearer wrong']),
         'steadfast'
     );
+    $steadfastSecretResult = $courier->handleWebhook(
+        'steadfast',
+        courierWebhookJson(['event' => 'tracking_update', 'consignment_id' => 'secret-header-' . $stamp]),
+        ['Secret-Key' => 'steadfast-test-secret-key']
+    );
+    courierWebhookAssert(empty($steadfastSecretResult['orderMatched']), 'Steadfast Secret-Key authentication was rejected or matched an unrelated order.');
     expectCourierWebhookSignatureFailure(
         fn() => $courier->handleWebhook('pathao', $minimalPayload, ['X-Test-Pathao-Secret' => 'wrong']),
         'pathao'
@@ -434,6 +442,42 @@ try {
         'updated_at' => '2026-08-03 13:15:00',
     ]), $steadfastHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastId) === 'Completed', 'Steadfast tracking-only event changed status.');
+
+    $steadfastTrackingStatusId = 'cwh-sf-tracking-status-' . $stamp;
+    $steadfastTrackingStatusNumber = 'CWH-SF-TRACKING-STATUS-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $steadfastTrackingStatusId, $steadfastTrackingStatusNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-TRACKING-STATUS-' . $stamp,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'tracking_update',
+        'consignment_id' => 'SF-TRACKING-STATUS-' . $stamp,
+        'invoice' => $steadfastTrackingStatusNumber,
+        'status' => 'delivered',
+    ]), ['Api-Key' => 'steadfast-test-api-key']);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastTrackingStatusId) === 'Completed', 'Steadfast tracking_update with explicit status was ignored.');
+
+    $steadfastLateId = 'cwh-sf-late-' . $stamp;
+    $steadfastLateNumber = 'CWH-SF-LATE-' . $stamp;
+    $steadfastLateConsignment = 'SF-LATE-' . $stamp;
+    $steadfastLatePayload = courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => $steadfastLateConsignment,
+        'invoice' => $steadfastLateNumber,
+        'status' => 'delivered',
+    ]);
+    $lateResult = $courier->handleWebhook('steadfast', $steadfastLatePayload, $steadfastHeaders);
+    courierWebhookAssert(empty($lateResult['orderMatched']), 'Pre-order Steadfast webhook unexpectedly matched an order.');
+    $lateEventKey = hash('sha256', 'steadfast|' . $steadfastLatePayload);
+    $database->execute(
+        "UPDATE courier_webhook_events SET processed_at = '1970-01-01 00:00:00' WHERE provider = 'steadfast' AND event_key = :event_key",
+        [':event_key' => $lateEventKey]
+    );
+    createCourierWebhookOrder($database, $actor, $nextSequence, $steadfastLateId, $steadfastLateNumber, 'Picked', $customerId, [
+        'steadfast' => $steadfastLateConsignment,
+    ]);
+    $lateReplay = $courier->reconcileUnmatchedWebhookEvents(['provider' => 'steadfast', 'limit' => 1]);
+    courierWebhookAssert(($lateReplay['matched'] ?? 0) === 1, 'Stored unmatched Steadfast webhook was not reconciled after the order became matchable.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastLateId) === 'Completed', 'Reconciled Steadfast webhook did not update the order status.');
 
     $steadfastCancelledId = 'cwh-sf-cancel-' . $stamp;
     $steadfastCancelledNumber = 'CWH-SF-CANCEL-' . $stamp;
@@ -784,6 +828,11 @@ try {
     $realtimeProvider = (string) file_get_contents($root . '/src/contexts/RealtimeProvider.tsx');
     courierWebhookAssert(!str_contains($realtimeProvider, 'setInterval'), 'Browser courier polling interval still exists.');
     courierWebhookAssert(!str_contains($realtimeProvider, 'syncCarryBeeTransferStatuses'), 'Browser still calls courier status sync automatically.');
+    $courierWorker = (string) file_get_contents($root . '/backend/bin/process_courier_statuses.php');
+    $courierScheduler = (string) file_get_contents($root . '/backend/src/CourierStatusScheduler.php');
+    courierWebhookAssert(str_contains($courierWorker, "['carrybee', 'paperfly', 'steadfast', 'pathao', 'exchange']"), 'Server fallback worker does not cover every courier status path.');
+    courierWebhookAssert(str_contains($courierWorker, 'GET_LOCK'), 'Courier fallback worker does not prevent overlapping runs.');
+    courierWebhookAssert(str_contains($courierScheduler, 'process_courier_statuses.php'), 'Courier fallback worker is not installed by the scheduler.');
     $orderDetails = (string) file_get_contents($root . '/pages/OrderDetails.tsx');
     $ordersPage = (string) file_get_contents($root . '/pages/Orders.tsx');
     courierWebhookAssert(str_contains($orderDetails, 'courierAutomaticExpenseRecorded'), 'Order Details does not check if automatic expense was recorded.');

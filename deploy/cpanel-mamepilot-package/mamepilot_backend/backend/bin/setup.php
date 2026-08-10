@@ -7,6 +7,7 @@ use App\Database;
 use App\MigrationManager;
 use App\SchemaManager;
 use App\AutoCallScheduler;
+use App\CourierStatusScheduler;
 use App\UpdateScheduler;
 
 require_once dirname(__DIR__) . '/bootstrap.php';
@@ -33,6 +34,9 @@ if (!$skipMigrations) {
 
 $autoCallSchedule = (new AutoCallScheduler($config))->ensureInstalled();
 echo 'Automatic calling schedule: ' . $autoCallSchedule['message'] . "\n";
+
+$courierStatusSchedule = (new CourierStatusScheduler($config))->ensureInstalled();
+echo 'Courier confirmation schedule: ' . $courierStatusSchedule['message'] . "\n";
 
 $updateSchedule = (new UpdateScheduler($config))->ensureInstalled();
 echo 'Automatic update schedule: ' . $updateSchedule['message'] . "\n";

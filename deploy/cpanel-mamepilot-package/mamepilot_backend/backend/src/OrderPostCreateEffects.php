@@ -8,16 +8,18 @@ final class OrderPostCreateEffects
 {
     private FeatureAccess $featureAccess;
     private AutoCallApi $autoCall;
+    private ?Database $database;
     private bool $surveyWorkerScheduled = false;
     private bool $fraudWorkersScheduled = false;
     private ?bool $fraudChecksEnabled = null;
     /** @var array<string, true> */
     private array $fraudCustomerIds = [];
 
-    public function __construct(FeatureAccess $featureAccess, AutoCallApi $autoCall)
+    public function __construct(FeatureAccess $featureAccess, AutoCallApi $autoCall, ?Database $database = null)
     {
         $this->featureAccess = $featureAccess;
         $this->autoCall = $autoCall;
+        $this->database = $database;
     }
 
     /** @param array<string, mixed> $order */
@@ -50,7 +52,12 @@ final class OrderPostCreateEffects
         }
         if ($this->fraudChecksEnabled === null) {
             try {
-                $this->fraudChecksEnabled = !empty($this->featureAccess->fetchCapabilities()['grow_your_business']);
+                $autoEnabled = false;
+                if ($this->database !== null) {
+                    $row = $this->database->fetchOne('SELECT automatic_fraud_check_on_order_creation FROM system_defaults LIMIT 1');
+                    $autoEnabled = (bool) ($row['automatic_fraud_check_on_order_creation'] ?? false);
+                }
+                $this->fraudChecksEnabled = $autoEnabled;
             } catch (\Throwable $exception) {
                 $this->fraudChecksEnabled = false;
                 error_log('Could not read fraud-check capability settings: ' . $exception->getMessage());

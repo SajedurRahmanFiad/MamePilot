@@ -2,9 +2,9 @@
 
 ## What changed
 
-MamePilot no longer asks every courier for every order status every ten minutes from each open browser. CarryBee, Paperfly, Pathao, and Steadfast now notify MamePilot when a parcel changes.
+MamePilot no longer asks every courier for every order status from each open browser. CarryBee, Paperfly, Pathao, and Steadfast notify MamePilot when a parcel changes, while a low-volume server worker periodically confirms open consignments through the legacy courier APIs when a webhook is delayed or missing.
 
-The old courier status-check actions remain available for support diagnostics, but MamePilot does not run them continuously.
+The old courier status-check actions remain available for support diagnostics and are also used by the bounded server fallback worker. One deployment runs at most one small provider batch per schedule tick, uses a database lock to prevent overlap, rotates through all providers and exchange consignments, and backs off at the database cursor boundary instead of downloading every order at once. It also retries authenticated webhook events that arrived before the local order became matchable. This keeps shared hosting responsive across many deployments.
 
 ## One-time setup
 
@@ -61,7 +61,7 @@ If there is no account or the selected account cannot cover the expense, deliver
 
 Use this order of checks:
 
-1. Confirm the merchant portal uses the webhook URL shown in Courier Settings and that its latest delivery attempt received HTTP 200.
+1. Confirm the merchant portal uses the webhook URL shown in Courier Settings and that its latest delivery attempt received HTTP 200. A webhook delivery failure is not terminal: the server confirmation worker will retry the open consignment through the courier API.
 2. Confirm the verification signature/token/header exactly matches Courier Settings.
 3. Compare the courier's consignment/tracking number and merchant order reference with the MamePilot order.
 4. Compare only the provider's explicit fee fields using the formulas above. Do not compare COD collected, collectable amount, package price, or product price as shipping cost.
@@ -69,4 +69,3 @@ Use this order of checks:
 6. Check that the order history says it was updated automatically from the expected courier and that its linked Shipping Costs transaction has the same fee total.
 
 For developer/support investigation, `courier_webhook_events` contains the received event and its match/processing result. `courier_order_charges` contains the saved fee components, total, matched order, and linked expense transaction. These records make it possible to distinguish a provider payload problem, an order-matching problem, and an accounting problem without guessing from the order status alone.
-

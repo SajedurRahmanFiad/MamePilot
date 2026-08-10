@@ -591,8 +591,8 @@ const OrderDetails: React.FC = () => {
         const timestamp = 'timestamp' in entry ? entry.timestamp : undefined;
         return {
           ...entry,
-          text: formatHistoryTextForTimeline(entry.text, timestamp),
-          parsedAt: parseHistoryTimestamp(timestamp || entry.text),
+          text: formatHistoryTextForTimeline(String(entry.text || ''), timestamp),
+          parsedAt: parseHistoryTimestamp(timestamp || String(entry.text || '')),
           fallbackOrder: lifecycleOrder[entry.key] ?? (100 + index),
         };
       });
@@ -664,7 +664,11 @@ const OrderDetails: React.FC = () => {
   };
   
   const canUseFraudChecker = can('fraudChecker.check') && hasCapability('fraud_checker');
-  const isFraudCheckerConfigured = Boolean(courierSettings?.fraudChecker?.apiKey?.trim());
+  const isFraudCheckerConfigured = Boolean(
+    (courierSettings?.fraudChecker?.provider === 'fraudspy'
+      ? (courierSettings?.fraudChecker?.fraudspyApiKey || courierSettings?.fraudChecker?.apiKey)
+      : courierSettings?.fraudChecker?.apiKey)?.trim()
+  );
   const canUseCourierAutomation = hasCapability('courier_automation');
   const canUseSteadfast = hasSubCapability('steadfast_courier');
   const canUseCarryBee = hasSubCapability('carrybee_courier');
@@ -2225,6 +2229,21 @@ const OrderDetails: React.FC = () => {
                         )}
                       </div>
                     </div>
+                  )}
+
+                  {/* Fraud Reports Link if available */}
+                  {(activeFraudResult?.reports?.length ?? customer?.fraudCheckResult?.reports?.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={openFraudChecker}
+                      className="w-full flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors text-left font-semibold text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
+                        <span>View {(activeFraudResult?.reports?.length ?? customer?.fraudCheckResult?.reports?.length ?? 0)} fraud report{(activeFraudResult?.reports?.length ?? customer?.fraudCheckResult?.reports?.length ?? 0) > 1 ? 's' : ''}</span>
+                      </div>
+                      <span className="text-red-500 font-bold">&rarr;</span>
+                    </button>
                   )}
 
                   {/* Courier History Button */}

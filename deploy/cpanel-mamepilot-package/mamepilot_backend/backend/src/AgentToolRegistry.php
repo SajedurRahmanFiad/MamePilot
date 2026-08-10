@@ -255,7 +255,7 @@ final class AgentToolRegistry
             ],
             'inventory' => [
                 'capability' => 'inventory',
-                'reads' => ['fetchProducts', 'fetchProductsPage', 'fetchProductsMini', 'fetchProductsSearch', 'fetchProductById', 'fetchCategories', 'fetchCategoriesById', 'fetchUnits', 'fetchUnitById'],
+                'reads' => ['fetchProducts', 'fetchProductsPage', 'fetchProductsMini', 'fetchProductsSearch', 'fetchProductsSearchPage', 'fetchProductById', 'fetchCategories', 'fetchCategoriesById', 'fetchUnits', 'fetchUnitById'],
                 'actions' => ['createProduct', 'updateProduct', 'deleteProduct', 'createCategory', 'updateCategory', 'createUnit', 'updateUnit'],
             ],
             'purchases' => [
@@ -671,6 +671,10 @@ final class AgentToolRegistry
         if (in_array($action, ['fetchLeadIntelligence', 'fetchLeadEvents'], true)) return $strictObject(['leadId' => ['type' => 'string', 'minLength' => 1]], ['leadId']);
         if ($action === 'fetchOrderSearchPreview') return $strictObject(['search' => ['type' => 'string', 'minLength' => 1], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 20]], ['search']);
         if ($action === 'fetchProductsSearch') return $strictObject(['q' => ['type' => 'string', 'minLength' => 1], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 200]], ['q']);
+        if ($action === 'fetchProductsSearchPage') return $strictObject([
+            'q' => ['type' => 'string'], 'page' => ['type' => 'integer', 'minimum' => 1],
+            'pageSize' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50],
+        ]);
         if ($action === 'analyzeLowStock') return $strictObject([
             'threshold' => ['type' => 'number', 'minimum' => 0], 'category' => ['type' => 'string'],
             'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100],

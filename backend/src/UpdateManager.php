@@ -124,6 +124,7 @@ final class UpdateManager
                 $databaseResult = ['message' => 'Database update step skipped.'];
             }
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
+            $courierStatusSchedule = (new CourierStatusScheduler($this->config))->ensureInstalled();
             $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
 
             $result = [
@@ -137,6 +138,7 @@ final class UpdateManager
                 'backupRoot' => null,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
+                'courierStatusSchedule' => $courierStatusSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
                 'updatedAt' => gmdate('c'),
             ];
@@ -201,6 +203,7 @@ final class UpdateManager
                 $databaseResult = ['message' => 'Schema update skipped by UPDATE_RUN_SCHEMA=0.'];
             }
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
+            $courierStatusSchedule = (new CourierStatusScheduler($this->config))->ensureInstalled();
             $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
 
             $result = [
@@ -214,6 +217,7 @@ final class UpdateManager
                 'backupRoot' => null,
                 'database' => $databaseResult,
                 'automaticCallingSchedule' => $autoCallSchedule,
+                'courierStatusSchedule' => $courierStatusSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
                 'updatedAt' => gmdate('c'),
             ];

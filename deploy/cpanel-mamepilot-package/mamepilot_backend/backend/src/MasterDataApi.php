@@ -982,6 +982,44 @@ final class MasterDataApi extends BaseService
         return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
     }
 
+    /**
+     * Return a bounded, deterministic product search window for order/bill
+     * autocomplete controls. Unlike fetchProductsSearch this also supports an
+     * empty query and exposes continuation metadata so callers never need to
+     * load the whole catalog into the browser.
+     */
+    public function fetchProductsSearchPage(array $params): array
+    {
+        $query = trim((string) ($params['q'] ?? ''));
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $pageSize = max(1, min(50, (int) ($params['pageSize'] ?? 30)));
+        $offset = ($page - 1) * $pageSize;
+        $where = 'WHERE deleted_at IS NULL';
+        $bindings = [];
+        if ($query !== '') {
+            $where .= ' AND (name LIKE :search OR sku LIKE :search)';
+            $bindings[':search'] = '%' . $query . '%';
+        }
+        // Fetch one extra row instead of running a full COUNT(*) scan for
+        // every autocomplete keystroke. The dropdown only needs to know
+        // whether another bounded page exists.
+        $rows = $this->database->fetchAll(
+            "SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing
+             FROM products {$where}
+             ORDER BY name ASC, id ASC
+             LIMIT " . ($pageSize + 1) . " OFFSET {$offset}",
+            $bindings
+        );
+        $hasMore = count($rows) > $pageSize;
+        if ($hasMore) array_pop($rows);
+        return [
+            'data' => array_map(fn(array $row): array => $this->mapProduct($row), $rows),
+            'page' => $page,
+            'pageSize' => $pageSize,
+            'hasMore' => $hasMore,
+        ];
+    }
+
     public function fetchProductById(array $params): ?array
     {
         $id = trim((string) ($params['id'] ?? ''));
@@ -1539,6 +1577,7 @@ final class MasterDataApi extends BaseService
             'themeColor' => trim((string) ($row['theme_color'] ?? '#0f2f57')),
             'productSelectionMode' => (string) ($row['product_selection_mode'] ?? 'simple'),
             'calculateCogsFromPurchasePrice' => (bool) ($row['calculate_cogs_from_purchase_price'] ?? false),
+            'automaticFraudCheckOnOrderCreation' => (bool) ($row['automatic_fraud_check_on_order_creation'] ?? false),
         ];
     }
 
@@ -1602,6 +1641,15 @@ final class MasterDataApi extends BaseService
                 );
             }
             $payload['calculate_cogs_from_purchase_price'] = (int) $enabled;
+        }
+        if (array_key_exists('automaticFraudCheckOnOrderCreation', $params)) {
+            $autoFraudEnabled = (bool) $params['automaticFraudCheckOnOrderCreation'];
+            if (!$this->columnExists('system_defaults', 'automatic_fraud_check_on_order_creation')) {
+                $this->database->execute(
+                    "ALTER TABLE `system_defaults` ADD COLUMN `automatic_fraud_check_on_order_creation` TINYINT(1) NOT NULL DEFAULT 0"
+                );
+            }
+            $payload['automatic_fraud_check_on_order_creation'] = (int) $autoFraudEnabled;
         }
 
         $row = $this->database->fetchOne('SELECT id FROM system_defaults LIMIT 1');
@@ -3797,7 +3845,9 @@ final class MasterDataApi extends BaseService
                 'defaultPaymentMethod' => (string) ($row['paperfly_default_payment_method'] ?? ''),
             ],
             'fraudChecker' => [
+                'provider' => (string) ($row['fraud_checker_provider'] ?? 'bdcourier'),
                 'apiKey' => $hasFraudCheckerColumn ? (string) ($row['fraud_checker_api_key'] ?? '') : '',
+                'fraudspyApiKey' => (string) ($row['fraudspy_api_key'] ?? ''),
             ],
             'pathao' => [
                 'baseUrl' => (string) ($row['pathao_base_url'] ?? ''),
@@ -3921,9 +3971,33 @@ final class MasterDataApi extends BaseService
             'pathao_default_payment_method' => $this->nullableString($pathao['defaultPaymentMethod'] ?? $current['pathao']['defaultPaymentMethod'] ?? null),
         ];
 
-        if ($hasFraudCheckerColumn) {
-            $updates['fraud_checker_api_key'] = $fraudChecker['apiKey'] ?? $current['fraudChecker']['apiKey'];
+        if (!$this->columnExists('courier_settings', 'fraud_checker_provider')) {
+            $this->database->execute(
+                "ALTER TABLE `courier_settings` ADD COLUMN `fraud_checker_provider` VARCHAR(32) NOT NULL DEFAULT 'bdcourier'"
+            );
         }
+        if (!$this->columnExists('courier_settings', 'fraud_checker_api_key')) {
+            $this->database->execute(
+                "ALTER TABLE `courier_settings` ADD COLUMN `fraud_checker_api_key` VARCHAR(500) NULL"
+            );
+        }
+        if (!$this->columnExists('courier_settings', 'fraudspy_api_key')) {
+            $this->database->execute(
+                "ALTER TABLE `courier_settings` ADD COLUMN `fraudspy_api_key` VARCHAR(500) NULL"
+            );
+        }
+
+        $provider = array_key_exists('provider', $fraudChecker)
+            ? (trim((string) $fraudChecker['provider']) === 'fraudspy' ? 'fraudspy' : 'bdcourier')
+            : ($current['fraudChecker']['provider'] ?? 'bdcourier');
+
+        $updates['fraud_checker_provider'] = $provider;
+        $updates['fraud_checker_api_key'] = array_key_exists('apiKey', $fraudChecker)
+            ? (string) $fraudChecker['apiKey']
+            : ($current['fraudChecker']['apiKey'] ?? '');
+        $updates['fraudspy_api_key'] = array_key_exists('fraudspyApiKey', $fraudChecker)
+            ? (string) $fraudChecker['fraudspyApiKey']
+            : ($current['fraudChecker']['fraudspyApiKey'] ?? '');
 
         return $this->saveSingleton(
             'courier_settings',

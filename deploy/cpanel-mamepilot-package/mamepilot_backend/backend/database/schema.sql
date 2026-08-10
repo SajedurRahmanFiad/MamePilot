@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   max_transaction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   white_label TINYINT(1) NOT NULL DEFAULT 0,
   theme_color VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
+  automatic_fraud_check_on_order_creation TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -252,7 +253,8 @@ ALTER TABLE `users`
   ADD COLUMN IF NOT EXISTS `fixed_salary` DECIMAL(12,2) NULL;
 ALTER TABLE `system_defaults`
   ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57';
+  ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
+  ADD COLUMN IF NOT EXISTS `automatic_fraud_check_on_order_creation` TINYINT(1) NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS courier_settings (
   id VARCHAR(64) NOT NULL,
   steadfast_enabled TINYINT(1) NOT NULL DEFAULT 0,
@@ -272,7 +274,9 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   paperfly_key VARCHAR(500) NULL,
   paperfly_default_shop_name VARCHAR(255) NULL,
   paperfly_max_weight_kg DECIMAL(10,3) NOT NULL DEFAULT 0.300,
+  fraud_checker_provider VARCHAR(32) NOT NULL DEFAULT 'bdcourier',
   fraud_checker_api_key VARCHAR(500) NULL,
+  fraudspy_api_key VARCHAR(500) NULL,
   pathao_enabled TINYINT(1) NOT NULL DEFAULT 0,
   pathao_base_url VARCHAR(255) NULL,
   pathao_client_id VARCHAR(255) NULL,
@@ -1082,6 +1086,7 @@ CREATE TABLE IF NOT EXISTS `courier_webhook_events` (
   UNIQUE KEY uq_courier_webhook_provider_event (provider, event_key),
   KEY idx_courier_webhook_order_received (order_id, received_at),
   KEY idx_courier_webhook_provider_received (provider, received_at),
+  KEY idx_courier_webhook_unmatched_retry (provider, processing_status, processed_at),
   CONSTRAINT fk_courier_webhook_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `courier_order_charges` (
@@ -1112,6 +1117,16 @@ CREATE TABLE IF NOT EXISTS `courier_order_charges` (
   CONSTRAINT fk_courier_charge_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE SET NULL,
   CONSTRAINT fk_courier_charge_event FOREIGN KEY (source_event_id) REFERENCES courier_webhook_events (id) ON DELETE SET NULL,
   CONSTRAINT fk_courier_charge_transaction FOREIGN KEY (expense_transaction_id) REFERENCES transactions (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `courier_poll_worker_state` (
+  provider VARCHAR(32) NOT NULL,
+  row_offset INT UNSIGNED NOT NULL DEFAULT 0,
+  last_run_at DATETIME NULL,
+  last_success_at DATETIME NULL,
+  last_error_at DATETIME NULL,
+  last_error TEXT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (provider)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS payroll_payments (
   id VARCHAR(64) NOT NULL,

@@ -44,7 +44,7 @@ final class BusinessActionDispatcher
         $this->whatsapp = new WhatsAppApi($database, $auth, $config);
         $this->messenger = new MessengerApi($database, $auth, $config);
         $this->leads = new LeadApi($database, $auth, $config, $this->master, $this->operations);
-        $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall);
+        $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall, $database);
         $this->woocommerce = new WooCommerceApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
         $this->shopify = new ShopifyApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
         $this->recurringTransactions = new RecurringTransactionApi($database, $auth, $config);

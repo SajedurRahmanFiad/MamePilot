@@ -31,11 +31,11 @@ const defaultSettings: Settings = {
   courier: {
     automaticallyDeductShippingCosts: false,
     automaticallyMarkPaidAfterDelivery: false,
-    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '' },
-    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '' },
-    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '' },
-    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '' },
-    fraudChecker: { apiKey: '' },
+    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    fraudChecker: { provider: 'bdcourier', apiKey: '', fraudspyApiKey: '' },
   },
   payroll: {
     unitAmount: 0,

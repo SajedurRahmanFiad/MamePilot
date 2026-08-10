@@ -1,5 +1,6 @@
 import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 import {
+  connectFraudspySteadfast,
   createCustomer,
   updateCustomer,
   deleteCustomer,
@@ -30,23 +31,6 @@ import {
   createUser,
   updateUser,
   deleteUser,
-  createVendor,
-  updateVendor,
-  deleteVendor,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  createCategory,
-  updateCategory,
-  deleteCategory,
-  createPaymentMethod,
-  updatePaymentMethod,
-  deletePaymentMethod,
-  createUnit,
-  updateUnit,
-  deleteUnit,
-  updateCompanySettings,
-  updateOrderSettings,
   createVendor,
   updateVendor,
   deleteVendor,
@@ -3419,5 +3403,11 @@ export function useUpdateVoiceSurveyIntegrationSettings(): UseMutationResult<Voi
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey-integration'] });
     },
+  });
+}
+
+export function useConnectFraudspySteadfast(): UseMutationResult<{ ok: boolean; message: string; credential?: any }, Error, void, unknown> {
+  return useMutation({
+    mutationFn: connectFraudspySteadfast,
   });
 }

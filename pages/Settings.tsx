@@ -1503,6 +1503,22 @@ const SettingsPage: React.FC = () => {
                     Transactions above this amount will stay pending until an admin accepts or declines them.
                   </p>
                 </div>
+                <div className="space-y-2 md:col-span-2 pt-2">
+                  <label className="flex items-start gap-3 cursor-pointer p-4 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={systemDefaults.automaticFraudCheckOnOrderCreation ?? false}
+                      onChange={e => setSystemDefaultField('automaticFraudCheckOnOrderCreation', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-[var(--primary-color,#0f2f57)] focus:ring-[var(--primary-color,#0f2f57)]"
+                    />
+                    <div>
+                      <span className="block text-sm font-bold text-gray-800">Automatic fraud check on order creation</span>
+                      <span className="mt-1 block text-xs leading-5 text-gray-600">
+                        Automatically run a background courier history check for the customer's phone number when a new order is created.
+                      </span>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           )}
@@ -2369,7 +2385,7 @@ const SettingsPage: React.FC = () => {
                   <span className="">Steadfast</span> Secrets
                 </h3>
                 <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                  Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('steadfast')}</code>. Steadfast webhooks are verified with the API key as a Bearer token.
+                  Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('steadfast')}</code>. Steadfast webhooks are verified with the API key (Bearer or API-key header). A lightweight server check confirms open consignments if a webhook is missed.
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">

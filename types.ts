@@ -376,7 +376,9 @@ export interface CompanySettings {
 }
 
 export interface FraudCheckerSettings {
+  provider?: 'bdcourier' | 'fraudspy';
   apiKey: string;
+  fraudspyApiKey?: string;
 }
 
 export interface VoiceSurveySettings {
@@ -1173,6 +1175,7 @@ export interface Settings {
     themeColor: string;
     productSelectionMode: string;
     calculateCogsFromPurchasePrice: boolean;
+    automaticFraudCheckOnOrderCreation?: boolean;
   };
   categories: {
     id: string;

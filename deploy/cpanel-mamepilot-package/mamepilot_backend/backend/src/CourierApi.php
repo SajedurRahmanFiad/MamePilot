@@ -71,8 +71,9 @@ final class CourierApi extends BaseService
     /**
      * @return array{status:int, body:string, json:mixed}
      */
-    private function request(string $method, string $url, array $headers = [], ?array $jsonBody = null): array
+    private function request(string $method, string $url, array $headers = [], ?array $jsonBody = null, int $timeoutSeconds = 30): array
     {
+        $timeoutSeconds = max(3, min(30, $timeoutSeconds));
         $body = $jsonBody !== null ? json_encode($jsonBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
 
         if (function_exists('curl_init')) {
@@ -93,8 +94,8 @@ final class CourierApi extends BaseService
                 CURLOPT_CUSTOMREQUEST => strtoupper($method),
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_HTTPHEADER => $headerList,
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_TIMEOUT => $timeoutSeconds,
+                CURLOPT_CONNECTTIMEOUT => min(10, $timeoutSeconds),
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_SSL_VERIFYHOST => 2,
@@ -127,7 +128,7 @@ final class CourierApi extends BaseService
                     'method' => strtoupper($method),
                     'header' => implode("\r\n", $headerList),
                     'content' => $body ?? '',
-                    'timeout' => 30,
+                    'timeout' => $timeoutSeconds,
                     'ignore_errors' => true,
                 ],
             ]);
@@ -166,6 +167,11 @@ final class CourierApi extends BaseService
     private function trimBaseUrl(array $params, string $field = 'baseUrl'): string
     {
         return rtrim(trim((string) ($params[$field] ?? '')), '/');
+    }
+
+    private function requestTimeout(array $params): int
+    {
+        return max(3, min(30, (int) ($params['timeoutSeconds'] ?? 30)));
     }
 
     private function normalizeBanglaDigits(string $value): string
@@ -366,9 +372,118 @@ final class CourierApi extends BaseService
         return $result;
     }
 
+    public function connectFraudspySteadfast(array $params = []): array
+    {
+        $user = $this->currentUser();
+        if (!hasAdminAccess($user['role'] ?? null)) {
+            throw new RuntimeException('Developer or Admin permission required.');
+        }
+
+        $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1') ?? [];
+        $fraudspyApiKey = trim((string) ($settings['fraudspy_api_key'] ?? $settings['fraud_checker_api_key'] ?? ''));
+        if ($fraudspyApiKey === '') {
+            throw new RuntimeException('FraudSpy API key is not configured in Developer Settings.');
+        }
+
+        $steadfastApiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
+        $steadfastSecretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
+        if ($steadfastApiKey === '' || $steadfastSecretKey === '') {
+            throw new RuntimeException('Steadfast API key and Secret key must be configured in Courier Settings.');
+        }
+
+        $origin = $this->getAppOrigin();
+        $response = $this->request(
+            'POST',
+            'https://fraudspy.com.bd/api/v1/steadfast/connect',
+            [
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+                'Origin' => $origin,
+                'Authorization' => 'Bearer ' . $fraudspyApiKey,
+            ],
+            [
+                'api_key' => $steadfastApiKey,
+                'secret_key' => $steadfastSecretKey,
+            ]
+        );
+
+        $payload = is_array($response['json']) ? $response['json'] : [];
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            $errorMsg = (string) ($payload['message'] ?? $payload['error'] ?? '');
+            if ($errorMsg === '') {
+                $errorMsg = match ($response['status']) {
+                    401 => 'Invalid, expired, or missing FraudSpy API key.',
+                    403 => 'No active FraudSpy subscription or subscription expired.',
+                    422 => 'Invalid API key or Secret key for Steadfast.',
+                    429 => 'FraudSpy daily limit exceeded.',
+                    default => 'Steadfast connection failed with HTTP ' . $response['status'] . '.',
+                };
+            }
+            throw new RuntimeException($errorMsg);
+        }
+
+        return [
+            'ok' => (bool) ($payload['ok'] ?? true),
+            'message' => (string) ($payload['message'] ?? 'Steadfast API credentials connected successfully.'),
+            'credential' => $payload['credential'] ?? null,
+        ];
+    }
+
+    private function getAppOrigin(): string
+    {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+        return $scheme . '://' . $host;
+    }
+
     private function performFraudCheck(string $phone): array
     {
-        $settings = $this->database->fetchOne('SELECT fraud_checker_api_key FROM courier_settings LIMIT 1');
+        $hasProviderCol = $this->columnExists('courier_settings', 'fraud_checker_provider');
+        $hasFraudspyCol = $this->columnExists('courier_settings', 'fraudspy_api_key');
+
+        $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1') ?? [];
+        $provider = $hasProviderCol ? trim((string) ($settings['fraud_checker_provider'] ?? 'bdcourier')) : 'bdcourier';
+
+        if ($provider === 'fraudspy') {
+            $apiKey = $hasFraudspyCol ? trim((string) ($settings['fraudspy_api_key'] ?? '')) : '';
+            if ($apiKey === '') {
+                $apiKey = trim((string) ($settings['fraud_checker_api_key'] ?? ''));
+            }
+            if ($apiKey === '') {
+                throw new RuntimeException('FraudSpy API key is not configured in Developer Settings.');
+            }
+
+            $response = $this->request(
+                'POST',
+                'https://fraudspy.com.bd/api/v1/search',
+                [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                    'Origin' => $this->getAppOrigin(),
+                    'Authorization' => 'Bearer ' . $apiKey,
+                ],
+                ['phone' => $phone]
+            );
+
+            $payload = is_array($response['json']) ? $response['json'] : [];
+            if ($response['status'] < 200 || $response['status'] >= 300) {
+                $errorMsg = (string) ($payload['message'] ?? $payload['error'] ?? '');
+                if ($errorMsg === '') {
+                    $errorMsg = match ($response['status']) {
+                        401 => 'Invalid, expired, or missing FraudSpy API key.',
+                        422 => 'Invalid phone number format.',
+                        403 => 'No active FraudSpy subscription or subscription expired.',
+                        429 => 'FraudSpy daily limit exceeded.',
+                        default => 'FraudSpy request failed with HTTP ' . $response['status'] . '.',
+                    };
+                }
+                throw new RuntimeException($errorMsg);
+            }
+
+            return $this->mapFraudSpyResponse($payload, $phone);
+        }
+
+        // Default: BDCourier
         $apiKey = trim((string) ($settings['fraud_checker_api_key'] ?? ''));
         if ($apiKey === '') {
             throw new RuntimeException('Fraud Checker API key is not configured in Settings.');
@@ -393,6 +508,91 @@ final class CourierApi extends BaseService
         }
 
         return $this->mapFraudCheckResponse($payload, $phone);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function mapFraudSpyResponse(array $payload, string $phone): array
+    {
+        $rawCouriers = is_array($payload['couriers'] ?? null) ? $payload['couriers'] : [];
+        $couriers = [];
+
+        foreach ($rawCouriers as $key => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $total = (int) ($value['total'] ?? 0);
+            $successful = (int) ($value['successful'] ?? 0);
+            $returned = (int) ($value['returned'] ?? 0);
+            $ratio = $total > 0 ? round(($successful / $total) * 100, 2) : 0;
+
+            $couriers[] = [
+                'key' => (string) $key,
+                'name' => ucfirst((string) $key),
+                'logo' => '',
+                'totalParcel' => $total,
+                'successParcel' => $successful,
+                'cancelledParcel' => $returned,
+                'successRatio' => $ratio,
+            ];
+        }
+
+        usort($couriers, static function (array $left, array $right): int {
+            return ($right['totalParcel'] <=> $left['totalParcel']) ?: strcmp((string) $left['name'], (string) $right['name']);
+        });
+
+        $overall = is_array($payload['overall'] ?? null) ? $payload['overall'] : [];
+        $totalParcel = (int) ($overall['total'] ?? array_sum(array_column($couriers, 'totalParcel')));
+        $successParcel = (int) ($overall['delivered'] ?? array_sum(array_column($couriers, 'successParcel')));
+        $cancelledParcel = (int) ($overall['returned'] ?? array_sum(array_column($couriers, 'cancelledParcel')));
+        $successRatio = isset($overall['success_ratio'])
+            ? round((float) $overall['success_ratio'], 2)
+            : ($totalParcel > 0 ? round(($successParcel / $totalParcel) * 100, 2) : 0);
+
+        $summary = [
+            'totalParcel' => $totalParcel,
+            'successParcel' => $successParcel,
+            'cancelledParcel' => $cancelledParcel,
+            'successRatio' => $successRatio,
+        ];
+
+        $reports = [];
+        $fraudReportsData = is_array($payload['fraud_reports']['reports'] ?? null) ? $payload['fraud_reports']['reports'] : [];
+        foreach ($fraudReportsData as $report) {
+            if (!is_array($report)) {
+                continue;
+            }
+
+            $details = (string) ($report['complain'] ?? '');
+            if (!empty($report['categories']) && is_array($report['categories'])) {
+                $details .= ' [' . implode(', ', $report['categories']) . ']';
+            }
+
+            $reports[] = [
+                'id' => (string) ($report['id'] ?? ''),
+                'name' => (string) ($report['contact_name'] ?? ''),
+                'details' => $details,
+                'createdAt' => $this->toIso($report['reported_at'] ?? null) ?? (string) ($report['reported_at'] ?? ''),
+                'courierLogo' => '',
+                'courierName' => (string) ($report['courier'] ?? ''),
+            ];
+        }
+
+        usort($reports, static function (array $left, array $right): int {
+            return strcmp((string) ($right['createdAt'] ?? ''), (string) ($left['createdAt'] ?? ''));
+        });
+
+        return [
+            'status' => 'success',
+            'phone' => $phone,
+            'couriers' => $couriers,
+            'summary' => $summary,
+            'reports' => $reports,
+            'provider' => 'fraudspy',
+        ];
     }
 
     private function persistCustomerFraudSnapshot(string $customerId, string $phone, array $result): void
@@ -590,7 +790,9 @@ final class CourierApi extends BaseService
         $response = $this->request(
             'GET',
             $this->trimBaseUrl($params) . '/api/v2/orders/' . rawurlencode($consignmentId) . '/details',
-            $this->carryBeeHeaders($params)
+            $this->carryBeeHeaders($params),
+            null,
+            $this->requestTimeout($params)
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
@@ -671,6 +873,7 @@ final class CourierApi extends BaseService
 
         $mode = ($params['mode'] ?? '') === 'backfill' ? 'backfill' : 'incremental';
         $limit = max(1, min(500, (int) ($params['limit'] ?? ($mode === 'backfill' ? 100 : 250))));
+        $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
         $sql = "SELECT id, order_number, status, history, items, carrybee_consignment_id, created_at
                 FROM orders
                 WHERE deleted_at IS NULL
@@ -686,7 +889,7 @@ final class CourierApi extends BaseService
             $bindings[':cursor'] = $this->normalizeDateTimeInput((string) $params['cursorCreatedAt']);
         }
         $sql .= $mode === 'backfill' ? ' ORDER BY created_at ASC' : ' ORDER BY created_at DESC';
-        $sql .= ' LIMIT ' . $limit;
+        $sql .= ' LIMIT ' . $limit . ' OFFSET ' . $offset;
 
         $rows = $this->database->fetchAll($sql, $bindings);
         $statusCounts = [];
@@ -702,6 +905,7 @@ final class CourierApi extends BaseService
                     'clientSecret' => $clientSecret,
                     'clientContext' => $clientContext,
                     'consignmentId' => (string) ($row['carrybee_consignment_id'] ?? ''),
+                    'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
                     $errors[] = ['orderId' => $row['id'], 'orderNumber' => $row['order_number'], 'error' => $details['error'] ?? 'Unknown error'];
@@ -715,6 +919,7 @@ final class CourierApi extends BaseService
                 if (empty($statusInfo['rawStatus']) || $statusInfo['status'] === null) {
                     continue;
                 }
+                if ($statusInfo['status'] === 'Picked' && (string) ($row['status'] ?? '') === 'Picked') continue;
 
                 $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
                 $updates = [
@@ -826,7 +1031,9 @@ final class CourierApi extends BaseService
             [
                 'Api-Key' => trim((string) ($params['apiKey'] ?? '')),
                 'Secret-Key' => trim((string) ($params['secretKey'] ?? '')),
-            ]
+            ],
+            null,
+            $this->requestTimeout($params)
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
@@ -958,7 +1165,8 @@ final class CourierApi extends BaseService
                 'Authorization' => 'Basic ' . base64_encode($username . ':' . $password),
                 'paperflykey' => $paperflyKey,
             ],
-            ['ReferenceNumber' => $referenceNumber]
+            ['ReferenceNumber' => $referenceNumber],
+            $this->requestTimeout($params)
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
@@ -1164,6 +1372,8 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $username === '' || $password === '' || $paperflyKey === '') {
             return ['checked' => 0, 'updated' => 0];
         }
+        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         $rows = $this->database->fetchAll(
             "SELECT id, order_number, status, history, paperfly_tracking_number
@@ -1171,11 +1381,14 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND paperfly_tracking_number IS NOT NULL
                AND paperfly_tracking_number <> ''
-               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')
+               ORDER BY created_at ASC
+               LIMIT {$limit} OFFSET {$offset}"
         );
 
         $checked = 0;
         $updated = 0;
+        $failed = 0;
         foreach ($rows as $row) {
             $referenceNumber = trim((string) ($row['paperfly_tracking_number'] ?? ''));
             if ($referenceNumber === '') {
@@ -1193,9 +1406,11 @@ final class CourierApi extends BaseService
                 'password' => $password,
                 'paperflyKey' => $paperflyKey,
                 'referenceNumber' => $referenceNumber,
+                'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
             ]);
 
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
+                $failed += 1;
                 continue;
             }
 
@@ -1203,6 +1418,7 @@ final class CourierApi extends BaseService
             if (empty($statusInfo['status'])) {
                 continue;
             }
+            if ($statusInfo['status'] === 'Picked' && (string) ($row['status'] ?? '') === 'Picked') continue;
 
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
             $updates = ['history' => $history];
@@ -1228,7 +1444,7 @@ final class CourierApi extends BaseService
             $updated += 1;
         }
 
-        return ['checked' => $checked, 'updated' => $updated];
+        return ['checked' => $checked, 'updated' => $updated, 'failed' => $failed];
     }
 
     public function syncSteadfastDeliveryStatuses(array $params = []): array
@@ -1240,6 +1456,8 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $apiKey === '' || $secretKey === '') {
             return ['checked' => 0, 'updated' => 0];
         }
+        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         $rows = $this->database->fetchAll(
             "SELECT id, status, history, steadfast_consignment_id
@@ -1247,11 +1465,14 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND steadfast_consignment_id IS NOT NULL
                AND steadfast_consignment_id <> ''
-               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')
+               ORDER BY created_at ASC
+               LIMIT {$limit} OFFSET {$offset}"
         );
 
         $checked = 0;
         $updated = 0;
+        $failed = 0;
         foreach ($rows as $row) {
             $consignmentId = trim((string) ($row['steadfast_consignment_id'] ?? ''));
             if ($consignmentId === '') {
@@ -1264,8 +1485,10 @@ final class CourierApi extends BaseService
                 'apiKey' => $apiKey,
                 'secretKey' => $secretKey,
                 'consignmentId' => $consignmentId,
+                'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
             ]);
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
+                $failed += 1;
                 continue;
             }
 
@@ -1273,6 +1496,7 @@ final class CourierApi extends BaseService
             if (empty($statusInfo['rawStatus']) || empty($statusInfo['status'])) {
                 continue;
             }
+            if ($statusInfo['status'] === 'Picked' && (string) ($row['status'] ?? '') === 'Picked') continue;
 
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
             $updates = ['history' => $history];
@@ -1298,7 +1522,7 @@ final class CourierApi extends BaseService
             $updated += 1;
         }
 
-        return ['checked' => $checked, 'updated' => $updated];
+        return ['checked' => $checked, 'updated' => $updated, 'failed' => $failed];
     }
 
     /**
@@ -1308,6 +1532,8 @@ final class CourierApi extends BaseService
     public function syncExchangeConsignmentStatuses(array $params = []): array
     {
         $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1');
+        $limit = max(1, min(10, (int) ($params['limit'] ?? 5)));
+        $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
         $checked = 0;
         $updated = 0;
 
@@ -1322,7 +1548,8 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_steadfast_consignment_id IS NOT NULL
                    AND exchange_steadfast_consignment_id <> ''
-                   AND status IN ('Exchange processing', 'Exchange picked')"
+                   AND status IN ('Exchange processing', 'Exchange picked')
+                   ORDER BY created_at ASC LIMIT {$limit} OFFSET {$offset}"
             );
             foreach ($rows as $row) {
                 $consignmentId = trim((string) ($row['exchange_steadfast_consignment_id'] ?? ''));
@@ -1334,6 +1561,7 @@ final class CourierApi extends BaseService
                     'apiKey' => $steadfastApiKey,
                     'secretKey' => $steadfastSecretKey,
                     'consignmentId' => $consignmentId,
+                    'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1374,7 +1602,8 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_carrybee_consignment_id IS NOT NULL
                    AND exchange_carrybee_consignment_id <> ''
-                   AND status IN ('Exchange processing', 'Exchange picked')"
+                   AND status IN ('Exchange processing', 'Exchange picked')
+                   ORDER BY created_at ASC LIMIT {$limit} OFFSET {$offset}"
             );
             foreach ($rows as $row) {
                 $consignmentId = trim((string) ($row['exchange_carrybee_consignment_id'] ?? ''));
@@ -1387,6 +1616,7 @@ final class CourierApi extends BaseService
                     'clientSecret' => $carrybeeClientSecret,
                     'clientContext' => $carrybeeClientContext,
                     'consignmentId' => $consignmentId,
+                    'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1432,7 +1662,8 @@ final class CourierApi extends BaseService
                  WHERE deleted_at IS NULL
                    AND exchange_paperfly_tracking_number IS NOT NULL
                    AND exchange_paperfly_tracking_number <> ''
-                   AND status IN ('Exchange processing', 'Exchange picked')"
+                   AND status IN ('Exchange processing', 'Exchange picked')
+                   ORDER BY created_at ASC LIMIT {$limit} OFFSET {$offset}"
             );
             foreach ($rows as $row) {
                 $referenceNumber = trim((string) ($row['exchange_paperfly_tracking_number'] ?? ''));
@@ -1445,6 +1676,7 @@ final class CourierApi extends BaseService
                     'password' => $paperflyPassword,
                     'paperflyKey' => $paperflyKey,
                     'referenceNumber' => $referenceNumber,
+                    'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1544,7 +1776,8 @@ final class CourierApi extends BaseService
                      WHERE deleted_at IS NULL
                        AND exchange_pathao_consignment_id IS NOT NULL
                        AND exchange_pathao_consignment_id <> ''
-                       AND status IN ('Exchange processing', 'Exchange picked')"
+                       AND status IN ('Exchange processing', 'Exchange picked')
+                       ORDER BY created_at ASC LIMIT {$limit} OFFSET {$offset}"
                 );
                 foreach ($rows as $row) {
                     $consignmentId = trim((string) ($row['exchange_pathao_consignment_id'] ?? ''));
@@ -1555,6 +1788,7 @@ final class CourierApi extends BaseService
                         'baseUrl' => $pathaoBaseUrl,
                         'accessToken' => $pathaoAccessToken,
                         'consignmentId' => $consignmentId,
+                        'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
                     ]);
                     if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1854,7 +2088,9 @@ final class CourierApi extends BaseService
             [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
-            ]
+            ],
+            null,
+            $this->requestTimeout($params)
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
@@ -1912,6 +2148,8 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $clientId === '' || $clientSecret === '') {
             return ['checked' => 0, 'updated' => 0];
         }
+        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         // Get or refresh the access token
         $accessToken = trim((string) ($settings['pathao_access_token'] ?? ''));
@@ -1964,11 +2202,14 @@ final class CourierApi extends BaseService
              WHERE deleted_at IS NULL
                AND pathao_consignment_id IS NOT NULL
                AND pathao_consignment_id <> ''
-               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')"
+               AND status IN ('On Hold', 'Processing', 'Courier assigned', 'Picked')
+               ORDER BY created_at ASC
+               LIMIT {$limit} OFFSET {$offset}"
         );
 
         $checked = 0;
         $updated = 0;
+        $failed = 0;
         foreach ($rows as $row) {
             $consignmentId = trim((string) ($row['pathao_consignment_id'] ?? ''));
             if ($consignmentId === '') {
@@ -1980,9 +2221,11 @@ final class CourierApi extends BaseService
                 'baseUrl' => $baseUrl,
                 'accessToken' => $accessToken,
                 'consignmentId' => $consignmentId,
+                'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
             ]);
 
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
+                $failed += 1;
                 continue;
             }
 
@@ -1999,6 +2242,7 @@ final class CourierApi extends BaseService
             if (empty($statusInfo['status'])) {
                 continue;
             }
+            if ($statusInfo['status'] === 'Picked' && (string) ($row['status'] ?? '') === 'Picked') continue;
 
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
             $updates = ['history' => $history];
@@ -2024,7 +2268,7 @@ final class CourierApi extends BaseService
             $updated += 1;
         }
 
-        return ['checked' => $checked, 'updated' => $updated];
+        return ['checked' => $checked, 'updated' => $updated, 'failed' => $failed];
     }
 
     /**
@@ -2034,7 +2278,7 @@ final class CourierApi extends BaseService
      * @param array<string, string> $headers
      * @return array<string, mixed>
      */
-    public function handleWebhook(string $provider, string $rawBody, array $headers): array
+    public function handleWebhook(string $provider, string $rawBody, array $headers, bool $trustedReplay = false): array
     {
         $provider = strtolower(trim($provider));
         if (!in_array($provider, ['carrybee', 'paperfly', 'steadfast', 'pathao'], true)) {
@@ -2060,7 +2304,7 @@ final class CourierApi extends BaseService
         }
 
         $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1') ?? [];
-        $this->verifyWebhookRequest($provider, $headers, $settings);
+        if (!$trustedReplay) $this->verifyWebhookRequest($provider, $headers, $settings);
 
         try {
             $payload = json_decode($rawBody, true, 64, JSON_THROW_ON_ERROR);
@@ -2176,6 +2420,46 @@ final class CourierApi extends BaseService
         });
     }
 
+    /**
+     * Retry authenticated webhook payloads that arrived before their local
+     * order identifiers were available. This is CLI-only so the trusted replay
+     * path cannot be invoked through the public action dispatcher.
+     *
+     * @return array{checked:int,matched:int,updated:int,failed:int}
+     */
+    public function reconcileUnmatchedWebhookEvents(array $params = []): array
+    {
+        if (PHP_SAPI !== 'cli') throw new RuntimeException('Courier webhook reconciliation is CLI-only.');
+        if (!$this->tableExists('courier_webhook_events')) return ['checked' => 0, 'matched' => 0, 'updated' => 0, 'failed' => 0];
+
+        $provider = strtolower(trim((string) ($params['provider'] ?? '')));
+        if (!in_array($provider, ['carrybee', 'paperfly', 'steadfast', 'pathao'], true)) {
+            throw new RuntimeException('Unsupported courier webhook reconciliation provider.');
+        }
+        $limit = max(1, min(10, (int) ($params['limit'] ?? 3)));
+        $rows = $this->database->fetchAll(
+            "SELECT payload FROM courier_webhook_events
+             WHERE provider = :provider AND processing_status = 'unmatched'
+             ORDER BY COALESCE(processed_at, received_at) ASC, received_at ASC
+             LIMIT {$limit}",
+            [':provider' => $provider]
+        );
+        $matched = 0;
+        $updated = 0;
+        $failed = 0;
+        foreach ($rows as $row) {
+            try {
+                $result = $this->handleWebhook($provider, (string) ($row['payload'] ?? ''), [], true);
+                if (!empty($result['orderMatched'])) $matched += 1;
+                if (!empty($result['orderUpdated'])) $updated += 1;
+            } catch (\Throwable $exception) {
+                $failed += 1;
+                error_log('Stored courier webhook reconciliation failed: ' . $exception->getMessage());
+            }
+        }
+        return ['checked' => count($rows), 'matched' => $matched, 'updated' => $updated, 'failed' => $failed];
+    }
+
     /** @param array<string, string> $headers @param array<string, mixed> $settings */
     private function verifyWebhookRequest(string $provider, array $headers, array $settings): void
     {
@@ -2184,8 +2468,23 @@ final class CourierApi extends BaseService
             $expected = trim((string) ($settings['carrybee_webhook_signature'] ?? ''));
             $provided = $this->webhookHeader($headers, 'X-CB-Webhook-Integration-Header');
         } elseif ($provider === 'steadfast') {
-            $expected = trim((string) ($settings['steadfast_api_key'] ?? ''));
+            $apiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
+            $secretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
+            $expected = '';
             $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
+            if ($provided !== '') {
+                if ($apiKey !== '' && hash_equals($apiKey, trim($provided))) return;
+                if ($secretKey !== '' && hash_equals($secretKey, trim($provided))) return;
+            }
+            // Steadfast installations/proxies do not all preserve the
+            // Authorization header. Compare API-key aliases to the API key and
+            // Secret-Key to the separately configured secret.
+            foreach (['Api-Key', 'X-Api-Key', 'X-Steadfast-Api-Key'] as $headerName) {
+                $candidate = $this->webhookHeader($headers, $headerName);
+                if ($apiKey !== '' && $candidate !== '' && hash_equals($apiKey, trim($candidate))) return;
+            }
+            $candidateSecret = $this->webhookHeader($headers, 'Secret-Key');
+            if ($secretKey !== '' && $candidateSecret !== '' && hash_equals($secretKey, trim($candidateSecret))) return;
         } elseif ($provider === 'paperfly') {
             $expected = trim((string) ($settings['paperfly_webhook_secret'] ?? ''));
             $provided = '';
@@ -2335,7 +2634,11 @@ final class CourierApi extends BaseService
             return null;
         }
         if ($provider === 'steadfast' && $event === 'tracking_update') {
-            return null;
+            // Tracking-only notifications have no status and must remain
+            // reference data. A tracking_update carrying an explicit status,
+            // however, is a real state transition and must be applied.
+            $statusOnly = trim($status);
+            if ($statusOnly === '' || $statusOnly === 'tracking_update') return null;
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
@@ -2368,9 +2671,25 @@ final class CourierApi extends BaseService
         $conditions = [];
         $bindings = [];
         if ($consignmentId !== '') {
-            $conditions[] = "({$columns[0]} = :consignment_main OR {$columns[1]} = :consignment_exchange)";
-            $bindings[':consignment_main'] = $consignmentId;
-            $bindings[':consignment_exchange'] = $consignmentId;
+            // A supplied consignment is the strongest identity. Never let a
+            // reused/incorrect merchant reference select a different order.
+            $exact = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE deleted_at IS NULL
+                 AND (' . $columns[0] . ' = :consignment_main OR ' . $columns[1] . ' = :consignment_exchange)
+                 ORDER BY created_at DESC LIMIT 1 FOR UPDATE',
+                [':consignment_main' => $consignmentId, ':consignment_exchange' => $consignmentId]
+            );
+            if ($exact !== null) {
+                $mainId = trim((string) ($exact[$columns[0]] ?? ''));
+                $exchangeId = trim((string) ($exact[$columns[1]] ?? ''));
+                $isExchange = $exchangeId === $consignmentId && $mainId !== $consignmentId;
+                if ($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange') $isExchange = true;
+                $exact['isExchange'] = $isExchange;
+                return $exact;
+            }
+            // No exact consignment match: retain the event as unmatched until
+            // the provider identifier is stored, rather than guessing.
+            return null;
         }
         if ($merchantReference !== '') {
             $conditions[] = '(order_number = :merchant_order_number OR id = :merchant_order_id)';
