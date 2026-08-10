@@ -1094,8 +1094,23 @@ final class MasterDataApi extends BaseService
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
         $payload = [];
 
+        $existing = $this->database->fetchOne(
+            'SELECT id, name FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => $id]
+        );
+        if ($existing === null) {
+            throw new RuntimeException('Product not found.');
+        }
+
         if (array_key_exists('name', $updates)) {
-            $payload['name'] = trim((string) $updates['name']);
+            $nextName = trim((string) $updates['name']);
+            if (
+                $this->productIdentityNumbers((string) ($existing['name'] ?? '')) !== $this->productIdentityNumbers($nextName)
+                && $this->productHasInventoryHistory($id)
+            ) {
+                throw new RuntimeException('This product is already used by inventory-bearing orders or bills. Create a new product instead of changing its size, quantity, or other numeric identity.');
+            }
+            $payload['name'] = $nextName;
         }
         if (array_key_exists('slug', $updates)) {
             $slugValue = trim((string) ($updates['slug'] ?? ''));
@@ -1133,8 +1148,55 @@ final class MasterDataApi extends BaseService
     public function deleteProduct(array $params): array
     {
         $this->currentUser();
-        $this->softDelete('products', trim((string) ($params['id'] ?? '')));
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($this->productHasInventoryHistory($id)) {
+            throw new RuntimeException('This product is used by inventory-bearing orders or bills and cannot be deleted. Keep it for history and create a replacement product if needed.');
+        }
+        $this->softDelete('products', $id);
         return ['success' => true];
+    }
+
+    /** @return array<int, string> */
+    private function productIdentityNumbers(string $name): array
+    {
+        $normalized = strtr($name, [
+            '০' => '0', '১' => '1', '২' => '2', '৩' => '3', '৪' => '4',
+            '৫' => '5', '৬' => '6', '৭' => '7', '৮' => '8', '৯' => '9',
+        ]);
+        preg_match_all('/\d+/u', $normalized, $matches);
+        return array_map(static fn(string $value): string => ltrim($value, '0') ?: '0', $matches[0] ?? []);
+    }
+
+    private function productHasInventoryHistory(string $productId): bool
+    {
+        if ($productId === '') {
+            return false;
+        }
+
+        $bindings = [':product_id' => $productId];
+        $order = $this->database->fetchOne(
+            "SELECT id FROM orders
+             WHERE deleted_at IS NULL
+               AND status IN ('Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed')
+               AND JSON_VALID(items)
+               AND JSON_SEARCH(items, 'one', :product_id, NULL, '$[*].productId') IS NOT NULL
+             LIMIT 1",
+            $bindings
+        );
+        if ($order !== null) {
+            return true;
+        }
+
+        $bill = $this->database->fetchOne(
+            "SELECT id FROM bills
+             WHERE deleted_at IS NULL
+               AND status IN ('Received', 'Paid')
+               AND JSON_VALID(items)
+               AND JSON_SEARCH(items, 'one', :product_id, NULL, '$[*].productId') IS NOT NULL
+             LIMIT 1",
+            $bindings
+        );
+        return $bill !== null;
     }
 
     public function fetchAccounts(array $params = []): array
