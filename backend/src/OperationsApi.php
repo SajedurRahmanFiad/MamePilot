@@ -10698,21 +10698,9 @@ SQL;
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
             $status = trim((string) ($orderRow['status'] ?? ''));
-            $historyKey = $outcome === 'Delivered' ? 'completed' : 'returned';
             $expectedStatus = $outcome === 'Delivered' ? 'Completed' : 'Returned';
-            $automaticHistory = strtolower(trim((string) ($history[$historyKey] ?? '')));
-            $automaticMarker = $outcome === 'Delivered'
-                ? 'marked delivered automatically from'
-                : 'marked returned automatically from';
-            $knownCourier = false;
-            foreach (['carrybee', 'paperfly', 'steadfast', 'pathao'] as $courier) {
-                if (str_contains($automaticHistory, $courier)) {
-                    $knownCourier = true;
-                    break;
-                }
-            }
-            if ($status !== $expectedStatus || !str_contains($automaticHistory, $automaticMarker) || !$knownCourier) {
-                throw new RuntimeException('Completion expenses can only be added here after a courier automatically marks the order delivered or returned.');
+            if ($status !== $expectedStatus) {
+                throw new RuntimeException('Completion expenses can only be added to orders with the matching completed or returned status.');
             }
 
             if ($outcome === 'Delivered') {

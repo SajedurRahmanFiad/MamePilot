@@ -702,12 +702,20 @@ const OrderDetails: React.FC = () => {
     'orders.markReturnedAny',
   ) : false;
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
-  const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
-  const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
-    ? canMarkCurrentOrderCompleted
-    : courierAutoFinalizedOutcome === 'Returned'
-      ? canMarkCurrentOrderReturned
-      : false;
+  const courierCompletionExpenseOutcome = order
+    ? order.status === OrderStatus.COMPLETED
+      ? 'Delivered'
+      : order.status === OrderStatus.RETURNED
+        ? 'Returned'
+        : null
+    : null;
+  const canAddCourierCompletionExpense = order
+    ? order.status === OrderStatus.COMPLETED
+      ? canMarkCurrentOrderCompleted
+      : order.status === OrderStatus.RETURNED
+        ? canMarkCurrentOrderReturned
+        : false
+    : false;
   const canCancelCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny') : false;
   const canDeleteCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny') : false;
   const canProcessReturnExchange = order ? canAccessRecord(order.createdBy, 'orders.processReturnExchangeOwn', 'orders.processReturnExchangeAny') : false;
@@ -1028,7 +1036,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const getNextStatusTransitionCTA = () => {
-    if (canAddCourierCompletionExpense && courierAutoFinalizedOutcome) {
+    if (canAddCourierCompletionExpense && courierCompletionExpenseOutcome) {
       return (
         <div className="pt-4">
           <button
@@ -1036,7 +1044,7 @@ const OrderDetails: React.FC = () => {
             onClick={openCourierCompletionExpense}
             className={`w-full rounded-xl py-3 text-sm font-bold text-white transition ${theme.colors.primary[600]} hover:${theme.colors.primary[700]}`}
           >
-            {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
+            {courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
           </button>
         </div>
       );
@@ -1346,12 +1354,12 @@ const OrderDetails: React.FC = () => {
   };
 
   const openCourierCompletionExpense = () => {
-    if (!order || !courierAutoFinalizedOutcome) return;
+    if (!order || !courierCompletionExpenseOutcome) return;
     const baseForm = createCompletionForm(order);
     setCompletionForm({
       ...baseForm,
-      outcome: courierAutoFinalizedOutcome,
-      amount: courierAutoFinalizedOutcome === 'Returned' ? order.shipping : 0,
+      outcome: courierCompletionExpenseOutcome,
+      amount: courierCompletionExpenseOutcome === 'Returned' ? order.shipping : 0,
       refundAmount: 0,
     });
     setCompletionExpenseOnly(true);
@@ -1671,9 +1679,9 @@ const OrderDetails: React.FC = () => {
                         {ICONS.Check} Complete Order
                       </button>
                     )}
-                    {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
+                    {canAddCourierCompletionExpense && courierCompletionExpenseOutcome && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openCourierCompletionExpense(); setIsActionOpen(false); }}>
-                        {ICONS.Plus} {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
+                        {ICONS.Plus} {courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
                       </button>
                     )}
                     {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED) && (

@@ -799,7 +799,11 @@ const Orders: React.FC = () => {
   };
 
   const openCourierCompletionExpense = (order: Order) => {
-    const outcome = getCourierAutoFinalizedOutcome(order);
+    const outcome = order.status === OrderStatus.COMPLETED
+      ? 'Delivered'
+      : order.status === OrderStatus.RETURNED
+        ? 'Returned'
+        : null;
     if (!outcome) return;
     setCompletionForm({
       ...createCompletionForm(order),
@@ -1402,10 +1406,14 @@ const Orders: React.FC = () => {
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
                   (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
-                const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
-                const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
+                const courierCompletionExpenseOutcome = order.status === OrderStatus.COMPLETED
+                  ? 'Delivered'
+                  : order.status === OrderStatus.RETURNED
+                    ? 'Returned'
+                    : null;
+                const canAddCourierCompletionExpense = order.status === OrderStatus.COMPLETED
                   ? canDeliverOrder(order)
-                  : courierAutoFinalizedOutcome === 'Returned'
+                  : order.status === OrderStatus.RETURNED
                     ? canReturnOrder(order)
                     : false;
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
@@ -1523,9 +1531,9 @@ const Orders: React.FC = () => {
                               {canFinalizeSelectedOrder && (
                                 <button onClick={() => { openCompletionModal(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">{ICONS.Check} Complete Order</button>
                               )}
-                              {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
+                              {canAddCourierCompletionExpense && courierCompletionExpenseOutcome && (
                                 <button onClick={() => { openCourierCompletionExpense(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700">
-                                  {ICONS.Plus} {courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
+                                  {ICONS.Plus} {courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
                                 </button>
                               )}
                               {canAddPaymentSelectedOrder && (
@@ -1577,8 +1585,8 @@ const Orders: React.FC = () => {
                               {canFinalizeSelectedOrder && (
                                 <button onClick={() => openCompletionModal(order)} className="p-2.5 text-gray-400 hover:text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Complete Order">{ICONS.Check}</button>
                               )}
-                              {canAddCourierCompletionExpense && courierAutoFinalizedOutcome && (
-                                <button onClick={() => openCourierCompletionExpense(order)} className="p-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all" title={courierAutoFinalizedOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}>{ICONS.Plus}</button>
+                              {canAddCourierCompletionExpense && courierCompletionExpenseOutcome && (
+                                <button onClick={() => openCourierCompletionExpense(order)} className="p-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all" title={courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}>{ICONS.Plus}</button>
                               )}
                           {canAddPaymentSelectedOrder && (
                             <button onClick={() => openPayment(order)} className="p-2.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-xl transition-all" title="Add Payment">{ICONS.Banking}</button>
