@@ -20,15 +20,16 @@ VALUES
   ('box', 'Box', 'box', NULL),
 ON DUPLICATE KEY UPDATE
   id = id;
-INSERT INTO categories (id, name, type, color, parent_id)
+INSERT INTO categories (id, name, type, color, parent_id, is_system)
 VALUES
-  ('income_sales', 'Sales', 'Income', '#10B981', NULL),
-  ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL),
-  ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL),
-  ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL),
-  ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL),
-  ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL),
-  ('product_other', 'General', 'Product', '#8B5CF6', NULL)
+  ('income_sales', 'Sales', 'Income', '#10B981', NULL, 1),
+  ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL, 0),
+  ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL, 1),
+  ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL, 0),
+  ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL, 1),
+  ('expense_withdrawal', 'Withdrawal', 'Expense', '#DB2777', NULL, 1),
+  ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL, 0),
+  ('product_other', 'General', 'Product', '#8B5CF6', NULL, 0)
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO company_settings (id, name, phone, email, address, logo)

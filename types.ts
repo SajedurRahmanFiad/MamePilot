@@ -849,7 +849,7 @@ export interface Account {
 export interface Transaction {
   id: string;
   date: string;
-  type: 'Income' | 'Expense' | 'Transfer' | 'Withdraw';
+  type: 'Income' | 'Expense' | 'Transfer';
   category: string;
   createdAt?: string;
   deletedAt?: string;
@@ -1180,7 +1180,7 @@ export interface Settings {
   categories: {
     id: string;
     name: string;
-    type: 'Income' | 'Expense' | 'Withdraw' | 'Product' | 'Other';
+    type: 'Income' | 'Expense' | 'Product' | 'Other';
     color: string;
     parentId?: string;
     isSystem?: boolean;

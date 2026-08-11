@@ -345,7 +345,7 @@ const Orders: React.FC = () => {
   const orders = ordersPage?.data ?? [];
 
   const { data: companySettings } = useCompanySettings();
-  const { data: allMetaAds = [] } = useMetaAdOptions(true);
+  const { data: allMetaAds } = useMetaAdOptions(true);
   const { data: orderFilterOpts } = useOrderFilterOptions();
 
   const sourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => {

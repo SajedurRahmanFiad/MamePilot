@@ -3278,6 +3278,9 @@ CREATE TABLE IF NOT EXISTS shopify_webhook_events (
   CONSTRAINT fk_shopify_webhook_events_store FOREIGN KEY (store_id) REFERENCES shopify_stores(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Migration: 2026-08-11_withdrawal_category.sql
+-- Skipped data-mutating statement from 2026-08-11_withdrawal_category.sql.
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_modify_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

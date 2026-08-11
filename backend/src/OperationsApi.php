@@ -93,7 +93,7 @@ final class OperationsApi extends BaseService
                 continue;
             }
 
-            if ($type === 'Expense' || $type === 'Withdraw') {
+            if ($type === 'Expense') {
                 $deltas[(string) $accountId] = ($deltas[(string) $accountId] ?? 0.0) + ($effect === 'apply' ? -$amount : $amount);
                 continue;
             }
@@ -134,7 +134,7 @@ final class OperationsApi extends BaseService
             return -$amount;
         }
 
-        if (($type === 'Expense' || $type === 'Withdraw') && $accountRowId === $normalizedAccountId) {
+        if ($type === 'Expense' && $accountRowId === $normalizedAccountId) {
             return $amount;
         }
 
@@ -187,7 +187,7 @@ final class OperationsApi extends BaseService
     private function assertTransactionHasAvailableBalance(array $transaction, float $balanceAdjustment = 0.0): void
     {
         $type = trim((string) ($transaction['type'] ?? ''));
-        if (!in_array($type, ['Expense', 'Transfer', 'Withdraw'], true)) {
+        if (!in_array($type, ['Expense', 'Transfer'], true)) {
             return;
         }
 
@@ -6525,24 +6525,12 @@ final class OperationsApi extends BaseService
         $bindings = [];
 
         if (!empty($filters['type'])) {
-            $typeFilter = trim((string) $filters['type']);
-            if ($typeFilter === 'Withdraw') {
-                $where .= ' AND twr.category IN (SELECT id FROM categories WHERE type = :withdraw_category_type)';
-                $bindings[':withdraw_category_type'] = 'Withdraw';
-            } else {
-                $where .= ' AND twr.type = :type';
-                $bindings[':type'] = $typeFilter;
-            }
+            $where .= ' AND twr.type = :type';
+            $bindings[':type'] = trim((string) $filters['type']);
         }
         if (!empty($filters['typeNot'])) {
-            $typeNotFilter = trim((string) $filters['typeNot']);
-            if ($typeNotFilter === 'Withdraw') {
-                $where .= ' AND twr.category NOT IN (SELECT id FROM categories WHERE type = :withdraw_category_type_not)';
-                $bindings[':withdraw_category_type_not'] = 'Withdraw';
-            } else {
-                $where .= ' AND twr.type <> :type_not';
-                $bindings[':type_not'] = $typeNotFilter;
-            }
+            $where .= ' AND twr.type <> :type_not';
+            $bindings[':type_not'] = trim((string) $filters['typeNot']);
         }
         if (!empty($filters['category'])) {
             $where .= ' AND twr.category = :category';
@@ -10699,6 +10687,14 @@ SQL;
             if ($orderRow === null) {
                 throw new RuntimeException('Order not found.');
             }
+            if ($outcome === 'Delivered') {
+                $courierSettings = $this->database->fetchOne(
+                    'SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1'
+                ) ?? [];
+                if ((bool) ($courierSettings['automatically_deduct_shipping_costs'] ?? false)) {
+                    throw new RuntimeException('Courier shipping costs are recorded automatically for delivered orders.');
+                }
+            }
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
             $status = trim((string) ($orderRow['status'] ?? ''));
@@ -10771,9 +10767,19 @@ SQL;
             ], (string) $actor['id'], $actor);
 
             $expenseLabel = $outcome === 'Delivered' ? 'Additional delivery expense' : 'Return expense';
+            $actorName = trim((string) ($actor['name'] ?? 'A user'));
+            $actorDisplay = $actorName !== '' ? $actorName : 'A user';
+            $auditTime = $recordedAt;
+            try {
+                $recordedUtc = new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC'));
+                $recordedLocal = $recordedUtc->setTimezone(new \DateTimeZone($this->config->timezone()));
+                $auditTime = $recordedLocal->format('j M Y \a\t g:i A');
+            } catch (\Throwable $ignored) {
+                $auditTime = $recordedAt;
+            }
             $history['expense'] = $this->appendHistoryText(
                 (string) ($history['expense'] ?? ''),
-                $expenseLabel . ' recorded after automatic courier completion: ' . $this->formatMoney($amount) . '.'
+                $expenseLabel . ' recorded manually by ' . $actorDisplay . ' on ' . $auditTime . ': ' . $this->formatMoney($amount) . '.'
                     . ($note !== '' ? ' Note: ' . $note : '')
             );
             $this->touchUpdate('orders', $orderId, ['history' => $this->jsonEncode($history)]);

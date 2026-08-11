@@ -42,7 +42,7 @@ const Transactions: React.FC = () => {
     from: searchParams.get('from') || '',
     to: searchParams.get('to') || '',
   };
-  const urlTypeTab = (searchParams.get('type') as 'All' | 'Income' | 'Expense' | 'Transfer' | 'Withdraw' | null) || 'All';
+  const urlTypeTab = (searchParams.get('type') as 'All' | 'Income' | 'Expense' | 'Transfer' | null) || 'All';
   const urlTypeNotFilter = searchParams.get('typeNot') || '';
   const urlCreatedByFilter = searchParams.get('createdBy') || 'all';
   const urlCreatedByNotFilter = searchParams.get('createdByNot') || '';
@@ -61,7 +61,7 @@ const Transactions: React.FC = () => {
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [filterRange, setFilterRange] = useState<FilterRange>(urlFilterRange);
   const [customDates, setCustomDates] = useState(urlCustomDates);
-  const [typeTab, setTypeTab] = useState<'All' | 'Income' | 'Expense' | 'Transfer' | 'Withdraw'>(urlTypeTab);
+  const [typeTab, setTypeTab] = useState<'All' | 'Income' | 'Expense' | 'Transfer'>(urlTypeTab);
   const [createdByFilter, setCreatedByFilter] = useState<string>(urlCreatedByFilter);
   const [createdByNotFilter, setCreatedByNotFilter] = useState<string>(urlCreatedByNotFilter);
   const [categoryFilter, setCategoryFilter] = useState<string>(urlCategoryFilter);
@@ -189,7 +189,7 @@ const Transactions: React.FC = () => {
   const categoryOptions = useMemo(() => {
     const optionMap = new Map<string, string>();
     const categoryTypes = effectiveTypeTab === 'All'
-      ? ['Income', 'Expense', 'Withdraw']
+      ? ['Income', 'Expense']
       : effectiveTypeTab === 'Transfer'
         ? []
         : [effectiveTypeTab];
@@ -305,7 +305,7 @@ const Transactions: React.FC = () => {
       {
         type: 'Type',
         operators: ['=', '≠'] as const,
-        values: ['Income', 'Expense', 'Transfer', 'Withdraw'],
+        values: ['Income', 'Expense', 'Transfer'],
       },
       {
         type: 'Account',
@@ -504,7 +504,7 @@ const Transactions: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [highlightedTransactionId, searchParams, setSearchParams, showTransactionsTableLoading]);
 
-  const handleTypeTabChange = (type: 'All' | 'Income' | 'Expense' | 'Transfer' | 'Withdraw') => {
+  const handleTypeTabChange = (type: 'All' | 'Income' | 'Expense' | 'Transfer') => {
     setPage(1);
     setTypeTab(type);
   };
@@ -707,7 +707,7 @@ const Transactions: React.FC = () => {
           const typeEqFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');
           const typeNeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '≠');
           if (typeEqFilter) {
-            setTypeTab(typeEqFilter.value as 'All' | 'Income' | 'Expense' | 'Transfer' | 'Withdraw');
+            setTypeTab(typeEqFilter.value as 'All' | 'Income' | 'Expense' | 'Transfer');
             setTypeNotFilter('');
           } else if (typeNeFilter) {
             setTypeTab('All');

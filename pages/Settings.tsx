@@ -3059,7 +3059,6 @@ const SettingsPage: React.FC = () => {
                 >
                   <option value="Income">Income</option>
                   <option value="Expense">Expense</option>
-                  <option value="Withdraw">Withdraw</option>
                   <option value="Product">Product</option>
                 </select>
               </div>
