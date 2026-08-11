@@ -536,7 +536,7 @@ final class AgentToolRegistry
 
         if (in_array($action, ['fetchOrders', 'fetchCustomers', 'fetchCustomersMini', 'fetchVendors', 'fetchProductsMini', 'fetchAccounts', 'fetchTransactions', 'fetchPayrollEmployees', 'fetchEmployeeWalletCards', 'fetchMyWallet'], true)) return $strictObject();
         if ($action === 'fetchProducts') return $strictObject(['category' => ['type' => 'string']]);
-        if ($action === 'fetchCategories') return $strictObject(['type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Product', 'Other']]]);
+        if ($action === 'fetchCategories') return $strictObject(['type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Withdraw', 'Product', 'Other']]]);
         if ($action === 'fetchUnits') return $strictObject();
         if ($action === 'fetchLeadsPage') return $strictObject(array_merge($pageFields, [
             'status' => ['type' => 'string'], 'channel' => ['type' => 'string', 'enum' => ['messenger', 'whatsapp']],
@@ -697,7 +697,7 @@ final class AgentToolRegistry
             'openingBalance' => ['type' => 'number'], 'currentBalance' => ['type' => 'number'],
         ], ['name', 'type']);
         if ($action === 'createTransaction') return $strictObject([
-            'type' => ['type' => 'string', 'enum' => ['Income', 'Expense']], 'category' => ['type' => 'string', 'minLength' => 1],
+            'type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Withdraw']], 'category' => ['type' => 'string', 'minLength' => 1],
             'accountId' => ['type' => 'string', 'minLength' => 1], 'amount' => ['type' => 'number', 'exclusiveMinimum' => 0],
             'date' => ['type' => 'string'], 'description' => ['type' => 'string'], 'paymentMethod' => ['type' => 'string'],
             'referenceId' => ['type' => 'string'], 'contactId' => ['type' => 'string'],
@@ -707,7 +707,7 @@ final class AgentToolRegistry
             'amount' => ['type' => 'number', 'exclusiveMinimum' => 0], 'date' => ['type' => 'string'], 'description' => ['type' => 'string'],
         ], ['accountId', 'toAccountId', 'amount']);
         if ($action === 'createCategory') return $strictObject([
-            'name' => ['type' => 'string', 'minLength' => 1], 'type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Product', 'Other']],
+            'name' => ['type' => 'string', 'minLength' => 1], 'type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Withdraw', 'Product', 'Other']],
             'color' => ['type' => 'string'], 'parentId' => ['type' => 'string'],
         ], ['name', 'type']);
         if ($action === 'createUnit') return $strictObject([
@@ -783,7 +783,7 @@ final class AgentToolRegistry
         if ($action === 'updateTransaction') return $strictObject([
             'id' => ['type' => 'string', 'minLength' => 1],
             'updates' => ['type' => 'object', 'properties' => [
-                'date' => ['type' => 'string'], 'type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Transfer']],
+                'date' => ['type' => 'string'], 'type' => ['type' => 'string', 'enum' => ['Income', 'Expense', 'Transfer', 'Withdraw']],
                 'category' => ['type' => 'string'], 'accountId' => ['type' => 'string'], 'toAccountId' => ['type' => 'string'],
                 'amount' => ['type' => 'number', 'exclusiveMinimum' => 0], 'description' => ['type' => 'string'],
                 'referenceId' => ['type' => 'string'], 'contactId' => ['type' => 'string'], 'paymentMethod' => ['type' => 'string'],

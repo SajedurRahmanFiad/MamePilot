@@ -703,10 +703,8 @@ const OrderDetails: React.FC = () => {
   ) : false;
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const courierAutoFinalizedOutcome = getCourierAutoFinalizedOutcome(order);
-  const automaticCourierExpenseEnabled = courierSettings?.automaticallyDeductShippingCosts ?? false;
-  const courierAutomaticExpenseRecorded = order?.courierAutomaticExpenseRecorded ?? false;
   const canAddCourierCompletionExpense = courierAutoFinalizedOutcome === 'Delivered'
-    ? !(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded) && canMarkCurrentOrderCompleted
+    ? canMarkCurrentOrderCompleted
     : courierAutoFinalizedOutcome === 'Returned'
       ? canMarkCurrentOrderReturned
       : false;

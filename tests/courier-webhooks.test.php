@@ -382,21 +382,30 @@ try {
     ) ?? [])['total'] ?? 0);
     courierWebhookAssert($carryPaymentCountAfterRetry === 1, 'CarryBee retry duplicated the automatic payment.');
 
-    try {
-        $operations->addCourierCompletionExpense([
-            'orderId' => $carryAutoId,
-            'outcome' => 'Delivered',
-            'date' => gmdate('c'),
-            'additionalExpenseAmount' => 1,
-            'additionalExpenseCategoryId' => 'expense_shipping',
-        ]);
-        throw new RuntimeException('Manual delivered-order expense remained available while automation was enabled.');
-    } catch (RuntimeException $exception) {
-        courierWebhookAssert(
-            str_contains(strtolower($exception->getMessage()), 'automatically'),
-            'Manual delivered-order expense was rejected for the wrong reason.'
-        );
-    }
+    $operations->addCourierCompletionExpense([
+        'orderId' => $carryAutoId,
+        'outcome' => 'Delivered',
+        'date' => gmdate('c'),
+        'additionalExpenseAmount' => 1,
+        'additionalExpenseCategoryId' => 'expense_shipping',
+    ]);
+    $manualDeliveredExpense = $database->fetchOne(
+        "SELECT * FROM transactions
+         WHERE reference_id = :order_id AND type = 'Expense'
+           AND description LIKE 'Additional delivery expense for Order #%'
+           AND amount = 1.00
+           AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC LIMIT 1",
+        [':order_id' => $carryAutoId]
+    );
+    courierWebhookAssert(
+        $manualDeliveredExpense !== null,
+        'Manual delivered-order expense was not recorded when courier automation was enabled.'
+    );
+    courierWebhookAssert(
+        abs((float) ($manualDeliveredExpense['amount'] ?? 0) - 1.00) < 0.001,
+        'Manual delivered-order expense did not preserve the requested amount.'
+    );
 
     $manualReturnId = 'cwh-manual-return-' . $stamp;
     $manualReturnNumber = 'CWH-MANUAL-RETURN-' . $stamp;
@@ -835,10 +844,10 @@ try {
     courierWebhookAssert(str_contains($courierScheduler, 'process_courier_statuses.php'), 'Courier fallback worker is not installed by the scheduler.');
     $orderDetails = (string) file_get_contents($root . '/pages/OrderDetails.tsx');
     $ordersPage = (string) file_get_contents($root . '/pages/Orders.tsx');
-    courierWebhookAssert(str_contains($orderDetails, 'courierAutomaticExpenseRecorded'), 'Order Details does not check if automatic expense was recorded.');
-    courierWebhookAssert(str_contains($ordersPage, 'courierAutomaticExpenseRecorded'), 'Orders list does not check if automatic expense was recorded.');
-    courierWebhookAssert(str_contains($orderDetails, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Order Details does not conditionally hide the manual expense button.');
-    courierWebhookAssert(str_contains($ordersPage, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Orders list does not conditionally hide the manual expense button.');
+    courierWebhookAssert(str_contains($orderDetails, 'canAddCourierCompletionExpense'), 'Order Details does not expose the manual completion-expense gate.');
+    courierWebhookAssert(str_contains($ordersPage, 'canAddCourierCompletionExpense'), 'Orders list does not expose the manual completion-expense gate.');
+    courierWebhookAssert(!str_contains($orderDetails, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Order Details still retains the legacy manual-expense hide check.');
+    courierWebhookAssert(!str_contains($ordersPage, '!(automaticCourierExpenseEnabled && courierAutomaticExpenseRecorded)'), 'Orders list still retains the legacy manual-expense hide check.');
 
     echo "Courier webhook verification, mappings, idempotency, charges, expenses, account effects, and Undoer integration passed.\n";
 } finally {

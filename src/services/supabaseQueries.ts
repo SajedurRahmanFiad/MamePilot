@@ -333,7 +333,7 @@ export async function permanentlyDeleteDeletedItem(target: { entityType: Recycle
 
 export async function fetchCategories(type?: string) { return call<any[]>('fetchCategories', { type }); }
 export async function fetchCategoriesById(id: string) { return call<any | null>('fetchCategoriesById', { id }); }
-export async function createCategory(category: { name: string; type: 'Income' | 'Expense' | 'Product' | 'Other'; color?: string; parentId?: string; }) { return call<any>('createCategory', category); }
+export async function createCategory(category: { name: string; type: 'Income' | 'Expense' | 'Withdraw' | 'Product' | 'Other'; color?: string; parentId?: string; }) { return call<any>('createCategory', category); }
 export async function updateCategory(id: string, updates: Partial<{ name: string; type: string; color: string; parentId: string; }>) { return call<any>('updateCategory', { id, updates }); }
 export async function deleteCategory(id: string) { await remove('deleteCategory', id); }
 

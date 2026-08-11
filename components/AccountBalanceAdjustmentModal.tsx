@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { Account } from '../types';
 import { formatCurrency } from '../constants';
 import { useCreateTransaction } from '../src/hooks/useMutations';
+import { useCategories, useSystemDefaults } from '../src/hooks/useQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { Button } from './Button';
 import { NumericInput } from './Input';
@@ -23,11 +24,15 @@ const AccountBalanceAdjustmentModal: React.FC<AccountBalanceAdjustmentModalProps
   onClose,
 }) => {
   const createTransactionMutation = useCreateTransaction();
+  const { data: categories = [] } = useCategories();
+  const { data: systemDefaults } = useSystemDefaults();
   const toast = useToastNotifications();
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
   const isDeposit = action === 'deposit';
   const actionLabel = isDeposit ? 'Deposit' : 'Withdraw';
+  const withdrawCategoryId = categories.find((category) => category.type === 'Withdraw')?.id;
+  const incomeCategoryId = systemDefaults?.incomeCategoryId || categories.find((category) => category.type === 'Income')?.id;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -60,12 +65,12 @@ const AccountBalanceAdjustmentModal: React.FC<AccountBalanceAdjustmentModalProps
 
     try {
       const transaction = await createTransactionMutation.mutateAsync({
-        type: isDeposit ? 'Income' : 'Expense',
+        type: isDeposit ? 'Income' : 'Withdraw',
         date: new Date().toISOString(),
         accountId: account.id,
         amount,
         description: transactionDescription,
-        category: isDeposit ? 'Deposit' : 'Withdrawal',
+        category: isDeposit ? (incomeCategoryId || 'Deposit') : (withdrawCategoryId || 'Withdrawal'),
         paymentMethod: 'Account Adjustment',
       });
 
@@ -159,7 +164,7 @@ const AccountBalanceAdjustmentModal: React.FC<AccountBalanceAdjustmentModalProps
           </div>
 
           <p className="text-xs font-medium leading-5 text-gray-500">
-            This will be recorded as an {isDeposit ? 'Income' : 'Expense'} transaction for this account.
+            This will be recorded as an {isDeposit ? 'Income' : 'Withdraw'} transaction for this account.
           </p>
         </>
       )}
