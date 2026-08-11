@@ -10687,14 +10687,6 @@ SQL;
             if ($orderRow === null) {
                 throw new RuntimeException('Order not found.');
             }
-            if ($outcome === 'Delivered') {
-                $courierSettings = $this->database->fetchOne(
-                    'SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1'
-                ) ?? [];
-                if ((bool) ($courierSettings['automatically_deduct_shipping_costs'] ?? false)) {
-                    throw new RuntimeException('Courier shipping costs are recorded automatically for delivered orders.');
-                }
-            }
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
             $status = trim((string) ($orderRow['status'] ?? ''));
