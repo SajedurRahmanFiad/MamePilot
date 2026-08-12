@@ -3281,6 +3281,9 @@ CREATE TABLE IF NOT EXISTS shopify_webhook_events (
 -- Migration: 2026-08-11_withdrawal_category.sql
 -- Skipped data-mutating statement from 2026-08-11_withdrawal_category.sql.
 
+-- Migration: 2026-08-12_seed_batch_event_types.sql
+-- Skipped data-mutating statement from 2026-08-12_seed_batch_event_types.sql.
+
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_modify_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;

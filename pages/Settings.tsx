@@ -3060,6 +3060,9 @@ const SettingsPage: React.FC = () => {
                   <option value="Income">Income</option>
                   <option value="Expense">Expense</option>
                   <option value="Product">Product</option>
+                  {hasSubCapability('batch_management') && (
+                    <option value="Batch">Batch</option>
+                  )}
                 </select>
               </div>
               <div className="space-y-1">

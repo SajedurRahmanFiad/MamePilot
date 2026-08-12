@@ -1,4 +1,4 @@
-﻿import { useQuery, UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, UseQueryResult, UseQueryOptions } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fetchAllNotifications,
@@ -19,6 +19,7 @@ import {
   fetchProfitLossReport,
   fetchProductQuantitySoldReport,
   fetchCustomerSalesReport,
+  fetchOrderReport,
   fetchOrdersPage,
   fetchOrderById,
   fetchOrdersByCustomerId,
@@ -192,6 +193,7 @@ import type {
   VoiceSurveySettings,
   VoiceSurveyIntegrationSettings,
   OrderSurveySnapshot,
+  OrderReportData,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -361,6 +363,34 @@ export function useProfitLossReport(
         filterRange,
         customDates: normalizedCustomDates,
         companyPageIds,
+      }),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useOrderReport(
+  filterRange: string = 'This Year',
+  customDates: { from: string; to: string } = { from: '', to: '' },
+  companyPageIds: string[] = [],
+  dateMode: 'created' | 'completed' = 'created',
+  options?: { enabled?: boolean }
+): UseQueryResult<OrderReportData, Error> {
+  const normalizedCustomDates = {
+    from: String(customDates?.from || ''),
+    to: String(customDates?.to || ''),
+  };
+  const sortedIds = [...companyPageIds].sort().join(',');
+
+  return useQuery({
+    queryKey: ['reports', 'orders', filterRange, normalizedCustomDates.from, normalizedCustomDates.to, sortedIds, dateMode],
+    queryFn: () =>
+      fetchOrderReport({
+        filterRange,
+        customDates: normalizedCustomDates,
+        companyPageIds,
+        dateMode,
       }),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
@@ -1884,5 +1914,88 @@ export function useMetaAdInsightsDevices(id: string | undefined, enabled = true)
     queryFn: () => fetchMetaAdInsightsDevices(id || ''),
     enabled: !!id && enabled,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ===== Batch Management Queries =====
+
+import {
+  fetchBatchesPage,
+  fetchBatchById,
+  fetchBatchCategories,
+  fetchBatchEventTypes,
+  fetchBatchEventsPage,
+} from '../services/supabaseQueries';
+
+export function useBatchesPage(
+  page: number,
+  pageSize: number,
+  searchQuery?: string,
+  categoryId?: string,
+  filters?: {
+    createdByIds?: string[];
+    createdByNotIds?: string[];
+    name?: string;
+    nameNot?: string;
+    categoryNot?: string;
+    sku?: string;
+    skuNot?: string;
+    population?: { operator: string; value: string };
+    salePrice?: { operator: string; value: string };
+    purchasePrice?: { operator: string; value: string };
+    averageAge?: { operator: string; value: string };
+  },
+) {
+  return useQuery({
+    queryKey: ['batches', page, pageSize, searchQuery, categoryId, filters],
+    queryFn: () => fetchBatchesPage(page, pageSize, searchQuery, categoryId, filters),
+    placeholderData: (previousData) => previousData,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
+export function useBatch(id: string | undefined) {
+  return useQuery({
+    queryKey: ['batch', id],
+    queryFn: () => fetchBatchById(id || ''),
+    enabled: !!id,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
+export function useBatchCategories() {
+  return useQuery({
+    queryKey: ['batch-categories'],
+    queryFn: fetchBatchCategories,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
+export function useBatchEventTypes() {
+  return useQuery({
+    queryKey: ['batch-event-types'],
+    queryFn: fetchBatchEventTypes,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
+export function useBatchEventsPage(
+  page: number,
+  pageSize: number,
+  filters?: { batchId?: string; eventTypeId?: string; dateFrom?: string; dateTo?: string },
+  dynamicFilters?: {
+    batchNotIds?: string[];
+    eventTypeNotIds?: string[];
+    populationChange?: { operator: string; value: string };
+    expenseAmount?: { operator: string; value: string };
+    createdByIds?: string[];
+    createdByNotIds?: string[];
+  },
+) {
+  return useQuery({
+    queryKey: ['batch-events', page, pageSize, filters, dynamicFilters],
+    queryFn: () => fetchBatchEventsPage(page, pageSize, filters, dynamicFilters),
+    placeholderData: (previousData) => previousData,
+    staleTime: 15 * 60 * 1000,
   });
 }

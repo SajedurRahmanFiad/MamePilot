@@ -821,6 +821,34 @@ abstract class BaseService
     }
 
     /**
+     * Normalize a Unicode string to NFC form for consistent matching.
+     * This ensures that composed characters (like Bengali with matras) match
+     * regardless of how they were input (composed vs decomposed).
+     *
+     * @param string $value The string to normalize
+     * @return string The normalized string (NFC form), or the original if normalization fails
+     */
+    protected function normalizeUnicodeString(string $value): string
+    {
+        if ($value === '') {
+            return $value;
+        }
+
+        // Check if the intl extension is available with Normalizer
+        if (class_exists('\Normalizer', false) && defined('\Normalizer::FORM_C')) {
+            try {
+                return \Normalizer::normalize($value, \Normalizer::FORM_C);
+            } catch (\Throwable $e) {
+                // Fall through to return original value
+            }
+        }
+
+        // Fallback: return the original string
+        // MySQL's utf8mb4_unicode_ci collation should handle most cases
+        return $value;
+    }
+
+    /**
      * @param mixed $value
      */
     protected function nullableString($value): ?string

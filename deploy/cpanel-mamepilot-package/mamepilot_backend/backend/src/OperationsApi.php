@@ -2010,7 +2010,10 @@ final class OperationsApi extends BaseService
         $search = trim((string) ($params['search'] ?? ''));
         $field = trim((string) ($params['field'] ?? ''));
         $limit = 50;
-        $like = $search !== '' ? '%' . $search . '%' : null;
+        // Normalize the search string for consistent Unicode matching
+        $normalizedSearch = $this->normalizeUnicodeString($search);
+        $escapedSearch = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedSearch);
+        $like = $search !== '' ? '%' . $escapedSearch . '%' : null;
 
         $result = [];
 
@@ -4275,6 +4278,158 @@ final class OperationsApi extends BaseService
             'expenses' => $expenses,
             'totalOperatingExpenses' => $totalOperatingExpenses,
             'netProfit' => $grossProfit - $totalOperatingExpenses,
+        ];
+    }
+
+    public function fetchOrderReport(array $params = []): array
+    {
+        $this->ensureReportsViewPermission();
+
+        $normalizedParams = $this->normalizeProfitLossFilterParams($params);
+        $companyPageIds = $normalizedParams['companyPageIds'] ?? [];
+        if (!empty($companyPageIds)) {
+            $validPages = [];
+            foreach ($this->fetchCompanyPages() as $companyPage) {
+                $validPages[(string) ($companyPage['id'] ?? '')] = true;
+            }
+            foreach ($companyPageIds as $cid) {
+                if (!isset($validPages[$cid])) {
+                    throw new RuntimeException('Select a valid company for the Order report.');
+                }
+            }
+        }
+
+        $dateMode = trim((string) ($params['dateMode'] ?? 'created'));
+        if (!in_array($dateMode, ['created', 'completed'], true)) {
+            $dateMode = 'created';
+        }
+
+        $filters = $this->buildDashboardDateFilters($normalizedParams);
+        $hasCompanyFilter = !empty($companyPageIds);
+
+        $conditions = ['1 = 1'];
+        $bindings = [];
+
+        if ($dateMode === 'created') {
+            $this->applyDashboardDateBounds('o.orderDate', $filters, $conditions, $bindings, 'order_rpt');
+        } else {
+            $this->applyDashboardDateTimeBounds('o.createdAt', $filters, $conditions, $bindings, 'order_rpt');
+        }
+
+        if ($hasCompanyFilter) {
+            $orClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $orClauses[] = '(o.pageId = :order_rpt_page_' . $i . ' OR (
+                    NULLIF(TRIM(o.pageId), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(o.pageSnapshot, \'$.id\')) = :order_rpt_snap_' . $i . '
+                ))';
+                $bindings[':order_rpt_page_' . $i] = $cid;
+                $bindings[':order_rpt_snap_' . $i] = $cid;
+            }
+            $conditions[] = '(' . implode(' OR ', $orClauses) . ')';
+        }
+
+        $orders = $this->database->fetchAll(
+            'SELECT o.id, o.orderNumber, o.orderDate, o.status,
+                    o.subtotal, o.discount, o.shipping, o.total, o.paidAmount,
+                    o.history, o.createdAt,
+                    o.customerName, o.customerPhone, o.customerAddress,
+                    o.creatorName,
+                    COALESCE(JSON_LENGTH(o.items), 0) AS itemCount
+             FROM orders_with_customer_creator o
+             WHERE ' . implode(' AND ', $conditions) . '
+             ORDER BY o.orderDate DESC',
+            $bindings
+        );
+
+        $orderIds = array_map(static fn(array $o) => (string) ($o['id'] ?? ''), $orders);
+        $cogsMap = [];
+        if (!empty($orderIds)) {
+            $cogsPlaceholders = [];
+            $cogsBindings = [];
+            foreach ($orderIds as $i => $oid) {
+                $cogsPlaceholders[] = ':cogs_oid_' . $i;
+                $cogsBindings[':cogs_oid_' . $i] = $oid;
+            }
+            $cogsRows = $this->database->fetchAll(
+                'SELECT order_id, COALESCE(SUM(amount), 0) AS cogsAmount
+                 FROM order_cogs_expenses
+                 WHERE order_id IN (' . implode(', ', $cogsPlaceholders) . ') AND status = \'recorded\'
+                 GROUP BY order_id',
+                $cogsBindings
+            );
+            foreach ($cogsRows as $cogsRow) {
+                $cogsMap[(string) $cogsRow['order_id']] = (float) $cogsRow['cogsAmount'];
+            }
+        }
+
+        $totalOrders = count($orders);
+        $completedCount = 0;
+        $returnedCount = 0;
+        $cancelledCount = 0;
+        $exchangeCount = 0;
+        $totalRevenue = 0.0;
+        $totalPaid = 0.0;
+        $totalCogs = 0.0;
+
+        $enrichedOrders = [];
+        foreach ($orders as $order) {
+            $status = (string) ($order['status'] ?? '');
+            $total = (float) ($order['total'] ?? 0);
+            $paidAmount = (float) ($order['paidAmount'] ?? 0);
+            $orderId = (string) ($order['id'] ?? '');
+            $cogs = $cogsMap[$orderId] ?? 0.0;
+
+            if ($status === 'Completed' || $status === 'Exchange delivered') {
+                $completedCount++;
+            } elseif ($status === 'Returned' || $status === 'Exchange returned') {
+                $returnedCount++;
+            } elseif ($status === 'Cancelled' || $status === 'Exchange cancelled') {
+                $cancelledCount++;
+            } elseif (in_array($status, ['Exchange processing', 'Exchange picked'], true)) {
+                $exchangeCount++;
+            }
+
+            $totalRevenue += $total;
+            $totalPaid += $paidAmount;
+            $totalCogs += $cogs;
+
+            $enrichedOrders[] = [
+                'id' => $orderId,
+                'orderNumber' => (string) ($order['orderNumber'] ?? ''),
+                'orderDate' => (string) ($order['orderDate'] ?? ''),
+                'status' => $status,
+                'customerName' => (string) ($order['customerName'] ?? 'Walk-in'),
+                'customerPhone' => (string) ($order['customerPhone'] ?? ''),
+                'creatorName' => (string) ($order['creatorName'] ?? ''),
+                'itemCount' => (int) ($order['itemCount'] ?? 0),
+                'subtotal' => $total,
+                'discount' => (float) ($order['discount'] ?? 0),
+                'shipping' => (float) ($order['shipping'] ?? 0),
+                'total' => $total,
+                'paidAmount' => $paidAmount,
+                'dueAmount' => max(0, $total - $paidAmount),
+                'cogs' => $cogs,
+                'profit' => $total - $cogs,
+                'createdAt' => (string) ($order['createdAt'] ?? ''),
+                'updatedAt' => '',
+            ];
+        }
+
+        return [
+            'companyPageIds' => $companyPageIds,
+            'dateMode' => $dateMode,
+            'totalOrders' => $totalOrders,
+            'completedCount' => $completedCount,
+            'returnedCount' => $returnedCount,
+            'cancelledCount' => $cancelledCount,
+            'exchangeCount' => $exchangeCount,
+            'totalRevenue' => $totalRevenue,
+            'totalPaid' => $totalPaid,
+            'totalDue' => max(0, $totalRevenue - $totalPaid),
+            'totalCogs' => $totalCogs,
+            'totalProfit' => $totalRevenue - $totalCogs,
+            'orders' => $enrichedOrders,
         ];
     }
 

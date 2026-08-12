@@ -1222,6 +1222,43 @@ export interface ProfitLossReport {
   netProfit: number;
 }
 
+export interface OrderReportOrder {
+  id: string;
+  orderNumber: string;
+  orderDate: string;
+  status: string;
+  customerName: string;
+  customerPhone: string;
+  creatorName: string;
+  itemCount: number;
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  total: number;
+  paidAmount: number;
+  dueAmount: number;
+  cogs: number;
+  profit: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderReportData {
+  companyPageIds: string[];
+  dateMode: 'created' | 'completed';
+  totalOrders: number;
+  completedCount: number;
+  returnedCount: number;
+  cancelledCount: number;
+  exchangeCount: number;
+  totalRevenue: number;
+  totalPaid: number;
+  totalDue: number;
+  totalCogs: number;
+  totalProfit: number;
+  orders: OrderReportOrder[];
+}
+
 export interface ProductQuantitySoldRow {
   productName: string;
   quantity: number;

@@ -61,6 +61,7 @@ import type {
   VoiceSurveyWorkerHealth,
   VoiceSurveyIntegrationSettings,
   OrderSurveySnapshot,
+  OrderReportData,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -153,6 +154,9 @@ export async function fetchIncomeVsExpenseReport() {
 }
 export async function fetchProfitLossReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[] }) {
   return call<ProfitLossReport>('fetchProfitLossReport', params || {});
+}
+export async function fetchOrderReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[]; dateMode?: 'created' | 'completed' }) {
+  return call<OrderReportData>('fetchOrderReport', params || {});
 }
 export async function fetchProductQuantitySoldReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<ProductQuantitySoldReport>('fetchProductQuantitySoldReport', params || {});
@@ -734,6 +738,90 @@ export async function verifyPipraPayPayment(payload: {
   paymentId?: string;
 }): Promise<{ success: boolean; paid: boolean; status: string; paymentOutcome?: string; paymentStatus?: string; message?: string; reference?: string; paymentFound?: boolean; paymentKind?: 'subscription' | 'recharge'; emailSent?: boolean }> {
   return call('verifyPipraPayPayment', payload, { timeoutMs: 30000 });
+}
+
+// ===== Batch Management =====
+
+export async function fetchBatchesPage(
+  page: number,
+  pageSize: number,
+  searchQuery?: string,
+  categoryId?: string,
+  filters?: {
+    createdByIds?: string[];
+    createdByNotIds?: string[];
+    name?: string;
+    nameNot?: string;
+    categoryNot?: string;
+    sku?: string;
+    skuNot?: string;
+    population?: { operator: string; value: string };
+    salePrice?: { operator: string; value: string };
+    purchasePrice?: { operator: string; value: string };
+    averageAge?: { operator: string; value: string };
+  },
+): Promise<{ data: import('../../types').Batch[]; count: number }> {
+  return call('fetchBatchesPage', { page, pageSize, searchQuery, categoryId, filters });
+}
+
+export async function fetchBatchById(id: string): Promise<import('../../types').Batch | null> {
+  return call('fetchBatchById', { id });
+}
+
+export async function fetchBatchCategories(): Promise<import('../../types').BatchCategory[]> {
+  return call('fetchBatchCategories', {});
+}
+
+export async function fetchBatchEventTypes(): Promise<import('../../types').BatchEventType[]> {
+  return call('fetchBatchEventTypes', {});
+}
+
+export async function fetchBatchEventsPage(
+  page: number,
+  pageSize: number,
+  filters?: { batchId?: string; eventTypeId?: string; dateFrom?: string; dateTo?: string },
+  dynamicFilters?: {
+    batchNotIds?: string[];
+    eventTypeNotIds?: string[];
+    populationChange?: { operator: string; value: string };
+    expenseAmount?: { operator: string; value: string };
+    createdByIds?: string[];
+    createdByNotIds?: string[];
+  },
+): Promise<{ data: import('../../types').BatchEvent[]; count: number }> {
+  return call('fetchBatchEventsPage', { page, pageSize, filters, dynamicFilters });
+}
+
+export async function createBatch(data: Omit<import('../../types').Batch, 'id' | 'createdAt' | 'updatedAt' | 'categoryName'>): Promise<{ id: string }> {
+  return call('createBatch', data);
+}
+
+export async function updateBatch(id: string, updates: Partial<import('../../types').Batch>): Promise<{ success: boolean }> {
+  return call('updateBatch', { id, ...updates });
+}
+
+export async function deleteBatch(id: string): Promise<{ success: boolean }> {
+  return call('deleteBatch', { id });
+}
+
+export async function createBatchCategory(data: Omit<import('../../types').BatchCategory, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ id: string }> {
+  return call('createBatchCategory', data);
+}
+
+export async function updateBatchCategory(id: string, updates: Partial<import('../../types').BatchCategory>): Promise<{ success: boolean }> {
+  return call('updateBatchCategory', { id, ...updates });
+}
+
+export async function deleteBatchCategory(id: string): Promise<{ success: boolean }> {
+  return call('deleteBatchCategory', { id });
+}
+
+export async function createBatchEvent(data: import('../../types').BatchEventInput): Promise<{ id: string; success: boolean; newPopulation: number }> {
+  return call('createBatchEvent', data);
+}
+
+export async function deleteBatchEvent(id: string): Promise<{ success: boolean }> {
+  return call('deleteBatchEvent', { id });
 }
 
 export async function batchUpdateSettings(updates: { company?: Partial<CompanySettings>; order?: { prefix?: string; nextNumber?: number; }; invoice?: { title?: string; logoWidth?: number; logoHeight?: number; footer?: string; }; defaults?: { defaultAccountId?: string; defaultPaymentMethod?: string; incomeCategoryId?: string; expenseCategoryId?: string; recordsPerPage?: number; maxTransactionAmount?: number; whiteLabel?: boolean; themeColor?: string; productSelectionMode?: string; calculateCogsFromPurchasePrice?: boolean; automaticFraudCheckOnOrderCreation?: boolean; }; courier?: { automaticallyDeductShippingCosts?: boolean; automaticallyMarkPaidAfterDelivery?: boolean; steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string; invoice?: string }; carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string }; paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number }; fraudChecker?: { provider?: 'bdcourier' | 'fraudspy'; apiKey?: string; fraudspyApiKey?: string; }; }; permissions?: PermissionsSettings; payroll?: { unitAmount?: number; countedStatuses?: any[]; }; wallet?: { unitAmount?: number; countedStatuses?: any[]; }; }) {

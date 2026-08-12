@@ -29,7 +29,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
 
 export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
   dashboard: 'Central hub showing revenue, expenses, profit charts, order stats, and employee performance comparisons with date range filtering.',
-  inventory: 'Product catalog management — create, edit, and search products with pricing, stock quantities, categories, and images.',
+  inventory: 'Product catalog management — create, edit, and search products with pricing, stock quantities, categories, and images. Includes batch management for living products (birds, livestock) with population tracking, age monitoring, and event logging.',
   sales: 'Full sales pipeline — create and manage orders with line items, discounts, shipping, and track customer profiles with order history.',
   recycle_bin_undoer: 'Restore soft-deleted records (orders, customers, products) or revert an order to a previous status via timeline history.',
   purchases: 'Vendor and bill management — create purchase orders, track incoming stock, manage vendor contacts and payment records.',
@@ -103,6 +103,7 @@ export const SUB_CAPABILITY_LABELS: Record<SubCapabilityKey, string> = {
   pathao_courier: 'Pathao',
   recycle_bin: 'Recycle Bin',
   undoer: 'Undoer',
+  batch_management: 'Batch Management',
 };
 
 export const SUB_CAPABILITY_PARENT_MAP: Record<SubCapabilityKey, AppCapabilityKey> = {
@@ -117,6 +118,7 @@ export const SUB_CAPABILITY_PARENT_MAP: Record<SubCapabilityKey, AppCapabilityKe
   pathao_courier: 'courier_automation',
   recycle_bin: 'recycle_bin_undoer',
   undoer: 'recycle_bin_undoer',
+  batch_management: 'inventory',
 };
 
 export const PARENT_SUB_CAPABILITIES: Partial<Record<AppCapabilityKey, SubCapabilityKey[]>> = {
@@ -124,6 +126,7 @@ export const PARENT_SUB_CAPABILITIES: Partial<Record<AppCapabilityKey, SubCapabi
   banking: ['accounts', 'transactions', 'transfer'],
   courier_automation: ['steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier'],
   recycle_bin_undoer: ['recycle_bin', 'undoer'],
+  inventory: ['batch_management'],
 };
 
 export const SUB_CAPABILITY_KEYS = Object.keys(SUB_CAPABILITY_LABELS) as SubCapabilityKey[];
@@ -170,7 +173,7 @@ export function normalizeCapabilities(value: Partial<AppCapabilityMap> | undefin
 
 export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCapabilityKey }> = [
   { pattern: /^\/dashboard(?:\/|$)/, capability: 'dashboard' },
-  { pattern: /^\/products(?:\/|$)/, capability: 'inventory' },
+  { pattern: /^\/products(?:\/|$)|^\/batches(?:\/|$)|^\/batch-event-history(?:\/|$)/, capability: 'inventory' },
   { pattern: /^\/orders(?:\/|$)|^\/customers(?:\/|$)|^\/print-order(?:\/|$)/, capability: 'sales' },
   { pattern: /^\/bills(?:\/|$)|^\/vendors(?:\/|$)|^\/print-bill(?:\/|$)/, capability: 'purchases' },
   { pattern: /^\/banking(?:\/|$)|^\/transactions(?:\/|$)/, capability: 'banking' },

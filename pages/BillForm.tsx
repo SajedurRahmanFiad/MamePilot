@@ -441,8 +441,8 @@ const BillForm: React.FC = () => {
                 <tr key={idx} className="group hover:bg-gray-50/50">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
-                      {products.find(p => p.id === item.productId)?.image && (
-                        <img src={products.find(p => p.id === item.productId)?.image} className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm" />
+                      {(allProductsRef.current.get(item.productId) ?? products.find(p => p.id === item.productId))?.image && (
+                        <img src={(allProductsRef.current.get(item.productId) ?? products.find(p => p.id === item.productId))?.image} className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm" />
                       )}
                       <span className="font-bold text-gray-800 text-sm">{item.productName}</span>
                     </div>
@@ -500,8 +500,8 @@ const BillForm: React.FC = () => {
                                     )}
                                   </div>
                                 )}
-                                {p.image && (
-                                  <img src={p.image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                                {(allProductsRef.current.get(p.id) ?? p).image && (
+                                  <img src={(allProductsRef.current.get(p.id) ?? p).image} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
                                 )}
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{p.name}</p>

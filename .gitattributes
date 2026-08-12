@@ -1,0 +1,32 @@
+# Handle line endings
+* text=auto
+
+# Denote all JS build artifacts as binary to prevent CRLF conversion
+*.js binary
+*.jsx binary
+
+# ZIP files are binary
+*.zip binary
+
+# Image files are binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg binary
+
+# SQL files should maintain their line endings
+*.sql text eol=lf
+
+# PHP files
+*.php text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# TypeScript files
+*.ts text eol=lf
+*.tsx text eol=lf
+
+# Markdown files
+*.md text eol=lf

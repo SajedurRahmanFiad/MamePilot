@@ -63,6 +63,7 @@ final class FeatureAccess
         'pathao_courier' => 'courier_automation',
         'recycle_bin' => 'recycle_bin_undoer',
         'undoer' => 'recycle_bin_undoer',
+        'batch_management' => 'inventory',
     ];
 
     private const ACTION_CAPABILITIES = [
@@ -306,6 +307,20 @@ final class FeatureAccess
         'createRecurringTransaction' => 'recurring_transactions',
         'updateRecurringTransaction' => 'recurring_transactions',
         'deleteRecurringTransaction' => 'recurring_transactions',
+        // Batch Management
+        'fetchBatchesPage' => 'inventory',
+        'fetchBatchById' => 'inventory',
+        'createBatch' => 'inventory',
+        'updateBatch' => 'inventory',
+        'deleteBatch' => 'inventory',
+        'fetchBatchCategories' => 'inventory',
+        'createBatchCategory' => 'inventory',
+        'updateBatchCategory' => 'inventory',
+        'deleteBatchCategory' => 'inventory',
+        'fetchBatchEventTypes' => 'inventory',
+        'fetchBatchEventsPage' => 'inventory',
+        'createBatchEvent' => 'inventory',
+        'deleteBatchEvent' => 'inventory',
     ];
 
     private Database $database;

@@ -58,11 +58,11 @@ final class MasterDataApi extends BaseService
         }
         if (!$contains) {
             $where .= " AND COALESCE({$column}, '') " . ($negative ? '<>' : '=') . " :{$bindingName}";
-            $bindings[':' . $bindingName] = $value;
+            $bindings[':' . $bindingName] = $this->normalizeUnicodeString($value);
             return;
         }
 
-        $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $value);
+        $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $this->normalizeUnicodeString($value));
         $where .= " AND COALESCE({$column}, '') " . ($negative ? 'NOT LIKE' : 'LIKE') . " :{$bindingName} ESCAPE '='";
         $bindings[':' . $bindingName] = '%' . $escaped . '%';
     }
@@ -978,8 +978,12 @@ final class MasterDataApi extends BaseService
             // The Products page free-text box is intentionally a product-name
             // search. Structured chips remain available for category, prices,
             // stock, creator, and other fields.
+            // Normalize the search string to NFC form for consistent Unicode matching
+            // This ensures that composed characters (like Bengali with matras) match
+            // regardless of how they were input.
+            $normalizedSearch = $this->normalizeUnicodeString($search);
             $where .= " AND CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_product_search ESCAPE '='";
-            $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
+            $bindings[':raw_product_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedSearch) . '%';
         }
         if ($category !== '') {
             $this->appendEncodedTextFilter($where, $bindings, 'category', $category, 'category');
@@ -1105,9 +1109,13 @@ final class MasterDataApi extends BaseService
             return [];
         }
 
+        // Normalize the search query for consistent Unicode matching
+        $normalizedQuery = $this->normalizeUnicodeString($query);
+        $escapedQuery = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedQuery);
+
         $bindings = [
-            ':search_name' => '%' . $query . '%',
-            ':search_sku' => '%' . $query . '%',
+            ':search_name' => '%' . $escapedQuery . '%',
+            ':search_sku' => '%' . $escapedQuery . '%',
         ];
 
         $rows = $this->database->fetchAll(
@@ -1198,10 +1206,13 @@ final class MasterDataApi extends BaseService
         if ($query !== '') {
             // Native PDO prepares do not allow one named placeholder to be
             // reused multiple times in the same statement.
+            // Normalize the search query for consistent Unicode matching
+            $normalizedQuery = $this->normalizeUnicodeString($query);
+            $escapedQuery = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedQuery);
             $productWhere .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
             $batchWhere .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
-            $bindings[':search_name'] = '%' . $query . '%';
-            $bindings[':search_sku'] = '%' . $query . '%';
+            $bindings[':search_name'] = '%' . $escapedQuery . '%';
+            $bindings[':search_sku'] = '%' . $escapedQuery . '%';
         }
 
         // Fetch one extra row instead of running a full COUNT(*) scan for

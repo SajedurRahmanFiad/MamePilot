@@ -3411,3 +3411,104 @@ export function useConnectFraudspySteadfast(): UseMutationResult<{ ok: boolean; 
     mutationFn: connectFraudspySteadfast,
   });
 }
+
+// ===== Batch Management Mutations =====
+
+import {
+  createBatch as apiCreateBatch,
+  updateBatch as apiUpdateBatch,
+  deleteBatch as apiDeleteBatch,
+  createBatchCategory as apiCreateBatchCategory,
+  updateBatchCategory as apiUpdateBatchCategory,
+  deleteBatchCategory as apiDeleteBatchCategory,
+  createBatchEvent as apiCreateBatchEvent,
+  deleteBatchEvent as apiDeleteBatchEvent,
+} from '../services/supabaseQueries';
+import type { Batch, BatchCategory, BatchEventInput } from '../../types';
+
+export function useCreateBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiCreateBatch,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batch-categories'] });
+    },
+  });
+}
+
+export function useUpdateBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Batch> }) => apiUpdateBatch(id, updates),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batch', id] });
+    },
+  });
+}
+
+export function useDeleteBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiDeleteBatch,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+    },
+  });
+}
+
+export function useCreateBatchCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiCreateBatchCategory,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-categories'] });
+    },
+  });
+}
+
+export function useUpdateBatchCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<BatchCategory> }) => apiUpdateBatchCategory(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-categories'] });
+    },
+  });
+}
+
+export function useDeleteBatchCategory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiDeleteBatchCategory,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batch-categories'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+    },
+  });
+}
+
+export function useCreateBatchEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiCreateBatchEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batch-events'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+}
+
+export function useDeleteBatchEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: apiDeleteBatchEvent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batch-events'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+}

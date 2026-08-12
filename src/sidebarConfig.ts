@@ -30,11 +30,32 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     visible: ({ canViewDashboard }) => canViewDashboard,
   },
   {
-    key: 'products',
-    label: 'Products',
-    to: '/products',
+    key: 'inventory',
+    label: 'Inventory',
     icon: ICONS.Products,
-    visible: ({ can, hasCapability }) => can('products.view') && hasCapability('inventory'),
+    children: [
+      {
+        key: 'products',
+        label: 'Products',
+        to: '/products',
+        icon: ICONS.Products,
+        visible: ({ can, hasCapability }) => can('products.view') && hasCapability('inventory'),
+      },
+      {
+        key: 'batches',
+        label: 'Batches',
+        to: '/batches',
+        icon: ICONS.Products,
+        visible: ({ can, hasSubCapability }) => can('batches.view') && hasSubCapability('batch_management'),
+      },
+      {
+        key: 'batch_event_history',
+        label: 'Batch Event History',
+        to: '/batch-event-history',
+        icon: ICONS.Clock,
+        visible: ({ can, hasSubCapability }) => can('batch_events.view') && hasSubCapability('batch_management'),
+      },
+    ],
   },
   {
     key: 'orders',
@@ -291,6 +312,12 @@ const filterSidebarItems = (
   return items.reduce<SidebarConfigItem[]>((acc, item) => {
     if (item.children) {
       const filteredChildren = filterSidebarItems(item.children, context);
+
+      if (filteredChildren.length === 1 && item.visible?.(context) !== false) {
+        acc.push(filteredChildren[0]);
+        return acc;
+      }
+
       if (filteredChildren.length > 0 && item.visible?.(context) !== false) {
         acc.push({ ...item, children: filteredChildren });
       }

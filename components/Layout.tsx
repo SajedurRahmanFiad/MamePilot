@@ -228,6 +228,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/products')) {
       return { title: 'Products Catalog', subtitle: 'Manage inventory, pricing, and product details.' };
     }
+    if (pathname.startsWith('/batches/new')) {
+      return { title: 'New Batch', subtitle: 'Create a new batch of living products.' };
+    }
+    if (pathname.startsWith('/batches/edit/')) {
+      return { title: 'Edit Batch', subtitle: 'Update the selected batch details.' };
+    }
+    if (pathname.startsWith('/batches')) {
+      return { title: 'Batches', subtitle: 'Manage batches of living products with population tracking.' };
+    }
+    if (pathname.startsWith('/batch-event-history')) {
+      return { title: 'Batch Event History', subtitle: 'Review all recorded events for living product batches.' };
+    }
     if (pathname.startsWith('/users/new')) {
       return { title: 'Add User', subtitle: 'Create a new app user and assign access.' };
     }
@@ -441,7 +453,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
           </div>
 
-          <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+          <style>{`
+            .sidebar-scrollbar-hidden {
+              scrollbar-width: none;
+              -ms-overflow-style: none;
+            }
+            .sidebar-scrollbar-hidden::-webkit-scrollbar {
+              display: none;
+              width: 0;
+              height: 0;
+            }
+          `}</style>
+
+          <nav className="sidebar-scrollbar-hidden flex-1 px-4 pb-8 space-y-1 overflow-y-auto">
             {sidebarItems.map((item) => (
             <SidebarItem
               key={item.key}
@@ -454,6 +478,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               onClick={() => setIsSidebarOpen(false)}
             />
           ))}
+            <div className="h-6" />
           </nav>
 
 

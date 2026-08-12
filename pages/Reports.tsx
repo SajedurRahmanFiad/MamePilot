@@ -12,6 +12,7 @@ import {
   fetchIncomeVsExpenseReport,
   fetchProductQuantitySoldReport,
   fetchProfitLossReport,
+  fetchOrderReport,
 } from '../src/services/supabaseQueries';
 
 const ReportCard: React.FC<{ 
@@ -103,6 +104,20 @@ const Reports: React.FC = () => {
           void queryClient.prefetchQuery({
             queryKey: ['reports', 'profit-loss', 'This Year', '', '', ''],
             queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageIds: [] }),
+          });
+        }
+      },
+      {
+        title: 'Order Report',
+        description: 'Lifetime order details with status breakdown, revenue, and profit analysis.',
+        icon: ICONS.Sales,
+        color: 'bg-blue-50 text-blue-600',
+        to: '/reports/orders',
+        requiredCapabilities: ['sales'] as AppCapabilityKey[],
+        onPrefetch: () => {
+          void queryClient.prefetchQuery({
+            queryKey: ['reports', 'orders', 'This Year', '', '', '', 'created'],
+            queryFn: () => fetchOrderReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageIds: [], dateMode: 'created' }),
           });
         }
       },

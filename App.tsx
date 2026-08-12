@@ -72,6 +72,9 @@ const TransactionForm = lazyPage(() => import('./pages/TransactionForm'));
 const RecurringTransactions = lazyPage(() => import('./pages/RecurringTransactions'));
 const Products = lazyPage(() => import('./pages/Products'));
 const ProductForm = lazyPage(() => import('./pages/ProductForm'));
+const Batches = lazyPage(() => import('./pages/Batches'));
+const BatchForm = lazyPage(() => import('./pages/BatchForm'));
+const BatchEventHistory = lazyPage(() => import('./pages/BatchEventHistory'));
 const Users = lazyPage(() => import('./pages/Users'));
 const UserForm = lazyPage(() => import('./pages/UserForm'));
 const UserDetails = lazyPage(() => import('./pages/UserDetails'));
@@ -101,6 +104,7 @@ const ExpenseSummary = lazyPage(() => import('./pages/reports/ExpenseSummary'));
 const IncomeSummary = lazyPage(() => import('./pages/reports/IncomeSummary'));
 const IncomeVsExpense = lazyPage(() => import('./pages/reports/IncomeVsExpense'));
 const ProfitLoss = lazyPage(() => import('./pages/reports/ProfitLoss'));
+const OrderReport = lazyPage(() => import('./pages/reports/OrderReport'));
 const ProductQuantitySold = lazyPage(() => import('./pages/reports/ProductQuantitySold'));
 const CustomerSalesReport = lazyPage(() => import('./pages/reports/CustomerSalesReport'));
 const UserActivityPerformanceReport = lazyPage(() => import('./pages/reports/UserActivityPerformanceReport'));
@@ -204,6 +208,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     }
     if (can('products.view')) preloaders.add(Products.preload);
     if (can('products.create') || can('products.edit')) preloaders.add(ProductForm.preload);
+    if (can('batches.view') && hasSubCapability('batch_management')) preloaders.add(Batches.preload);
+    if ((can('batches.create') || can('batches.edit')) && hasSubCapability('batch_management')) preloaders.add(BatchForm.preload);
+    if (can('batch_events.view') && hasSubCapability('batch_management')) preloaders.add(BatchEventHistory.preload);
     if (can('transactions.view') && hasSubCapability('transactions')) preloaders.add(Transactions.preload);
     if ((can('transactions.create') || can('transactions.edit')) && hasSubCapability('transactions')) preloaders.add(TransactionForm.preload);
     if (can('transactions.view') && hasCapability('recurring_transactions')) preloaders.add(RecurringTransactions.preload);
@@ -224,6 +231,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       preloaders.add(IncomeSummary.preload);
       preloaders.add(IncomeVsExpense.preload);
       preloaders.add(ProfitLoss.preload);
+      preloaders.add(OrderReport.preload);
       preloaders.add(ProductQuantitySold.preload);
       preloaders.add(CustomerSalesReport.preload);
       if (isAdmin) {
@@ -420,6 +428,19 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
         isAuthenticated ? (can('products.edit') ? (writeDisabled ? <Navigate to="/products" replace /> : <Layout><ProductForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
+      <Route path="/batches" element={
+        isAuthenticated ? (can('batches.view') && hasSubCapability('batch_management') ? <Layout><Batches /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/batches/new" element={
+        isAuthenticated ? (can('batches.create') && hasSubCapability('batch_management') ? (writeDisabled ? <Navigate to="/batches" replace /> : <Layout><BatchForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/batches/edit/:id" element={
+        isAuthenticated ? (can('batches.edit') && hasSubCapability('batch_management') ? (writeDisabled ? <Navigate to="/batches" replace /> : <Layout><BatchForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/batch-event-history" element={
+        isAuthenticated ? (can('batch_events.view') && hasSubCapability('batch_management') ? <Layout><BatchEventHistory /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+
       <Route path="/users" element={
         isAuthenticated ? (can('users.view') && hasSubCapability('hr_management') ? <Layout><Users /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -500,6 +521,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/reports/profit-loss" element={
         isAuthenticated ? (can('reports.view') ? <Layout><ProfitLoss /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/reports/orders" element={
+        isAuthenticated ? (can('reports.view') ? <Layout><OrderReport /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/reports/product-quantity-sold" element={
         isAuthenticated ? (can('reports.view') ? <Layout><ProductQuantitySold /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

@@ -704,6 +704,48 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: 'View subscription plans and billing details.',
     section: 'Settings',
   },
+  {
+    key: 'batches.view',
+    label: 'View Batches',
+    description: 'View the list of living product batches.',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batches.create',
+    label: 'Create Batches',
+    description: 'Create new batches of living products.',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batches.edit',
+    label: 'Edit Batches',
+    description: 'Edit existing batch details including name, category, pricing, and description.',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batches.delete',
+    label: 'Delete Batches',
+    description: 'Delete batches (moves to recycle bin).',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batch_events.view',
+    label: 'View Batch Events',
+    description: 'View the history of events recorded for batches.',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batch_events.create',
+    label: 'Create Batch Events',
+    description: 'Record events for batches such as deaths, vaccinations, illnesses, etc.',
+    section: 'Inventory & Banking',
+  },
+  {
+    key: 'batch_events.delete',
+    label: 'Delete Batch Events',
+    description: 'Delete batch event records (with population reversion).',
+    section: 'Inventory & Banking',
+  },
 ];
 
 export const STORED_PERMISSION_DEFINITIONS = PERMISSION_DEFINITIONS.filter(
@@ -761,6 +803,9 @@ export const DEFAULT_ROLE_PERMISSION_SETTINGS: PermissionsSettings = {
         'reports.viewCustomerSales',
         'reports.viewProductQuantity',
         'reports.viewUserActivity',
+        'batches.view',
+        'batch_events.view',
+        'batch_events.create',
       ]),
     },
   ],
