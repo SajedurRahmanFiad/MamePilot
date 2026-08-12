@@ -200,7 +200,7 @@ const OrderReport: React.FC = () => {
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
           >
             <option value="created">Orders created during</option>
-            <option value="completed">Actions completed during</option>
+            <option value="completed">Actions delivered during</option>
           </select>
         </div>
 
@@ -268,7 +268,7 @@ const OrderReport: React.FC = () => {
             ))}
           </div>
           <p className="text-center text-xs text-gray-400 mt-4">
-            {dateMode === 'created' ? 'Orders created during' : 'Actions completed during'} {' '}
+            {dateMode === 'created' ? 'Orders created during' : 'Actions delivered during'} {' '}
             {filterRange === 'Custom'
               ? (customDates.from && customDates.to ? `${customDates.from} to ${customDates.to}` : customDates.from ? `from ${customDates.from}` : customDates.to ? `until ${customDates.to}` : 'all time')
               : filterRange === 'All Time' ? 'all time' : `this ${filterRange.toLowerCase().replace('this ', '').replace('last ', '')}`}
@@ -278,7 +278,7 @@ const OrderReport: React.FC = () => {
         <div className="p-8 space-y-8">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <SummaryCard label="Total Orders" value={reportData?.totalOrders ?? 0} />
-            <SummaryCard label="Completed" value={reportData?.completedCount ?? 0} sub={`${completionRate}% completion`} color="border-l-green-400" />
+            <SummaryCard label="Delivered" value={reportData?.completedCount ?? 0} sub={`${completionRate}% delivery rate`} color="border-l-green-400" />
             <SummaryCard label="Returned" value={reportData?.returnedCount ?? 0} sub={`${returnRate}% return rate`} color="border-l-orange-400" />
             <SummaryCard label="Cancelled" value={reportData?.cancelledCount ?? 0} sub={`${cancelRate}% cancel rate`} color="border-l-red-400" />
             <SummaryCard label="Exchanges" value={reportData?.exchangeCount ?? 0} color="border-l-blue-400" />
@@ -301,7 +301,7 @@ const OrderReport: React.FC = () => {
               <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Order Metrics</h4>
               <div className="space-y-0">
                 <InsightRow label="Total Orders" value={(reportData?.totalOrders ?? 0).toLocaleString()} />
-                <InsightRow label="Completed" value={(reportData?.completedCount ?? 0).toLocaleString()} detail={`${completionRate}%`} valueClass="text-green-600" />
+                <InsightRow label="Delivered" value={(reportData?.completedCount ?? 0).toLocaleString()} detail={`${completionRate}%`} valueClass="text-green-600" />
                 <InsightRow label="Returned" value={(reportData?.returnedCount ?? 0).toLocaleString()} detail={`${returnRate}%`} valueClass="text-orange-600" />
                 <InsightRow label="Cancelled" value={(reportData?.cancelledCount ?? 0).toLocaleString()} detail={`${cancelRate}%`} valueClass="text-red-600" />
                 <InsightRow label="Exchanges" value={(reportData?.exchangeCount ?? 0).toLocaleString()} valueClass="text-blue-600" />
