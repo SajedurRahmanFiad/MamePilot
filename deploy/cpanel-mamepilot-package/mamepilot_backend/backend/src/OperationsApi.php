@@ -1064,15 +1064,36 @@ final class OperationsApi extends BaseService
     }
 
     /**
-     * Extract timestamp from history text like "Marked as delivered by User on 2024-01-15 at 14:30:00."
-     * Returns timestamp in 'Y-m-d H:i:s' format or null if not found.
+     * Extract timestamp from history text and return as UTC 'Y-m-d H:i:s'.
+     *
+     * Handles:
+     *   - "DD Mon YYYY at HH:MM AM/PM"   (backend & frontend, local time)
+     *   - "DD Mon YYYY, at HH:MM AM/PM"  (frontend variant, local time)
+     *   - "YYYY-MM-DD HH:MM:SS"          (courier webhooks, already UTC)
+     *   - "YYYY-MM-DDTHH:MM:SSZ"         (ISO-8601, already UTC)
      */
     private function extractTimestampFromHistoryText(string $text): ?string
     {
-        $pattern = '/(\d{4}-\d{2}-\d{2}) at (\d{2}:\d{2}:\d{2})/';
-        if (preg_match($pattern, $text, $matches)) {
-            return $matches[1] . ' ' . $matches[2];
+        $utcTz = new \DateTimeZone('UTC');
+
+        // 1) "15 Jan 2025 at 02:30 PM" or "15 Jan 2025, at 02:30 PM"  (local time)
+        $localPattern = '/(\d{1,2}\s+\w{3}\s+\d{4})\s*,?\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)/i';
+        if (preg_match($localPattern, $text, $m)) {
+            try {
+                $localTz = new \DateTimeZone($this->config->timezone());
+                $dt = new \DateTimeImmutable(trim($m[1]) . ' ' . trim($m[2]), $localTz);
+                return $dt->setTimezone($utcTz)->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+                // fall through
+            }
         }
+
+        // 2) "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DDTHH:MM:SSZ"  (already UTC)
+        $utcPattern = '/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})Z?/';
+        if (preg_match($utcPattern, $text, $m)) {
+            return $m[1] . ' ' . $m[2];
+        }
+
         return null;
     }
 
