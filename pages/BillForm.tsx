@@ -79,11 +79,12 @@ const BillForm: React.FC = () => {
     refetchOnWindowFocus: false,
   });
 
-  // Prefer full products cache if present, otherwise use search results when typing, or mini list when empty.
+  // Prefer server-side search results when the user is searching.
+  // Otherwise, fall back to the full products cache or a lightweight mini list.
   const fullProducts = queryClient.getQueryData<any[]>(['products']);
-  const products = (fullProducts && fullProducts.length > 0)
-    ? fullProducts
-    : (debouncedSearch ? productsSearch : (productsMini || []));
+  const products = debouncedSearch
+    ? productsSearch
+    : ((fullProducts && fullProducts.length > 0) ? fullProducts : (productsMini || []));
 
   // Accumulate all seen products into the ref so addItem can find them after search changes
   React.useEffect(() => {
@@ -192,9 +193,11 @@ const BillForm: React.FC = () => {
     const product = allProductsRef.current.get(productId) ?? products.find(p => p.id === productId);
     if (!product) return;
 
+    const isBatch = product.itemType === 'batch';
+
     const newItem: OrderItem = {
       productId: product.id,
-      productName: product.name,
+      productName: isBatch ? `[Batch] ${product.name}` : product.name,
       rate: product.purchasePrice,
       quantity: 1,
       amount: product.purchasePrice
@@ -475,10 +478,10 @@ const BillForm: React.FC = () => {
                               <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                               <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                             </div>
-                          ) : products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                          ) : products.length === 0 ? (
                             <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
                           ) : (
-                            products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+                            products.map(p => (
                               <button
                                 key={p.id}
                                 onClick={() => isMultiSelectMode ? toggleProductSelection(p.id) : addItem(p.id)}
@@ -503,7 +506,11 @@ const BillForm: React.FC = () => {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{p.name}</p>
                                   <p className="text-[10px] font-bold text-sky-600/60 uppercase tracking-widest">Cost: {formatCurrency(p.purchasePrice)}</p>
-                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Stock: {p.stock ?? 0}</p>
+                                  {p.itemType === 'batch' ? (
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Population: {p.population ?? 0} • Age: {p.averageAgeDays ?? 0} days</p>
+                                  ) : (
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Stock: {p.stock ?? 0}</p>
+                                  )}
                                 </div>
                               </button>
                             ))

@@ -116,7 +116,14 @@ export type PermissionKey =
   | 'settings.editCategories'
   | 'settings.editPaymentMethods'
   | 'settings.managePermissions'
-  | 'subscriptions.view';
+  | 'subscriptions.view'
+  | 'batches.view'
+  | 'batches.create'
+  | 'batches.edit'
+  | 'batches.delete'
+  | 'batch_events.view'
+  | 'batch_events.create'
+  | 'batch_events.delete';
 
 export type RolePermissionMap = Record<PermissionKey, boolean>;
 
@@ -261,6 +268,94 @@ export interface Product {
   createdBy?: string;
   deletedAt?: string;
   deletedBy?: string;
+  // Extended fields for batch integration
+  itemType?: 'product' | 'batch';
+  population?: number;
+  averageAgeDays?: number;
+}
+
+export interface BatchCategory {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  parentId?: string;
+  isSystem?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+}
+
+export interface Batch {
+  id: string;
+  name: string;
+  slug?: string;
+  sku?: string | null;
+  categoryId: string;
+  image: string;
+  population: number;
+  averageAgeDays: number;
+  salePrice: number;
+  purchasePrice: number;
+  description?: string;
+  categoryName?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+}
+
+export interface BatchEventType {
+  id: string;
+  name: string;
+  description?: string;
+  isSystem: boolean;
+  requiresPopulationChange: boolean;
+  requiresExpenseAmount: boolean;
+  requiresAccountId: boolean;
+  requiresPaymentMethod: boolean;
+  requiresNotes: boolean;
+  stockAdjustmentDirection: 'increase' | 'decrease' | 'none';
+  createdAt?: string;
+}
+
+export interface BatchEvent {
+  id: string;
+  batchId: string;
+  eventTypeId: string;
+  eventTypeName?: string;
+  batchName?: string;
+  eventDate: string;
+  populationChange: number;
+  populationAfter: number;
+  expenseAmount: number;
+  accountId?: string;
+  accountName?: string;
+  paymentMethod?: string;
+  paymentMethodName?: string;
+  notes?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
+}
+
+export interface BatchEventInput {
+  batchId: string;
+  eventTypeId: string;
+  eventDate: string;
+  populationChange?: number;
+  expenseAmount?: number;
+  accountId?: string;
+  paymentMethod?: string;
+  notes?: string;
+}
+
+export interface AgeComponents {
+  years: number;
+  months: number;
+  days: number;
 }
 
 export interface DynamicPricingRule {
@@ -1180,7 +1275,7 @@ export interface Settings {
   categories: {
     id: string;
     name: string;
-    type: 'Income' | 'Expense' | 'Product' | 'Other';
+    type: 'Income' | 'Expense' | 'Product' | 'Other' | 'Batch';
     color: string;
     parentId?: string;
     isSystem?: boolean;
@@ -1237,7 +1332,8 @@ export type SubCapabilityKey =
   | 'paperfly_courier'
   | 'pathao_courier'
   | 'recycle_bin'
-  | 'undoer';
+  | 'undoer'
+  | 'batch_management';
 
 export type SubCapabilityMap = Partial<Record<SubCapabilityKey, boolean>>;
 
@@ -2126,7 +2222,8 @@ export type RecycleBinEntityType =
   | 'transaction'
   | 'user'
   | 'vendor'
-  | 'product';
+  | 'product'
+  | 'batch';
 
 export interface RecycleBinItem {
   id: string;

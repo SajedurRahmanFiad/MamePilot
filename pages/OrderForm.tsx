@@ -431,12 +431,17 @@ const OrderForm: React.FC = () => {
   const addItem = (productId: string) => {
     const product = allProductsRef.current.get(productId) ?? products.find(p => p.id === productId);
     if (!product) return;
-    if ((product.stock ?? 0) <= 0) {
+
+    // For batches, check population instead of stock
+    const isBatch = product.itemType === 'batch';
+    const stockCheck = isBatch ? (product.population ?? 0) : (product.stock ?? 0);
+
+    if (stockCheck <= 0) {
       toast.warning(`"${product.name}" is out of stock — will be created On Hold.`);
     }
 
-    // Apply dynamic pricing for initial quantity of 1
-    const pricing = applyDynamicPricing(product.dynamicPricing, 1, product.salePrice);
+    // Apply dynamic pricing for initial quantity of 1 (only for products, not batches)
+    const pricing = applyDynamicPricing(isBatch ? undefined : product.dynamicPricing, 1, product.salePrice);
 
     let itemRate = product.salePrice;
     let itemDiscount = 0;
@@ -451,7 +456,7 @@ const OrderForm: React.FC = () => {
 
     const newItem: OrderItem = {
       productId: product.id,
-      productName: product.name,
+      productName: product.itemType === 'batch' ? `[Batch] ${product.name}` : product.name,
       rate: itemRate,
       quantity: 1,
       amount: itemRate,
@@ -478,10 +483,11 @@ const OrderForm: React.FC = () => {
     const newQty = Math.max(1, qty);
     item.quantity = newQty;
 
-    // Re-evaluate dynamic pricing based on new quantity
+    // Re-evaluate dynamic pricing based on new quantity (only for products, not batches)
     const product = allProductsRef.current.get(item.productId) ?? products.find(p => p.id === item.productId);
+    const isBatch = product?.itemType === 'batch';
     const baseRate = product?.salePrice ?? item.rate;
-    const pricing = applyDynamicPricing(product?.dynamicPricing, newQty, baseRate);
+    const pricing = applyDynamicPricing(isBatch ? undefined : product?.dynamicPricing, newQty, baseRate);
 
     if (pricing.action === 'setRate') {
       // setRate: change the rate, track original for strikethrough display
@@ -1083,7 +1089,11 @@ const OrderForm: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{p.name}</p>
                         <p className="text-[10px] font-bold ${theme.colors.primary[600]}/60 uppercase tracking-widest">{formatCurrency(p.salePrice)}</p>
-                        <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
+                        {p.itemType === 'batch' ? (
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Population: {p.population ?? 0} • Age: {p.averageAgeDays ?? 0} days</p>
+                        ) : (
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${p.stock <= 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock: {p.stock ?? 0}</p>
+                        )}
                       </div>
                     </button>
                   ))

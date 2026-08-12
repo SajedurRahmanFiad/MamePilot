@@ -871,18 +871,95 @@ final class MasterDataApi extends BaseService
     public function fetchProducts(array $params = []): array
     {
         $category = trim((string) ($params['category'] ?? ''));
-        $sql = 'SELECT id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, deleted_at, deleted_by
-                FROM products
-                WHERE deleted_at IS NULL';
+
+        // Build WHERE clauses for both products and batches
+        $productWhere = 'WHERE deleted_at IS NULL';
+        $batchWhere = 'WHERE deleted_at IS NULL';
         $bindings = [];
+
         if ($category !== '') {
-            $sql .= ' AND category = :category';
+            $productWhere .= ' AND category = :category';
+            $batchWhere .= ' AND category_id = :category';
             $bindings[':category'] = $category;
         }
-        $sql .= ' ORDER BY created_at DESC';
 
-        $rows = $this->database->fetchAll($sql, $bindings);
-        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
+        $productSql = "SELECT
+            id,
+            name,
+            slug,
+            sku,
+            image,
+            category,
+            unit_id,
+            sale_price,
+            purchase_price,
+            stock,
+            dynamic_pricing,
+            created_by,
+            created_at,
+            deleted_at,
+            deleted_by,
+            'product' as item_type,
+            NULL as population,
+            NULL as average_age_days
+            FROM products {$productWhere}";
+
+        $batchSql = "SELECT
+            CONCAT('batch-', id) as id,
+            name,
+            slug,
+            sku,
+            image,
+            category_id as category,
+            NULL as unit_id,
+            sale_price,
+            purchase_price,
+            population as stock,
+            NULL as dynamic_pricing,
+            created_by,
+            created_at,
+            deleted_at,
+            deleted_by,
+            'batch' as item_type,
+            population,
+            average_age_days
+            FROM batches {$batchWhere}";
+
+        $rows = $this->database->fetchAll(
+            "{$productSql} UNION ALL {$batchSql} ORDER BY created_at DESC"
+            , $bindings);
+
+        // Map rows to unified format
+        $mappedRows = [];
+        foreach ($rows as $row) {
+            if ($row['item_type'] === 'batch') {
+                $mappedRows[] = [
+                    'id' => (string) $row['id'],
+                    'name' => (string) ($row['name'] ?? ''),
+                    'slug' => $this->nullableString($row['slug'] ?? null),
+                    'sku' => $this->nullableString($row['sku'] ?? null),
+                    'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
+                    'category' => (string) ($row['category'] ?? ''),
+                    'unitId' => null,
+                    'salePrice' => (float) ($row['sale_price'] ?? 0),
+                    'purchasePrice' => (float) ($row['purchase_price'] ?? 0),
+                    'stock' => (int) ($row['stock'] ?? 0),
+                    'dynamicPricing' => null,
+                    'createdBy' => $this->nullableString($row['created_by'] ?? null),
+                    'createdAt' => $this->toIso($row['created_at'] ?? null),
+                    'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
+                    'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),
+                    'itemType' => 'batch',
+                    'population' => (int) ($row['population'] ?? 0),
+                    'averageAgeDays' => (int) ($row['average_age_days'] ?? 0),
+                ];
+            } else {
+                $mappedRows[] = $this->mapProduct($row);
+                $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            }
+        }
+
+        return $mappedRows;
     }
 
     public function fetchProductsPage(array $params): array
@@ -956,10 +1033,67 @@ final class MasterDataApi extends BaseService
     public function fetchProductsMini(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing FROM products WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100'
+            "(SELECT
+                id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                stock,
+                dynamic_pricing,
+                category,
+                'product' as item_type,
+                NULL as population,
+                NULL as average_age_days
+             FROM products WHERE deleted_at IS NULL)
+             UNION ALL
+             (SELECT
+                CONCAT('batch-', id) as id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                population as stock,
+                NULL as dynamic_pricing,
+                category_id as category,
+                'batch' as item_type,
+                population,
+                average_age_days
+             FROM batches WHERE deleted_at IS NULL)
+             ORDER BY created_at DESC
+             LIMIT 100"
         );
 
-        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
+        // Map rows to unified format
+        $mappedRows = [];
+        foreach ($rows as $row) {
+            if ($row['item_type'] === 'batch') {
+                $mappedRows[] = [
+                    'id' => (string) $row['id'],
+                    'name' => (string) ($row['name'] ?? ''),
+                    'slug' => $this->nullableString($row['slug'] ?? null),
+                    'sku' => $this->nullableString($row['sku'] ?? null),
+                    'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
+                    'category' => (string) ($row['category'] ?? ''),
+                    'salePrice' => (float) ($row['sale_price'] ?? 0),
+                    'purchasePrice' => (float) ($row['purchase_price'] ?? 0),
+                    'stock' => (int) ($row['stock'] ?? 0),
+                    'dynamicPricing' => null,
+                    'itemType' => 'batch',
+                    'population' => (int) ($row['population'] ?? 0),
+                    'averageAgeDays' => (int) ($row['average_age_days'] ?? 0),
+                ];
+            } else {
+                $mappedRows[] = $this->mapProduct($row);
+                $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            }
+        }
+
+        return $mappedRows;
     }
 
     public function fetchProductsSearch(array $params): array
@@ -970,19 +1104,76 @@ final class MasterDataApi extends BaseService
             return [];
         }
 
+        $bindings = [
+            ':search_name' => '%' . $query . '%',
+            ':search_sku' => '%' . $query . '%',
+        ];
+
         $rows = $this->database->fetchAll(
-            "SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing
+            "(SELECT
+                id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                stock,
+                dynamic_pricing,
+                category,
+                'product' as item_type,
+                NULL as population,
+                NULL as average_age_days
              FROM products
-             WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
-             ORDER BY created_at DESC
+             WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku))
+             UNION ALL
+             (SELECT
+                CONCAT('batch-', id) as id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                population as stock,
+                NULL as dynamic_pricing,
+                category_id as category,
+                'batch' as item_type,
+                population,
+                average_age_days
+             FROM batches
+             WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku))
+             ORDER BY name ASC, id ASC
              LIMIT {$limit}",
-            [
-                ':search_name' => '%' . $query . '%',
-                ':search_sku' => '%' . $query . '%',
-            ]
+            $bindings
         );
 
-        return array_map(fn(array $row): array => $this->mapProduct($row), $rows);
+        // Map rows to unified format
+        $mappedRows = [];
+        foreach ($rows as $row) {
+            if ($row['item_type'] === 'batch') {
+                $mappedRows[] = [
+                    'id' => (string) $row['id'],
+                    'name' => (string) ($row['name'] ?? ''),
+                    'slug' => $this->nullableString($row['slug'] ?? null),
+                    'sku' => $this->nullableString($row['sku'] ?? null),
+                    'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
+                    'category' => (string) ($row['category'] ?? ''),
+                    'salePrice' => (float) ($row['sale_price'] ?? 0),
+                    'purchasePrice' => (float) ($row['purchase_price'] ?? 0),
+                    'stock' => (int) ($row['stock'] ?? 0),
+                    'dynamicPricing' => null,
+                    'itemType' => 'batch',
+                    'population' => (int) ($row['population'] ?? 0),
+                    'averageAgeDays' => (int) ($row['average_age_days'] ?? 0),
+                ];
+            } else {
+                $mappedRows[] = $this->mapProduct($row);
+                $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            }
+        }
+
+        return $mappedRows;
     }
 
     /**
@@ -997,29 +1188,92 @@ final class MasterDataApi extends BaseService
         $page = max(1, (int) ($params['page'] ?? 1));
         $pageSize = max(1, min(50, (int) ($params['pageSize'] ?? 30)));
         $offset = ($page - 1) * $pageSize;
-        $where = 'WHERE deleted_at IS NULL';
+
+        // Build WHERE clauses for both products and batches
+        $productWhere = 'WHERE deleted_at IS NULL';
+        $batchWhere = 'WHERE deleted_at IS NULL';
         $bindings = [];
+
         if ($query !== '') {
             // Native PDO prepares do not allow one named placeholder to be
             // reused multiple times in the same statement.
-            $where .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
+            $productWhere .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
+            $batchWhere .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
             $bindings[':search_name'] = '%' . $query . '%';
             $bindings[':search_sku'] = '%' . $query . '%';
         }
+
         // Fetch one extra row instead of running a full COUNT(*) scan for
         // every autocomplete keystroke. The dropdown only needs to know
         // whether another bounded page exists.
         $rows = $this->database->fetchAll(
-            "SELECT id, name, slug, sku, image, sale_price, purchase_price, stock, dynamic_pricing
-             FROM products {$where}
+            "(SELECT
+                id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                stock,
+                dynamic_pricing,
+                category,
+                'product' as item_type,
+                NULL as population,
+                NULL as average_age_days
+             FROM products {$productWhere})
+             UNION ALL
+             (SELECT
+                CONCAT('batch-', id) as id,
+                name,
+                slug,
+                sku,
+                image,
+                sale_price,
+                purchase_price,
+                population as stock,
+                NULL as dynamic_pricing,
+                category_id as category,
+                'batch' as item_type,
+                population,
+                average_age_days
+             FROM batches {$batchWhere})
              ORDER BY name ASC, id ASC
              LIMIT " . ($pageSize + 1) . " OFFSET {$offset}",
             $bindings
         );
         $hasMore = count($rows) > $pageSize;
         if ($hasMore) array_pop($rows);
+
+        // Map rows to unified format
+        $mappedRows = [];
+        foreach ($rows as $row) {
+            if ($row['item_type'] === 'batch') {
+                // For batches, use a modified mapping
+                $mappedRows[] = [
+                    'id' => (string) $row['id'],
+                    'name' => (string) ($row['name'] ?? ''),
+                    'slug' => $this->nullableString($row['slug'] ?? null),
+                    'sku' => $this->nullableString($row['sku'] ?? null),
+                    'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '')),
+                    'category' => (string) ($row['category'] ?? ''),
+                    'salePrice' => (float) ($row['sale_price'] ?? 0),
+                    'purchasePrice' => (float) ($row['purchase_price'] ?? 0),
+                    'stock' => (int) ($row['stock'] ?? 0),
+                    'dynamicPricing' => null,
+                    'itemType' => 'batch',
+                    'population' => (int) ($row['population'] ?? 0),
+                    'averageAgeDays' => (int) ($row['average_age_days'] ?? 0),
+                ];
+            } else {
+                // For products, use the standard mapping
+                $mappedRows[] = $this->mapProduct($row);
+                $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            }
+        }
+
         return [
-            'data' => array_map(fn(array $row): array => $this->mapProduct($row), $rows),
+            'data' => $mappedRows,
             'page' => $page,
             'pageSize' => $pageSize,
             'hasMore' => $hasMore,
