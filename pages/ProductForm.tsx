@@ -9,6 +9,7 @@ import { compressImage } from '../utils';
 import { useProduct, useCategories, useUnits } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { getPreservedRouteState } from '../src/utils/navigation';
 
 function slugify(text: string): string {
@@ -26,6 +27,12 @@ const ProductForm: React.FC = () => {
   const isEdit = Boolean(id);
   const user = db.currentUser;
   const { canCreateProducts, canEditProducts } = useRolePermissions();
+  const { capabilities, isLoading: capabilitiesLoading } = useCapabilities();
+
+  // Check if Shopify or WooCommerce is enabled
+  const showSkuField = useMemo(() => {
+    return capabilities.shopify || capabilities.woocommerce;
+  }, [capabilities.shopify, capabilities.woocommerce]);
 
   const handleClose = () => {
     const navState = getPreservedRouteState(location.state);
@@ -181,7 +188,7 @@ const ProductForm: React.FC = () => {
       const productData: Omit<Product, 'id'> = {
         name: form.name || '',
         slug: form.slug ? slugify(form.slug) : undefined,
-        sku: form.sku?.trim() || undefined,
+        sku: showSkuField ? (form.sku?.trim() || undefined) : undefined,
         category: form.category || '',
         image: form.image || '/uploads/Empty_product.png',
         unitId: form.unitId || undefined,
@@ -276,17 +283,19 @@ const ProductForm: React.FC = () => {
           </div>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">SKU</label>
-          <input
-            type="text"
-            className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]"
-            value={form.sku || ''}
-            onChange={e => setForm({ ...form, sku: e.target.value })}
-            placeholder="e.g. SHIRT-BLACK-L"
-          />
-          <p className="text-xs text-gray-400">Shopify uses the SKU to match this product and prevent duplicate imports.</p>
-        </div>
+        {showSkuField && (
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">SKU</label>
+            <input
+              type="text"
+              className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]"
+              value={form.sku || ''}
+              onChange={e => setForm({ ...form, sku: e.target.value })}
+              placeholder="e.g. SHIRT-BLACK-L"
+            />
+            <p className="text-xs text-gray-400">Shopify uses the SKU to match this product and prevent duplicate imports.</p>
+          </div>
+        )}
 
         <div className="space-y-1">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Slug</label>
