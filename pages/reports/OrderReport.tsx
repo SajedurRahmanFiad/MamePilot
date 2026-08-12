@@ -284,6 +284,12 @@ const OrderReport: React.FC = () => {
             <SummaryCard label="Exchanges" value={reportData?.exchangeCount ?? 0} color="border-l-blue-400" />
           </div>
 
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <SummaryCard label="Processing" value={reportData?.processingCount ?? 0} color="border-l-yellow-400" />
+            <SummaryCard label="Picked" value={reportData?.pickedCount ?? 0} color="border-l-indigo-400" />
+            <SummaryCard label="Courier Assigned" value={reportData?.courierAssignedCount ?? 0} color="border-l-purple-400" />
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <SummaryCard label="Total Revenue" value={formatCurrency(reportData?.totalRevenue ?? 0)} />
             <SummaryCard label="Total Paid" value={formatCurrency(reportData?.totalPaid ?? 0)} color="border-l-green-400" />
@@ -299,6 +305,9 @@ const OrderReport: React.FC = () => {
                 <InsightRow label="Returned" value={(reportData?.returnedCount ?? 0).toLocaleString()} detail={`${returnRate}%`} valueClass="text-orange-600" />
                 <InsightRow label="Cancelled" value={(reportData?.cancelledCount ?? 0).toLocaleString()} detail={`${cancelRate}%`} valueClass="text-red-600" />
                 <InsightRow label="Exchanges" value={(reportData?.exchangeCount ?? 0).toLocaleString()} valueClass="text-blue-600" />
+                <InsightRow label="Processing" value={(reportData?.processingCount ?? 0).toLocaleString()} valueClass="text-yellow-600" />
+                <InsightRow label="Picked" value={(reportData?.pickedCount ?? 0).toLocaleString()} valueClass="text-indigo-600" />
+                <InsightRow label="Courier Assigned" value={(reportData?.courierAssignedCount ?? 0).toLocaleString()} valueClass="text-purple-600" />
               </div>
             </div>
 

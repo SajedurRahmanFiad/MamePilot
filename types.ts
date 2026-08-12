@@ -1251,6 +1251,9 @@ export interface OrderReportData {
   returnedCount: number;
   cancelledCount: number;
   exchangeCount: number;
+  processingCount: number;
+  pickedCount: number;
+  courierAssignedCount: number;
   totalRevenue: number;
   totalPaid: number;
   totalDue: number;

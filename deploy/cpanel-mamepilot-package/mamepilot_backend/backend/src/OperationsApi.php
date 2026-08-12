@@ -1064,36 +1064,6 @@ final class OperationsApi extends BaseService
     }
 
     /**
-     * Extract the timestamp from history for a given order status.
-     * Returns the timestamp as a string in 'Y-m-d H:i:s' format.
-     */
-    private function extractActionTimestampFromHistory(array $history, string $status): ?string
-    {
-        $statusToHistoryKey = [
-            'Completed' => 'completed',
-            'Exchange delivered' => 'exchangeDelivered',
-            'Returned' => 'returned',
-            'Exchange returned' => 'return',
-            'Cancelled' => 'cancelled',
-            'Exchange cancelled' => 'cancelled',
-            'Exchange processing' => 'exchangeProcessing',
-            'Exchange picked' => 'exchangePicked',
-        ];
-
-        $historyKey = $statusToHistoryKey[$status] ?? null;
-        if ($historyKey === null) {
-            return null;
-        }
-
-        $historyText = $this->historyValue($history, $historyKey);
-        if ($historyText === '') {
-            return null;
-        }
-
-        return $this->extractTimestampFromHistoryText($historyText);
-    }
-
-    /**
      * Extract timestamp from history text like "Marked as delivered by User on 2024-01-15 at 14:30:00."
      * Returns timestamp in 'Y-m-d H:i:s' format or null if not found.
      */
@@ -1105,6 +1075,38 @@ final class OperationsApi extends BaseService
         }
         return null;
     }
+
+    /**
+     * Check if any action in the history occurred within the given date range.
+     */
+    private function hasAnyActionInDateRange(array $history, ?string $fromDateTime, ?string $toDateTime): bool
+    {
+        if ($fromDateTime === null && $toDateTime === null) {
+            return true;
+        }
+
+        $actionKeys = [
+            'processing', 'picked', 'courier', 'completed',
+            'returned', 'cancelled', 'exchangeProcessing', 'exchangePicked',
+            'exchangeDelivered', 'exchangeReturned', 'exchangeCancelled',
+        ];
+
+        foreach ($actionKeys as $key) {
+            $historyText = $this->historyValue($history, $key);
+            if ($historyText !== '') {
+                $timestamp = $this->extractTimestampFromHistoryText($historyText);
+                if ($timestamp !== null) {
+                    if (($fromDateTime === null || $timestamp >= $fromDateTime) &&
+                        ($toDateTime === null || $timestamp <= $toDateTime)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private function assertUserCanManageOrderRecord(array $user, array $row, string $ownPermission, string $anyPermission, string $message): void
     {
         $createdBy = (string) ($row['created_by'] ?? $row['createdBy'] ?? '');
@@ -4378,18 +4380,16 @@ final class OperationsApi extends BaseService
             $bindings
         );
 
+        $fromDateTime = $filters['fromDateTime'] ?? null;
+        $toDateTime = $filters['toDateTime'] ?? null;
+
         if ($dateMode === 'completed') {
-            $fromDateTime = $filters['fromDateTime'] ?? null;
-            $toDateTime = $filters['toDateTime'] ?? null;
             $filteredOrders = [];
             foreach ($orders as $order) {
                 $history = $this->jsonDecodeAssoc($order['history'] ?? []);
-                $actionTimestamp = $this->extractActionTimestampFromHistory($history, $order['status']);
-                if ($actionTimestamp !== null) {
-                    if (($fromDateTime === null || $actionTimestamp >= $fromDateTime) &&
-                        ($toDateTime === null || $actionTimestamp <= $toDateTime)) {
-                        $filteredOrders[] = $order;
-                    }
+                $hasActionInRange = $this->hasAnyActionInDateRange($history, $fromDateTime, $toDateTime);
+                if ($hasActionInRange) {
+                    $filteredOrders[] = $order;
                 }
             }
             $orders = $filteredOrders;
@@ -4421,6 +4421,9 @@ final class OperationsApi extends BaseService
         $returnedCount = 0;
         $cancelledCount = 0;
         $exchangeCount = 0;
+        $processingCount = 0;
+        $pickedCount = 0;
+        $courierAssignedCount = 0;
         $totalRevenue = 0.0;
         $totalPaid = 0.0;
         $totalCogs = 0.0;
@@ -4441,6 +4444,16 @@ final class OperationsApi extends BaseService
                 $cancelledCount++;
             } elseif (in_array($status, ['Exchange processing', 'Exchange picked'], true)) {
                 $exchangeCount++;
+            }
+
+            if ($status === 'Processing' || $status === 'Exchange processing') {
+                $processingCount++;
+            }
+            if ($status === 'Picked' || $status === 'Exchange picked') {
+                $pickedCount++;
+            }
+            if ($status === 'Courier assigned') {
+                $courierAssignedCount++;
             }
 
             $totalRevenue += $total;
@@ -4477,6 +4490,9 @@ final class OperationsApi extends BaseService
             'returnedCount' => $returnedCount,
             'cancelledCount' => $cancelledCount,
             'exchangeCount' => $exchangeCount,
+            'processingCount' => $processingCount,
+            'pickedCount' => $pickedCount,
+            'courierAssignedCount' => $courierAssignedCount,
             'totalRevenue' => $totalRevenue,
             'totalPaid' => $totalPaid,
             'totalDue' => max(0, $totalRevenue - $totalPaid),
