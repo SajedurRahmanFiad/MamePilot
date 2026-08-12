@@ -1054,6 +1054,9 @@ final class MasterDataApi extends BaseService
             $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
         }
 
+        // Numeric-aware sort for Bengali numeral suffixes
+        usort($mappedRows, fn($a, $b) => $this->compareProductNames($a['name'] ?? '', $b['name'] ?? ''));
+
         return $mappedRows;
     }
 
@@ -1110,6 +1113,11 @@ final class MasterDataApi extends BaseService
             $mappedRows[] = $this->mapProduct($row);
             $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
         }
+
+        // Re-sort so that product names sharing the same alphabetic prefix
+        // but differing in trailing Bengali numerals are ordered numerically
+        // (e.g. ৫, ১০, ১৫, ২০) instead of purely alphabetically.
+        usort($mappedRows, fn($a, $b) => $this->compareProductNames($a['name'] ?? '', $b['name'] ?? ''));
 
         return [
             'data' => $mappedRows,

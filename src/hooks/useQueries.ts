@@ -371,10 +371,10 @@ export function useProfitLossReport(
 }
 
 export function useOrderReport(
-  filterRange: string = 'This Year',
+  filterRange: string = 'Today',
   customDates: { from: string; to: string } = { from: '', to: '' },
   companyPageIds: string[] = [],
-  dateMode: 'created' | 'completed' = 'created',
+  dateMode: 'created' | 'completed' = 'completed',
   options?: { enabled?: boolean }
 ): UseQueryResult<OrderReportData, Error> {
   const normalizedCustomDates = {

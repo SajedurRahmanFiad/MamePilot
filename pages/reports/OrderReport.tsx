@@ -32,10 +32,10 @@ const InsightRow: React.FC<{ label: string; value: string; detail?: string; valu
 
 const OrderReport: React.FC = () => {
   const navigate = useNavigate();
-  const [filterRange, setFilterRange] = useState<FilterRange>('This Year');
+  const [filterRange, setFilterRange] = useState<FilterRange>('Today');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const [includeTime, setIncludeTime] = useState(false);
-  const [dateMode, setDateMode] = useState<DateMode>('created');
+  const [dateMode, setDateMode] = useState<DateMode>('completed');
   const [appliedCompanyIds, setAppliedCompanyIds] = useState<string[]>([]);
   const [pendingCompanyIds, setPendingCompanyIds] = useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);

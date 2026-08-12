@@ -1064,9 +1064,47 @@ final class OperationsApi extends BaseService
     }
 
     /**
-     * @param array<string, mixed> $user
-     * @param array<string, mixed> $row
+     * Extract the timestamp from history for a given order status.
+     * Returns the timestamp as a string in 'Y-m-d H:i:s' format.
      */
+    private function extractActionTimestampFromHistory(array $history, string $status): ?string
+    {
+        $statusToHistoryKey = [
+            'Completed' => 'completed',
+            'Exchange delivered' => 'exchangeDelivered',
+            'Returned' => 'returned',
+            'Exchange returned' => 'return',
+            'Cancelled' => 'cancelled',
+            'Exchange cancelled' => 'cancelled',
+            'Exchange processing' => 'exchangeProcessing',
+            'Exchange picked' => 'exchangePicked',
+        ];
+
+        $historyKey = $statusToHistoryKey[$status] ?? null;
+        if ($historyKey === null) {
+            return null;
+        }
+
+        $historyText = $this->historyValue($history, $historyKey);
+        if ($historyText === '') {
+            return null;
+        }
+
+        return $this->extractTimestampFromHistoryText($historyText);
+    }
+
+    /**
+     * Extract timestamp from history text like "Marked as delivered by User on 2024-01-15 at 14:30:00."
+     * Returns timestamp in 'Y-m-d H:i:s' format or null if not found.
+     */
+    private function extractTimestampFromHistoryText(string $text): ?string
+    {
+        $pattern = '/(\d{4}-\d{2}-\d{2}) at (\d{2}:\d{2}:\d{2})/';
+        if (preg_match($pattern, $text, $matches)) {
+            return $matches[1] . ' ' . $matches[2];
+        }
+        return null;
+    }
     private function assertUserCanManageOrderRecord(array $user, array $row, string $ownPermission, string $anyPermission, string $message): void
     {
         $createdBy = (string) ($row['created_by'] ?? $row['createdBy'] ?? '');
@@ -4312,8 +4350,6 @@ final class OperationsApi extends BaseService
 
         if ($dateMode === 'created') {
             $this->applyDashboardDateBounds('o.orderDate', $filters, $conditions, $bindings, 'order_rpt');
-        } else {
-            $this->applyDashboardDateTimeBounds('o.createdAt', $filters, $conditions, $bindings, 'order_rpt');
         }
 
         if ($hasCompanyFilter) {
@@ -4341,6 +4377,23 @@ final class OperationsApi extends BaseService
              ORDER BY o.orderDate DESC',
             $bindings
         );
+
+        if ($dateMode === 'completed') {
+            $fromDateTime = $filters['fromDateTime'] ?? null;
+            $toDateTime = $filters['toDateTime'] ?? null;
+            $filteredOrders = [];
+            foreach ($orders as $order) {
+                $history = $this->jsonDecodeAssoc($order['history'] ?? []);
+                $actionTimestamp = $this->extractActionTimestampFromHistory($history, $order['status']);
+                if ($actionTimestamp !== null) {
+                    if (($fromDateTime === null || $actionTimestamp >= $fromDateTime) &&
+                        ($toDateTime === null || $actionTimestamp <= $toDateTime)) {
+                        $filteredOrders[] = $order;
+                    }
+                }
+            }
+            $orders = $filteredOrders;
+        }
 
         $orderIds = array_map(static fn(array $o) => (string) ($o['id'] ?? ''), $orders);
         $cogsMap = [];

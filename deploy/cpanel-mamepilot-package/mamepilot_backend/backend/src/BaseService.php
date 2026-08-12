@@ -849,6 +849,52 @@ abstract class BaseService
     }
 
     /**
+     * Convert a string of Bengali digits (০-৯) to an integer.
+     * Non-Bengali-digit characters are ignored.
+     */
+    protected function bengaliToNumber(string $bengali): int
+    {
+        $map = [
+            '০' => '0', '১' => '1', '২' => '2', '৩' => '3', '৪' => '4',
+            '৫' => '5', '৬' => '6', '৭' => '7', '৮' => '8', '৯' => '9',
+        ];
+        return (int) strtr($bengali, $map);
+    }
+
+    /**
+     * Sort comparator for product names that may contain trailing Bengali
+     * numerals.  When two names share the same alphabetic prefix and differ
+     * only in a trailing Bengali number group, they are sorted numerically;
+     * otherwise the standard alphabetical (strcmp) order is used.
+     */
+    protected function compareProductNames(string $a, string $b): int
+    {
+        // Match an optional common prefix followed by a Bengali digit group
+        // and an optional suffix.  The prefix captures everything before the
+        // first Bengali digit that appears as a number token (preceded by
+        // a space, tilde, or start-of-string and followed by a space or end).
+        $pattern = '/^(.*?)([০-৯]+)(.*)$/u';
+
+        $matchA = preg_match($pattern, $a, $partsA);
+        $matchB = preg_match($pattern, $b, $partsB);
+
+        if ($matchA && $matchB && $partsA[1] === $partsB[1]) {
+            // Same alphabetic prefix — sort by numeric value of Bengali digits
+            $numA = $this->bengaliToNumber($partsA[2]);
+            $numB = $this->bengaliToNumber($partsB[2]);
+            $cmp = $numA <=> $numB;
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            // Same numeric value — fall through to suffix comparison
+            return strcmp($partsA[3], $partsB[3]);
+        }
+
+        // Default: alphabetical sort
+        return strcmp($a, $b);
+    }
+
+    /**
      * @param mixed $value
      */
     protected function nullableString($value): ?string
