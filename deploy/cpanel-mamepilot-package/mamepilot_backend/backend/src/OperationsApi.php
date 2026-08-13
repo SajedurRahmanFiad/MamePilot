@@ -4455,9 +4455,16 @@ final class OperationsApi extends BaseService
             $filteredOrders = [];
             foreach ($orders as $order) {
                 $history = $this->jsonDecodeAssoc($order['history'] ?? []);
-                $hasActionInRange = $this->hasAnyActionInDateRange($history, $fromDateTime, $toDateTime);
-                if ($hasActionInRange) {
-                    $filteredOrders[] = $order;
+                // For 'completed' date mode, only check the 'completed' history field
+                $historyText = $this->historyValue($history, 'completed');
+                if ($historyText !== '') {
+                    $timestamp = $this->extractTimestampFromHistoryText($historyText);
+                    if ($timestamp !== null) {
+                        if (($fromDateTime === null || $timestamp >= $fromDateTime) &&
+                            ($toDateTime === null || $timestamp <= $toDateTime)) {
+                            $filteredOrders[] = $order;
+                        }
+                    }
                 }
             }
             $orders = $filteredOrders;
