@@ -3,7 +3,8 @@
  * These functions are reused across many components to avoid repetition
  */
 
-import type { Bill, Order, Transaction, OrderStatus, BillStatus } from './types';
+import type { Bill, Order, Transaction } from './types';
+import { OrderStatus, BillStatus } from './types';
 
 const DYNAMIC_TEXT_FILTER_PREFIX = '__mp_filter_v1__:';
 
