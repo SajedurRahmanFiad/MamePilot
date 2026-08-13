@@ -204,8 +204,8 @@ const Bills: React.FC = () => {
 
   const { data: billsPage, isFetching: billsLoading } = useBillsPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
-    from: filterByBillStatusChange ? undefined : timeFilters.from,
-    to: filterByBillStatusChange ? undefined : timeFilters.to,
+    from: timeFilters.from,
+    to: timeFilters.to,
     search: searchQuery,
     createdByIds,
     createdByNotIds,

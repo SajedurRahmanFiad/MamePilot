@@ -776,8 +776,9 @@ abstract class BaseService
                 $dateStr = $matches[1];
                 $timeStr = $matches[2];
 
-                // Parse date
-                $date = \DateTimeImmutable::createFromFormat('d M Y', $dateStr, $this->utcTimezone());
+                // Parse date in LOCAL timezone (history timestamps are in local time)
+                $localTimezone = new \DateTimeZone($this->config->timezone());
+                $date = \DateTimeImmutable::createFromFormat('d M Y', $dateStr, $localTimezone);
                 if ($date === false) {
                     continue;
                 }
@@ -806,8 +807,7 @@ abstract class BaseService
                     }
                 }
 
-                // Combine date and time in Asia/Dhaka timezone (app timezone)
-                $localTimezone = new \DateTimeZone($this->config->timezone());
+                // Combine date and time in LOCAL timezone, then convert to UTC
                 $dateTimeStr = $date->format('Y-m-d') . ' ' . sprintf('%02d:%02d:%02d', $hour, $minute, $second);
                 $localDateTime = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $dateTimeStr, $localTimezone);
 
