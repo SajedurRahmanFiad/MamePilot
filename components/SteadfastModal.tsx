@@ -105,8 +105,8 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         try {
           if (result.error.includes('Account is not active')) {
             displayError = 'Your Steadfast account is not active. Please contact Steadfast support or check your account status.';
-          } else if (result.error.includes('Invalid API key') || result.error.includes('Unauthorized') || result.error.includes('401')) {
-            displayError = 'Invalid Steadfast credentials. Please verify your API key and secret key in Settings → Courier.';
+          } else if (result.error.includes('Invalid API key') || result.error.includes('Secret Key') || result.error.includes('Unauthorized')) {
+            displayError = 'Invalid Steadfast credentials. Please verify your API key and secret key in Settings → Courier. Detail: ' + result.error;
           } else if (result.error.includes('limit') || result.error.includes('quota')) {
             displayError = 'Steadfast API limit reached. Please try again later.';
           }

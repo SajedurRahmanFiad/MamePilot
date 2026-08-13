@@ -1011,7 +1011,8 @@ final class CourierApi extends BaseService
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
-            return ['error' => 'HTTP ' . $response['status']];
+            $detail = $response['json']['message'] ?? $response['json']['error'] ?? $response['body'] ?? '';
+            return ['error' => 'HTTP ' . $response['status'] . ($detail !== '' ? ': ' . $detail : '')];
         }
 
         return is_array($response['json']) ? $response['json'] : ['error' => 'Invalid response'];
@@ -1037,7 +1038,8 @@ final class CourierApi extends BaseService
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
-            return ['error' => 'HTTP ' . $response['status']];
+            $detail = $response['json']['message'] ?? $response['json']['error'] ?? $response['body'] ?? '';
+            return ['error' => 'HTTP ' . $response['status'] . ($detail !== '' ? ': ' . $detail : '')];
         }
 
         return ['data' => $response['json']];
@@ -1061,7 +1063,8 @@ final class CourierApi extends BaseService
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
-            return ['error' => 'HTTP ' . $response['status']];
+            $detail = $response['json']['message'] ?? $response['json']['error'] ?? $response['body'] ?? '';
+            return ['error' => 'HTTP ' . $response['status'] . ($detail !== '' ? ': ' . $detail : '')];
         }
 
         return ['data' => $response['json']];
