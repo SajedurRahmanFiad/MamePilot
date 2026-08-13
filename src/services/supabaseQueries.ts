@@ -164,7 +164,7 @@ export async function fetchProductQuantitySoldReport(params?: { filterRange?: st
 export async function fetchCustomerSalesReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<CustomerSalesReportData>('fetchCustomerSalesReport', params || {});
 }
-export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[] }, options?: ApiActionOptions) {
+export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean }, options?: ApiActionOptions) {
   return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters }, options);
 }
 export async function fetchOrderFilterOptions(params?: { search?: string; field?: string }) {
@@ -286,7 +286,7 @@ export async function fetchVendorsPage(page: number = 1, pageSize: number = DEFA
 export async function fetchVendorFilterOptions(params?: { search?: string; field?: string }) {
   return call<{ names?: string[]; phones?: string[]; addresses?: string[] }>('fetchVendorFilterOptions', params || {});
 }
-export async function fetchBillsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; billNumber?: string; billNumberNot?: string; vendorName?: string; vendorNameNot?: string; vendorPhone?: string; vendorPhoneNot?: string; billStatus?: string; billStatusNot?: string; paymentStatus?: string; paymentStatusNot?: string }, options?: ApiActionOptions) {
+export async function fetchBillsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; billNumber?: string; billNumberNot?: string; vendorName?: string; vendorNameNot?: string; vendorPhone?: string; vendorPhoneNot?: string; billStatus?: string; billStatusNot?: string; paymentStatus?: string; paymentStatusNot?: string; statusHistoryField?: string | null; filterByStatusChange?: boolean }, options?: ApiActionOptions) {
   return call<{ data: Bill[]; count: number }>('fetchBillsPage', { page, pageSize, filters }, options);
 }
 export async function fetchBillFilterOptions(params?: { search?: string; field?: string }) {

@@ -18,7 +18,7 @@ import { DEFAULT_PAGE_SIZE, fetchBillById } from '../src/services/supabaseQuerie
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDate, formatDateTimeParts, getBillActivityDate, getDateTimeFilters, getTodayDate } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, formatDate, formatDateTimeParts, getBillActivityDate, getDateTimeFilters, getTodayDate, getBillStatusHistoryField } from '../utils';
 
 const PAYMENT_STATUS_OPTIONS = ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'];
 
@@ -162,6 +162,19 @@ const Bills: React.FC = () => {
     [effectiveFilterRange, effectiveCustomDates]
   );
 
+  // When a specific bill status is selected and datetime filter is applied,
+  // filter by the status change datetime from history instead of createdAt
+  const billStatusHistoryField = useMemo(() => {
+    // For bills, we need to check the final status (which may come from history)
+    // Map the filter status to the corresponding history field
+    if (effectiveBillStatusFilter === 'all' || !effectiveBillStatusFilter) return null;
+    return getBillStatusHistoryField(effectiveBillStatusFilter as BillStatus);
+  }, [effectiveBillStatusFilter]);
+
+  // Determine if we should filter by status change datetime
+  const filterByBillStatusChange = useMemo(() => {
+    return billStatusHistoryField !== null && (timeFilters.from || timeFilters.to);
+  }, [billStatusHistoryField, timeFilters.from, timeFilters.to]);
   const createdByIds = useMemo(() => {
     const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
     if (effectiveCreatedByFilter === 'all') return undefined;
@@ -191,8 +204,8 @@ const Bills: React.FC = () => {
 
   const { data: billsPage, isFetching: billsLoading } = useBillsPage(effectivePage, pageSize, {
     status: effectiveStatusTab === 'All' ? undefined : effectiveStatusTab,
-    from: timeFilters.from,
-    to: timeFilters.to,
+    from: filterByBillStatusChange ? undefined : timeFilters.from,
+    to: filterByBillStatusChange ? undefined : timeFilters.to,
     search: searchQuery,
     createdByIds,
     createdByNotIds,
@@ -206,6 +219,8 @@ const Bills: React.FC = () => {
     billStatusNot: effectiveBillStatusNotFilter || undefined,
     paymentStatus: effectivePaymentStatusFilter === 'all' ? undefined : effectivePaymentStatusFilter,
     paymentStatusNot: effectivePaymentStatusNotFilter || undefined,
+    statusHistoryField: billStatusHistoryField,
+    filterByStatusChange: filterByBillStatusChange,
   }, {
     enabled: canLoadBills,
   });

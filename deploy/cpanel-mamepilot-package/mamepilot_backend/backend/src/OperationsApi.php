@@ -1882,13 +1882,27 @@ final class OperationsApi extends BaseService
             }
         }
 
+        // Handle datetime filtering - either by createdAt or by status change datetime from history
+        $statusHistoryField = $filters['statusHistoryField'] ?? null;
+        $filterByStatusChange = !empty($filters['filterByStatusChange']);
+        $fromFilter = null;
+        $toFilter = null;
+
         if (!empty($filters['from'])) {
-            $where .= ' AND createdAt >= :from';
-            $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
+            $fromFilter = $this->normalizeDateTimeInput((string) $filters['from']);
+            // Only apply createdAt filter if NOT filtering by status change
+            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+                $where .= ' AND createdAt >= :from';
+                $bindings[':from'] = $fromFilter;
+            }
         }
         if (!empty($filters['to'])) {
-            $where .= ' AND createdAt <= :to';
-            $bindings[':to'] = $this->normalizeDateTimeInput((string) $filters['to']);
+            $toFilter = $this->normalizeDateTimeInput((string) $filters['to']);
+            // Only apply createdAt filter if NOT filtering by status change
+            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+                $where .= ' AND createdAt <= :to';
+                $bindings[':to'] = $toFilter;
+            }
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
@@ -1965,6 +1979,39 @@ final class OperationsApi extends BaseService
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
+
+        // Apply status change datetime filtering in PHP if needed
+        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter)) {
+            $filteredRows = [];
+            $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
+            $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
+
+            foreach ($rows as $row) {
+                $history = $this->jsonDecodeAssoc($row['history'] ?? []);
+                $historyValue = $history[$statusHistoryField] ?? '';
+
+                if ($historyValue) {
+                    $parsedDate = $this->parseHistoryTimestampValue($historyValue);
+                    if ($parsedDate) {
+                        $inRange = true;
+                        if ($fromDate && $parsedDate < $fromDate) {
+                            $inRange = false;
+                        }
+                        if ($toDate && $parsedDate > $toDate) {
+                            $inRange = false;
+                        }
+                        if ($inRange) {
+                            $filteredRows[] = $row;
+                        }
+                    }
+                }
+            }
+            $rows = $filteredRows;
+
+            // Recount based on filtered results (this is an approximation for paginated results)
+            // For accurate counts, we'd need to fetch all matching records first
+            $countRow['count'] = count($filteredRows);
+        }
 
         return [
             'data' => array_map(fn(array $row): array => $this->mapOrder($row), $rows),
@@ -4919,13 +4966,13 @@ final class OperationsApi extends BaseService
             $collectedAmount = round((float) ($charge['collected_amount'] ?? 0), 2);
         }
 
-        // Fall back to remainingDue when no collected_amount is available from the webhook.
-        $paymentAmount = $collectedAmount > 0
-            ? $collectedAmount
-            : round(max(0.0, $orderTotal - $paidAmount), 2);
-        if ($paymentAmount <= 0) {
+        // Only record payment when the courier actually reports a non-zero collected
+        // amount.  A0 collected_amount means no COD was collected from the customer;
+        // falling back to the remaining due would incorrectly mark the order as paid.
+        if ($collectedAmount <= 0) {
             return null;
         }
+        $paymentAmount = $collectedAmount;
 
         // Use per-courier defaults; fall back to system defaults, then to the oldest account.
         $prefix = $provider;
@@ -5217,7 +5264,7 @@ final class OperationsApi extends BaseService
             $this->touchUpdate('orders', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
             $automaticExpenseTransactionId = '';
-            if ($automaticCourierExpense !== null && in_array($nextStatus, ['Completed', 'Exchange delivered'], true)) {
+            if ($automaticCourierExpense !== null) {
                 $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
                     $actor,
                     $id,
@@ -6082,6 +6129,12 @@ final class OperationsApi extends BaseService
         $where = 'WHERE 1=1';
         $bindings = [];
 
+        // Handle datetime filtering - either by createdAt or by status change datetime from history
+        $statusHistoryField = $filters['statusHistoryField'] ?? null;
+        $filterByStatusChange = !empty($filters['filterByStatusChange']);
+        $fromFilter = null;
+        $toFilter = null;
+
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
             $where .= ' AND status = :status';
@@ -6136,12 +6189,22 @@ final class OperationsApi extends BaseService
             $bindings[':bill_payment_status_not'] = $billPaymentStatusNot;
         }
         if (!empty($filters['from'])) {
-            $where .= ' AND createdAt >= :from';
-            $bindings[':from'] = $this->normalizeDateTimeInput((string) $filters['from']);
+            // When filtering by status change datetime, we'll handle it in PHP after fetching
+            $fromFilter = $this->normalizeDateTimeInput((string) $filters['from']);
+            // Only apply createdAt filter if NOT filtering by status change
+            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+                $where .= ' AND createdAt >= :from';
+                $bindings[':from'] = $fromFilter;
+            }
         }
         if (!empty($filters['to'])) {
-            $where .= ' AND createdAt <= :to';
-            $bindings[':to'] = $this->normalizeDateTimeInput((string) $filters['to']);
+            // When filtering by status change datetime, we'll handle it in PHP after fetching
+            $toFilter = $this->normalizeDateTimeInput((string) $filters['to']);
+            // Only apply createdAt filter if NOT filtering by status change
+            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+                $where .= ' AND createdAt <= :to';
+                $bindings[':to'] = $toFilter;
+            }
         }
 
         $search = trim((string) ($filters['search'] ?? ''));
@@ -6195,6 +6258,38 @@ final class OperationsApi extends BaseService
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
+
+        // Apply status change datetime filtering in PHP if needed
+        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter)) {
+            $filteredRows = [];
+            $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
+            $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
+
+            foreach ($rows as $row) {
+                $history = $this->jsonDecodeAssoc($row['history'] ?? []);
+                $historyValue = $history[$statusHistoryField] ?? '';
+
+                if ($historyValue) {
+                    $parsedDate = $this->parseHistoryTimestampValue($historyValue);
+                    if ($parsedDate) {
+                        $inRange = true;
+                        if ($fromDate && $parsedDate < $fromDate) {
+                            $inRange = false;
+                        }
+                        if ($toDate && $parsedDate > $toDate) {
+                            $inRange = false;
+                        }
+                        if ($inRange) {
+                            $filteredRows[] = $row;
+                        }
+                    }
+                }
+            }
+            $rows = $filteredRows;
+
+            // Recount based on filtered results
+            $countRow['count'] = count($filteredRows);
+        }
 
         return [
             'data' => array_map(fn(array $row): array => $this->mapBill($row), $rows),
@@ -10239,9 +10334,6 @@ SQL;
             [':id' => $orderId]
         );
         if ($orderRow === null) {
-            return null;
-        }
-        if (!in_array((string) ($orderRow['status'] ?? ''), ['Completed', 'Exchange delivered'], true)) {
             return null;
         }
 

@@ -2913,7 +2913,7 @@ final class CourierApi extends BaseService
         }
 
         $effectiveTarget = (string) ($updates['status'] ?? $current);
-        if ($chargeId !== '' && $hasCharge && in_array($effectiveTarget, ['Completed', 'Exchange delivered'], true)) {
+        if ($chargeId !== '' && $hasCharge) {
             $updates['courierAutomaticExpense'] = [
                 'chargeId' => $chargeId,
                 'provider' => $provider,

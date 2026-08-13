@@ -743,6 +743,84 @@ abstract class BaseService
         }
     }
 
+    /**
+     * Parse a history timestamp value which can be either ISO 8601 or human-readable format.
+     * Human-readable format: "Marked delivered on 26 Jul 2025, at 04:30 PM" or "on 26 Jul 2025, at 04:30 PM"
+     */
+    protected function parseHistoryTimestampValue(string $value): ?\DateTimeImmutable
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        // Try ISO 8601 format first (from gmdate('c'))
+        $parsed = $this->parseDateTimeValue($trimmed, $this->utcTimezone());
+        if ($parsed !== null) {
+            return $parsed;
+        }
+
+        // Try human-readable format: "Marked delivered on 26 Jul 2025, at 04:30 PM"
+        // or "on 26 Jul 2025, at 04:30 PM"
+        $patterns = [
+            // "Marked delivered on 26 Jul 2025, at 04:30 PM"
+            '/^.*?on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+            // "on 26 Jul 2025, at 04:30 PM"
+            '/^on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+            // "26 Jul 2025, 04:30 PM" (without "on" and "at")
+            '/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $trimmed, $matches)) {
+                $dateStr = $matches[1];
+                $timeStr = $matches[2];
+
+                // Parse date
+                $date = \DateTimeImmutable::createFromFormat('d M Y', $dateStr, $this->utcTimezone());
+                if ($date === false) {
+                    continue;
+                }
+
+                // Parse time with am/pm
+                $timeStrLower = strtolower(trim($timeStr));
+                $hasAmPm = false;
+                if (preg_match('/(\d{1,2}:\d{2}(?::\d{2})?)\s*(am|pm)/', $timeStrLower, $timeMatches)) {
+                    $timePart = $timeMatches[1];
+                    $meridiem = $timeMatches[2];
+                    $hasAmPm = true;
+                } else {
+                    $timePart = $timeStrLower;
+                }
+
+                $timeParts = explode(':', $timePart);
+                $hour = (int)($timeParts[0] ?? 0);
+                $minute = (int)($timeParts[1] ?? 0);
+                $second = (int)($timeParts[2] ?? 0);
+
+                if ($hasAmPm) {
+                    if ($meridiem === 'pm' && $hour !== 12) {
+                        $hour += 12;
+                    } elseif ($meridiem === 'am' && $hour === 12) {
+                        $hour = 0;
+                    }
+                }
+
+                // Combine date and time in Asia/Dhaka timezone (app timezone)
+                $localTimezone = new \DateTimeZone($this->config->timezone());
+                $dateTimeStr = $date->format('Y-m-d') . ' ' . sprintf('%02d:%02d:%02d', $hour, $minute, $second);
+                $localDateTime = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $dateTimeStr, $localTimezone);
+
+                if ($localDateTime !== false) {
+                    // Convert to UTC
+                    return $localDateTime->setTimezone($this->utcTimezone());
+                }
+            }
+        }
+
+        return null;
+    }
+
     protected function normalizeDateTimeInput(string $value): string
     {
         $trimmed = trim($value);

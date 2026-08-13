@@ -34,6 +34,7 @@ import {
   getPaperflyReferenceNumber,
   getPreferredCourierFromHistory,
   getTodayDate,
+  getOrderStatusHistoryField,
 } from '../utils';
 
 const normalizeCourierFilterValue = (value: string | null | undefined): string => {
@@ -287,6 +288,18 @@ const Orders: React.FC = () => {
     return getDateTimeFilters(effectiveFilterRange, effectiveCustomDates);
   }, [effectiveFilterRange, effectiveCustomDates]);
 
+  // When a specific status is selected and datetime filter is applied,
+  // filter by the status change datetime from history instead of createdAt
+  const statusHistoryField = useMemo(() => {
+    if (effectiveStatusTab === 'All' || !effectiveStatusTab) return null;
+    return getOrderStatusHistoryField(effectiveStatusTab);
+  }, [effectiveStatusTab]);
+
+  // Determine if we should filter by status change datetime
+  const filterByStatusChange = useMemo(() => {
+    return statusHistoryField !== null && (timeFilters.from || timeFilters.to);
+  }, [statusHistoryField, timeFilters.from, timeFilters.to]);
+
   // Compute createdByIds based on createdByFilter
   const createdByIds = useMemo(() => {
     const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
@@ -334,8 +347,10 @@ const Orders: React.FC = () => {
     courierNot: normalizedEffectiveCourierNot || undefined,
     sourceAd: effectiveSourceAd || undefined,
     sourceAdNot: effectiveSourceAdNot || undefined,
-    from: timeFilters.from,
-    to: timeFilters.to,
+    from: filterByStatusChange ? undefined : timeFilters.from,
+    to: filterByStatusChange ? undefined : timeFilters.to,
+    statusHistoryField,
+    filterByStatusChange,
     search: searchQuery,
     createdByIds,
     createdByNotIds,

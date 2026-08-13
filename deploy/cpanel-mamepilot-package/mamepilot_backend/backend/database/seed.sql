@@ -17,7 +17,7 @@ VALUES
   ('kilogram', 'Kilogram', 'kg', NULL),
   ('gram', 'Gram', 'g', NULL),
   ('liter', 'Liter', 'L', NULL),
-  ('box', 'Box', 'box', NULL),
+  ('box', 'Box', 'box', NULL)
 ON DUPLICATE KEY UPDATE
   id = id;
 INSERT INTO categories (id, name, type, color, parent_id, is_system)

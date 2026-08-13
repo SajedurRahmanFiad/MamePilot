@@ -3,7 +3,7 @@
  * These functions are reused across many components to avoid repetition
  */
 
-import type { Bill, Order, Transaction } from './types';
+import type { Bill, Order, Transaction, OrderStatus, BillStatus } from './types';
 
 const DYNAMIC_TEXT_FILTER_PREFIX = '__mp_filter_v1__:';
 
@@ -347,6 +347,57 @@ export const getOrderActivityDate = (order: Pick<Order, 'createdAt' | 'orderDate
 
 export const getBillActivityDate = (bill: Pick<Bill, 'createdAt' | 'billDate' | 'history'>): string =>
   resolveActivityDate(bill.createdAt, bill.billDate, bill.history?.created);
+
+/**
+ * Map order status to the corresponding history field name that stores the timestamp
+ */
+export const getOrderStatusHistoryField = (status: OrderStatus): string | null => {
+  const statusToHistoryField: Record<OrderStatus, string> = {
+    [OrderStatus.CREATED]: 'created',
+    [OrderStatus.ON_HOLD]: 'created',
+    [OrderStatus.PROCESSING]: 'processing',
+    [OrderStatus.COURIER_ASSIGNED]: 'courier',
+    [OrderStatus.PICKED]: 'picked',
+    [OrderStatus.COMPLETED]: 'completed',
+    [OrderStatus.EXCHANGE_PROCESSING]: 'exchangeProcessing',
+    [OrderStatus.EXCHANGE_PICKED]: 'exchangePicked',
+    [OrderStatus.EXCHANGE_DELIVERED]: 'exchangeDelivered',
+    [OrderStatus.EXCHANGE_RETURNED]: 'exchangeReturned',
+    [OrderStatus.EXCHANGE_CANCELLED]: 'exchangeCancelled',
+    [OrderStatus.RETURNED]: 'returned',
+    [OrderStatus.CANCELLED]: 'cancelled',
+  };
+  return statusToHistoryField[status] ?? null;
+};
+
+/**
+ * Map bill status to the corresponding history field name that stores the timestamp
+ */
+export const getBillStatusHistoryField = (status: BillStatus): string | null => {
+  const statusToHistoryField: Record<BillStatus, string> = {
+    [BillStatus.ON_HOLD]: 'created',
+    [BillStatus.PROCESSING]: 'processing',
+    [BillStatus.RECEIVED]: 'received',
+    [BillStatus.PAID]: 'paid',
+    [BillStatus.RETURNED]: 'returned',
+    [BillStatus.CANCELLED]: 'cancelled',
+  };
+  return statusToHistoryField[status] ?? null;
+};
+
+/**
+ * Extract ISO timestamp from a history field value.
+ * History values can be either ISO timestamps or human-readable strings like "Marked delivered on 26 Jul 2025, at 04:30 PM"
+ */
+export const extractTimestampFromHistory = (historyValue: string | undefined | null): string => {
+  if (!historyValue) return '';
+
+  // If it's already an ISO timestamp, return it
+  const parsed = parseHistoryTimestamp(historyValue);
+  if (parsed) return parsed.toISOString();
+
+  return '';
+};
 
 export const getTransactionActivityDate = (
   transaction: Pick<Transaction, 'createdAt' | 'date' | 'history'>
