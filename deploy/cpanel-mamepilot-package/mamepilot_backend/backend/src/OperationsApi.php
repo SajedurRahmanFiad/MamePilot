@@ -5361,9 +5361,6 @@ final class OperationsApi extends BaseService
         if ($additionalExpenseAmount < 0) {
             throw new RuntimeException('Additional expense amount cannot be negative.');
         }
-        if ($outcome !== 'Delivered' && $additionalExpenseAmount > 0) {
-            throw new RuntimeException('Additional delivery expenses can only be recorded for delivered orders.');
-        }
         if ($additionalExpenseAmount > 0 && $additionalExpenseCategoryId === '') {
             throw new RuntimeException('An expense category is required when an additional delivery expense is recorded.');
         }
@@ -5416,19 +5413,24 @@ final class OperationsApi extends BaseService
             }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
-            if ($previousStatus !== 'Picked' && $previousStatus !== 'Exchange picked') {
+            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled'];
+            $isTerminal = in_array($previousStatus, $terminalStatuses, true);
+            $expenseOnlyForTerminal = $isTerminal
+                && $additionalExpenseAmount > 0
+                && round(max(0.0, $amount), 2) <= 0
+                && round(max(0.0, $refundAmount), 2) <= 0;
+            if (!$isTerminal && $previousStatus !== 'Picked' && $previousStatus !== 'Exchange picked') {
                 throw new RuntimeException('Only picked orders can be finalized from this modal.');
+            }
+            if ($isTerminal && !$expenseOnlyForTerminal) {
+                throw new RuntimeException('This order is already in a terminal status. Use the expense-only action to add expenses.');
             }
 
             $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
             $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
-            $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
             $orderTotal = (float) ($orderRow['total'] ?? 0);
             $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
             $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
-            $nextStatus = $outcome === 'Returned' ? 'Returned' : ($previousStatus === 'Exchange picked' ? 'Exchange delivered' : 'Completed');
-            $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
-            $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
             $systemDefaults = $this->database->fetchOne(
                 'SELECT default_account_id, default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
             ) ?? [];
@@ -5439,6 +5441,58 @@ final class OperationsApi extends BaseService
                 $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
                 $defaultAccountId = trim((string) ($fallbackAccount['id'] ?? ''));
             }
+
+            // Expense-only mode for terminal orders: skip status change and stock transitions.
+            if ($expenseOnlyForTerminal) {
+                $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
+                    ->setTimezone(new \DateTimeZone($this->config->timezone()));
+                $dateLabel = $localRecordedAt->format('j M Y');
+                $timeLabel = $localRecordedAt->format('h:i A');
+                $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+                $payload = [];
+                $createdTransactions = [];
+
+                if ($additionalExpenseAmount > 0) {
+                    if ($defaultAccountId === '') {
+                        throw new RuntimeException('Configure a default account before recording additional delivery expenses.');
+                    }
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => $additionalExpenseCategoryId,
+                        'accountId' => $defaultAccountId,
+                        'amount' => $additionalExpenseAmount,
+                        'description' => "Additional delivery expense for Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $defaultPaymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $history['expense'] = $this->appendHistoryText(
+                        (string) ($history['expense'] ?? ''),
+                        sprintf('Additional delivery expense recorded by %s on %s at %s: %s.',
+                            trim((string) ($actor['name'] ?? 'System')),
+                            $dateLabel,
+                            $timeLabel,
+                            $this->formatMoney($additionalExpenseAmount)
+                        )
+                    );
+                    $payload['history'] = $this->jsonEncode($history);
+                }
+
+                $this->touchUpdate('orders', $orderId, $payload);
+                $row = $this->fetchOrderRowById($orderId);
+                if ($row === null) {
+                    throw new RuntimeException('Updated order could not be loaded.');
+                }
+                $this->syncCustomerOrderSummaries([$customerId]);
+                return $this->mapOrder($row);
+            }
+
+            $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
+            $nextStatus = $outcome === 'Returned' ? 'Returned' : ($previousStatus === 'Exchange picked' ? 'Exchange delivered' : 'Completed');
+            $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
+            $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
             $existingIncome = 0.0;
             $existingExpense = 0.0;
             foreach ($linkedTransactions as $transactionRow) {

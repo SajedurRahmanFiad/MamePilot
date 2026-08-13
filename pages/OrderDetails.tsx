@@ -707,14 +707,30 @@ const OrderDetails: React.FC = () => {
       ? 'Delivered'
       : order.status === OrderStatus.RETURNED
         ? 'Returned'
-        : null
+        : order.status === OrderStatus.CANCELLED
+          ? 'Delivered'
+          : order.status === OrderStatus.EXCHANGE_DELIVERED
+            ? 'Delivered'
+            : order.status === OrderStatus.EXCHANGE_RETURNED
+              ? 'Returned'
+              : order.status === OrderStatus.EXCHANGE_CANCELLED
+                ? 'Delivered'
+                : null
     : null;
   const canAddCourierCompletionExpense = order
     ? order.status === OrderStatus.COMPLETED
       ? canMarkCurrentOrderCompleted
       : order.status === OrderStatus.RETURNED
         ? canMarkCurrentOrderReturned
-        : false
+        : order.status === OrderStatus.CANCELLED
+          ? canMarkCurrentOrderCompleted
+          : order.status === OrderStatus.EXCHANGE_DELIVERED
+            ? canMarkCurrentOrderCompleted
+            : order.status === OrderStatus.EXCHANGE_RETURNED
+              ? canMarkCurrentOrderReturned
+              : order.status === OrderStatus.EXCHANGE_CANCELLED
+                ? canMarkCurrentOrderCompleted
+                : false
     : false;
   const canCancelCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.cancelOwn', 'orders.cancelAny') : false;
   const canDeleteCurrentOrder = order ? canAccessRecord(order.createdBy, 'orders.deleteOwn', 'orders.deleteAny') : false;

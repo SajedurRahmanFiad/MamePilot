@@ -818,7 +818,15 @@ const Orders: React.FC = () => {
       ? 'Delivered'
       : order.status === OrderStatus.RETURNED
         ? 'Returned'
-        : null;
+        : order.status === OrderStatus.CANCELLED
+          ? 'Delivered'
+          : order.status === OrderStatus.EXCHANGE_DELIVERED
+            ? 'Delivered'
+            : order.status === OrderStatus.EXCHANGE_RETURNED
+              ? 'Returned'
+              : order.status === OrderStatus.EXCHANGE_CANCELLED
+                ? 'Delivered'
+                : null;
     if (!outcome) return;
     setCompletionForm({
       ...createCompletionForm(order),
@@ -1425,12 +1433,28 @@ const Orders: React.FC = () => {
                   ? 'Delivered'
                   : order.status === OrderStatus.RETURNED
                     ? 'Returned'
-                    : null;
+                    : order.status === OrderStatus.CANCELLED
+                      ? 'Delivered'
+                      : order.status === OrderStatus.EXCHANGE_DELIVERED
+                        ? 'Delivered'
+                        : order.status === OrderStatus.EXCHANGE_RETURNED
+                          ? 'Returned'
+                          : order.status === OrderStatus.EXCHANGE_CANCELLED
+                            ? 'Delivered'
+                            : null;
                 const canAddCourierCompletionExpense = order.status === OrderStatus.COMPLETED
                   ? canDeliverOrder(order)
                   : order.status === OrderStatus.RETURNED
                     ? canReturnOrder(order)
-                    : false;
+                    : order.status === OrderStatus.CANCELLED
+                      ? canDeliverOrder(order)
+                      : order.status === OrderStatus.EXCHANGE_DELIVERED
+                        ? canDeliverOrder(order)
+                        : order.status === OrderStatus.EXCHANGE_RETURNED
+                          ? canReturnOrder(order)
+                          : order.status === OrderStatus.EXCHANGE_CANCELLED
+                            ? canDeliverOrder(order)
+                            : false;
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
                 const canTrackSelectedOrder = sentToAnyCourier;
                 const canAddPaymentSelectedOrder = canAddPayment(order);
