@@ -846,13 +846,15 @@ const Orders: React.FC = () => {
       const canMarkCompletionOrderDelivered = canDeliverOrder(completionOrder);
       const canMarkCompletionOrderReturned = canReturnOrder(completionOrder);
 
-      if (completionForm.outcome === 'Delivered' && !canMarkCompletionOrderDelivered) {
-        toast.error('You do not have permission to mark orders as completed.');
-        return;
-      }
-      if (completionForm.outcome === 'Returned' && !canMarkCompletionOrderReturned) {
-        toast.error('You do not have permission to mark orders as returned.');
-        return;
+      if (!isExpenseOnly) {
+        if (completionForm.outcome === 'Delivered' && !canMarkCompletionOrderDelivered) {
+          toast.error('You do not have permission to mark orders as completed.');
+          return;
+        }
+        if (completionForm.outcome === 'Returned' && !canMarkCompletionOrderReturned) {
+          toast.error('You do not have permission to mark orders as returned.');
+          return;
+        }
       }
 
       if (completionForm.outcome === 'Returned') {

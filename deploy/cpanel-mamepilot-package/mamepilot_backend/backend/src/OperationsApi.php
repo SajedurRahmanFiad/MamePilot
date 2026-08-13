@@ -11081,9 +11081,11 @@ SQL;
 
             $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
             $status = trim((string) ($orderRow['status'] ?? ''));
-            $expectedStatus = $outcome === 'Delivered' ? 'Completed' : 'Returned';
-            if ($status !== $expectedStatus) {
-                throw new RuntimeException('Completion expenses can only be added to orders with the matching completed or returned status.');
+            $validStatuses = $outcome === 'Delivered'
+                ? ['Completed', 'Cancelled', 'Exchange delivered', 'Exchange cancelled']
+                : ['Returned', 'Exchange returned'];
+            if (!in_array($status, $validStatuses, true)) {
+                throw new RuntimeException('Completion expenses can only be added to orders with a matching terminal status.');
             }
 
             if ($outcome === 'Delivered') {
