@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import PortalMenu from '../components/PortalMenu';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Order, OrderStatus, hasAdminAccess, isEmployeeRole } from '../types';
+import { Order, OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
@@ -418,7 +418,7 @@ const Orders: React.FC = () => {
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
-        values: Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => ({
+        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED).map((status) => ({
           value: status,
           label: getStatusDisplayName(status),
         })),
@@ -1683,6 +1683,17 @@ const Orders: React.FC = () => {
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : completionOrder ? canDeliverOrder(completionOrder) : false}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : completionOrder ? canReturnOrder(completionOrder) : false}
         expenseOnly={completionExpenseOnly}
+        expenseOnlyStatusLabel={
+          completionExpenseOnly && completionOrder
+            ? completionOrder.status === 'Cancelled' ? 'Cancelled'
+              : completionOrder.status === 'Exchange delivered' ? 'Exchange delivered'
+              : completionOrder.status === 'Exchange returned' ? 'Exchange returned'
+              : completionOrder.status === 'Exchange cancelled' ? 'Exchange cancelled'
+              : completionOrder.status === 'Completed' ? 'Delivered'
+              : completionOrder.status === 'Returned' ? 'Returned'
+              : undefined
+            : undefined
+        }
       />
 
       <Dialog

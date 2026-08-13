@@ -184,6 +184,9 @@ export enum OrderStatus {
   CANCELLED = 'Cancelled'
 }
 
+// Runtime array of OrderStatus values for safe iteration at runtime
+export const ORDER_STATUS_VALUES = Object.values(OrderStatus) as OrderStatus[];
+
 export type ConfirmationStatus = 'confirmed' | 'cancelled' | 'on_hold' | 'waiting';
 export type SurveyStatus = 'pending' | 'triggered' | 'initiated' | 'completed' | 'failed' | 'skipped';
 

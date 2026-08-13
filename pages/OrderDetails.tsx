@@ -2399,6 +2399,17 @@ const OrderDetails: React.FC = () => {
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : canMarkCurrentOrderCompleted}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : canMarkCurrentOrderReturned}
         expenseOnly={completionExpenseOnly}
+        expenseOnlyStatusLabel={
+          completionExpenseOnly && order
+            ? order.status === 'Cancelled' ? 'Cancelled'
+              : order.status === 'Exchange delivered' ? 'Exchange delivered'
+              : order.status === 'Exchange returned' ? 'Exchange returned'
+              : order.status === 'Exchange cancelled' ? 'Exchange cancelled'
+              : order.status === 'Completed' ? 'Delivered'
+              : order.status === 'Returned' ? 'Returned'
+              : undefined
+            : undefined
+        }
       />
 
       <CommonPaymentModal

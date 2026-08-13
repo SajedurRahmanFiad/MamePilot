@@ -5,7 +5,7 @@ import { db, saveDb } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, DashboardSettingsPanel, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
+import { OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
 import {
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings,
@@ -1709,7 +1709,7 @@ const SettingsPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {Object.values(OrderStatus).filter((status) => status !== OrderStatus.CREATED).map((status) => {
+                    {ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED).map((status) => {
                       const checked = walletSettings.countedStatuses.includes(status);
 
                       return (

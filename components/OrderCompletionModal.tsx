@@ -31,6 +31,7 @@ interface OrderCompletionModalProps {
   allowDeliveredOutcome?: boolean;
   allowReturnedOutcome?: boolean;
   expenseOnly?: boolean;
+  expenseOnlyStatusLabel?: string;
 }
 
 const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
@@ -44,6 +45,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   allowDeliveredOutcome = true,
   allowReturnedOutcome = true,
   expenseOnly = false,
+  expenseOnlyStatusLabel,
 }) => {
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
@@ -170,7 +172,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         <div className="mb-8">
           <h3 className="mt-2 text-2xl font-black text-gray-900">
             {expenseOnly
-              ? `Add ${isReturned ? 'return' : 'additional delivery'} expense for order #${order.orderNumber}`
+              ? `Add ${expenseOnlyStatusLabel ? expenseOnlyStatusLabel.toLowerCase() : (isReturned ? 'return' : 'additional delivery')} expense for order #${order.orderNumber}`
               : `Complete order #${order.orderNumber}`}
           </h3>
           <p className="mt-2 text-sm font-medium">
@@ -202,7 +204,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                   } disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500 disabled:opacity-70 disabled:shadow-none`}
                 >
                   {outcome === 'Delivered' ? ICONS.Check : ICONS.Return}
-                  <span className="hidden sm:inline">{outcome}</span>
+                  <span className="hidden sm:inline">{expenseOnly && expenseOnlyStatusLabel ? expenseOnlyStatusLabel : outcome}</span>
                 </button>
               ))}
             </div>
