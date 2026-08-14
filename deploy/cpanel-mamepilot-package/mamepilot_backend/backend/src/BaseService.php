@@ -768,11 +768,11 @@ abstract class BaseService
             // UTC timestamp in history text: "...on 2026-08-14 14:46:15." (Steadfast/courier webhooks)
             '/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/',
             // "Marked delivered on 26 Jul 2025, at 04:30 PM" (local time, with "on" prefix)
-            '/^.*?on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+            '/^.*?on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[\,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))[\.\s]*$/',
             // "on 26 Jul 2025, at 04:30 PM"
-            '/^on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+            '/^on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[\,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))[\.\s]*$/',
             // "26 Jul 2025, 04:30 PM" (without "on" and "at")
-            '/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
+            '/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[\,\s]+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))[\.\s]*$/',
         ];
 
         foreach ($patterns as $pattern) {
