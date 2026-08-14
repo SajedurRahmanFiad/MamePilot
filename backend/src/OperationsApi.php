@@ -707,6 +707,28 @@ final class OperationsApi extends BaseService
         $bindings[':' . $bindingName] = '%' . $escaped . '%';
     }
 
+    private function appendNumericFilter(
+        string &$where,
+        array &$bindings,
+        string $filterKey,
+        ?array $filter,
+        string $column,
+    ): void {
+        if (!is_array($filter) || empty($filter['operator']) || !isset($filter['value'])) {
+            return;
+        }
+        $operator = trim((string) $filter['operator']);
+        $value = (float) $filter['value'];
+        $validOps = ['=', '≠', '<', '>', '<=', '>='];
+        if (!in_array($operator, $validOps, true)) {
+            return;
+        }
+        $sqlOp = $operator === '≠' ? '<>' : $operator;
+        $bindingKey = ':' . $filterKey . '_num';
+        $where .= " AND {$column} {$sqlOp} {$bindingKey}";
+        $bindings[$bindingKey] = $value;
+    }
+
     /** @param array<int, array<string, mixed>> $items */
     private function validateDocumentAmounts(array $params, array $items, string $documentLabel): void
     {
@@ -11385,6 +11407,532 @@ SQL;
 
             return $this->mapOrder($finalRow);
         });
+    }
+
+    // ─── Batch Management ────────────────────────────────────────────
+
+    private function mapBatch(array $row): array
+    {
+        return [
+            'id' => (string) $row['id'],
+            'name' => (string) ($row['name'] ?? ''),
+            'slug' => $this->nullableString($row['slug'] ?? null),
+            'sku' => $this->nullableString($row['sku'] ?? null),
+            'categoryId' => (string) ($row['category_id'] ?? ''),
+            'categoryName' => $this->nullableString($row['category_name'] ?? null),
+            'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '/uploads/Empty_product.png')),
+            'population' => (int) ($row['population'] ?? 0),
+            'averageAgeDays' => (int) ($row['average_age_days'] ?? 0),
+            'salePrice' => (float) ($row['sale_price'] ?? 0),
+            'purchasePrice' => (float) ($row['purchase_price'] ?? 0),
+            'description' => $this->nullableString($row['description'] ?? null),
+            'createdBy' => $this->nullableString($row['created_by'] ?? null),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+            'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+            'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
+            'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),
+        ];
+    }
+
+    private function mapBatchCategory(array $row): array
+    {
+        return [
+            'id' => (string) $row['id'],
+            'name' => (string) ($row['name'] ?? ''),
+            'description' => $this->nullableString($row['description'] ?? null),
+            'color' => (string) ($row['color'] ?? '#ebf4ff'),
+            'parentId' => $this->nullableString($row['parent_id'] ?? null),
+            'isSystem' => (bool) ($row['is_system'] ?? false),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+            'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+            'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
+            'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),
+        ];
+    }
+
+    private function mapBatchEventType(array $row): array
+    {
+        return [
+            'id' => (string) $row['id'],
+            'name' => (string) ($row['name'] ?? ''),
+            'description' => $this->nullableString($row['description'] ?? null),
+            'isSystem' => (bool) ($row['is_system'] ?? true),
+            'requiresPopulationChange' => (bool) ($row['requires_population_change'] ?? false),
+            'requiresExpenseAmount' => (bool) ($row['requires_expense_amount'] ?? false),
+            'requiresAccountId' => (bool) ($row['requires_account_id'] ?? false),
+            'requiresPaymentMethod' => (bool) ($row['requires_payment_method'] ?? false),
+            'requiresNotes' => (bool) ($row['requires_notes'] ?? false),
+            'stockAdjustmentDirection' => (string) ($row['stock_adjustment_direction'] ?? 'none'),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+        ];
+    }
+
+    private function mapBatchEvent(array $row): array
+    {
+        return [
+            'id' => (string) $row['id'],
+            'batchId' => (string) ($row['batch_id'] ?? ''),
+            'batchName' => $this->nullableString($row['batch_name'] ?? null),
+            'eventTypeId' => (string) ($row['event_type_id'] ?? ''),
+            'eventTypeName' => $this->nullableString($row['event_type_name'] ?? null),
+            'eventDate' => (string) ($row['event_date'] ?? ''),
+            'populationChange' => (int) ($row['population_change'] ?? 0),
+            'populationAfter' => (int) ($row['population_after'] ?? 0),
+            'expenseAmount' => (float) ($row['expense_amount'] ?? 0),
+            'accountId' => $this->nullableString($row['account_id'] ?? null),
+            'accountName' => $this->nullableString($row['account_name'] ?? null),
+            'paymentMethod' => $this->nullableString($row['payment_method'] ?? null),
+            'paymentMethodName' => $this->nullableString($row['payment_method_name'] ?? null),
+            'notes' => $this->nullableString($row['notes'] ?? null),
+            'createdBy' => $this->nullableString($row['created_by'] ?? null),
+            'createdByName' => $this->nullableString($row['created_by_name'] ?? null),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+        ];
+    }
+
+    public function fetchBatchesPage(array $params): array
+    {
+        $pageSize = $this->pageSize($params);
+        $offset = $this->pageOffset($params);
+        $searchQuery = trim((string) ($params['searchQuery'] ?? ''));
+        $categoryId = trim((string) ($params['categoryId'] ?? ''));
+        $filters = is_array($params['filters'] ?? null) ? $params['filters'] : [];
+
+        $where = 'WHERE b.deleted_at IS NULL';
+        $bindings = [];
+
+        if ($searchQuery !== '') {
+            $where .= ' AND (b.name LIKE :search OR b.sku LIKE :search_sku OR b.description LIKE :search_desc)';
+            $searchPattern = '%' . $searchQuery . '%';
+            $bindings[':search'] = $searchPattern;
+            $bindings[':search_sku'] = $searchPattern;
+            $bindings[':search_desc'] = $searchPattern;
+        }
+
+        if ($categoryId !== '') {
+            $where .= ' AND b.category_id = :category_id';
+            $bindings[':category_id'] = $categoryId;
+        }
+
+        // Dynamic filters
+        $createdByIds = $filters['createdByIds'] ?? null;
+        if (is_array($createdByIds) && count($createdByIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($createdByIds, 'cid');
+            $where .= ' AND b.created_by IN (' . implode(',', $placeholders) . ')';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $createdByNotIds = $filters['createdByNotIds'] ?? null;
+        if (is_array($createdByNotIds) && count($createdByNotIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($createdByNotIds, 'cni');
+            $where .= ' AND (b.created_by IS NULL OR b.created_by NOT IN (' . implode(',', $placeholders) . '))';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $nameFilter = trim((string) ($filters['name'] ?? ''));
+        if ($nameFilter !== '') {
+            $this->appendEncodedTextFilter($where, $bindings, 'name', $nameFilter, 'b.name');
+        }
+        $nameNot = trim((string) ($filters['nameNot'] ?? ''));
+        if ($nameNot !== '') {
+            $this->appendEncodedTextFilter($where, $bindings, 'nameNot', $nameNot, 'b.name_not', true);
+        }
+        $skuFilter = trim((string) ($filters['sku'] ?? ''));
+        if ($skuFilter !== '') {
+            $this->appendEncodedTextFilter($where, $bindings, 'sku', $skuFilter, 'b.sku');
+        }
+        $skuNot = trim((string) ($filters['skuNot'] ?? ''));
+        if ($skuNot !== '') {
+            $this->appendEncodedTextFilter($where, $bindings, 'skuNot', $skuNot, 'b.sku_not', true);
+        }
+        $categoryNot = trim((string) ($filters['categoryNot'] ?? ''));
+        if ($categoryNot !== '') {
+            $this->appendEncodedTextFilter($where, $bindings, 'categoryNot', $categoryNot, 'cat_name_not', true);
+        }
+        $this->appendNumericFilter($where, $bindings, 'population', $filters['population'] ?? null, 'b.population');
+        $this->appendNumericFilter($where, $bindings, 'salePrice', $filters['salePrice'] ?? null, 'b.sale_price');
+        $this->appendNumericFilter($where, $bindings, 'purchasePrice', $filters['purchasePrice'] ?? null, 'b.purchase_price');
+        $this->appendNumericFilter($where, $bindings, 'averageAge', $filters['averageAge'] ?? null, 'b.average_age_days');
+
+        $sql = "SELECT b.*, bc.name AS category_name
+                FROM batches b
+                LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL
+                {$where}
+                ORDER BY b.created_at DESC
+                LIMIT {$pageSize} OFFSET {$offset}";
+        $rows = $this->database->fetchAll($sql, $bindings);
+
+        $countSql = "SELECT COUNT(*) AS cnt FROM batches b LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL {$where}";
+        $countRow = $this->database->fetchOne($countSql, $bindings);
+        $count = (int) ($countRow['cnt'] ?? 0);
+
+        return [
+            'data' => array_map(fn(array $row): array => $this->mapBatch($row), $rows),
+            'count' => $count,
+        ];
+    }
+
+    public function fetchBatchById(array $params): ?array
+    {
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+        $row = $this->database->fetchOne(
+            "SELECT b.*, bc.name AS category_name
+             FROM batches b
+             LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL
+             WHERE b.id = :id AND b.deleted_at IS NULL LIMIT 1",
+            [':id' => $id]
+        );
+        return $row ? $this->mapBatch($row) : null;
+    }
+
+    public function createBatch(array $params): array
+    {
+        $actor = $this->currentUser();
+        $id = $this->stringId($params['id'] ?? null);
+        $slug = trim((string) ($params['slug'] ?? ''));
+        if ($slug === '') {
+            $slug = preg_replace('/[^a-z0-9]+/', '-', strtolower(trim((string) ($params['name'] ?? ''))));
+            $slug = trim($slug, '-');
+        }
+
+        $this->database->execute(
+            "INSERT INTO batches (id, name, slug, sku, category_id, image, population, average_age_days, sale_price, purchase_price, description, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :sku, :category_id, :image, :population, :average_age_days, :sale_price, :purchase_price, :description, :created_by, :created_at, :updated_at)",
+            [
+                ':id' => $id,
+                ':name' => trim((string) ($params['name'] ?? '')),
+                ':slug' => $slug !== '' ? $slug : null,
+                ':sku' => $this->nullableString($params['sku'] ?? null),
+                ':category_id' => trim((string) ($params['categoryId'] ?? '')),
+                ':image' => trim((string) ($params['image'] ?? '/uploads/Empty_product.png')),
+                ':population' => max(0, (int) ($params['population'] ?? 0)),
+                ':average_age_days' => max(0, (int) ($params['averageAgeDays'] ?? 0)),
+                ':sale_price' => max(0, (float) ($params['salePrice'] ?? 0)),
+                ':purchase_price' => max(0, (float) ($params['purchasePrice'] ?? 0)),
+                ':description' => $this->nullableString($params['description'] ?? null),
+                ':created_by' => (string) $actor['id'],
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+
+        return $this->fetchBatchById(['id' => $id]) ?? throw new RuntimeException('Failed to create batch.');
+    }
+
+    public function updateBatch(array $params): array
+    {
+        $id = trim((string) ($params['id'] ?? ''));
+        $updates = is_array($params['updates'] ?? null) ? $params['updates'] : $params;
+        $payload = [];
+
+        if (array_key_exists('name', $updates)) $payload['name'] = trim((string) $updates['name']);
+        if (array_key_exists('slug', $updates)) $payload['slug'] = trim((string) $updates['slug']);
+        if (array_key_exists('sku', $updates)) $payload['sku'] = $this->nullableString($updates['sku']);
+        if (array_key_exists('categoryId', $updates)) $payload['category_id'] = trim((string) $updates['categoryId']);
+        if (array_key_exists('image', $updates)) $payload['image'] = trim((string) $updates['image']);
+        if (array_key_exists('population', $updates)) $payload['population'] = max(0, (int) $updates['population']);
+        if (array_key_exists('averageAgeDays', $updates)) $payload['average_age_days'] = max(0, (int) $updates['averageAgeDays']);
+        if (array_key_exists('salePrice', $updates)) $payload['sale_price'] = max(0, (float) $updates['salePrice']);
+        if (array_key_exists('purchasePrice', $updates)) $payload['purchase_price'] = max(0, (float) $updates['purchasePrice']);
+        if (array_key_exists('description', $updates)) $payload['description'] = $this->nullableString($updates['description']);
+
+        $this->touchUpdate('batches', $id, $payload);
+        return $this->fetchBatchById(['id' => $id]) ?? throw new RuntimeException('Batch not found.');
+    }
+
+    public function deleteBatch(array $params): array
+    {
+        $id = trim((string) ($params['id'] ?? ''));
+        $this->softDelete('batches', $id);
+        return ['success' => true];
+    }
+
+    public function fetchBatchCategories(array $params = []): array
+    {
+        $rows = $this->database->fetchAll(
+            "SELECT * FROM batch_categories WHERE deleted_at IS NULL ORDER BY name ASC"
+        );
+        return array_map(fn(array $row): array => $this->mapBatchCategory($row), $rows);
+    }
+
+    public function createBatchCategory(array $params): array
+    {
+        $this->requireAdmin();
+        $id = $this->stringId($params['id'] ?? null);
+        $this->database->execute(
+            "INSERT INTO batch_categories (id, name, description, color, parent_id, created_at, updated_at)
+             VALUES (:id, :name, :description, :color, :parent_id, :created_at, :updated_at)",
+            [
+                ':id' => $id,
+                ':name' => trim((string) ($params['name'] ?? '')),
+                ':description' => $this->nullableString($params['description'] ?? null),
+                ':color' => trim((string) ($params['color'] ?? '#ebf4ff')),
+                ':parent_id' => $this->nullableString($params['parentId'] ?? null),
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+        $row = $this->database->fetchOne('SELECT * FROM batch_categories WHERE id = :id LIMIT 1', [':id' => $id]);
+        return $row ? $this->mapBatchCategory($row) : throw new RuntimeException('Failed to create batch category.');
+    }
+
+    public function updateBatchCategory(array $params): array
+    {
+        $this->requireAdmin();
+        $id = trim((string) ($params['id'] ?? ''));
+        $updates = is_array($params['updates'] ?? null) ? $params['updates'] : $params;
+        $existing = $this->database->fetchOne('SELECT is_system FROM batch_categories WHERE id = :id LIMIT 1', [':id' => $id]);
+        if ($existing && $existing['is_system']) {
+            throw new RuntimeException('System categories cannot be edited.');
+        }
+        $payload = [];
+        if (array_key_exists('name', $updates)) $payload['name'] = trim((string) $updates['name']);
+        if (array_key_exists('description', $updates)) $payload['description'] = $this->nullableString($updates['description']);
+        if (array_key_exists('color', $updates)) $payload['color'] = trim((string) $updates['color']);
+        if (array_key_exists('parentId', $updates)) $payload['parent_id'] = $this->nullableString($updates['parentId']);
+        $this->touchUpdate('batch_categories', $id, $payload);
+        $row = $this->database->fetchOne('SELECT * FROM batch_categories WHERE id = :id LIMIT 1', [':id' => $id]);
+        return $row ? $this->mapBatchCategory($row) : throw new RuntimeException('Batch category not found.');
+    }
+
+    public function deleteBatchCategory(array $params): array
+    {
+        $this->requireAdmin();
+        $id = trim((string) ($params['id'] ?? ''));
+        $existing = $this->database->fetchOne('SELECT is_system FROM batch_categories WHERE id = :id LIMIT 1', [':id' => $id]);
+        if ($existing && $existing['is_system']) {
+            throw new RuntimeException('System categories cannot be deleted.');
+        }
+        $this->softDelete('batch_categories', $id);
+        return ['success' => true];
+    }
+
+    public function fetchBatchEventTypes(array $params = []): array
+    {
+        $rows = $this->database->fetchAll(
+            "SELECT * FROM batch_event_types ORDER BY name ASC"
+        );
+        return array_map(fn(array $row): array => $this->mapBatchEventType($row), $rows);
+    }
+
+    public function fetchBatchEventsPage(array $params): array
+    {
+        $pageSize = $this->pageSize($params);
+        $offset = $this->pageOffset($params);
+        $filters = is_array($params['filters'] ?? null) ? $params['filters'] : [];
+        $dynamicFilters = is_array($params['dynamicFilters'] ?? null) ? $params['dynamicFilters'] : [];
+
+        $where = 'WHERE 1=1';
+        $bindings = [];
+
+        $batchId = trim((string) ($filters['batchId'] ?? ''));
+        if ($batchId !== '') {
+            $where .= ' AND be.batch_id = :batch_id';
+            $bindings[':batch_id'] = $batchId;
+        }
+        $eventTypeId = trim((string) ($filters['eventTypeId'] ?? ''));
+        if ($eventTypeId !== '') {
+            $where .= ' AND be.event_type_id = :event_type_id';
+            $bindings[':event_type_id'] = $eventTypeId;
+        }
+        $dateFrom = trim((string) ($filters['dateFrom'] ?? ''));
+        if ($dateFrom !== '') {
+            $where .= ' AND be.event_date >= :date_from';
+            $bindings[':date_from'] = $dateFrom;
+        }
+        $dateTo = trim((string) ($filters['dateTo'] ?? ''));
+        if ($dateTo !== '') {
+            $where .= ' AND be.event_date <= :date_to';
+            $bindings[':date_to'] = $dateTo;
+        }
+
+        // Dynamic filters
+        $batchNotIds = $dynamicFilters['batchNotIds'] ?? null;
+        if (is_array($batchNotIds) && count($batchNotIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($batchNotIds, 'bni');
+            $where .= ' AND be.batch_id NOT IN (' . implode(',', $placeholders) . ')';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $eventTypeNotIds = $dynamicFilters['eventTypeNotIds'] ?? null;
+        if (is_array($eventTypeNotIds) && count($eventTypeNotIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($eventTypeNotIds, 'etni');
+            $where .= ' AND be.event_type_id NOT IN (' . implode(',', $placeholders) . ')';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $createdByIds = $dynamicFilters['createdByIds'] ?? null;
+        if (is_array($createdByIds) && count($createdByIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($createdByIds, 'ecid');
+            $where .= ' AND be.created_by IN (' . implode(',', $placeholders) . ')';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $createdByNotIds = $dynamicFilters['createdByNotIds'] ?? null;
+        if (is_array($createdByNotIds) && count($createdByNotIds) > 0) {
+            [$placeholders, $idBindings] = $this->inClause($createdByNotIds, 'ecni');
+            $where .= ' AND (be.created_by IS NULL OR be.created_by NOT IN (' . implode(',', $placeholders) . '))';
+            $bindings = array_merge($bindings, $idBindings);
+        }
+        $this->appendNumericFilter($where, $bindings, 'populationChange', $dynamicFilters['populationChange'] ?? null, 'be.population_change');
+        $this->appendNumericFilter($where, $bindings, 'expenseAmount', $dynamicFilters['expenseAmount'] ?? null, 'be.expense_amount');
+
+        $sql = "SELECT be.*,
+                       b.name AS batch_name,
+                       bet.name AS event_type_name,
+                       u.name AS created_by_name,
+                       a.name AS account_name,
+                       pm.name AS payment_method_name
+                FROM batch_events be
+                LEFT JOIN batches b ON b.id = be.batch_id
+                LEFT JOIN batch_event_types bet ON bet.id = be.event_type_id
+                LEFT JOIN users u ON u.id = be.created_by
+                LEFT JOIN accounts a ON a.id = be.account_id
+                LEFT JOIN payment_methods pm ON pm.id = be.payment_method
+                {$where}
+                ORDER BY be.event_date DESC, be.created_at DESC
+                LIMIT {$pageSize} OFFSET {$offset}";
+        $rows = $this->database->fetchAll($sql, $bindings);
+
+        $countSql = "SELECT COUNT(*) AS cnt FROM batch_events be {$where}";
+        $countRow = $this->database->fetchOne($countSql, $bindings);
+        $count = (int) ($countRow['cnt'] ?? 0);
+
+        return [
+            'data' => array_map(fn(array $row): array => $this->mapBatchEvent($row), $rows),
+            'count' => $count,
+        ];
+    }
+
+    public function createBatchEvent(array $params): array
+    {
+        $actor = $this->currentUser();
+        $batchId = trim((string) ($params['batchId'] ?? ''));
+        $eventTypeId = trim((string) ($params['eventTypeId'] ?? ''));
+        $eventDate = $this->normalizeDateOnly(trim((string) ($params['eventDate'] ?? '')));
+
+        if ($batchId === '' || $eventTypeId === '') {
+            throw new RuntimeException('Batch and event type are required.');
+        }
+
+        $batch = $this->database->fetchOne('SELECT * FROM batches WHERE id = :id AND deleted_at IS NULL LIMIT 1', [':id' => $batchId]);
+        if ($batch === null) {
+            throw new RuntimeException('Batch not found.');
+        }
+
+        $eventType = $this->database->fetchOne('SELECT * FROM batch_event_types WHERE id = :id LIMIT 1', [':id' => $eventTypeId]);
+        if ($eventType === null) {
+            throw new RuntimeException('Event type not found.');
+        }
+
+        $populationChange = (int) ($params['populationChange'] ?? 0);
+        $currentPopulation = (int) ($batch['population'] ?? 0);
+        $newPopulation = $currentPopulation + $populationChange;
+
+        if ($newPopulation < 0) {
+            throw new RuntimeException('Population cannot go below zero.');
+        }
+
+        $expenseAmount = max(0, (float) ($params['expenseAmount'] ?? 0));
+        $accountId = $this->nullableString($params['accountId'] ?? null);
+        $paymentMethod = $this->nullableString($params['paymentMethod'] ?? null);
+        $notes = $this->nullableString($params['notes'] ?? null);
+        $id = $this->stringId($params['id'] ?? null);
+
+        $this->database->transaction(function () use ($id, $batchId, $eventTypeId, $eventDate, $populationChange, $newPopulation, $expenseAmount, $accountId, $paymentMethod, $notes, $actor, $currentPopulation): void {
+            $this->database->execute(
+                "INSERT INTO batch_events (id, batch_id, event_type_id, event_date, population_change, population_after, expense_amount, account_id, payment_method, notes, created_by, created_at)
+                 VALUES (:id, :batch_id, :event_type_id, :event_date, :population_change, :population_after, :expense_amount, :account_id, :payment_method, :notes, :created_by, :created_at)",
+                [
+                    ':id' => $id,
+                    ':batch_id' => $batchId,
+                    ':event_type_id' => $eventTypeId,
+                    ':event_date' => $eventDate !== '' ? $eventDate : gmdate('Y-m-d'),
+                    ':population_change' => $populationChange,
+                    ':population_after' => $newPopulation,
+                    ':expense_amount' => $expenseAmount,
+                    ':account_id' => $accountId,
+                    ':payment_method' => $paymentMethod,
+                    ':notes' => $notes,
+                    ':created_by' => (string) $actor['id'],
+                    ':created_at' => $this->database->nowUtc(),
+                ]
+            );
+
+            $this->database->execute(
+                "UPDATE batches SET population = :population, updated_at = :updated_at WHERE id = :id",
+                [':population' => $newPopulation, ':updated_at' => $this->database->nowUtc(), ':id' => $batchId]
+            );
+
+            if ($populationChange !== 0) {
+                $this->database->execute(
+                    "INSERT INTO batch_stock_adjustments (id, batch_id, change_amount, direction, created_by, event_id, created_at)
+                     VALUES (:id, :batch_id, :change_amount, :direction, :created_by, :event_id, :created_at)",
+                    [
+                        ':id' => $this->uuid4(),
+                        ':batch_id' => $batchId,
+                        ':change_amount' => abs($populationChange),
+                        ':direction' => $populationChange > 0 ? 'increase' : 'decrease',
+                        ':created_by' => (string) $actor['id'],
+                        ':event_id' => $id,
+                        ':created_at' => $this->database->nowUtc(),
+                    ]
+                );
+            }
+
+            if ($expenseAmount > 0 && $accountId !== null) {
+                $this->database->execute(
+                    "UPDATE accounts SET current_balance = current_balance - :amount, updated_at = :updated_at WHERE id = :id",
+                    [':amount' => $expenseAmount, ':updated_at' => $this->database->nowUtc(), ':id' => $accountId]
+                );
+            }
+        });
+
+        return ['id' => $id, 'success' => true, 'newPopulation' => $newPopulation];
+    }
+
+    public function deleteBatchEvent(array $params): array
+    {
+        $actor = $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') {
+            throw new RuntimeException('Event ID is required.');
+        }
+
+        $event = $this->database->fetchOne('SELECT * FROM batch_events WHERE id = :id LIMIT 1', [':id' => $id]);
+        if ($event === null) {
+            throw new RuntimeException('Batch event not found.');
+        }
+
+        $this->database->transaction(function () use ($event, $actor): void {
+            $batchId = (string) $event['batch_id'];
+            $populationChange = (int) $event['population_change'];
+
+            if ($populationChange !== 0) {
+                $batch = $this->database->fetchOne('SELECT population FROM batches WHERE id = :id LIMIT 1', [':id' => $batchId]);
+                $currentPopulation = $batch ? (int) $batch['population'] : 0;
+                $revertedPopulation = $currentPopulation - $populationChange;
+                if ($revertedPopulation < 0) {
+                    $revertedPopulation = 0;
+                }
+                $this->database->execute(
+                    "UPDATE batches SET population = :population, updated_at = :updated_at WHERE id = :id",
+                    [':population' => $revertedPopulation, ':updated_at' => $this->database->nowUtc(), ':id' => $batchId]
+                );
+            }
+
+            $expenseAmount = (float) $event['expense_amount'];
+            $accountId = $this->nullableString($event['account_id'] ?? null);
+            if ($expenseAmount > 0 && $accountId !== null) {
+                $this->database->execute(
+                    "UPDATE accounts SET current_balance = current_balance + :amount, updated_at = :updated_at WHERE id = :id",
+                    [':amount' => $expenseAmount, ':updated_at' => $this->database->nowUtc(), ':id' => $accountId]
+                );
+            }
+
+            $this->database->execute('DELETE FROM batch_stock_adjustments WHERE event_id = :event_id', [':event_id' => (string) $event['id']]);
+            $this->database->execute('DELETE FROM batch_events WHERE id = :id', [':id' => (string) $event['id']]);
+        });
+
+        return ['success' => true];
     }
 
 }

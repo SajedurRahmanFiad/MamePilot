@@ -20,6 +20,7 @@ const ENTITY_LABELS: Record<RecycleBinEntityType, string> = {
   user: 'User',
   vendor: 'Vendor',
   product: 'Product',
+  batch: 'Batch',
 };
 
 const ENTITY_BADGES: Record<RecycleBinEntityType, string> = {
@@ -30,6 +31,7 @@ const ENTITY_BADGES: Record<RecycleBinEntityType, string> = {
   user: 'bg-rose-100 text-rose-700',
   vendor: 'bg-cyan-100 text-cyan-700',
   product: 'bg-slate-100 text-slate-700',
+  batch: 'bg-orange-100 text-orange-700',
 };
 
 const formatTimestamp = (value?: string): string => {

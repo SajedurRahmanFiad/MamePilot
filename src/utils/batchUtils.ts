@@ -1,4 +1,4 @@
-import type { AgeComponents } from '../types';
+import type { AgeComponents } from '../../types';
 
 export function ageToDays(age: AgeComponents): number {
   return age.years * 365 + age.months * 30 + age.days;

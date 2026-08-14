@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Batch, AgeComponents } from '../types';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
-import { useBatch, useBatchCategories } from '../src/hooks/useQueries';
+import { useBatch, useBatchCategories, useBatchEventsPage, useBatchEventTypes } from '../src/hooks/useQueries';
 import { useCreateBatch, useUpdateBatch } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { getPreservedRouteState } from '../src/utils/navigation';
@@ -40,6 +40,9 @@ const BatchForm: React.FC = () => {
 
   const { data: existingBatch } = useBatch(isEdit ? id : undefined);
   const { data: batchCategories = [], isPending: loadingCategories } = useBatchCategories();
+  const { data: batchEventsData } = useBatchEventsPage(1, 100, isEdit ? { batchId: id } : undefined);
+  const { data: eventTypes = [] } = useBatchEventTypes();
+  const batchEvents = batchEventsData?.data ?? [];
 
   const createMutation = useCreateBatch();
   const updateMutation = useUpdateBatch();
@@ -325,6 +328,51 @@ const BatchForm: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Batch Event History - only when editing */}
+      {isEdit && batchEvents.length > 0 && (
+        <div className="bg-white p-8 rounded-lg border border-gray-100 shadow-sm space-y-4">
+          <h3 className="text-lg font-black text-gray-900">Event History</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Event Type</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Pop. Change</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Pop. After</th>
+                  <th className="px-4 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Expense</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {batchEvents.map((event) => (
+                  <tr key={event.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-700">
+                      {new Date(event.eventDate).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2.5 py-1 bg-[#ebf4ff] rounded-lg text-[10px] font-black uppercase tracking-widest">
+                        {event.eventTypeName || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`font-black ${event.populationChange > 0 ? 'text-emerald-600' : event.populationChange < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                        {event.populationChange > 0 ? '+' : ''}{event.populationChange}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-700">{event.populationAfter}</td>
+                    <td className="px-4 py-3 text-right text-sm font-medium text-gray-700">
+                      {event.expenseAmount > 0 ? `৳${event.expenseAmount.toLocaleString()}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 truncate max-w-[200px]">{event.notes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

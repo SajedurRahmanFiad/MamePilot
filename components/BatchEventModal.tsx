@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BatchEventType } from '../types';
 import { useBatchesPage, useBatchEventTypes, useAccounts, usePaymentMethods } from '../src/hooks/useQueries';
 import { useCreateBatchEvent } from '../src/hooks/useMutations';
 import { Button, NumericInput } from '../components';
+import { ICONS } from '../constants';
 import { theme } from '../theme';
 import { formatAge } from '../src/utils/batchUtils';
 
@@ -29,8 +30,22 @@ const BatchEventModal: React.FC<BatchEventModalProps> = ({ isOpen, onClose, onSu
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
 
+  // Batch search state
+  const [showBatchSearch, setShowBatchSearch] = useState(false);
+  const [batchSearchTerm, setBatchSearchTerm] = useState('');
+
   const createEventMutation = useCreateBatchEvent();
   const selectedBatch = batches.find(b => b.id === selectedBatchId);
+
+  const filteredBatches = useMemo(() => {
+    if (!batchSearchTerm.trim()) return batches;
+    const term = batchSearchTerm.trim().toLowerCase();
+    return batches.filter(b =>
+      b.name.toLowerCase().includes(term) ||
+      (b.sku && b.sku.toLowerCase().includes(term)) ||
+      (b.categoryName && b.categoryName.toLowerCase().includes(term))
+    );
+  }, [batches, batchSearchTerm]);
 
   useEffect(() => {
     if (isOpen) {
@@ -43,6 +58,8 @@ const BatchEventModal: React.FC<BatchEventModalProps> = ({ isOpen, onClose, onSu
       setSelectedAccountId('');
       setSelectedPaymentMethod('');
       setNotes('');
+      setShowBatchSearch(false);
+      setBatchSearchTerm('');
     }
   }, [isOpen]);
 
@@ -86,21 +103,72 @@ const BatchEventModal: React.FC<BatchEventModalProps> = ({ isOpen, onClose, onSu
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Batch Selection */}
-          <div className="space-y-1">
+          {/* Batch Selection - Search Dropdown */}
+          <div className="space-y-1 relative">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Batch</label>
-            <select
-              className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] ${theme.colors.text.primary}`}
-              value={selectedBatchId}
-              onChange={e => setSelectedBatchId(e.target.value)}
-            >
-              <option value="">Select Batch...</option>
-              {batches.map(batch => (
-                <option key={batch.id} value={batch.id}>
-                  {batch.name} (Pop: {batch.population} | Age: {formatAge(batch.averageAgeDays)})
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowBatchSearch(!showBatchSearch)}
+                className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+              >
+                {selectedBatch ? (
+                  <div className="flex-1 overflow-hidden">
+                    <span className="font-bold block text-sm text-gray-900">{selectedBatch.name}</span>
+                    <p className="text-[10px] text-gray-500 leading-none mt-0.5">
+                      Pop: {selectedBatch.population} | Age: {formatAge(selectedBatch.averageAgeDays)}
+                      {selectedBatch.sku ? ` | SKU: ${selectedBatch.sku}` : ''}
+                    </p>
+                  </div>
+                ) : (
+                  <span className="text-gray-400 text-sm">Select Batch...</span>
+                )}
+                <div className={`transition-transform duration-200 ${showBatchSearch ? 'rotate-90' : ''}`}>
+                  {ICONS.ChevronRight}
+                </div>
+              </button>
+
+              {showBatchSearch && (
+                <div className="absolute top-full left-0 mt-2 w-full bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <div className="relative mb-2">
+                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                      {ICONS.Search}
+                    </div>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search batch name, SKU, category..."
+                      className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium"
+                      value={batchSearchTerm}
+                      onChange={(e) => setBatchSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                    {filteredBatches.length === 0 ? (
+                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No batches found</div>
+                    ) : (
+                      filteredBatches.map((batch) => (
+                        <button
+                          key={batch.id}
+                          onClick={() => {
+                            setSelectedBatchId(batch.id);
+                            setShowBatchSearch(false);
+                            setBatchSearchTerm('');
+                          }}
+                          className="w-full px-4 py-2.5 text-left hover:bg-[#ebf4ff] rounded-lg group transition-colors"
+                        >
+                          <p className="text-sm font-bold text-gray-800">{batch.name}</p>
+                          <p className="text-[10px] text-gray-500">
+                            Pop: {batch.population} | Age: {formatAge(batch.averageAgeDays)}
+                            {batch.sku ? ` | SKU: ${batch.sku}` : ''}
+                          </p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Event Type Selection */}

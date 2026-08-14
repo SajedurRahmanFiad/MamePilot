@@ -762,8 +762,12 @@ abstract class BaseService
 
         // Try human-readable format: "Marked delivered on 26 Jul 2025, at 04:30 PM"
         // or "on 26 Jul 2025, at 04:30 PM"
+        // Also handle UTC timestamps in webhook text:
+        // "Marked delivered automatically from Steadfast webhook event \"delivered\" on 2026-08-14 14:46:15."
         $patterns = [
-            // "Marked delivered on 26 Jul 2025, at 04:30 PM"
+            // UTC timestamp in history text: "...on 2026-08-14 14:46:15." (Steadfast/courier webhooks)
+            '/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/',
+            // "Marked delivered on 26 Jul 2025, at 04:30 PM" (local time, with "on" prefix)
             '/^.*?on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
             // "on 26 Jul 2025, at 04:30 PM"
             '/^on\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})[,\s]+at\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM))$/',
@@ -776,7 +780,21 @@ abstract class BaseService
                 $dateStr = $matches[1];
                 $timeStr = $matches[2];
 
-                // Parse date in LOCAL timezone (history timestamps are in local time)
+                // UTC format: YYYY-MM-DD HH:MM:SS (from courier webhooks)
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
+                    $dateTimeStr = $dateStr . ' ' . $timeStr;
+                    $utcDateTime = \DateTimeImmutable::createFromFormat(
+                        'Y-m-d H:i:s',
+                        $dateTimeStr,
+                        $this->utcTimezone()
+                    );
+                    if ($utcDateTime !== false) {
+                        return $utcDateTime;
+                    }
+                    continue;
+                }
+
+                // Local format: "d M Y" with optional AM/PM time
                 $localTimezone = new \DateTimeZone($this->config->timezone());
                 $date = \DateTimeImmutable::createFromFormat('d M Y', $dateStr, $localTimezone);
                 if ($date === false) {

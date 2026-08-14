@@ -124,6 +124,14 @@ final class ServiceLifecycle
         'syncShopifyOrders',
         'repairShopifyWebhook',
         'repairWebhook',
+        'createBatch',
+        'updateBatch',
+        'deleteBatch',
+        'createBatchCategory',
+        'updateBatchCategory',
+        'deleteBatchCategory',
+        'createBatchEvent',
+        'deleteBatchEvent',
     ];
 
     private Database $database;
