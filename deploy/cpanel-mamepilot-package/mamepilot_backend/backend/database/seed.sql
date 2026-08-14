@@ -11,27 +11,6 @@ VALUES
   ('upay', 'Upay', 'Mobile Banking', 1)
 ON DUPLICATE KEY UPDATE
   id = id;
-INSERT INTO units (id, name, short_name, description)
-VALUES
-  ('piece', 'Piece', 'pc', NULL),
-  ('kilogram', 'Kilogram', 'kg', NULL),
-  ('gram', 'Gram', 'g', NULL),
-  ('liter', 'Liter', 'L', NULL),
-  ('box', 'Box', 'box', NULL)
-ON DUPLICATE KEY UPDATE
-  id = id;
-INSERT INTO categories (id, name, type, color, parent_id, is_system)
-VALUES
-  ('income_sales', 'Sales', 'Income', '#10B981', NULL, 1),
-  ('income_other', 'Other Income', 'Income', '#8B5CF6', NULL, 0),
-  ('expense_purchases', 'Purchases', 'Expense', '#EF4444', NULL, 1),
-  ('expense_payroll', 'Payroll', 'Expense', '#0F766E', NULL, 0),
-  ('expense_shipping', 'Shipping Costs', 'Expense', '#F97316', NULL, 1),
-  ('expense_withdrawal', 'Withdrawal', 'Expense', '#DB2777', NULL, 1),
-  ('expense_other', 'Other Expense', 'Expense', '#6B7280', NULL, 0),
-  ('product_other', 'General', 'Product', '#8B5CF6', NULL, 0)
-ON DUPLICATE KEY UPDATE
-  id = id;
 INSERT INTO company_settings (id, name, phone, email, address, logo)
 VALUES ('company-default', 'MamePilot', '+880', 'info@mamepilot.com', '', '/uploads/Full Branding.png')
 ON DUPLICATE KEY UPDATE
@@ -85,4 +64,19 @@ INSERT INTO users (id, name, phone, role, image, password_hash, created_at, upda
 VALUES ('developer-1', 'Fiad', '01404020000', 'Developer', NULL, '$2y$12$S83k2T8iMEi9uJP83IQqJeTulzW2OVd5w64nJlxht85zx8z6AWhPy', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
   id = id;
+INSERT INTO batch_event_types (id, name, description, is_system, requires_population_change, requires_expense_amount, requires_account_id, requires_payment_method, requires_notes, stock_adjustment_direction)
+VALUES
+  ('stocking',        'Stocking',        'New birds added to the batch',              1, 1, 0, 0, 0, 0, 'increase'),
+  ('mortality',       'Mortality',       'Bird deaths in the batch',                 1, 1, 0, 0, 0, 1, 'decrease'),
+  ('sale',            'Sale',            'Birds sold from the batch',                1, 1, 1, 0, 0, 1, 'decrease'),
+  ('feeding_cost',    'Feeding Cost',    'Feed expense for the batch',               1, 0, 1, 1, 1, 1, 'none'),
+  ('vaccination',     'Vaccination',     'Vaccination administered to the batch',    1, 0, 1, 1, 1, 1, 'none'),
+  ('health_treatment','Health Treatment','Medication or treatment for the batch',    1, 0, 1, 1, 1, 1, 'none'),
+  ('weight_check',    'Weight Check',    'Record batch weight measurement',          1, 0, 0, 0, 0, 1, 'none'),
+  ('transfer_in',     'Transfer In',     'Birds transferred into this batch',        1, 1, 0, 0, 0, 1, 'increase'),
+  ('transfer_out',    'Transfer Out',    'Birds transferred out of this batch',      1, 1, 0, 0, 0, 1, 'decrease'),
+  ('other',           'Other',           'Miscellaneous batch event',                1, 0, 0, 0, 0, 1, 'none')
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  description = VALUES(description);
 
