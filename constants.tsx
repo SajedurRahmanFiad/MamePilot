@@ -109,6 +109,7 @@ export const getStatusColor = (status: string): string => {
     'PROCESSING': 'bg-blue-100 text-blue-600',
     'PICKED': 'bg-purple-100 text-purple-600',
     'COMPLETED': 'bg-green-100 text-green-600',
+    'PARTIALLY_DELIVERED': 'bg-amber-100 text-amber-700',
     'EXCHANGE_PROCESSING': 'bg-blue-100 text-blue-600',
     'EXCHANGE_PICKED': 'bg-purple-100 text-purple-600',
     'EXCHANGE_DELIVERED': 'bg-green-100 text-green-600',
@@ -123,6 +124,7 @@ export const getStatusColor = (status: string): string => {
     'Courier assigned': 'bg-blue-100 text-blue-600',
     'Picked': 'bg-purple-100 text-purple-600',
     'Completed': 'bg-green-100 text-green-600',
+    'partially_delivered': 'bg-amber-100 text-amber-700',
     'Exchange processing': 'bg-blue-100 text-blue-600',
     'Exchange picked': 'bg-purple-100 text-purple-600',
     'Exchange delivered': 'bg-green-100 text-green-600',
@@ -161,6 +163,7 @@ export const getPaymentStatusBadgeColor = (status: string): string => {
 
 export const getStatusDisplayName = (status: string): string => {
   if (status === 'Completed') return 'Delivered';
+  if (status === 'partially_delivered') return 'Partially Delivered';
   if (status === 'Exchange processing') return 'Exchange Processing';
   if (status === 'Exchange picked') return 'Exchange Picked';
   if (status === 'Exchange delivered') return 'Exchange Delivered';

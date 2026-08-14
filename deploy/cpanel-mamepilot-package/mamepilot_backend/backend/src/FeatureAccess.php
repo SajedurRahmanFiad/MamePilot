@@ -93,6 +93,7 @@ final class FeatureAccess
         'deleteOrder' => 'sales',
         'addCourierCompletionExpense' => 'sales',
         'completePickedOrder' => 'sales',
+        'confirmPartialDelivery' => 'sales',
         'fetchOrderCogsBackfillStatus' => 'sales',
         'backfillOrderCogsExpenses' => 'sales',
         'fetchCustomers' => 'sales',

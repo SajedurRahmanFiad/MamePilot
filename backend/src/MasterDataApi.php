@@ -9,6 +9,7 @@ use Throwable;
 final class MasterDataApi extends BaseService
 {
     private bool $capabilitySettingsRuntimeSchemaChecked = false;
+    private ?bool $batchesTableExists = null;
 
     private const MAINTENANCE_DEFAULT_IMAGE_URL = '/uploads/Rat_avatar.png';
     private const MAINTENANCE_DEFAULT_CAPTION = 'A mouse is stuck in your server';
@@ -1013,6 +1014,28 @@ final class MasterDataApi extends BaseService
         return $mappedRows;
     }
 
+    /**
+     * Check whether the batches table exists in the current database.
+     * Cached for the lifetime of the request so repeated search calls
+     * don't hit information_schema on every keystroke.
+     */
+    private function hasBatchesTable(): bool
+    {
+        if ($this->batchesTableExists !== null) {
+            return $this->batchesTableExists;
+        }
+
+        try {
+            $this->batchesTableExists = $this->database->fetchOne(
+                "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'batches' LIMIT 1"
+            ) !== null;
+        } catch (\Throwable) {
+            $this->batchesTableExists = false;
+        }
+
+        return $this->batchesTableExists;
+    }
+
     public function fetchProductsSearch(array $params): array
     {
         $query = trim((string) ($params['q'] ?? ''));
@@ -1029,14 +1052,16 @@ final class MasterDataApi extends BaseService
             ':search_sku' => '%' . $escapedQuery . '%',
         ];
 
-        $rows = $this->database->fetchAll(
-            "(
+        $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
                     stock, dynamic_pricing, category, 'product' AS item_type
                  FROM products
                  WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
-             )
+             )";
+
+        if ($this->hasBatchesTable()) {
+            $sql .= "
              UNION ALL
              (
                 SELECT
@@ -1044,11 +1069,12 @@ final class MasterDataApi extends BaseService
                     population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
                  FROM batches
                  WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
-             )
-             ORDER BY name ASC, id ASC
-             LIMIT {$limit}",
-            $bindings
-        );
+             )";
+        }
+
+        $sql .= " ORDER BY name ASC, id ASC LIMIT {$limit}";
+
+        $rows = $this->database->fetchAll($sql, $bindings);
 
         $mappedRows = [];
         foreach ($rows as $row) {
@@ -1091,13 +1117,15 @@ final class MasterDataApi extends BaseService
         // Fetch one extra row instead of running a full COUNT(*) scan for
         // every autocomplete keystroke. The dropdown only needs to know
         // whether another bounded page exists.
-        $rows = $this->database->fetchAll(
-            "(
+        $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
                     stock, dynamic_pricing, category, 'product' AS item_type
                  FROM products {$where}
-             )
+             )";
+
+        if ($this->hasBatchesTable()) {
+            $sql .= "
              UNION ALL
              (
                 SELECT
@@ -1105,11 +1133,12 @@ final class MasterDataApi extends BaseService
                     population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
                  FROM batches
                  WHERE deleted_at IS NULL" . ($query !== '' ? ' AND (name LIKE :search_name OR sku LIKE :search_sku)' : '') . "
-             )
-             ORDER BY name ASC, id ASC
-             LIMIT " . ($pageSize + 1) . " OFFSET {$offset}",
-            $bindings
-        );
+             )";
+        }
+
+        $sql .= " ORDER BY name ASC, id ASC LIMIT " . ($pageSize + 1) . " OFFSET {$offset}";
+
+        $rows = $this->database->fetchAll($sql, $bindings);
         $hasMore = count($rows) > $pageSize;
         if ($hasMore) array_pop($rows);
 

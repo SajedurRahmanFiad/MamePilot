@@ -16,6 +16,7 @@ final class ServiceLifecycle
         'backfillOrderCogsExpenses',
         'addCourierCompletionExpense',
         'completePickedOrder',
+        'confirmPartialDelivery',
         'createAccount',
         'createBill',
         'createCategory',

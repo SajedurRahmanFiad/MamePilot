@@ -246,7 +246,7 @@ final class AgentToolRegistry
             'sales' => [
                 'capability' => 'sales',
                 'reads' => ['fetchOrders', 'fetchOrdersPage', 'fetchOrderSearchPreview', 'fetchOrderById', 'fetchOrdersByCustomerId', 'fetchOrderByNumber', 'fetchCustomers', 'fetchCustomersPage', 'fetchCustomersMini', 'fetchCustomerById'],
-                'actions' => ['createOrder', 'updateOrder', 'completePickedOrder', 'processOrderReturnExchange', 'deleteOrder', 'createCustomer', 'updateCustomer', 'deleteCustomer'],
+                'actions' => ['createOrder', 'updateOrder', 'completePickedOrder', 'confirmPartialDelivery', 'processOrderReturnExchange', 'deleteOrder', 'createCustomer', 'updateCustomer', 'deleteCustomer'],
             ],
             'leads' => [
                 'capability' => 'automatic_leads',
@@ -796,6 +796,14 @@ final class AgentToolRegistry
             'refundAmount' => ['type' => 'number'], 'refundAccountId' => ['type' => 'string'],
             'additionalExpenseAmount' => ['type' => 'number', 'minimum' => 0], 'additionalExpenseCategoryId' => ['type' => 'string'],
         ], ['orderId', 'outcome']);
+        if ($action === 'confirmPartialDelivery') return $strictObject([
+            'orderId' => ['type' => 'string', 'minLength' => 1],
+            'returnedItems' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
+                'productId' => ['type' => 'string', 'minLength' => 1], 'returnQty' => ['type' => 'integer', 'minimum' => 1],
+            ], 'required' => ['productId', 'returnQty'], 'additionalProperties' => false]],
+            'accountId' => ['type' => 'string'], 'paymentMethod' => ['type' => 'string'],
+            'categoryId' => ['type' => 'string'], 'note' => ['type' => 'string'], 'date' => ['type' => 'string'],
+        ], ['orderId']);
         if ($action === 'reviewTransactionApproval') return $strictObject([
             'transactionId' => ['type' => 'string', 'minLength' => 1], 'decision' => ['type' => 'string', 'enum' => ['approve', 'decline']], 'note' => ['type' => 'string'],
         ], ['transactionId', 'decision']);
@@ -1384,6 +1392,7 @@ final class AgentToolRegistry
             $action === 'updateOrder' => ['orders.editOwn', 'orders.editAny', 'orders.cancelOwn', 'orders.cancelAny', 'orders.moveOnHoldToProcessingOwn', 'orders.moveOnHoldToProcessingAny', 'orders.sendToCourierOwn', 'orders.sendToCourierAny', 'orders.moveToPickedOwn', 'orders.moveToPickedAny'],
             $action === 'deleteOrder' => ['orders.deleteOwn', 'orders.deleteAny'],
             $action === 'completePickedOrder' => ['orders.markCompletedOwn', 'orders.markCompletedAny'],
+            $action === 'confirmPartialDelivery' => ['orders.markCompletedOwn', 'orders.markCompletedAny'],
             $action === 'processOrderReturnExchange' => ['orders.processReturnExchangeOwn', 'orders.processReturnExchangeAny'],
             str_contains($action, 'Customer') && str_starts_with($action, 'fetch') => 'customers.view',
             $action === 'createCustomer' => 'customers.create', $action === 'updateCustomer' => 'customers.edit', $action === 'deleteCustomer' => 'customers.delete',

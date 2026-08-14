@@ -50,6 +50,7 @@ export { default as DashboardSettingsPanel } from './DashboardSettingsPanel';
 export { default as FraudCheckResults } from './FraudCheckResults';
 export { default as FraudCheckModal } from './FraudCheckModal';
 export { default as OrderReturnExchangeModal } from './OrderReturnExchangeModal';
+export { default as PartialDeliveryConfirmModal } from './PartialDeliveryConfirmModal';
 export { default as BillReturnModal } from './BillReturnModal';
 
 export { default as MetaAdsMoney } from './MetaAdsMoney';

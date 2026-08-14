@@ -45,6 +45,7 @@ import type {
   WalletSettings,
   CompletePickedOrderPayload,
   AddCourierCompletionExpensePayload,
+  ConfirmPartialDeliveryPayload,
   CourierSettings,
   CapabilitySettings,
   FraudCheckResult,
@@ -180,6 +181,7 @@ export async function createOrder(order: Omit<Order, 'id'>) { return call<Order>
 export async function updateOrder(id: string, updates: Partial<Order>) { return call<Order | null>('updateOrder', { id, updates }); }
 export async function deleteOrder(id: string) { await remove('deleteOrder', id); }
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
+export async function confirmPartialDelivery(payload: ConfirmPartialDeliveryPayload) { return call<Order>('confirmPartialDelivery', payload); }
 export async function addCourierCompletionExpense(payload: AddCourierCompletionExpensePayload) { return call<Order>('addCourierCompletionExpense', payload); }
 export async function fetchOrderByNumber(orderNumber: string) { return call<Order | null>('fetchOrderByNumber', { orderNumber }); }
 export async function fetchOrderUndoPlan(orderId: string) { return call<OrderUndoPlan>('fetchOrderUndoPlan', { orderId }); }

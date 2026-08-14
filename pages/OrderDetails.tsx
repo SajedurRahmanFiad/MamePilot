@@ -3,12 +3,12 @@ import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
-import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmationStatus } from '../types';
+import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmPartialDeliveryPayload, type ConfirmationStatus } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
-import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, PartialDeliveryConfirmModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
 import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
-import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
+import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useConfirmPartialDelivery, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { LoadingOverlay } from '../components';
@@ -107,11 +107,13 @@ const OrderDetails: React.FC = () => {
   const addCourierCompletionExpenseMutation = useAddCourierCompletionExpense();
   const deleteOrderMutation = useDeleteOrder();
   const processReturnExchangeMutation = useProcessOrderReturnExchange();
+  const confirmPartialDeliveryMutation = useConfirmPartialDelivery();
   const triggerSurveyCallMutation = useTriggerSurveyCall();
   const retrySurveyCallMutation = useRetrySurveyCall();
   const cancelSurveyCallMutation = useCancelSurveyCall();
   const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
   const [showReturnExchangeModal, setShowReturnExchangeModal] = useState(false);
+  const [showPartialDeliveryModal, setShowPartialDeliveryModal] = useState(false);
   
   const handleDeleteOrder = () => {
     setShowDeleteOrderConfirmation(true);
@@ -183,6 +185,14 @@ const OrderDetails: React.FC = () => {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient, currentCustomerPhone, courierHistoryMutation]);
+
+  // Auto-trigger partial delivery confirmation modal
+  React.useEffect(() => {
+    if (order?.status === OrderStatus.PARTIALLY_DELIVERED && order?.partialDeliveryActionRequired && !showPartialDeliveryModal) {
+      setShowPartialDeliveryModal(true);
+    }
+  }, [order?.status, order?.partialDeliveryActionRequired]);
+
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
   type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick';
   type OrderStatusTransition = {
@@ -193,7 +203,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -287,6 +297,7 @@ const OrderDetails: React.FC = () => {
 
   const getFinalBranchStatus = (status: OrderStatus): OrderTimelineLabel | null => {
     if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered';
+    if (status === OrderStatus.PARTIALLY_DELIVERED) return 'Partially Delivered';
     if (status === OrderStatus.EXCHANGE_PROCESSING) return 'Exchange processing';
     if (status === OrderStatus.EXCHANGE_PICKED) return 'Exchange picked';
     if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange delivered';
@@ -1401,6 +1412,23 @@ const OrderDetails: React.FC = () => {
     }
   };
 
+  const handleConfirmPartialDelivery = async (payload: ConfirmPartialDeliveryPayload) => {
+    try {
+      const updatedOrder = await confirmPartialDeliveryMutation.mutateAsync(payload);
+      setShowPartialDeliveryModal(false);
+      if ((updatedOrder.pendingTransactionCount || 0) > 0) {
+        toast.info(
+          `Partial delivery confirmed. ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} sent for admin approval.`
+        );
+      } else {
+        toast.success('Partial delivery confirmed successfully');
+      }
+    } catch (err) {
+      console.error('Failed to confirm partial delivery:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to confirm partial delivery');
+    }
+  };
+
   const handleOpenTracking = () => {
     const preferredCourier = getPreferredCourierFromHistory(order.history?.courier);
     const courierHistory = String(order.history?.courier || '').toLowerCase();
@@ -1705,6 +1733,11 @@ const OrderDetails: React.FC = () => {
                     {canProcessReturnExchange && (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED) && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 flex items-center gap-2 font-bold text-orange-700" onClick={() => { setShowReturnExchangeModal(true); setIsActionOpen(false); }}>
                         {ICONS.Return} Return / Exchange
+                      </button>
+                    )}
+                    {order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { setShowPartialDeliveryModal(true); setIsActionOpen(false); }}>
+                        {ICONS.Check} Confirm Partial Delivery
                       </button>
                     )}
                     {canAssignExchangeCourier && (
@@ -2656,6 +2689,14 @@ const OrderDetails: React.FC = () => {
         onSubmit={handleProcessReturnExchange}
         order={order}
         isLoading={processReturnExchangeMutation.isPending}
+      />
+
+      <PartialDeliveryConfirmModal
+        isOpen={showPartialDeliveryModal}
+        onClose={() => setShowPartialDeliveryModal(false)}
+        onSubmit={handleConfirmPartialDelivery}
+        order={order}
+        isLoading={confirmPartialDeliveryMutation.isPending}
       />
     </div>
   );

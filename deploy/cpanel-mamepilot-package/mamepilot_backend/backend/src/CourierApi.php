@@ -2635,6 +2635,7 @@ final class CourierApi extends BaseService
             return match ($event) {
                 'order.picked' => 'Picked',
                 'order.delivered' => 'Delivered',
+                'order.partial_delivery', 'order.partial-delivery' => 'Partially Delivered',
                 'order.returned' => 'Returned',
                 'order.cancelled', 'order.canceled' => 'Cancelled',
                 default => null,
@@ -2642,11 +2643,12 @@ final class CourierApi extends BaseService
         }
         if ($provider === 'paperfly') {
             if (in_array($event, ['parcel.delivered', 'parcel.exchange'], true)) return 'Delivered';
+            if ($event === 'parcel.partial') return 'Partially Delivered';
             if (in_array($event, ['parcel.return', 'parcel.return_to_merchant'], true)) return 'Returned';
             if ($event === 'parcel.cancelled') return 'Cancelled';
             if (in_array($event, [
                 'parcel.picked_up', 'parcel.in_transit', 'parcel.received_at_point',
-                'parcel.assigned_for_delivery', 'parcel.partial', 'parcel.return_transit',
+                'parcel.assigned_for_delivery', 'parcel.return_transit',
             ], true)) return 'Picked';
             return null;
         }
@@ -2659,6 +2661,7 @@ final class CourierApi extends BaseService
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
+        if (str_contains($status, 'partial')) return 'Partially Delivered';
         if (
             str_contains($status, 'deliver')
             || preg_match('/(^|[._ -])delivered?($|[._ -])/', $event) === 1
@@ -2872,11 +2875,12 @@ final class CourierApi extends BaseService
             : [];
 
         if ($mapped !== null) {
-            $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered'];
+            $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered'];
             $mainEventDuringExchange = !$isExchange
                 && in_array($current, ['Exchange processing', 'Exchange picked'], true);
             $target = match ($mapped) {
                 'Delivered' => $isExchange ? 'Exchange delivered' : 'Completed',
+                'Partially Delivered' => $isExchange ? null : 'partially_delivered',
                 'Returned' => $isExchange ? null : 'Returned',
                 'Cancelled' => $isExchange ? null : 'Cancelled',
                 'Picked' => $isExchange ? 'Exchange picked' : 'Picked',
@@ -2897,6 +2901,31 @@ final class CourierApi extends BaseService
                             $raw,
                             $when
                         );
+                    } elseif ($mapped === 'Partially Delivered') {
+                        $history['partiallyDelivered'] = sprintf(
+                            'Marked partially delivered automatically from %s webhook event "%s" on %s. Action required to confirm delivered items.',
+                            $providerLabel,
+                            $raw,
+                            $when
+                        );
+                        $updates['partial_delivery_action_required'] = 1;
+                        $updates['partial_delivered_at'] = $when;
+                        $updates['partial_cod_amount'] = round((float) ($details['collectedAmount'] ?? 0), 2);
+                        $updates['partial_shipping_amount'] = round((float) ($details['deliveryFee'] ?? 0), 2);
+                        // Calculate total COGS from order items for deferred recording
+                        $orderItems = is_array(json_decode((string) ($order['items'] ?? '[]'), true))
+                            ? json_decode((string) ($order['items'] ?? '[]'), true)
+                            : [];
+                        $totalCogs = 0.0;
+                        foreach ($orderItems as $oi) {
+                            if (!is_array($oi)) continue;
+                            $qty = max(0, (float) ($oi['quantity'] ?? 0));
+                            $pid = trim((string) ($oi['productId'] ?? ''));
+                            if ($qty <= 0 || $pid === '') continue;
+                            $prod = $this->database->fetchOne('SELECT purchase_price FROM products WHERE id = :id LIMIT 1', [':id' => $pid]);
+                            $totalCogs += round(max(0.0, (float) ($prod['purchase_price'] ?? 0)) * $qty, 2);
+                        }
+                        $updates['partial_cogs_amount'] = round($totalCogs, 2);
                     } elseif ($mapped === 'Returned') {
                         $history['returned'] = sprintf(
                             'Marked returned automatically from %s webhook event "%s" on %s.',

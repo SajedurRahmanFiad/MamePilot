@@ -175,6 +175,7 @@ export enum OrderStatus {
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
+  PARTIALLY_DELIVERED = 'partially_delivered',
   EXCHANGE_PROCESSING = 'Exchange processing',
   EXCHANGE_PICKED = 'Exchange picked',
   EXCHANGE_DELIVERED = 'Exchange delivered',
@@ -824,6 +825,12 @@ export interface Order {
   >>;
   paidAmount: number;
   paidAt?: string; // ISO timestamp when payment received
+  // Partial delivery fields
+  partialDeliveryActionRequired?: boolean;
+  partialCogsAmount?: number;
+  partialShippingAmount?: number;
+  partialCodAmount?: number;
+  partialDeliveredAt?: string;
   // Relational fields: populated from joined customer and user data
   // Present when fetching paginated orders via orders_with_customer_creator view
   customerName?: string;
@@ -2079,6 +2086,16 @@ export interface AddCourierCompletionExpensePayload {
   note?: string;
   additionalExpenseAmount?: number;
   additionalExpenseCategoryId?: string;
+}
+
+export interface ConfirmPartialDeliveryPayload {
+  orderId: string;
+  returnedItems: Array<{ productId: string; returnQty: number }>;
+  accountId?: string;
+  paymentMethod?: string;
+  categoryId?: string;
+  note?: string;
+  date?: string;
 }
 
 export type NotificationActionKind = 'none' | 'link' | 'decision' | 'link_and_decision';

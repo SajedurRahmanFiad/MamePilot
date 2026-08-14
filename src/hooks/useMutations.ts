@@ -7,6 +7,7 @@ import {
   createNotification,
   createOrder,
   completePickedOrder,
+  confirmPartialDelivery,
   addCourierCompletionExpense,
   revertOrderStatus,
   updateOrder,
@@ -144,6 +145,7 @@ import type {
   RecycleBinEntityType,
   CompletePickedOrderPayload,
   AddCourierCompletionExpensePayload,
+  ConfirmPartialDeliveryPayload,
   FraudCheckResult,
   CapabilitySettings,
   PaymentGatewaySettings,
@@ -796,6 +798,26 @@ export function useAddCourierCompletionExpense(): UseMutationResult<Order, Error
       queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useConfirmPartialDelivery(): UseMutationResult<Order, Error, ConfirmPartialDeliveryPayload, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: confirmPartialDelivery,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', data.id], data);
+      queryClient.invalidateQueries({ queryKey: ['orders'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['customers'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['ordersByCustomerId'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['products'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['employeeOrderCounts'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['payroll'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['wallet'], exact: false });
       invalidateDashboardQueries(queryClient);
     },
   });

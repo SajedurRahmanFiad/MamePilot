@@ -1506,6 +1506,12 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
                         <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
+                        {order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            Action Required
+                          </span>
+                        )}
                         {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToSteadfast && (
                           <img src="/uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full" />
                         )}

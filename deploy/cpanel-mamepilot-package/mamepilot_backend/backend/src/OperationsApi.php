@@ -796,6 +796,24 @@ final class OperationsApi extends BaseService
         );
         $productsById = $this->keyBy($rows, 'id');
 
+        $missingIds = [];
+        foreach ($productIds as $pid) {
+            if (!isset($productsById[$pid])) {
+                $missingIds[] = $pid;
+            }
+        }
+
+        if ($missingIds !== []) {
+            [$batchPlaceholders, $batchBindings] = $this->inClause($missingIds, 'batch');
+            $batchRows = $this->database->fetchAll(
+                'SELECT id, name FROM batches WHERE id IN (' . implode(', ', $batchPlaceholders) . ')',
+                $batchBindings
+            );
+            foreach ($batchRows as $batchRow) {
+                $productsById[$batchRow['id']] = $batchRow;
+            }
+        }
+
         foreach ($items as $itemIndex => $item) {
             $productId = trim((string) ($item['productId'] ?? ''));
             if ($productId === '') {
@@ -4972,17 +4990,27 @@ final class OperationsApi extends BaseService
         float $orderTotal,
         float $paidAmount
     ): ?array {
-        if ($nextStatus !== 'Completed' || $previousStatus === 'Completed') {
+        // Fire for ALL terminal statuses triggered by courier webhooks, not just Delivered.
+        // This ensures COD collected amounts are always recorded as income.
+        $terminalStatuses = ['Completed', 'Returned', 'Cancelled'];
+        if (!in_array($nextStatus, $terminalStatuses, true) || $previousStatus === $nextStatus) {
             return null;
         }
 
-        $completionHistory = strtolower(trim((string) ($history['completed'] ?? '')));
-        if (!str_contains($completionHistory, 'marked delivered automatically from')) {
+        // Detect courier webhook origin from history for the corresponding status
+        $historyKey = match ($nextStatus) {
+            'Completed' => 'completed',
+            'Returned' => 'returned',
+            'Cancelled' => 'cancelled',
+            default => '',
+        };
+        $historyText = strtolower(trim((string) ($history[$historyKey] ?? '')));
+        if (!str_contains($historyText, 'automatically from')) {
             return null;
         }
         $provider = '';
         foreach (['carrybee', 'paperfly', 'steadfast', 'pathao'] as $courier) {
-            if (str_contains($completionHistory, $courier)) {
+            if (str_contains($historyText, $courier)) {
                 $provider = $courier;
                 break;
             }
@@ -5012,15 +5040,11 @@ final class OperationsApi extends BaseService
             $collectedAmount = round((float) ($charge['collected_amount'] ?? 0), 2);
         }
 
-        // Only record payment when the courier actually reports a non-zero collected
-        // amount.  A0 collected_amount means no COD was collected from the customer;
-        // falling back to the remaining due would incorrectly mark the order as paid.
         if ($collectedAmount <= 0) {
             return null;
         }
         $paymentAmount = $collectedAmount;
 
-        // Use per-courier defaults; fall back to system defaults, then to the oldest account.
         $prefix = $provider;
         $courierSettings = $this->database->fetchOne(
             "SELECT {$prefix}_default_account_id, {$prefix}_default_income_category_id, {$prefix}_default_payment_method
@@ -5046,13 +5070,19 @@ final class OperationsApi extends BaseService
         $incomeCategory = trim((string) ($courierSettings["{$prefix}_default_income_category_id"] ?? ''))
             ?: (trim((string) ($systemDefaults['income_category_id'] ?? '')) ?: 'income_sales');
         $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
+        $statusLabel = match ($nextStatus) {
+            'Completed' => 'delivery',
+            'Returned' => 'return delivery',
+            'Cancelled' => 'cancelled delivery',
+            default => 'delivery',
+        };
         $transaction = $this->createTransactionRecord([
             'date' => $this->database->nowUtc(),
             'type' => 'Income',
             'category' => $incomeCategory,
             'accountId' => $accountId,
             'amount' => $paymentAmount,
-            'description' => "Automatic courier delivery payment for Order #{$orderNumber}",
+            'description' => "Automatic courier {$statusLabel} payment for Order #{$orderNumber}",
             'referenceId' => $orderId,
             'contactId' => (string) ($orderRow['customer_id'] ?? ''),
             'paymentMethod' => $paymentMethod,
@@ -5061,7 +5091,7 @@ final class OperationsApi extends BaseService
 
         return [
             'paidAmount' => $paidAmount + $paymentAmount,
-            'historyText' => 'Automatically marked paid after courier delivery: ' . $this->formatMoney($paymentAmount) . '.',
+            'historyText' => "Automatically marked paid after courier {$statusLabel}: " . $this->formatMoney($paymentAmount) . '.',
             'transaction' => $transaction,
         ];
     }
@@ -5297,6 +5327,21 @@ final class OperationsApi extends BaseService
             if (array_key_exists('sourceAd', $updates) || array_key_exists('source_ad', $updates)) {
                 $payload['source_ad'] = $this->nullableString($updates['sourceAd'] ?? $updates['source_ad'] ?? null);
             }
+            if (array_key_exists('partial_delivery_action_required', $updates)) {
+                $payload['partial_delivery_action_required'] = (int) ($updates['partial_delivery_action_required'] ?? 0);
+            }
+            if (array_key_exists('partial_cogs_amount', $updates)) {
+                $payload['partial_cogs_amount'] = $this->formatMoney($updates['partial_cogs_amount'] ?? 0);
+            }
+            if (array_key_exists('partial_shipping_amount', $updates)) {
+                $payload['partial_shipping_amount'] = $this->formatMoney($updates['partial_shipping_amount'] ?? 0);
+            }
+            if (array_key_exists('partial_cod_amount', $updates)) {
+                $payload['partial_cod_amount'] = $this->formatMoney($updates['partial_cod_amount'] ?? 0);
+            }
+            if (array_key_exists('partial_delivered_at', $updates)) {
+                $payload['partial_delivered_at'] = $this->nullableString($updates['partial_delivered_at'] ?? null);
+            }
 
             $affectsCustomerSummary =
                 array_key_exists('customerId', $updates) ||
@@ -5459,7 +5504,7 @@ final class OperationsApi extends BaseService
             }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
-            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled'];
+            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered'];
             $isTerminal = in_array($previousStatus, $terminalStatuses, true);
             $expenseOnlyForTerminal = $isTerminal
                 && $additionalExpenseAmount > 0
@@ -6145,6 +6190,266 @@ final class OperationsApi extends BaseService
                     $stockUpdates,
                     $beforeUndoEffects
                 );
+            }
+
+            $order = $this->mapOrder($row);
+            $pendingTransactionIds = array_values(array_map(
+                static fn(array $t): string => (string) ($t['id'] ?? ''),
+                array_filter($createdTransactions, static fn(array $t): bool => (string) ($t['approvalStatus'] ?? 'approved') === 'pending')
+            ));
+            $order['pendingTransactionCount'] = count($pendingTransactionIds);
+            $order['pendingTransactionIds'] = $pendingTransactionIds;
+
+            return $order;
+        });
+    }
+
+    /**
+     * Confirm a partially delivered order. The user selects which items were
+     * returned and this finalizes the financial transactions:
+     * - COGS expense for delivered items (total COGS minus returned items COGS)
+     * - Shipping cost expense
+     * - COD income (collected amount)
+     */
+    public function confirmPartialDelivery(array $params): array
+    {
+        $actor = $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        $returnedItems = is_array($params['returnedItems'] ?? null) ? $params['returnedItems'] : [];
+
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+
+        $accountId = trim((string) ($params['accountId'] ?? ''));
+        $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+        $categoryId = trim((string) ($params['categoryId'] ?? ''));
+        $note = trim((string) ($params['note'] ?? ''));
+        $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
+
+        return $this->database->transaction(function () use (
+            $actor,
+            $orderId,
+            $returnedItems,
+            $accountId,
+            $paymentMethod,
+            $categoryId,
+            $note,
+            $recordedAt
+        ): array {
+            $orderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $orderId]
+            );
+
+            if ($orderRow === null) {
+                throw new RuntimeException('Order not found.');
+            }
+
+            $currentStatus = trim((string) ($orderRow['status'] ?? ''));
+            if ($currentStatus !== 'partially_delivered') {
+                throw new RuntimeException('Only partially delivered orders can be confirmed.');
+            }
+
+            $this->assertUserCanManageOrderRecord(
+                $actor,
+                $orderRow,
+                'orders.markCompletedOwn',
+                'orders.markCompletedAny',
+                'You do not have permission to confirm partial delivery.'
+            );
+
+            $orderNumber = trim((string) ($orderRow['order_number'] ?? ''));
+            $customerId = trim((string) ($orderRow['customer_id'] ?? ''));
+            $previousItems = $this->jsonDecodeList($orderRow['items'] ?? []);
+            $totalCogsDeferred = (float) ($orderRow['partial_cogs_amount'] ?? 0);
+            $totalShippingDeferred = (float) ($orderRow['partial_shipping_amount'] ?? 0);
+            $totalCodDeferred = (float) ($orderRow['partial_cod_amount'] ?? 0);
+            $orderTotal = (float) ($orderRow['total'] ?? 0);
+            $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
+
+            $systemDefaults = $this->database->fetchOne(
+                'SELECT default_account_id, default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
+            ) ?? [];
+            $defaultPaymentMethod = trim((string) ($systemDefaults['default_payment_method'] ?? 'Cash')) ?: 'Cash';
+            $incomeCategoryId = trim((string) ($systemDefaults['income_category_id'] ?? 'income_sales')) ?: 'income_sales';
+            $defaultAccountId = trim((string) ($systemDefaults['default_account_id'] ?? ''));
+            if ($defaultAccountId === '') {
+                $fallbackAccount = $this->database->fetchOne('SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1');
+                $defaultAccountId = trim((string) ($fallbackAccount['id'] ?? ''));
+            }
+
+            $effectiveAccountId = $accountId !== '' ? $accountId : $defaultAccountId;
+            $effectivePaymentMethod = $paymentMethod !== '' ? $paymentMethod : $defaultPaymentMethod;
+            $effectiveCategoryId = $categoryId !== '' ? $categoryId : $incomeCategoryId;
+
+            $localRecordedAt = (new \DateTimeImmutable($recordedAt, new \DateTimeZone('UTC')))
+                ->setTimezone(new \DateTimeZone($this->config->timezone()));
+            $dateLabel = $localRecordedAt->format('j M Y');
+            $timeLabel = $localRecordedAt->format('h:i A');
+            $actorName = trim((string) ($actor['name'] ?? 'System'));
+
+            // Calculate COGS for returned items to deduct from the deferred total
+            $returnedCogsDeduction = 0.0;
+            foreach ($returnedItems as $returnedItem) {
+                $productId = trim((string) ($returnedItem['productId'] ?? ''));
+                $returnQty = (int) ($returnedItem['returnQty'] ?? 0);
+                if ($productId === '' || $returnQty <= 0) continue;
+
+                $product = $this->database->fetchOne(
+                    'SELECT purchase_price FROM products WHERE id = :id LIMIT 1',
+                    [':id' => $productId]
+                );
+                $purchasePrice = max(0.0, (float) ($product['purchase_price'] ?? 0));
+                $returnedCogsDeduction += round($purchasePrice * $returnQty, 2);
+            }
+
+            $deliveredCogs = max(0.0, round($totalCogsDeferred - $returnedCogsDeduction, 2));
+
+            // Calculate delivered item value (for COD/collection proportion)
+            $totalItemValue = 0.0;
+            $returnedItemValue = 0.0;
+            foreach ($previousItems as $item) {
+                $rate = max(0.0, (float) ($item['rate'] ?? 0));
+                $qty = (int) ($item['quantity'] ?? 0);
+                $totalItemValue += $rate * $qty;
+                foreach ($returnedItems as $ri) {
+                    if (trim((string) ($ri['productId'] ?? '')) === trim((string) ($item['productId'] ?? ''))) {
+                        $returnedItemValue += $rate * (int) ($ri['returnQty'] ?? 0);
+                    }
+                }
+            }
+            $deliveredItemValue = max(0.0, $totalItemValue - $returnedItemValue);
+            $codIncome = $totalItemValue > 0
+                ? round($totalCodDeferred * ($deliveredItemValue / $totalItemValue), 2)
+                : 0.0;
+
+            $createdTransactions = [];
+
+            // 1. COGS expense for delivered items (only when purchase-price COGS is enabled)
+            if ($this->purchasePriceCogsEnabled() && $deliveredCogs > 0 && $effectiveAccountId !== '') {
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Expense',
+                    'category' => 'expense_purchases',
+                    'accountId' => $effectiveAccountId,
+                    'amount' => $deliveredCogs,
+                    'description' => "COGS for partially delivered Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $effectivePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
+            // 2. Shipping cost expense
+            if ($totalShippingDeferred > 0 && $effectiveAccountId !== '') {
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Expense',
+                    'category' => 'Courier Shipping Cost',
+                    'accountId' => $effectiveAccountId,
+                    'amount' => $totalShippingDeferred,
+                    'description' => "Courier shipping cost for partially delivered Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $defaultPaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+            }
+
+            // 3. COD income (collected amount proportional to delivered items)
+            if ($codIncome > 0 && $effectiveAccountId !== '') {
+                $createdTransactions[] = $this->createTransactionRecord([
+                    'date' => $recordedAt,
+                    'type' => 'Income',
+                    'category' => $effectiveCategoryId,
+                    'accountId' => $effectiveAccountId,
+                    'amount' => $codIncome,
+                    'description' => "COD collection for partially delivered Order #{$orderNumber}",
+                    'referenceId' => $orderId,
+                    'contactId' => $customerId,
+                    'paymentMethod' => $effectivePaymentMethod,
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+                $paidAmount += $codIncome;
+            }
+
+            // Update items with returned quantities
+            $updatedItems = $previousItems;
+            foreach ($returnedItems as $ri) {
+                $productId = trim((string) ($ri['productId'] ?? ''));
+                $returnQty = (int) ($ri['returnQty'] ?? 0);
+                if ($productId === '' || $returnQty <= 0) continue;
+                foreach ($updatedItems as &$item) {
+                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
+                        $item['returnedQty'] = (int) ($item['returnedQty'] ?? 0) + $returnQty;
+                        break;
+                    }
+                }
+                unset($item);
+            }
+
+            $history = $this->jsonDecodeAssoc($orderRow['history'] ?? []);
+            $returnedDescriptions = [];
+            foreach ($returnedItems as $ri) {
+                $productId = trim((string) ($ri['productId'] ?? ''));
+                $returnQty = (int) ($ri['returnQty'] ?? 0);
+                if ($productId === '' || $returnQty <= 0) continue;
+                foreach ($previousItems as $item) {
+                    if (trim((string) ($item['productId'] ?? '')) === $productId) {
+                        $returnedDescriptions[] = trim((string) ($item['productName'] ?? 'Unknown')) . " x{$returnQty}";
+                        break;
+                    }
+                }
+            }
+
+            $history['partialDeliveryConfirmed'] = sprintf(
+                'Partial delivery confirmed by %s on %s at %s. Delivered COGS: %s. Shipping: %s. COD: %s.%s%s',
+                $actorName,
+                $dateLabel,
+                $timeLabel,
+                $this->formatMoney($deliveredCogs),
+                $this->formatMoney($totalShippingDeferred),
+                $this->formatMoney($codIncome),
+                $returnedDescriptions !== [] ? ' Returned: ' . implode(', ', $returnedDescriptions) . '.' : '',
+                $note !== '' ? ' Note: ' . $note : ''
+            );
+
+            $payload = [
+                'status' => 'Completed',
+                'items' => $this->jsonEncode($updatedItems),
+                'paid_amount' => $this->formatMoney($paidAmount),
+                'partial_delivery_action_required' => 0,
+                'partial_cogs_amount' => 0,
+                'partial_shipping_amount' => 0,
+                'partial_cod_amount' => 0,
+                'partial_delivered_at' => null,
+                'history' => $this->jsonEncode($history),
+            ];
+
+            $this->touchUpdate('orders', $orderId, $payload);
+
+            // Sync COGS for the now-Completed status
+            $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
+            if ($freshForCogs !== null) {
+                $cogsTransaction = $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
+                if ($cogsTransaction !== null) $createdTransactions[] = $cogsTransaction;
+            }
+
+            $this->syncCustomerOrderSummaries([$customerId]);
+            $this->syncWalletCreditForOrder([
+                'id' => $orderId,
+                'createdBy' => (string) ($orderRow['created_by'] ?? ''),
+                'status' => 'Completed',
+                'orderNumber' => $orderNumber,
+                'orderDate' => (string) ($orderRow['order_date'] ?? ''),
+                'createdAt' => $this->toIso($orderRow['created_at'] ?? null),
+            ]);
+
+            $row = $this->fetchOrderRowById($orderId);
+            if ($row === null) {
+                throw new RuntimeException('Updated order could not be loaded.');
             }
 
             $order = $this->mapOrder($row);
