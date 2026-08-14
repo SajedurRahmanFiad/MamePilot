@@ -1099,7 +1099,7 @@ final class OperationsApi extends BaseService
         $utcTz = new \DateTimeZone('UTC');
 
         // 1) "15 Jan 2025 at 02:30 PM" or "15 Jan 2025, at 02:30 PM"  (local time)
-        $localPattern = '/(\d{1,2}\s+\w{3}\s+\d{4})\s*,?\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)/i';
+        $localPattern = '/(\d{1,2}\s+\w{3}\s+\d{4})\s*,?\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)\s*\.?\s*$/i';
         if (preg_match($localPattern, $text, $m)) {
             try {
                 $localTz = new \DateTimeZone($this->config->timezone());

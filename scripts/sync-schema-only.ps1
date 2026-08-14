@@ -167,6 +167,23 @@ function Convert-AlterTable([string]$Statement, [string]$SourceName) {
       continue
     }
 
+    $dropForeignKey = [regex]::Match($clause, '(?is)^\s*DROP\s+FOREIGN\s+KEY\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?$')
+    if ($dropForeignKey.Success) {
+      $output.Add("CALL sp_drop_fk('$table', '$($dropForeignKey.Groups[1].Value)');")
+      continue
+    }
+
+    $addForeignKey = [regex]::Match($clause, '(?is)^\s*ADD\s+(?:CONSTRAINT\s+)?`?([A-Za-z0-9_]+)`?\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+`?([A-Za-z0-9_]+)`?\s*\(([^)]+)\)(.*)$')
+    if ($addForeignKey.Success) {
+      $fkName = $addForeignKey.Groups[1].Value
+      $fkColumns = Quote-SqlLiteral $addForeignKey.Groups[2].Value.Trim()
+      $fkRefTable = $addForeignKey.Groups[3].Value
+      $fkRefColumns = Quote-SqlLiteral $addForeignKey.Groups[4].Value.Trim()
+      $fkExtras = Quote-SqlLiteral $addForeignKey.Groups[5].Value.Trim()
+      $output.Add("CALL sp_add_fk('$table', '$fkName', '($fkColumns)', '$fkRefTable', '($fkRefColumns)', '$fkExtras');")
+      continue
+    }
+
     throw "Unsupported ALTER TABLE clause in ${SourceName}: $clause"
   }
   return ($output -join "`r`n")
@@ -276,6 +293,38 @@ BEGIN
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND INDEX_NAME = p_index
   ) THEN
     SET @sql = CONCAT('ALTER TABLE `', p_table, '` DROP INDEX `', p_index, '`');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_drop_fk;
+DELIMITER $$
+CREATE PROCEDURE sp_drop_fk(IN p_table VARCHAR(64), IN p_fk_name VARCHAR(64))
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND CONSTRAINT_NAME = p_fk_name AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` DROP FOREIGN KEY `', p_fk_name, '`');
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_add_fk;
+DELIMITER $$
+CREATE PROCEDURE sp_add_fk(IN p_table VARCHAR(64), IN p_fk_name VARCHAR(64), IN p_columns TEXT, IN p_ref_table VARCHAR(64), IN p_ref_columns TEXT, IN p_extras TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND CONSTRAINT_NAME = p_fk_name AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD CONSTRAINT `', p_fk_name, '` FOREIGN KEY ', p_columns, ' REFERENCES `', p_ref_table, '` ', p_ref_columns, ' ', p_extras);
     PREPARE stmt FROM @sql;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;

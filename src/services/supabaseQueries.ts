@@ -769,7 +769,7 @@ export async function fetchBatchById(id: string): Promise<import('../../types').
 }
 
 export async function fetchBatchCategories(): Promise<import('../../types').BatchCategory[]> {
-  return call('fetchBatchCategories', {});
+  return call('fetchCategories', { type: 'Batch' });
 }
 
 export async function fetchBatchEventTypes(): Promise<import('../../types').BatchEventType[]> {

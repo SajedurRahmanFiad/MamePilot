@@ -1538,3 +1538,106 @@ ALTER TABLE `payroll_payments`
   ADD INDEX IF NOT EXISTS `idx_payroll_payments_type_employee_paid_id` (`compensation_type`, `employee_id`, `paid_at`, `id`);
 ALTER TABLE `recurring_transactions`
   ADD INDEX IF NOT EXISTS `idx_recurring_active_next_run_id` (`is_active`, `next_run_at`, `id`);
+
+-- ─── Batch Management Tables ───────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS batch_categories (
+  id VARCHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  color VARCHAR(50) NOT NULL DEFAULT '#ebf4ff',
+  parent_id VARCHAR(36) NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by VARCHAR(36) NULL,
+  PRIMARY KEY (id),
+  KEY idx_batch_categories_parent_id (parent_id),
+  KEY idx_batch_categories_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS batches (
+  id VARCHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(255) NULL,
+  sku VARCHAR(100) NULL,
+  category_id VARCHAR(36) NULL,
+  image VARCHAR(500) NOT NULL DEFAULT '/uploads/Empty_product.png',
+  population INT NOT NULL DEFAULT 0,
+  average_age_days INT NOT NULL DEFAULT 0,
+  sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  description TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by VARCHAR(36) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_batches_slug (slug),
+  KEY idx_batches_category_id (category_id),
+  KEY idx_batches_created_by (created_by),
+  KEY idx_batches_deleted_at (deleted_at),
+  CONSTRAINT fk_batches_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS batch_event_types (
+  id VARCHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 1,
+  requires_population_change TINYINT(1) NOT NULL DEFAULT 0,
+  requires_expense_amount TINYINT(1) NOT NULL DEFAULT 0,
+  requires_account_id TINYINT(1) NOT NULL DEFAULT 0,
+  requires_payment_method TINYINT(1) NOT NULL DEFAULT 0,
+  requires_notes TINYINT(1) NOT NULL DEFAULT 0,
+  stock_adjustment_direction VARCHAR(20) NOT NULL DEFAULT 'none',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS batch_events (
+  id VARCHAR(36) NOT NULL,
+  batch_id VARCHAR(36) NOT NULL,
+  event_type_id VARCHAR(36) NOT NULL,
+  event_date DATE NOT NULL,
+  population_change INT NOT NULL DEFAULT 0,
+  population_after INT NOT NULL DEFAULT 0,
+  expense_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  account_id VARCHAR(36) NULL,
+  payment_method VARCHAR(36) NULL,
+  notes TEXT NULL,
+  created_by VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_batch_events_batch_id (batch_id),
+  KEY idx_batch_events_event_type_id (event_type_id),
+  KEY idx_batch_events_event_date (event_date),
+  KEY idx_batch_events_created_by (created_by),
+  CONSTRAINT fk_batch_events_batch FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE,
+  CONSTRAINT fk_batch_events_event_type FOREIGN KEY (event_type_id) REFERENCES batch_event_types(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_batch_events_account FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+  CONSTRAINT fk_batch_events_payment_method FOREIGN KEY (payment_method) REFERENCES payment_methods(id) ON DELETE SET NULL,
+  CONSTRAINT fk_batch_events_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS batch_stock_adjustments (
+  id VARCHAR(36) NOT NULL,
+  batch_id VARCHAR(36) NOT NULL,
+  change_amount INT NOT NULL DEFAULT 0,
+  direction VARCHAR(20) NOT NULL,
+  created_by VARCHAR(36) NULL,
+  event_id VARCHAR(36) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_batch_stock_adj_batch_id (batch_id),
+  KEY idx_batch_stock_adj_event_id (event_id),
+  CONSTRAINT fk_batch_stock_adj_batch FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE,
+  CONSTRAINT fk_batch_stock_adj_event FOREIGN KEY (event_id) REFERENCES batch_events(id) ON DELETE SET NULL,
+  CONSTRAINT fk_batch_stock_adj_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Fix: point batches.category_id FK to categories (where Batch-type categories live)
+ALTER TABLE `batches` DROP FOREIGN KEY `fk_batches_category`;
+ALTER TABLE `batches` ADD CONSTRAINT `fk_batches_category` FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON DELETE SET NULL;

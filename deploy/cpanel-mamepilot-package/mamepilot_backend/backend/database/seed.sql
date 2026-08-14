@@ -68,7 +68,6 @@ INSERT INTO batch_event_types (id, name, description, is_system, requires_popula
 VALUES
   ('stocking',        'Stocking',        'New birds added to the batch',              1, 1, 0, 0, 0, 0, 'increase'),
   ('mortality',       'Mortality',       'Bird deaths in the batch',                 1, 1, 0, 0, 0, 1, 'decrease'),
-  ('sale',            'Sale',            'Birds sold from the batch',                1, 1, 1, 0, 0, 1, 'decrease'),
   ('feeding_cost',    'Feeding Cost',    'Feed expense for the batch',               1, 0, 1, 1, 1, 1, 'none'),
   ('vaccination',     'Vaccination',     'Vaccination administered to the batch',    1, 0, 1, 1, 1, 1, 'none'),
   ('health_treatment','Health Treatment','Medication or treatment for the batch',    1, 0, 1, 1, 1, 1, 'none'),
