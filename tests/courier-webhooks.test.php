@@ -163,7 +163,7 @@ $nextSequence = (int) (($database->fetchOne(
 $carryHeaders = ['X-CB-Webhook-Integration-Header' => 'carrybee-test-signature'];
 $paperflyHeaders = ['X-Paperfly-Webhook-Secret' => 'paperfly-test-secret'];
 $steadfastHeaders = ['Authorization' => 'Bearer steadfast-test-api-key'];
-$pathaoHeaders = ['X-Test-Pathao-Secret' => 'pathao-test-secret'];
+$pathaoHeaders = ['X-PATHAO-Signature' => 'pathao-test-secret'];
 
 $pdo->beginTransaction();
 try {
@@ -186,7 +186,7 @@ try {
             ':paperfly' => 'paperfly-test-secret',
             ':steadfast' => 'steadfast-test-api-key',
             ':steadfast_secret' => 'steadfast-test-secret-key',
-            ':pathao_header' => 'X-Test-Pathao-Secret',
+            ':pathao_header' => 'X-PATHAO-Signature',
             ':pathao_secret' => 'pathao-test-secret',
         ]
     );
@@ -231,7 +231,7 @@ try {
     );
     courierWebhookAssert(empty($steadfastSecretResult['orderMatched']), 'Steadfast Secret-Key authentication was rejected or matched an unrelated order.');
     expectCourierWebhookSignatureFailure(
-        fn() => $courier->handleWebhook('pathao', $minimalPayload, ['X-Test-Pathao-Secret' => 'wrong']),
+        fn() => $courier->handleWebhook('pathao', $minimalPayload, ['X-PATHAO-Signature' => 'wrong']),
         'pathao'
     );
 

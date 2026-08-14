@@ -1030,19 +1030,21 @@ final class MasterDataApi extends BaseService
         ];
 
         $rows = $this->database->fetchAll(
-            "SELECT
-                id,
-                name,
-                slug,
-                sku,
-                image,
-                sale_price,
-                purchase_price,
-                stock,
-                dynamic_pricing,
-                category
-             FROM products
-             WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
+            "(
+                SELECT
+                    id, name, slug, sku, image, sale_price, purchase_price,
+                    stock, dynamic_pricing, category, 'product' AS item_type
+                 FROM products
+                 WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
+             )
+             UNION ALL
+             (
+                SELECT
+                    id, name, slug, sku, image, sale_price, purchase_price,
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
+                 FROM batches
+                 WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
+             )
              ORDER BY name ASC, id ASC
              LIMIT {$limit}",
             $bindings
@@ -1050,8 +1052,10 @@ final class MasterDataApi extends BaseService
 
         $mappedRows = [];
         foreach ($rows as $row) {
+            $itemType = $row['item_type'] ?? 'product';
+            unset($row['item_type']);
             $mappedRows[] = $this->mapProduct($row);
-            $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            $mappedRows[count($mappedRows) - 1]['itemType'] = $itemType;
         }
 
         // Numeric-aware sort for Bengali numeral suffixes
@@ -1088,18 +1092,20 @@ final class MasterDataApi extends BaseService
         // every autocomplete keystroke. The dropdown only needs to know
         // whether another bounded page exists.
         $rows = $this->database->fetchAll(
-            "SELECT
-                id,
-                name,
-                slug,
-                sku,
-                image,
-                sale_price,
-                purchase_price,
-                stock,
-                dynamic_pricing,
-                category
-             FROM products {$where}
+            "(
+                SELECT
+                    id, name, slug, sku, image, sale_price, purchase_price,
+                    stock, dynamic_pricing, category, 'product' AS item_type
+                 FROM products {$where}
+             )
+             UNION ALL
+             (
+                SELECT
+                    id, name, slug, sku, image, sale_price, purchase_price,
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
+                 FROM batches
+                 WHERE deleted_at IS NULL" . ($query !== '' ? ' AND (name LIKE :search_name OR sku LIKE :search_sku)' : '') . "
+             )
              ORDER BY name ASC, id ASC
              LIMIT " . ($pageSize + 1) . " OFFSET {$offset}",
             $bindings
@@ -1110,8 +1116,10 @@ final class MasterDataApi extends BaseService
         // Map rows to unified format
         $mappedRows = [];
         foreach ($rows as $row) {
+            $itemType = $row['item_type'] ?? 'product';
+            unset($row['item_type']);
             $mappedRows[] = $this->mapProduct($row);
-            $mappedRows[count($mappedRows) - 1]['itemType'] = 'product';
+            $mappedRows[count($mappedRows) - 1]['itemType'] = $itemType;
         }
 
         // Re-sort so that product names sharing the same alphabetic prefix
@@ -4034,6 +4042,7 @@ final class MasterDataApi extends BaseService
                 'tokenExpiresAt' => (string) ($row['pathao_token_expires_at'] ?? ''),
                 'webhookHeader' => (string) ($row['pathao_webhook_header'] ?? 'X-MamePilot-Webhook-Secret'),
                 'webhookSecret' => (string) ($row['pathao_webhook_secret'] ?? ''),
+                'merchantWebhookSecret' => (string) ($row['pathao_merchant_webhook_secret'] ?? ''),
                 'defaultAccountId' => (string) ($row['pathao_default_account_id'] ?? ''),
                 'defaultExpenseCategoryId' => (string) ($row['pathao_default_expense_category_id'] ?? ''),
                 'defaultIncomeCategoryId' => (string) ($row['pathao_default_income_category_id'] ?? ''),
@@ -4134,6 +4143,7 @@ final class MasterDataApi extends BaseService
                 ? trim((string) $pathao['webhookHeader'])
                 : ($current['pathao']['webhookHeader'] ?? 'X-MamePilot-Webhook-Secret'),
             'pathao_webhook_secret' => $pathao['webhookSecret'] ?? $current['pathao']['webhookSecret'],
+            'pathao_merchant_webhook_secret' => $pathao['merchantWebhookSecret'] ?? $current['pathao']['merchantWebhookSecret'],
             'pathao_default_account_id' => $this->nullableString($pathao['defaultAccountId'] ?? $current['pathao']['defaultAccountId'] ?? null),
             'pathao_default_expense_category_id' => $this->nullableString($pathao['defaultExpenseCategoryId'] ?? $current['pathao']['defaultExpenseCategoryId'] ?? null),
             'pathao_default_income_category_id' => $this->nullableString($pathao['defaultIncomeCategoryId'] ?? $current['pathao']['defaultIncomeCategoryId'] ?? null),

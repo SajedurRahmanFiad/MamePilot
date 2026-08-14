@@ -58,6 +58,12 @@ try {
     if ($provider === 'carrybee') {
         http_response_code(202);
         header('X-CB-Webhook-Integration-Header: 40489fe0-9386-4fc9-8e92-2b2fcb9d451c');
+    } elseif ($provider === 'pathao' && !empty($result['integrationVerified'])) {
+        http_response_code(202);
+        $merchantSecret = (string) ($result['merchantWebhookSecret'] ?? '');
+        if ($merchantSecret !== '') {
+            header('X-Pathao-Merchant-Webhook-Integration-Secret: ' . $merchantSecret);
+        }
     } else {
         http_response_code(200);
     }

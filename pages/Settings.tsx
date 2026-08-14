@@ -175,7 +175,7 @@ const SettingsPage: React.FC = () => {
     steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
-    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '', merchantWebhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     fraudChecker: { apiKey: '' },
   });
   const courierWebhookEndpoint = (provider: string) => {
@@ -2751,7 +2751,7 @@ const SettingsPage: React.FC = () => {
                   <span className="">Pathao</span> Secrets
                 </h3>
                 <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('pathao')}</code>. Configure the same header name and value in Pathao&apos;s strict webhook settings.</p>
+                  <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('pathao')}</code>. Configure this URL in the Pathao dashboard.</p>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="space-y-2">
                       <label className="font-bold uppercase tracking-widest">Webhook header name</label>
@@ -2761,6 +2761,11 @@ const SettingsPage: React.FC = () => {
                       <label className="font-bold uppercase tracking-widest">Webhook header value</label>
                       <input type="password" value={courierSettings.pathao.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Shared secret value" />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="font-bold uppercase tracking-widest">Merchant webhook integration secret</label>
+                    <input type="password" value={courierSettings.pathao.merchantWebhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, merchantWebhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Integration handshake secret from Pathao dashboard" />
+                    <p className="text-[10px] text-amber-600">This value is returned in the X-Pathao-Merchant-Webhook-Integration-Secret header during webhook integration setup.</p>
                   </div>
                 </div>
                 <div className="space-y-4">

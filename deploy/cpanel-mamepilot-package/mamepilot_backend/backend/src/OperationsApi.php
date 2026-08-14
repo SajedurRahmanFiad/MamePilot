@@ -11569,15 +11569,15 @@ SQL;
         $this->appendNumericFilter($where, $bindings, 'purchasePrice', $filters['purchasePrice'] ?? null, 'b.purchase_price');
         $this->appendNumericFilter($where, $bindings, 'averageAge', $filters['averageAge'] ?? null, 'b.average_age_days');
 
-        $sql = "SELECT b.*, bc.name AS category_name
+        $sql = "SELECT b.*, c.name AS category_name
                 FROM batches b
-                LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL
+                LEFT JOIN categories c ON c.id = b.category_id AND c.type = 'Batch'
                 {$where}
                 ORDER BY b.created_at DESC
                 LIMIT {$pageSize} OFFSET {$offset}";
         $rows = $this->database->fetchAll($sql, $bindings);
 
-        $countSql = "SELECT COUNT(*) AS cnt FROM batches b LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL {$where}";
+        $countSql = "SELECT COUNT(*) AS cnt FROM batches b LEFT JOIN categories c ON c.id = b.category_id AND c.type = 'Batch' {$where}";
         $countRow = $this->database->fetchOne($countSql, $bindings);
         $count = (int) ($countRow['cnt'] ?? 0);
 
@@ -11594,9 +11594,9 @@ SQL;
             return null;
         }
         $row = $this->database->fetchOne(
-            "SELECT b.*, bc.name AS category_name
+            "SELECT b.*, c.name AS category_name
              FROM batches b
-             LEFT JOIN batch_categories bc ON bc.id = b.category_id AND bc.deleted_at IS NULL
+             LEFT JOIN categories c ON c.id = b.category_id AND c.type = 'Batch'
              WHERE b.id = :id AND b.deleted_at IS NULL LIMIT 1",
             [':id' => $id]
         );

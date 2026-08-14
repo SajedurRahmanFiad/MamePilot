@@ -2288,17 +2288,24 @@ final class CourierApi extends BaseService
             throw new RuntimeException('Unsupported courier webhook provider.');
         }
 
-        // Carrybee webhook integration handshake — bypasses secret verification
-        // because this event fires before the user has stored the secret in our app.
-        if ($provider === 'carrybee') {
+        // CarryBee and Pathao webhook integration handshakes — bypass secret
+        // verification because these events fire before the user stores the
+        // secret in our app.
+        if (in_array($provider, ['carrybee', 'pathao'], true)) {
             $earlyPayload = json_decode($rawBody, true);
-            if (is_array($earlyPayload) && ($earlyPayload['event'] ?? '') === 'webhook.integration') {
-                return [
+            $integrationEvent = is_array($earlyPayload) ? ($earlyPayload['event'] ?? '') : '';
+            if ($integrationEvent === 'webhook.integration' || $integrationEvent === 'webhook_integration') {
+                $result = [
                     'status' => 'success',
-                    'provider' => 'carrybee',
-                    'event' => 'webhook.integration',
+                    'provider' => $provider,
+                    'event' => $integrationEvent,
                     'integrationVerified' => true,
                 ];
+                if ($provider === 'pathao') {
+                    $settings = $this->database->fetchOne('SELECT pathao_merchant_webhook_secret FROM courier_settings LIMIT 1') ?? [];
+                    $result['merchantWebhookSecret'] = (string) ($settings['pathao_merchant_webhook_secret'] ?? '');
+                }
+                return $result;
             }
         }
 
@@ -2502,9 +2509,16 @@ final class CourierApi extends BaseService
                 $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
             }
         } else {
+            // Pathao always sends the signature in X-PATHAO-Signature.
             $expected = trim((string) ($settings['pathao_webhook_secret'] ?? ''));
-            $headerName = trim((string) ($settings['pathao_webhook_header'] ?? '')) ?: 'X-MamePilot-Webhook-Secret';
-            $provided = $this->webhookHeader($headers, $headerName);
+            $provided = $this->webhookHeader($headers, 'X-PATHAO-Signature');
+            if ($provided === '') {
+                // Fallback for legacy configurable header name.
+                $legacyHeader = trim((string) ($settings['pathao_webhook_header'] ?? ''));
+                if ($legacyHeader !== '' && strcasecmp($legacyHeader, 'X-PATHAO-Signature') !== 0) {
+                    $provided = $this->webhookHeader($headers, $legacyHeader);
+                }
+            }
         }
 
         if ($expected === '' || $provided === '' || !hash_equals($expected, trim($provided))) {
