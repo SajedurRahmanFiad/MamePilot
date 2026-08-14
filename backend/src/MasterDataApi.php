@@ -1046,19 +1046,20 @@ final class MasterDataApi extends BaseService
 
         $normalizedQuery = $this->normalizeUnicodeString($query);
         $escapedQuery = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedQuery);
-
-        $bindings = [
-            ':search_name' => '%' . $escapedQuery . '%',
-            ':search_sku' => '%' . $escapedQuery . '%',
-        ];
+        $likeValue = '%' . $escapedQuery . '%';
 
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
                     stock, dynamic_pricing, category, 'product' AS item_type
                  FROM products
-                 WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
+                 WHERE deleted_at IS NULL AND (name LIKE :p_search_name OR sku LIKE :p_search_sku)
              )";
+
+        $bindings = [
+            ':p_search_name' => $likeValue,
+            ':p_search_sku'  => $likeValue,
+        ];
 
         if ($this->hasBatchesTable()) {
             $sql .= "
@@ -1068,8 +1069,10 @@ final class MasterDataApi extends BaseService
                     id, name, slug, sku, image, sale_price, purchase_price,
                     population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
                  FROM batches
-                 WHERE deleted_at IS NULL AND (name LIKE :search_name OR sku LIKE :search_sku)
+                 WHERE deleted_at IS NULL AND (name LIKE :b_search_name OR sku LIKE :b_search_sku)
              )";
+            $bindings[':b_search_name'] = $likeValue;
+            $bindings[':b_search_sku']  = $likeValue;
         }
 
         $sql .= " ORDER BY name ASC, id ASC LIMIT {$limit}";
@@ -1103,15 +1106,20 @@ final class MasterDataApi extends BaseService
         $pageSize = max(1, min(50, (int) ($params['pageSize'] ?? 30)));
         $offset = ($page - 1) * $pageSize;
 
-        $where = 'WHERE deleted_at IS NULL';
+        $productWhere = 'WHERE deleted_at IS NULL';
+        $batchWhere   = 'WHERE deleted_at IS NULL';
         $bindings = [];
 
         if ($query !== '') {
             $normalizedQuery = $this->normalizeUnicodeString($query);
             $escapedQuery = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalizedQuery);
-            $where .= ' AND (name LIKE :search_name OR sku LIKE :search_sku)';
-            $bindings[':search_name'] = '%' . $escapedQuery . '%';
-            $bindings[':search_sku'] = '%' . $escapedQuery . '%';
+            $likeValue = '%' . $escapedQuery . '%';
+            $productWhere .= ' AND (name LIKE :p_search_name OR sku LIKE :p_search_sku)';
+            $batchWhere   .= ' AND (name LIKE :b_search_name OR sku LIKE :b_search_sku)';
+            $bindings[':p_search_name'] = $likeValue;
+            $bindings[':p_search_sku']  = $likeValue;
+            $bindings[':b_search_name'] = $likeValue;
+            $bindings[':b_search_sku']  = $likeValue;
         }
 
         // Fetch one extra row instead of running a full COUNT(*) scan for
@@ -1121,7 +1129,7 @@ final class MasterDataApi extends BaseService
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
                     stock, dynamic_pricing, category, 'product' AS item_type
-                 FROM products {$where}
+                 FROM products {$productWhere}
              )";
 
         if ($this->hasBatchesTable()) {
@@ -1132,7 +1140,7 @@ final class MasterDataApi extends BaseService
                     id, name, slug, sku, image, sale_price, purchase_price,
                     population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
                  FROM batches
-                 WHERE deleted_at IS NULL" . ($query !== '' ? ' AND (name LIKE :search_name OR sku LIKE :search_sku)' : '') . "
+                 {$batchWhere}
              )";
         }
 
