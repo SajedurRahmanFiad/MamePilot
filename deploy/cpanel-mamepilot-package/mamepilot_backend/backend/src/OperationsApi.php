@@ -1958,9 +1958,13 @@ final class OperationsApi extends BaseService
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
-        $rows = $this->database->fetchAll(
-            "SELECT
-                id,
+
+        // When filtering by status change timestamp, we must fetch ALL matching rows first,
+        // filter in PHP, then paginate. Otherwise the LIMIT/OFFSET paginates by createdAt
+        // and misses orders completed in the range but created outside the current page.
+        $needsPostFilter = $filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter);
+
+        $selectColumns = "id,
                 orderNumber,
                 orderDate,
                 customerId,
@@ -1994,16 +1998,18 @@ final class OperationsApi extends BaseService
                 exchangePaperflyTrackingNumber,
                 exchangePathaoConsignmentId,
                 exchangeCourierHistory,
-                sourceAd
-             FROM orders_with_customer_creator
-             {$where}
-             ORDER BY createdAt DESC, id DESC
-             LIMIT {$pageSize} OFFSET {$offset}",
-            $bindings
-        );
+                sourceAd";
 
-        // Apply status change datetime filtering in PHP if needed
-        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter)) {
+        if ($needsPostFilter) {
+            // Fetch ALL matching rows (no LIMIT/OFFSET) so post-filter sees every order
+            $rows = $this->database->fetchAll(
+                "SELECT {$selectColumns}
+                 FROM orders_with_customer_creator
+                 {$where}
+                 ORDER BY createdAt DESC, id DESC",
+                $bindings
+            );
+
             $filteredRows = [];
             $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
             $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
@@ -2028,11 +2034,22 @@ final class OperationsApi extends BaseService
                     }
                 }
             }
-            $rows = $filteredRows;
 
-            // Recount based on filtered results (this is an approximation for paginated results)
-            // For accurate counts, we'd need to fetch all matching records first
-            $countRow['count'] = count($filteredRows);
+            // Update count to reflect actual filtered results
+            $totalFilteredCount = count($filteredRows);
+            $countRow['count'] = $totalFilteredCount;
+
+            // Paginate in PHP after filtering
+            $rows = array_slice($filteredRows, $offset, $pageSize);
+        } else {
+            $rows = $this->database->fetchAll(
+                "SELECT {$selectColumns}
+                 FROM orders_with_customer_creator
+                 {$where}
+                 ORDER BY createdAt DESC, id DESC
+                 LIMIT {$pageSize} OFFSET {$offset}",
+                $bindings
+            );
         }
 
         return [
