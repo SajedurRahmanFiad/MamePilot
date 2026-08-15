@@ -1265,9 +1265,25 @@ export interface OrderReportOrder {
   updatedAt: string;
 }
 
+export type OrderReportDateMode =
+  | 'created'
+  | 'on_hold'
+  | 'processing'
+  | 'courier'
+  | 'picked'
+  | 'completed'
+  | 'partiallyDelivered'
+  | 'exchangeProcessing'
+  | 'exchangePicked'
+  | 'exchangeDelivered'
+  | 'exchangeReturned'
+  | 'exchangeCancelled'
+  | 'returned'
+  | 'cancelled';
+
 export interface OrderReportData {
   companyPageIds: string[];
-  dateMode: 'created' | 'completed';
+  dateMode: OrderReportDateMode;
   totalOrders: number;
   completedCount: number;
   returnedCount: number;
@@ -1276,6 +1292,8 @@ export interface OrderReportData {
   processingCount: number;
   pickedCount: number;
   courierAssignedCount: number;
+  onHoldCount: number;
+  partialDeliveredCount: number;
   totalRevenue: number;
   totalPaid: number;
   totalDue: number;

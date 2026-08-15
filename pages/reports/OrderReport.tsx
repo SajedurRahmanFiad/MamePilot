@@ -9,8 +9,26 @@ import type { FilterRange } from '../../utils';
 import { toDateTimeLocalInputValue } from '../../utils';
 import { useCompanySettings, useOrderReport } from '../../src/hooks/useQueries';
 import { normalizeCompanySettings } from '../../src/utils/companyPages';
+import type { OrderReportDateMode } from '../../types';
 
-type DateMode = 'created' | 'completed';
+const DATE_MODE_LABELS: Record<OrderReportDateMode, string> = {
+  created: 'Orders created during',
+  on_hold: 'On Hold during',
+  processing: 'Processing during',
+  courier: 'Courier assigned during',
+  picked: 'Picked during',
+  completed: 'Actions delivered during',
+  partiallyDelivered: 'Partially delivered during',
+  exchangeProcessing: 'Exchange processing during',
+  exchangePicked: 'Exchange picked during',
+  exchangeDelivered: 'Exchange delivered during',
+  exchangeReturned: 'Exchange returned during',
+  exchangeCancelled: 'Exchange cancelled during',
+  returned: 'Returned during',
+  cancelled: 'Cancelled during',
+};
+
+export const ORDER_REPORT_DATE_MODES = Object.keys(DATE_MODE_LABELS) as OrderReportDateMode[];
 
 const SummaryCard: React.FC<{ label: string; value: string | number; sub?: string; color?: string }> = ({ label, value, sub, color }) => (
   <div className={`p-4 rounded-xl border border-gray-100 bg-white shadow-sm ${color ? `border-l-4 ${color}` : ''}`}>
@@ -35,7 +53,7 @@ const OrderReport: React.FC = () => {
   const [filterRange, setFilterRange] = useState<FilterRange>('Today');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const [includeTime, setIncludeTime] = useState(false);
-  const [dateMode, setDateMode] = useState<DateMode>('completed');
+  const [dateMode, setDateMode] = useState<OrderReportDateMode>('completed');
   const [appliedCompanyIds, setAppliedCompanyIds] = useState<string[]>([]);
   const [pendingCompanyIds, setPendingCompanyIds] = useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -196,11 +214,12 @@ const OrderReport: React.FC = () => {
           <label className="block text-xs font-bold text-gray-500 mb-1.5">Date Mode</label>
           <select
             value={dateMode}
-            onChange={(e) => setDateMode(e.target.value as DateMode)}
+            onChange={(e) => setDateMode(e.target.value as OrderReportDateMode)}
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
           >
-            <option value="created">Orders created during</option>
-            <option value="completed">Actions delivered during</option>
+            {ORDER_REPORT_DATE_MODES.map((mode) => (
+              <option key={mode} value={mode}>{DATE_MODE_LABELS[mode]}</option>
+            ))}
           </select>
         </div>
 
@@ -268,7 +287,7 @@ const OrderReport: React.FC = () => {
             ))}
           </div>
           <p className="text-center text-xs text-gray-400 mt-4">
-            {dateMode === 'created' ? 'Orders created during' : 'Actions delivered during'} {' '}
+            {DATE_MODE_LABELS[dateMode]} {' '}
             {filterRange === 'Custom'
               ? (customDates.from && customDates.to ? `${customDates.from} to ${customDates.to}` : customDates.from ? `from ${customDates.from}` : customDates.to ? `until ${customDates.to}` : 'all time')
               : filterRange === 'All Time' ? 'all time' : `this ${filterRange.toLowerCase().replace('this ', '').replace('last ', '')}`}
@@ -288,6 +307,8 @@ const OrderReport: React.FC = () => {
             <SummaryCard label="Processing" value={reportData?.processingCount ?? 0} color="border-l-yellow-400" />
             <SummaryCard label="Picked" value={reportData?.pickedCount ?? 0} color="border-l-indigo-400" />
             <SummaryCard label="Courier Assigned" value={reportData?.courierAssignedCount ?? 0} color="border-l-purple-400" />
+            <SummaryCard label="On Hold" value={reportData?.onHoldCount ?? 0} color="border-l-cyan-400" />
+            <SummaryCard label="Partially Delivered" value={reportData?.partialDeliveredCount ?? 0} color="border-l-teal-400" />
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -308,6 +329,8 @@ const OrderReport: React.FC = () => {
                 <InsightRow label="Processing" value={(reportData?.processingCount ?? 0).toLocaleString()} valueClass="text-yellow-600" />
                 <InsightRow label="Picked" value={(reportData?.pickedCount ?? 0).toLocaleString()} valueClass="text-indigo-600" />
                 <InsightRow label="Courier Assigned" value={(reportData?.courierAssignedCount ?? 0).toLocaleString()} valueClass="text-purple-600" />
+                <InsightRow label="On Hold" value={(reportData?.onHoldCount ?? 0).toLocaleString()} valueClass="text-cyan-600" />
+                <InsightRow label="Partially Delivered" value={(reportData?.partialDeliveredCount ?? 0).toLocaleString()} valueClass="text-teal-600" />
               </div>
             </div>
 

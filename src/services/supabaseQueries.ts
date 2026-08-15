@@ -63,6 +63,7 @@ import type {
   VoiceSurveyIntegrationSettings,
   OrderSurveySnapshot,
   OrderReportData,
+  OrderReportDateMode,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -156,7 +157,7 @@ export async function fetchIncomeVsExpenseReport() {
 export async function fetchProfitLossReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[] }) {
   return call<ProfitLossReport>('fetchProfitLossReport', params || {});
 }
-export async function fetchOrderReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[]; dateMode?: 'created' | 'completed' }) {
+export async function fetchOrderReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[]; dateMode?: OrderReportDateMode }) {
   return call<OrderReportData>('fetchOrderReport', params || {});
 }
 export async function fetchProductQuantitySoldReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {

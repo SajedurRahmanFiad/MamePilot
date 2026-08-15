@@ -4493,9 +4493,28 @@ final class OperationsApi extends BaseService
         }
 
         $dateMode = trim((string) ($params['dateMode'] ?? 'created'));
-        if (!in_array($dateMode, ['created', 'completed'], true)) {
+        // Mirrors fetchOrdersPage: each status mode bounds a dedicated status
+        // timestamp column (On Hold falls back to createdAt, like the list page).
+        $statusDateColumnMap = [
+            'created' => 'orderDate',
+            'on_hold' => 'createdAt',
+            'processing' => 'processedAt',
+            'courier' => 'courierAssignedAt',
+            'picked' => 'pickedAt',
+            'completed' => 'completedAt',
+            'partiallyDelivered' => 'partialDeliveredAt',
+            'exchangeProcessing' => 'exchangeProcessingAt',
+            'exchangePicked' => 'exchangePickedAt',
+            'exchangeDelivered' => 'exchangeDeliveredAt',
+            'exchangeReturned' => 'exchangeReturnedAt',
+            'exchangeCancelled' => 'exchangeCancelledAt',
+            'returned' => 'returnedAt',
+            'cancelled' => 'cancelledAt',
+        ];
+        if (!isset($statusDateColumnMap[$dateMode])) {
             $dateMode = 'created';
         }
+        $dateColumn = $statusDateColumnMap[$dateMode];
 
         $filters = $this->buildDashboardDateFilters($normalizedParams);
         $hasCompanyFilter = !empty($companyPageIds);
@@ -4504,7 +4523,9 @@ final class OperationsApi extends BaseService
         $bindings = [];
 
         if ($dateMode === 'created') {
-            $this->applyDashboardDateBounds('o.orderDate', $filters, $conditions, $bindings, 'order_rpt');
+            $this->applyDashboardDateBounds('o.' . $dateColumn, $filters, $conditions, $bindings, 'order_rpt');
+        } else {
+            $this->applyDashboardDateTimeBounds('o.' . $dateColumn, $filters, $conditions, $bindings, 'order_rpt');
         }
 
         if ($hasCompanyFilter) {
@@ -4532,28 +4553,6 @@ final class OperationsApi extends BaseService
              ORDER BY o.orderDate DESC',
             $bindings
         );
-
-        $fromDateTime = $filters['fromDateTime'] ?? null;
-        $toDateTime = $filters['toDateTime'] ?? null;
-
-        if ($dateMode === 'completed') {
-            $filteredOrders = [];
-            foreach ($orders as $order) {
-                $history = $this->jsonDecodeAssoc($order['history'] ?? []);
-                // For 'completed' date mode, only check the 'completed' history field
-                $historyText = $this->historyValue($history, 'completed');
-                if ($historyText !== '') {
-                    $timestamp = $this->extractTimestampFromHistoryText($historyText);
-                    if ($timestamp !== null) {
-                        if (($fromDateTime === null || $timestamp >= $fromDateTime) &&
-                            ($toDateTime === null || $timestamp <= $toDateTime)) {
-                            $filteredOrders[] = $order;
-                        }
-                    }
-                }
-            }
-            $orders = $filteredOrders;
-        }
 
         $orderIds = array_map(static fn(array $o) => (string) ($o['id'] ?? ''), $orders);
         $cogsMap = [];
@@ -4584,6 +4583,8 @@ final class OperationsApi extends BaseService
         $processingCount = 0;
         $pickedCount = 0;
         $courierAssignedCount = 0;
+        $onHoldCount = 0;
+        $partialDeliveredCount = 0;
         $totalRevenue = 0.0;
         $totalPaid = 0.0;
         $totalCogs = 0.0;
@@ -4614,6 +4615,12 @@ final class OperationsApi extends BaseService
             }
             if ($status === 'Courier assigned') {
                 $courierAssignedCount++;
+            }
+            if ($status === 'On Hold') {
+                $onHoldCount++;
+            }
+            if ($status === 'partially_delivered') {
+                $partialDeliveredCount++;
             }
 
             $totalRevenue += $total;
@@ -4653,6 +4660,8 @@ final class OperationsApi extends BaseService
             'processingCount' => $processingCount,
             'pickedCount' => $pickedCount,
             'courierAssignedCount' => $courierAssignedCount,
+            'onHoldCount' => $onHoldCount,
+            'partialDeliveredCount' => $partialDeliveredCount,
             'totalRevenue' => $totalRevenue,
             'totalPaid' => $totalPaid,
             'totalDue' => max(0, $totalRevenue - $totalPaid),

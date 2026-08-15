@@ -194,6 +194,7 @@ import type {
   VoiceSurveyIntegrationSettings,
   OrderSurveySnapshot,
   OrderReportData,
+  OrderReportDateMode,
   WhatsAppSettings,
   WhatsAppContact,
   WhatsAppMessage,
@@ -374,7 +375,7 @@ export function useOrderReport(
   filterRange: string = 'Today',
   customDates: { from: string; to: string } = { from: '', to: '' },
   companyPageIds: string[] = [],
-  dateMode: 'created' | 'completed' = 'completed',
+  dateMode: OrderReportDateMode = 'completed',
   options?: { enabled?: boolean }
 ): UseQueryResult<OrderReportData, Error> {
   const normalizedCustomDates = {
