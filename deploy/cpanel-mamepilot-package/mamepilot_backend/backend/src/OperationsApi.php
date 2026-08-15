@@ -667,6 +667,49 @@ final class OperationsApi extends BaseService
         return $existing . "\n" . $event;
     }
 
+    /**
+     * Populate the dedicated bill status-timestamp columns from history text.
+     * History values are successfully/time-aware and may be multi-line; the LAST
+     * parseable line wins so the most recent recorded moment is authoritative.
+     * Mirrors the Orders read-model so the Bills page can filter in SQL.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function applyBillStatusTimestampColumns(array &$payload, mixed $history): void
+    {
+        $historyData = $this->jsonDecodeAssoc($history);
+        if ($historyData === []) {
+            return;
+        }
+
+        $columnByHistoryKey = [
+            'processing' => 'processed_at',
+            'received' => 'received_at',
+            'paid' => 'paid_at',
+            'returned' => 'returned_at',
+            'cancelled' => 'cancelled_at',
+        ];
+
+        foreach ($columnByHistoryKey as $key => $column) {
+            $value = $historyData[$key] ?? null;
+            if (!is_string($value) || trim($value) === '') {
+                continue;
+            }
+            $lines = preg_split('/\r?\n/', $value) ?: [];
+            $parsed = null;
+            foreach (array_reverse($lines) as $line) {
+                $candidate = $this->parseHistoryTimestampValue(trim($line));
+                if ($candidate !== null) {
+                    $parsed = $candidate;
+                    break;
+                }
+            }
+            if ($parsed !== null) {
+                $payload[$column] = $parsed->format('Y-m-d H:i:s');
+            }
+        }
+    }
+
     /** @return array{0: string, 1: bool} */
     private function decodeEncodedTextFilterValue(string $value): array
     {
@@ -5250,6 +5293,9 @@ final class OperationsApi extends BaseService
                     'history' => [],
                 ], (string) $actor['id'], $actor);
                 $payload['paid_amount'] = $this->formatMoney($previousPaidAmount + $paymentAmount);
+                if (trim((string) ($existingRow['payment_received_at'] ?? '')) === '') {
+                    $payload['payment_received_at'] = $this->normalizeDateTimeInput($paymentDate);
+                }
             }
 
             $refundAmount = round((float) ($updates['refundAmount'] ?? 0), 2);
@@ -5288,6 +5334,9 @@ final class OperationsApi extends BaseService
                     'history' => [],
                 ], (string) $actor['id'], $actor);
                 $payload['paid_amount'] = $this->formatMoney(max(0.0, $previousPaidAmount - $refundAmount));
+                if (trim((string) ($existingRow['refund_issued_at'] ?? '')) === '') {
+                    $payload['refund_issued_at'] = $this->normalizeDateTimeInput($refundDate);
+                }
             }
 
             $automaticCourierPayment = $this->recordAutomaticCourierDeliveryPayment(
@@ -5306,6 +5355,9 @@ final class OperationsApi extends BaseService
                     $automaticCourierPayment['historyText']
                 );
                 $payload['history'] = $this->jsonEncode($nextHistory);
+                if (trim((string) ($existingRow['payment_received_at'] ?? '')) === '') {
+                    $payload['payment_received_at'] = $this->database->nowUtc();
+                }
             }
 
             if (array_key_exists('carrybeeConsignmentId', $updates) || array_key_exists('carrybee_consignment_id', $updates)) {
@@ -6582,6 +6634,23 @@ final class OperationsApi extends BaseService
         $fromFilter = null;
         $toFilter = null;
 
+        // Bills have dedicated status-timestamp columns (processed/received/paid/
+        // returned/cancelled in the bills_with_vendor_creator view), so status-change
+        // filters compare directly against that column instead of re-parsing history
+        // text on every request. The 'created' field maps to createdAt (no dedicated
+        // column exists), which keeps On Hold / All Time filtering by createdAt.
+        $billStatusHistoryColumnMap = [
+            'processing' => 'processedAt',
+            'received' => 'receivedAt',
+            'paid' => 'paidAt',
+            'returned' => 'returnedAt',
+            'cancelled' => 'cancelledAt',
+        ];
+        $statusColumn = null;
+        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created') {
+            $statusColumn = $billStatusHistoryColumnMap[$statusHistoryField] ?? null;
+        }
+
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
             $where .= ' AND status = :status';
@@ -6636,19 +6705,23 @@ final class OperationsApi extends BaseService
             $bindings[':bill_payment_status_not'] = $billPaymentStatusNot;
         }
         if (!empty($filters['from'])) {
-            // When filtering by status change datetime, we'll handle it in PHP after fetching
             $fromFilter = $this->normalizeDateTimeInput((string) $filters['from']);
-            // Only apply createdAt filter if NOT filtering by status change
-            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+            if ($statusColumn) {
+                // Filter by the status's own timestamp column (legacy rows without a
+                // parseable history event keep a NULL column and are not matched).
+                $where .= " AND {$statusColumn} IS NOT NULL AND {$statusColumn} >= :from";
+                $bindings[':from'] = $fromFilter;
+            } elseif (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
                 $where .= ' AND createdAt >= :from';
                 $bindings[':from'] = $fromFilter;
             }
         }
         if (!empty($filters['to'])) {
-            // When filtering by status change datetime, we'll handle it in PHP after fetching
             $toFilter = $this->normalizeDateTimeInput((string) $filters['to']);
-            // Only apply createdAt filter if NOT filtering by status change
-            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+            if ($statusColumn) {
+                $where .= " AND {$statusColumn} IS NOT NULL AND {$statusColumn} <= :to";
+                $bindings[':to'] = $toFilter;
+            } elseif (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
                 $where .= ' AND createdAt <= :to';
                 $bindings[':to'] = $toFilter;
             }
@@ -6682,88 +6755,30 @@ final class OperationsApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM bills_with_vendor_creator {$where}", $bindings);
 
-        $needsPostFilter = $filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter);
-
-        if ($needsPostFilter) {
-            // Fetch ALL matching rows (no LIMIT/OFFSET) so post-filter sees every bill
-            $rows = $this->database->fetchAll(
-                "SELECT
-                    id,
-                    billNumber,
-                    billDate,
-                    vendorId,
-                    vendorName,
-                    vendorPhone,
-                    vendorAddress,
-                    createdBy,
-                    creatorName,
-                    status,
-                    total,
-                    history,
-                    paidAmount,
-                    createdAt,
-                    deletedAt,
-                    deletedBy
-                 FROM bills_with_vendor_creator
-                 {$where}
-                 ORDER BY createdAt DESC, id DESC",
-                $bindings
-            );
-
-            $filteredRows = [];
-            $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
-            $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
-
-            foreach ($rows as $row) {
-                $history = $this->jsonDecodeAssoc($row['history'] ?? []);
-                $historyValue = $history[$statusHistoryField] ?? '';
-
-                if ($historyValue) {
-                    $parsedDate = $this->parseHistoryTimestampValue($historyValue);
-                    if ($parsedDate) {
-                        $inRange = true;
-                        if ($fromDate && $parsedDate < $fromDate) {
-                            $inRange = false;
-                        }
-                        if ($toDate && $parsedDate > $toDate) {
-                            $inRange = false;
-                        }
-                        if ($inRange) {
-                            $filteredRows[] = $row;
-                        }
-                    }
-                }
-            }
-            $rows = array_slice($filteredRows, $offset, $pageSize);
-
-            // Update count to reflect actual filtered results
-            $countRow['count'] = count($filteredRows);
-        } else {
-            $rows = $this->database->fetchAll(
-                "SELECT
-                    id,
-                    billNumber,
-                    billDate,
-                    vendorId,
-                    vendorName,
-                    vendorPhone,
-                    vendorAddress,
-                    createdBy,
-                    creatorName,
-                    status,
-                    total,
-                    history,
-                    paidAmount,
-                    createdAt,
-                    deletedAt,
-                    deletedBy
-                 FROM bills_with_vendor_creator
-                 {$where}
-                 ORDER BY createdAt DESC, id DESC
-                 LIMIT {$pageSize} OFFSET {$offset}",
-                $bindings
-            );
-        }
+        $rows = $this->database->fetchAll(
+            "SELECT
+                id,
+                billNumber,
+                billDate,
+                vendorId,
+                vendorName,
+                vendorPhone,
+                vendorAddress,
+                createdBy,
+                creatorName,
+                status,
+                total,
+                history,
+                paidAmount,
+                createdAt,
+                deletedAt,
+                deletedBy
+             FROM bills_with_vendor_creator
+             {$where}
+             ORDER BY createdAt DESC, id DESC
+             LIMIT {$pageSize} OFFSET {$offset}",
+            $bindings
+        );
 
         return [
             'data' => array_map(fn(array $row): array => $this->mapBill($row), $rows),
@@ -6815,13 +6830,26 @@ final class OperationsApi extends BaseService
             $stockUpdates = $this->applyBillStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
 
+            $initialStatusColumnMap = [
+                'Processing' => 'processed_at',
+                'Received' => 'received_at',
+                'Paid' => 'paid_at',
+                'Returned' => 'returned_at',
+                'Cancelled' => 'cancelled_at',
+            ];
+            $initialStatusColumn = $initialStatusColumnMap[$status] ?? null;
+
             $this->database->execute(
                 'INSERT INTO bills (
                     id, bill_number, bill_seq, bill_date, vendor_id, created_by, status, items,
-                    subtotal, discount, shipping, total, paid_amount, notes, history, created_at, updated_at
+                    subtotal, discount, shipping, total, paid_amount, notes, history,
+                    processed_at, received_at, paid_at, returned_at, cancelled_at,
+                    created_at, updated_at
                 ) VALUES (
                     :id, :bill_number, :bill_seq, :bill_date, :vendor_id, :created_by, :status, :items,
-                    :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :created_at, :updated_at
+                    :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history,
+                    :processed_at, :received_at, :paid_at, :returned_at, :cancelled_at,
+                    :created_at, :updated_at
                 )',
                 [
                     ':id' => $id,
@@ -6839,6 +6867,11 @@ final class OperationsApi extends BaseService
                     ':paid_amount' => $this->formatMoney($params['paidAmount'] ?? 0),
                     ':notes' => $this->nullableString($params['notes'] ?? null),
                     ':history' => $this->jsonEncode($params['history'] ?? []),
+                    ':processed_at' => $initialStatusColumn === 'processed_at' ? $now : null,
+                    ':received_at' => $initialStatusColumn === 'received_at' ? $now : null,
+                    ':paid_at' => $initialStatusColumn === 'paid_at' ? $now : null,
+                    ':returned_at' => $initialStatusColumn === 'returned_at' ? $now : null,
+                    ':cancelled_at' => $initialStatusColumn === 'cancelled_at' ? $now : null,
                     ':created_at' => $now,
                     ':updated_at' => $now,
                 ]
@@ -6926,6 +6959,7 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
+                $this->applyBillStatusTimestampColumns($payload, $updates['history']);
             }
 
             $additionalExpenseAmount = round((float) ($updates['additionalExpenseAmount'] ?? 0), 2);
@@ -6992,6 +7026,9 @@ final class OperationsApi extends BaseService
                         'history' => [],
                     ], (string) $actor['id'], $actor);
                     $payload['paid_amount'] = $this->formatMoney($previousPaidAmount + $paymentAmount);
+                    if (trim((string) ($existingRow['payment_received_at'] ?? '')) === '') {
+                        $payload['payment_received_at'] = $recordedAt;
+                    }
                 } else {
                     $maxRefund = max(0.0, $previousPaidAmount - $billSettlementTotal);
                     if ($refundAmount > $maxRefund) {
@@ -7010,6 +7047,9 @@ final class OperationsApi extends BaseService
                         'history' => [],
                     ], (string) $actor['id'], $actor);
                     $payload['paid_amount'] = $this->formatMoney(max(0.0, $previousPaidAmount - $refundAmount));
+                    if (trim((string) ($existingRow['refund_issued_at'] ?? '')) === '') {
+                        $payload['refund_issued_at'] = $recordedAt;
+                    }
                 }
             }
 
@@ -7309,6 +7349,7 @@ final class OperationsApi extends BaseService
                 $payload['status'] = 'Returned';
                 $history['returned'] = "Fully returned to vendor by {$actorName} on {$dateLabel} at {$timeLabel}.";
                 $payload['history'] = $this->jsonEncode($history);
+                $payload['returned_at'] = $recordedAt;
             }
             $this->touchUpdate('bills', $billId, $payload);
 

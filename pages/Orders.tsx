@@ -297,7 +297,7 @@ const Orders: React.FC = () => {
 
   // Determine if we should filter by status change datetime
   const filterByStatusChange = useMemo(() => {
-    return statusHistoryField !== null && (timeFilters.from || timeFilters.to);
+    return Boolean(statusHistoryField !== null && (timeFilters.from || timeFilters.to));
   }, [statusHistoryField, timeFilters.from, timeFilters.to]);
 
   // Compute createdByIds based on createdByFilter
@@ -1185,6 +1185,7 @@ const Orders: React.FC = () => {
               compact={true}
               onRefresh={handleRefreshOrders}
               isRefreshing={ordersLoading}
+              ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
             />
           </div>
         </div>
@@ -1210,6 +1211,7 @@ const Orders: React.FC = () => {
           setIncludeTime={handleIncludeTimeChange}
           onRefresh={handleRefreshOrders}
           isRefreshing={ordersLoading}
+          ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
         />
       </div>
       {/* Pagination controls moved below the table to match other pages */}

@@ -28,6 +28,29 @@ ALTER TABLE `orders`
   ADD INDEX IF NOT EXISTS `idx_orders_exchange_delivered_at` (`exchange_delivered_at`),
   ADD INDEX IF NOT EXISTS `idx_orders_exchange_returned_at` (`exchange_returned_at`),
   ADD INDEX IF NOT EXISTS `idx_orders_exchange_cancelled_at` (`exchange_cancelled_at`);
+ALTER TABLE `orders`
+  ADD COLUMN IF NOT EXISTS `payment_received_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `refund_issued_at` DATETIME NULL;
+ALTER TABLE `orders`
+  ADD INDEX IF NOT EXISTS `idx_orders_payment_received_at` (`payment_received_at`),
+  ADD INDEX IF NOT EXISTS `idx_orders_refund_issued_at` (`refund_issued_at`);
+
+-- Backfill payment and refund timestamps from orders.history.payment.
+-- The key mixes payment and refund lines; each column anchors on its own
+-- line prefix (first matching line wins, lines append chronologically).
+-- Timestamp dialects: 12h DD MMM / 12h MMM DD / webhook / ISO / 24h DD MMM.
+UPDATE orders
+SET payment_received_at = COALESCE(SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2} [A-Za-z]{3,9} [0-9]{4}'), ''), ' ', NULLIF(UPPER(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2} ?[AP]\.?M\.?'), '.', '')), '')), '%e %b %Y %h:%i %p'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[A-Za-z]{3,9} [0-9]{1,2},? [0-9]{4}'), ',', ''), ''), ' ', NULLIF(UPPER(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2} ?[AP]\.?M\.?'), '.', '')), '')), '%b %e %Y %h:%i %p'), '06:00:00'), SUBTIME(STR_TO_DATE(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?'), ''), '%Y-%m-%d %H:%i:%s'), '06:00:00'), SUBTIME(STR_TO_DATE(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?'), 'T', ' '), ''), '%Y-%m-%d %H:%i:%s'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2} [A-Za-z]{3,9} [0-9]{4}'), ''), ' ', NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?'), '')), '%e %b %Y %H:%i'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[A-Za-z]{3,9} [0-9]{1,2},? [0-9]{4}'), ',', ''), ''), ' ', NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Payment of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?'), '')), '%b %e %Y %H:%i'), '06:00:00'))
+WHERE JSON_VALID(history) = 1
+  AND JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')) IS NOT NULL
+  AND payment_received_at IS NULL;
+
+-- Refund issued: first 'Refund of' line in orders.history.payment.
+UPDATE orders
+SET refund_issued_at = COALESCE(SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2} [A-Za-z]{3,9} [0-9]{4}'), ''), ' ', NULLIF(UPPER(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2} ?[AP]\.?M\.?'), '.', '')), '')), '%e %b %Y %h:%i %p'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[A-Za-z]{3,9} [0-9]{1,2},? [0-9]{4}'), ',', ''), ''), ' ', NULLIF(UPPER(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2} ?[AP]\.?M\.?'), '.', '')), '')), '%b %e %Y %h:%i %p'), '06:00:00'), SUBTIME(STR_TO_DATE(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?'), ''), '%Y-%m-%d %H:%i:%s'), '06:00:00'), SUBTIME(STR_TO_DATE(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?'), 'T', ' '), ''), '%Y-%m-%d %H:%i:%s'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2} [A-Za-z]{3,9} [0-9]{4}'), ''), ' ', NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?'), '')), '%e %b %Y %H:%i'), '06:00:00'), SUBTIME(STR_TO_DATE(CONCAT(NULLIF(REPLACE(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[A-Za-z]{3,9} [0-9]{1,2},? [0-9]{4}'), ',', ''), ''), ' ', NULLIF(REGEXP_SUBSTR(SUBSTRING_INDEX(SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')), LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')))), '\n', 1), '[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?'), '')), '%b %e %Y %H:%i'), '06:00:00'))
+WHERE JSON_VALID(history) = 1
+  AND JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment')) IS NOT NULL AND LOCATE('Refund of', JSON_UNQUOTE(JSON_EXTRACT(history, '$.payment'))) > 0
+  AND refund_issued_at IS NULL;
 
 -- Backfill each timestamp from the earliest (deterministic) recorded time the
 -- order first entered the corresponding status. Rows without any matching
@@ -139,7 +162,9 @@ SELECT
   o.exchange_picked_at AS exchangePickedAt,
   o.exchange_delivered_at AS exchangeDeliveredAt,
   o.exchange_returned_at AS exchangeReturnedAt,
-  o.exchange_cancelled_at AS exchangeCancelledAt
+  o.exchange_cancelled_at AS exchangeCancelledAt,
+  o.payment_received_at AS paymentReceivedAt,
+  o.refund_issued_at AS refundIssuedAt
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by

@@ -3199,7 +3199,42 @@ CALL sp_create_idx('orders', 'idx_orders_exchange_delivered_at', '`exchange_deli
 CALL sp_create_idx('orders', 'idx_orders_exchange_returned_at', '`exchange_returned_at`');
 CALL sp_create_idx('orders', 'idx_orders_exchange_cancelled_at', '`exchange_cancelled_at`');
 
+CALL sp_add_col('orders', 'payment_received_at', 'DATETIME NULL');
+CALL sp_add_col('orders', 'refund_issued_at', 'DATETIME NULL');
+
+CALL sp_create_idx('orders', 'idx_orders_payment_received_at', '`payment_received_at`');
+CALL sp_create_idx('orders', 'idx_orders_refund_issued_at', '`refund_issued_at`');
+
 -- Skipped data-mutating statement from 2026-08-15_order_status_timestamp_columns.sql.
+
+-- Skipped data-mutating statement from 2026-08-15_order_status_timestamp_columns.sql.
+
+-- Skipped data-mutating statement from 2026-08-15_order_status_timestamp_columns.sql.
+
+-- Migration: 2026-08-16_bill_status_timestamp_columns.sql
+CALL sp_add_col('bills', 'processed_at', 'DATETIME NULL');
+CALL sp_add_col('bills', 'received_at', 'DATETIME NULL');
+CALL sp_add_col('bills', 'paid_at', 'DATETIME NULL');
+CALL sp_add_col('bills', 'returned_at', 'DATETIME NULL');
+CALL sp_add_col('bills', 'cancelled_at', 'DATETIME NULL');
+
+CALL sp_create_idx('bills', 'idx_bills_processed_at', '`processed_at`');
+CALL sp_create_idx('bills', 'idx_bills_received_at', '`received_at`');
+CALL sp_create_idx('bills', 'idx_bills_paid_at', '`paid_at`');
+CALL sp_create_idx('bills', 'idx_bills_returned_at', '`returned_at`');
+CALL sp_create_idx('bills', 'idx_bills_cancelled_at', '`cancelled_at`');
+
+CALL sp_add_col('bills', 'payment_received_at', 'DATETIME NULL');
+CALL sp_add_col('bills', 'refund_issued_at', 'DATETIME NULL');
+
+CALL sp_create_idx('bills', 'idx_bills_payment_received_at', '`payment_received_at`');
+CALL sp_create_idx('bills', 'idx_bills_refund_issued_at', '`refund_issued_at`');
+
+-- Skipped data-mutating statement from 2026-08-16_bill_status_timestamp_columns.sql.
+
+-- Skipped data-mutating statement from 2026-08-16_bill_status_timestamp_columns.sql.
+
+-- Skipped data-mutating statement from 2026-08-16_bill_status_timestamp_columns.sql.
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
@@ -3538,11 +3573,52 @@ SELECT
   o.exchange_picked_at AS exchangePickedAt,
   o.exchange_delivered_at AS exchangeDeliveredAt,
   o.exchange_returned_at AS exchangeReturnedAt,
-  o.exchange_cancelled_at AS exchangeCancelledAt
+  o.exchange_cancelled_at AS exchangeCancelledAt,
+  o.payment_received_at AS paymentReceivedAt,
+  o.refund_issued_at AS refundIssuedAt
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by
 WHERE o.deleted_at IS NULL;
+
+-- Migration views: 2026-08-16_bill_status_timestamp_columns.sql
+-- Expose the new columns through the bill list view (used by fetchBillsPage).
+DROP VIEW IF EXISTS `bills_with_vendor_creator`;
+
+CREATE VIEW `bills_with_vendor_creator` AS
+SELECT
+  b.id,
+  b.bill_number AS billNumber,
+  b.bill_date AS billDate,
+  b.vendor_id AS vendorId,
+  v.name AS vendorName,
+  v.phone AS vendorPhone,
+  v.address AS vendorAddress,
+  b.created_by AS createdBy,
+  u.name AS creatorName,
+  b.status,
+  b.items,
+  b.subtotal,
+  b.discount,
+  b.shipping,
+  b.total,
+  b.paid_amount AS paidAmount,
+  b.notes,
+  b.history,
+  b.created_at AS createdAt,
+  b.processed_at AS processedAt,
+  b.received_at AS receivedAt,
+  b.paid_at AS paidAt,
+  b.returned_at AS returnedAt,
+  b.cancelled_at AS cancelledAt,
+  b.payment_received_at AS paymentReceivedAt,
+  b.refund_issued_at AS refundIssuedAt,
+  b.deleted_at AS deletedAt,
+  b.deleted_by AS deletedBy
+FROM bills b
+LEFT JOIN vendors v ON v.id = b.vendor_id
+LEFT JOIN users u ON u.id = b.created_by
+WHERE b.deleted_at IS NULL;
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_modify_col;

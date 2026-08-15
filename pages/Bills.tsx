@@ -173,7 +173,7 @@ const Bills: React.FC = () => {
 
   // Determine if we should filter by status change datetime
   const filterByBillStatusChange = useMemo(() => {
-    return billStatusHistoryField !== null && (timeFilters.from || timeFilters.to);
+    return Boolean(billStatusHistoryField !== null && (timeFilters.from || timeFilters.to));
   }, [billStatusHistoryField, timeFilters.from, timeFilters.to]);
   const createdByIds = useMemo(() => {
     const requireMatch = (ids: string[]) => ids.length > 0 ? ids : ['__no_matching_creator__'];
@@ -574,6 +574,7 @@ const Bills: React.FC = () => {
               compact={true}
               onRefresh={handleRefreshBills}
               isRefreshing={billsLoading}
+              ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
             />
           </div>
         </div>
@@ -597,6 +598,7 @@ const Bills: React.FC = () => {
           setCustomDates={handleCustomDatesChange}
           onRefresh={handleRefreshBills}
           isRefreshing={billsLoading}
+          ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
         />
       </div>
 
