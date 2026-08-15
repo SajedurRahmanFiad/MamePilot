@@ -102,6 +102,7 @@ const BillForm: React.FC = () => {
   const [vendorId, setVendorId] = useState('');
   const [isVendorCreateOpen, setIsVendorCreateOpen] = useState(false);
   const [vendorCreateInitialValues, setVendorCreateInitialValues] = useState<Partial<Pick<Vendor, 'name' | 'phone' | 'address'>>>();
+  const [vendorToEdit, setVendorToEdit] = useState<any>(null);
   const [billDate, setBillDate] = useState(getTodayDate());
   const [billNumber, setBillNumber] = useState('Generating...');
   const [billNumberLoading, setBillNumberLoading] = useState(false);
@@ -388,10 +389,24 @@ const BillForm: React.FC = () => {
                       <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
                     ) : (
                       (visibleVendors || []).map((v: any) => (
-                        <button key={v.id} onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="w-full px-4 py-2.5 text-left hover:bg-[#e6f0ff] rounded-lg group transition-colors">
-                          <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700">{v.name}</p>
-                          <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60">{v.phone}</p>
-                        </button>
+                        <div key={v.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#e6f0ff] transition-colors">
+                          <button onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors">
+                            <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{v.name}</p>
+                            <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60 truncate">{v.phone}</p>
+                          </button>
+                          {can('vendors.edit') && (
+                            <button
+                              title="Edit vendor"
+                              onClick={() => {
+                                setVendorToEdit(v);
+                                setShowVendorSearch(false);
+                              }}
+                              className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                            >
+                              {ICONS.Edit}
+                            </button>
+                          )}
+                        </div>
                       ))
                     )}
                   </div>
@@ -585,6 +600,17 @@ const BillForm: React.FC = () => {
             setVendorId(vendor.id);
             setShowVendorSearch(false);
             setVendorSearchTerm('');
+          }}
+        />
+      )}
+      {vendorToEdit && (
+        <VendorCreateModal
+          isOpen
+          onClose={() => setVendorToEdit(null)}
+          editingVendor={vendorToEdit}
+          onUpdated={(updated) => {
+            setVendorId(updated.id);
+            setVendorToEdit(null);
           }}
         />
       )}

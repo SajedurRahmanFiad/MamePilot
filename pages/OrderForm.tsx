@@ -164,6 +164,7 @@ const OrderForm: React.FC = () => {
   const [custSearchTerm, setCustSearchTerm] = useState('');
   const [isCustomerCreateOpen, setIsCustomerCreateOpen] = useState(false);
   const [customerCreateInitialValues, setCustomerCreateInitialValues] = useState<Partial<Pick<Customer, 'name' | 'phone' | 'address'>>>();
+  const [customerToEdit, setCustomerToEdit] = useState<CustomerSearchOption | null>(null);
   const [showSourceAdSearch, setShowSourceAdSearch] = useState(false);
   const [sourceAdSearchTerm, setSourceAdSearchTerm] = useState('');
   const [debouncedCustSearch, setDebouncedCustSearch] = React.useState('');
@@ -833,14 +834,27 @@ const OrderForm: React.FC = () => {
                       <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
                     ) : (
                       (allVisibleCustomers || []).map((c: any) => (
-                        <button 
-                          key={c.id} 
-                          onClick={() => handleCustomerSelect(c)} 
-                          className="w-full px-4 py-2.5 text-left hover:bg-[#ebf4ff] rounded-lg group transition-colors"
-                        >
-                          <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]}">{c.name}</p>
-                          <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60">{c.phone}</p>
-                        </button>
+                        <div key={c.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#ebf4ff] transition-colors">
+                          <button 
+                            onClick={() => handleCustomerSelect(c)} 
+                            className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors"
+                          >
+                            <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{c.name}</p>
+                            <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60 truncate">{c.phone}</p>
+                          </button>
+                          {can('customers.edit') && (
+                            <button
+                              title="Edit customer"
+                              onClick={() => {
+                                setCustomerToEdit(c);
+                                setShowCustomerSearch(false);
+                              }}
+                              className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                            >
+                              {ICONS.Edit}
+                            </button>
+                          )}
+                        </div>
                       ))
                     )}
                   </div>
@@ -1212,6 +1226,17 @@ const OrderForm: React.FC = () => {
           onClose={() => setIsCustomerCreateOpen(false)}
           initialValues={customerCreateInitialValues}
           onCreated={handleCustomerSelect}
+        />
+      )}
+      {customerToEdit && (
+        <CustomerCreateModal
+          isOpen
+          onClose={() => setCustomerToEdit(null)}
+          editingCustomer={customerToEdit}
+          onUpdated={(updated) => {
+            seedCustomerCache(updated);
+            setCustomerToEdit(null);
+          }}
         />
       )}
     </div>

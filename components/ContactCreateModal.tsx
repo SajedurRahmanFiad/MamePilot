@@ -4,7 +4,7 @@ import { sanitizePhoneInput } from '../utils';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useBeSmartSettings } from '../src/hooks/useQueries';
-import { useCreateCustomer, useCreateVendor } from '../src/hooks/useMutations';
+import { useCreateCustomer, useCreateVendor, useUpdateCustomer, useUpdateVendor } from '../src/hooks/useMutations';
 import { Button } from './Button';
 import InfoTooltip from './InfoTooltip';
 import { Modal } from './Modal';
@@ -23,6 +23,7 @@ interface ContactCreateModalBaseProps {
   isOpen: boolean;
   onClose: () => void;
   initialValues?: Partial<Pick<ContactFormValues, 'name' | 'phone' | 'address'>>;
+  editing?: boolean;
   smartMode: boolean;
   isLoading: boolean;
   isPending: boolean;
@@ -34,6 +35,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
   isOpen,
   onClose,
   initialValues,
+  editing = false,
   smartMode,
   isLoading,
   isPending,
@@ -85,8 +87,8 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
         : form);
       onClose();
     } catch (err) {
-      console.error(`Failed to create ${entityLabel}:`, err);
-      setError(err instanceof Error ? err.message : `Failed to create ${entityLabel}`);
+      console.error(`Failed to save ${entityLabel}:`, err);
+      setError(err instanceof Error ? err.message : `Failed to save ${entityLabel}`);
     }
   };
 
@@ -94,14 +96,16 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={isCustomer ? 'New Customer' : 'New Vendor'}
+      title={isCustomer ? (editing ? 'Edit Customer' : 'New Customer') : (editing ? 'Edit Vendor' : 'New Vendor')}
       size="md"
       contentClassName="space-y-5"
       footer={(
         <>
           <Button onClick={handleClose} variant="secondary" disabled={isPending}>Cancel</Button>
           <Button onClick={handleSave} variant="primary" loading={isPending} disabled={isLoading || isPending}>
-            {isPending ? (isCustomer ? 'Adding Customer...' : 'Adding Vendor...') : (isCustomer ? 'Add Customer' : 'Add Vendor')}
+            {isPending
+              ? (isCustomer ? (editing ? 'Updating Customer...' : 'Adding Customer...') : (editing ? 'Updating Vendor...' : 'Adding Vendor...'))
+              : (isCustomer ? (editing ? 'Update Customer' : 'Add Customer') : (editing ? 'Update Vendor' : 'Add Vendor'))}
           </Button>
         </>
       )}
@@ -184,26 +188,43 @@ interface CustomerCreateModalProps {
   onClose: () => void;
   initialValues?: Partial<Pick<ContactFormValues, 'name' | 'phone' | 'address'>>;
   onCreated?: (customer: Customer) => void;
+  editingCustomer?: (Pick<Customer, 'id'> & Partial<Customer>) | null;
+  onUpdated?: (customer: Customer) => void;
 }
 
-export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated }) => {
+export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated, editingCustomer, onUpdated }) => {
   const { user, isLoading: authLoading } = useAuth();
   const { capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(isOpen && hasBeSmart);
   const createMutation = useCreateCustomer();
+  const updateMutation = useUpdateCustomer();
   const smartMode = hasBeSmart && Boolean(beSmartSettings?.smartCustomerAdding);
+  const editing = Boolean(editingCustomer);
 
   return (
     <ContactCreateModalBase
       kind="customer"
       isOpen={isOpen}
       onClose={onClose}
-      initialValues={initialValues}
+      initialValues={editingCustomer
+        ? { name: editingCustomer.name, phone: editingCustomer.phone, address: editingCustomer.address }
+        : initialValues}
+      editing={editing}
       smartMode={smartMode}
       isLoading={authLoading || capabilitiesLoading || (hasBeSmart && smartSettingsLoading)}
-      isPending={createMutation.isPending}
+      isPending={createMutation.isPending || updateMutation.isPending}
       onSubmit={async (values) => {
+        if (editing && editingCustomer?.id) {
+          const updated = await updateMutation.mutateAsync({
+            id: editingCustomer.id,
+            updates: values.smartInput
+              ? { smartInput: values.smartInput }
+              : { name: values.name, phone: values.phone, address: values.address },
+          });
+          onUpdated?.(updated);
+          return;
+        }
         const created = await createMutation.mutateAsync({
           name: values.name,
           phone: values.phone,
@@ -223,26 +244,43 @@ interface VendorCreateModalProps {
   onClose: () => void;
   initialValues?: Partial<Pick<ContactFormValues, 'name' | 'phone' | 'address'>>;
   onCreated?: (vendor: Vendor) => void;
+  editingVendor?: (Pick<Vendor, 'id'> & Partial<Vendor>) | null;
+  onUpdated?: (vendor: Vendor) => void;
 }
 
-export const VendorCreateModal: React.FC<VendorCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated }) => {
+export const VendorCreateModal: React.FC<VendorCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated, editingVendor, onUpdated }) => {
   const { user, isLoading: authLoading } = useAuth();
   const { capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(isOpen && hasBeSmart);
   const createMutation = useCreateVendor();
+  const updateMutation = useUpdateVendor();
   const smartMode = hasBeSmart && Boolean(beSmartSettings?.smartVendorAdding);
+  const editing = Boolean(editingVendor);
 
   return (
     <ContactCreateModalBase
       kind="vendor"
       isOpen={isOpen}
       onClose={onClose}
-      initialValues={initialValues}
+      initialValues={editingVendor
+        ? { name: editingVendor.name, phone: editingVendor.phone, address: editingVendor.address }
+        : initialValues}
+      editing={editing}
       smartMode={smartMode}
       isLoading={authLoading || capabilitiesLoading || (hasBeSmart && smartSettingsLoading)}
-      isPending={createMutation.isPending}
+      isPending={createMutation.isPending || updateMutation.isPending}
       onSubmit={async (values) => {
+        if (editing && editingVendor?.id) {
+          const updated = await updateMutation.mutateAsync({
+            id: editingVendor.id,
+            updates: values.smartInput
+              ? { smartInput: values.smartInput }
+              : { name: values.name, phone: values.phone, address: values.address },
+          });
+          onUpdated?.(updated);
+          return;
+        }
         const created = await createMutation.mutateAsync({
           name: values.name,
           phone: values.phone,
