@@ -1051,7 +1051,8 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    stock, dynamic_pricing, category, 'product' AS item_type
+                    stock, dynamic_pricing, category, 'product' AS item_type,
+                    NULL AS population, NULL AS average_age_days
                  FROM products
                  WHERE deleted_at IS NULL AND (name LIKE :p_search_name OR sku LIKE :p_search_sku)
              )";
@@ -1067,7 +1068,8 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type,
+                    population, average_age_days
                  FROM batches
                  WHERE deleted_at IS NULL AND (name LIKE :b_search_name OR sku LIKE :b_search_sku)
              )";
@@ -1083,8 +1085,13 @@ final class MasterDataApi extends BaseService
         foreach ($rows as $row) {
             $itemType = $row['item_type'] ?? 'product';
             unset($row['item_type']);
-            $mappedRows[] = $this->mapProduct($row);
-            $mappedRows[count($mappedRows) - 1]['itemType'] = $itemType;
+            $mapped = $this->mapProduct($row);
+            $mapped['itemType'] = $itemType;
+            if ($itemType === 'batch') {
+                $mapped['population'] = (int) ($row['population'] ?? 0);
+                $mapped['averageAgeDays'] = (int) ($row['average_age_days'] ?? 0);
+            }
+            $mappedRows[] = $mapped;
         }
 
         // Numeric-aware sort for Bengali numeral suffixes
@@ -1128,7 +1135,8 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    stock, dynamic_pricing, category, 'product' AS item_type
+                    stock, dynamic_pricing, category, 'product' AS item_type,
+                    NULL AS population, NULL AS average_age_days
                  FROM products {$productWhere}
              )";
 
@@ -1138,7 +1146,8 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type,
+                    population, average_age_days
                  FROM batches
                  {$batchWhere}
              )";
@@ -1155,8 +1164,13 @@ final class MasterDataApi extends BaseService
         foreach ($rows as $row) {
             $itemType = $row['item_type'] ?? 'product';
             unset($row['item_type']);
-            $mappedRows[] = $this->mapProduct($row);
-            $mappedRows[count($mappedRows) - 1]['itemType'] = $itemType;
+            $mapped = $this->mapProduct($row);
+            $mapped['itemType'] = $itemType;
+            if ($itemType === 'batch') {
+                $mapped['population'] = (int) ($row['population'] ?? 0);
+                $mapped['averageAgeDays'] = (int) ($row['average_age_days'] ?? 0);
+            }
+            $mappedRows[] = $mapped;
         }
 
         // Re-sort so that product names sharing the same alphabetic prefix

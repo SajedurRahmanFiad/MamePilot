@@ -945,6 +945,8 @@ final class OperationsApi extends BaseService
             'pathao_consignment_id', 'exchange_courier', 'exchange_steadfast_consignment_id',
             'exchange_carrybee_consignment_id', 'exchange_paperfly_tracking_number',
             'exchange_pathao_consignment_id', 'exchange_courier_history',
+            'processed_at', 'courier_assigned_at', 'picked_at', 'completed_at', 'returned_at', 'cancelled_at',
+            'partial_delivered_at', 'exchange_processing_at', 'exchange_picked_at', 'exchange_delivered_at', 'exchange_returned_at', 'exchange_cancelled_at',
         ];
         $snapshot = [];
         foreach ($columns as $column) {
@@ -1922,27 +1924,46 @@ final class OperationsApi extends BaseService
             }
         }
 
-        // Handle datetime filtering - either by createdAt or by status change datetime from history
+        // Handle datetime filtering - either by createdAt or by status change datetime column
         $statusHistoryField = $filters['statusHistoryField'] ?? null;
         $filterByStatusChange = !empty($filters['filterByStatusChange']);
-        $fromFilter = null;
-        $toFilter = null;
+        $statusAtColumn = null;
+
+        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created') {
+            $statusAtColumnMap = [
+                'processing' => 'processedAt',
+                'courier' => 'courierAssignedAt',
+                'picked' => 'pickedAt',
+                'completed' => 'completedAt',
+                'returned' => 'returnedAt',
+                'cancelled' => 'cancelledAt',
+                'partiallyDelivered' => 'partialDeliveredAt',
+                'exchangeProcessing' => 'exchangeProcessingAt',
+                'exchangePicked' => 'exchangePickedAt',
+                'exchangeDelivered' => 'exchangeDeliveredAt',
+                'exchangeReturned' => 'exchangeReturnedAt',
+                'exchangeCancelled' => 'exchangeCancelledAt',
+            ];
+            $statusAtColumn = $statusAtColumnMap[$statusHistoryField] ?? null;
+        }
 
         if (!empty($filters['from'])) {
             $fromFilter = $this->normalizeDateTimeInput((string) $filters['from']);
-            // Only apply createdAt filter if NOT filtering by status change
-            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+            if ($statusAtColumn) {
+                $where .= " AND {$statusAtColumn} >= :from";
+            } else {
                 $where .= ' AND createdAt >= :from';
-                $bindings[':from'] = $fromFilter;
             }
+            $bindings[':from'] = $fromFilter;
         }
         if (!empty($filters['to'])) {
             $toFilter = $this->normalizeDateTimeInput((string) $filters['to']);
-            // Only apply createdAt filter if NOT filtering by status change
-            if (!$filterByStatusChange || !$statusHistoryField || $statusHistoryField === 'created') {
+            if ($statusAtColumn) {
+                $where .= " AND {$statusAtColumn} <= :to";
+            } else {
                 $where .= ' AND createdAt <= :to';
-                $bindings[':to'] = $toFilter;
             }
+            $bindings[':to'] = $toFilter;
         }
 
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
@@ -1976,11 +1997,6 @@ final class OperationsApi extends BaseService
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM orders_with_customer_creator {$where}", $bindings);
-
-        // When filtering by status change timestamp, we must fetch ALL matching rows first,
-        // filter in PHP, then paginate. Otherwise the LIMIT/OFFSET paginates by createdAt
-        // and misses orders completed in the range but created outside the current page.
-        $needsPostFilter = $filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter);
 
         $selectColumns = "id,
                 orderNumber,
@@ -2016,59 +2032,28 @@ final class OperationsApi extends BaseService
                 exchangePaperflyTrackingNumber,
                 exchangePathaoConsignmentId,
                 exchangeCourierHistory,
-                sourceAd";
+                sourceAd,
+                processedAt,
+                courierAssignedAt,
+                pickedAt,
+                completedAt,
+                returnedAt,
+                cancelledAt,
+                partialDeliveredAt,
+                exchangeProcessingAt,
+                exchangePickedAt,
+                exchangeDeliveredAt,
+                exchangeReturnedAt,
+                exchangeCancelledAt";
 
-        if ($needsPostFilter) {
-            // Fetch ALL matching rows (no LIMIT/OFFSET) so post-filter sees every order
-            $rows = $this->database->fetchAll(
-                "SELECT {$selectColumns}
-                 FROM orders_with_customer_creator
-                 {$where}
-                 ORDER BY createdAt DESC, id DESC",
-                $bindings
-            );
-
-            $filteredRows = [];
-            $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
-            $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
-
-            foreach ($rows as $row) {
-                $history = $this->jsonDecodeAssoc($row['history'] ?? []);
-                $historyValue = $history[$statusHistoryField] ?? '';
-
-                if ($historyValue) {
-                    $parsedDate = $this->parseHistoryTimestampValue($historyValue);
-                    if ($parsedDate) {
-                        $inRange = true;
-                        if ($fromDate && $parsedDate < $fromDate) {
-                            $inRange = false;
-                        }
-                        if ($toDate && $parsedDate > $toDate) {
-                            $inRange = false;
-                        }
-                        if ($inRange) {
-                            $filteredRows[] = $row;
-                        }
-                    }
-                }
-            }
-
-            // Update count to reflect actual filtered results
-            $totalFilteredCount = count($filteredRows);
-            $countRow['count'] = $totalFilteredCount;
-
-            // Paginate in PHP after filtering
-            $rows = array_slice($filteredRows, $offset, $pageSize);
-        } else {
-            $rows = $this->database->fetchAll(
-                "SELECT {$selectColumns}
-                 FROM orders_with_customer_creator
-                 {$where}
-                 ORDER BY createdAt DESC, id DESC
-                 LIMIT {$pageSize} OFFSET {$offset}",
-                $bindings
-            );
-        }
+        $rows = $this->database->fetchAll(
+            "SELECT {$selectColumns}
+             FROM orders_with_customer_creator
+             {$where}
+             ORDER BY createdAt DESC, id DESC
+             LIMIT {$pageSize} OFFSET {$offset}",
+            $bindings
+        );
 
         return [
             'data' => array_map(fn(array $row): array => $this->mapOrder($row), $rows),
@@ -4897,16 +4882,28 @@ final class OperationsApi extends BaseService
             $stockUpdates = $this->applyOrderStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
 
+            $initialStatusColumnMap = [
+                'Processing' => 'processed_at',
+                'Courier assigned' => 'courier_assigned_at',
+                'Picked' => 'picked_at',
+                'Completed' => 'completed_at',
+                'Returned' => 'returned_at',
+                'Cancelled' => 'cancelled_at',
+            ];
+            $initialStatusColumn = $initialStatusColumnMap[$status] ?? null;
+
             $this->database->execute(
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
                     subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
                     carrybee_consignment_id, steadfast_consignment_id, steadfast_invoice, steadfast_tracking_link, paperfly_tracking_number, pathao_consignment_id, source_ad,
+                    processed_at, courier_assigned_at, picked_at, completed_at, returned_at, cancelled_at,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
                     :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
                     :carrybee_consignment_id, :steadfast_consignment_id, :steadfast_invoice, :steadfast_tracking_link, :paperfly_tracking_number, :pathao_consignment_id, :source_ad,
+                    :processed_at, :courier_assigned_at, :picked_at, :completed_at, :returned_at, :cancelled_at,
                     :created_at, :updated_at
                 )',
                 [
@@ -4934,6 +4931,12 @@ final class OperationsApi extends BaseService
                     ':paperfly_tracking_number' => $this->nullableString($params['paperflyTrackingNumber'] ?? $params['paperfly_tracking_number'] ?? null),
                     ':pathao_consignment_id' => $this->nullableString($params['pathaoConsignmentId'] ?? $params['pathao_consignment_id'] ?? null),
                     ':source_ad' => $this->nullableString($params['sourceAd'] ?? $params['source_ad'] ?? null),
+                    ':processed_at' => $initialStatusColumn === 'processed_at' ? $now : null,
+                    ':courier_assigned_at' => $initialStatusColumn === 'courier_assigned_at' ? $now : null,
+                    ':picked_at' => $initialStatusColumn === 'picked_at' ? $now : null,
+                    ':completed_at' => $initialStatusColumn === 'completed_at' ? $now : null,
+                    ':returned_at' => $initialStatusColumn === 'returned_at' ? $now : null,
+                    ':cancelled_at' => $initialStatusColumn === 'cancelled_at' ? $now : null,
                     ':created_at' => $now,
                     ':updated_at' => $now,
                 ]
@@ -5191,6 +5194,27 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
+            }
+
+            if ($nextStatus !== $previousStatus) {
+                $statusTimestampColumnMap = [
+                    'Processing' => 'processed_at',
+                    'Courier assigned' => 'courier_assigned_at',
+                    'Picked' => 'picked_at',
+                    'Completed' => 'completed_at',
+                    'Returned' => 'returned_at',
+                    'Cancelled' => 'cancelled_at',
+                    'partially_delivered' => 'partial_delivered_at',
+                    'Exchange processing' => 'exchange_processing_at',
+                    'Exchange picked' => 'exchange_picked_at',
+                    'Exchange delivered' => 'exchange_delivered_at',
+                    'Exchange returned' => 'exchange_returned_at',
+                    'Exchange cancelled' => 'exchange_cancelled_at',
+                ];
+                $statusCol = $statusTimestampColumnMap[$nextStatus] ?? null;
+                if ($statusCol) {
+                    $payload[$statusCol] = $this->database->nowUtc();
+                }
             }
 
             $paymentAmount = round((float) ($updates['paymentAmount'] ?? 0), 2);
@@ -5605,6 +5629,15 @@ final class OperationsApi extends BaseService
             $payload = [
                 'status' => $nextStatus,
             ];
+            $statusTimestampColumnMap = [
+                'Completed' => 'completed_at',
+                'Returned' => 'returned_at',
+                'Exchange delivered' => 'exchange_delivered_at',
+            ];
+            $statusCol = $statusTimestampColumnMap[$nextStatus] ?? null;
+            if ($statusCol) {
+                $payload[$statusCol] = $recordedAt;
+            }
             $createdTransactions = [];
 
             if ($outcome === 'Delivered') {
@@ -6152,6 +6185,15 @@ final class OperationsApi extends BaseService
             ];
             if ($nextStatus !== null) {
                 $payload['status'] = $nextStatus;
+                $statusTimestampColumnMap = [
+                    'Returned' => 'returned_at',
+                    'Exchange returned' => 'exchange_returned_at',
+                    'Exchange processing' => 'exchange_processing_at',
+                ];
+                $statusCol = $statusTimestampColumnMap[$nextStatus] ?? null;
+                if ($statusCol) {
+                    $payload[$statusCol] = $recordedAt;
+                }
             }
             $this->touchUpdate('orders', $orderId, $payload);
             $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
@@ -6639,33 +6681,35 @@ final class OperationsApi extends BaseService
         }
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM bills_with_vendor_creator {$where}", $bindings);
-        $rows = $this->database->fetchAll(
-            "SELECT
-                id,
-                billNumber,
-                billDate,
-                vendorId,
-                vendorName,
-                vendorPhone,
-                vendorAddress,
-                createdBy,
-                creatorName,
-                status,
-                total,
-                history,
-                paidAmount,
-                createdAt,
-                deletedAt,
-                deletedBy
-             FROM bills_with_vendor_creator
-             {$where}
-             ORDER BY createdAt DESC, id DESC
-             LIMIT {$pageSize} OFFSET {$offset}",
-            $bindings
-        );
 
-        // Apply status change datetime filtering in PHP if needed
-        if ($filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter)) {
+        $needsPostFilter = $filterByStatusChange && $statusHistoryField && $statusHistoryField !== 'created' && ($fromFilter || $toFilter);
+
+        if ($needsPostFilter) {
+            // Fetch ALL matching rows (no LIMIT/OFFSET) so post-filter sees every bill
+            $rows = $this->database->fetchAll(
+                "SELECT
+                    id,
+                    billNumber,
+                    billDate,
+                    vendorId,
+                    vendorName,
+                    vendorPhone,
+                    vendorAddress,
+                    createdBy,
+                    creatorName,
+                    status,
+                    total,
+                    history,
+                    paidAmount,
+                    createdAt,
+                    deletedAt,
+                    deletedBy
+                 FROM bills_with_vendor_creator
+                 {$where}
+                 ORDER BY createdAt DESC, id DESC",
+                $bindings
+            );
+
             $filteredRows = [];
             $fromDate = $fromFilter ? new \DateTimeImmutable($fromFilter, $this->utcTimezone()) : null;
             $toDate = $toFilter ? new \DateTimeImmutable($toFilter, $this->utcTimezone()) : null;
@@ -6690,10 +6734,35 @@ final class OperationsApi extends BaseService
                     }
                 }
             }
-            $rows = $filteredRows;
+            $rows = array_slice($filteredRows, $offset, $pageSize);
 
-            // Recount based on filtered results
+            // Update count to reflect actual filtered results
             $countRow['count'] = count($filteredRows);
+        } else {
+            $rows = $this->database->fetchAll(
+                "SELECT
+                    id,
+                    billNumber,
+                    billDate,
+                    vendorId,
+                    vendorName,
+                    vendorPhone,
+                    vendorAddress,
+                    createdBy,
+                    creatorName,
+                    status,
+                    total,
+                    history,
+                    paidAmount,
+                    createdAt,
+                    deletedAt,
+                    deletedBy
+                 FROM bills_with_vendor_creator
+                 {$where}
+                 ORDER BY createdAt DESC, id DESC
+                 LIMIT {$pageSize} OFFSET {$offset}",
+                $bindings
+            );
         }
 
         return [

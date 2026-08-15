@@ -830,7 +830,19 @@ export interface Order {
   partialCogsAmount?: number;
   partialShippingAmount?: number;
   partialCodAmount?: number;
+  // Dedicated status timestamp columns (UTC ISO strings)
+  processedAt?: string;
+  courierAssignedAt?: string;
+  pickedAt?: string;
+  completedAt?: string;
+  returnedAt?: string;
+  cancelledAt?: string;
   partialDeliveredAt?: string;
+  exchangeProcessingAt?: string;
+  exchangePickedAt?: string;
+  exchangeDeliveredAt?: string;
+  exchangeReturnedAt?: string;
+  exchangeCancelledAt?: string;
   // Relational fields: populated from joined customer and user data
   // Present when fetching paginated orders via orders_with_customer_creator view
   customerName?: string;

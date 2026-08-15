@@ -1422,7 +1422,6 @@ abstract class BaseService
             'partialCogsAmount' => (float) ($row['partial_cogs_amount'] ?? $row['partialCogsAmount'] ?? 0),
             'partialShippingAmount' => (float) ($row['partial_shipping_amount'] ?? $row['partialShippingAmount'] ?? 0),
             'partialCodAmount' => (float) ($row['partial_cod_amount'] ?? $row['partialCodAmount'] ?? 0),
-            'partialDeliveredAt' => $this->toIso($row['partial_delivered_at'] ?? $row['partialDeliveredAt'] ?? null),
             'surveyId' => $this->nullableString($row['survey_id'] ?? $row['surveyId'] ?? null),
             'surveyStatus' => $this->nullableString($row['survey_status'] ?? $row['surveyStatus'] ?? null),
             'surveyResponse' => $this->nullableString($row['survey_response'] ?? $row['surveyResponse'] ?? null),
@@ -1436,6 +1435,18 @@ abstract class BaseService
             'createdAt' => $this->toIso($row['created_at'] ?? $row['createdAt'] ?? null),
             'deletedAt' => $this->toIso($row['deleted_at'] ?? $row['deletedAt'] ?? null),
             'deletedBy' => $this->nullableString($row['deleted_by'] ?? $row['deletedBy'] ?? null),
+            'processedAt' => $this->toIso($row['processed_at'] ?? $row['processedAt'] ?? null),
+            'courierAssignedAt' => $this->toIso($row['courier_assigned_at'] ?? $row['courierAssignedAt'] ?? null),
+            'pickedAt' => $this->toIso($row['picked_at'] ?? $row['pickedAt'] ?? null),
+            'completedAt' => $this->toIso($row['completed_at'] ?? $row['completedAt'] ?? null),
+            'returnedAt' => $this->toIso($row['returned_at'] ?? $row['returnedAt'] ?? null),
+            'cancelledAt' => $this->toIso($row['cancelled_at'] ?? $row['cancelledAt'] ?? null),
+            'partialDeliveredAt' => $this->toIso($row['partial_delivered_at'] ?? $row['partialDeliveredAt'] ?? null),
+            'exchangeProcessingAt' => $this->toIso($row['exchange_processing_at'] ?? $row['exchangeProcessingAt'] ?? null),
+            'exchangePickedAt' => $this->toIso($row['exchange_picked_at'] ?? $row['exchangePickedAt'] ?? null),
+            'exchangeDeliveredAt' => $this->toIso($row['exchange_delivered_at'] ?? $row['exchangeDeliveredAt'] ?? null),
+            'exchangeReturnedAt' => $this->toIso($row['exchange_returned_at'] ?? $row['exchangeReturnedAt'] ?? null),
+            'exchangeCancelledAt' => $this->toIso($row['exchange_cancelled_at'] ?? $row['exchangeCancelledAt'] ?? null),
         ];
     }
 
