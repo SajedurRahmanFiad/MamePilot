@@ -428,6 +428,9 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   automatically_deduct_shipping_costs TINYINT(1) NOT NULL DEFAULT 0,
   automatically_mark_paid_after_delivery TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_webhook_signature VARCHAR(500) NULL,
+  carrybee_webhook_header VARCHAR(128) NULL,
+  carrybee_webhook_integration_header VARCHAR(128) NULL,
+  carrybee_webhook_integration_value VARCHAR(500) NULL,
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
   pathao_webhook_secret VARCHAR(500) NULL,
@@ -471,6 +474,9 @@ CALL sp_add_col('courier_settings', 'automatically_deduct_shipping_costs', 'TINY
 CALL sp_add_col('courier_settings', 'automatically_mark_paid_after_delivery', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('courier_settings', 'steadfast_invoice', 'VARCHAR(100) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_signature', 'VARCHAR(500) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_webhook_header', 'VARCHAR(128) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_header', 'VARCHAR(128) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_value', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'paperfly_webhook_secret', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'pathao_webhook_header', 'VARCHAR(128) NULL');
 CALL sp_add_col('courier_settings', 'pathao_webhook_secret', 'VARCHAR(500) NULL');
@@ -3235,6 +3241,11 @@ CALL sp_create_idx('bills', 'idx_bills_refund_issued_at', '`refund_issued_at`');
 -- Skipped data-mutating statement from 2026-08-16_bill_status_timestamp_columns.sql.
 
 -- Skipped data-mutating statement from 2026-08-16_bill_status_timestamp_columns.sql.
+
+-- Migration: 2026-08-16_carrybee_webhook_variable_headers.sql
+CALL sp_add_col('courier_settings', 'carrybee_webhook_header', 'VARCHAR(128) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_header', 'VARCHAR(128) NULL');
+CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_value', 'VARCHAR(500) NULL');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

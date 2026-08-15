@@ -55,9 +55,16 @@ try {
     $courier = new CourierApi($database, $auth, $config, $operations);
     $result = $courier->handleWebhook($provider, $rawBody, $headers);
 
-    if ($provider === 'carrybee') {
+    if ($provider === 'carrybee' && !empty($result['integrationVerified'])) {
+        // CarryBee requires HTTP 202 plus the configured integration header
+        // name/value for the webhook.integration handshake only; real events
+        // are acknowledged with a normal 200 response.
         http_response_code(202);
-        header('X-CB-Webhook-Integration-Header: 40489fe0-9386-4fc9-8e92-2b2fcb9d451c');
+        $integrationHeader = trim((string) ($result['webhookIntegrationHeader'] ?? ''));
+        $integrationValue = trim((string) ($result['webhookIntegrationValue'] ?? ''));
+        if ($integrationHeader !== '' && $integrationValue !== '') {
+            header($integrationHeader . ': ' . $integrationValue, true);
+        }
     } elseif ($provider === 'pathao' && !empty($result['integrationVerified'])) {
         http_response_code(202);
         $merchantSecret = (string) ($result['merchantWebhookSecret'] ?? '');

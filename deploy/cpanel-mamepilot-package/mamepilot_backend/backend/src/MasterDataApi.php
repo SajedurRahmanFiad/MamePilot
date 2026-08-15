@@ -4054,6 +4054,9 @@ final class MasterDataApi extends BaseService
                 'clientContext' => (string) ($row['carrybee_client_context'] ?? ''),
                 'storeId' => (string) ($row['carrybee_store_id'] ?? ''),
                 'webhookSignature' => (string) ($row['carrybee_webhook_signature'] ?? ''),
+                'webhookHeader' => (string) ($row['carrybee_webhook_header'] ?? 'X-Carrybee-Webhook-Signature'),
+                'webhookIntegrationHeader' => (string) ($row['carrybee_webhook_integration_header'] ?? 'X-CB-Webhook-Integration-Header'),
+                'webhookIntegrationValue' => (string) ($row['carrybee_webhook_integration_value'] ?? '40489fe0-9386-4fc9-8e92-2b2fcb9d451c'),
                 'defaultAccountId' => (string) ($row['carrybee_default_account_id'] ?? ''),
                 'defaultExpenseCategoryId' => (string) ($row['carrybee_default_expense_category_id'] ?? ''),
                 'defaultIncomeCategoryId' => (string) ($row['carrybee_default_income_category_id'] ?? ''),
@@ -4165,6 +4168,15 @@ final class MasterDataApi extends BaseService
             'carrybee_client_context' => $carryBee['clientContext'] ?? $current['carryBee']['clientContext'],
             'carrybee_store_id' => $carryBee['storeId'] ?? $current['carryBee']['storeId'],
             'carrybee_webhook_signature' => $carryBee['webhookSignature'] ?? $current['carryBee']['webhookSignature'],
+            'carrybee_webhook_header' => array_key_exists('webhookHeader', $carryBee)
+                ? trim((string) $carryBee['webhookHeader'])
+                : ($current['carryBee']['webhookHeader'] ?? 'X-Carrybee-Webhook-Signature'),
+            'carrybee_webhook_integration_header' => array_key_exists('webhookIntegrationHeader', $carryBee)
+                ? trim((string) $carryBee['webhookIntegrationHeader'])
+                : ($current['carryBee']['webhookIntegrationHeader'] ?? 'X-CB-Webhook-Integration-Header'),
+            'carrybee_webhook_integration_value' => array_key_exists('webhookIntegrationValue', $carryBee)
+                ? trim((string) $carryBee['webhookIntegrationValue'])
+                : ($current['carryBee']['webhookIntegrationValue'] ?? '40489fe0-9386-4fc9-8e92-2b2fcb9d451c'),
             'carrybee_default_account_id' => $this->nullableString($carryBee['defaultAccountId'] ?? $current['carryBee']['defaultAccountId'] ?? null),
             'carrybee_default_expense_category_id' => $this->nullableString($carryBee['defaultExpenseCategoryId'] ?? $current['carryBee']['defaultExpenseCategoryId'] ?? null),
             'carrybee_default_income_category_id' => $this->nullableString($carryBee['defaultIncomeCategoryId'] ?? $current['carryBee']['defaultIncomeCategoryId'] ?? null),

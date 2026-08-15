@@ -436,7 +436,7 @@ export async function updateCourierSettings(updates: {
   automaticallyDeductShippingCosts?: boolean;
   automaticallyMarkPaidAfterDelivery?: boolean;
   steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string; invoice?: string };
-  carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string; webhookSignature?: string };
+  carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string; webhookSignature?: string; webhookHeader?: string; webhookIntegrationHeader?: string; webhookIntegrationValue?: string };
   paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number; webhookSecret?: string };
   pathao?: { baseUrl?: string; clientId?: string; clientSecret?: string; username?: string; password?: string; storeId?: string; defaultQuantity?: number; defaultWeight?: number; defaultDeliveryType?: number; defaultItemType?: number; webhookHeader?: string; webhookSecret?: string };
   fraudChecker?: { apiKey?: string };

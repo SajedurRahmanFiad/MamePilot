@@ -160,7 +160,7 @@ $nextSequence = (int) (($database->fetchOne(
     'SELECT COALESCE(MAX(order_seq), 0) + 1 AS next_sequence FROM orders'
 ) ?? [])['next_sequence'] ?? 1);
 
-$carryHeaders = ['X-CB-Webhook-Integration-Header' => 'carrybee-test-signature'];
+$carryHeaders = ['X-Carrybee-Webhook-Signature' => 'carrybee-test-signature'];
 $paperflyHeaders = ['X-Paperfly-Webhook-Secret' => 'paperfly-test-secret'];
 $steadfastHeaders = ['Authorization' => 'Bearer steadfast-test-api-key'];
 $pathaoHeaders = ['X-PATHAO-Signature' => 'pathao-test-secret'];
@@ -176,6 +176,7 @@ try {
             automatically_deduct_shipping_costs = 0,
             automatically_mark_paid_after_delivery = 0,
             carrybee_webhook_signature = :carrybee,
+            carrybee_webhook_header = :carrybee_header,
             paperfly_webhook_secret = :paperfly,
             steadfast_api_key = :steadfast,
             steadfast_secret_key = :steadfast_secret,
@@ -183,6 +184,7 @@ try {
             pathao_webhook_secret = :pathao_secret',
         [
             ':carrybee' => 'carrybee-test-signature',
+            ':carrybee_header' => 'X-Carrybee-Webhook-Signature',
             ':paperfly' => 'paperfly-test-secret',
             ':steadfast' => 'steadfast-test-api-key',
             ':steadfast_secret' => 'steadfast-test-secret-key',
@@ -212,9 +214,42 @@ try {
     );
 
     $minimalPayload = courierWebhookJson(['event' => 'order.picked', 'consignment_id' => 'invalid-signature-test']);
+    // CarryBee verifies real events with the configurable signature header
+    // (X-Carrybee-Webhook-Signature), never with the integration header.
     expectCourierWebhookSignatureFailure(
-        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-CB-Webhook-Integration-Header' => 'wrong']),
+        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-Carrybee-Webhook-Signature' => 'wrong']),
         'carrybee'
+    );
+    expectCourierWebhookSignatureFailure(
+        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-CB-Webhook-Integration-Header' => 'carrybee-test-signature']),
+        'carrybee'
+    );
+    $carrybeeIntegration = $courier->handleWebhook(
+        'carrybee',
+        courierWebhookJson(['event' => 'webhook.integration']),
+        ['X-CB-Webhook-Integration-Header' => 'anything']
+    );
+    courierWebhookAssert(($carrybeeIntegration['integrationVerified'] ?? false) === true, 'CarryBee webhook.integration handshake was not acknowledged.');
+    courierWebhookAssert(
+        ($carrybeeIntegration['webhookIntegrationHeader'] ?? '') === 'X-CB-Webhook-Integration-Header'
+        && ($carrybeeIntegration['webhookIntegrationValue'] ?? '') === '40489fe0-9386-4fc9-8e92-2b2fcb9d451c',
+        'CarryBee integration response header name/value defaults are incorrect.'
+    );
+    $database->execute(
+        "UPDATE courier_settings SET carrybee_webhook_header = 'X-CB-Custom-Signature'"
+    );
+    expectCourierWebhookSignatureFailure(
+        fn() => $courier->handleWebhook('carrybee', $minimalPayload, ['X-Carrybee-Webhook-Signature' => 'carrybee-test-signature']),
+        'carrybee'
+    );
+    $customHeaderResult = $courier->handleWebhook(
+        'carrybee',
+        courierWebhookJson(['event' => 'order.picked', 'consignment_id' => 'custom-header-' . $stamp]),
+        ['X-CB-Custom-Signature' => 'carrybee-test-signature']
+    );
+    courierWebhookAssert(empty($customHeaderResult['orderMatched']), 'Custom CarryBee signature header was not accepted and verified.');
+    $database->execute(
+        "UPDATE courier_settings SET carrybee_webhook_header = 'X-Carrybee-Webhook-Signature'"
     );
     expectCourierWebhookSignatureFailure(
         fn() => $courier->handleWebhook('paperfly', $minimalPayload, ['X-Paperfly-Webhook-Secret' => 'wrong']),
@@ -308,6 +343,42 @@ try {
         'reason' => 'Customer unavailable',
     ]), $carryHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $carryReturnId) === 'Returned', 'CarryBee returned did not map to Returned.');
+
+    $carryPaidReturnId = 'cwh-carry-paid-return-' . $stamp;
+    $carryPaidReturnNumber = 'CWH-CARRY-PAID-RETURN-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $carryPaidReturnId, $carryPaidReturnNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-PAID-RETURN-' . $stamp,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.paid-return',
+        'consignment_id' => 'CB-PAID-RETURN-' . $stamp,
+        'merchant_order_id' => $carryPaidReturnNumber,
+        'timestamptz' => '2026-08-01T14:30:00+00:00',
+        'collected_amount' => 500,
+        'attempt' => 1,
+        'reason' => 'Wrong size',
+        'remarks' => 'Paid return collected.',
+    ]), $carryHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $carryPaidReturnId) === 'Returned', 'CarryBee paid-return did not map to Returned.');
+    $carryPaidReturnCharge = courierWebhookExpense($database, $carryPaidReturnId);
+    courierWebhookAssert($carryPaidReturnCharge === null, 'CarryBee paid-return created an expense before toggle-on.');
+
+    $carryExchangeId = 'cwh-carry-exchange-' . $stamp;
+    $carryExchangeNumber = 'CWH-CARRY-EXCHANGE-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $carryExchangeId, $carryExchangeNumber, 'Exchange processing', $customerId, [
+        'carrybee' => 'CB-MAIN-' . $stamp,
+        'exchangeCarrybee' => 'CB-EXCHANGE-' . $stamp,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.exchange',
+        'consignment_id' => 'CB-EXCHANGE-' . $stamp,
+        'merchant_order_id' => $carryExchangeNumber,
+        'timestamptz' => '2026-08-01T15:00:00+00:00',
+        'collected_amount' => 900,
+        'reason' => 'Damaged item',
+        'remarks' => 'Exchange delivered.',
+    ]), $carryHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $carryExchangeId) === 'Exchange delivered', 'CarryBee exchange did not map to Exchange delivered.');
 
     // Enable accounting automation. A delivery now creates one linked Shipping
     // Costs transaction and includes it in the status Undoer restore point.

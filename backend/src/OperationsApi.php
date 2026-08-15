@@ -5494,6 +5494,17 @@ final class OperationsApi extends BaseService
                         $beforeUndoEffects
                     );
                 }
+                if ($automaticExpenseTransactionId !== '') {
+                    // The provider fee may have been stored and expensed by an
+                    // earlier event (e.g. CarryBee order.created) before this
+                    // status-changing event. Attach that pre-existing courier
+                    // expense to the new restore point so its undo covers it.
+                    $this->attachAutomaticCourierExpenseToLatestUndoEvent(
+                        $id,
+                        $nextStatus,
+                        $automaticExpenseTransactionId
+                    );
+                }
             } elseif ($automaticExpenseTransactionId !== '') {
                 $this->attachAutomaticCourierExpenseToLatestUndoEvent(
                     $id,
@@ -10840,9 +10851,6 @@ SQL;
         if (($charge['order_id'] ?? null) !== null && trim((string) $charge['order_id']) !== $orderId) {
             return null;
         }
-        if (trim((string) ($charge['expense_transaction_id'] ?? '')) !== '') {
-            return $this->fetchTransactionById(['id' => (string) $charge['expense_transaction_id']]);
-        }
 
         $amount = round((float) ($charge['total_charge'] ?? 0), 2);
         if ($amount <= 0) {
@@ -10859,6 +10867,47 @@ SQL;
         );
         if ($orderRow === null) {
             return null;
+        }
+        $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
+        $description = sprintf('Courier shipping cost (%s) for Order #%s', ucfirst($provider), $orderNumber);
+
+        $existingTransactionId = trim((string) ($charge['expense_transaction_id'] ?? ''));
+        if ($existingTransactionId !== '') {
+            // The provider total may have been corrected by a later fee event
+            // (e.g. CarryBee order.updated or Pathao fee.updated). Keep the
+            // already-recorded expense in sync with the final charge.
+            $transaction = $this->fetchTransactionById(['id' => $existingTransactionId]);
+            if ($transaction === null) {
+                return null;
+            }
+            if (abs((float) ($transaction['amount'] ?? 0) - $amount) >= 0.001) {
+                $previousAmount = (float) ($transaction['amount'] ?? 0);
+                $this->database->execute(
+                    'UPDATE transactions SET amount = :amount, description = :description, updated_at = :updated_at WHERE id = :id',
+                    [
+                        ':amount' => $this->formatMoney($amount),
+                        ':description' => $description,
+                        ':updated_at' => $this->database->nowUtc(),
+                        ':id' => $existingTransactionId,
+                    ]
+                );
+                $accountId = trim((string) ($transaction['accountId'] ?? ''));
+                if ($accountId !== '' && (bool) ($transaction['accountEffectApplied'] ?? false)) {
+                    // An Expense reduces the available balance. Apply the delta
+                    // so the account balance stays in sync with the new amount.
+                    $this->database->execute(
+                        "UPDATE accounts SET current_balance = current_balance - :delta, updated_at = :updated_at WHERE id = :id",
+                        [
+                            ':delta' => $this->formatMoney($amount - $previousAmount),
+                            ':updated_at' => $this->database->nowUtc(),
+                            ':id' => $accountId,
+                        ]
+                    );
+                }
+                $transaction['amount'] = $this->formatMoney($amount);
+                $transaction['description'] = $description;
+            }
+            return $transaction;
         }
 
         // Use per-courier defaults; fall back to system defaults, then to the oldest account.
@@ -10891,7 +10940,6 @@ SQL;
             );
             $expenseCategory = trim((string) ($shippingCat['id'] ?? '')) ?: 'expense_shipping';
         }
-        $orderNumber = trim((string) ($orderRow['order_number'] ?? $orderId));
         $transactionId = 'courier-expense-' . substr(hash('sha256', $chargeId), 0, 48);
         $transaction = $this->createTransactionRecord([
             'id' => $transactionId,
@@ -10900,7 +10948,7 @@ SQL;
             'category' => $expenseCategory,
             'accountId' => $accountId,
             'amount' => $amount,
-            'description' => sprintf('Courier shipping cost (%s) for Order #%s', ucfirst($provider), $orderNumber),
+            'description' => $description,
             'referenceId' => $orderId,
             'contactId' => (string) ($orderRow['customer_id'] ?? ''),
             'paymentMethod' => $paymentMethod,

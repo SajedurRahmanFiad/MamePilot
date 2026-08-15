@@ -2304,6 +2304,16 @@ final class CourierApi extends BaseService
                 if ($provider === 'pathao') {
                     $settings = $this->database->fetchOne('SELECT pathao_merchant_webhook_secret FROM courier_settings LIMIT 1') ?? [];
                     $result['merchantWebhookSecret'] = (string) ($settings['pathao_merchant_webhook_secret'] ?? '');
+                } else {
+                    // CarryBee demands a configurable response header whose name
+                    // and value it may change at any time.
+                    $settings = $this->database->fetchOne(
+                        'SELECT carrybee_webhook_integration_header, carrybee_webhook_integration_value FROM courier_settings LIMIT 1'
+                    ) ?? [];
+                    $result['webhookIntegrationHeader'] = trim((string) ($settings['carrybee_webhook_integration_header'] ?? ''))
+                        ?: 'X-CB-Webhook-Integration-Header';
+                    $result['webhookIntegrationValue'] = trim((string) ($settings['carrybee_webhook_integration_value'] ?? ''))
+                        ?: '40489fe0-9386-4fc9-8e92-2b2fcb9d451c';
                 }
                 return $result;
             }
@@ -2475,8 +2485,11 @@ final class CourierApi extends BaseService
     {
         $authorization = $this->webhookHeader($headers, 'Authorization');
         if ($provider === 'carrybee') {
+            // Real CarryBee events sign with the configurable
+            // X-Carrybee-Webhook-Signature header carrying the dashboard secret.
             $expected = trim((string) ($settings['carrybee_webhook_signature'] ?? ''));
-            $provided = $this->webhookHeader($headers, 'X-CB-Webhook-Integration-Header');
+            $signatureHeader = trim((string) ($settings['carrybee_webhook_header'] ?? '')) ?: 'X-Carrybee-Webhook-Signature';
+            $provided = $this->webhookHeader($headers, $signatureHeader);
         } elseif ($provider === 'steadfast') {
             $apiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
             $secretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
@@ -2634,9 +2647,9 @@ final class CourierApi extends BaseService
         if ($provider === 'carrybee') {
             return match ($event) {
                 'order.picked' => 'Picked',
-                'order.delivered' => 'Delivered',
+                'order.delivered', 'order.exchange' => 'Delivered',
                 'order.partial_delivery', 'order.partial-delivery' => 'Partially Delivered',
-                'order.returned' => 'Returned',
+                'order.returned', 'order.paid_return', 'order.paid-return' => 'Returned',
                 'order.cancelled', 'order.canceled' => 'Cancelled',
                 default => null,
             };
@@ -2703,7 +2716,11 @@ final class CourierApi extends BaseService
                 $mainId = trim((string) ($exact[$columns[0]] ?? ''));
                 $exchangeId = trim((string) ($exact[$columns[1]] ?? ''));
                 $isExchange = $exchangeId === $consignmentId && $mainId !== $consignmentId;
-                if ($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange') $isExchange = true;
+                if (($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange')
+                    || ($provider === 'carrybee' && strtolower($eventName) === 'order.exchange')
+                ) {
+                    $isExchange = true;
+                }
                 $exact['isExchange'] = $isExchange;
                 return $exact;
             }
@@ -2731,7 +2748,9 @@ final class CourierApi extends BaseService
         $mainId = trim((string) ($row[$columns[0]] ?? ''));
         $exchangeId = trim((string) ($row[$columns[1]] ?? ''));
         $isExchange = $consignmentId !== '' && $exchangeId === $consignmentId && $mainId !== $consignmentId;
-        if ($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange') {
+        if (($provider === 'paperfly' && strtolower($eventName) === 'parcel.exchange')
+            || ($provider === 'carrybee' && strtolower($eventName) === 'order.exchange')
+        ) {
             $isExchange = true;
         }
         $consignmentDidNotIdentifyMain = $consignmentId === '' || $mainId !== $consignmentId;
