@@ -191,6 +191,7 @@ function Convert-AlterTable([string]$Statement, [string]$SourceName) {
 
 function Convert-SchemaSource([string]$Sql, [string]$SourceName) {
   $output = New-Object System.Collections.Generic.List[string]
+  $views = New-Object System.Collections.Generic.List[string]
   foreach ($statement in (Split-SqlStatements $Sql)) {
     $core = ([regex]::Replace($statement, '(?m)^\s*--[^\r\n]*(?:\r?\n|$)', '')).Trim()
     if (-not $core) { continue }
@@ -212,9 +213,14 @@ function Convert-SchemaSource([string]$Sql, [string]$SourceName) {
       continue
     }
 
+    if ($core -match '(?is)^(DROP\s+VIEW|CREATE\s+VIEW)\b') {
+      $views.Add($statement.Trim() + ';')
+      continue
+    }
+
     $output.Add($statement.Trim() + ';')
   }
-  return ($output -join "`r`n`r`n")
+  return @{ddl = ($output -join "`r`n`r`n"); views = ($views -join "`r`n`r`n")}
 }
 
 $helpers = @'
@@ -339,11 +345,21 @@ $sections.Add('-- Generated from backend/database/schema.sql plus migrations/*.s
 $sections.Add('-- Contains row-preserving DDL only: no seed inserts and no business-row updates.')
 $sections.Add($helpers.Trim())
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8
-$sections.Add((Convert-SchemaSource $schema $SchemaFile))
+$schemaResult = Convert-SchemaSource $schema $SchemaFile
+$sections.Add($schemaResult.ddl)
+
+$viewSections = New-Object System.Collections.Generic.List[string]
+if ($schemaResult.views) { $viewSections.Add($schemaResult.views) }
 
 foreach ($migration in (Get-ChildItem -LiteralPath $migrationsPath -File -Filter '*.sql' | Sort-Object Name)) {
   $migrationSql = Get-Content -LiteralPath $migration.FullName -Raw -Encoding UTF8
-  $sections.Add("-- Migration: $($migration.Name)`r`n" + (Convert-SchemaSource $migrationSql $migration.Name))
+  $migrationResult = Convert-SchemaSource $migrationSql $migration.Name
+  $sections.Add("-- Migration: $($migration.Name)`r`n" + $migrationResult.ddl)
+  if ($migrationResult.views) { $viewSections.Add("-- Migration views: $($migration.Name)`r`n" + $migrationResult.views) }
+}
+
+if ($viewSections.Count -gt 0) {
+  $sections.Add(($viewSections -join "`r`n`r`n"))
 }
 
 $sections.Add("DROP PROCEDURE IF EXISTS sp_add_col;`r`nDROP PROCEDURE IF EXISTS sp_modify_col;`r`nDROP PROCEDURE IF EXISTS sp_create_idx;`r`nDROP PROCEDURE IF EXISTS sp_create_unique_idx;`r`nDROP PROCEDURE IF EXISTS sp_drop_idx;")

@@ -1438,8 +1438,6 @@ CALL sp_drop_idx('wallet_entries', 'uq_wallet_entries_order_entry_type');
 CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_payroll_payment', '`payroll_payment_id`');
 CALL sp_create_unique_idx('wallet_entries', 'uq_wallet_entries_payroll_entry', '`payroll_payment_id`, `entry_type`');
 
-DROP VIEW IF EXISTS orders_with_customer_creator;
-
 CALL sp_add_col('orders', 'pathao_consignment_id', 'VARCHAR(255) NULL');
 CALL sp_add_col('orders', 'exchange_pathao_consignment_id', 'VARCHAR(255) NULL');
 CALL sp_add_col('orders', 'steadfast_invoice', 'VARCHAR(100) NULL');
@@ -1449,242 +1447,6 @@ CALL sp_add_col('orders', 'source_ad', 'VARCHAR(64) NULL');
 CALL sp_create_idx('orders', 'idx_orders_pathao_consignment_id', '`pathao_consignment_id`');
 
 CALL sp_create_unique_idx('orders', 'uq_orders_steadfast_invoice', '`steadfast_invoice`');
-
-CREATE VIEW orders_with_customer_creator AS
-SELECT
-  o.id,
-  o.order_number AS orderNumber,
-  o.order_date AS orderDate,
-  o.customer_id AS customerId,
-  o.page_id AS pageId,
-  c.name AS customerName,
-  c.phone AS customerPhone,
-  c.address AS customerAddress,
-  o.created_by AS createdBy,
-  u.name AS creatorName,
-  o.status,
-  o.items,
-  o.subtotal,
-  o.discount,
-  o.shipping,
-  o.total,
-  o.paid_amount AS paidAmount,
-  o.notes,
-  o.history,
-  o.page_snapshot AS pageSnapshot,
-  o.created_at AS createdAt,
-  o.deleted_at AS deletedAt,
-  o.deleted_by AS deletedBy,
-  o.carrybee_consignment_id AS carrybeeConsignmentId,
-  o.steadfast_consignment_id AS steadfastConsignmentId,
-  o.steadfast_invoice AS steadfastInvoice,
-  o.steadfast_tracking_link AS steadfastTrackingLink,
-  o.paperfly_tracking_number AS paperflyTrackingNumber,
-  o.pathao_consignment_id AS pathaoConsignmentId,
-  o.exchange_courier AS exchangeCourier,
-  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
-  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
-  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
-  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
-  o.exchange_courier_history AS exchangeCourierHistory,
-  o.source_ad AS sourceAd,
-  o.processed_at AS processedAt,
-  o.courier_assigned_at AS courierAssignedAt,
-  o.picked_at AS pickedAt,
-  o.completed_at AS completedAt,
-  o.returned_at AS returnedAt,
-  o.cancelled_at AS cancelledAt,
-  o.partial_delivered_at AS partialDeliveredAt,
-  o.exchange_processing_at AS exchangeProcessingAt,
-  o.exchange_picked_at AS exchangePickedAt,
-  o.exchange_delivered_at AS exchangeDeliveredAt,
-  o.exchange_returned_at AS exchangeReturnedAt,
-  o.exchange_cancelled_at AS exchangeCancelledAt
-FROM orders o
-LEFT JOIN customers c ON c.id = o.customer_id
-LEFT JOIN users u ON u.id = o.created_by
-WHERE o.deleted_at IS NULL;
-
-DROP VIEW IF EXISTS bills_with_vendor_creator;
-
-CREATE VIEW bills_with_vendor_creator AS
-SELECT
-  b.id,
-  b.bill_number AS billNumber,
-  b.bill_date AS billDate,
-  b.vendor_id AS vendorId,
-  v.name AS vendorName,
-  v.phone AS vendorPhone,
-  v.address AS vendorAddress,
-  b.created_by AS createdBy,
-  u.name AS creatorName,
-  b.status,
-  b.items,
-  b.subtotal,
-  b.discount,
-  b.shipping,
-  b.total,
-  b.paid_amount AS paidAmount,
-  b.notes,
-  b.history,
-  b.created_at AS createdAt,
-  b.deleted_at AS deletedAt,
-  b.deleted_by AS deletedBy
-FROM bills b
-LEFT JOIN vendors v ON v.id = b.vendor_id
-LEFT JOIN users u ON u.id = b.created_by
-WHERE b.deleted_at IS NULL;
-
-DROP VIEW IF EXISTS transactions_with_relations;
-
-CREATE VIEW transactions_with_relations AS
-SELECT
-  t.id,
-  t.date,
-  t.type,
-  t.category,
-  t.account_id AS accountId,
-  a.name AS accountName,
-  t.to_account_id AS toAccountId,
-  t.amount,
-  t.description,
-  t.reference_id AS referenceId,
-  t.contact_id AS contactId,
-  COALESCE(c.name, v.name) AS contactName,
-  CASE
-    WHEN c.id IS NOT NULL THEN 'Customer'
-    WHEN v.id IS NOT NULL THEN 'Vendor'
-    ELSE NULL
-  END AS contactType,
-  t.payment_method AS paymentMethod,
-  t.attachment_name AS attachmentName,
-  t.attachment_url AS attachmentUrl,
-  t.created_by AS createdBy,
-  u.name AS creatorName,
-  t.approval_status AS approvalStatus,
-  t.account_effect_applied AS accountEffectApplied,
-  t.approval_requested_at AS approvalRequestedAt,
-  t.approved_at AS approvedAt,
-  t.declined_at AS declinedAt,
-  t.approval_note AS approvalNote,
-  t.created_at AS createdAt,
-  t.deleted_at AS deletedAt,
-  t.deleted_by AS deletedBy
-FROM transactions t
-LEFT JOIN accounts a ON a.id = t.account_id
-LEFT JOIN customers c ON c.id = t.contact_id
-LEFT JOIN vendors v ON v.id = t.contact_id
-LEFT JOIN users u ON u.id = t.created_by
-WHERE t.deleted_at IS NULL;
-
-DROP VIEW IF EXISTS employee_wallet_balances;
-
-CREATE VIEW employee_wallet_balances AS
-SELECT
-  u.id AS employeeId,
-  u.name AS employeeName,
-  u.role AS employeeRole,
-  ROUND(COALESCE(SUM(
-    CASE
-      WHEN we.entry_type IN ('order_credit', 'order_reversal')
-        AND o.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
-      WHEN we.entry_type NOT IN ('order_credit', 'order_reversal')
-        AND we.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
-      ELSE 0
-    END
-  ), 0), 2) AS currentBalance,
-  ROUND(COALESCE(SUM(
-    CASE
-      WHEN we.entry_type = 'order_credit'
-        AND o.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
-      ELSE 0
-    END
-  ), 0), 2) AS totalEarned,
-  ROUND(ABS(COALESCE(SUM(
-    CASE
-      WHEN we.entry_type = 'payout'
-        AND we.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
-      ELSE 0
-    END
-  ), 0)), 2) AS totalPaid,
-  COALESCE(active_wallet_orders.credited_orders, 0) AS creditedOrders,
-  MAX(
-    CASE
-      WHEN we.entry_type IN ('order_credit', 'order_reversal')
-        AND o.created_at >= '2026-03-31 18:00:00' THEN we.created_at
-      WHEN we.entry_type NOT IN ('order_credit', 'order_reversal')
-        AND we.created_at >= '2026-03-31 18:00:00' THEN we.created_at
-      ELSE NULL
-    END
-  ) AS lastActivityAt
-FROM users u
-LEFT JOIN wallet_entries we ON we.employee_id = u.id
-LEFT JOIN orders o ON o.id = we.source_order_id
-LEFT JOIN (
-  SELECT
-    active_order_credits.employee_id,
-    COUNT(*) AS credited_orders
-  FROM (
-    SELECT
-      we.employee_id,
-      we.source_order_id
-    FROM wallet_entries we
-    INNER JOIN orders o ON o.id = we.source_order_id
-    WHERE we.entry_type IN ('order_credit', 'order_reversal')
-      AND o.created_at >= '2026-03-31 18:00:00'
-    GROUP BY we.employee_id, we.source_order_id
-    HAVING ROUND(COALESCE(SUM(we.amount_delta), 0), 2) > 0
-  ) active_order_credits
-  GROUP BY active_order_credits.employee_id
-) active_wallet_orders ON active_wallet_orders.employee_id = u.id
-WHERE u.role IN ('Employee')
-  AND u.deleted_at IS NULL
-GROUP BY u.id, u.name, u.role, active_wallet_orders.credited_orders;
-
-DROP VIEW IF EXISTS wallet_activity_with_relations;
-
-CREATE VIEW wallet_activity_with_relations AS
-SELECT
-  we.id,
-  we.employee_id AS employeeId,
-  employee_user.name AS employeeName,
-  employee_user.role AS employeeRole,
-  we.entry_type AS entryType,
-  we.amount_delta AS amountDelta,
-  we.unit_amount_snapshot AS unitAmountSnapshot,
-  we.source_order_id AS orderId,
-  COALESCE(we.source_order_number, o.order_number) AS orderNumber,
-  we.wallet_payout_id AS payoutId,
-  COALESCE(we.payroll_payment_id, wp.payroll_payment_id) AS payrollPaymentId,
-  wp.transaction_id AS transactionId,
-  wp.account_id AS accountId,
-  a.name AS accountName,
-  wp.payment_method AS paymentMethod,
-  wp.category_id AS categoryId,
-  c.name AS categoryName,
-  pp.compensation_type AS compensationType,
-  pp.base_amount_snapshot AS baseAmountSnapshot,
-  pp.bonus_amount AS bonusAmount,
-  pp.deduction_amount AS deductionAmount,
-  pp.amount_snapshot AS netAmount,
-  pp.period_start AS periodStart,
-  pp.period_end AS periodEnd,
-  we.note,
-  we.created_at AS createdAt,
-  we.created_by AS createdBy,
-  creator_user.name AS createdByName,
-  wp.paid_at AS paidAt,
-  wp.paid_by AS paidBy,
-  paid_by_user.name AS paidByName
-FROM wallet_entries we
-LEFT JOIN users employee_user ON employee_user.id = we.employee_id
-LEFT JOIN orders o ON o.id = we.source_order_id
-LEFT JOIN wallet_payouts wp ON wp.id = we.wallet_payout_id
-LEFT JOIN payroll_payments pp ON pp.id = COALESCE(we.payroll_payment_id, wp.payroll_payment_id)
-LEFT JOIN accounts a ON a.id = wp.account_id
-LEFT JOIN categories c ON c.id = wp.category_id
-LEFT JOIN users creator_user ON creator_user.id = we.created_by
-LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
 
 CALL sp_create_idx('users', 'idx_users_active_created_id', '`deleted_at`, `is_system`, `created_at`, `id`');
 CALL sp_create_idx('users', 'idx_users_active_role_name_id', '`deleted_at`, `is_system`, `role`, `name`, `id`');
@@ -3121,51 +2883,6 @@ CALL sp_add_col('orders', 'steadfast_invoice', 'VARCHAR(100) NULL');
 
 CALL sp_create_unique_idx('orders', 'uq_orders_steadfast_invoice', '`steadfast_invoice`');
 
-DROP VIEW IF EXISTS `orders_with_customer_creator`;
-
-CREATE VIEW `orders_with_customer_creator` AS
-SELECT
-  o.id,
-  o.order_number AS orderNumber,
-  o.order_date AS orderDate,
-  o.customer_id AS customerId,
-  c.name AS customerName,
-  c.phone AS customerPhone,
-  c.address AS customerAddress,
-  o.page_id AS pageId,
-  o.created_by AS createdBy,
-  u.name AS creatorName,
-  o.status,
-  o.items,
-  o.subtotal,
-  o.discount,
-  o.shipping,
-  o.total,
-  o.paid_amount AS paidAmount,
-  o.notes,
-  o.history,
-  o.page_snapshot AS pageSnapshot,
-  o.created_at AS createdAt,
-  o.deleted_at AS deletedAt,
-  o.deleted_by AS deletedBy,
-  o.carrybee_consignment_id AS carrybeeConsignmentId,
-  o.steadfast_consignment_id AS steadfastConsignmentId,
-  o.steadfast_invoice AS steadfastInvoice,
-  o.steadfast_tracking_link AS steadfastTrackingLink,
-  o.paperfly_tracking_number AS paperflyTrackingNumber,
-  o.pathao_consignment_id AS pathaoConsignmentId,
-  o.exchange_courier AS exchangeCourier,
-  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
-  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
-  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
-  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
-  o.exchange_courier_history AS exchangeCourierHistory,
-  o.source_ad AS sourceAd
-FROM orders o
-LEFT JOIN customers c ON c.id = o.customer_id
-LEFT JOIN users u ON u.id = o.created_by
-WHERE o.deleted_at IS NULL;
-
 -- Migration: 2026-08-06_courier_per_courier_defaults.sql
 CALL sp_add_col('courier_settings', 'steadfast_default_account_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('courier_settings', 'steadfast_default_expense_category_id', 'VARCHAR(64) NULL');
@@ -3484,6 +3201,291 @@ CALL sp_create_idx('orders', 'idx_orders_exchange_cancelled_at', '`exchange_canc
 
 -- Skipped data-mutating statement from 2026-08-15_order_status_timestamp_columns.sql.
 
+DROP VIEW IF EXISTS orders_with_customer_creator;
+
+CREATE VIEW orders_with_customer_creator AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  o.page_id AS pageId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.pathao_consignment_id AS pathaoConsignmentId,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd,
+  o.processed_at AS processedAt,
+  o.courier_assigned_at AS courierAssignedAt,
+  o.picked_at AS pickedAt,
+  o.completed_at AS completedAt,
+  o.returned_at AS returnedAt,
+  o.cancelled_at AS cancelledAt,
+  o.partial_delivered_at AS partialDeliveredAt,
+  o.exchange_processing_at AS exchangeProcessingAt,
+  o.exchange_picked_at AS exchangePickedAt,
+  o.exchange_delivered_at AS exchangeDeliveredAt,
+  o.exchange_returned_at AS exchangeReturnedAt,
+  o.exchange_cancelled_at AS exchangeCancelledAt
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
+
+DROP VIEW IF EXISTS bills_with_vendor_creator;
+
+CREATE VIEW bills_with_vendor_creator AS
+SELECT
+  b.id,
+  b.bill_number AS billNumber,
+  b.bill_date AS billDate,
+  b.vendor_id AS vendorId,
+  v.name AS vendorName,
+  v.phone AS vendorPhone,
+  v.address AS vendorAddress,
+  b.created_by AS createdBy,
+  u.name AS creatorName,
+  b.status,
+  b.items,
+  b.subtotal,
+  b.discount,
+  b.shipping,
+  b.total,
+  b.paid_amount AS paidAmount,
+  b.notes,
+  b.history,
+  b.created_at AS createdAt,
+  b.deleted_at AS deletedAt,
+  b.deleted_by AS deletedBy
+FROM bills b
+LEFT JOIN vendors v ON v.id = b.vendor_id
+LEFT JOIN users u ON u.id = b.created_by
+WHERE b.deleted_at IS NULL;
+
+DROP VIEW IF EXISTS transactions_with_relations;
+
+CREATE VIEW transactions_with_relations AS
+SELECT
+  t.id,
+  t.date,
+  t.type,
+  t.category,
+  t.account_id AS accountId,
+  a.name AS accountName,
+  t.to_account_id AS toAccountId,
+  t.amount,
+  t.description,
+  t.reference_id AS referenceId,
+  t.contact_id AS contactId,
+  COALESCE(c.name, v.name) AS contactName,
+  CASE
+    WHEN c.id IS NOT NULL THEN 'Customer'
+    WHEN v.id IS NOT NULL THEN 'Vendor'
+    ELSE NULL
+  END AS contactType,
+  t.payment_method AS paymentMethod,
+  t.attachment_name AS attachmentName,
+  t.attachment_url AS attachmentUrl,
+  t.created_by AS createdBy,
+  u.name AS creatorName,
+  t.approval_status AS approvalStatus,
+  t.account_effect_applied AS accountEffectApplied,
+  t.approval_requested_at AS approvalRequestedAt,
+  t.approved_at AS approvedAt,
+  t.declined_at AS declinedAt,
+  t.approval_note AS approvalNote,
+  t.created_at AS createdAt,
+  t.deleted_at AS deletedAt,
+  t.deleted_by AS deletedBy
+FROM transactions t
+LEFT JOIN accounts a ON a.id = t.account_id
+LEFT JOIN customers c ON c.id = t.contact_id
+LEFT JOIN vendors v ON v.id = t.contact_id
+LEFT JOIN users u ON u.id = t.created_by
+WHERE t.deleted_at IS NULL;
+
+DROP VIEW IF EXISTS employee_wallet_balances;
+
+CREATE VIEW employee_wallet_balances AS
+SELECT
+  u.id AS employeeId,
+  u.name AS employeeName,
+  u.role AS employeeRole,
+  ROUND(COALESCE(SUM(
+    CASE
+      WHEN we.entry_type IN ('order_credit', 'order_reversal')
+        AND o.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
+      WHEN we.entry_type NOT IN ('order_credit', 'order_reversal')
+        AND we.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
+      ELSE 0
+    END
+  ), 0), 2) AS currentBalance,
+  ROUND(COALESCE(SUM(
+    CASE
+      WHEN we.entry_type = 'order_credit'
+        AND o.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
+      ELSE 0
+    END
+  ), 0), 2) AS totalEarned,
+  ROUND(ABS(COALESCE(SUM(
+    CASE
+      WHEN we.entry_type = 'payout'
+        AND we.created_at >= '2026-03-31 18:00:00' THEN we.amount_delta
+      ELSE 0
+    END
+  ), 0)), 2) AS totalPaid,
+  COALESCE(active_wallet_orders.credited_orders, 0) AS creditedOrders,
+  MAX(
+    CASE
+      WHEN we.entry_type IN ('order_credit', 'order_reversal')
+        AND o.created_at >= '2026-03-31 18:00:00' THEN we.created_at
+      WHEN we.entry_type NOT IN ('order_credit', 'order_reversal')
+        AND we.created_at >= '2026-03-31 18:00:00' THEN we.created_at
+      ELSE NULL
+    END
+  ) AS lastActivityAt
+FROM users u
+LEFT JOIN wallet_entries we ON we.employee_id = u.id
+LEFT JOIN orders o ON o.id = we.source_order_id
+LEFT JOIN (
+  SELECT
+    active_order_credits.employee_id,
+    COUNT(*) AS credited_orders
+  FROM (
+    SELECT
+      we.employee_id,
+      we.source_order_id
+    FROM wallet_entries we
+    INNER JOIN orders o ON o.id = we.source_order_id
+    WHERE we.entry_type IN ('order_credit', 'order_reversal')
+      AND o.created_at >= '2026-03-31 18:00:00'
+    GROUP BY we.employee_id, we.source_order_id
+    HAVING ROUND(COALESCE(SUM(we.amount_delta), 0), 2) > 0
+  ) active_order_credits
+  GROUP BY active_order_credits.employee_id
+) active_wallet_orders ON active_wallet_orders.employee_id = u.id
+WHERE u.role IN ('Employee')
+  AND u.deleted_at IS NULL
+GROUP BY u.id, u.name, u.role, active_wallet_orders.credited_orders;
+
+DROP VIEW IF EXISTS wallet_activity_with_relations;
+
+CREATE VIEW wallet_activity_with_relations AS
+SELECT
+  we.id,
+  we.employee_id AS employeeId,
+  employee_user.name AS employeeName,
+  employee_user.role AS employeeRole,
+  we.entry_type AS entryType,
+  we.amount_delta AS amountDelta,
+  we.unit_amount_snapshot AS unitAmountSnapshot,
+  we.source_order_id AS orderId,
+  COALESCE(we.source_order_number, o.order_number) AS orderNumber,
+  we.wallet_payout_id AS payoutId,
+  COALESCE(we.payroll_payment_id, wp.payroll_payment_id) AS payrollPaymentId,
+  wp.transaction_id AS transactionId,
+  wp.account_id AS accountId,
+  a.name AS accountName,
+  wp.payment_method AS paymentMethod,
+  wp.category_id AS categoryId,
+  c.name AS categoryName,
+  pp.compensation_type AS compensationType,
+  pp.base_amount_snapshot AS baseAmountSnapshot,
+  pp.bonus_amount AS bonusAmount,
+  pp.deduction_amount AS deductionAmount,
+  pp.amount_snapshot AS netAmount,
+  pp.period_start AS periodStart,
+  pp.period_end AS periodEnd,
+  we.note,
+  we.created_at AS createdAt,
+  we.created_by AS createdBy,
+  creator_user.name AS createdByName,
+  wp.paid_at AS paidAt,
+  wp.paid_by AS paidBy,
+  paid_by_user.name AS paidByName
+FROM wallet_entries we
+LEFT JOIN users employee_user ON employee_user.id = we.employee_id
+LEFT JOIN orders o ON o.id = we.source_order_id
+LEFT JOIN wallet_payouts wp ON wp.id = we.wallet_payout_id
+LEFT JOIN payroll_payments pp ON pp.id = COALESCE(we.payroll_payment_id, wp.payroll_payment_id)
+LEFT JOIN accounts a ON a.id = wp.account_id
+LEFT JOIN categories c ON c.id = wp.category_id
+LEFT JOIN users creator_user ON creator_user.id = we.created_by
+LEFT JOIN users paid_by_user ON paid_by_user.id = wp.paid_by;
+
+-- Migration views: 2026-08-05_steadfast_tracking_invoice_auto_payment.sql
+DROP VIEW IF EXISTS `orders_with_customer_creator`;
+
+CREATE VIEW `orders_with_customer_creator` AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.page_id AS pageId,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.pathao_consignment_id AS pathaoConsignmentId,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
+
+-- Migration views: 2026-08-15_order_status_timestamp_columns.sql
 -- Expose the new columns through the order list view.
 DROP VIEW IF EXISTS `orders_with_customer_creator`;
 
