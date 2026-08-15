@@ -83,7 +83,7 @@ const SettingsPage: React.FC = () => {
   const { data: walletSettingsData, isPending: walletPending } = useWalletSettings({ enabled: canUsePayroll });
   const walletLoading = canUsePayroll && walletPending;
   const { data: permissionsSettingsData, isPending: permissionsLoading } = usePermissionsSettings();
-  const { data: dashboardSettingsData, isPending: dashboardSettingsLoading } = useDashboardSettings(hasCapability('custom_roles') && canManagePermissions);
+  const { data: dashboardSettingsData, isPending: dashboardSettingsLoading } = useDashboardSettings(hasAdminAccess(user?.role));
   const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
@@ -1060,7 +1060,7 @@ const SettingsPage: React.FC = () => {
     hasCapability('messenger') && hasAdminAccess(user?.role) ? { id: 'messenger', label: 'Messenger', icon: ICONS.Messenger } : null,
     hasCapability('woocommerce') && hasAdminAccess(user?.role) ? { id: 'woocommerce', label: 'WooCommerce', icon: ICONS.Sales } : null,
     hasCapability('shopify') && hasAdminAccess(user?.role) ? { id: 'shopify', label: 'Shopify', icon: ICONS.Sales } : null,
-    hasCapability('custom_roles') && canManagePermissions ? { id: 'dashboard', label: 'Dashboard', icon: ICONS.Dashboard } : null,
+    hasAdminAccess(user?.role) ? { id: 'dashboard', label: 'Dashboard', icon: ICONS.Dashboard } : null,
     hasCapability('custom_roles') && canManagePermissions ? { id: 'permissions', label: 'Permissions', icon: ICONS.Users } : null,
     canEditCategories ? { id: 'categories', label: 'Categories', icon: ICONS.More } : null,
     canEditPaymentMethods ? { id: 'payments', label: 'Payment Methods', icon: ICONS.Banking } : null,
