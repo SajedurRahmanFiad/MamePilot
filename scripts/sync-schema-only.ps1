@@ -197,7 +197,11 @@ function Convert-SchemaSource([string]$Sql, [string]$SourceName) {
     if (-not $core) { continue }
 
     if ($core -match '(?is)^(INSERT|UPDATE|DELETE|REPLACE|TRUNCATE)\b') {
-      $output.Add("-- Skipped data-mutating statement from $SourceName.")
+      if ($statement -match '@keep-data-backfill') {
+        $output.Add($statement.Trim() + ';')
+      } else {
+        $output.Add("-- Skipped data-mutating statement from $SourceName.")
+      }
       continue
     }
     if ($core -match '(?is)^ALTER\s+TABLE\b') {
@@ -343,6 +347,8 @@ $sections = New-Object System.Collections.Generic.List[string]
 $sections.Add('-- MamePilot production-safe schema-only migration.')
 $sections.Add('-- Generated from backend/database/schema.sql plus migrations/*.sql.')
 $sections.Add('-- Contains row-preserving DDL only: no seed inserts and no business-row updates.')
+$sections.Add('-- Statements tagged "-- @keep-data-backfill" are retained: routine derived-data')
+$sections.Add('-- backfills that only fill NULL columns and are safe to re-run on every deployment.')
 $sections.Add($helpers.Trim())
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8
 $schemaResult = Convert-SchemaSource $schema $SchemaFile
