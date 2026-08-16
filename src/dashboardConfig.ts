@@ -3,12 +3,34 @@ import type {
   DashboardConfiguration,
   DashboardItemSetting,
   DashboardSettings,
+  OrderKpiTimeBasis,
 } from '../types';
 
 export const ADMIN_DEFAULT_DASHBOARD_ID = 'admin-default';
 export const EMPLOYEE_DEFAULT_DASHBOARD_ID = 'employee-default';
 
 export type DashboardDataScope = 'admin' | 'employee';
+
+export interface OrderKpiTimeBasisOption {
+  value: OrderKpiTimeBasis;
+  label: string;
+  description: string;
+}
+
+export const ORDER_KPI_TIME_BASIS_OPTIONS: OrderKpiTimeBasisOption[] = [
+  {
+    value: 'created_at',
+    label: 'By order creation',
+    description: 'Order KPI cards count orders created within the selected period.',
+  },
+  {
+    value: 'status_at',
+    label: 'By status action',
+    description: 'Order KPI cards count orders whose status action (delivered, picked, paid, and so on) happened within the selected period.',
+  },
+];
+
+export const DEFAULT_ORDER_KPI_TIME_BASIS: OrderKpiTimeBasis = 'created_at';
 
 export interface DashboardItemDefinition {
   key: string;
@@ -96,9 +118,13 @@ export const createDefaultDashboard = (systemKey: 'admin' | 'employee'): Dashboa
   systemKey,
   kpiCards: normalizeItemSettings([], DASHBOARD_KPI_DEFINITIONS, systemKey),
   widgets: normalizeItemSettings([], DASHBOARD_WIDGET_DEFINITIONS, systemKey),
+  orderKpiTimeBasis: DEFAULT_ORDER_KPI_TIME_BASIS,
   createdAt: null,
   updatedAt: null,
 });
+
+export const normalizeOrderKpiTimeBasis = (value: unknown): OrderKpiTimeBasis =>
+  value === 'status_at' ? 'status_at' : DEFAULT_ORDER_KPI_TIME_BASIS;
 
 export const normalizeDashboardConfiguration = (value: Partial<DashboardConfiguration>): DashboardConfiguration => {
   const systemKey = value.systemKey === 'admin' || value.id === ADMIN_DEFAULT_DASHBOARD_ID
@@ -117,6 +143,7 @@ export const normalizeDashboardConfiguration = (value: Partial<DashboardConfigur
     systemKey,
     kpiCards: normalizeItemSettings(value.kpiCards, DASHBOARD_KPI_DEFINITIONS, systemKey),
     widgets: normalizeItemSettings(value.widgets, DASHBOARD_WIDGET_DEFINITIONS, systemKey),
+    orderKpiTimeBasis: normalizeOrderKpiTimeBasis(value.orderKpiTimeBasis),
     createdAt: value.createdAt ?? null,
     updatedAt: value.updatedAt ?? null,
   };

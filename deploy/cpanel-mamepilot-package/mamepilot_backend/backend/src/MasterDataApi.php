@@ -4327,6 +4327,7 @@ final class MasterDataApi extends BaseService
                 'systemKey' => $systemKey,
                 'kpiCards' => $this->normalizeDashboardItems($dashboard['kpiCards'] ?? [], self::DASHBOARD_KPI_SCOPES, $systemKey),
                 'widgets' => $this->normalizeDashboardItems($dashboard['widgets'] ?? [], self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+                'orderKpiTimeBasis' => $this->normalizeOrderKpiTimeBasis($dashboard['orderKpiTimeBasis'] ?? null),
             ];
         }
 
@@ -4340,6 +4341,7 @@ final class MasterDataApi extends BaseService
                     'systemKey' => $systemKey,
                     'kpiCards' => $this->defaultDashboardItems(self::DASHBOARD_KPI_SCOPES, $systemKey),
                     'widgets' => $this->defaultDashboardItems(self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+                    'orderKpiTimeBasis' => 'created_at',
                 ];
             }
         }
@@ -4353,15 +4355,16 @@ final class MasterDataApi extends BaseService
             foreach ($normalized as $dashboard) {
                 $this->database->execute(
                     'INSERT INTO dashboard_configurations
-                        (id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at)
+                        (id, name, is_system, system_key, kpi_cards, widgets, order_kpi_time_basis, created_at, updated_at)
                      VALUES
-                        (:id, :name, :is_system, :system_key, :kpi_cards, :widgets, :created_at, :updated_at)
+                        (:id, :name, :is_system, :system_key, :kpi_cards, :widgets, :order_kpi_time_basis, :created_at, :updated_at)
                      ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         is_system = VALUES(is_system),
                         system_key = VALUES(system_key),
                         kpi_cards = VALUES(kpi_cards),
                         widgets = VALUES(widgets),
+                        order_kpi_time_basis = VALUES(order_kpi_time_basis),
                         updated_at = VALUES(updated_at)',
                     [
                         ':id' => $dashboard['id'],
@@ -4370,6 +4373,7 @@ final class MasterDataApi extends BaseService
                         ':system_key' => $dashboard['systemKey'],
                         ':kpi_cards' => $this->jsonEncode($dashboard['kpiCards']),
                         ':widgets' => $this->jsonEncode($dashboard['widgets']),
+                        ':order_kpi_time_basis' => $dashboard['orderKpiTimeBasis'],
                         ':created_at' => $now,
                         ':updated_at' => $now,
                     ]

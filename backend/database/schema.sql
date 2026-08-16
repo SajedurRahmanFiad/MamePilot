@@ -293,6 +293,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   pathao_token_expires_at VARCHAR(64) NULL,
   automatically_deduct_shipping_costs TINYINT(1) NOT NULL DEFAULT 0,
   automatically_mark_paid_after_delivery TINYINT(1) NOT NULL DEFAULT 0,
+  save_webhook_events TINYINT(1) NOT NULL DEFAULT 1,
   carrybee_webhook_signature VARCHAR(500) NULL,
   carrybee_webhook_header VARCHAR(128) NULL,
   carrybee_webhook_integration_header VARCHAR(128) NULL,
@@ -338,6 +339,7 @@ ALTER TABLE `courier_settings`
 ALTER TABLE `courier_settings`
   ADD COLUMN IF NOT EXISTS `automatically_deduct_shipping_costs` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `automatically_mark_paid_after_delivery` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `save_webhook_events` TINYINT(1) NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS `steadfast_invoice` VARCHAR(100) NULL,
   ADD COLUMN IF NOT EXISTS `carrybee_webhook_signature` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `carrybee_webhook_header` VARCHAR(128) NULL,

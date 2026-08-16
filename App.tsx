@@ -84,6 +84,7 @@ const DeveloperNotifications = lazyPage(() => import('./pages/DeveloperNotificat
 const DeveloperSettings = lazyPage(() => import('./pages/DeveloperSettings'));
 const DeveloperNotes = lazyPage(() => import('./pages/DeveloperNotes'));
 const DeveloperSubscriptions = lazyPage(() => import('./pages/DeveloperSubscriptions'));
+const DeveloperWebhooks = lazyPage(() => import('./pages/DeveloperWebhooks'));
 const NotificationDetail = lazyPage(() => import('./pages/NotificationDetail'));
 const Customers = lazyPage(() => import('./pages/Customers'));
 const Leads = lazyPage(() => import('./pages/Leads'));
@@ -243,8 +244,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (activeUser?.role === 'Developer') {
       preloaders.add(DeveloperNotifications.preload);
       preloaders.add(DeveloperSettings.preload);
-      preloaders.add(DeveloperNotes.preload);
+preloaders.add(DeveloperNotes.preload);
       preloaders.add(DeveloperSubscriptions.preload);
+      preloaders.add(DeveloperWebhooks.preload);
       preloaders.add(NotificationDetail.preload);
     }
     if (can('undoer.view')) preloaders.add(Undoer.preload);
@@ -310,6 +312,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
       } />
       <Route path="/developer/subscriptions" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperSubscriptions /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/developer/webhooks" element={
+        isAuthenticated ? (activeUser?.role === 'Developer' ? <Layout><DeveloperWebhooks /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/developer" element={
         isAuthenticated ? (activeUser?.role === 'Developer' ? <Navigate to="/developer/settings" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

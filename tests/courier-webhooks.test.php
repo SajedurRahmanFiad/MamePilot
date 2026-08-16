@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/backend/bootstrap.php';
 
 use App\Auth;
+use App\ApiException;
 use App\Config;
 use App\CourierApi;
 use App\Database;
@@ -117,7 +118,7 @@ function courierWebhookPayment(Database $database, string $orderId): ?array
     return $database->fetchOne(
         "SELECT * FROM transactions
          WHERE reference_id = :order_id AND type = 'Income'
-           AND description LIKE 'Automatic courier delivery payment%'
+           AND description LIKE 'Automatic courier % payment%'
            AND deleted_at IS NULL
          ORDER BY created_at ASC, id ASC LIMIT 1",
         [':order_id' => $orderId]
@@ -1239,6 +1240,198 @@ try {
     ) ?? [])['total'] ?? 0);
     courierWebhookAssert($syncChargeCount === 1, 'Sync polling duplicated the provider charge row.');
 
+    // Return events: whatever fee and collected amount the webhook carries is
+    // booked as expense and income. A plain return (nothing collected) gets the
+    // shipping fee expensed but no income; a paid return books both.
+    $sfReturnId = 'cwh-sf-return-money-' . $stamp;
+    $sfReturnNumber = 'CWH-SF-RETURN-MONEY-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $sfReturnId, $sfReturnNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-RETURN-MONEY-' . $stamp,
+        'total' => 1200,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-RETURN-MONEY-' . $stamp,
+        'invoice' => $sfReturnNumber,
+        'status' => 'return',
+        'cod_amount' => 0,
+        'delivery_charge' => 12.5,
+        'updated_at' => '2026-08-05 09:00:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $sfReturnId) === 'Returned', 'Steadfast return did not map to Returned.');
+    $sfReturnExpense = courierWebhookExpense($database, $sfReturnId);
+    courierWebhookAssert(
+        $sfReturnExpense !== null && abs((float) $sfReturnExpense['amount'] - 12.50) < 0.001,
+        'Steadfast return webhook shipping fee was not expensed.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $sfReturnId) === null,
+        'Steadfast return with no collected amount created automatic income.'
+    );
+    $sfReturnPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $sfReturnId]);
+    courierWebhookAssert((float) ($sfReturnPaid['paid_amount'] ?? -1) === 0.0, 'Steadfast return webhook marked the order partially paid.');
+
+    // CarryBee paid return: the courier collected money at the door, so the
+    // webhook's fee and collected amount both become transactions.
+    $cbPaidReturnId = 'cwh-cb-paid-return-' . $stamp;
+    $cbPaidReturnNumber = 'CWH-CB-PAID-RETURN-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $cbPaidReturnId, $cbPaidReturnNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-PAID-RETURN-' . $stamp,
+        'total' => 1200,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.paid_return',
+        'consignment_id' => 'CB-PAID-RETURN-' . $stamp,
+        'merchant_order_id' => $cbPaidReturnNumber,
+        'timestamptz' => '2026-08-05T09:30:00+00:00',
+        'collected_amount' => 500,
+        'delivery_fee' => 10,
+    ]), $carryHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $cbPaidReturnId) === 'Returned', 'CarryBee paid-return did not map to Returned.');
+    $cbPaidReturnExpense = courierWebhookExpense($database, $cbPaidReturnId);
+    courierWebhookAssert(
+        $cbPaidReturnExpense !== null && abs((float) $cbPaidReturnExpense['amount'] - 10.00) < 0.001,
+        'CarryBee paid-return webhook shipping fee was not expensed.'
+    );
+    $cbPaidReturnPayment = courierWebhookPayment($database, $cbPaidReturnId);
+    courierWebhookAssert(
+        $cbPaidReturnPayment !== null && abs((float) $cbPaidReturnPayment['amount'] - 500.00) < 0.001,
+        'CarryBee paid-return collected amount was not booked as automatic income.'
+    );
+    $cbPaidReturnPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $cbPaidReturnId]);
+    courierWebhookAssert(abs((float) ($cbPaidReturnPaid['paid_amount'] ?? 0) - 500.00) < 0.001, 'CarryBee paid-return income was not added to paid_amount.');
+
+    // CarryBee plain return: fee expensed, nothing collected means no income.
+    $cbReturnId = 'cwh-cb-return-money-' . $stamp;
+    $cbReturnNumber = 'CWH-CB-RETURN-MONEY-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $cbReturnId, $cbReturnNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-RETURN-MONEY-' . $stamp,
+        'total' => 900,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.returned',
+        'consignment_id' => 'CB-RETURN-MONEY-' . $stamp,
+        'merchant_order_id' => $cbReturnNumber,
+        'timestamptz' => '2026-08-05T10:00:00+00:00',
+        'collected_amount' => 0,
+        'delivery_fee' => 8,
+    ]), $carryHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $cbReturnId) === 'Returned', 'CarryBee return did not map to Returned.');
+    $cbReturnExpense = courierWebhookExpense($database, $cbReturnId);
+    courierWebhookAssert(
+        $cbReturnExpense !== null && abs((float) $cbReturnExpense['amount'] - 8.00) < 0.001,
+        'CarryBee return webhook shipping fee was not expensed.'
+    );
+    courierWebhookAssert(courierWebhookPayment($database, $cbReturnId) === null, 'CarryBee return with no collected amount created income.');
+
+    // Paperfly return: fee lives under data.delivery_fee.
+    $pfReturnMoneyId = 'cwh-pf-return-money-' . $stamp;
+    $pfReturnMoneyNumber = 'CWH-PF-RETURN-MONEY-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $pfReturnMoneyId, $pfReturnMoneyNumber, 'Picked', $customerId, [
+        'paperfly' => 'PF-RETURN-MONEY-' . $stamp,
+        'total' => 800,
+    ]);
+    $courier->handleWebhook('paperfly', courierWebhookJson([
+        'event' => 'parcel.return',
+        'timestamp' => '2026-08-05T10:30:00+00:00',
+        'data' => [
+            'order_number' => 'PF-RETURN-MONEY-' . $stamp,
+            'merchant_order_reference' => $pfReturnMoneyNumber,
+            'status' => 'return',
+            'delivery_fee' => 7.25,
+        ],
+    ]), $paperflyHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $pfReturnMoneyId) === 'Returned', 'Paperfly return did not map to Returned.');
+    $pfReturnExpense = courierWebhookExpense($database, $pfReturnMoneyId);
+    courierWebhookAssert(
+        $pfReturnExpense !== null && abs((float) $pfReturnExpense['amount'] - 7.25) < 0.001,
+        'Paperfly return webhook shipping fee was not expensed.'
+    );
+    courierWebhookAssert(courierWebhookPayment($database, $pfReturnMoneyId) === null, 'Paperfly return with no collected amount created income.');
+
+    // Pathao Return Delivered: fee arrives with the same event.
+    $paReturnId = 'cwh-pa-return-money-' . $stamp;
+    $paReturnNumber = 'CWH-PA-RETURN-MONEY-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $paReturnId, $paReturnNumber, 'Picked', $customerId, [
+        'pathao' => 'PATHAO-RETURN-MONEY-' . $stamp,
+        'total' => 1100,
+    ]);
+    $courier->handleWebhook('pathao', courierWebhookJson([
+        'event' => 'order.updated',
+        'data' => [
+            'consignment_id' => 'PATHAO-RETURN-MONEY-' . $stamp,
+            'merchant_order_id' => $paReturnNumber,
+            'order_status_slug' => 'Return Delivered',
+            'delivery_fee' => 5,
+            'updated_at' => '2026-08-05 11:00:00',
+        ],
+    ]), $pathaoHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $paReturnId) === 'Returned', 'Pathao Return Delivered did not map to Returned.');
+    $paReturnExpense = courierWebhookExpense($database, $paReturnId);
+    courierWebhookAssert(
+        $paReturnExpense !== null && abs((float) $paReturnExpense['amount'] - 5.00) < 0.001,
+        'Pathao Return Delivered shipping fee was not expensed.'
+    );
+    courierWebhookAssert(courierWebhookPayment($database, $paReturnId) === null, 'Pathao Return Delivered without collected amount created income.');
+
+    // A fee arriving after the return event (order already terminal) is still
+    // expensed once; no income is ever added for an unpaid return.
+    $latePaReturnId = 'cwh-pa-return-late-fee-' . $stamp;
+    $latePaReturnNumber = 'CWH-PA-RETURN-LATE-FEE-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $latePaReturnId, $latePaReturnNumber, 'Picked', $customerId, [
+        'pathao' => 'PATHAO-RETURN-LATE-FEE-' . $stamp,
+        'total' => 600,
+    ]);
+    $courier->handleWebhook('pathao', courierWebhookJson([
+        'event' => 'order.updated',
+        'data' => [
+            'consignment_id' => 'PATHAO-RETURN-LATE-FEE-' . $stamp,
+            'merchant_order_id' => $latePaReturnNumber,
+            'order_status_slug' => 'Return Delivered',
+            'updated_at' => '2026-08-05 11:30:00',
+        ],
+    ]), $pathaoHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $latePaReturnId) === 'Returned', 'Late-fee Pathao return did not map to Returned.');
+    courierWebhookAssert(courierWebhookExpense($database, $latePaReturnId) === null, 'Fee-less return webhook created an expense.');
+    $courier->handleWebhook('pathao', courierWebhookJson([
+        'event' => 'fee.updated',
+        'data' => [
+            'consignment_id' => 'PATHAO-RETURN-LATE-FEE-' . $stamp,
+            'merchant_order_id' => $latePaReturnNumber,
+            'delivery_fee' => 3.75,
+            'updated_at' => '2026-08-05 12:00:00',
+        ],
+    ]), $pathaoHeaders);
+    $latePaReturnExpense = courierWebhookExpense($database, $latePaReturnId);
+    courierWebhookAssert(
+        $latePaReturnExpense !== null && abs((float) $latePaReturnExpense['amount'] - 3.75) < 0.001,
+        'Late return fee was not expensed after the order became terminal.'
+    );
+    courierWebhookAssert(courierWebhookPayment($database, $latePaReturnId) === null, 'Late return fee event created automatic income.');
+
+    // Both toggles off: a return webhook carrying fee and collected amount
+    // changes the status only and creates no transactions.
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 0, automatically_mark_paid_after_delivery = 0');
+    $offReturnId = 'cwh-return-off-' . $stamp;
+    $offReturnNumber = 'CWH-RETURN-OFF-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $offReturnId, $offReturnNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-RETURN-OFF-' . $stamp,
+        'total' => 700,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-RETURN-OFF-' . $stamp,
+        'invoice' => $offReturnNumber,
+        'status' => 'return',
+        'cod_amount' => 700,
+        'delivery_charge' => 20,
+        'updated_at' => '2026-08-05 12:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $offReturnId) === 'Returned', 'Toggle-off return did not map to Returned.');
+    courierWebhookAssert(courierWebhookExpense($database, $offReturnId) === null, 'Toggle-off return webhook created an expense.');
+    courierWebhookAssert(courierWebhookPayment($database, $offReturnId) === null, 'Toggle-off return webhook created automatic income.');
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1, automatically_mark_paid_after_delivery = 1');
+
     // Unmatched events remain auditable and can match on an exact provider
     // retry after the local order identifier becomes available.
     $unmatchedConsignment = 'CB-UNMATCHED-' . $stamp;
@@ -1269,6 +1462,109 @@ try {
         [':provider' => 'carrybee', ':consignment' => $unmatchedConsignment]
     ) ?? [])['total'] ?? 0);
     courierWebhookAssert($unmatchedChargeCount === 1, 'Unmatched retry duplicated the provider charge row.');
+
+    // Webhook event saving toggle plus Developer-only paging and detail.
+    $developerActor = $database->fetchOne(
+        "SELECT id, name, phone, role FROM users WHERE role = 'Developer' AND deleted_at IS NULL
+         ORDER BY created_at ASC LIMIT 1"
+    );
+    if ($developerActor === null) {
+        throw new RuntimeException('Local Developer test actor is unavailable.');
+    }
+    $adminActor = $database->fetchOne(
+        "SELECT id FROM users WHERE role = 'Admin' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1"
+    );
+    $toggleOff = $courier->setWebhookSavingEnabled(['enabled' => false]);
+    courierWebhookAssert(($toggleOff['savingEnabled'] ?? true) === false, 'Webhook saving toggle did not turn off.');
+    courierWebhookAssert(
+        (int) (($database->fetchOne('SELECT save_webhook_events FROM courier_settings LIMIT 1') ?? [])['save_webhook_events'] ?? 1) === 0,
+        'save_webhook_events was not persisted as disabled.'
+    );
+    $saveOffId = 'cwh-save-off-' . $stamp;
+    $saveOffNumber = 'CWH-SAVE-OFF-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $saveOffId, $saveOffNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-SAVE-OFF-' . $stamp,
+        'total' => 600,
+    ]);
+    $saveOffResult = $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.delivered',
+        'consignment_id' => 'CB-SAVE-OFF-' . $stamp,
+        'merchant_order_id' => $saveOffNumber,
+        'timestamptz' => '2026-08-06T09:00:00+00:00',
+        'collected_amount' => 600,
+    ]), $carryHeaders);
+    courierWebhookAssert(($saveOffResult['webhookEventSaved'] ?? true) === false, 'Toggle-off webhook reported that an event row was saved.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $saveOffId) === 'Completed', 'Toggle-off webhook was not processed for the order status.');
+    courierWebhookAssert(courierWebhookPayment($database, $saveOffId) !== null, 'Toggle-off webhook did not book the automatic payment.');
+    $saveOffEventCount = (int) (($database->fetchOne(
+        'SELECT COUNT(*) AS total FROM courier_webhook_events WHERE provider = :provider AND consignment_id = :consignment',
+        [':provider' => 'carrybee', ':consignment' => 'CB-SAVE-OFF-' . $stamp]
+    ) ?? [])['total'] ?? 0);
+    courierWebhookAssert($saveOffEventCount === 0, 'Toggle-off webhook stored an event row.');
+
+    $toggleOn = $courier->setWebhookSavingEnabled(['enabled' => true]);
+    courierWebhookAssert(($toggleOn['savingEnabled'] ?? false) === true, 'Webhook saving toggle did not turn on.');
+    $saveOnId = 'cwh-save-on-' . $stamp;
+    $saveOnNumber = 'CWH-SAVE-ON-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $saveOnId, $saveOnNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-SAVE-ON-' . $stamp,
+        'total' => 500,
+    ]);
+    $saveOnResult = $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.returned',
+        'consignment_id' => 'CB-SAVE-ON-' . $stamp,
+        'merchant_order_id' => $saveOnNumber,
+        'timestamptz' => '2026-08-06T09:30:00+00:00',
+        'reason' => 'Buyer refused',
+    ]), $carryHeaders);
+    courierWebhookAssert(($saveOnResult['webhookEventSaved'] ?? false) === true, 'Toggle-on webhook did not report the stored event.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $saveOnId) === 'Returned', 'Toggle-on webhook was not processed for the order status.');
+    $saveOnEvent = $database->fetchOne(
+        'SELECT * FROM courier_webhook_events WHERE provider = :provider AND consignment_id = :consignment LIMIT 1',
+        [':provider' => 'carrybee', ':consignment' => 'CB-SAVE-ON-' . $stamp]
+    );
+    courierWebhookAssert($saveOnEvent !== null && ($saveOnEvent['processing_status'] ?? '') === 'processed', 'Toggle-on event was not stored as processed.');
+    courierWebhookAssert((string) ($saveOnEvent['order_id'] ?? '') === $saveOnId, 'Stored toggle-on event is missing the matched order id.');
+    $saveOnPayload = json_decode((string) ($saveOnEvent['payload'] ?? ''), true);
+    courierWebhookAssert(is_array($saveOnPayload) && ($saveOnPayload['reason'] ?? '') === 'Buyer refused', 'Stored webhook payload does not match the raw JSON.');
+
+    $pageResult = $courier->fetchWebhookEventsPage(['page' => 1, 'pageSize' => 5, 'filters' => ['search' => 'CB-SAVE-ON-' . $stamp]]);
+    courierWebhookAssert(is_array($pageResult['data'] ?? null) && count($pageResult['data']) === 1, 'Webhook event page did not return the saved event.');
+    courierWebhookAssert((string) ($pageResult['data'][0]['id'] ?? '') === (string) $saveOnEvent['id'], 'Webhook event page returned the wrong event row.');
+    courierWebhookAssert((string) ($pageResult['data'][0]['orderNumber'] ?? '') === $saveOnNumber, 'Webhook event page lost the matched order number.');
+    courierWebhookAssert(($pageResult['savingEnabled'] ?? false) === true, 'Webhook event page reported the wrong saving toggle.');
+    courierWebhookAssert(count($pageResult['options']['eventNames'] ?? []) > 0, 'Webhook event page options are empty.');
+
+    $detailResult = $courier->fetchWebhookEventDetail(['id' => (string) $saveOnEvent['id']]);
+    $detailEvent = $detailResult['event'] ?? [];
+    courierWebhookAssert((string) ($detailEvent['id'] ?? '') === (string) $saveOnEvent['id'], 'Webhook event detail returned the wrong event.');
+    $detailPayload = $detailEvent['payload'] ?? null;
+    courierWebhookAssert(is_array($detailPayload) && ($detailPayload['event'] ?? '') === 'order.returned', 'Webhook event detail payload was not decoded.');
+    courierWebhookAssert((string) (($detailResult['order'] ?? [])['orderNumber'] ?? '') === $saveOnNumber, 'Webhook event detail lost the linked order.');
+    courierWebhookAssert(is_array($detailResult['charges'] ?? null), 'Webhook event detail charges are missing.');
+    try {
+        $courier->fetchWebhookEventDetail(['id' => 'no-such-webhook-event']);
+        throw new RuntimeException('Unknown webhook event id was not rejected.');
+    } catch (RuntimeException $exception) {
+        courierWebhookAssert(str_contains($exception->getMessage(), 'not found'), 'Unknown webhook event id failed for the wrong reason.');
+    }
+
+    if ($adminActor !== null && (string) ($adminActor['id'] ?? '') !== (string) $developerActor['id']) {
+        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $auth->issueToken($adminActor);
+        try {
+            $courier->fetchWebhookEventsPage([]);
+            throw new RuntimeException('Non-developer was allowed to list courier webhook events.');
+        } catch (ApiException $exception) {
+            courierWebhookAssert($exception->httpStatus() === 403, 'Non-developer webhook listing was rejected with the wrong status.');
+        }
+        try {
+            $courier->setWebhookSavingEnabled(['enabled' => true]);
+            throw new RuntimeException('Non-developer was allowed to change webhook event saving.');
+        } catch (ApiException $exception) {
+            courierWebhookAssert($exception->httpStatus() === 403, 'Non-developer toggle change was rejected with the wrong status.');
+        }
+        $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $auth->issueToken($developerActor);
+    }
 
     $startingBalance = 5000.00;
     $linkedExpenseTotal = (float) (($database->fetchOne(

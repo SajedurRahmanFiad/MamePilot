@@ -827,6 +827,45 @@ export async function deleteBatchEvent(id: string): Promise<{ success: boolean }
   return call('deleteBatchEvent', { id });
 }
 
+// ===== Developer Webhooks (stored courier webhook events) =====
+
+export type WebhookEventFilters = {
+  provider?: string;
+  processingStatus?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+};
+
+export type WebhookEventDynamicFilters = {
+  providerNot?: string;
+  processingStatusNot?: string;
+  eventName?: { operator: string; value: string };
+  consignmentId?: { operator: string; value: string };
+  merchantReference?: { operator: string; value: string };
+  orderId?: { operator: string; value: string };
+  receivedOn?: string;
+  receivedBefore?: string;
+  receivedAfter?: string;
+};
+
+export async function fetchWebhookEventsPage(
+  page: number,
+  pageSize: number,
+  filters?: WebhookEventFilters,
+  dynamicFilters?: WebhookEventDynamicFilters,
+): Promise<{ data: import('../../types').CourierWebhookEvent[]; count: number; savingEnabled: boolean; options: { providers: string[]; eventNames: string[]; processingStatuses: string[] } }> {
+  return call('fetchWebhookEventsPage', { page, pageSize, filters, dynamicFilters });
+}
+
+export async function fetchWebhookEventDetail(id: string): Promise<import('../../types').CourierWebhookEventDetail> {
+  return call('fetchWebhookEventDetail', { id });
+}
+
+export async function setWebhookSavingEnabled(enabled: boolean): Promise<{ savingEnabled: boolean }> {
+  return call('setWebhookSavingEnabled', { enabled });
+}
+
 export async function batchUpdateSettings(updates: { company?: Partial<CompanySettings>; order?: { prefix?: string; nextNumber?: number; }; invoice?: { title?: string; logoWidth?: number; logoHeight?: number; footer?: string; }; defaults?: { defaultAccountId?: string; defaultPaymentMethod?: string; incomeCategoryId?: string; expenseCategoryId?: string; recordsPerPage?: number; maxTransactionAmount?: number; whiteLabel?: boolean; themeColor?: string; productSelectionMode?: string; calculateCogsFromPurchasePrice?: boolean; automaticFraudCheckOnOrderCreation?: boolean; }; courier?: { automaticallyDeductShippingCosts?: boolean; automaticallyMarkPaidAfterDelivery?: boolean; steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string; invoice?: string }; carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string }; paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number }; fraudChecker?: { provider?: 'bdcourier' | 'fraudspy'; apiKey?: string; fraudspyApiKey?: string; }; }; permissions?: PermissionsSettings; payroll?: { unitAmount?: number; countedStatuses?: any[]; }; wallet?: { unitAmount?: number; countedStatuses?: any[]; }; }) {
   const { permissions, ...batchEligibleUpdates } = updates;
   const hasBatchEligibleUpdates = Object.keys(batchEligibleUpdates).length > 0;

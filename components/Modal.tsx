@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
+import { X } from 'lucide-react';
 import { theme } from '../theme';
 
 interface ModalProps {
@@ -57,8 +58,16 @@ export const Modal: React.FC<ModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="border-b border-gray-100 p-6">
+          <div className="border-b border-gray-100 p-6 flex items-center justify-between">
             <h2 className={`${theme.typography.title.sm}`}>{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full p-2 text-gray-400 hover:bg-gray-100"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           {/* Content */}

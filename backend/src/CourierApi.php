@@ -2378,41 +2378,46 @@ final class CourierApi extends BaseService
             $eventKey,
             $now
         ): array {
-            $candidateId = $this->uuid4();
-            $this->database->execute(
-                "INSERT INTO courier_webhook_events (
-                    id, provider, event_key, event_name, merchant_reference, consignment_id,
-                    event_at, payload, processing_status, received_at
-                 ) VALUES (
-                    :id, :provider, :event_key, :event_name, :merchant_reference, :consignment_id,
-                    :event_at, :payload, 'received', :received_at
-                 ) ON DUPLICATE KEY UPDATE event_key = VALUES(event_key)",
-                [
-                    ':id' => $candidateId,
-                    ':provider' => $provider,
-                    ':event_key' => $eventKey,
-                    ':event_name' => $details['eventName'],
-                    ':merchant_reference' => $details['merchantReference'] !== '' ? $details['merchantReference'] : null,
-                    ':consignment_id' => $details['consignmentId'] !== '' ? $details['consignmentId'] : null,
-                    ':event_at' => $details['eventAt'],
-                    ':payload' => $rawBody,
-                    ':received_at' => $now,
-                ]
-            );
-            $eventRow = $this->database->fetchOne(
-                'SELECT * FROM courier_webhook_events WHERE provider = :provider AND event_key = :event_key LIMIT 1 FOR UPDATE',
-                [':provider' => $provider, ':event_key' => $eventKey]
-            );
-            if ($eventRow === null) {
-                throw new RuntimeException('Courier webhook event could not be stored.');
-            }
-            if ((string) ($eventRow['processing_status'] ?? '') === 'processed') {
-                return [
-                    'status' => 'success',
-                    'provider' => $provider,
-                    'event' => $details['eventName'],
-                    'duplicate' => true,
-                ];
+            $savingEnabled = $this->webhookSavingEnabled();
+            $eventId = '';
+            if ($savingEnabled) {
+                $candidateId = $this->uuid4();
+                $this->database->execute(
+                    "INSERT INTO courier_webhook_events (
+                        id, provider, event_key, event_name, merchant_reference, consignment_id,
+                        event_at, payload, processing_status, received_at
+                     ) VALUES (
+                        :id, :provider, :event_key, :event_name, :merchant_reference, :consignment_id,
+                        :event_at, :payload, 'received', :received_at
+                     ) ON DUPLICATE KEY UPDATE event_key = VALUES(event_key)",
+                    [
+                        ':id' => $candidateId,
+                        ':provider' => $provider,
+                        ':event_key' => $eventKey,
+                        ':event_name' => $details['eventName'],
+                        ':merchant_reference' => $details['merchantReference'] !== '' ? $details['merchantReference'] : null,
+                        ':consignment_id' => $details['consignmentId'] !== '' ? $details['consignmentId'] : null,
+                        ':event_at' => $details['eventAt'],
+                        ':payload' => $rawBody,
+                        ':received_at' => $now,
+                    ]
+                );
+                $eventRow = $this->database->fetchOne(
+                    'SELECT * FROM courier_webhook_events WHERE provider = :provider AND event_key = :event_key LIMIT 1 FOR UPDATE',
+                    [':provider' => $provider, ':event_key' => $eventKey]
+                );
+                if ($eventRow === null) {
+                    throw new RuntimeException('Courier webhook event could not be stored.');
+                }
+                if ((string) ($eventRow['processing_status'] ?? '') === 'processed') {
+                    return [
+                        'status' => 'success',
+                        'provider' => $provider,
+                        'event' => $details['eventName'],
+                        'duplicate' => true,
+                    ];
+                }
+                $eventId = (string) $eventRow['id'];
             }
 
             $orderMatch = $this->findWebhookOrder(
@@ -2425,19 +2430,22 @@ final class CourierApi extends BaseService
             $charge = $this->upsertWebhookCharge(
                 $provider,
                 $details,
-                (string) $eventRow['id'],
+                $eventId !== '' ? $eventId : null,
                 $orderId
             );
 
             if ($orderId === '') {
                 $message = 'No local order matched the courier identifiers.';
-                $this->finishWebhookEvent((string) $eventRow['id'], 'unmatched', $message, null);
+                if ($savingEnabled) {
+                    $this->finishWebhookEvent($eventId, 'unmatched', $message, null);
+                }
                 return [
                     'status' => 'success',
                     'provider' => $provider,
                     'event' => $details['eventName'],
                     'duplicate' => false,
                     'orderMatched' => false,
+                    'webhookEventSaved' => $savingEnabled,
                 ];
             }
 
@@ -2457,8 +2465,10 @@ final class CourierApi extends BaseService
                 'SELECT expense_status FROM courier_order_charges WHERE id = :id LIMIT 1',
                 [':id' => (string) $charge['id']]
             );
-            $message = $updates === [] ? 'Event stored; no safe order status change was required.' : 'Order updated from courier webhook.';
-            $this->finishWebhookEvent((string) $eventRow['id'], 'processed', $message, $orderId);
+            if ($savingEnabled) {
+                $message = $updates === [] ? 'Event stored; no safe order status change was required.' : 'Order updated from courier webhook.';
+                $this->finishWebhookEvent($eventId, 'processed', $message, $orderId);
+            }
 
             return [
                 'status' => 'success',
@@ -2468,6 +2478,7 @@ final class CourierApi extends BaseService
                 'orderMatched' => true,
                 'orderUpdated' => $updated,
                 'expenseRecorded' => (string) ($chargeAfter['expense_status'] ?? '') === 'recorded',
+                'webhookEventSaved' => $savingEnabled,
             ];
         });
     }
@@ -3099,6 +3110,328 @@ final class CourierApi extends BaseService
             ];
         }
         return $updates;
+    }
+
+    /**
+     * Whether raw courier webhook events should be persisted in
+     * courier_webhook_events. Developer-controlled; defaults to enabled even
+     * before the 2026-08-16_webhook_event_logging migration has run.
+     */
+    private function webhookSavingEnabled(): bool
+    {
+        if (!$this->tableExists('courier_settings')) {
+            return true;
+        }
+        $row = $this->database->fetchOne('SELECT save_webhook_events FROM courier_settings LIMIT 1');
+        $value = $row['save_webhook_events'] ?? null;
+        if ($value === null) {
+            return true;
+        }
+        return (bool) $value;
+    }
+
+    private function requireDeveloperUser(): array
+    {
+        $user = $this->currentUser();
+        if (trim((string) ($user['role'] ?? '')) !== 'Developer') {
+            throw new ApiException('Developer access required.', 403, 'DEVELOPER_ACCESS_REQUIRED');
+        }
+        return $user;
+    }
+
+    private function webhookPageSize(array $params): int
+    {
+        $pageSize = (int) ($params['pageSize'] ?? 25);
+        return min(100, max(1, $pageSize === 0 ? 25 : $pageSize));
+    }
+
+    private function webhookPageOffset(array $params): int
+    {
+        $page = max(1, (int) ($params['page'] ?? 1));
+        return ($page - 1) * $this->webhookPageSize($params);
+    }
+
+    /** @param array<string, mixed>|null $filter */
+    private function appendWebhookLikeFilter(string &$where, array &$bindings, string $key, ?array $filter, string $column): void
+    {
+        if (!is_array($filter)) {
+            return;
+        }
+        $value = trim((string) ($filter['value'] ?? ''));
+        if ($value === '') {
+            return;
+        }
+        $operator = trim((string) ($filter['operator'] ?? 'contains'));
+        $placeholder = ':' . $key . '_value';
+        if (in_array($operator, ['=', '≠', 'is', 'is not', 'not'], true)) {
+            $match = $column . ' = ' . $placeholder;
+        } elseif (in_array($operator, ['does not contain', 'not contains'], true)) {
+            $match = '(COALESCE(' . $column . ", '') NOT LIKE CONCAT('%', " . $placeholder . ", '%'))";
+        } else {
+            $match = $column . ' LIKE CONCAT(\'%\', ' . $placeholder . ', \'%\')';
+        }
+        $bindings[$placeholder] = $value;
+        $where .= ' AND ' . $match;
+    }
+
+    /**
+     * Developer-only: paginated list of stored courier webhook events with the
+     * matched order visible alongside each raw payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function fetchWebhookEventsPage(array $params): array
+    {
+        $this->requireDeveloperUser();
+        if (!$this->tableExists('courier_webhook_events')) {
+            return ['data' => [], 'count' => 0, 'savingEnabled' => true, 'options' => ['providers' => [], 'eventNames' => [], 'processingStatuses' => []]];
+        }
+
+        $filters = is_array($params['filters'] ?? null) ? $params['filters'] : [];
+        $dynamicFilters = is_array($params['dynamicFilters'] ?? null) ? $params['dynamicFilters'] : [];
+        $where = 'WHERE 1 = 1';
+        $bindings = [];
+
+        $provider = strtolower(trim((string) ($filters['provider'] ?? '')));
+        if ($provider !== '') {
+            $where .= ' AND e.provider = :provider';
+            $bindings[':provider'] = $provider;
+        }
+        $processingStatus = strtolower(trim((string) ($filters['processingStatus'] ?? '')));
+        if ($processingStatus !== '') {
+            $where .= ' AND e.processing_status = :processing_status';
+            $bindings[':processing_status'] = $processingStatus;
+        }
+        $dateFrom = trim((string) ($filters['dateFrom'] ?? ''));
+        if ($dateFrom !== '') {
+            $where .= ' AND e.received_at >= :date_from';
+            $bindings[':date_from'] = $dateFrom;
+        }
+        $dateTo = trim((string) ($filters['dateTo'] ?? ''));
+        if ($dateTo !== '') {
+            $where .= ' AND e.received_at <= :date_to';
+            $bindings[':date_to'] = $dateTo;
+        }
+        $search = trim((string) ($filters['search'] ?? ''));
+        if ($search !== '') {
+            $where .= ' AND (e.consignment_id LIKE :search_consignment OR e.merchant_reference LIKE :search_merchant OR e.event_name LIKE :search_event OR o.order_number LIKE :search_order)';
+            $searchValue = '%' . $search . '%';
+            $bindings[':search_consignment'] = $searchValue;
+            $bindings[':search_merchant'] = $searchValue;
+            $bindings[':search_event'] = $searchValue;
+            $bindings[':search_order'] = $searchValue;
+        }
+
+        $providerNot = strtolower(trim((string) ($dynamicFilters['providerNot'] ?? '')));
+        if ($providerNot !== '') {
+            $where .= ' AND e.provider <> :provider_not';
+            $bindings[':provider_not'] = $providerNot;
+        }
+        $processingStatusNot = strtolower(trim((string) ($dynamicFilters['processingStatusNot'] ?? '')));
+        if ($processingStatusNot !== '') {
+            $where .= ' AND e.processing_status <> :processing_status_not';
+            $bindings[':processing_status_not'] = $processingStatusNot;
+        }
+        foreach (['eventName' => 'e.event_name', 'consignmentId' => 'e.consignment_id', 'merchantReference' => 'e.merchant_reference'] as $filterKey => $column) {
+            $this->appendWebhookLikeFilter($where, $bindings, $filterKey, $dynamicFilters[$filterKey] ?? null, $column);
+        }
+        $orderFilter = $dynamicFilters['orderId'] ?? null;
+        if (is_array($orderFilter)) {
+            $value = trim((string) ($orderFilter['value'] ?? ''));
+            if ($value !== '') {
+                $operator = trim((string) ($orderFilter['operator'] ?? '='));
+                $like = in_array($operator, ['contains', 'does not contain'], true);
+                $orderValue = $like ? '%' . $value . '%' : $value;
+                $bindings[':order_value_number'] = $orderValue;
+                $bindings[':order_value_id'] = $orderValue;
+                if ($operator === 'does not contain') {
+                    $where .= ' AND (o.order_number NOT LIKE :order_value_number AND (e.order_id IS NULL OR e.order_id NOT LIKE :order_value_id))';
+                } elseif ($operator === '≠') {
+                    $where .= ' AND (o.order_number <> :order_value_number AND (e.order_id IS NULL OR e.order_id <> :order_value_id))';
+                } elseif ($operator === 'contains') {
+                    $where .= ' AND (o.order_number LIKE :order_value_number OR e.order_id LIKE :order_value_id)';
+                } else {
+                    $where .= ' AND (o.order_number = :order_value_number OR e.order_id = :order_value_id)';
+                }
+            }
+        }
+        $receivedOn = trim((string) ($dynamicFilters['receivedOn'] ?? ''));
+        if ($receivedOn !== '') {
+            $where .= ' AND DATE(e.received_at) = :received_on';
+            $bindings[':received_on'] = $receivedOn;
+        }
+        $receivedBefore = trim((string) ($dynamicFilters['receivedBefore'] ?? ''));
+        if ($receivedBefore !== '') {
+            $where .= ' AND e.received_at < :received_before';
+            $bindings[':received_before'] = $receivedBefore . ' 23:59:59';
+        }
+        $receivedAfter = trim((string) ($dynamicFilters['receivedAfter'] ?? ''));
+        if ($receivedAfter !== '') {
+            $where .= ' AND e.received_at >= :received_after';
+            $bindings[':received_after'] = $receivedAfter . ' 00:00:00';
+        }
+
+        $pageSize = $this->webhookPageSize($params);
+        $offset = $this->webhookPageOffset($params);
+
+        $sql = "SELECT e.id, e.provider, e.event_name, e.order_id, e.merchant_reference, e.consignment_id,
+                       e.event_at, e.received_at, e.processing_status, e.processing_message,
+                       o.order_number, o.status AS order_status
+                FROM courier_webhook_events e
+                LEFT JOIN orders o ON o.id = e.order_id
+                {$where}
+                ORDER BY e.received_at DESC, e.id DESC
+                LIMIT {$pageSize} OFFSET {$offset}";
+        $rows = $this->database->fetchAll($sql, $bindings);
+
+        $countRow = $this->database->fetchOne(
+            "SELECT COUNT(*) AS cnt
+             FROM courier_webhook_events e
+             LEFT JOIN orders o ON o.id = e.order_id
+             {$where}",
+            $bindings
+        );
+
+        $eventNames = array_map(
+            static fn(array $row): string => (string) $row['event_name'],
+            $this->database->fetchAll(
+                "SELECT DISTINCT event_name FROM courier_webhook_events WHERE event_name <> '' ORDER BY event_name ASC"
+            )
+        );
+
+        return [
+            'data' => array_map(static function (array $row): array {
+                return [
+                    'id' => (string) $row['id'],
+                    'provider' => (string) $row['provider'],
+                    'eventName' => (string) $row['event_name'],
+                    'orderId' => $row['order_id'] !== null ? (string) $row['order_id'] : '',
+                    'orderNumber' => $row['order_number'] !== null ? (string) $row['order_number'] : '',
+                    'orderStatus' => $row['order_status'] !== null ? (string) $row['order_status'] : '',
+                    'merchantReference' => $row['merchant_reference'] !== null ? (string) $row['merchant_reference'] : '',
+                    'consignmentId' => $row['consignment_id'] !== null ? (string) $row['consignment_id'] : '',
+                    'eventAt' => $row['event_at'] ?? null,
+                    'receivedAt' => (string) $row['received_at'],
+                    'processingStatus' => (string) $row['processing_status'],
+                    'processingMessage' => $row['processing_message'] !== null ? (string) $row['processing_message'] : '',
+                ];
+            }, $rows),
+            'count' => (int) ($countRow['cnt'] ?? 0),
+            'savingEnabled' => $this->webhookSavingEnabled(),
+            'options' => [
+                'providers' => ['carrybee', 'paperfly', 'steadfast', 'pathao'],
+                'eventNames' => $eventNames,
+                'processingStatuses' => ['received', 'processed', 'unmatched'],
+            ],
+        ];
+    }
+
+    /**
+     * Developer-only: one stored webhook event with its decoded raw JSON
+     * payload plus the matched order and any linked courier charges.
+     *
+     * @return array<string, mixed>
+     */
+    public function fetchWebhookEventDetail(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') {
+            throw new RuntimeException('Webhook event id is required.');
+        }
+        if (!$this->tableExists('courier_webhook_events')) {
+            throw new RuntimeException('Courier webhook database upgrade has not been applied.');
+        }
+        $row = $this->database->fetchOne(
+            'SELECT * FROM courier_webhook_events WHERE id = :id LIMIT 1',
+            [':id' => $id]
+        );
+        if ($row === null) {
+            throw new RuntimeException('Webhook event not found.');
+        }
+
+        $payloadRaw = (string) ($row['payload'] ?? '');
+        $payload = json_decode($payloadRaw, true);
+        $payload = is_array($payload) ? $payload : $payloadRaw;
+
+        $orderId = trim((string) ($row['order_id'] ?? ''));
+        $order = null;
+        $charges = [];
+        if ($orderId !== '') {
+            $orderRow = $this->database->fetchOne(
+                'SELECT id, order_number, status, total, paid_amount FROM orders WHERE id = :id LIMIT 1',
+                [':id' => $orderId]
+            );
+            if ($orderRow !== null) {
+                $order = [
+                    'id' => (string) $orderRow['id'],
+                    'orderNumber' => (string) $orderRow['order_number'],
+                    'status' => (string) $orderRow['status'],
+                    'total' => (float) $orderRow['total'],
+                    'paidAmount' => (float) $orderRow['paid_amount'],
+                ];
+            }
+            $chargeRows = $this->database->fetchAll(
+                'SELECT provider, consignment_id, cod_fee, delivery_fee, total_charge, collected_amount,
+                        expense_status, expense_transaction_id, source_event_id
+                 FROM courier_order_charges
+                 WHERE order_id = :order_id
+                 ORDER BY created_at ASC, id ASC',
+                [':order_id' => $orderId]
+            );
+            $charges = array_map(static function (array $charge): array {
+                return [
+                    'provider' => (string) $charge['provider'],
+                    'consignmentId' => $charge['consignment_id'] !== null ? (string) $charge['consignment_id'] : '',
+                    'codFee' => (float) $charge['cod_fee'],
+                    'deliveryFee' => (float) $charge['delivery_fee'],
+                    'totalCharge' => (float) $charge['total_charge'],
+                    'collectedAmount' => (float) $charge['collected_amount'],
+                    'expenseStatus' => (string) $charge['expense_status'],
+                    'expenseTransactionId' => $charge['expense_transaction_id'] !== null ? (string) $charge['expense_transaction_id'] : '',
+                    'sourceEventId' => $charge['source_event_id'] !== null ? (string) $charge['source_event_id'] : '',
+                ];
+            }, $chargeRows);
+        }
+
+        return [
+            'event' => [
+                'id' => (string) $row['id'],
+                'provider' => (string) $row['provider'],
+                'eventKey' => (string) $row['event_key'],
+                'eventName' => (string) $row['event_name'],
+                'merchantReference' => $row['merchant_reference'] !== null ? (string) $row['merchant_reference'] : '',
+                'consignmentId' => $row['consignment_id'] !== null ? (string) $row['consignment_id'] : '',
+                'eventAt' => $row['event_at'] ?? null,
+                'receivedAt' => (string) $row['received_at'],
+                'processedAt' => $row['processed_at'] !== null ? (string) $row['processed_at'] : '',
+                'processingStatus' => (string) $row['processing_status'],
+                'processingMessage' => $row['processing_message'] !== null ? (string) $row['processing_message'] : '',
+                'payload' => $payload,
+            ],
+            'order' => $order,
+            'charges' => $charges,
+        ];
+    }
+
+    /**
+     * Developer-only: toggle whether raw webhook events are persisted. While
+     * disabled, webhooks are still processed (status changes, charges,
+     * expenses, income) but no event row is stored.
+     *
+     * @return array{savingEnabled: bool}
+     */
+    public function setWebhookSavingEnabled(array $params): array
+    {
+        $this->requireDeveloperUser();
+        $enabled = (bool) ($params['enabled'] ?? false);
+        $this->saveSingleton(
+            'courier_settings',
+            'courier-default',
+            ['save_webhook_events' => $enabled ? 1 : 0],
+            fn(): array => ['savingEnabled' => $enabled]
+        );
+        return ['savingEnabled' => $enabled];
     }
 
     private function finishWebhookEvent(string $eventId, string $status, string $message, ?string $orderId): void

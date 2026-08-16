@@ -427,6 +427,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   pathao_token_expires_at VARCHAR(64) NULL,
   automatically_deduct_shipping_costs TINYINT(1) NOT NULL DEFAULT 0,
   automatically_mark_paid_after_delivery TINYINT(1) NOT NULL DEFAULT 0,
+  save_webhook_events TINYINT(1) NOT NULL DEFAULT 1,
   carrybee_webhook_signature VARCHAR(500) NULL,
   carrybee_webhook_header VARCHAR(128) NULL,
   carrybee_webhook_integration_header VARCHAR(128) NULL,
@@ -472,6 +473,7 @@ CALL sp_add_col('courier_settings', 'pathao_token_expires_at', 'VARCHAR(64) NULL
 
 CALL sp_add_col('courier_settings', 'automatically_deduct_shipping_costs', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('courier_settings', 'automatically_mark_paid_after_delivery', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('courier_settings', 'save_webhook_events', 'TINYINT(1) NOT NULL DEFAULT 1');
 CALL sp_add_col('courier_settings', 'steadfast_invoice', 'VARCHAR(100) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_signature', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_header', 'VARCHAR(128) NULL');
@@ -3250,6 +3252,9 @@ CALL sp_create_idx('bills', 'idx_bills_refund_issued_at', '`refund_issued_at`');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_header', 'VARCHAR(128) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_header', 'VARCHAR(128) NULL');
 CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_value', 'VARCHAR(500) NULL');
+
+-- Migration: 2026-08-17_dashboard_order_kpi_time_basis.sql
+CALL sp_add_col('dashboard_configurations', 'order_kpi_time_basis', 'VARCHAR(20) NOT NULL DEFAULT ''created_at'' AFTER widgets');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

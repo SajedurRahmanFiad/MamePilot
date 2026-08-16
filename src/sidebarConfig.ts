@@ -301,6 +301,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.Bell,
         visible: () => true,
       },
+      {
+        key: 'developer_webhooks',
+        label: 'Webhooks',
+        to: '/developer/webhooks',
+        icon: ICONS.Courier,
+        visible: () => true,
+      },
     ],
   },
 ];

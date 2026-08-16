@@ -153,6 +153,8 @@ export interface DashboardItemSetting {
   enabled: boolean;
 }
 
+export type OrderKpiTimeBasis = 'created_at' | 'status_at';
+
 export interface DashboardConfiguration {
   id: string;
   name: string;
@@ -160,6 +162,7 @@ export interface DashboardConfiguration {
   systemKey?: 'admin' | 'employee' | null;
   kpiCards: DashboardItemSetting[];
   widgets: DashboardItemSetting[];
+  orderKpiTimeBasis?: OrderKpiTimeBasis;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -343,6 +346,56 @@ export interface BatchEvent {
   createdBy?: string;
   createdByName?: string;
   createdAt?: string;
+}
+
+export interface CourierWebhookEvent {
+  id: string;
+  provider: string;
+  eventName: string;
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  merchantReference: string;
+  consignmentId: string;
+  eventAt: string | null;
+  receivedAt: string;
+  processingStatus: 'received' | 'processed' | 'unmatched' | string;
+  processingMessage: string;
+}
+
+export interface CourierWebhookEventDetail {
+  event: {
+    id: string;
+    provider: string;
+    eventKey: string;
+    eventName: string;
+    merchantReference: string;
+    consignmentId: string;
+    eventAt: string | null;
+    receivedAt: string;
+    processedAt: string;
+    processingStatus: string;
+    processingMessage: string;
+    payload: unknown;
+  };
+  order: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    total: number;
+    paidAmount: number;
+  } | null;
+  charges: Array<{
+    provider: string;
+    consignmentId: string;
+    codFee: number;
+    deliveryFee: number;
+    totalCharge: number;
+    collectedAmount: number;
+    expenseStatus: string;
+    expenseTransactionId: string;
+    sourceEventId: string;
+  }>;
 }
 
 export interface BatchEventInput {

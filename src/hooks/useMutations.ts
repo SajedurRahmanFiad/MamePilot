@@ -3534,3 +3534,17 @@ export function useDeleteBatchEvent() {
     },
   });
 }
+
+// ===== Developer Webhook Event Mutations =====
+
+import { setWebhookSavingEnabled as apiSetWebhookSavingEnabled } from '../services/supabaseQueries';
+
+export function useSetWebhookSavingEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ enabled }: { enabled: boolean }) => apiSetWebhookSavingEnabled(enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webhook-events'] });
+    },
+  });
+}

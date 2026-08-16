@@ -3280,6 +3280,120 @@ final class OperationsApi extends BaseService
         }
     }
 
+    /**
+     * Bounds orders by the timestamp of their status action, mirroring the
+     * orders page "Order Status" filter: each status compares against its
+     * dedicated status_at column. Statuses without a dedicated timestamp
+     * (On Hold/Created) fall back to created_at, matching the orders page.
+     *
+     * @param array<string, string|null> $filters
+     * @param array<int, string> $conditions
+     * @param array<string, mixed> $bindings
+     */
+    private function applyDashboardStatusActionBounds(
+        array $filters,
+        array &$conditions,
+        array &$bindings,
+        string $bindingPrefix
+    ): void {
+        if (empty($filters['fromDateTime']) && empty($filters['toDateTime'])) {
+            return;
+        }
+
+        $statusColumnByStatus = [
+            'On Hold' => 'created_at',
+            'Created' => 'created_at',
+            'Processing' => 'processed_at',
+            'Courier assigned' => 'courier_assigned_at',
+            'Picked' => 'picked_at',
+            'Completed' => 'completed_at',
+            'Returned' => 'returned_at',
+            'Cancelled' => 'cancelled_at',
+            'partially_delivered' => 'partial_delivered_at',
+            'Exchange processing' => 'exchange_processing_at',
+            'Exchange picked' => 'exchange_picked_at',
+            'Exchange delivered' => 'exchange_delivered_at',
+            'Exchange returned' => 'exchange_returned_at',
+            'Exchange cancelled' => 'exchange_cancelled_at',
+        ];
+
+        $groups = [];
+        foreach ($statusColumnByStatus as $statusValue => $statusColumn) {
+            $key = $bindingPrefix . '_' . strtolower(str_replace(' ', '_', $statusValue));
+            $parts = ["status = :{$key}"];
+            $bindings[":{$key}"] = $statusValue;
+            if (!empty($filters['fromDateTime'])) {
+                $fromKey = "{$key}_from";
+                $parts[] = "{$statusColumn} >= :{$fromKey}";
+                $bindings[":{$fromKey}"] = $filters['fromDateTime'];
+            }
+            if (!empty($filters['toDateTime'])) {
+                $toKey = "{$key}_to";
+                $parts[] = "{$statusColumn} <= :{$toKey}";
+                $bindings[":{$toKey}"] = $filters['toDateTime'];
+            }
+            $groups[] = '(' . implode(' AND ', $parts) . ')';
+        }
+
+        if ($groups !== []) {
+            $conditions[] = '(' . implode(' OR ', $groups) . ')';
+        }
+    }
+
+    /**
+     * Bounds orders by the timestamp of the payment action matching their
+     * computed payment status: paid buckets use payment_received_at, refunded
+     * uses refund_issued_at, and unpaid (which has no payment action) falls
+     * back to created_at.
+     *
+     * @param array<string, string|null> $filters
+     * @param array<int, string> $conditions
+     * @param array<string, mixed> $bindings
+     */
+    private function applyDashboardPaymentActionBounds(
+        array $filters,
+        string $paymentStatusSql,
+        array &$conditions,
+        array &$bindings,
+        string $bindingPrefix
+    ): void {
+        if (empty($filters['fromDateTime']) && empty($filters['toDateTime'])) {
+            return;
+        }
+
+        $timestampColumnByPaymentStatus = [
+            'Refunded' => 'refund_issued_at',
+            'Paid' => 'payment_received_at',
+            'Partially Paid' => 'payment_received_at',
+            'Overpaid' => 'payment_received_at',
+            'Unpaid' => 'created_at',
+        ];
+
+        $groups = [];
+        $groupIndex = 0;
+        foreach ($timestampColumnByPaymentStatus as $paymentStatus => $timestampColumn) {
+            $statusKey = "{$bindingPrefix}_status_{$groupIndex}";
+            $parts = ["{$paymentStatusSql} = :{$statusKey}"];
+            $bindings[":{$statusKey}"] = $paymentStatus;
+            if (!empty($filters['fromDateTime'])) {
+                $fromKey = "{$statusKey}_from";
+                $parts[] = "{$timestampColumn} >= :{$fromKey}";
+                $bindings[":{$fromKey}"] = $filters['fromDateTime'];
+            }
+            if (!empty($filters['toDateTime'])) {
+                $toKey = "{$statusKey}_to";
+                $parts[] = "{$timestampColumn} <= :{$toKey}";
+                $bindings[":{$toKey}"] = $filters['toDateTime'];
+            }
+            $groups[] = '(' . implode(' AND ', $parts) . ')';
+            $groupIndex++;
+        }
+
+        if ($groups !== []) {
+            $conditions[] = '(' . implode(' OR ', $groups) . ')';
+        }
+    }
+
     private function ensureReportsViewPermission(): void
     {
         if (!$this->currentUserHasPermission('reports.view')) {
@@ -3350,7 +3464,7 @@ final class OperationsApi extends BaseService
      * @param array<string, string|null> $filters
      * @return array<string, mixed>
      */
-    private function buildDashboardAdminSnapshot(array $filters): array
+    private function buildDashboardAdminSnapshot(array $filters, string $orderKpiTimeBasis = 'created_at'): array
     {
         $featureAccess = new FeatureAccess($this->database, $this->auth);
         $capabilities = $featureAccess->fetchCapabilities();
@@ -3400,9 +3514,19 @@ final class OperationsApi extends BaseService
             'refunded' => 0,
         ];
 
+        $statusAtBasis = $orderKpiTimeBasis === 'status_at';
+
         $orderConditions = ['deleted_at IS NULL'];
         $orderBindings = [];
-        $this->applyDashboardDateTimeBounds('created_at', $filters, $orderConditions, $orderBindings, 'dashboard_order');
+        if ($statusAtBasis) {
+            $this->applyDashboardStatusActionBounds($filters, $orderConditions, $orderBindings, 'dashboard_status');
+        } else {
+            $this->applyDashboardDateTimeBounds('created_at', $filters, $orderConditions, $orderBindings, 'dashboard_order');
+        }
+
+        $totalOrderConditions = ['deleted_at IS NULL'];
+        $totalOrderBindings = [];
+        $this->applyDashboardDateTimeBounds('created_at', $filters, $totalOrderConditions, $totalOrderBindings, 'dashboard_total_order');
 
         $transactionConditions = ['deleted_at IS NULL'];
         $transactionBindings = [];
@@ -3442,8 +3566,23 @@ final class OperationsApi extends BaseService
                 $orderCounts['exchangeTotal'] += $count;
                 $orderTotals['exchangeTotal'] += $total;
             }
-            $orderCounts['total'] += $count;
-            $orderTotals['total'] += $total;
+            if (!$statusAtBasis) {
+                $orderCounts['total'] += $count;
+                $orderTotals['total'] += $total;
+            }
+        }
+
+        if ($statusAtBasis) {
+            // The Total Orders card always keeps its creation-based meaning,
+            // so its aggregate is derived from a created_at-bounded query.
+            $totalOrderRow = $this->database->fetchOne(
+                'SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+                 FROM orders
+                 WHERE ' . implode(' AND ', $totalOrderConditions),
+                $totalOrderBindings
+            ) ?? [];
+            $orderCounts['total'] += (int) ($totalOrderRow['count'] ?? 0);
+            $orderTotals['total'] += (float) ($totalOrderRow['total'] ?? 0);
         }
 
         $orderSettlementTotalSql = "(CASE WHEN status = 'Cancelled' THEN 0 ELSE total END)";
@@ -3462,14 +3601,22 @@ final class OperationsApi extends BaseService
             'Overpaid' => 'overpaid',
             'Refunded' => 'refunded',
         ];
+        $paymentConditions = ['deleted_at IS NULL'];
+        $paymentBindings = [];
+        if ($statusAtBasis) {
+            $this->applyDashboardPaymentActionBounds($filters, $paymentStatusSql, $paymentConditions, $paymentBindings, 'dashboard_payment');
+        } else {
+            $paymentConditions = $orderConditions;
+            $paymentBindings = $orderBindings;
+        }
         $paymentRows = $this->database->fetchAll(
             'SELECT ' . $paymentStatusSql . ' AS paymentStatus,
                     COUNT(*) AS count,
                     COALESCE(SUM(total), 0) AS total
              FROM orders
-             WHERE ' . implode(' AND ', $orderConditions) . '
+             WHERE ' . implode(' AND ', $paymentConditions) . '
              GROUP BY paymentStatus',
-            $orderBindings
+            $paymentBindings
         );
         $paymentCounts = $basePaymentMetrics;
         $paymentTotals = $basePaymentMetrics;
@@ -3932,11 +4079,16 @@ final class OperationsApi extends BaseService
         $dashboardRole = $canViewAdminDashboard && $canViewEmployeeDashboard
             ? 'mixed'
             : ($canViewAdminDashboard ? 'admin' : 'employee');
+        $dashboardId = $this->dashboardIdForRole($role);
+        $dashboard = $this->dashboardConfigurationById($dashboardId);
+        $orderKpiTimeBasis = is_array($dashboard)
+            ? $this->normalizeOrderKpiTimeBasis($dashboard['orderKpiTimeBasis'] ?? null)
+            : 'created_at';
 
         return [
             'role' => $dashboardRole,
-            'dashboardId' => $this->dashboardIdForRole($role),
-            'admin' => $canViewAdminDashboard ? $this->buildDashboardAdminSnapshot($filters) : null,
+            'dashboardId' => $dashboardId,
+            'admin' => $canViewAdminDashboard ? $this->buildDashboardAdminSnapshot($filters, $orderKpiTimeBasis) : null,
             'employee' => $canViewEmployeeDashboard ? $this->buildDashboardEmployeeSnapshot($filters) : null,
             'refreshedAt' => gmdate('c'),
         ];

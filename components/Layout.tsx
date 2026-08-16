@@ -264,6 +264,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/developer/settings')) {
       return { title: 'Developer Settings', subtitle: 'Control integrations, maintenance, and system behavior.' };
     }
+    if (pathname.startsWith('/developer/webhooks')) {
+      return { title: 'Webhook Events', subtitle: 'Review courier webhook deliveries and raw payloads.' };
+    }
     if (pathname.startsWith('/developer')) {
       return { title: 'Developer Settings', subtitle: 'Control integrations, maintenance, and system behavior.' };
     }

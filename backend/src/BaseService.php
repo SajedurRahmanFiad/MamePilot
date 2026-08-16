@@ -1950,6 +1950,14 @@ abstract class BaseService
 
     /**
      * @param mixed $value
+     */
+    protected function normalizeOrderKpiTimeBasis($value): string
+    {
+        return in_array((string) $value, ['created_at', 'status_at'], true) ? (string) $value : 'created_at';
+    }
+
+    /**
+     * @param mixed $value
      * @param array<string, string> $registry
      * @return array<int, array{key: string, enabled: bool}>
      */
@@ -2013,15 +2021,16 @@ abstract class BaseService
         foreach ($rows as $row) {
             $this->database->execute(
                 'INSERT IGNORE INTO dashboard_configurations
-                    (id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at)
+                    (id, name, is_system, system_key, kpi_cards, widgets, order_kpi_time_basis, created_at, updated_at)
                  VALUES
-                    (:id, :name, 1, :system_key, :kpi_cards, :widgets, :created_at, :updated_at)',
+                    (:id, :name, 1, :system_key, :kpi_cards, :widgets, :order_kpi_time_basis, :created_at, :updated_at)',
                 [
                     ':id' => $row['id'],
                     ':name' => $row['name'],
                     ':system_key' => $row['systemKey'],
                     ':kpi_cards' => $this->jsonEncode($row['kpis']),
                     ':widgets' => $this->jsonEncode($row['widgets']),
+                    ':order_kpi_time_basis' => 'created_at',
                     ':created_at' => $now,
                     ':updated_at' => $now,
                 ]
@@ -2052,6 +2061,7 @@ abstract class BaseService
             'systemKey' => $systemKey,
             'kpiCards' => $this->normalizeDashboardItems($row['kpi_cards'] ?? null, self::DASHBOARD_KPI_SCOPES, $systemKey),
             'widgets' => $this->normalizeDashboardItems($row['widgets'] ?? null, self::DASHBOARD_WIDGET_SCOPES, $systemKey),
+            'orderKpiTimeBasis' => $this->normalizeOrderKpiTimeBasis($row['order_kpi_time_basis'] ?? null),
             'createdAt' => $this->toIso($row['created_at'] ?? null),
             'updatedAt' => $this->toIso($row['updated_at'] ?? null),
         ];
@@ -2064,7 +2074,7 @@ abstract class BaseService
             return ['dashboards' => []];
         }
         $rows = $this->database->fetchAll(
-            'SELECT id, name, is_system, system_key, kpi_cards, widgets, created_at, updated_at
+            'SELECT id, name, is_system, system_key, kpi_cards, widgets, order_kpi_time_basis, created_at, updated_at
              FROM dashboard_configurations
              ORDER BY is_system DESC, CASE system_key WHEN \'admin\' THEN 0 WHEN \'employee\' THEN 1 ELSE 2 END, name ASC'
         );

@@ -2000,3 +2000,35 @@ export function useBatchEventsPage(
     staleTime: 15 * 60 * 1000,
   });
 }
+
+// ===== Developer Webhook Event Queries =====
+
+import {
+  fetchWebhookEventsPage,
+  fetchWebhookEventDetail,
+  type WebhookEventFilters,
+  type WebhookEventDynamicFilters,
+} from '../services/supabaseQueries';
+
+export function useWebhookEventsPage(
+  page: number,
+  pageSize: number,
+  filters?: WebhookEventFilters,
+  dynamicFilters?: WebhookEventDynamicFilters,
+) {
+  return useQuery({
+    queryKey: ['webhook-events', page, pageSize, filters, dynamicFilters],
+    queryFn: () => fetchWebhookEventsPage(page, pageSize, filters, dynamicFilters),
+    placeholderData: (previousData) => previousData,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useWebhookEventDetail(id: string | null) {
+  return useQuery({
+    queryKey: ['webhook-event', id],
+    queryFn: () => fetchWebhookEventDetail(id || ''),
+    enabled: !!id,
+    staleTime: 30 * 1000,
+  });
+}

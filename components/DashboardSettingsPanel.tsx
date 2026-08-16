@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { DashboardConfiguration, DashboardItemSetting, DashboardSettings } from '../types';
+import type { DashboardConfiguration, DashboardItemSetting, DashboardSettings, OrderKpiTimeBasis } from '../types';
 import {
   DASHBOARD_KPI_DEFINITIONS,
   DASHBOARD_WIDGET_DEFINITIONS,
+  ORDER_KPI_TIME_BASIS_OPTIONS,
   cloneDashboardSettings,
   normalizeDashboardConfiguration,
 } from '../src/dashboardConfig';
@@ -21,9 +22,10 @@ interface OrderedChecklistProps {
   items: DashboardItemSetting[];
   definitions: typeof DASHBOARD_KPI_DEFINITIONS;
   onChange: (items: DashboardItemSetting[]) => void;
+  headerExtra?: React.ReactNode;
 }
 
-const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description, items, definitions, onChange }) => {
+const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description, items, definitions, onChange, headerExtra }) => {
   const definitionByKey = useMemo(() => new Map(definitions.map((definition) => [definition.key, definition])), [definitions]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
@@ -38,8 +40,13 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="border-b border-gray-100 px-5 py-4">
-        <h4 className="text-base font-black text-gray-900">{title}</h4>
-        <p className="mt-1 text-xs font-medium leading-5 text-gray-500">{description}</p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h4 className="text-base font-black text-gray-900">{title}</h4>
+            <p className="mt-1 text-xs font-medium leading-5 text-gray-500">{description}</p>
+          </div>
+          {headerExtra}
+        </div>
       </div>
       <div className="divide-y divide-gray-100">
         {items.map((item, index) => {
@@ -202,6 +209,23 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
               items={selectedDashboard.kpiCards}
               definitions={DASHBOARD_KPI_DEFINITIONS}
               onChange={(items) => updateSelected((dashboard) => ({ ...dashboard, kpiCards: items }))}
+              headerExtra={
+                <label className="flex w-full min-w-[240px] flex-col gap-1.5 lg:w-[300px]">
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Order KPI time basis</span>
+                  <select
+                    value={selectedDashboard.orderKpiTimeBasis}
+                    onChange={(event) => updateSelected((dashboard) => ({ ...dashboard, orderKpiTimeBasis: event.target.value as OrderKpiTimeBasis }))}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:border-[#3c5a82]"
+                  >
+                    {ORDER_KPI_TIME_BASIS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] font-medium leading-4 text-gray-400">
+                    {ORDER_KPI_TIME_BASIS_OPTIONS.find((option) => option.value === selectedDashboard.orderKpiTimeBasis)?.description}
+                  </span>
+                </label>
+              }
             />
             <OrderedChecklist
               title="Widgets"
