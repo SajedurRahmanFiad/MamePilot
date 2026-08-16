@@ -940,6 +940,14 @@ final class CourierApi extends BaseService
                     $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
                 }
 
+                $this->attachSyncedCharge(
+                    $updates,
+                    'carrybee',
+                    is_array($details['data'] ?? null) ? $details['data'] : [],
+                    (string) ($row['carrybee_consignment_id'] ?? ''),
+                    (string) ($row['order_number'] ?? ''),
+                    (string) $row['id']
+                );
                 $this->updateOrderAsCourierSystem([
                     'id' => (string) $row['id'],
                     'updates' => $updates,
@@ -1440,6 +1448,14 @@ final class CourierApi extends BaseService
                 $updates['history']['picked'] = 'Marked picked automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
             }
 
+            $this->attachSyncedCharge(
+                $updates,
+                'paperfly',
+                is_array($details['data'] ?? null) ? $details['data'] : [],
+                (string) ($row['paperfly_tracking_number'] ?? ''),
+                (string) ($row['order_number'] ?? ''),
+                (string) $row['id']
+            );
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
                 'updates' => $updates,
@@ -1518,6 +1534,14 @@ final class CourierApi extends BaseService
                 $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
             }
 
+            $this->attachSyncedCharge(
+                $updates,
+                'steadfast',
+                is_array($details['data'] ?? null) ? $details['data'] : [],
+                (string) ($row['steadfast_consignment_id'] ?? ''),
+                (string) ($row['order_number'] ?? ''),
+                (string) $row['id']
+            );
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
                 'updates' => $updates,
@@ -2264,6 +2288,14 @@ final class CourierApi extends BaseService
                 $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
             }
 
+            $this->attachSyncedCharge(
+                $updates,
+                'pathao',
+                is_array($orderData ?? null) ? $orderData : [],
+                (string) ($row['pathao_consignment_id'] ?? ''),
+                (string) ($row['order_number'] ?? ''),
+                (string) $row['id']
+            );
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
                 'updates' => $updates,
@@ -2770,7 +2802,7 @@ final class CourierApi extends BaseService
     private function upsertWebhookCharge(
         string $provider,
         array $details,
-        string $eventId,
+        ?string $eventId,
         string $orderId
     ): ?array {
         $reference = $details['consignmentId'] !== '' ? $details['consignmentId'] : $details['merchantReference'];
@@ -2836,7 +2868,8 @@ final class CourierApi extends BaseService
                 delivery_fee = IF(VALUES(delivery_fee) > 0, VALUES(delivery_fee), delivery_fee),
                 total_charge = IF(VALUES(total_charge) > 0, VALUES(total_charge), total_charge),
                 collected_amount = IF(VALUES(collected_amount) > 0, VALUES(collected_amount), collected_amount),
-                currency = VALUES(currency), source_event_id = VALUES(source_event_id),
+                currency = VALUES(currency),
+                source_event_id = COALESCE(VALUES(source_event_id), source_event_id),
                 provider_updated_at = COALESCE(VALUES(provider_updated_at), provider_updated_at),
                 updated_at = VALUES(updated_at)",
             [
@@ -2851,7 +2884,7 @@ final class CourierApi extends BaseService
                 ':total_charge' => $this->formatMoney($details['totalCharge']),
                 ':collected_amount' => $this->formatMoney($details['collectedAmount']),
                 ':currency' => $details['currency'],
-                ':source_event_id' => $eventId,
+                ':source_event_id' => $eventId !== null && $eventId !== '' ? $eventId : null,
                 ':provider_updated_at' => $details['eventAt'],
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -2872,6 +2905,84 @@ final class CourierApi extends BaseService
         );
     }
 
+    /**
+     * Extract charge fields from a provider API status-poll response (not a
+     * webhook). Mirrors webhookDetails semantics so polled and pushed money
+     * follow one consistent rule: Steadfast reports cod_amount, all others
+     * collected_amount, and fee keys use the same families.
+     *
+     * @return array<string, mixed>
+     */
+    private function syncChargeDetails(string $provider, array $data, string $consignmentId, string $merchantReference): array
+    {
+        $containers = [$data];
+        if (is_array($data['data'] ?? null)) {
+            $containers[] = $data['data'];
+        }
+        if (is_array($data['data']['data'] ?? null)) {
+            $containers[] = $data['data']['data'];
+        }
+
+        $codFee = $this->firstWebhookNumber($containers, ['cod_fee', 'cod_charge', 'collection_charge', 'collection_fee']);
+        $deliveryFee = $this->firstWebhookNumber($containers, ['delivery_fee', 'delivery_charge', 'shipping_fee', 'shipping_charge']);
+        $directTotal = $this->firstWebhookNumber($containers, ['total_charge', 'courier_charge', 'shipping_cost']);
+        $totalCharge = round($codFee + $deliveryFee, 2);
+        if ($totalCharge <= 0 && $directTotal > 0) {
+            $totalCharge = round($directTotal, 2);
+        }
+
+        $collectedAmount = 0.0;
+        if ($provider === 'steadfast') {
+            $collectedAmount = $this->firstWebhookNumber($containers, ['cod_amount']);
+        } else {
+            $collectedAmount = $this->firstWebhookNumber($containers, ['collected_amount']);
+        }
+
+        $eventAtRaw = $this->firstWebhookValue($containers, [
+            'timestamptz', 'timestamp', 'updated_at', 'action_date_time', 'action_datetime', 'event_at',
+        ]);
+        $eventAt = null;
+        if ($eventAtRaw !== '' && strtotime($eventAtRaw) !== false) {
+            $eventAt = gmdate('Y-m-d H:i:s', (int) strtotime($eventAtRaw));
+        }
+
+        return [
+            'eventName' => 'status.sync',
+            'consignmentId' => $consignmentId,
+            'merchantReference' => $merchantReference,
+            'eventAt' => $eventAt,
+            'codFee' => max(0, round($codFee, 2)),
+            'deliveryFee' => max(0, round($deliveryFee, 2)),
+            'totalCharge' => max(0, $totalCharge),
+            'collectedAmount' => max(0, round($collectedAmount, 2)),
+            'currency' => strtoupper($this->firstWebhookValue($containers, ['currency'])) ?: 'BDT',
+            'rawStatus' => '',
+            'mappedStatus' => null,
+        ];
+    }
+
+    /**
+     * Upsert the provider charge from a status-poll response and attach it to
+     * the updates applied via updateOrderAsCourierSystem. Polling syncs then
+     * book the same automatic expense/income the webhook path books: the row
+     * merges with any webhook-created charge (one expense per consignment) and
+     * terminal-transition income resolves the collected amount from it.
+     *
+     * @param array<string, mixed> $updates
+     */
+    private function attachSyncedCharge(array &$updates, string $provider, array $data, string $consignmentId, string $merchantReference, string $orderId): void
+    {
+        $details = $this->syncChargeDetails($provider, $data, $consignmentId, $merchantReference);
+        $charge = $this->upsertWebhookCharge($provider, $details, null, $orderId);
+        if ($charge !== null && trim((string) ($charge['id'] ?? '')) !== '') {
+            $updates['courierAutomaticExpense'] = [
+                'chargeId' => trim((string) $charge['id']),
+                'provider' => $provider,
+                'recordedAt' => $details['eventAt'] ?? $this->database->nowUtc(),
+            ];
+        }
+    }
+
     /** @return array<string, mixed> */
     private function buildWebhookOrderUpdates(string $provider, array $details, array $order, ?array $charge): array
     {
@@ -2879,7 +2990,6 @@ final class CourierApi extends BaseService
         $current = (string) ($order['status'] ?? '');
         $isExchange = (bool) ($order['isExchange'] ?? false);
         $chargeId = trim((string) ($charge['id'] ?? ''));
-        $hasCharge = (float) ($charge['total_charge'] ?? 0) > 0;
         $providerLabel = match ($provider) {
             'carrybee' => 'CarryBee',
             'paperfly' => 'Paperfly',
@@ -2978,7 +3088,10 @@ final class CourierApi extends BaseService
         }
 
         $effectiveTarget = (string) ($updates['status'] ?? $current);
-        if ($chargeId !== '' && $hasCharge) {
+        if ($chargeId !== '') {
+            // Attach the charge for every matched event (even fee-less ones):
+            // income resolves the collected amount from this triggering charge,
+            // and the expense recorder skips rows whose total is zero.
             $updates['courierAutomaticExpense'] = [
                 'chargeId' => $chargeId,
                 'provider' => $provider,

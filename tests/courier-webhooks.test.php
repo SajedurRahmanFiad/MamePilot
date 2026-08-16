@@ -75,7 +75,7 @@ function createCourierWebhookOrder(
             ':customer_id' => $customerId,
             ':created_by' => (string) $actor['id'],
             ':status' => $status,
-            ':items' => '[]',
+            ':items' => $extra['items'] ?? '[]',
             ':total' => $extra['total'] ?? 0,
             ':paid_amount' => $extra['paidAmount'] ?? 0,
             ':history' => courierWebhookJson(is_array($history) ? $history : []),
@@ -569,10 +569,17 @@ try {
         'consignment_id' => 'SF-CANCEL-' . $stamp,
         'invoice' => $steadfastCancelledNumber,
         'status' => 'cancelled',
+        'cod_amount' => 500,
         'delivery_charge' => 0,
         'updated_at' => '2026-08-03 14:00:00',
     ]), $steadfastHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastCancelledId) === 'Cancelled', 'Steadfast cancelled did not map to Cancelled.');
+    courierWebhookAssert(
+        courierWebhookPayment($database, $steadfastCancelledId) === null,
+        'Steadfast cancelled webhook booked the COD amount as automatic courier income.'
+    );
+    $sfCancelPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $steadfastCancelledId]);
+    courierWebhookAssert((float) ($sfCancelPaid['paid_amount'] ?? -1) === 0.0, 'Steadfast cancelled webhook marked the order paid.');
 
     $steadfastPendingId = 'cwh-sf-pending-' . $stamp;
     $steadfastPendingNumber = 'CWH-SF-PENDING-' . $stamp;
@@ -685,9 +692,193 @@ try {
             'order_number' => 'PF-CANCEL-' . $stamp,
             'merchant_order_reference' => $paperflyCancelledNumber,
             'status' => 'cancelled',
+            'collected_amount' => 400,
         ],
     ]), $paperflyHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $paperflyCancelledId) === 'Cancelled', 'Paperfly cancelled did not map to Cancelled.');
+    courierWebhookAssert(
+        courierWebhookPayment($database, $paperflyCancelledId) === null,
+        'Paperfly cancelled webhook booked the collected amount as automatic courier income.'
+    );
+
+    // A cancelled webhook that still carries a shipping fee is expensed when
+    // the automatic shipping-cost setting is on; the toggle still gates it.
+    $cancelFeeOnId = 'cwh-sf-cancel-fee-' . $stamp;
+    $cancelFeeOnNumber = 'CWH-SF-CANCEL-FEE-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $cancelFeeOnId, $cancelFeeOnNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-CANCEL-FEE-' . $stamp,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-CANCEL-FEE-' . $stamp,
+        'invoice' => $cancelFeeOnNumber,
+        'status' => 'cancelled',
+        'cod_amount' => 300,
+        'delivery_charge' => 12.5,
+        'updated_at' => '2026-08-03 15:00:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(
+        courierWebhookOrderStatus($database, $cancelFeeOnId) === 'Cancelled',
+        'Fee-carrying Steadfast cancelled did not map to Cancelled.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $cancelFeeOnId) === null,
+        'Fee-carrying cancelled webhook booked the COD amount as automatic courier income.'
+    );
+    $cancelFeeOnExpense = courierWebhookExpense($database, $cancelFeeOnId);
+    courierWebhookAssert(
+        $cancelFeeOnExpense !== null && abs((float) $cancelFeeOnExpense['amount'] - 12.50) < 0.001,
+        'Cancelled webhook shipping fee was not expensed while the automatic shipping-cost setting was on.'
+    );
+
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 0');
+    $cancelFeeOffId = 'cwh-sf-cancel-fee-off-' . $stamp;
+    $cancelFeeOffNumber = 'CWH-SF-CANCEL-FEE-OFF-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $cancelFeeOffId, $cancelFeeOffNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-CANCEL-FEE-OFF-' . $stamp,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-CANCEL-FEE-OFF-' . $stamp,
+        'invoice' => $cancelFeeOffNumber,
+        'status' => 'cancelled',
+        'cod_amount' => 200,
+        'delivery_charge' => 9.75,
+        'updated_at' => '2026-08-03 15:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(
+        courierWebhookOrderStatus($database, $cancelFeeOffId) === 'Cancelled',
+        'Toggle-off Steadfast cancelled did not map to Cancelled.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $cancelFeeOffId) === null,
+        'Cancelled webhook shipping fee was expensed while the automatic shipping-cost setting was off.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $cancelFeeOffId) === null,
+        'Toggle-off cancelled webhook booked the COD amount as automatic courier income.'
+    );
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1');
+
+    // Purchase-price COGS (when enabled) must never produce an expense for a
+    // webhook-cancelled order; a delivered control proves the toggle is live.
+    $cogsTablePresent = $database->fetchOne(
+        'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table_name LIMIT 1',
+        [':table_name' => 'order_cogs_expenses']
+    ) !== null;
+    if ($cogsTablePresent) {
+        // The COGS feature is disabled while the purchases capability is on;
+        // take the gate down for this block and restore it afterwards.
+        $capRow = $database->fetchOne('SELECT id, capabilities FROM app_capability_settings LIMIT 1');
+        $capabilities = is_array($capRow) ? json_decode((string) ($capRow['capabilities'] ?? '{}'), true) : null;
+        $capabilities = is_array($capabilities) ? $capabilities : [];
+        $originalPurchasesCapability = (bool) ($capabilities['purchases'] ?? false);
+        if ($capRow !== null) {
+            $capabilities['purchases'] = false;
+            $database->execute(
+                'UPDATE app_capability_settings SET capabilities = :capabilities WHERE id = :id',
+                [':capabilities' => courierWebhookJson($capabilities), ':id' => (string) $capRow['id']]
+            );
+        }
+
+        // Ensure exactly one singleton row exists, then enable the toggle on
+        // every row so LIMIT 1 reads are deterministic.
+        $defaultsRow = $database->fetchOne('SELECT id FROM system_defaults LIMIT 1');
+        if ($defaultsRow === null) {
+            $database->execute(
+                'INSERT INTO system_defaults (id, default_account_id, default_payment_method) VALUES (:id, :account_id, :payment_method)',
+                [':id' => 'cwh-defaults-' . $stamp, ':account_id' => $accountId, ':payment_method' => 'Cash']
+            );
+        }
+        $database->execute(
+            'UPDATE system_defaults SET default_account_id = :account_id, default_payment_method = :payment_method, calculate_cogs_from_purchase_price = 1',
+            [':account_id' => $accountId, ':payment_method' => 'Cash']
+        );
+        $cogsProductId = 'cwh-cogs-product-' . $stamp;
+        $database->execute(
+            'INSERT INTO products (id, name, sale_price, purchase_price, stock) VALUES (:id, :name, 100.00, 40.00, 500)',
+            [':id' => $cogsProductId, ':name' => 'COGS Webhook Product']
+        );
+        $cogsItems = courierWebhookJson([[
+            'productId' => $cogsProductId,
+            'productName' => 'COGS Webhook Product',
+            'quantity' => 2,
+            'salePrice' => 100,
+        ]]);
+
+        $cogsCancelledId = 'cwh-sf-cogs-cancel-' . $stamp;
+        $cogsCancelledNumber = 'CWH-SF-COGS-CANCEL-' . $stamp;
+        createCourierWebhookOrder($database, $actor, $nextSequence, $cogsCancelledId, $cogsCancelledNumber, 'Picked', $customerId, [
+            'steadfast' => 'SF-COGS-CANCEL-' . $stamp,
+            'items' => $cogsItems,
+        ]);
+        $courier->handleWebhook('steadfast', courierWebhookJson([
+            'notification_type' => 'delivery_status',
+            'consignment_id' => 'SF-COGS-CANCEL-' . $stamp,
+            'invoice' => $cogsCancelledNumber,
+            'status' => 'cancelled',
+            'cod_amount' => 250,
+            'updated_at' => '2026-08-03 16:00:00',
+        ]), $steadfastHeaders);
+        courierWebhookAssert(
+            courierWebhookOrderStatus($database, $cogsCancelledId) === 'Cancelled',
+            'COGS-test Steadfast cancelled did not map to Cancelled.'
+        );
+        courierWebhookAssert(
+            courierWebhookPayment($database, $cogsCancelledId) === null,
+            'Webhook-cancelled order was booked as automatic courier income.'
+        );
+        courierWebhookAssert(
+            $database->fetchOne(
+                'SELECT * FROM order_cogs_expenses WHERE order_id = :order_id LIMIT 1',
+                [':order_id' => $cogsCancelledId]
+            ) === null,
+            'Webhook-cancelled order created a purchase-price COGS record.'
+        );
+        courierWebhookAssert(
+            $database->fetchOne(
+                "SELECT * FROM transactions
+                 WHERE reference_id = :order_id AND type = 'Expense' AND category = 'expense_purchases' AND deleted_at IS NULL
+                 ORDER BY created_at ASC, id ASC LIMIT 1",
+                [':order_id' => $cogsCancelledId]
+            ) === null,
+            'Webhook-cancelled order created a purchase-price COGS expense transaction.'
+        );
+
+        // Control: the same items completed through a webhook still create COGS.
+        $cogsDeliveredId = 'cwh-sf-cogs-delivered-' . $stamp;
+        $cogsDeliveredNumber = 'CWH-SF-COGS-DELIVERED-' . $stamp;
+        createCourierWebhookOrder($database, $actor, $nextSequence, $cogsDeliveredId, $cogsDeliveredNumber, 'Picked', $customerId, [
+            'steadfast' => 'SF-COGS-DELIVERED-' . $stamp,
+            'items' => $cogsItems,
+        ]);
+        $courier->handleWebhook('steadfast', courierWebhookJson([
+            'notification_type' => 'delivery_status',
+            'consignment_id' => 'SF-COGS-DELIVERED-' . $stamp,
+            'invoice' => $cogsDeliveredNumber,
+            'status' => 'delivered',
+            'updated_at' => '2026-08-03 16:30:00',
+        ]), $steadfastHeaders);
+        $cogsDeliveredTx = $database->fetchOne(
+            "SELECT * FROM transactions
+             WHERE reference_id = :order_id AND type = 'Expense' AND category = 'expense_purchases' AND deleted_at IS NULL
+             ORDER BY created_at ASC, id ASC LIMIT 1",
+            [':order_id' => $cogsDeliveredId]
+        );
+        courierWebhookAssert(
+            $cogsDeliveredTx !== null && abs((float) $cogsDeliveredTx['amount'] - 80.00) < 0.001,
+            'Delivered control did not create the exact purchase-price COGS expense while the toggle was on.'
+        );
+
+        $database->execute('UPDATE system_defaults SET calculate_cogs_from_purchase_price = 0');
+        if ($capRow !== null) {
+            $capabilities['purchases'] = $originalPurchasesCapability;
+            $database->execute(
+                'UPDATE app_capability_settings SET capabilities = :capabilities WHERE id = :id',
+                [':capabilities' => courierWebhookJson($capabilities), ':id' => (string) $capRow['id']]
+            );
+        }
+    }
 
     // Pathao accepts configurable strict headers and flexible nested status
     // payloads. Fee components received separately remain one exact charge.
@@ -853,6 +1044,200 @@ try {
         is_array($lateUndoIds) && in_array((string) $lateExpense['id'], $lateUndoIds, true),
         'Late automatic expense was not attached to the existing Undoer event.'
     );
+
+    // A pre-paid order must never let the courier's collected amount exceed the
+    // remaining balance: automatic income is clamped to what is still due.
+    $clampId = 'cwh-clamp-' . $stamp;
+    $clampNumber = 'CWH-CLAMP-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $clampId, $clampNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-CLAMP-' . $stamp,
+        'total' => 1500,
+        'paidAmount' => 700,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.delivered',
+        'consignment_id' => 'CB-CLAMP-' . $stamp,
+        'merchant_order_id' => $clampNumber,
+        'timestamptz' => '2026-08-04T16:00:00+00:00',
+        'collected_amount' => 2000,
+    ]), $carryHeaders);
+    $clampPayment = courierWebhookPayment($database, $clampId);
+    courierWebhookAssert(
+        $clampPayment !== null && abs((float) $clampPayment['amount'] - 800.00) < 0.001,
+        'Automatic courier income was not clamped to the remaining order balance.'
+    );
+    $clampPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $clampId]);
+    courierWebhookAssert(abs((float) ($clampPaid['paid_amount'] ?? 0) - 1500.00) < 0.001, 'Clamped payment left the order balance wrong.');
+    $clampPaymentCount = (int) (($database->fetchOne(
+        "SELECT COUNT(*) AS total FROM transactions WHERE reference_id = :order_id AND type = 'Income' AND description LIKE 'Automatic courier delivery payment%'",
+        [':order_id' => $clampId]
+    ) ?? [])['total'] ?? 0);
+    courierWebhookAssert($clampPaymentCount === 1, 'Clamped webhook payment duplicated the income transaction.');
+
+    // A fully paid order records no additional automatic income at all.
+    $fullyPaidId = 'cwh-fully-paid-' . $stamp;
+    $fullyPaidNumber = 'CWH-FULLY-PAID-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $fullyPaidId, $fullyPaidNumber, 'Picked', $customerId, [
+        'carrybee' => 'CB-FULLY-PAID-' . $stamp,
+        'total' => 900,
+        'paidAmount' => 900,
+    ]);
+    $courier->handleWebhook('carrybee', courierWebhookJson([
+        'event' => 'order.delivered',
+        'consignment_id' => 'CB-FULLY-PAID-' . $stamp,
+        'merchant_order_id' => $fullyPaidNumber,
+        'timestamptz' => '2026-08-04T16:30:00+00:00',
+        'collected_amount' => 900,
+    ]), $carryHeaders);
+    courierWebhookAssert(
+        courierWebhookPayment($database, $fullyPaidId) === null,
+        'Automatic courier income was recorded for an already fully paid order.'
+    );
+
+    // Partial deliveries: the webhook fee is auto-expensed once, and confirming
+    // the partial delivery must not book a duplicate shipping fee.
+    $partialId = 'cwh-partial-' . $stamp;
+    $partialNumber = 'CWH-PARTIAL-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $partialId, $partialNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-PARTIAL-' . $stamp,
+        'total' => 1000,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-PARTIAL-' . $stamp,
+        'invoice' => $partialNumber,
+        'status' => 'partial_delivered',
+        'cod_amount' => 500,
+        'delivery_charge' => 12.5,
+        'updated_at' => '2026-08-04 17:00:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $partialId) === 'partially_delivered', 'Steadfast partial did not map to partially_delivered.');
+    $partialAutoExpense = courierWebhookExpense($database, $partialId);
+    courierWebhookAssert($partialAutoExpense !== null && abs((float) $partialAutoExpense['amount'] - 12.50) < 0.001, 'Partial webhook fee was not expensed automatically.');
+    $operations->confirmPartialDelivery(['orderId' => $partialId, 'returnedItems' => []]);
+    $partialShippingConfirmTx = $database->fetchOne(
+        "SELECT * FROM transactions
+         WHERE reference_id = :order_id AND type = 'Expense' AND category = 'Courier Shipping Cost' AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC LIMIT 1",
+        [':order_id' => $partialId]
+    );
+    courierWebhookAssert($partialShippingConfirmTx === null, 'Partial confirmation duplicated the already-recorded shipping expense.');
+    $partialExpenseCount = (int) (($database->fetchOne(
+        "SELECT COUNT(*) AS total FROM transactions WHERE reference_id = :order_id AND type = 'Expense' AND deleted_at IS NULL",
+        [':order_id' => $partialId]
+    ) ?? [])['total'] ?? 0);
+    courierWebhookAssert($partialExpenseCount === 1, 'Partial confirmation created more than one expense transaction.');
+
+    // With the automatic shipping toggle off, the deferred shipping fee is
+    // still booked at confirmation time (no webhook fee expense existed).
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 0');
+    $partialOffId = 'cwh-partial-off-' . $stamp;
+    $partialOffNumber = 'CWH-PARTIAL-OFF-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $partialOffId, $partialOffNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-PARTIAL-OFF-' . $stamp,
+        'total' => 800,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-PARTIAL-OFF-' . $stamp,
+        'invoice' => $partialOffNumber,
+        'status' => 'partial_delivered',
+        'cod_amount' => 300,
+        'delivery_charge' => 9.5,
+        'updated_at' => '2026-08-04 17:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $partialOffId) === 'partially_delivered', 'Toggle-off partial did not map to partially_delivered.');
+    courierWebhookAssert(courierWebhookExpense($database, $partialOffId) === null, 'Toggle-off partial webhook created an automatic expense.');
+    $operations->confirmPartialDelivery(['orderId' => $partialOffId, 'returnedItems' => []]);
+    $partialOffShippingTx = $database->fetchOne(
+        "SELECT * FROM transactions
+         WHERE reference_id = :order_id AND type = 'Expense' AND category = 'Courier Shipping Cost' AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC LIMIT 1",
+        [':order_id' => $partialOffId]
+    );
+    courierWebhookAssert(
+        $partialOffShippingTx !== null && abs((float) $partialOffShippingTx['amount'] - 9.50) < 0.001,
+        'Toggle-off partial confirmation lost the deferred shipping expense.'
+    );
+    $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1');
+
+    // Exchange deliveries book no automatic income; the money is settled
+    // through the manual exchange flow.
+    $exchangeIncomeId = 'cwh-exchange-income-' . $stamp;
+    $exchangeIncomeNumber = 'CWH-EXCHANGE-INCOME-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $exchangeIncomeId, $exchangeIncomeNumber, 'Exchange processing', $customerId, [
+        'paperfly' => 'PF-EXCHANGE-INCOME-MAIN-' . $stamp,
+        'exchangePaperfly' => 'PF-EXCHANGE-INCOME-' . $stamp,
+    ]);
+    $courier->handleWebhook('paperfly', courierWebhookJson([
+        'event' => 'parcel.exchange',
+        'timestamp' => '2026-08-04T18:00:00+00:00',
+        'data' => [
+            'order_number' => 'PF-EXCHANGE-INCOME-' . $stamp,
+            'merchant_order_reference' => $exchangeIncomeNumber,
+            'order_status' => 'exchange',
+            'collected_amount' => 250,
+        ],
+    ]), $paperflyHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $exchangeIncomeId) === 'Exchange delivered', 'Exchange-income test did not reach Exchange delivered.');
+    courierWebhookAssert(
+        courierWebhookPayment($database, $exchangeIncomeId) === null,
+        'Exchange delivery webhook booked automatic income despite the manual exchange settlement flow.'
+    );
+
+    // Polling syncs now book the same money webhooks do: the polled fee is
+    // upserted into the shared charge row and income uses its collected amount.
+    $courierReflection = new ReflectionClass($courier);
+    $syncChargeDetails = $courierReflection->getMethod('syncChargeDetails');
+    $syncChargeDetails->setAccessible(true);
+    $attachSyncedCharge = $courierReflection->getMethod('attachSyncedCharge');
+    $attachSyncedCharge->setAccessible(true);
+    $updateOrderAsCourierSystem = $courierReflection->getMethod('updateOrderAsCourierSystem');
+    $updateOrderAsCourierSystem->setAccessible(true);
+
+    $syncedDetails = $syncChargeDetails->invoke(
+        $courier,
+        'steadfast',
+        ['status' => 'delivered', 'cod_amount' => 920.5, 'delivery_charge' => 13.5],
+        'SF-SYNC-' . $stamp,
+        ''
+    );
+    courierWebhookAssert(abs((float) ($syncedDetails['totalCharge'] ?? 0) - 13.50) < 0.001, 'Sync poll did not extract the delivery fee.');
+    courierWebhookAssert(abs((float) ($syncedDetails['collectedAmount'] ?? 0) - 920.50) < 0.001, 'Sync poll did not extract the Steadfast cod amount.');
+    courierWebhookAssert(abs((float) ($syncedDetails['codFee'] ?? 0)) === 0.0, 'Sync poll misread a non-fee field as the COD fee.');
+
+    $syncOrderId = 'cwh-sync-' . $stamp;
+    $syncOrderNumber = 'CWH-SYNC-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $syncOrderId, $syncOrderNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-SYNC-' . $stamp,
+        'total' => 920.5,
+    ]);
+    $syncUpdates = [];
+    $attachSyncedCharge->invokeArgs($courier, [
+        &$syncUpdates,
+        'steadfast',
+        ['status' => 'delivered', 'cod_amount' => 920.5, 'delivery_charge' => 13.5],
+        'SF-SYNC-' . $stamp,
+        '',
+        $syncOrderId,
+    ]);
+    courierWebhookAssert(
+        !empty($syncUpdates['courierAutomaticExpense']['chargeId']),
+        'Sync polling did not attach the provider charge to the order updates.'
+    );
+    $syncUpdates['status'] = 'Completed';
+    $syncUpdates['history'] = ['completed' => 'Marked delivered automatically from Steadfast delivery status "delivered" on ' . gmdate('c')];
+    $updateOrderAsCourierSystem->invokeArgs($courier, [['id' => $syncOrderId, 'updates' => $syncUpdates]]);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $syncOrderId) === 'Completed', 'Simulated sync status change was not applied.');
+    $syncExpense = courierWebhookExpense($database, $syncOrderId);
+    courierWebhookAssert($syncExpense !== null && abs((float) $syncExpense['amount'] - 13.50) < 0.001, 'Sync-completed order did not book the polled shipping fee.');
+    $syncPayment = courierWebhookPayment($database, $syncOrderId);
+    courierWebhookAssert($syncPayment !== null && abs((float) $syncPayment['amount'] - 920.50) < 0.001, 'Sync-completed order did not book income from the polled collected amount.');
+    $syncChargeCount = (int) (($database->fetchOne(
+        'SELECT COUNT(*) AS total FROM courier_order_charges WHERE provider = :provider AND consignment_id = :consignment',
+        [':provider' => 'steadfast', ':consignment' => 'SF-SYNC-' . $stamp]
+    ) ?? [])['total'] ?? 0);
+    courierWebhookAssert($syncChargeCount === 1, 'Sync polling duplicated the provider charge row.');
 
     // Unmatched events remain auditable and can match on an exact provider
     // retry after the local order identifier becomes available.

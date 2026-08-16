@@ -5043,11 +5043,14 @@ final class OperationsApi extends BaseService
         string $nextStatus,
         array $history,
         float $orderTotal,
-        float $paidAmount
+        float $paidAmount,
+        string $triggerChargeId = ''
     ): ?array {
-        // Fire for ALL terminal statuses triggered by courier webhooks, not just Delivered.
-        // This ensures COD collected amounts are always recorded as income.
-        $terminalStatuses = ['Completed', 'Returned', 'Cancelled'];
+        // Fire for terminal statuses triggered by courier webhooks, not just Delivered.
+        // This ensures COD collected amounts are always recorded as income for
+        // delivered and paid-return deliveries. Cancelled is intentionally excluded:
+        // a cancelled shipment collects nothing, so no income may be booked.
+        $terminalStatuses = ['Completed', 'Returned'];
         if (!in_array($nextStatus, $terminalStatuses, true) || $previousStatus === $nextStatus) {
             return null;
         }
@@ -5081,11 +5084,27 @@ final class OperationsApi extends BaseService
             return null;
         }
 
-        // Use the collected amount from the courier webhook (cod_amount for Steadfast,
-        // collected_amount for others) instead of the remaining order balance.
+        // Use the collected amount reported by the courier (cod_amount for
+        // Steadfast, collected_amount for others). Prefer the charge row of the
+        // event that triggered this status change so a later-updated exchange
+        // consignment charge cannot bleed its amount into the main delivery.
         $orderId = trim((string) ($orderRow['id'] ?? ''));
         $collectedAmount = 0.0;
-        if ($orderId !== '' && $this->tableExists('courier_order_charges')) {
+        $triggerChargeId = trim($triggerChargeId);
+        if ($triggerChargeId !== '' && $this->tableExists('courier_order_charges')) {
+            $triggerCharge = $this->database->fetchOne(
+                'SELECT provider, order_id, collected_amount FROM courier_order_charges WHERE id = :id LIMIT 1',
+                [':id' => $triggerChargeId]
+            );
+            if (
+                $triggerCharge !== null
+                && trim((string) ($triggerCharge['provider'] ?? '')) === $provider
+                && trim((string) ($triggerCharge['order_id'] ?? '')) === $orderId
+            ) {
+                $collectedAmount = round((float) ($triggerCharge['collected_amount'] ?? 0), 2);
+            }
+        }
+        if ($collectedAmount <= 0 && $orderId !== '' && $this->tableExists('courier_order_charges')) {
             $charge = $this->database->fetchOne(
                 'SELECT collected_amount FROM courier_order_charges
                  WHERE order_id = :order_id AND provider = :provider
@@ -5098,7 +5117,16 @@ final class OperationsApi extends BaseService
         if ($collectedAmount <= 0) {
             return null;
         }
-        $paymentAmount = $collectedAmount;
+        // Never let an automatic courier collection exceed the remaining order
+        // balance: the order may already carry manual payments or refunds.
+        $remainingDue = round(max(0.0, $orderTotal - $paidAmount), 2);
+        if ($remainingDue <= 0.001) {
+            return null;
+        }
+        $paymentAmount = min($collectedAmount, $remainingDue);
+        if ($paymentAmount <= 0.001) {
+            return null;
+        }
 
         $prefix = $provider;
         $courierSettings = $this->database->fetchOne(
@@ -5128,7 +5156,6 @@ final class OperationsApi extends BaseService
         $statusLabel = match ($nextStatus) {
             'Completed' => 'delivery',
             'Returned' => 'return delivery',
-            'Cancelled' => 'cancelled delivery',
             default => 'delivery',
         };
         $transaction = $this->createTransactionRecord([
@@ -5355,7 +5382,8 @@ final class OperationsApi extends BaseService
                 $nextStatus,
                 $nextHistory,
                 (float) ($payload['total'] ?? $orderTotal),
-                (float) ($payload['paid_amount'] ?? $previousPaidAmount)
+                (float) ($payload['paid_amount'] ?? $previousPaidAmount),
+                $automaticCourierExpense !== null ? trim((string) ($automaticCourierExpense['chargeId'] ?? '')) : ''
             );
             if ($automaticCourierPayment !== null) {
                 $payload['paid_amount'] = $this->formatMoney($automaticCourierPayment['paidAmount']);
@@ -6456,8 +6484,18 @@ final class OperationsApi extends BaseService
                 ], (string) $actor['id'], $actor);
             }
 
-            // 2. Shipping cost expense
-            if ($totalShippingDeferred > 0 && $effectiveAccountId !== '') {
+            // 2. Shipping cost expense. When the automatic courier shipping
+            // expense for the webhook charge already exists
+            // (automatically_deduct_shipping_costs enabled), the fee was booked
+            // when the partial-delivery webhook arrived; skip the duplicate.
+            $automaticShippingExpenseRecorded = $this->tableExists('courier_order_charges')
+                && $this->database->fetchOne(
+                    'SELECT id FROM courier_order_charges
+                     WHERE order_id = :order_id AND expense_transaction_id IS NOT NULL AND expense_transaction_id <> \'\'
+                     LIMIT 1',
+                    [':order_id' => $orderId]
+                ) !== null;
+            if ($totalShippingDeferred > 0 && $effectiveAccountId !== '' && !$automaticShippingExpenseRecorded) {
                 $createdTransactions[] = $this->createTransactionRecord([
                     'date' => $recordedAt,
                     'type' => 'Expense',

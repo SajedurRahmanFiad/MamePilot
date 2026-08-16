@@ -55,7 +55,7 @@ $assert(
     str_contains($settings, 'automaticallyMarkPaidAfterDelivery')
         && str_contains($masterData, 'automatically_mark_paid_after_delivery')
         && str_contains($operations, 'recordAutomaticCourierDeliveryPayment')
-        && str_contains($operations, 'Automatically marked paid after courier delivery'),
+        && str_contains($operations, 'Automatically marked paid after courier '),
     'Automatic payment after courier delivery is not wired end to end.'
 );
 $assert(
