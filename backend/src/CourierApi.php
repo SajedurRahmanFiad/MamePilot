@@ -1356,9 +1356,10 @@ final class CourierApi extends BaseService
         if ($normalized !== '') {
             if (strpos($normalized, 'delivered') !== false) {
                 $status = 'Delivered';
-            } elseif (strpos($normalized, 'returned') !== false || strpos($normalized, 'cancelled_approval_pending') !== false) {
-                $status = 'Returned';
-            } elseif (strpos($normalized, 'cancel') !== false && strpos($normalized, 'cancelled_approval_pending') === false) {
+            } elseif (strpos($normalized, 'return') !== false || strpos($normalized, 'cancel') !== false) {
+                // Steadfast returns and cancelled approvals are cancellations
+                // from the merchant's perspective: nothing was collected, so
+                // they must never book paid-return income.
                 $status = 'Cancelled';
             } else {
                 $status = 'Picked';
@@ -2714,6 +2715,14 @@ final class CourierApi extends BaseService
             // however, is a real state transition and must be applied.
             $statusOnly = trim($status);
             if ($statusOnly === '' || $statusOnly === 'tracking_update') return null;
+        }
+        if ($provider === 'steadfast') {
+            // Steadfast returns are cancellations from the merchant's point of
+            // view: nothing is ever collected, so the order is cancelled and no
+            // income may be booked. This covers the return_status notification
+            // (which carries no status field) and any return wording on the
+            // delivery status.
+            if ($event === 'return_status' || str_contains($status, 'return')) return 'Cancelled';
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';

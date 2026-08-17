@@ -1240,9 +1240,9 @@ try {
     ) ?? [])['total'] ?? 0);
     courierWebhookAssert($syncChargeCount === 1, 'Sync polling duplicated the provider charge row.');
 
-    // Return events: whatever fee and collected amount the webhook carries is
-    // booked as expense and income. A plain return (nothing collected) gets the
-    // shipping fee expensed but no income; a paid return books both.
+    // Steadfast return values are cancellations: whatever fee and collected
+    // amount the webhook carries, only the shipping fee is expensed and no
+    // income is ever booked.
     $sfReturnId = 'cwh-sf-return-money-' . $stamp;
     $sfReturnNumber = 'CWH-SF-RETURN-MONEY-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $sfReturnId, $sfReturnNumber, 'Picked', $customerId, [
@@ -1258,7 +1258,7 @@ try {
         'delivery_charge' => 12.5,
         'updated_at' => '2026-08-05 09:00:00',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $sfReturnId) === 'Returned', 'Steadfast return did not map to Returned.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $sfReturnId) === 'Cancelled', 'Steadfast return did not map to Cancelled.');
     $sfReturnExpense = courierWebhookExpense($database, $sfReturnId);
     courierWebhookAssert(
         $sfReturnExpense !== null && abs((float) $sfReturnExpense['amount'] - 12.50) < 0.001,
@@ -1427,10 +1427,80 @@ try {
         'delivery_charge' => 20,
         'updated_at' => '2026-08-05 12:30:00',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $offReturnId) === 'Returned', 'Toggle-off return did not map to Returned.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $offReturnId) === 'Cancelled', 'Toggle-off return did not map to Cancelled.');
     courierWebhookAssert(courierWebhookExpense($database, $offReturnId) === null, 'Toggle-off return webhook created an expense.');
     courierWebhookAssert(courierWebhookPayment($database, $offReturnId) === null, 'Toggle-off return webhook created automatic income.');
     $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1, automatically_mark_paid_after_delivery = 1');
+
+    // Steadfast return_status notifications (no status field) cancel the
+    // order: only the shipping fee may be expensed, never income.
+    $returnStatusId = 'cwh-sf-return-status-' . $stamp;
+    $returnStatusNumber = 'CWH-SF-RETURN-STATUS-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusId, $returnStatusNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-RS-' . $stamp,
+        'total' => 1000,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'return_status',
+        'consignment_id' => 'SF-RS-' . $stamp,
+        'invoice' => $returnStatusNumber,
+        'tracking_message' => 'Consignment Return status has been updated to Processing',
+        'updated_at' => '2026-08-15 13:59:44',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusId) === 'Cancelled', 'Steadfast return_status did not cancel the order.');
+    courierWebhookAssert(
+        courierWebhookPayment($database, $returnStatusId) === null,
+        'Steadfast return_status booked automatic courier income.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $returnStatusId) === null,
+        'Fee-less Steadfast return_status created a shipping expense.'
+    );
+    $returnStatusPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $returnStatusId]);
+    courierWebhookAssert((float) ($returnStatusPaid['paid_amount'] ?? -1) === 0.0, 'Steadfast return_status marked the order paid.');
+
+    // A return_status that carries a shipping fee books only that expense.
+    $returnStatusFeeId = 'cwh-sf-return-status-fee-' . $stamp;
+    $returnStatusFeeNumber = 'CWH-SF-RETURN-STATUS-FEE-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusFeeId, $returnStatusFeeNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-RS-FEE-' . $stamp,
+        'total' => 900,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'return_status',
+        'consignment_id' => 'SF-RS-FEE-' . $stamp,
+        'invoice' => $returnStatusFeeNumber,
+        'cod_amount' => 700,
+        'delivery_charge' => 11.25,
+        'tracking_message' => 'Consignment Return status has been updated to Processing',
+        'updated_at' => '2026-08-15 14:05:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusFeeId) === 'Cancelled', 'Fee-carrying Steadfast return_status did not cancel the order.');
+    $returnStatusFeeExpense = courierWebhookExpense($database, $returnStatusFeeId);
+    courierWebhookAssert(
+        $returnStatusFeeExpense !== null && abs((float) $returnStatusFeeExpense['amount'] - 11.25) < 0.001,
+        'Fee-carrying Steadfast return_status did not expense the shipping fee.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $returnStatusFeeId) === null,
+        'Fee-carrying Steadfast return_status booked the COD amount as income.'
+    );
+
+    // Steadfast return_status never regresses an already-terminal status.
+    $returnStatusGuardId = 'cwh-sf-return-status-guard-' . $stamp;
+    $returnStatusGuardNumber = 'CWH-SF-RETURN-STATUS-GUARD-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusGuardId, $returnStatusGuardNumber, 'Returned', $customerId, [
+        'steadfast' => 'SF-RS-GUARD-' . $stamp,
+        'history' => ['returned' => 'Marked returned automatically from Steadfast delivery status "returned" on 2026-08-15.'],
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'return_status',
+        'consignment_id' => 'SF-RS-GUARD-' . $stamp,
+        'invoice' => $returnStatusGuardNumber,
+        'tracking_message' => 'Consignment Return status has been updated to Processing',
+        'updated_at' => '2026-08-15 14:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusGuardId) === 'Returned', 'Steadfast return_status regressed an already-terminal order.');
 
     // Unmatched events remain auditable and can match on an exact provider
     // retry after the local order identifier becomes available.
