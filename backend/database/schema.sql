@@ -301,6 +301,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
   pathao_webhook_secret VARCHAR(500) NULL,
+  pathao_merchant_webhook_secret VARCHAR(500) NULL,
   steadfast_default_account_id VARCHAR(64) NULL,
   steadfast_default_expense_category_id VARCHAR(64) NULL,
   steadfast_default_income_category_id VARCHAR(64) NULL,
@@ -347,7 +348,8 @@ ALTER TABLE `courier_settings`
   ADD COLUMN IF NOT EXISTS `carrybee_webhook_integration_value` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `paperfly_webhook_secret` VARCHAR(500) NULL,
   ADD COLUMN IF NOT EXISTS `pathao_webhook_header` VARCHAR(128) NULL,
-  ADD COLUMN IF NOT EXISTS `pathao_webhook_secret` VARCHAR(500) NULL;
+  ADD COLUMN IF NOT EXISTS `pathao_webhook_secret` VARCHAR(500) NULL,
+  ADD COLUMN IF NOT EXISTS `pathao_merchant_webhook_secret` VARCHAR(500) NULL;
 CREATE TABLE IF NOT EXISTS role_permissions (
   role_name VARCHAR(64) NOT NULL,
   permissions LONGTEXT NULL,

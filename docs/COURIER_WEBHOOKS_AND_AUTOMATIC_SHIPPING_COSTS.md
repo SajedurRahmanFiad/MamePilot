@@ -19,6 +19,20 @@ Open **Settings > Courier**. Each available courier shows its exact webhook URL.
 
 The URL must be public, use HTTPS, and accept a `POST` request. A successful notification receives HTTP 200. Requests with a missing or incorrect verification value are rejected.
 
+### CarryBee webhook setup, step by step
+
+1. Open **Settings > Courier** in MamePilot and copy the **CarryBee Webhook URL** (it ends with `?provider=carrybee`).
+2. Log in to your CarryBee merchant dashboard and open the webhook/developer settings page.
+3. Create a new webhook and paste the MamePilot webhook URL into CarryBee.
+4. CarryBee asks for (or generates) a **Webhook Secret** at that moment. Copy the secret string it shows you — this is the password CarryBee will put in every notification it sends. If CarryBee lets you type your own secret, type any long random string and remember it.
+5. Go back to MamePilot, **Settings > Courier > CarryBee Secrets**, and paste that exact secret into **Webhook signature header value**.
+
+   Do not invent a value here: MamePilot only accepts notifications that carry the exact same secret that CarryBee uses. The **Webhook signature header name** stays `X-Carrybee-Webhook-Signature` (the default).
+6. **Webhook integration header name/value** fields are the answer CarryBee expects while it verifies the webhook. Keep the shown defaults unless CarryBee's dashboard tells you a different header name or verification value.
+7. Save Courier settings. When CarryBee tests the webhook ("integration" event), it receives HTTP 202 with the correct answer, and real order notifications are accepted only when signed with the secret from step 4.
+
+If a notification fails, re-check that the secret in CarryBee and the secret in MamePilot are exactly the same (copy-paste them).
+
 ## How order statuses change
 
 | Courier message | MamePilot result |

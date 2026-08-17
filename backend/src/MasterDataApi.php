@@ -4228,6 +4228,7 @@ final class MasterDataApi extends BaseService
                 "ALTER TABLE `courier_settings` ADD COLUMN `fraudspy_api_key` VARCHAR(500) NULL"
             );
         }
+        $this->ensureCourierWebhookColumns();
 
         $provider = array_key_exists('provider', $fraudChecker)
             ? (trim((string) $fraudChecker['provider']) === 'fraudspy' ? 'fraudspy' : 'bdcourier')
@@ -4247,6 +4248,35 @@ final class MasterDataApi extends BaseService
             $updates,
             fn(): array => $this->fetchCourierSettings()
         );
+    }
+
+    /**
+     * Self-heal the courier webhook-era columns so saving settings never
+     * fails with "Unknown column" when an installation has not applied the
+     * corresponding migration yet.
+     */
+    private function ensureCourierWebhookColumns(): void
+    {
+        $definitions = [
+            'automatically_deduct_shipping_costs' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'automatically_mark_paid_after_delivery' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'carrybee_webhook_signature' => 'VARCHAR(500) NULL',
+            'carrybee_webhook_header' => 'VARCHAR(128) NULL',
+            'carrybee_webhook_integration_header' => 'VARCHAR(128) NULL',
+            'carrybee_webhook_integration_value' => 'VARCHAR(500) NULL',
+            'paperfly_webhook_secret' => 'VARCHAR(500) NULL',
+            'pathao_webhook_header' => 'VARCHAR(128) NULL',
+            'pathao_webhook_secret' => 'VARCHAR(500) NULL',
+            'pathao_merchant_webhook_secret' => 'VARCHAR(500) NULL',
+            'save_webhook_events' => 'TINYINT(1) NOT NULL DEFAULT 1',
+        ];
+        foreach ($definitions as $column => $definition) {
+            if (!$this->columnExists('courier_settings', $column)) {
+                $this->database->execute(
+                    "ALTER TABLE `courier_settings` ADD COLUMN `{$column}` {$definition}"
+                );
+            }
+        }
     }
 
     private function globalBrandingCacheKey(): string

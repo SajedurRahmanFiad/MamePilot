@@ -439,6 +439,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   paperfly_webhook_secret VARCHAR(500) NULL,
   pathao_webhook_header VARCHAR(128) NULL,
   pathao_webhook_secret VARCHAR(500) NULL,
+  pathao_merchant_webhook_secret VARCHAR(500) NULL,
   steadfast_default_account_id VARCHAR(64) NULL,
   steadfast_default_expense_category_id VARCHAR(64) NULL,
   steadfast_default_income_category_id VARCHAR(64) NULL,
@@ -486,6 +487,7 @@ CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_value', 'VARCH
 CALL sp_add_col('courier_settings', 'paperfly_webhook_secret', 'VARCHAR(500) NULL');
 CALL sp_add_col('courier_settings', 'pathao_webhook_header', 'VARCHAR(128) NULL');
 CALL sp_add_col('courier_settings', 'pathao_webhook_secret', 'VARCHAR(500) NULL');
+CALL sp_add_col('courier_settings', 'pathao_merchant_webhook_secret', 'VARCHAR(500) NULL');
 
 CREATE TABLE IF NOT EXISTS role_permissions (
   role_name VARCHAR(64) NOT NULL,
@@ -3259,6 +3261,9 @@ CALL sp_add_col('courier_settings', 'carrybee_webhook_integration_value', 'VARCH
 
 -- Migration: 2026-08-17_dashboard_order_kpi_time_basis.sql
 CALL sp_add_col('dashboard_configurations', 'order_kpi_time_basis', 'VARCHAR(20) NOT NULL DEFAULT ''created_at'' AFTER widgets');
+
+-- Migration: 2026-08-17_pathao_merchant_webhook_secret.sql
+CALL sp_add_col('courier_settings', 'pathao_merchant_webhook_secret', 'VARCHAR(500) NULL');
 
 -- Migration: 2026-08-17_status_timestamp_history_backfills.sql
 -- Status-timestamp history backfills for Orders and Bills.
