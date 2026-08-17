@@ -2435,6 +2435,10 @@ final class CourierApi extends BaseService
                 $orderId
             );
 
+            if ($provider === 'steadfast' && $orderId !== '' && $details['eventName'] === 'tracking_update') {
+                $this->recordSteadfastTrackingUpdate($details, $orderId, $eventKey);
+            }
+
             if ($orderId === '') {
                 $message = 'No local order matched the courier identifiers.';
                 if ($savingEnabled) {
@@ -2637,6 +2641,9 @@ final class CourierApi extends BaseService
             'order_status_slug', 'order_status', 'delivery_status', 'status', 'tracking_status',
         ]);
         $mappedStatus = $this->mapWebhookStatus($provider, $eventName, $rawStatus);
+        $trackingMessage = $this->firstWebhookValue($containers, [
+            'tracking_message', 'trackingMessage', 'status_message', 'message',
+        ]);
 
         return [
             'eventName' => $eventName,
@@ -2650,6 +2657,89 @@ final class CourierApi extends BaseService
             'currency' => strtoupper($this->firstWebhookValue($containers, ['currency'])) ?: 'BDT',
             'rawStatus' => $rawStatus !== '' ? $rawStatus : $eventName,
             'mappedStatus' => $mappedStatus,
+            'trackingMessage' => $trackingMessage,
+        ];
+    }
+
+    /**
+     * Persist a Steadfast tracking_update webhook message so the order detail
+     * page can render a "Courier tracking" timeline. Exact webhook retries and
+     * unmatched-event replays share one event_key, so the unique key keeps the
+     * stored timeline single-sourced while a replay attaches the order id.
+     *
+     * @param array<string, mixed> $details
+     */
+    private function recordSteadfastTrackingUpdate(array $details, string $orderId, string $eventKey): void
+    {
+        if (!$this->tableExists('courier_tracking_events')) {
+            return;
+        }
+        $message = trim((string) ($details['trackingMessage'] ?? ''));
+        if ($message === '') {
+            return;
+        }
+        $consignmentId = trim((string) ($details['consignmentId'] ?? ''));
+        $merchantReference = trim((string) ($details['merchantReference'] ?? ''));
+        $id = $this->uuid4();
+        $this->database->execute(
+            "INSERT INTO courier_tracking_events (
+                id, provider, event_key, order_id, consignment_id, merchant_reference,
+                tracking_message, event_at, received_at, created_at, updated_at
+             ) VALUES (
+                :id, 'steadfast', :event_key, :order_id, :consignment_id, :merchant_reference,
+                :tracking_message, :event_at, :received_at, :created_at, :updated_at
+             )
+             ON DUPLICATE KEY UPDATE
+                order_id = COALESCE(VALUES(order_id), order_id),
+                merchant_reference = COALESCE(VALUES(merchant_reference), merchant_reference),
+                updated_at = VALUES(updated_at)",
+            [
+                ':id' => $id,
+                ':event_key' => $eventKey,
+                ':order_id' => $orderId,
+                ':consignment_id' => $consignmentId !== '' ? $consignmentId : null,
+                ':merchant_reference' => $merchantReference !== '' ? $merchantReference : null,
+                ':tracking_message' => $message,
+                ':event_at' => $details['eventAt'],
+                ':received_at' => $this->database->nowUtc(),
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+    }
+
+    /**
+     * Courier tracking timeline for one order. Only Steadfast tracking_update
+     * webhook messages are stored, oldest event first.
+     *
+     * @return array{data: array<int, array<string, mixed>>}
+     */
+    public function fetchCourierTrackingEvents(array $params): array
+    {
+        $this->currentUser();
+        $orderId = trim((string) ($params['orderId'] ?? ''));
+        if ($orderId === '') {
+            throw new RuntimeException('Order id is required.');
+        }
+        if (!$this->tableExists('courier_tracking_events')) {
+            return ['data' => []];
+        }
+        $rows = $this->database->fetchAll(
+            "SELECT tracking_message, event_at, received_at
+             FROM courier_tracking_events
+             WHERE order_id = :order_id AND provider = 'steadfast'
+               AND tracking_message IS NOT NULL AND tracking_message <> ''
+             ORDER BY event_at ASC, received_at ASC, id ASC",
+            [':order_id' => $orderId]
+        );
+        return [
+            'data' => array_map(static function (array $row): array {
+                return [
+                    'trackingMessage' => (string) $row['tracking_message'],
+                    'eventAt' => $row['event_at'] !== null ? (string) $row['event_at'] : null,
+                    'receivedAt' => (string) $row['received_at'],
+                ];
+            }, $rows),
         ];
     }
 

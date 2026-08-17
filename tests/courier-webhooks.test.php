@@ -133,7 +133,7 @@ $operations = new OperationsApi($database, $auth, $config);
 $courier = new CourierApi($database, $auth, $config, $operations);
 $pdo = $database->connect();
 
-foreach (['courier_webhook_events', 'courier_order_charges', 'order_status_undo_events'] as $requiredTable) {
+foreach (['courier_webhook_events', 'courier_order_charges', 'order_status_undo_events', 'courier_tracking_events'] as $requiredTable) {
     $exists = $database->fetchOne(
         'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table_name LIMIT 1',
         [':table_name' => $requiredTable]
@@ -596,6 +596,88 @@ try {
         'updated_at' => '2026-08-03 14:30:00',
     ]), $steadfastHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $steadfastPendingId) === 'Picked', 'Steadfast pending did not map to Picked.');
+
+    // Courier tracking timeline: Steadfast tracking_update messages are
+    // persisted per order, retries deduplicate on the event key, and the
+    // CLI reconciliation replay attaches a later-created order to the row.
+    $timelineId = 'cwh-sf-timeline-' . $stamp;
+    $timelineNumber = 'CWH-SF-TIMELINE-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $timelineId, $timelineNumber, 'Processing', $customerId, [
+        'steadfast' => 'SF-TIMELINE-' . $stamp,
+    ]);
+    $timelineEventOne = courierWebhookJson([
+        'notification_type' => 'tracking_update',
+        'consignment_id' => 'SF-TIMELINE-' . $stamp,
+        'invoice' => $timelineNumber,
+        'tracking_message' => 'Parcel booked and queued for pickup.',
+        'updated_at' => '2026-08-05T09:00:00+00:00',
+    ]);
+    $courier->handleWebhook('steadfast', $timelineEventOne, $steadfastHeaders);
+    $timelineEventTwo = courierWebhookJson([
+        'notification_type' => 'tracking_update',
+        'consignment_id' => 'SF-TIMELINE-' . $stamp,
+        'invoice' => $timelineNumber,
+        'tracking_message' => 'Parcel is out for delivery.',
+        'updated_at' => '2026-08-05T11:00:00+00:00',
+    ]);
+    $courier->handleWebhook('steadfast', $timelineEventTwo, $steadfastHeaders);
+    $timelineRetry = $courier->handleWebhook('steadfast', $timelineEventTwo, $steadfastHeaders);
+    courierWebhookAssert(($timelineRetry['duplicate'] ?? false) === true, 'Steadfast tracking_update retry was not deduplicated.');
+    $timelineRows = $database->fetchAll(
+        'SELECT order_id, tracking_message, event_at FROM courier_tracking_events
+         WHERE provider = :provider AND order_id = :order_id ORDER BY event_at ASC, id ASC',
+        [':provider' => 'steadfast', ':order_id' => $timelineId]
+    );
+    courierWebhookAssert(count($timelineRows) === 2, 'Steadfast tracking_update messages were not stored exactly once per event.');
+    courierWebhookAssert((string) ($timelineRows[0]['tracking_message'] ?? '') === 'Parcel booked and queued for pickup.', 'First tracking event was not stored in chronological order.');
+    courierWebhookAssert((string) ($timelineRows[1]['tracking_message'] ?? '') === 'Parcel is out for delivery.', 'Second tracking event was not stored in chronological order.');
+    $timelineFetch = $courier->fetchCourierTrackingEvents(['orderId' => $timelineId]);
+    courierWebhookAssert(count($timelineFetch['data']) === 2, 'fetchCourierTrackingEvents did not return the stored timeline.');
+    courierWebhookAssert((string) ($timelineFetch['data'][0]['trackingMessage'] ?? '') === 'Parcel booked and queued for pickup.', 'fetchCourierTrackingEvents returned the wrong first message.');
+    courierWebhookAssert((string) ($timelineFetch['data'][1]['eventAt'] ?? '') === '2026-08-05 11:00:00', 'fetchCourierTrackingEvents lost the event timestamp.');
+    courierWebhookAssert(
+        count($courier->fetchCourierTrackingEvents(['orderId' => 'cwh-sf-unrelated-' . $stamp])['data']) === 0,
+        'fetchCourierTrackingEvents leaked events from another order.'
+    );
+
+    $timelineReplayPayload = courierWebhookJson([
+        'notification_type' => 'tracking_update',
+        'consignment_id' => 'SF-TIMELINE-REPLAY-' . $stamp,
+        'tracking_message' => 'Shipment created before the order existed.',
+        'updated_at' => '2026-08-05T12:00:00+00:00',
+    ]);
+    $courier->handleWebhook('steadfast', $timelineReplayPayload, $steadfastHeaders);
+    $replayEventKey = hash('sha256', 'steadfast|' . $timelineReplayPayload);
+    $database->execute(
+        "UPDATE courier_webhook_events SET processed_at = '1970-01-01 00:00:00' WHERE provider = 'steadfast' AND event_key = :event_key",
+        [':event_key' => $replayEventKey]
+    );
+    $timelineReplayId = 'cwh-sf-timeline-replay-' . $stamp;
+    $timelineReplayNumber = 'CWH-SF-TIMELINE-REPLAY-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $timelineReplayId, $timelineReplayNumber, 'Processing', $customerId, [
+        'steadfast' => 'SF-TIMELINE-REPLAY-' . $stamp,
+    ]);
+    $replayResult = $courier->reconcileUnmatchedWebhookEvents(['provider' => 'steadfast', 'limit' => 1]);
+    courierWebhookAssert(($replayResult['matched'] ?? 0) === 1, 'Unmatched Steadfast tracking_update was not reconciled after its order appeared.');
+    $replayRows = $database->fetchAll(
+        'SELECT order_id, tracking_message FROM courier_tracking_events
+         WHERE provider = :provider AND event_key = :event_key',
+        [':provider' => 'steadfast', ':event_key' => $replayEventKey]
+    );
+    courierWebhookAssert(count($replayRows) === 1, 'Reconciled tracking_update replay duplicated the stored timeline event.');
+    courierWebhookAssert((string) ($replayRows[0]['order_id'] ?? '') === $timelineReplayId, 'Reconciled tracking_update replay did not attach the later-created order.');
+    courierWebhookAssert(
+        count($courier->fetchCourierTrackingEvents(['orderId' => $timelineReplayId])['data']) === 1,
+        'Reconciled tracking_update timeline is missing from fetchCourierTrackingEvents.'
+    );
+
+    $missingOrderIdThrown = false;
+    try {
+        $courier->fetchCourierTrackingEvents([]);
+    } catch (RuntimeException $exception) {
+        $missingOrderIdThrown = str_contains($exception->getMessage(), 'required');
+    }
+    courierWebhookAssert($missingOrderIdThrown, 'fetchCourierTrackingEvents accepted a missing order id.');
 
     // Paperfly: package_price and collected_amount are not courier fees. An
     // explicit fee field is saved and later recorded on delivery.

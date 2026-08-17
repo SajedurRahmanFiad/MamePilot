@@ -862,6 +862,10 @@ export async function fetchWebhookEventDetail(id: string): Promise<import('../..
   return call('fetchWebhookEventDetail', { id });
 }
 
+export async function fetchCourierTrackingEvents(orderId: string): Promise<{ data: import('../../types').CourierTrackingEvent[] }> {
+  return call('fetchCourierTrackingEvents', { orderId });
+}
+
 export async function setWebhookSavingEnabled(enabled: boolean): Promise<{ savingEnabled: boolean }> {
   return call('setWebhookSavingEnabled', { enabled });
 }

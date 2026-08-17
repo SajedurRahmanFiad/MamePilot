@@ -398,6 +398,12 @@ export interface CourierWebhookEventDetail {
   }>;
 }
 
+export interface CourierTrackingEvent {
+  trackingMessage: string;
+  eventAt: string | null;
+  receivedAt: string;
+}
+
 export interface BatchEventInput {
   batchId: string;
   eventTypeId: string;

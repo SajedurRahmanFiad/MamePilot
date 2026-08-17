@@ -7,7 +7,7 @@ import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type Confir
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, PartialDeliveryConfirmModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
-import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults, useCourierTrackingEvents } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useConfirmPartialDelivery, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -95,6 +95,8 @@ const OrderDetails: React.FC = () => {
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: sourceAdDetails } = useMetaAd(order?.sourceAd || undefined, Boolean(order?.sourceAd));
   const { data: courierSettings } = useCourierSettings();
+  const { data: courierTrackingData } = useCourierTrackingEvents(id || '');
+  const courierTrackingEvents = courierTrackingData?.data || [];
   const sourceAdInfo = useMemo(() => {
     if (!order?.sourceAd || !sourceAdDetails) return null;
     return sourceAdDetails;
@@ -237,6 +239,8 @@ const OrderDetails: React.FC = () => {
     status: true,
     survey: true,
     activitySurvey: false,
+    activity: false,
+    tracking: false,
   });
 
   const hasExchangedItems = (o?: Order | null) =>
@@ -2360,63 +2364,114 @@ const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Activity Timeline Section - Full Width */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
-        <div className="px-5 py-4 bg-gray-50 border-b">
-          <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Activity Timeline</h3>
-        </div>
-        <div className="p-5 space-y-4">
-          {activityTimelineEntries.length > 0 ? (
-            activityTimelineEntries.map((entry) => entry.children ? (
-              <div key={entry.key} className="border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl text-left transition-colors hover:bg-gray-50"
-                  onClick={() => toggleSection('activitySurvey')}
-                  aria-expanded={isSectionExpanded('activitySurvey')}
-                >
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                    {entry.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-500">{entry.label}</p>
-                    <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
-                  </div>
-                  <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('activitySurvey') ? 'rotate-90' : ''}`}>
-                    {ICONS.ChevronRight}
-                  </div>
-                </button>
-                {isSectionExpanded('activitySurvey') && (
-                  <div className="ml-4 mt-4 space-y-4 border-l-2 border-blue-100 pl-6">
-                    {entry.children.map((child) => (
-                      <div key={child.key} className="relative flex items-center gap-3">
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
-                          {child.icon}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{child.label}</p>
-                          <p className="text-xs font-medium leading-relaxed text-gray-700">{child.text}</p>
-                        </div>
+      {/* Activity Timeline + Courier tracking - side by side on desktop, stacked on mobile */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Activity Timeline Section */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+          <button
+            type="button"
+            className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+            onClick={() => toggleSection('activity')}
+            aria-expanded={isSectionExpanded('activity')}
+          >
+            <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Activity Timeline</h3>
+            <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('activity') ? 'rotate-90' : ''}`}>
+              {ICONS.ChevronRight}
+            </div>
+          </button>
+          {isSectionExpanded('activity') && (
+            <div className="p-5 space-y-4">
+              {activityTimelineEntries.length > 0 ? (
+                activityTimelineEntries.map((entry) => entry.children ? (
+                  <div key={entry.key} className="border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-xl text-left transition-colors hover:bg-gray-50"
+                      onClick={() => toggleSection('activitySurvey')}
+                      aria-expanded={isSectionExpanded('activitySurvey')}
+                    >
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                        {entry.icon}
                       </div>
-                    ))}
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-500">{entry.label}</p>
+                        <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
+                      </div>
+                      <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('activitySurvey') ? 'rotate-90' : ''}`}>
+                        {ICONS.ChevronRight}
+                      </div>
+                    </button>
+                    {isSectionExpanded('activitySurvey') && (
+                      <div className="ml-4 mt-4 space-y-4 border-l-2 border-blue-100 pl-6">
+                        {entry.children.map((child) => (
+                          <div key={child.key} className="relative flex items-center gap-3">
+                            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                              {child.icon}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{child.label}</p>
+                              <p className="text-xs font-medium leading-relaxed text-gray-700">{child.text}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            ) : (
-              <div key={entry.key} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
-                <div className="flex-shrink-0">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600">
-                    {entry.icon}
+                ) : (
+                  <div key={entry.key} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+                    <div className="flex-shrink-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+                        {entry.icon}
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{entry.label}</p>
+                      <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">{entry.label}</p>
-                  <p className="text-xs font-medium leading-relaxed text-gray-700">{entry.text}</p>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-xs text-gray-400 text-center py-4">No activity recorded yet</p>
+                ))
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-4">No activity recorded yet</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Courier Tracking Section */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+          <button
+            type="button"
+            className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+            onClick={() => toggleSection('tracking')}
+            aria-expanded={isSectionExpanded('tracking')}
+          >
+            <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Courier Tracking</h3>
+            <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('tracking') ? 'rotate-90' : ''}`}>
+              {ICONS.ChevronRight}
+            </div>
+          </button>
+          {isSectionExpanded('tracking') && (
+            <div className="p-5 space-y-4">
+              {courierTrackingEvents.length > 0 ? (
+                courierTrackingEvents.map((event) => (
+                  <div key={`${event.eventAt || ''}-${event.receivedAt}`} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+                    <div className="flex-shrink-0">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                        {ICONS.Courier}
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                        {formatDateTime(event.eventAt || event.receivedAt)}
+                      </p>
+                      <p className="text-xs font-medium leading-relaxed text-gray-700">{event.trackingMessage}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-4">No courier tracking updates yet</p>
+              )}
+            </div>
           )}
         </div>
       </div>

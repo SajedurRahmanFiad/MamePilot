@@ -2006,6 +2006,7 @@ export function useBatchEventsPage(
 import {
   fetchWebhookEventsPage,
   fetchWebhookEventDetail,
+  fetchCourierTrackingEvents,
   type WebhookEventFilters,
   type WebhookEventDynamicFilters,
 } from '../services/supabaseQueries';
@@ -2030,5 +2031,14 @@ export function useWebhookEventDetail(id: string | null) {
     queryFn: () => fetchWebhookEventDetail(id || ''),
     enabled: !!id,
     staleTime: 30 * 1000,
+  });
+}
+
+export function useCourierTrackingEvents(orderId: string) {
+  return useQuery({
+    queryKey: ['courier-tracking-events', orderId],
+    queryFn: () => fetchCourierTrackingEvents(orderId || ''),
+    enabled: !!orderId,
+    staleTime: 60 * 1000,
   });
 }
