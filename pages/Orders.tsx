@@ -1471,7 +1471,7 @@ const Orders: React.FC = () => {
                   || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
                 const settlementTotal = getOrderSettlementTotal(order);
-                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, settlementTotal, order.history);
+                const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.status === OrderStatus.CANCELLED ? order.total : settlementTotal, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
                 const isRefunded = paymentStatusLabel === 'Refunded';

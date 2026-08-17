@@ -255,6 +255,7 @@ const OrderDetails: React.FC = () => {
         { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
         { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
         { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
+        { label: 'Partially Delivered', historyKey: 'completed', description: 'Some items were delivered; the rest need follow-up.' },
         { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
       ];
       if (showExchangeTimeline) {
@@ -287,6 +288,7 @@ const OrderDetails: React.FC = () => {
     if (order.status === OrderStatus.COMPLETED) {
       return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered'));
     }
+    if (order.status === OrderStatus.PARTIALLY_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Partially Delivered');
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
@@ -324,6 +326,8 @@ const OrderDetails: React.FC = () => {
           return item.label;
         case 'Delivered':
           return order?.status === OrderStatus.COMPLETED ? 'Delivered' : 'Delivering';
+        case 'Partially Delivered':
+          return 'Partially Delivered';
         case 'Exchanged':
           return 'Delivered, Exchanged';
         case 'Exchange processing':
@@ -393,7 +397,7 @@ const OrderDetails: React.FC = () => {
 
     if (!order) return '';
 
-    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Exchanged', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'Returned', 'Cancelled'].includes(item.label);
+    const isActiveBranchItem = index === timelineIndex && ['Delivered', 'Exchanged', 'Partially Delivered', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'Returned', 'Cancelled'].includes(item.label);
     if (index === timelineIndex && !isActiveBranchItem) {
       return '';
     }
@@ -408,6 +412,8 @@ const OrderDetails: React.FC = () => {
           return order.statusTimestamps?.courier || order.history?.courier;
         case 'Picked up':
           return order.statusTimestamps?.picked || order.history?.picked;
+        case 'Partially Delivered':
+          return order.partialDeliveredAt || '';
         case 'Delivered':
           return order.statusTimestamps?.completed || order.history?.completed;
         case 'Exchanged':
@@ -446,7 +452,7 @@ const OrderDetails: React.FC = () => {
 
   const getOrderProgressPercent = (activeOrder?: Order | null) => {
     if (!activeOrder) return 0;
-    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED].includes(activeOrder.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.PARTIALLY_DELIVERED].includes(activeOrder.status)) {
       return 100;
     }
     const finalStepLabel = showExchangeTimeline ? 'Exchange delivered' : 'Delivered';
@@ -888,9 +894,10 @@ const OrderDetails: React.FC = () => {
 
   // Calculate payment status
   const settlementTotal = order?.status === OrderStatus.CANCELLED ? 0 : (order?.total ?? 0);
+  const paymentStatusTotal = order?.status === OrderStatus.CANCELLED ? (order?.total ?? 0) : settlementTotal;
   const getPaymentStatus = () => {
     if (!order) return 'Unpaid';
-    return getPaymentStatusLabel(order.paidAmount, settlementTotal, order.history);
+    return getPaymentStatusLabel(order.paidAmount, paymentStatusTotal, order.history);
   };
   
   const loading = orderLoading;
@@ -2054,7 +2061,7 @@ const OrderDetails: React.FC = () => {
                       const branchStatus = getFinalBranchStatus(order?.status ?? OrderStatus.CREATED);
                       const isExchangeStep = ['Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned'].includes(item.label);
                       const isInExchangeFlow = [OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED, OrderStatus.EXCHANGE_RETURNED].includes(order?.status as OrderStatus);
-                      const isBranchItem = (item.label === 'Exchange processing' || item.label === 'Exchange picked' || item.label === 'Exchange delivered' || item.label === 'Exchange returned' || item.label === 'Exchange cancelled' || item.label === 'Exchanged' || item.label === 'Returned' || item.label === 'Cancelled')
+                      const isBranchItem = (item.label === 'Exchange processing' || item.label === 'Exchange picked' || item.label === 'Exchange delivered' || item.label === 'Exchange returned' || item.label === 'Exchange cancelled' || item.label === 'Exchanged' || item.label === 'Partially Delivered' || item.label === 'Returned' || item.label === 'Cancelled')
                         || (item.label === 'Delivered' && !showExchangeTimeline);
                       const isUnavailableBranch = Boolean(branchStatus && isBranchItem && item.label !== branchStatus)
                         && !(isInExchangeFlow && isExchangeStep);
@@ -2364,9 +2371,8 @@ const OrderDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* Activity Timeline + Courier tracking - side by side on desktop, stacked on mobile */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {/* Activity Timeline Section */}
+      {/* Activity Timeline Section */}
+      <div className="space-y-4 sm:space-y-6">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
           <button
             type="button"
