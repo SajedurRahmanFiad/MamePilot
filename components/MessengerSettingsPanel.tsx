@@ -61,8 +61,15 @@ const MessengerSettingsPanel: React.FC = () => {
     const toastId = toast.loading('Connecting to the Facebook Page...');
     try {
       const result = await testConnection.mutateAsync();
+      console.log('[Messenger] Test connection succeeded:', result);
+      if (result.warning) {
+        console.warn('[Messenger] Page subscription check warning:', result.warning);
+        toast.update(toastId, `Connected to ${result.pageName || 'the Facebook Page'}. The page subscription could not be verified — check the browser console for the Meta error.`, 'warning');
+        return;
+      }
       toast.update(toastId, `Connected to ${result.pageName || 'Facebook Page'}.`, 'success');
     } catch (testError) {
+      console.error('[Messenger] Test connection failed:', testError);
       toast.update(toastId, testError instanceof Error ? testError.message : 'Messenger connection test failed.', 'error');
     }
   };
@@ -71,8 +78,10 @@ const MessengerSettingsPanel: React.FC = () => {
     const toastId = toast.loading('Turning on Page message delivery...');
     try {
       const result = await subscribePage.mutateAsync();
+      console.log('[Messenger] Subscribe result:', result);
       toast.update(toastId, result.subscribed ? 'Page message delivery is active.' : 'Page messages could not be turned on. Check the saved details and try again.', result.subscribed ? 'success' : 'error');
     } catch (subscribeError) {
+      console.error('[Messenger] Subscribe failed:', subscribeError);
       toast.update(toastId, subscribeError instanceof Error ? subscribeError.message : 'Could not turn on Page messages. Check the saved details and try again.', 'error');
     }
   };

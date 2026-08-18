@@ -81,6 +81,7 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
+        'X-MamePilot-Debug': '1',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(payload ?? {}),
@@ -137,10 +138,20 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
 
     const rawMessage = parsed?.error || `Request failed with status ${response.status}`;
     const fallback = response.status >= 500 ? GENERIC_ACTION_ERROR : 'We could not complete this request. Please try again.';
-    throw new ApiError(userFacingErrorMessage(rawMessage, fallback), {
+    const error = new ApiError(userFacingErrorMessage(rawMessage, fallback), {
       status: response.status,
       code: parsed?.code || 'HTTP_ERROR',
     });
+
+    if (typeof window !== 'undefined') {
+      console.warn(`[api:${action}] HTTP ${response.status} failed`, {
+        url: apiActionUrl(action),
+        response: parsed,
+        detail: parsed?.debug ?? error.message,
+      });
+    }
+
+    throw error;
   }
 
   return parsed as T;

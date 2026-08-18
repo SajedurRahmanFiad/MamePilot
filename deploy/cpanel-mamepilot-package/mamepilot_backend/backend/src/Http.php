@@ -93,19 +93,31 @@ final class Http
         $requestId = self::requestId();
         error_log(sprintf('[MamePilot %s] %s in %s:%d\n%s', $requestId, $exception->getMessage(), $exception->getFile(), $exception->getLine(), $exception->getTraceAsString()));
         $message = $exception->getMessage();
+        $debug = self::debugRequested() ? ['debug' => $message] : [];
         if ($message === 'Authentication required.') {
-            self::error(401, 'Your session has expired. Please sign in again.', ['code' => 'AUTHENTICATION_REQUIRED']);
+            self::error(401, 'Your session has expired. Please sign in again.', ['code' => 'AUTHENTICATION_REQUIRED'] + $debug);
             return;
         }
         if ($message === 'Admin access required.' || $message === 'Developer access required.') {
-            self::error(403, 'You do not have permission to do this.', ['code' => 'ACCESS_DENIED']);
+            self::error(403, 'You do not have permission to do this.', ['code' => 'ACCESS_DENIED'] + $debug);
             return;
         }
         if ($exception instanceof \RuntimeException && !($exception instanceof \PDOException)) {
-            self::error(400, self::safeErrorMessage($message), ['code' => 'ACTION_NOT_COMPLETED']);
+            self::error(400, self::safeErrorMessage($message), ['code' => 'ACTION_NOT_COMPLETED'] + $debug);
             return;
         }
-        self::error(500, self::GENERIC_ERROR, ['code' => 'SERVER_ERROR', 'requestId' => $requestId]);
+        self::error(500, self::GENERIC_ERROR, ['code' => 'SERVER_ERROR', 'requestId' => $requestId] + $debug);
+    }
+
+    /**
+     * Opt-in debugging: include the raw exception message in error responses
+     * when the client sends the X-MamePilot-Debug header or a debug=1 query
+     * parameter. Safe by default; production responses stay sanitized.
+     */
+    private static function debugRequested(): bool
+    {
+        if (!empty($_SERVER['HTTP_X_MAMEPILOT_DEBUG'])) return true;
+        return (string) ($_GET['debug'] ?? '') === '1';
     }
 
     public static function method(): string

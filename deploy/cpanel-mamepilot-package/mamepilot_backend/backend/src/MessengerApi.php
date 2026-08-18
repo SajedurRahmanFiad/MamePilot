@@ -62,7 +62,14 @@ final class MessengerApi extends BaseService
         $page = $this->graphRequest('GET', '/' . rawurlencode($pageId), null, $settings, [
             'fields' => 'id,name,username,picture.type(large)',
         ]);
-        $subscription = $this->subscriptionState($settings);
+        $subscription = ['subscribed' => false, 'fields' => []];
+        $warning = null;
+        try {
+            $subscription = $this->subscriptionState($settings);
+        } catch (\Throwable $exception) {
+            $warning = trim((string) preg_replace('/\s+/', ' ', $exception->getMessage()));
+            if ($warning === '') $warning = 'Meta could not verify the page subscription.';
+        }
         $picture = (string) ($page['picture']['data']['url'] ?? '');
         $this->database->execute(
             'UPDATE messenger_settings
@@ -87,6 +94,7 @@ final class MessengerApi extends BaseService
             'pagePictureUrl' => $picture,
             'subscribed' => $subscription['subscribed'],
             'subscribedFields' => $subscription['fields'],
+            'warning' => $warning,
         ];
     }
 
