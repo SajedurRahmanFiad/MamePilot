@@ -54,6 +54,7 @@ export const DASHBOARD_KPI_DEFINITIONS: DashboardItemDefinition[] = [
   { key: 'admin.courierAssignedOrders', label: 'Courier Assigned Orders', description: 'Orders currently assigned to a courier.', scope: 'admin', defaultFor: [] },
   { key: 'admin.pickedOrders', label: 'Picked Orders', description: 'Orders picked by a courier.', scope: 'admin', defaultFor: ['admin'] },
   { key: 'admin.deliveredOrders', label: 'Delivered Orders', description: 'Completed and delivered orders.', scope: 'admin', defaultFor: ['admin'] },
+  { key: 'admin.partiallyDeliveredOrders', label: 'Partially Delivered Orders', description: 'Orders in a partial delivery state.', scope: 'admin', defaultFor: [] },
   { key: 'admin.exchangedOrders', label: 'Exchanged Orders', description: 'Orders in any exchange workflow status.', scope: 'admin', defaultFor: [] },
   { key: 'admin.exchangeProcessingOrders', label: 'Exchange Processing Orders', description: 'Orders whose exchange is being processed.', scope: 'admin', defaultFor: [] },
   { key: 'admin.exchangePickedOrders', label: 'Exchange Picked Orders', description: 'Exchange orders picked by a courier.', scope: 'admin', defaultFor: [] },

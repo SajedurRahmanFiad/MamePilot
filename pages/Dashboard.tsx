@@ -251,6 +251,7 @@ const Dashboard: React.FC = () => {
       case 'admin.courierAssignedOrders': return orderCard('Courier Assigned Orders', 'courierAssigned', OrderStatus.COURIER_ASSIGNED, 'bg-blue-600', 'bg-blue-700', ICONS.Courier);
       case 'admin.pickedOrders': return orderCard('Picked Orders', 'picked', OrderStatus.PICKED, 'bg-cyan-500', 'bg-cyan-600', ICONS.Courier);
       case 'admin.deliveredOrders': return orderCard('Delivered Orders', 'completed', OrderStatus.COMPLETED, 'bg-teal-600', 'bg-teal-700', ICONS.PlusCircle);
+      case 'admin.partiallyDeliveredOrders': return orderCard('Partially Delivered Orders', 'partiallyDelivered', OrderStatus.PARTIALLY_DELIVERED, 'bg-amber-500', 'bg-amber-600', ICONS.Clock);
       case 'admin.exchangedOrders': return <StatCard title="Exchanged Orders" value={adminSnapshot ? adminSnapshot.orderCounts.exchangeTotal : inlinePlaceholder} icon={ICONS.Transfer} bgColor="bg-violet-700" textColor="text-white" iconBgColor="bg-violet-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.exchangeTotal) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.exchangeTotal : undefined} />;
       case 'admin.exchangeProcessingOrders': return orderCard('Exchange Processing Orders', 'exchangeProcessing', OrderStatus.EXCHANGE_PROCESSING, 'bg-indigo-500', 'bg-indigo-600', ICONS.Transfer);
       case 'admin.exchangePickedOrders': return orderCard('Exchange Picked Orders', 'exchangePicked', OrderStatus.EXCHANGE_PICKED, 'bg-purple-500', 'bg-purple-600', ICONS.Courier);

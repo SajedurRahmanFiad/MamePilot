@@ -1134,6 +1134,7 @@ export interface DashboardOrderMetrics {
   courierAssigned: number;
   picked: number;
   completed: number;
+  partiallyDelivered: number;
   exchangeTotal: number;
   exchangeProcessing: number;
   exchangePicked: number;
