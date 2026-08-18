@@ -73,12 +73,20 @@ const BatchEventModal: React.FC<BatchEventModalProps> = ({ isOpen, onClose, onSu
   const handleSubmit = async () => {
     if (!selectedBatchId || !selectedEventTypeId) return;
 
+    const enteredChange = selectedEventType?.requiresPopulationChange ? populationChange : 0;
+    const direction = selectedEventType?.stockAdjustmentDirection ?? 'none';
+    const populationChangeValue = direction === 'decrease'
+      ? -Math.abs(enteredChange)
+      : direction === 'increase'
+        ? Math.abs(enteredChange)
+        : enteredChange;
+
     try {
       await createEventMutation.mutateAsync({
         batchId: selectedBatchId,
         eventTypeId: selectedEventTypeId,
         eventDate,
-        populationChange: selectedEventType?.requiresPopulationChange ? populationChange : 0,
+        populationChange: populationChangeValue,
         expenseAmount: selectedEventType?.requiresExpenseAmount ? expenseAmount : 0,
         accountId: selectedEventType?.requiresAccountId ? selectedAccountId : undefined,
         paymentMethod: selectedEventType?.requiresPaymentMethod ? selectedPaymentMethod : undefined,
