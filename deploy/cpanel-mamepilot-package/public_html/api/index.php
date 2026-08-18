@@ -13,6 +13,7 @@ use App\Database;
 use App\FeatureAccess;
 use App\GitUpdateDispatcher;
 use App\Http;
+use App\LeadApi;
 use App\MasterDataApi;
 use App\MetaAdsApi;
 use App\MessengerApi;
@@ -85,6 +86,7 @@ try {
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
     $shopify = new ShopifyApi($database, $auth, $config, $operations, $postCreateEffects);
     $recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
+    $lead = new LeadApi($database, $auth, $config);
 
     if ($action === 'health') {
         Http::ok(array_merge([
@@ -142,7 +144,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $shopify, $recurringTransactions];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $shopify, $recurringTransactions, $lead];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
