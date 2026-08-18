@@ -15,6 +15,7 @@ const LeadDetails: React.FC = () => {
   const profile = lead?.profile || {};
   const copy = async (value: string) => { if (value) await navigator.clipboard?.writeText(value); };
   if (leadQuery.isPending && !lead) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (intelligenceQuery.error && !lead) return <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-red-600">{(intelligenceQuery.error as Error).message}</div>;
   if (!lead) return <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-gray-500">Lead not found.</div>;
   return <div className="space-y-5">
     <button type="button" onClick={() => navigate((location.state as any)?.from || '/leads')} className="inline-flex items-center gap-2 text-sm font-black text-indigo-600"><ArrowLeft size={16} /> Back to leads</button>

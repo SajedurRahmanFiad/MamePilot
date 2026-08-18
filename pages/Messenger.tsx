@@ -279,7 +279,7 @@ const MessengerPage: React.FC = () => {
         </div>
       </aside>
 
-      {selectedContact && infoOpen && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} onClose={() => setInfoOpen(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
+      {selectedContact && infoOpen && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} error={leadIntelligence.error instanceof Error ? leadIntelligence.error.message : null} onClose={() => setInfoOpen(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
 
       <main className={`${mobileChatOpen ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-white`}>
         {!selectedContact ? <div className="flex flex-1 items-center justify-center bg-white p-6 text-center"><div><div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#0a7cff] to-[#8b5cf6] text-white shadow-xl"><Send size={42} /></div><h2 className="mt-6 text-2xl font-black">Messenger conversations</h2><p className="mt-2 text-sm text-gray-500">Choose a conversation to start replying.</p></div></div> : <>

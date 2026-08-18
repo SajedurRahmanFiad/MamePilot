@@ -436,7 +436,7 @@ const WhatsApp: React.FC = () => {
   return (
     <div className="relative flex h-full min-h-0 w-full overflow-hidden bg-white">
       <div className={`${selectedContactId ? 'hidden md:flex' : 'flex'} h-full min-h-0 w-full shrink-0 flex-col border-r border-gray-100 md:w-[360px] md:min-w-[360px]`}>{listPanel}</div>
-      {selectedContactId && showLeadPanel && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} onClose={() => setShowLeadPanel(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
+      {selectedContactId && showLeadPanel && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} error={leadIntelligence.error instanceof Error ? leadIntelligence.error.message : null} onClose={() => setShowLeadPanel(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
       <div className={`${selectedContactId ? 'flex' : 'hidden md:flex'} h-full min-h-0 min-w-0 flex-1 flex-col`}>{chatPanel}</div>
       <NewConversationModal open={showNewChat} pending={createConversation.isPending} onClose={() => setShowNewChat(false)} onSubmit={startConversation} />
       <TemplateModal open={showTemplates} templates={(templatesQuery.data?.data || []) as WhatsAppTemplate[]} loading={templatesQuery.isPending} error={templatesQuery.error?.message} pending={sendTemplate.isPending} onClose={() => setShowTemplates(false)} onSend={submitTemplate} />
