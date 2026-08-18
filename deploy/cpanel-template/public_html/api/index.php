@@ -86,7 +86,7 @@ try {
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
     $shopify = new ShopifyApi($database, $auth, $config, $operations, $postCreateEffects);
     $recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
-    $lead = new LeadApi($database, $auth, $config);
+    $lead = new LeadApi($database, $auth, $config, $master, $operations);
 
     if ($action === 'health') {
         Http::ok(array_merge([
