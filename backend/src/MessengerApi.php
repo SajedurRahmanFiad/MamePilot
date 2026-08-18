@@ -438,7 +438,10 @@ final class MessengerApi extends BaseService
         foreach ((array) ($payload['entry'] ?? []) as $entry) {
             if (!is_array($entry)) continue;
             $entryPageId = trim((string) ($entry['id'] ?? ''));
-            $events = array_values(array_filter((array) ($entry['messaging'] ?? []), 'is_array'));
+            $events = [];
+            foreach (['messaging', 'standby'] as $eventKey) {
+                $events = array_merge($events, array_values(array_filter((array) ($entry[$eventKey] ?? []), 'is_array')));
+            }
             $received += count($events);
             if ($configuredPageId !== '' && $entryPageId !== '' && !hash_equals($configuredPageId, $entryPageId)) {
                 $skipped += count($events);
@@ -539,7 +542,10 @@ final class MessengerApi extends BaseService
             if ($mid !== '') $this->database->execute("UPDATE messenger_messages SET message_type = 'unsent', message_text = 'Message was removed', attachment_url = NULL, attachments_json = NULL, updated_at = :updated WHERE mid = :mid", [':updated' => $this->database->nowUtc(), ':mid' => $mid]);
             return true;
         }
-        foreach (['postback' => 'postback', 'referral' => 'referral', 'optin' => 'optin'] as $eventKey => $type) {
+        if (isset($event['referral']) && is_array($event['referral'])) {
+            return true;
+        }
+        foreach (['postback' => 'postback', 'optin' => 'optin'] as $eventKey => $type) {
             if (!is_array($event[$eventKey] ?? null)) continue;
             $data = $event[$eventKey];
             $text = trim((string) ($data['title'] ?? $data['ref'] ?? $data['payload'] ?? ucfirst($type)));
@@ -919,13 +925,48 @@ final class MessengerApi extends BaseService
         $attachments = [];
         foreach ($this->jsonDecodeList($row['attachments_json'] ?? null) as $attachment) {
             if (!is_array($attachment)) continue;
-            $attachments[] = ['type' => (string) ($attachment['type'] ?? ''), 'url' => (string) ($attachment['payload']['url'] ?? ''), 'title' => (string) ($attachment['title'] ?? '')];
+            $payload = is_array($attachment['payload'] ?? null) ? $attachment['payload'] : [];
+            $element = null;
+            if ((string) ($attachment['type'] ?? '') === 'template') {
+                foreach ((array) ($payload['elements'] ?? []) as $candidate) {
+                    if (is_array($candidate)) { $element = $candidate; break; }
+                }
+            }
+            $source = $element ?? $payload;
+            $buttons = [];
+            foreach ((array) ($source['buttons'] ?? []) as $button) {
+                if (!is_array($button)) continue;
+                $buttons[] = ['type' => (string) ($button['type'] ?? 'postback'), 'title' => (string) ($button['title'] ?? ''), 'url' => (string) ($button['url'] ?? ''), 'payload' => (string) ($button['payload'] ?? '')];
+            }
+            $attachments[] = [
+                'type' => (string) ($attachment['type'] ?? ''),
+                'url' => (string) ($source['url'] ?? $payload['url'] ?? ''),
+                'title' => (string) ($source['title'] ?? $attachment['title'] ?? ''),
+                'subtitle' => (string) ($source['subtitle'] ?? ''),
+                'buttons' => $buttons,
+            ];
+        }
+        $card = null;
+        $payloadJson = json_decode((string) ($row['payload_json'] ?? ''), true);
+        if (is_array($payloadJson) && is_array($payloadJson['card'] ?? null)) {
+            $element = $payloadJson['card'];
+            $buttons = [];
+            foreach ((array) ($element['buttons'] ?? []) as $button) {
+                if (!is_array($button)) continue;
+                $buttons[] = ['type' => (string) ($button['type'] ?? 'postback'), 'title' => (string) ($button['title'] ?? ''), 'url' => (string) ($button['url'] ?? ''), 'payload' => (string) ($button['payload'] ?? '')];
+            }
+            $card = [
+                'title' => (string) ($element['title'] ?? ''),
+                'subtitle' => (string) ($element['subtitle'] ?? ''),
+                'imageUrl' => (string) ($element['image_url'] ?? ''),
+                'buttons' => $buttons,
+            ];
         }
         return [
             'id' => (string) ($row['id'] ?? ''), 'mid' => (string) ($row['mid'] ?? ''), 'contactId' => (string) ($row['contact_id'] ?? ''),
             'direction' => (string) ($row['direction'] ?? ''), 'type' => (string) ($row['message_type'] ?? 'text'), 'text' => (string) ($row['message_text'] ?? ''),
             'attachmentUrl' => (string) ($row['attachment_url'] ?? ''), 'attachmentId' => (string) ($row['attachment_id'] ?? ''),
-            'attachments' => $attachments, 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'fileName' => (string) ($row['file_name'] ?? ''),
+            'attachments' => $attachments, 'card' => $card, 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'fileName' => (string) ($row['file_name'] ?? ''),
             'status' => (string) ($row['status'] ?? ''), 'errorCode' => (string) ($row['error_code'] ?? ''), 'errorMessage' => (string) ($row['error_message'] ?? ''),
             'replyToMid' => (string) ($row['reply_to_mid'] ?? ''), 'reaction' => (string) ($row['reaction'] ?? ''), 'reactionActor' => (string) ($row['reaction_actor'] ?? ''),
             'quickReplies' => $quickReplies, 'messageAt' => $this->toIso($row['message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),

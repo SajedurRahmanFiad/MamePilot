@@ -1924,6 +1924,21 @@ export interface MessengerContact {
   updatedAt?: string | null;
 }
 
+export interface MessengerAttachment {
+  type: string;
+  url: string;
+  title: string;
+  subtitle?: string;
+  buttons?: Array<{ type: string; title: string; url: string; payload: string }>;
+}
+
+export interface MessengerCard {
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  buttons: Array<{ type: string; title: string; url: string; payload: string }>;
+}
+
 export interface MessengerMessage {
   id: string;
   mid: string;
@@ -1933,7 +1948,8 @@ export interface MessengerMessage {
   text: string;
   attachmentUrl: string;
   attachmentId: string;
-  attachments: Array<{ type: string; url: string; title?: string }>;
+  attachments: MessengerAttachment[];
+  card?: MessengerCard | null;
   mimeType: string;
   fileName: string;
   status: string;

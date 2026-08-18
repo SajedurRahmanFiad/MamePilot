@@ -79,8 +79,24 @@ const ContactAvatar: React.FC<{ contact: Pick<MessengerContact, 'name' | 'profil
   return contact.profilePictureUrl ? <img src={contact.profilePictureUrl} alt="" className={`${classes} shrink-0 rounded-full object-cover`} /> : <div className={`${classes} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 font-black text-[#0866ff]`}>{initials(contact.name)}</div>;
 };
 
+const CardView: React.FC<{ card: { title: string; subtitle: string; imageUrl: string; buttons: Array<{ type: string; title: string; url: string; payload: string }> } }> = ({ card }) => (
+  <div className="min-w-[230px] max-w-full overflow-hidden rounded-2xl bg-white text-gray-900 shadow-sm">
+    {card.imageUrl && <img src={card.imageUrl} alt="" className="h-36 w-full object-cover" />}
+    <div className="space-y-2 p-3">
+      <div><p className="font-black">{card.title || 'Shared card'}</p>{card.subtitle && <p className="mt-0.5 text-sm text-gray-500">{card.subtitle}</p>}</div>
+      {card.buttons.length > 0 && <div className="flex flex-col gap-1.5">{card.buttons.map((button, index) => button.type === 'web_url' && button.url ? <a key={index} href={button.url} target="_blank" rel="noreferrer" className="rounded-xl border border-[#0866ff] px-3 py-1.5 text-center text-sm font-bold text-[#0866ff] hover:bg-blue-50">{button.title}</a> : <span key={index} className="rounded-xl border border-gray-200 px-3 py-1.5 text-center text-sm font-bold text-gray-600">{button.title}</span>)}</div>}
+    </div>
+  </div>
+);
+
 const MessageContent: React.FC<{ message: MessengerMessage }> = ({ message }) => {
-  if (message.type === 'template') return <div className="min-w-[220px] overflow-hidden rounded-2xl bg-white text-gray-900 shadow-sm">{message.attachmentUrl && <img src={message.attachmentUrl} alt="" className="h-32 w-full object-cover" />}<div className="p-3"><p className="font-black">{message.text || 'Shared card'}</p></div></div>;
+  if (message.type === 'template' || message.card) {
+    const card = message.card ?? (() => {
+      const attachment = message.attachments.find((item) => item.type === 'template');
+      return attachment ? { title: attachment.title, subtitle: attachment.subtitle ?? '', imageUrl: attachment.url, buttons: attachment.buttons ?? [] } : { title: message.text || 'Shared card', subtitle: '', imageUrl: message.attachmentUrl, buttons: [] };
+    })();
+    return <CardView card={card} />;
+  }
   const attachments = message.attachments?.length ? message.attachments : (message.attachmentUrl ? [{ type: message.type, url: message.attachmentUrl }] : []);
   if (attachments.length > 0) {
     return (
@@ -119,7 +135,7 @@ const MessageBubble: React.FC<{
         </div>
         {message.quickReplies?.length > 0 && <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">{message.quickReplies.map((reply, index) => <span key={`${reply.title}-${index}`} className="rounded-full border border-[#0866ff] bg-white px-3 py-1 text-xs font-bold text-[#0866ff]">{reply.title}</span>)}</div>}
         {message.reaction && <button type="button" onClick={() => onReact('')} className={`absolute -bottom-3 ${outgoing ? 'right-1' : 'left-1'} rounded-full border-2 border-white bg-white px-1.5 py-0.5 text-sm shadow`}>{message.reaction}</button>}
-        <div className={`mt-1 flex items-center gap-1 px-1 text-[10px] text-gray-400 ${outgoing ? 'justify-end' : 'justify-start'}`}><span>{formatTime(message.messageAt)}</span>{outgoing && <Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} />}{message.status === 'failed' && <AlertCircle size={12} className="text-red-500" />}</div>
+        <div className={`mt-1 flex items-center gap-1 px-1 text-[10px] text-gray-400 ${outgoing ? 'justify-end' : 'justify-start'}`}><span>{formatTime(message.messageAt)}</span>{outgoing && <span className="flex items-center gap-0.5">{message.status === 'read' || message.status === 'delivered' ? <><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /></> : <Check size={11} />}</span>}{message.status === 'failed' && <AlertCircle size={12} className="text-red-500" />}</div>
         {message.errorMessage && <p className="max-w-sm px-1 text-right text-[11px] font-medium text-red-600">{message.errorMessage}</p>}
       </div>
       {!outgoing && <button type="button" onClick={onReply} className="mb-1 rounded-full p-1.5 text-gray-400 opacity-0 transition hover:bg-gray-100 group-hover:opacity-100 focus:opacity-100"><Reply size={16} /></button>}
@@ -188,7 +204,8 @@ const MessengerPage: React.FC = () => {
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
   useEffect(() => { setContactPage(1); }, [debouncedSearch, filter]);
   useEffect(() => { if (!selectedId && contacts.length > 0) setSelectedId(contacts[0].id); }, [contacts, selectedId]);
-  useEffect(() => { if (selectedId && selectedContact?.unreadCount) markRead.mutate(selectedId); }, [selectedId, selectedContact?.unreadCount]);
+  useEffect(() => { if (selectedId && selectedContact?.unreadCount && document.hasFocus()) markRead.mutate(selectedId); }, [selectedId, selectedContact?.unreadCount]);
+  useEffect(() => { const clearOnFocus = () => { if (selectedId && selectedContact?.unreadCount) markRead.mutate(selectedId); }; window.addEventListener('focus', clearOnFocus); return () => window.removeEventListener('focus', clearOnFocus); }, [selectedId, selectedContact?.unreadCount]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, selectedId]);
   useEffect(() => () => { if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current); recorderStreamRef.current?.getTracks().forEach((track) => track.stop()); }, []);
 
