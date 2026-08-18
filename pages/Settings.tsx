@@ -19,6 +19,7 @@ import {
   useBatchUpdateSettings,
   useUpdatePermissionsSettings,
   useUpdateDashboardSettings,
+  useUpdateSystemDefaults,
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
@@ -120,6 +121,7 @@ const SettingsPage: React.FC = () => {
   const batchUpdateMutation = useBatchUpdateSettings();
   const updatePermissionsSettingsMutation = useUpdatePermissionsSettings();
   const updateDashboardSettingsMutation = useUpdateDashboardSettings();
+  const updateSystemDefaultsMutation = useUpdateSystemDefaults();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
@@ -219,6 +221,9 @@ const SettingsPage: React.FC = () => {
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() => normalizeDashboardSettings());
   const dashboardDirtyRef = useRef(false);
   const [dashboardDirty, setDashboardDirty] = useState(false);
+  const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
+  const lowStockThresholdDirtyRef = useRef(false);
+  const [lowStockThresholdDirty, setLowStockThresholdDirty] = useState(false);
   const [metaAdsSettings, setMetaAdsSettings] = useState<MetaAdsSettings>({
     appId: '',
     appSecret: '',
@@ -349,6 +354,13 @@ const SettingsPage: React.FC = () => {
       setDashboardSettings(cloneDashboardSettings(dashboardSettingsData));
     }
   }, [dashboardSettingsData]);
+
+  React.useEffect(() => {
+    const threshold = Number(systemDefaultsData?.lowStockThreshold);
+    if (Number.isFinite(threshold) && threshold > 0 && !lowStockThresholdDirtyRef.current) {
+      setLowStockThreshold(threshold);
+    }
+  }, [systemDefaultsData?.lowStockThreshold]);
 
   React.useEffect(() => {
     if (metaAdsSettingsData) {
@@ -628,6 +640,12 @@ const SettingsPage: React.FC = () => {
     });
   }, []);
 
+  const handleLowStockThresholdChange = useCallback((next: number) => {
+    lowStockThresholdDirtyRef.current = true;
+    setLowStockThresholdDirty(true);
+    setLowStockThreshold(next);
+  }, []);
+
   const handleSave = async () => {
     if (activeTab === 'dashboard') {
       const toastId = toast.loading('Saving dashboard layouts...');
@@ -638,6 +656,13 @@ const SettingsPage: React.FC = () => {
         setDashboardDirty(false);
         setDashboardSettings(persisted);
         queryClient.setQueryData(['settings', 'dashboards'], persisted);
+        if (lowStockThresholdDirtyRef.current) {
+          const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
+          lowStockThresholdDirtyRef.current = false;
+          setLowStockThresholdDirty(false);
+          const defaultsData = savedDefaults?.data ?? savedDefaults;
+          if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
+        }
         toast.update(toastId, 'Dashboard layouts saved successfully!', 'success');
       } catch (err) {
         console.error('Failed to save dashboard layouts:', err);
@@ -1120,11 +1145,11 @@ const SettingsPage: React.FC = () => {
           disabled={activeTab === 'permissions'
             ? (!permissionsDirty && !dashboardDirty) || updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending
             : activeTab === 'dashboard'
-              ? !dashboardDirty || updateDashboardSettingsMutation.isPending
+              ? (!dashboardDirty && !lowStockThresholdDirty) || updateDashboardSettingsMutation.isPending || updateSystemDefaultsMutation.isPending
             : batchUpdateMutation.isPending}
         >
           {((activeTab === 'permissions' && (updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending))
-            || (activeTab === 'dashboard' && updateDashboardSettingsMutation.isPending)
+            || (activeTab === 'dashboard' && (updateDashboardSettingsMutation.isPending || updateSystemDefaultsMutation.isPending))
             || (!['permissions', 'dashboard'].includes(activeTab) && batchUpdateMutation.isPending))
             ? 'Saving...'
             : 'Save Changes'}
@@ -2210,7 +2235,9 @@ const SettingsPage: React.FC = () => {
             <DashboardSettingsPanel
               value={dashboardSettings}
               onChange={handleDashboardChange}
-              hasUnsavedChanges={dashboardDirty}
+              hasUnsavedChanges={dashboardDirty || lowStockThresholdDirty}
+              lowStockThreshold={lowStockThreshold}
+              onLowStockThresholdChange={handleLowStockThresholdChange}
             />
           )}
 

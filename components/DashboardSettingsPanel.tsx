@@ -14,6 +14,8 @@ interface DashboardSettingsPanelProps {
   value: DashboardSettings;
   onChange: (next: DashboardSettings) => void;
   hasUnsavedChanges?: boolean;
+  lowStockThreshold?: number;
+  onLowStockThresholdChange?: (value: number) => void;
 }
 
 interface OrderedChecklistProps {
@@ -95,7 +97,7 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
   );
 };
 
-const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false }) => {
+const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false, lowStockThreshold = 10, onLowStockThresholdChange }) => {
   const [selectedDashboardId, setSelectedDashboardId] = useState(value.dashboards[0]?.id || '');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newDashboardName, setNewDashboardName] = useState('');
@@ -210,21 +212,35 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
               definitions={DASHBOARD_KPI_DEFINITIONS}
               onChange={(items) => updateSelected((dashboard) => ({ ...dashboard, kpiCards: items }))}
               headerExtra={
-                <label className="flex w-full min-w-[240px] flex-col gap-1.5 lg:w-[300px]">
-                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Order KPI time basis</span>
-                  <select
-                    value={selectedDashboard.orderKpiTimeBasis}
-                    onChange={(event) => updateSelected((dashboard) => ({ ...dashboard, orderKpiTimeBasis: event.target.value as OrderKpiTimeBasis }))}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:border-[#3c5a82]"
-                  >
-                    {ORDER_KPI_TIME_BASIS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                  <span className="text-[11px] font-medium leading-4 text-gray-400">
-                    {ORDER_KPI_TIME_BASIS_OPTIONS.find((option) => option.value === selectedDashboard.orderKpiTimeBasis)?.description}
-                  </span>
-                </label>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="flex min-w-[240px] flex-1 flex-col gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Order KPI time basis</span>
+                    <select
+                      value={selectedDashboard.orderKpiTimeBasis}
+                      onChange={(event) => updateSelected((dashboard) => ({ ...dashboard, orderKpiTimeBasis: event.target.value as OrderKpiTimeBasis }))}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:border-[#3c5a82]"
+                    >
+                      {ORDER_KPI_TIME_BASIS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] font-medium leading-4 text-gray-400">
+                      {ORDER_KPI_TIME_BASIS_OPTIONS.find((option) => option.value === selectedDashboard.orderKpiTimeBasis)?.description}
+                    </span>
+                  </label>
+                  <label className="flex min-w-[120px] flex-col gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Low stock threshold</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99999}
+                      value={lowStockThreshold}
+                      onChange={(event) => onLowStockThresholdChange?.(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:border-[#3c5a82]"
+                    />
+                    <span className="text-[11px] font-medium leading-4 text-gray-400">Items at or below this stock amount count as low.</span>
+                  </label>
+                </div>
               }
             />
             <OrderedChecklist

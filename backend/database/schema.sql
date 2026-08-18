@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   white_label TINYINT(1) NOT NULL DEFAULT 0,
   theme_color VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
   automatic_fraud_check_on_order_creation TINYINT(1) NOT NULL DEFAULT 0,
+  low_stock_threshold INT NOT NULL DEFAULT 10,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -254,7 +255,8 @@ ALTER TABLE `users`
 ALTER TABLE `system_defaults`
   ADD COLUMN IF NOT EXISTS `white_label` TINYINT(1) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS `theme_color` VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
-  ADD COLUMN IF NOT EXISTS `automatic_fraud_check_on_order_creation` TINYINT(1) NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS `automatic_fraud_check_on_order_creation` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `low_stock_threshold` INT NOT NULL DEFAULT 10;
 CREATE TABLE IF NOT EXISTS courier_settings (
   id VARCHAR(64) NOT NULL,
   steadfast_enabled TINYINT(1) NOT NULL DEFAULT 0,

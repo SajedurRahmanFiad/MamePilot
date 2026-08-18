@@ -3910,6 +3910,143 @@ final class OperationsApi extends BaseService
             unset($product);
         }
 
+        $topSoldBatches = [];
+        if ($this->tableExists('batches')) {
+            $batchIdRows = $this->database->fetchAll('SELECT id FROM batches WHERE deleted_at IS NULL');
+            $batchIds = array_values(array_filter(array_map(
+                static fn(array $row): string => trim((string) ($row['id'] ?? '')),
+                $batchIdRows
+            )));
+            if ($batchIds !== []) {
+                [$batchIdPlaceholders, $batchIdBindings] = $this->inClause($batchIds, 'top_batch_filter');
+                $topBatchConditions = ['deleted_at IS NULL', 'status = :dashboard_top_batch_status'];
+                $topBatchBindings = [':dashboard_top_batch_status' => 'Completed'];
+                $this->applyDashboardDateBounds('order_date', $filters, $topBatchConditions, $topBatchBindings, 'dashboard_top_batch');
+
+                try {
+                    $topBatchIdSql = $this->orderItemJsonValue('o', 'top_batch_seq', 'productId');
+                    $topBatchNameSql = $this->orderItemJsonValue('o', 'top_batch_seq', 'productName');
+                    $topBatchQuantitySql = $this->orderItemJsonValue('o', 'top_batch_seq', 'quantity');
+                    $topSoldBatches = array_map(
+                        static fn(array $row): array => [
+                            'batchId' => (string) ($row['batchId'] ?? ''),
+                            'name' => (string) ($row['name'] ?? 'Unnamed Batch'),
+                            'qty' => (int) ($row['qty'] ?? 0),
+                        ],
+                        $this->database->fetchAll(
+                            'SELECT
+                                MIN(NULLIF(' . $topBatchIdSql . ', \'\')) AS batchId,
+                                COALESCE(NULLIF(' . $topBatchNameSql . ', \'\'), \'Unnamed Batch\') AS name,
+                                SUM(CAST(COALESCE(NULLIF(' . $topBatchQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))) AS qty
+                             FROM orders o
+                             INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'top_batch_seq') . '
+                             WHERE ' . implode(' AND ', array_map(static fn(string $condition): string => 'o.' . $condition, $topBatchConditions)) . '
+                               AND COALESCE(NULLIF(' . $topBatchIdSql . ', \'\'), NULLIF(' . $topBatchNameSql . ', \'\')) IN (' . implode(', ', $batchIdPlaceholders) . ')
+                             GROUP BY COALESCE(NULLIF(' . $topBatchIdSql . ', \'\'), NULLIF(' . $topBatchNameSql . ', \'\')), COALESCE(NULLIF(' . $topBatchNameSql . ', \'\'), \'Unnamed Batch\')
+                             HAVING qty > 0
+                             ORDER BY qty DESC, name ASC
+                             LIMIT 5',
+                            array_merge($topBatchBindings, $batchIdBindings)
+                        )
+                    );
+                } catch (\Throwable) {
+                    $batchIdSet = array_fill_keys($batchIds, true);
+                    $topBatchRows = $this->database->fetchAll(
+                        'SELECT items FROM orders WHERE ' . implode(' AND ', $topBatchConditions),
+                        $topBatchBindings
+                    );
+                    $batchMap = [];
+                    foreach ($topBatchRows as $row) {
+                        foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                            if (!is_array($item)) continue;
+                            $key = trim((string) ($item['productId'] ?? $item['productName'] ?? ''));
+                            $quantity = (int) ($item['quantity'] ?? 0);
+                            if ($key === '' || $quantity <= 0 || !isset($batchIdSet[$key])) continue;
+                            if (!isset($batchMap[$key])) {
+                                $batchMap[$key] = [
+                                    'batchId' => trim((string) ($item['productId'] ?? '')),
+                                    'name' => trim((string) ($item['productName'] ?? '')) ?: 'Unnamed Batch',
+                                    'qty' => 0,
+                                ];
+                            }
+                            $batchMap[$key]['qty'] += $quantity;
+                        }
+                    }
+                    $topSoldBatches = array_values($batchMap);
+                    usort($topSoldBatches, static fn(array $left, array $right): int =>
+                        (int) $right['qty'] !== (int) $left['qty']
+                            ? (int) $right['qty'] <=> (int) $left['qty']
+                            : strcmp((string) $left['name'], (string) $right['name'])
+                    );
+                    $topSoldBatches = array_slice($topSoldBatches, 0, 5);
+                }
+
+                $soldBatchIds = array_filter(array_column($topSoldBatches, 'batchId'));
+                if ($soldBatchIds) {
+                    [$batchImagePlaceholders, $batchImageBindings] = $this->inClause($soldBatchIds, 'top_batch_image');
+                    $batchImageRows = $this->database->fetchAll(
+                        'SELECT id, image FROM batches WHERE id IN (' . implode(', ', $batchImagePlaceholders) . ')',
+                        $batchImageBindings
+                    );
+                    $batchImageMap = [];
+                    foreach ($batchImageRows as $imgRow) {
+                        $batchImageMap[(string) $imgRow['id']] = (string) ($imgRow['image'] ?? '');
+                    }
+                    foreach ($topSoldBatches as &$batch) {
+                        $bid = $batch['batchId'] ?? '';
+                        $batch['image'] = ($bid !== '' && isset($batchImageMap[$bid])) ? $batchImageMap[$bid] : '';
+                        unset($batch['batchId']);
+                    }
+                    unset($batch);
+                } else {
+                    foreach ($topSoldBatches as &$batch) {
+                        $batch['image'] = '';
+                        unset($batch['batchId']);
+                    }
+                    unset($batch);
+                }
+            }
+        }
+
+        $lowStockThreshold = 10;
+        if ($this->columnExists('system_defaults', 'low_stock_threshold')) {
+            $thresholdRow = $this->database->fetchOne('SELECT low_stock_threshold FROM system_defaults LIMIT 1') ?? [];
+            $lowStockThreshold = max(1, (int) ($thresholdRow['low_stock_threshold'] ?? 10));
+        }
+        $lowStockProducts = [];
+        if ($lowStockThreshold >= 1) {
+            $lowStockRows = $this->database->fetchAll(
+                "SELECT id, name, image, stock, 'product' AS item_type
+                 FROM products
+                 WHERE deleted_at IS NULL AND stock <= :low_stock
+                 ORDER BY stock ASC, name ASC",
+                [':low_stock' => $lowStockThreshold]
+            );
+            if ($this->tableExists('batches')) {
+                $lowStockRows = array_merge($lowStockRows, $this->database->fetchAll(
+                    "SELECT id, name, image, population AS stock, 'batch' AS item_type
+                     FROM batches
+                     WHERE deleted_at IS NULL AND population <= :low_stock_batch
+                     ORDER BY population ASC, name ASC",
+                    [':low_stock_batch' => $lowStockThreshold]
+                ));
+            }
+            usort($lowStockRows, static function (array $left, array $right): int {
+                $stockOrder = (int) $left['stock'] <=> (int) $right['stock'];
+                if ($stockOrder !== 0) return $stockOrder;
+                return strcmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+            });
+            $lowStockProducts = array_slice(array_map(
+                static fn(array $row): array => [
+                    'name' => trim((string) ($row['name'] ?? '')) ?: 'Unnamed Item',
+                    'image' => (string) ($row['image'] ?? ''),
+                    'stock' => (int) ($row['stock'] ?? 0),
+                    'itemType' => (string) ($row['item_type'] ?? 'product'),
+                ],
+                $lowStockRows
+            ), 0, 5);
+        }
+
         return [
             'totalSales' => $totalSales,
             'totalPurchases' => $totalPurchases,
@@ -3922,6 +4059,9 @@ final class OperationsApi extends BaseService
             'monthlyData' => array_values($monthlyData),
             'expenseByCategory' => $expenseByCategory,
             'topSoldProducts' => $topSoldProducts,
+            'topSoldBatches' => $topSoldBatches,
+            'lowStockProducts' => $lowStockProducts,
+            'lowStockThreshold' => $lowStockThreshold,
             'topCustomers' => $topCustomers,
         ];
     }

@@ -1171,6 +1171,13 @@ export interface DashboardTopProduct {
   qty: number;
 }
 
+export interface DashboardLowStockProduct {
+  name: string;
+  image?: string;
+  stock: number;
+  itemType: 'product' | 'batch';
+}
+
 export interface DashboardTopCustomer {
   name: string;
   image?: string;
@@ -1190,6 +1197,9 @@ export interface DashboardAdminSnapshot {
   monthlyData: DashboardCashFlowPoint[];
   expenseByCategory: DashboardExpenseCategory[];
   topSoldProducts: DashboardTopProduct[];
+  topSoldBatches: DashboardTopProduct[];
+  lowStockProducts: DashboardLowStockProduct[];
+  lowStockThreshold: number;
   topCustomers: DashboardTopCustomer[];
 }
 

@@ -1806,6 +1806,7 @@ final class MasterDataApi extends BaseService
             'productSelectionMode' => (string) ($row['product_selection_mode'] ?? 'simple'),
             'calculateCogsFromPurchasePrice' => (bool) ($row['calculate_cogs_from_purchase_price'] ?? false),
             'automaticFraudCheckOnOrderCreation' => (bool) ($row['automatic_fraud_check_on_order_creation'] ?? false),
+            'lowStockThreshold' => (int) ($row['low_stock_threshold'] ?? 10),
         ];
     }
 
@@ -1878,6 +1879,22 @@ final class MasterDataApi extends BaseService
                 );
             }
             $payload['automatic_fraud_check_on_order_creation'] = (int) $autoFraudEnabled;
+        }
+        if (array_key_exists('lowStockThreshold', $params)) {
+            $lowStockThreshold = (int) $params['lowStockThreshold'];
+            if ($lowStockThreshold < 1 || $lowStockThreshold > 99999) {
+                throw new ApiException(
+                    'Low stock threshold must be between 1 and 99999.',
+                    422,
+                    'INVALID_LOW_STOCK_THRESHOLD'
+                );
+            }
+            if (!$this->columnExists('system_defaults', 'low_stock_threshold')) {
+                $this->database->execute(
+                    "ALTER TABLE `system_defaults` ADD COLUMN `low_stock_threshold` INT NOT NULL DEFAULT 10"
+                );
+            }
+            $payload['low_stock_threshold'] = $lowStockThreshold;
         }
 
         $row = $this->database->fetchOne('SELECT id FROM system_defaults LIMIT 1');

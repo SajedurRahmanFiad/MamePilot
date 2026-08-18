@@ -370,6 +370,7 @@ CREATE TABLE IF NOT EXISTS system_defaults (
   white_label TINYINT(1) NOT NULL DEFAULT 0,
   theme_color VARCHAR(32) NOT NULL DEFAULT '#0f2f57',
   automatic_fraud_check_on_order_creation TINYINT(1) NOT NULL DEFAULT 0,
+  low_stock_threshold INT NOT NULL DEFAULT 10,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -392,6 +393,7 @@ CALL sp_add_col('users', 'fixed_salary', 'DECIMAL(12,2) NULL');
 CALL sp_add_col('system_defaults', 'white_label', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('system_defaults', 'theme_color', 'VARCHAR(32) NOT NULL DEFAULT ''#0f2f57''');
 CALL sp_add_col('system_defaults', 'automatic_fraud_check_on_order_creation', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL sp_add_col('system_defaults', 'low_stock_threshold', 'INT NOT NULL DEFAULT 10');
 
 CREATE TABLE IF NOT EXISTS courier_settings (
   id VARCHAR(64) NOT NULL,
@@ -3735,6 +3737,11 @@ SET refund_issued_at = COALESCE(
     ), '%b %e %Y %H:%i'), '06:00:00')
 )
 WHERE JSON_VALID(history) = 1 AND JSON_UNQUOTE(JSON_EXTRACT(history, '$.refund')) IS NOT NULL AND refund_issued_at IS NULL;
+
+-- Migration: 2026-08-18_low_stock_threshold.sql
+-- Low-stock dashboard widget threshold. Products and batches at or below
+-- this stock/population amount are listed by the Low Stock Products widget.
+CALL sp_add_col('system_defaults', 'low_stock_threshold', 'INT NOT NULL DEFAULT 10');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

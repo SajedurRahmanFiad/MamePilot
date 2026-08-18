@@ -77,6 +77,8 @@ export const DASHBOARD_KPI_DEFINITIONS: DashboardItemDefinition[] = [
 export const DASHBOARD_WIDGET_DEFINITIONS: DashboardItemDefinition[] = [
   { key: 'admin.cashFlow', label: 'Cash Flow', description: 'Monthly income, expense, and profit chart.', scope: 'admin', defaultFor: ['admin'], requiredCapabilities: ['banking'], width: 'full' },
   { key: 'admin.topSoldProducts', label: 'Top 5 Sold Products', description: 'Best-selling products by quantity.', scope: 'admin', defaultFor: ['admin'], width: 'half' },
+  { key: 'admin.topSoldBatches', label: 'Top 5 Sold Batches', description: 'Best-selling batches by quantity.', scope: 'admin', defaultFor: ['admin'], requiredSubCapabilities: ['batch_management'], width: 'half' },
+  { key: 'admin.lowStockProducts', label: 'Low Stock Products', description: 'Products and batches at or below the low-stock threshold.', scope: 'admin', defaultFor: [], requiredCapabilities: ['inventory'], width: 'half' },
   { key: 'admin.topCustomers', label: 'Top 5 Customers', description: 'Highest-value customers by completed sales.', scope: 'admin', defaultFor: ['admin'], width: 'half' },
   { key: 'admin.profitLoss', label: 'Profit & Loss Summary', description: 'Income, expense, and net profit summary.', scope: 'admin', defaultFor: ['admin'], requiredCapabilities: ['purchases', 'banking'], width: 'half' },
   { key: 'admin.expensesByCategory', label: 'Expenses by Category', description: 'Expense distribution chart by category.', scope: 'admin', defaultFor: ['admin'], requiredCapabilities: ['purchases', 'banking'], width: 'half' },

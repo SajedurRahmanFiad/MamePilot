@@ -54,6 +54,8 @@ abstract class BaseService
     protected const DASHBOARD_WIDGET_SCOPES = [
         'admin.cashFlow' => 'admin',
         'admin.topSoldProducts' => 'admin',
+        'admin.topSoldBatches' => 'admin',
+        'admin.lowStockProducts' => 'admin',
         'admin.topCustomers' => 'admin',
         'admin.profitLoss' => 'admin',
         'admin.expensesByCategory' => 'admin',
@@ -76,6 +78,7 @@ abstract class BaseService
     protected const ADMIN_DEFAULT_DASHBOARD_WIDGETS = [
         'admin.cashFlow',
         'admin.topSoldProducts',
+        'admin.topSoldBatches',
         'admin.topCustomers',
         'admin.profitLoss',
         'admin.expensesByCategory',

@@ -20,6 +20,8 @@ export type SystemDefaultsSnapshot = {
   themeColor: string;
   productSelectionMode: string;
   calculateCogsFromPurchasePrice: boolean;
+  automaticFraudCheckOnOrderCreation?: boolean;
+  lowStockThreshold?: number;
 };
 
 function readEntry<T>(key: string): CacheEntry<T> | null {
