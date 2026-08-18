@@ -471,6 +471,28 @@ const OrderDetails: React.FC = () => {
   };
   
   const isSectionExpanded = (section: string) => !!expandedSection[section];
+
+  /**
+   * Courier webhook payloads carry Bangladesh wall-clock timestamps with no
+   * offset (e.g. `2026-08-03 14:30:00` is already UTC+6). Render them as-is
+   * instead of letting formatDateTime shift them another +06:00.
+   */
+  const formatCourierWebhookTime = (value?: string | null): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const naive = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (!naive) return formatDateTime(raw);
+    const wallClockAsUtc = new Date(Date.UTC(
+      Number(naive[1]),
+      Number(naive[2]) - 1,
+      Number(naive[3]),
+      Number(naive[4]),
+      Number(naive[5]),
+      Number(naive[6] || 0),
+    ));
+    if (!Number.isFinite(wallClockAsUtc.getTime())) return formatDateTime(raw);
+    return formatDateTime(new Date(wallClockAsUtc.getTime() - 6 * 60 * 60 * 1000));
+  };
   
   // Get customer and created by user from query results
   // `customer` is obtained via `useCustomer` above
@@ -2468,7 +2490,9 @@ const OrderDetails: React.FC = () => {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        {formatDateTime(event.eventAt || event.receivedAt)}
+                        {event.eventAt
+                          ? formatCourierWebhookTime(event.eventAt)
+                          : formatDateTime(event.receivedAt)}
                       </p>
                       <p className="text-xs font-medium leading-relaxed text-gray-700">{event.trackingMessage}</p>
                     </div>
