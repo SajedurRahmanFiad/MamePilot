@@ -32,6 +32,7 @@ abstract class BaseService
         'admin.courierAssignedOrders' => 'admin',
         'admin.pickedOrders' => 'admin',
         'admin.deliveredOrders' => 'admin',
+        'admin.partiallyDeliveredOrders' => 'admin',
         'admin.exchangedOrders' => 'admin',
         'admin.exchangeProcessingOrders' => 'admin',
         'admin.exchangePickedOrders' => 'admin',
