@@ -200,7 +200,7 @@ final class FeatureAccess
         'syncPathaoDeliveryStatuses' => 'pathao_courier',
         'fetchPathaoOrderInfo' => 'pathao_courier',
         'updatePermissionsSettings' => 'custom_roles',
-        'updateDashboardSettings' => 'custom_roles',
+        'updateDashboardSettings' => 'dashboard',
         'fetchAgentSettings' => 'enterprise_ai_agent',
         'updateAgentSettings' => 'enterprise_ai_agent',
         'mameChat' => 'enterprise_ai_agent',
