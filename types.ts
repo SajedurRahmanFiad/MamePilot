@@ -1893,6 +1893,10 @@ export interface MessengerSettings {
   webhookConfigured: boolean;
   subscribed: boolean;
   subscribedFields: string[];
+  webhookEventsReceived: number;
+  webhookEventsProcessed: number;
+  lastWebhookAt: string | null;
+  lastWebhookStatus: string;
 }
 
 export interface MessengerProfileSettings {

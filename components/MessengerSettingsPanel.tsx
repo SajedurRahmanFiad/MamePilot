@@ -26,6 +26,10 @@ const EMPTY_SETTINGS: MessengerSettings = {
   webhookConfigured: false,
   subscribed: false,
   subscribedFields: [],
+  webhookEventsReceived: 0,
+  webhookEventsProcessed: 0,
+  lastWebhookAt: null,
+  lastWebhookStatus: '',
 };
 
 const EMPTY_PROFILE: MessengerProfileSettings = { greeting: '', getStartedEnabled: false, iceBreakers: [] };
@@ -168,6 +172,18 @@ const MessengerSettingsPanel: React.FC = () => {
         <h4 className="font-black text-blue-950">Message delivery address</h4>
         <p className="mt-1 text-sm text-blue-700">Copy this address into the Messenger section of your Meta app, then turn on message delivery.</p>
         <div className="mt-4 flex gap-2"><input readOnly value={settings.webhookUrl} className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm font-medium" /><Button type="button" variant="outline" onClick={copyWebhook} aria-label="Copy message delivery address"><Clipboard size={17} /></Button></div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-gray-50/60 p-5">
+        <h4 className="font-black text-gray-900">Message delivery activity</h4>
+        <p className="mt-1 text-sm text-gray-500">Shows whether Meta is delivering new page messages to this address. Send a message to the page, then reload this panel.</p>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <div><dt className="font-black text-gray-800">Events received</dt><dd className="mt-1 text-lg font-black text-gray-900">{settings.webhookEventsReceived}</dd></div>
+          <div><dt className="font-black text-gray-800">Events processed</dt><dd className="mt-1 text-lg font-black text-gray-900">{settings.webhookEventsProcessed}</dd></div>
+          <div><dt className="font-black text-gray-800">Last delivery</dt><dd className="mt-1 font-medium text-gray-700">{settings.lastWebhookAt ? new Date(settings.lastWebhookAt).toLocaleString() : 'Never'}</dd></div>
+        </dl>
+        {settings.lastWebhookStatus && <p className="mt-4 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-medium text-gray-700">Last status: {settings.lastWebhookStatus}</p>}
+        {settings.webhookEventsReceived === 0 && settings.configured && <p className="mt-3 text-xs font-semibold text-amber-700">No events received yet. Check that this address is saved in the Messenger section of your Meta app and message delivery is turned on.</p>}
       </section>
 
       <section className="space-y-5 border-t border-gray-100 pt-7">

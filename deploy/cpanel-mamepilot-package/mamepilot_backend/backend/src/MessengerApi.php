@@ -425,22 +425,46 @@ final class MessengerApi extends BaseService
         $settings = $this->settingsRow();
         $secret = trim((string) ($settings['app_secret'] ?? ''));
         if ($secret === '' || $signature === null || !hash_equals('sha256=' . hash_hmac('sha256', $rawBody, $secret), trim($signature))) {
+            $this->recordWebhookDiagnostics(null, null, 'Signature mismatch - event rejected');
             throw new RuntimeException('Invalid Messenger webhook signature.');
         }
         $payload = json_decode($rawBody, true);
         if (!is_array($payload) || (string) ($payload['object'] ?? '') !== 'page') throw new RuntimeException('Invalid Messenger webhook JSON.');
+        $received = 0;
         $processed = 0;
+        $skipped = 0;
+        $mismatch = '';
+        $configuredPageId = trim((string) ($settings['page_id'] ?? ''));
         foreach ((array) ($payload['entry'] ?? []) as $entry) {
             if (!is_array($entry)) continue;
-            $configuredPageId = trim((string) ($settings['page_id'] ?? ''));
             $entryPageId = trim((string) ($entry['id'] ?? ''));
-            if ($configuredPageId !== '' && $entryPageId !== '' && !hash_equals($configuredPageId, $entryPageId)) continue;
-            foreach ((array) ($entry['messaging'] ?? []) as $event) {
-                if (!is_array($event)) continue;
+            $events = array_values(array_filter((array) ($entry['messaging'] ?? []), 'is_array'));
+            $received += count($events);
+            if ($configuredPageId !== '' && $entryPageId !== '' && !hash_equals($configuredPageId, $entryPageId)) {
+                $skipped += count($events);
+                $mismatch = $entryPageId;
+                continue;
+            }
+            foreach ($events as $event) {
                 $processed += $this->handleMessagingEvent($event, $settings) ? 1 : 0;
             }
         }
-        return ['ok' => true, 'processed' => $processed];
+        $status = $received . ' event(s) received, ' . $processed . ' processed';
+        if ($skipped > 0) $status .= ', ' . $skipped . ' skipped: webhook page id (' . $mismatch . ') does not match configured page (' . $configuredPageId . ')';
+        $this->recordWebhookDiagnostics($received, $processed, $status);
+        return ['ok' => true, 'received' => $received, 'processed' => $processed, 'skipped' => $skipped];
+    }
+
+    private function recordWebhookDiagnostics(?int $received, ?int $processed, string $status): void
+    {
+        if ($this->settingsRow() === null) return;
+        $bindings = [':status' => mb_substr($status, 0, 500), ':at' => $this->database->nowUtc(), ':id' => self::SETTINGS_ID];
+        $sets = ['last_webhook_status = :status', 'last_webhook_at = :at', 'updated_at = :at'];
+        if ($received !== null) {
+            $sets[] = 'webhook_events_received = webhook_events_received + ' . max(0, $received);
+            $sets[] = 'webhook_events_processed = webhook_events_processed + ' . max(0, (int) $processed);
+        }
+        $this->database->execute('UPDATE messenger_settings SET ' . implode(', ', $sets) . ' WHERE id = :id', $bindings);
     }
 
     private function handleMessagingEvent(array $event, ?array $settings): bool
@@ -540,13 +564,23 @@ final class MessengerApi extends BaseService
 
     private function messagingPolicy(array $contact, array $settings): array
     {
-        $last = trim((string) ($contact['last_user_message_at'] ?? ''));
-        if ($last === '') throw new RuntimeException('You can reply after this customer sends a new message.');
+        $last = $this->resolveLastUserMessageAt($contact, $settings);
+        if ($last === null) throw new RuntimeException('You can reply after this customer sends a new message.');
         $timestamp = strtotime($last . ' UTC');
         $age = $timestamp === false ? PHP_INT_MAX : max(0, time() - $timestamp);
         if ($age <= 86400) return ['type' => 'RESPONSE', 'tag' => null];
         if (!empty($settings['human_agent_enabled']) && $age <= 604800) return ['type' => 'MESSAGE_TAG', 'tag' => 'HUMAN_AGENT'];
         throw new RuntimeException('You can reply after this customer sends a new message.');
+    }
+
+    private function resolveLastUserMessageAt(array $contact, ?array $settings): ?string
+    {
+        $last = trim((string) ($contact['last_user_message_at'] ?? ''));
+        if ($last !== '') return $last;
+        if (!$this->isConfigured($settings)) return null;
+        $row = $this->database->fetchOne('SELECT MAX(message_at) AS at FROM messenger_messages WHERE contact_id = :contact AND direction = :direction AND message_at IS NOT NULL', [':contact' => $contact['id'], ':direction' => 'inbound']);
+        $last = trim((string) ($row['at'] ?? ''));
+        return $last === '' ? null : $last;
     }
 
     private function sendSenderAction(string $psid, string $action): void
@@ -603,6 +637,10 @@ final class MessengerApi extends BaseService
             'webhookConfigured' => trim((string) ($settings['verify_token'] ?? '')) !== '' && trim((string) ($settings['app_secret'] ?? '')) !== '',
             'subscribed' => !empty($settings['subscribed']),
             'subscribedFields' => array_values(array_filter(array_map('strval', $this->jsonDecodeList($settings['subscribed_fields'] ?? null)))),
+            'webhookEventsReceived' => (int) ($settings['webhook_events_received'] ?? 0),
+            'webhookEventsProcessed' => (int) ($settings['webhook_events_processed'] ?? 0),
+            'lastWebhookAt' => $this->toIso($settings['last_webhook_at'] ?? null),
+            'lastWebhookStatus' => (string) ($settings['last_webhook_status'] ?? ''),
         ];
     }
 
@@ -855,8 +893,8 @@ final class MessengerApi extends BaseService
 
     private function mapContact(array $row, ?array $settings): array
     {
-        $last = trim((string) ($row['last_user_message_at'] ?? ''));
-        $age = $last === '' ? PHP_INT_MAX : max(0, time() - (strtotime($last . ' UTC') ?: 0));
+        $lastResolved = $this->resolveLastUserMessageAt($row, $settings);
+        $age = $lastResolved === null ? PHP_INT_MAX : max(0, time() - (strtotime($lastResolved . ' UTC') ?: 0));
         $humanEnabled = !empty($this->settingsWithEnvironment($settings)['human_agent_enabled']);
         $window = $age <= 86400 ? 'standard' : (($humanEnabled && $age <= 604800) ? 'human_agent' : 'closed');
         $name = trim((string) ($row['name'] ?? '')) ?: trim((string) (($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? ''))) ?: 'Messenger customer';
@@ -866,7 +904,7 @@ final class MessengerApi extends BaseService
             'profilePictureUrl' => (string) ($row['profile_picture_url'] ?? ''), 'locale' => (string) ($row['locale'] ?? ''),
             'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => (string) ($row['last_message_preview'] ?? ''),
             'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null),
-            'lastUserMessageAt' => $this->toIso($row['last_user_message_at'] ?? null), 'canReply' => $window !== 'closed', 'replyWindow' => $window,
+            'lastUserMessageAt' => $this->toIso($lastResolved), 'canReply' => $window !== 'closed', 'replyWindow' => $window,
             'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
         ];
     }
@@ -919,9 +957,10 @@ final class MessengerApi extends BaseService
             return;
         }
         $ensuredForRequest = true;
-        if (!$this->tableExists('messenger_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_settings (id VARCHAR(64) NOT NULL, page_access_token TEXT NULL, page_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0', page_name VARCHAR(191) NULL, page_username VARCHAR(191) NULL, page_picture_url VARCHAR(1000) NULL, human_agent_enabled TINYINT(1) NOT NULL DEFAULT 0, subscribed TINYINT(1) NOT NULL DEFAULT 0, subscribed_fields LONGTEXT NULL, greeting VARCHAR(160) NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        if (!$this->tableExists('messenger_settings')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_settings (id VARCHAR(64) NOT NULL, page_access_token TEXT NULL, page_id VARCHAR(64) NULL, verify_token VARCHAR(255) NULL, app_secret VARCHAR(500) NULL, graph_version VARCHAR(16) NOT NULL DEFAULT 'v25.0', page_name VARCHAR(191) NULL, page_username VARCHAR(191) NULL, page_picture_url VARCHAR(1000) NULL, human_agent_enabled TINYINT(1) NOT NULL DEFAULT 0, subscribed TINYINT(1) NOT NULL DEFAULT 0, subscribed_fields LONGTEXT NULL, greeting VARCHAR(160) NULL, get_started_enabled TINYINT(1) NOT NULL DEFAULT 0, ice_breakers_json LONGTEXT NULL, webhook_events_received INT NOT NULL DEFAULT 0, webhook_events_processed INT NOT NULL DEFAULT 0, last_webhook_at DATETIME NULL, last_webhook_status VARCHAR(500) NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('messenger_contacts')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_contacts (id VARCHAR(64) NOT NULL, psid VARCHAR(191) NOT NULL, name VARCHAR(191) NULL, first_name VARCHAR(100) NULL, last_name VARCHAR(100) NULL, profile_picture_url VARCHAR(1000) NULL, locale VARCHAR(32) NULL, unread_count INT NOT NULL DEFAULT 0, last_message_preview VARCHAR(500) NULL, last_message_type VARCHAR(32) NULL, last_message_at DATETIME NULL, last_user_message_at DATETIME NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_messenger_contacts_psid (psid), KEY idx_messenger_contacts_last_message (last_message_at), KEY idx_messenger_contacts_unread (unread_count)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$this->tableExists('messenger_messages')) $this->database->execute("CREATE TABLE IF NOT EXISTS messenger_messages (id VARCHAR(64) NOT NULL, contact_id VARCHAR(64) NOT NULL, mid VARCHAR(255) NULL, direction VARCHAR(16) NOT NULL, message_type VARCHAR(32) NOT NULL DEFAULT 'text', message_text LONGTEXT NULL, attachment_url VARCHAR(1500) NULL, attachment_id VARCHAR(255) NULL, attachments_json LONGTEXT NULL, media_mime_type VARCHAR(127) NULL, file_name VARCHAR(255) NULL, status VARCHAR(32) NOT NULL DEFAULT 'received', error_code VARCHAR(64) NULL, error_message TEXT NULL, reply_to_mid VARCHAR(255) NULL, reaction VARCHAR(64) NULL, reaction_actor VARCHAR(16) NULL, quick_reply_payload VARCHAR(500) NULL, quick_replies_json LONGTEXT NULL, payload_json LONGTEXT NULL, message_at DATETIME NOT NULL, created_by VARCHAR(64) NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_messenger_messages_mid (mid), KEY idx_messenger_messages_contact_time (contact_id, message_at), KEY idx_messenger_messages_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        if ($this->tableExists('messenger_settings') && !$this->columnExists('messenger_settings', 'webhook_events_received')) $this->database->execute('ALTER TABLE messenger_settings ADD COLUMN webhook_events_received INT NOT NULL DEFAULT 0, ADD COLUMN webhook_events_processed INT NOT NULL DEFAULT 0, ADD COLUMN last_webhook_at DATETIME NULL, ADD COLUMN last_webhook_status VARCHAR(500) NULL');
         @touch($marker);
     }
 }

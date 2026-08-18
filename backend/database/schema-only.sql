@@ -3743,6 +3743,12 @@ WHERE JSON_VALID(history) = 1 AND JSON_UNQUOTE(JSON_EXTRACT(history, '$.refund')
 -- this stock/population amount are listed by the Low Stock Products widget.
 CALL sp_add_col('system_defaults', 'low_stock_threshold', 'INT NOT NULL DEFAULT 10');
 
+-- Migration: 2026-08-18_messenger_webhook_diagnostics.sql
+CALL sp_add_col('messenger_settings', 'webhook_events_received', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('messenger_settings', 'webhook_events_processed', 'INT NOT NULL DEFAULT 0');
+CALL sp_add_col('messenger_settings', 'last_webhook_at', 'DATETIME NULL');
+CALL sp_add_col('messenger_settings', 'last_webhook_status', 'VARCHAR(500) NULL');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS
