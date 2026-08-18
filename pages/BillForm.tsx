@@ -179,7 +179,17 @@ const BillForm: React.FC = () => {
   }, [id]);
 
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
-  const total = Math.max(0, subtotal - discount + shipping);
+  const totalBeforeDiscount = Math.max(0, subtotal + shipping);
+  const total = Math.max(0, totalBeforeDiscount - discount);
+
+  const handleDiscountChange = (value: number) => {
+    setDiscount(Math.min(totalBeforeDiscount, Math.max(0, value)));
+  };
+
+  const handleTotalChange = (value: number) => {
+    const nextTotal = Math.min(totalBeforeDiscount, Math.max(0, value));
+    setDiscount(Math.max(0, totalBeforeDiscount - nextTotal));
+  };
 
   const toggleProductSelection = (productId: string) => {
     setSelectedProductIds(prev => {
@@ -224,6 +234,20 @@ const BillForm: React.FC = () => {
     setItems(newItems);
   };
 
+  const updateRate = (index: number, rate: number) => {
+    const newItems = [...items];
+    newItems[index].rate = Math.max(0, rate);
+    newItems[index].amount = newItems[index].rate * newItems[index].quantity;
+    setItems(newItems);
+  };
+
+  const updateAmount = (index: number, amount: number) => {
+    const newItems = [...items];
+    newItems[index].amount = Math.max(0, amount);
+    newItems[index].rate = newItems[index].quantity > 0 ? newItems[index].amount / newItems[index].quantity : 0;
+    setItems(newItems);
+  };
+
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
@@ -238,8 +262,9 @@ const BillForm: React.FC = () => {
       setError('User session expired. Please log in again.');
       return;
     }
-    if (discount < 0 || discount > subtotal) {
-      setError(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(subtotal)}.`);
+    const maxDiscount = subtotal + shipping;
+    if (discount < 0 || discount > maxDiscount) {
+      setError(`Discount must be between ${formatCurrency(0)} and ${formatCurrency(maxDiscount)}.`);
       return;
     }
     if (shipping < 0) {
@@ -462,11 +487,15 @@ const BillForm: React.FC = () => {
                       <span className="font-bold text-gray-800 text-sm">{item.productName}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-center text-sm font-bold text-gray-600">{formatCurrency(item.rate)}</td>
+                  <td className="px-4 py-4 text-center">
+                    <NumericInput value={item.rate} onChange={(value) => updateRate(idx, value)} className="w-24 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={true} decimalPlaces={2} />
+                  </td>
                   <td className="px-4 py-4 text-center">
                     <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
                   </td>
-                  <td className="px-6 py-4 text-right font-black text-gray-900 text-sm">{formatCurrency(item.amount)}</td>
+                  <td className="px-6 py-4 text-right">
+                    <NumericInput value={item.amount} onChange={(value) => updateAmount(idx, value)} className="w-28 text-right py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-black" allowDecimals={true} decimalPlaces={2} />
+                  </td>
                   <td className="px-4 py-4 text-right">
                     <button onClick={() => removeItem(idx)} className="p-2 text-red-200 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                       {ICONS.Delete}
@@ -564,7 +593,7 @@ const BillForm: React.FC = () => {
               <span>Discount</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 font-black">৳</span>
-                <NumericInput value={discount} onChange={(value) => setDiscount(value)} className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} />
+                <NumericInput value={discount} onChange={handleDiscountChange} className="w-20 text-right py-1.5 border border-gray-100 rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-gray-900 bg-white" allowDecimals={true} decimalPlaces={2} />
               </div>
             </div>
             <div className="flex justify-between items-center text-gray-500 text-[12px] font-bold uppercase tracking-widest">
@@ -576,7 +605,10 @@ const BillForm: React.FC = () => {
             </div>
             <div className="pt-6 border-t-4 border-[#c7dff5] flex justify-between items-center">
               <span className="text-sm font-black text-gray-900 uppercase tracking-tighter">Total</span>
-              <span className="text-sm font-black text-[#3c5a82]">{formatCurrency(total)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#3c5a82] font-black">৳</span>
+                <NumericInput value={total} onChange={handleTotalChange} className="w-24 text-right py-1.5 border border-[#c7dff5] rounded-lg focus:ring-2 focus:ring-[#3c5a82] text-[#3c5a82] bg-white font-black" allowDecimals={true} decimalPlaces={2} aria-label="Bill total" />
+              </div>
             </div>
             <Button 
               onClick={handleSave}
