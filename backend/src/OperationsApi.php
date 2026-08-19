@@ -5546,6 +5546,12 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('status', $updates)) {
                 $payload['status'] = $nextStatus;
+                // Any status change (manual or webhook) resolves a pending
+                // Steadfast return notice unless the update explicitly re-sets
+                // the flag.
+                if (!array_key_exists('courier_return_action_required', $updates)) {
+                    $payload['courier_return_action_required'] = 0;
+                }
             }
             if (array_key_exists('items', $updates)) {
                 $payload['items'] = $this->jsonEncode($nextItems);
@@ -5737,6 +5743,9 @@ final class OperationsApi extends BaseService
             if (array_key_exists('partial_delivery_action_required', $updates)) {
                 $payload['partial_delivery_action_required'] = (int) ($updates['partial_delivery_action_required'] ?? 0);
             }
+            if (array_key_exists('courier_return_action_required', $updates)) {
+                $payload['courier_return_action_required'] = (int) ($updates['courier_return_action_required'] ?? 0);
+            }
             if (array_key_exists('partial_cogs_amount', $updates)) {
                 $payload['partial_cogs_amount'] = $this->formatMoney($updates['partial_cogs_amount'] ?? 0);
             }
@@ -5762,15 +5771,45 @@ final class OperationsApi extends BaseService
             $this->touchUpdate('orders', $id, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
             $automaticExpenseTransactionId = '';
-            if ($automaticCourierExpense !== null) {
-                $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
-                    $actor,
-                    $id,
-                    trim((string) ($automaticCourierExpense['chargeId'] ?? '')),
-                    trim((string) ($automaticCourierExpense['provider'] ?? '')),
-                    (string) ($automaticCourierExpense['recordedAt'] ?? '')
-                );
-                $automaticExpenseTransactionId = trim((string) ($automaticExpense['id'] ?? ''));
+            // The provider fee is only booked as a shipping-cost expense once
+            // the order reaches a terminal courier outcome; while the order is
+            // still in transit the charge amount is merely kept on the
+            // courier_order_charges row. Webhook-triggered updates carry the
+            // triggering charge row; manual terminal transitions resolve the
+            // stored charge for the order.
+            $expenseEligibleStatuses = ['Completed', 'Cancelled', 'Returned', 'partially_delivered', 'Exchange delivered'];
+            $terminalExpenseTransition = $nextStatus !== $previousStatus
+                && in_array($nextStatus, $expenseEligibleStatuses, true);
+            if (
+                $automaticCourierExpense !== null
+                || ($terminalExpenseTransition && $this->tableExists('courier_order_charges'))
+            ) {
+                if ($automaticCourierExpense === null) {
+                    $storedCharge = $this->database->fetchOne(
+                        "SELECT * FROM courier_order_charges
+                         WHERE order_id = :order_id AND expense_status <> 'recorded'
+                         ORDER BY updated_at DESC, created_at DESC
+                         LIMIT 1 FOR UPDATE",
+                        [':order_id' => $id]
+                    );
+                    if ($storedCharge !== null && trim((string) ($storedCharge['id'] ?? '')) !== '') {
+                        $automaticCourierExpense = [
+                            'chargeId' => (string) $storedCharge['id'],
+                            'provider' => (string) $storedCharge['provider'],
+                            'recordedAt' => $this->database->nowUtc(),
+                        ];
+                    }
+                }
+                if ($automaticCourierExpense !== null && in_array($nextStatus, $expenseEligibleStatuses, true)) {
+                    $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
+                        $actor,
+                        $id,
+                        trim((string) ($automaticCourierExpense['chargeId'] ?? '')),
+                        trim((string) ($automaticCourierExpense['provider'] ?? '')),
+                        (string) ($automaticCourierExpense['recordedAt'] ?? '')
+                    );
+                    $automaticExpenseTransactionId = trim((string) ($automaticExpense['id'] ?? ''));
+                }
             }
             if ($nextStatus !== $previousStatus || array_key_exists('items', $updates)) {
                 $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $id]);
@@ -11149,10 +11188,13 @@ SQL;
     }
 
     /**
-     * Create the provider shipping-cost transaction once the courier has
-     * delivered the order. This is deliberately called inside updateOrder's
-     * transaction so the status, account effect, order history, charge row,
-     * and undo journal either all commit or all roll back together.
+     * Create the provider shipping-cost transaction once the order reaches a
+     * terminal courier outcome (delivered, cancelled, returned, partially
+     * delivered, or exchange delivered). Until then the fee amount is only
+     * kept on the courier_order_charges row. This is deliberately called
+     * inside updateOrder's transaction so the status, account effect, order
+     * history, charge row, and undo journal either all commit or all roll
+     * back together.
      *
      * @param array<string, mixed> $actor
      * @return array<string, mixed>|null

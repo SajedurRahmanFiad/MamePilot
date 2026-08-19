@@ -936,6 +936,7 @@ CREATE TABLE IF NOT EXISTS orders (
   cancelled_at DATETIME NULL,
   partial_delivered_at DATETIME NULL,
   partial_delivery_action_required TINYINT(1) NOT NULL DEFAULT 0,
+  courier_return_action_required TINYINT(1) NOT NULL DEFAULT 0,
   partial_cogs_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   partial_shipping_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   partial_cod_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -3748,6 +3749,9 @@ CALL sp_add_col('messenger_settings', 'webhook_events_received', 'INT NOT NULL D
 CALL sp_add_col('messenger_settings', 'webhook_events_processed', 'INT NOT NULL DEFAULT 0');
 CALL sp_add_col('messenger_settings', 'last_webhook_at', 'DATETIME NULL');
 CALL sp_add_col('messenger_settings', 'last_webhook_status', 'VARCHAR(500) NULL');
+
+-- Migration: 2026-08-20_steadfast_return_notice_action_required.sql
+CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

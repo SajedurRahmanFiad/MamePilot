@@ -1514,8 +1514,10 @@ try {
     courierWebhookAssert(courierWebhookPayment($database, $offReturnId) === null, 'Toggle-off return webhook created automatic income.');
     $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1, automatically_mark_paid_after_delivery = 1');
 
-    // Steadfast return_status notifications (no status field) cancel the
-    // order: only the shipping fee may be expensed, never income.
+    // Steadfast return_status notifications (no status field) only mean the
+    // return flow has started: they never cancel the order. The order is
+    // flagged action-required for the merchant to review instead, no fee is
+    // expensed while the order is not terminal, and no income is ever booked.
     $returnStatusId = 'cwh-sf-return-status-' . $stamp;
     $returnStatusNumber = 'CWH-SF-RETURN-STATUS-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusId, $returnStatusNumber, 'Picked', $customerId, [
@@ -1529,7 +1531,15 @@ try {
         'tracking_message' => 'Consignment Return status has been updated to Processing',
         'updated_at' => '2026-08-15 13:59:44',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusId) === 'Cancelled', 'Steadfast return_status did not cancel the order.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusId) === 'Picked', 'Steadfast return_status cancelled the order.');
+    $returnStatusActionRow = $database->fetchOne(
+        'SELECT courier_return_action_required FROM orders WHERE id = :id',
+        [':id' => $returnStatusId]
+    );
+    courierWebhookAssert(
+        (int) ($returnStatusActionRow['courier_return_action_required'] ?? 0) === 1,
+        'Steadfast return_status did not flag the order action-required.'
+    );
     courierWebhookAssert(
         courierWebhookPayment($database, $returnStatusId) === null,
         'Steadfast return_status booked automatic courier income.'
@@ -1541,7 +1551,9 @@ try {
     $returnStatusPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $returnStatusId]);
     courierWebhookAssert((float) ($returnStatusPaid['paid_amount'] ?? -1) === 0.0, 'Steadfast return_status marked the order paid.');
 
-    // A return_status that carries a shipping fee books only that expense.
+    // A return_status that carries a shipping fee only stores the charge: the
+    // order is not terminal, so nothing is expensed yet. Confirming the return
+    // afterwards expenses the stored fee and clears the action-required flag.
     $returnStatusFeeId = 'cwh-sf-return-status-fee-' . $stamp;
     $returnStatusFeeNumber = 'CWH-SF-RETURN-STATUS-FEE-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusFeeId, $returnStatusFeeNumber, 'Picked', $customerId, [
@@ -1557,18 +1569,45 @@ try {
         'tracking_message' => 'Consignment Return status has been updated to Processing',
         'updated_at' => '2026-08-15 14:05:00',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusFeeId) === 'Cancelled', 'Fee-carrying Steadfast return_status did not cancel the order.');
-    $returnStatusFeeExpense = courierWebhookExpense($database, $returnStatusFeeId);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusFeeId) === 'Picked', 'Fee-carrying Steadfast return_status changed the order status.');
+    $returnStatusFeeCharge = $database->fetchOne(
+        'SELECT total_charge, expense_status FROM courier_order_charges
+         WHERE provider = :provider AND consignment_id = :consignment LIMIT 1',
+        [':provider' => 'steadfast', ':consignment' => 'SF-RS-FEE-' . $stamp]
+    );
     courierWebhookAssert(
-        $returnStatusFeeExpense !== null && abs((float) $returnStatusFeeExpense['amount'] - 11.25) < 0.001,
-        'Fee-carrying Steadfast return_status did not expense the shipping fee.'
+        $returnStatusFeeCharge !== null && abs((float) ($returnStatusFeeCharge['total_charge'] ?? 0) - 11.25) < 0.001,
+        'Fee-carrying Steadfast return_status did not store the shipping fee.'
+    );
+    courierWebhookAssert(
+        (string) ($returnStatusFeeCharge['expense_status'] ?? '') === 'not_recorded',
+        'Fee-carrying Steadfast return_status recorded the expense before the order became terminal.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $returnStatusFeeId) === null,
+        'Fee-carrying Steadfast return_status expensed the fee before the order became terminal.'
     );
     courierWebhookAssert(
         courierWebhookPayment($database, $returnStatusFeeId) === null,
         'Fee-carrying Steadfast return_status booked the COD amount as income.'
     );
+    $operations->updateOrder(['id' => $returnStatusFeeId, 'updates' => ['status' => 'Returned']]);
+    $returnStatusFeeExpense = courierWebhookExpense($database, $returnStatusFeeId);
+    courierWebhookAssert(
+        $returnStatusFeeExpense !== null && abs((float) $returnStatusFeeExpense['amount'] - 11.25) < 0.001,
+        'Confirmed return did not expense the stored Steadfast shipping fee.'
+    );
+    $returnStatusFeeActionRow = $database->fetchOne(
+        'SELECT courier_return_action_required FROM orders WHERE id = :id',
+        [':id' => $returnStatusFeeId]
+    );
+    courierWebhookAssert(
+        (int) ($returnStatusFeeActionRow['courier_return_action_required'] ?? 1) === 0,
+        'Manual return confirmation did not clear the action-required flag.'
+    );
 
-    // Steadfast return_status never regresses an already-terminal status.
+    // Steadfast return_status never regresses an already-terminal status and
+    // does not flag an already-resolved order.
     $returnStatusGuardId = 'cwh-sf-return-status-guard-' . $stamp;
     $returnStatusGuardNumber = 'CWH-SF-RETURN-STATUS-GUARD-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $returnStatusGuardId, $returnStatusGuardNumber, 'Returned', $customerId, [
@@ -1583,6 +1622,18 @@ try {
         'updated_at' => '2026-08-15 14:30:00',
     ]), $steadfastHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $returnStatusGuardId) === 'Returned', 'Steadfast return_status regressed an already-terminal order.');
+    $returnStatusGuardActionRow = $database->fetchOne(
+        'SELECT courier_return_action_required FROM orders WHERE id = :id',
+        [':id' => $returnStatusGuardId]
+    );
+    courierWebhookAssert(
+        (int) ($returnStatusGuardActionRow['courier_return_action_required'] ?? 0) === 0,
+        'Steadfast return_status flagged an already-terminal order.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $returnStatusGuardId) === null,
+        'Return_status on an already-terminal order created a shipping expense.'
+    );
 
     // Unmatched events remain auditable and can match on an exact provider
     // retry after the local order identifier becomes available.

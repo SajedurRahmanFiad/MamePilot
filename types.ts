@@ -867,6 +867,7 @@ export interface Order {
     exchangeDelivered?: string; // history entry for exchange delivered
     exchangeReturned?: string; // history entry for exchange returned
     exchangeCancelled?: string; // history entry for exchange cancelled
+    courierReturn?: string; // Steadfast return notice awaiting review
   };
   /** Server-authored UTC instants for lifecycle changes; legacy orders fall back to history text. */
   statusTimestamps?: Partial<Record<
@@ -890,6 +891,8 @@ export interface Order {
   partialCogsAmount?: number;
   partialShippingAmount?: number;
   partialCodAmount?: number;
+  // Steadfast return notice awaiting review
+  courierReturnActionRequired?: boolean;
   // Dedicated status timestamp columns (UTC ISO strings)
   processedAt?: string;
   courierAssignedAt?: string;

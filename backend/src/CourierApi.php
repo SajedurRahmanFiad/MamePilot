@@ -2807,12 +2807,14 @@ final class CourierApi extends BaseService
             if ($statusOnly === '' || $statusOnly === 'tracking_update') return null;
         }
         if ($provider === 'steadfast') {
-            // Steadfast returns are cancellations from the merchant's point of
-            // view: nothing is ever collected, so the order is cancelled and no
-            // income may be booked. This covers the return_status notification
-            // (which carries no status field) and any return wording on the
-            // delivery status.
-            if ($event === 'return_status' || str_contains($status, 'return')) return 'Cancelled';
+            // Steadfast return_status notifications only mean the return flow
+            // has started; they carry no status field and must never cancel
+            // the order. The order is flagged action-required instead, and
+            // real status transitions are applied only from delivery_status
+            // notifications. Any return wording on an explicit delivery
+            // status, however, is an authoritative cancellation.
+            if ($event === 'return_status') return null;
+            if (str_contains($status, 'return')) return 'Cancelled';
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
@@ -3100,6 +3102,7 @@ final class CourierApi extends BaseService
         $current = (string) ($order['status'] ?? '');
         $isExchange = (bool) ($order['isExchange'] ?? false);
         $chargeId = trim((string) ($charge['id'] ?? ''));
+        $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered'];
         $providerLabel = match ($provider) {
             'carrybee' => 'CarryBee',
             'paperfly' => 'Paperfly',
@@ -3108,13 +3111,14 @@ final class CourierApi extends BaseService
         };
         $when = (string) ($details['eventAt'] ?? $this->database->nowUtc());
         $raw = trim((string) ($details['rawStatus'] ?? $details['eventName']));
+        $isSteadfastReturnNotice = $provider === 'steadfast'
+            && strtolower(trim((string) ($details['eventName'] ?? ''))) === 'return_status';
         $updates = [];
         $history = is_array(json_decode((string) ($order['history'] ?? ''), true))
             ? json_decode((string) $order['history'], true)
             : [];
 
         if ($mapped !== null) {
-            $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered'];
             $mainEventDuringExchange = !$isExchange
                 && in_array($current, ['Exchange processing', 'Exchange picked'], true);
             $target = match ($mapped) {
@@ -3132,6 +3136,9 @@ final class CourierApi extends BaseService
             ) {
                 if ($current !== $target) {
                     $updates['status'] = $target;
+                    // An authoritative status transition resolves any pending
+                    // Steadfast return notice.
+                    $updates['courier_return_action_required'] = 0;
                     if ($mapped === 'Delivered') {
                         $key = $isExchange ? 'exchangeDelivered' : 'completed';
                         $history[$key] = sprintf(
@@ -3195,6 +3202,16 @@ final class CourierApi extends BaseService
                     . sprintf(' | Exchange returned/cancelled from %s webhook event "%s" on %s.', $providerLabel, $raw, $when);
                 $updates['history'] = $history;
             }
+        }
+
+        if ($mapped === null && $isSteadfastReturnNotice && !in_array($current, $terminal, true)) {
+            // The return notice is not a status transition: the parcel may not
+            // actually be returned yet. Flag the order action-required so the
+            // merchant reviews it instead of silently cancelling.
+            $updates['courier_return_action_required'] = 1;
+            $history['courierReturn'] = trim((string) ($history['courierReturn'] ?? ''))
+                . sprintf(' | Steadfast return notice "%s" received on %s. Action required to review the return.', $raw, $when);
+            $updates['history'] = $history;
         }
 
         $effectiveTarget = (string) ($updates['status'] ?? $current);

@@ -1819,6 +1819,15 @@ const OrderDetails: React.FC = () => {
         </div>
       </div>
 
+      {order.courierReturnActionRequired && (
+        <div className="flex flex-col gap-1 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-black text-orange-800">Steadfast return notice received — action required</p>
+          <p className="text-xs sm:text-sm font-bold text-orange-700">
+            The courier reports a return in progress. Review the order and confirm it as returned, cancelled, or delivered.
+          </p>
+        </div>
+      )}
+
       {isBusinessGrowthEnabled && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
           <p className="text-sm font-black">{customerTrust.label}{activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>

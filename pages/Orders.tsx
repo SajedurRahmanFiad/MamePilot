@@ -1514,6 +1514,12 @@ const Orders: React.FC = () => {
                             Action Required
                           </span>
                         )}
+                        {order.courierReturnActionRequired && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[9px] font-black uppercase tracking-widest">
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                            Review Return
+                          </span>
+                        )}
                         {([OrderStatus.COURIER_ASSIGNED, OrderStatus.PROCESSING, OrderStatus.PICKED, OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED].includes(order.status)) && sentToSteadfast && (
                           <img src="/uploads/steadfast.png" alt="Steadfast" className="w-5 h-5 rounded-full" />
                         )}

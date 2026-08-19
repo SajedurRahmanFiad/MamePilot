@@ -1423,6 +1423,7 @@ abstract class BaseService
             'pendingTransactionCount' => (int) ($row['pending_transaction_count'] ?? $row['pendingTransactionCount'] ?? 0),
             'pendingTransactionIds' => $this->jsonDecodeList($row['pending_transaction_ids'] ?? $row['pendingTransactionIds'] ?? []),
             'partialDeliveryActionRequired' => (bool) ($row['partial_delivery_action_required'] ?? $row['partialDeliveryActionRequired'] ?? false),
+            'courierReturnActionRequired' => (bool) ($row['courier_return_action_required'] ?? $row['courierReturnActionRequired'] ?? false),
             'partialCogsAmount' => (float) ($row['partial_cogs_amount'] ?? $row['partialCogsAmount'] ?? 0),
             'partialShippingAmount' => (float) ($row['partial_shipping_amount'] ?? $row['partialShippingAmount'] ?? 0),
             'partialCodAmount' => (float) ($row['partial_cod_amount'] ?? $row['partialCodAmount'] ?? 0),

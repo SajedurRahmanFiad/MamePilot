@@ -779,6 +779,7 @@ CREATE TABLE IF NOT EXISTS orders (
   cancelled_at DATETIME NULL,
   partial_delivered_at DATETIME NULL,
   partial_delivery_action_required TINYINT(1) NOT NULL DEFAULT 0,
+  courier_return_action_required TINYINT(1) NOT NULL DEFAULT 0,
   partial_cogs_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   partial_shipping_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   partial_cod_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
