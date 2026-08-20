@@ -4,6 +4,7 @@ export const CAPABILITY_LABELS: Record<AppCapabilityKey, string> = {
   dashboard: 'Dashboard',
   inventory: 'Inventory',
   sales: 'Sales & Customer Management',
+  pos: 'Point of Sale',
   recycle_bin_undoer: 'Recovery & Undo',
   purchases: 'Purchases & Vendor Management',
   banking: 'Banking & Cash Flow',
@@ -31,6 +32,7 @@ export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
   dashboard: 'Central hub showing revenue, expenses, profit charts, order stats, and employee performance comparisons with date range filtering.',
   inventory: 'Product catalog management — create, edit, and search products with pricing, stock quantities, categories, and images. Includes batch management for living products (birds, livestock) with population tracking, age monitoring, and event logging.',
   sales: 'Full sales pipeline — create and manage orders with line items, discounts, shipping, and track customer profiles with order history.',
+  pos: 'Point of Sale register — walk-in sales with cash/multi-method split payment, held sales, instant receipts, and the POS Sales history page.',
   recycle_bin_undoer: 'Restore soft-deleted records (orders, customers, products) or revert an order to a previous status via timeline history.',
   purchases: 'Vendor and bill management — create purchase orders, track incoming stock, manage vendor contacts and payment records.',
   banking: 'Financial account management — track bank accounts, record income and expense transactions, and transfer funds between accounts.',
@@ -55,9 +57,10 @@ export const CAPABILITY_DESCRIPTIONS: Record<AppCapabilityKey, string> = {
 };
 
 export const DEFAULT_CAPABILITIES: AppCapabilityMap = {
-  dashboard: true,
+dashboard: true,
   inventory: true,
   sales: true,
+  pos: true,
   recycle_bin_undoer: false,
   purchases: false,
   banking: false,
@@ -174,7 +177,8 @@ export function normalizeCapabilities(value: Partial<AppCapabilityMap> | undefin
 export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCapabilityKey }> = [
   { pattern: /^\/dashboard(?:\/|$)/, capability: 'dashboard' },
   { pattern: /^\/products(?:\/|$)|^\/batches(?:\/|$)|^\/batch-event-history(?:\/|$)/, capability: 'inventory' },
-  { pattern: /^\/orders(?:\/|$)|^\/customers(?:\/|$)|^\/print-order(?:\/|$)|^\/pos-sales(?:\/|$)/, capability: 'sales' },
+  { pattern: /^\/orders(?:\/|$)|^\/customers(?:\/|$)|^\/print-order(?:\/|$)/, capability: 'sales' },
+  { pattern: /^\/pos(?:\/|$)|^\/pos-sales(?:\/|$)/, capability: 'pos' },
   { pattern: /^\/bills(?:\/|$)|^\/vendors(?:\/|$)|^\/print-bill(?:\/|$)/, capability: 'purchases' },
   { pattern: /^\/banking(?:\/|$)|^\/transactions(?:\/|$)/, capability: 'banking' },
   { pattern: /^\/users(?:\/|$)|^\/payroll(?:\/|$)|^\/wallet(?:\/|$)|^\/human-resource-dashboard(?:\/|$)/, capability: 'human_resources' },

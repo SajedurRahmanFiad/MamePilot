@@ -69,7 +69,7 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     label: 'POS Sales',
     to: '/pos-sales',
     icon: ICONS.Pos,
-    visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sales'),
+    visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('pos'),
   },
   {
     key: 'customer_relationship',

@@ -1457,6 +1457,7 @@ export type AppCapabilityKey =
   | 'dashboard'
   | 'inventory'
   | 'sales'
+  | 'pos'
   | 'recycle_bin_undoer'
   | 'purchases'
   | 'banking'

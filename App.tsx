@@ -328,10 +328,10 @@ preloaders.add(DeveloperNotes.preload);
         isAuthenticated ? (can('orders.view') ? <Layout><Orders /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/pos-sales" element={
-        isAuthenticated ? (can('orders.view') ? <Layout><Orders mode="pos" /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('orders.view') && hasCapability('pos') ? <Layout><Orders mode="pos" /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/pos" element={
-        isAuthenticated ? (can('orders.create') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout hideSidebar><Pos /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+        isAuthenticated ? (can('orders.create') && hasCapability('pos') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout hideSidebar><Pos /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/orders/new" element={
         isAuthenticated ? (can('orders.create') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

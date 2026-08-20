@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
-import { RotateCcw } from 'lucide-react';
+import { ArrowLeft, RotateCcw } from 'lucide-react';
 import { db } from '../db';
 import { hasAdminAccess, isEmployeeRole } from '../types';
 import { theme } from '../theme';
@@ -507,6 +507,17 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
               </button>
             )}
 
+            {isPosPage && (
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                title="Back"
+                className={`p-2.5 ${theme.colors.bg.tertiary} ${theme.radius.md} ${theme.colors.text.secondary} border ${theme.colors.border.primary} hover:${theme.colors.text.primary} ${theme.transitions.normal} shrink-0`}
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
+
             <div className="ml-4 min-w-0 flex-1 overflow-hidden">
               <style>{`
                 @keyframes headerMarquee {
@@ -533,7 +544,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
           </div>
 
           <div className="flex items-center gap-4 ml-auto">
-            {can('orders.create') && hasCapability('sales') && (
+            {can('orders.create') && hasCapability('pos') && (
               <Link
                 to="/pos"
                 title="Point of Sale"

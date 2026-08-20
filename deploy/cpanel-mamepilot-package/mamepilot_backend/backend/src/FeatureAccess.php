@@ -10,6 +10,7 @@ final class FeatureAccess
         'dashboard' => true,
         'inventory' => true,
         'sales' => true,
+        'pos' => true,
         'recycle_bin_undoer' => false,
         'purchases' => false,
         'banking' => false,
@@ -80,22 +81,22 @@ final class FeatureAccess
         'createProduct' => 'inventory',
         'updateProduct' => 'inventory',
         'deleteProduct' => 'inventory',
-        'fetchOrders' => 'sales',
-        'fetchOrderById' => 'sales',
-        'fetchOrdersPage' => 'sales',
-        'fetchOrderFilterOptions' => 'sales',
-        'fetchOrdersByCustomerId' => 'sales',
+        'fetchOrders' => ['sales', 'pos'],
+        'fetchOrderById' => ['sales', 'pos'],
+        'fetchOrdersPage' => ['sales', 'pos'],
+        'fetchOrderFilterOptions' => ['sales', 'pos'],
+        'fetchOrdersByCustomerId' => ['sales', 'pos'],
         'fetchOrderSearchPreview' => 'sales',
         'fetchOrderByNumber' => 'sales',
         'getNextOrderNumber' => 'sales',
         'createOrder' => 'sales',
-        'createPosOrder' => 'sales',
-        'fetchPosInit' => 'sales',
-        'fetchPosPendingSales' => 'sales',
-        'cancelPosPendingSale' => 'sales',
-        'savePosDraft' => 'sales',
-        'fetchPosDraft' => 'sales',
-        'clearPosDraft' => 'sales',
+        'createPosOrder' => 'pos',
+        'fetchPosInit' => 'pos',
+        'fetchPosPendingSales' => 'pos',
+        'cancelPosPendingSale' => 'pos',
+        'savePosDraft' => 'pos',
+        'fetchPosDraft' => 'pos',
+        'clearPosDraft' => 'pos',
         'updateOrder' => 'sales',
         'deleteOrder' => 'sales',
         'addCourierCompletionExpense' => 'sales',
@@ -372,28 +373,29 @@ final class FeatureAccess
 
         $capabilities = $this->fetchCapabilities();
 
-        // Check if this is a sub-capability
-        $parentKey = self::SUB_CAPABILITY_PARENTS[$capability] ?? null;
-        if ($parentKey !== null) {
-            // Parent capability must be enabled
-            if (empty($capabilities[$parentKey])) {
-                throw new ApiException('This feature is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
-                    'capability' => $parentKey,
-                ]);
+        // An action may be allowed by any one of several capabilities
+        // (e.g. order history is reachable with sales OR pos enabled).
+        $allowedKeys = is_array($capability) ? $capability : [$capability];
+        foreach ($allowedKeys as $allowedKey) {
+            // Check if this is a sub-capability
+            $parentKey = self::SUB_CAPABILITY_PARENTS[$allowedKey] ?? null;
+            if ($parentKey !== null) {
+                // Parent capability must be enabled
+                if (empty($capabilities[$parentKey])) {
+                    continue;
+                }
+                // Check sub-capability override (stored in capabilities.subCapabilities)
+                $subCapabilities = $capabilities['subCapabilities'] ?? [];
+                if (is_array($subCapabilities) && array_key_exists($allowedKey, $subCapabilities) && $subCapabilities[$allowedKey] === false) {
+                    continue;
+                }
+                return;
             }
-            // Check sub-capability override (stored in capabilities.subCapabilities)
-            $subCapabilities = $capabilities['subCapabilities'] ?? [];
-            if (is_array($subCapabilities) && array_key_exists($capability, $subCapabilities) && $subCapabilities[$capability] === false) {
-                throw new ApiException('This feature is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
-                    'capability' => $capability,
-                ]);
-            }
-            return;
-        }
 
-        // Regular capability check
-        if (!empty($capabilities[$capability])) {
-            return;
+            // Regular capability check
+            if (!empty($capabilities[$allowedKey])) {
+                return;
+            }
         }
 
         throw new ApiException('This feature is not enabled for this installation.', 403, 'FEATURE_LOCKED', [
