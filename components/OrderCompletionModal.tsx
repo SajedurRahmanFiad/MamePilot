@@ -65,7 +65,11 @@ isLoading,
       ...(allowReturnedOutcome ? ['Returned' as const] : []),
       ...(allowPartialDeliveryOutcome && onSubmitPartialDelivery ? ['Partially Delivered' as const] : []),
     ],
-    [allowDeliveredOutcome, allowReturnedOutcome, allowPartialDeliveryOutcome, onSubmitPartialDelivery],
+    // Note: onSubmitPartialDelivery is intentionally NOT a dependency. Call
+    // sites toggling the partial-delivery tab always pair it with
+    // allowPartialDeliveryOutcome, so tracking the handler here would make
+    // this memo (and every effect depending on it) recompute on every render.
+    [allowDeliveredOutcome, allowReturnedOutcome, allowPartialDeliveryOutcome],
   );
 
   useEffect(() => {
@@ -135,6 +139,8 @@ isLoading,
 
   // Handle outcome changes - default category to Shipping Costs when switching to Returned (if no category selected yet)
   useEffect(() => {
+    if (!isOpen) return;
+
     if (!availableOutcomes.includes(form.outcome)) {
       setForm((current) => ({ ...current, outcome: availableOutcomes[0] || 'Delivered' }));
       return;
@@ -143,14 +149,14 @@ isLoading,
     if (form.outcome === 'Returned' && shippingCostsCategory && !form.categoryId) {
       setForm((current) => ({ ...current, categoryId: shippingCostsCategory.id }));
     }
-  }, [form.outcome, shippingCostsCategory, form.categoryId, setForm, availableOutcomes]);
+  }, [isOpen, form.outcome, shippingCostsCategory, form.categoryId, setForm, availableOutcomes]);
 
   useEffect(() => {
-    if (!order) return;
+    if (!isOpen || !order) return;
     if (form.outcome === 'Returned' && !form.amount && order.shipping > 0) {
       setForm((current) => ({ ...current, amount: order.shipping }));
     }
-  }, [form.outcome, form.amount, order, setForm]);
+  }, [isOpen, form.outcome, form.amount, order, setForm]);
 
   if (!isOpen || !order || availableOutcomes.length === 0) return null;
 
