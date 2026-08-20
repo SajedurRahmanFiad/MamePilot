@@ -435,13 +435,14 @@ GRAPHQL, ['first' => 50, 'after' => $cursor]);
     /** @return array{created:int,matched:int,updated:int,skipped:int} */
     private function importProductVariant(array $store, array $variant): array
     {
-        $sku = trim((string) ($variant['sku'] ?? ''));
-        if ($sku === '') return ['created' => 0, 'matched' => 0, 'updated' => 0, 'skipped' => 1];
         $remoteProductId = $this->legacyId($variant['product']['id'] ?? '');
         $remoteVariantId = $this->legacyId($variant['id'] ?? '');
+        $handle = trim((string) ($variant['product']['handle'] ?? ''));
+        $sku = trim((string) ($variant['sku'] ?? ''));
+        $matchKey = $sku !== '' ? $sku : $this->slugify(($handle !== '' ? $handle : 'shopify-product') . '-' . ($remoteVariantId !== '' ? $remoteVariantId : 'variant'));
         $name = trim((string) ($variant['product']['title'] ?? 'Shopify Product'));
         $variantTitle = trim((string) ($variant['title'] ?? ''));
-        if ($variantTitle !== '' && strcasecmp($variantTitle, 'Default Title') !== 0) $name .= ' - ' . $variantTitle;
+        if ($variantTitle !== '' && strcasecmp($variantTitle, 'Default Title') !== 0) $name .= ' (' . $variantTitle . ')';
         $price = round((float) ($variant['price'] ?? 0), 2);
         $stock = max(0, (int) ($variant['inventoryQuantity'] ?? 0));
         $image = trim((string) ($variant['image']['url'] ?? $variant['product']['featuredMedia']['preview']['image']['url'] ?? ''));
@@ -450,17 +451,17 @@ GRAPHQL, ['first' => 50, 'after' => $cursor]);
         $link = $this->database->fetchOne('SELECT l.product_id, l.auto_created, p.name FROM shopify_product_links l JOIN products p ON p.id = l.product_id AND p.deleted_at IS NULL WHERE l.store_id = :store_id AND l.shopify_product_id = :product_id AND l.shopify_variant_id = :variant_id LIMIT 1', [':store_id' => $store['id'], ':product_id' => $remoteProductId ?: '0', ':variant_id' => $remoteVariantId ?: '0']);
         if ($link !== null) {
             if ((int) ($link['auto_created'] ?? 0) === 1) {
-                $this->database->execute('UPDATE products SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock, category = :category, image = :image, updated_at = :updated_at WHERE id = :id', [':name' => $name, ':sku' => $sku, ':sale_price' => $price, ':stock' => $stock, ':category' => $category, ':image' => $image !== '' ? $image : null, ':updated_at' => $this->database->nowUtc(), ':id' => $link['product_id']]);
+                $this->database->execute('UPDATE products SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock, category = :category, image = :image, updated_at = :updated_at WHERE id = :id', [':name' => $name, ':sku' => $matchKey, ':sale_price' => $price, ':stock' => $stock, ':category' => $category, ':image' => $image !== '' ? $image : null, ':updated_at' => $this->database->nowUtc(), ':id' => $link['product_id']]);
                 return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
             }
             return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
         }
-        $existing = $this->database->fetchOne('SELECT id FROM products WHERE deleted_at IS NULL AND LOWER(TRIM(sku)) = LOWER(:sku) ORDER BY created_at ASC LIMIT 1', [':sku' => $sku]);
-        if ($existing !== null) { $this->linkProduct((string) $store['id'], $remoteProductId ?: '0', $remoteVariantId ?: '0', $sku, (string) $existing['id'], false); return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0]; }
+        $existing = $this->database->fetchOne('SELECT id FROM products WHERE deleted_at IS NULL AND LOWER(TRIM(sku)) = LOWER(:sku) ORDER BY created_at ASC LIMIT 1', [':sku' => $matchKey]);
+        if ($existing !== null) { $this->linkProduct((string) $store['id'], $remoteProductId ?: '0', $remoteVariantId ?: '0', $matchKey, (string) $existing['id'], false); return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0]; }
         $id = $this->uuid4(); $now = $this->database->nowUtc();
         $systemUser = $this->ensureSystemUser();
-        $this->database->execute('INSERT INTO products (id, name, slug, sku, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at) VALUES (:id, :name, :slug, :sku, :image, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)', [':id' => $id, ':name' => $name, ':slug' => $this->uniqueSlug($this->slugify(trim((string) ($variant['product']['handle'] ?? '')) . '-' . $sku)), ':sku' => $sku, ':image' => $image !== '' ? $image : null, ':category' => $category, ':sale_price' => $price, ':stock' => $stock, ':created_by' => (string) $systemUser['id'], ':created_at' => $now, ':updated_at' => $now]);
-        $this->linkProduct((string) $store['id'], $remoteProductId ?: '0', $remoteVariantId ?: '0', $sku, $id, true);
+        $this->database->execute('INSERT INTO products (id, name, slug, sku, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at) VALUES (:id, :name, :slug, :sku, :image, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)', [':id' => $id, ':name' => $name, ':slug' => $this->uniqueSlug($this->slugify(($handle !== '' ? $handle : 'shopify-product') . '-' . $matchKey)), ':sku' => $matchKey, ':image' => $image !== '' ? $image : null, ':category' => $category, ':sale_price' => $price, ':stock' => $stock, ':created_by' => (string) $systemUser['id'], ':created_at' => $now, ':updated_at' => $now]);
+        $this->linkProduct((string) $store['id'], $remoteProductId ?: '0', $remoteVariantId ?: '0', $matchKey, $id, true);
         return ['created' => 1, 'matched' => 0, 'updated' => 0, 'skipped' => 0];
     }
 

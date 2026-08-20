@@ -185,7 +185,7 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
           <li>Enter the <code>my-store.myshopify.com</code> hostname and select the matching invoice company.</li>
           <li>Save and test the connection, import all products, import all orders, then turn on automatic sync.</li>
         </ol>
-        <p className="mt-3 text-xs font-semibold text-emerald-800">Products match only by exact SKU. Customers match by normalized phone. Orders use customer phone plus the sorted SKU-and-quantity bundle as their duplicate key.</p>
+        <p className="mt-3 text-xs font-semibold text-emerald-800">Every variant becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) — using the variant image, price, and stock. Products match by exact SKU, or by the product handle when the SKU is missing. Customers match by normalized phone. Orders use customer phone plus the sorted SKU-and-quantity bundle as their duplicate key.</p>
       </section>
 
       {companyPages.length === 0 && <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Add a company page first. Every Shopify store must map to a company for invoice branding.</div>}

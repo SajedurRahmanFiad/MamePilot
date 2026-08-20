@@ -3,7 +3,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, ICONS } from '../../constants';
 import { Button, ReportPageSkeleton } from '../../components';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { useExpenseSummaryCsv, useExpenseSummaryReport } from '../../src/hooks/useQueries';
 import { formatDate } from '../../utils';
 
@@ -13,6 +13,7 @@ const ExpenseSummary: React.FC = () => {
   const { refetch: loadCsv, isFetching: isCsvLoading } = useExpenseSummaryCsv({ enabled: false });
   const isLoading = isPending;
   const chartData = data?.byCategory || [];
+  const paymentMethodData = data?.byPaymentMethod || [];
   const recentExpenses = data?.recentExpenses || [];
   const COLORS = ['#EF4444', '#F97316', '#F59E0B', '#8B5CF6', '#EC4899', '#3B82F6'];
   const topCategories = React.useMemo(
@@ -104,6 +105,31 @@ const ExpenseSummary: React.FC = () => {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm">
+        <h3 className="font-bold text-gray-800 mb-6">Expenses by Payment Method</h3>
+        <div className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={paymentMethodData}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={100}
+                paddingAngle={4}
+                dataKey="value"
+              >
+                {paymentMethodData.map((_, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value: number) => formatCurrency(value)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+              <Legend verticalAlign="bottom" align="center" />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

@@ -1054,8 +1054,10 @@ CREATE TABLE IF NOT EXISTS woocommerce_stores (
   company_page_id VARCHAR(64) NULL,
   enabled TINYINT(1) NOT NULL DEFAULT 1,
   last_synced_at DATETIME NULL,
+  last_products_synced_at DATETIME NULL,
   last_sync_status VARCHAR(32) NULL,
   last_sync_message VARCHAR(1000) NULL,
+  products_synced INT NOT NULL DEFAULT 0,
   orders_synced INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -3752,6 +3754,11 @@ CALL sp_add_col('messenger_settings', 'last_webhook_status', 'VARCHAR(500) NULL'
 
 -- Migration: 2026-08-20_steadfast_return_notice_action_required.sql
 CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
+
+-- Migration: 2026-08-20_woocommerce_product_import.sql
+CALL sp_add_col('woocommerce_stores', 'products_synced', 'INT NOT NULL DEFAULT 0 AFTER orders_synced');
+
+CALL sp_add_col('woocommerce_stores', 'last_products_synced_at', 'DATETIME NULL AFTER products_synced');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

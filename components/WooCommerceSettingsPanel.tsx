@@ -10,6 +10,7 @@ import {
   repairWooCommerceWebhook,
   saveWooCommerceStore,
   syncWooCommerceOrders,
+  syncWooCommerceProducts,
   testWooCommerceStore,
 } from '../src/services/supabaseQueries';
 import type { CompanyPage, WooCommerceStore } from '../types';
@@ -34,6 +35,7 @@ const blankStore = (companyPageId: string): StoreDraft => ({
   webhookUrl: '',
   companyPageId,
   enabled: true,
+  productsSynced: 0,
   ordersSynced: 0,
   isNew: true,
 });
@@ -114,17 +116,18 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
 
   const runStoreAction = async (
     draft: StoreDraft,
-    actionName: 'test' | 'webhook' | 'sync' | 'repair',
+    actionName: 'test' | 'webhook' | 'products' | 'sync' | 'repair',
     operation: () => Promise<{ message?: string }>,
   ) => {
     if (draft.isNew) {
-      toast.warning('Save this website before testing automatic order delivery or syncing orders.');
+      toast.warning('Save this website before testing automatic order delivery, importing products, or syncing orders.');
       return;
     }
     setBusyAction(actionName + ':' + draft.id);
     const labels = {
       test: 'Testing WooCommerce connection...',
       webhook: 'Turning on automatic order delivery...',
+      products: 'Importing all WooCommerce products...',
       sync: 'Syncing WooCommerce orders...',
       repair: 'Repairing webhook connection...',
     };
@@ -192,10 +195,11 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
     <div className="space-y-7 animate-in fade-in duration-300">
       <section className="flex flex-col gap-4 border-b border-gray-100 pb-5 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 className="text-xl font-bold text-gray-800">WooCommerce Order Sync</h3>
+          <h3 className="text-xl font-bold text-gray-800">WooCommerce Sync</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
-            Connect multiple WooCommerce websites. New orders arrive automatically through a secure connection and are
-            assigned to the selected company so invoices use the correct branding.
+            Connect multiple WooCommerce websites. Import your catalog — every variation becomes its own product — then
+            receive new orders automatically through a secure connection assigned to the selected company so invoices
+            use the correct branding.
           </p>
         </div>
         <Button type="button" onClick={addStore} disabled={companyPages.length === 0}>Add Website</Button>
@@ -207,7 +211,8 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
           <li>In WordPress, open WooCommerce → Settings → Advanced → REST API and choose Add key.</li>
           <li>Give the key Read/Write permission. Copy its consumer key and consumer secret into the website below.</li>
           <li>Set Public delivery base URL to your live MamePilot API folder, for example https://app.example.com/api. For local testing, use an HTTPS tunnel; WooCommerce cannot deliver to localhost.</li>
-          <li>Save the website, use Test Connection, then click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
+          <li>Save the website, use Test Connection, then click Import All Products to bring your catalog into the app. Every variation becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) with the variation image, SKU, price, and stock.</li>
+          <li>Click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
           <li>Use Sync Existing Orders once if you also want older WooCommerce orders. Repeated syncs are safe and do not create duplicates.</li>
         </ol>
         <p className="mt-3 text-xs font-semibold text-blue-800">
@@ -296,7 +301,9 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-gray-500">
                       <span>Automatic orders: {store.webhookId ? 'connected' : 'not connected'}</span>
-                      <span>Imported: {store.ordersSynced} orders</span>
+                      <span>Products: {store.productsSynced}</span>
+                      <span>Orders: {store.ordersSynced}</span>
+                      <span>Last product import: {store.lastProductsSyncedAt ? formatDateTime(store.lastProductsSyncedAt) : 'never'}</span>
                       <span>Last sync: {store.lastSyncedAt ? formatDateTime(store.lastSyncedAt) : 'never'}</span>
                     </div>
                     {store.webhookId && store.webhookId > 0 && webhookHealth[store.id] && (
@@ -314,6 +321,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button type="button" onClick={() => saveStore(store)} loading={busyAction === 'save:' + store.id} disabled={anyBusy || companyPages.length === 0}>Save Website</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'test', () => testWooCommerceStore(store.id))} loading={busyAction === 'test:' + store.id} disabled={anyBusy || store.isNew}>Test Connection</Button>
+                  <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'products', () => syncWooCommerceProducts(store.id))} loading={busyAction === 'products:' + store.id} disabled={anyBusy || store.isNew || !store.enabled}>Import All Products</Button>
                   <Button
                     type="button"
                     variant="secondary"

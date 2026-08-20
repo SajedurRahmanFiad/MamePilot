@@ -428,6 +428,81 @@ final class WooCommerceApi extends BaseService
         ];
     }
 
+    public function syncWooCommerceProducts(array $params): array
+    {
+        $this->requireAdmin();
+        $store = $this->requireStore((string) ($params['id'] ?? $params['storeId'] ?? ''));
+        if (empty($store['enabled'])) {
+            throw new RuntimeException('Enable this WooCommerce connection before importing products.');
+        }
+
+        $systemUser = $this->ensureSystemUser();
+        $counters = ['created' => 0, 'matched' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0];
+        $errors = [];
+        $page = 1;
+
+        do {
+            $response = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/products', [
+                'per_page' => 100, 'page' => $page,
+            ]);
+            $batch = is_array($response['json'] ?? null) ? $response['json'] : [];
+            if ($batch === []) {
+                break;
+            }
+
+            foreach ($batch as $product) {
+                if (!is_array($product)) {
+                    continue;
+                }
+                try {
+                    $variations = [];
+                    if ((string) ($product['type'] ?? '') === 'variable' && is_array($product['variations'] ?? null) && $product['variations'] !== []) {
+                        $variations = $this->fetchWcVariations($store, (int) ($product['id'] ?? 0));
+                    }
+                    if ($variations === []) {
+                        $this->accumulateImportCounts($counters, $this->importWcProductVariation($store, $product, null, (string) $systemUser['id']));
+                    } else {
+                        foreach ($variations as $variation) {
+                            if (is_array($variation)) {
+                                $this->accumulateImportCounts($counters, $this->importWcProductVariation($store, $product, $variation, (string) $systemUser['id']));
+                            }
+                        }
+                    }
+                } catch (\Throwable $exception) {
+                    $counters['failed']++;
+                    $errors[] = 'Product #' . trim((string) ($product['id'] ?? '?')) . ': ' . $exception->getMessage();
+                }
+            }
+
+            if (count($batch) < 100) {
+                break;
+            }
+            $page++;
+        } while (true);
+
+        $total = $counters['created'] + $counters['matched'] + $counters['updated'];
+        $message = sprintf(
+            'WooCommerce product import finished: %d created, %d matched, %d updated, %d skipped, %d failed.',
+            $counters['created'], $counters['matched'], $counters['updated'], $counters['skipped'], $counters['failed']
+        );
+        $this->database->execute(
+            'UPDATE woocommerce_stores SET products_synced = :count, last_products_synced_at = :now, last_synced_at = :now,
+                last_sync_status = :status, last_sync_message = :message, updated_at = :now WHERE id = :id',
+            [
+                ':count' => $total, ':now' => $this->database->nowUtc(),
+                ':status' => $counters['failed'] > 0 ? 'warning' : 'success',
+                ':message' => substr($message, 0, 1000), ':id' => $store['id'],
+            ]
+        );
+        return [
+            'success' => $counters['failed'] === 0, 'message' => $message,
+            'processed' => $total + $counters['skipped'] + $counters['failed'],
+            'created' => $counters['created'], 'matched' => $counters['matched'], 'updated' => $counters['updated'],
+            'skipped' => $counters['skipped'], 'imported' => $total, 'failed' => $counters['failed'],
+            'errors' => array_slice($errors, 0, 20),
+        ];
+    }
+
     public function handleWebhook(string $storeId, string $rawBody, ?string $signature, ?string $topic = null): array
     {
         $this->assertSchema();
@@ -896,6 +971,225 @@ final class WooCommerceApi extends BaseService
         return $product;
     }
 
+    /**
+     * Fetches all variations of a variable WooCommerce product with pagination.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchWcVariations(array $store, int $wcProductId): array
+    {
+        if ($wcProductId <= 0) {
+            return [];
+        }
+        $variations = [];
+        $page = 1;
+        do {
+            $response = $this->storeRequest($store, 'GET', '/wp-json/wc/v3/products/' . $wcProductId . '/variations', [
+                'per_page' => 100, 'page' => $page,
+            ]);
+            $batch = is_array($response['json'] ?? null) ? $response['json'] : [];
+            if ($batch === []) {
+                break;
+            }
+            foreach ($batch as $variation) {
+                if (is_array($variation)) {
+                    $variations[] = $variation;
+                }
+            }
+            if (count($batch) < 100) {
+                break;
+            }
+            $page++;
+        } while (true);
+        return $variations;
+    }
+
+    /**
+     * Imports a WooCommerce product as an individual local product. Variations
+     * become their own products named "Parent (Option / Option)" and use the
+     * variation image and SKU (the product slug when no SKU exists).
+     *
+     * @param array<string, mixed> $store
+     * @param array<string, mixed> $wcProduct
+     * @param array<string, mixed>|null $wcVariation
+     * @return array{created:int, matched:int, updated:int, skipped:int}
+     */
+    private function importWcProductVariation(array $store, array $wcProduct, ?array $wcVariation, string $systemUserId): array
+    {
+        $wcProductId = (int) ($wcProduct['id'] ?? 0);
+        $wcVariationId = $wcVariation !== null ? (int) ($wcVariation['id'] ?? 0) : 0;
+        $parentName = trim((string) ($wcProduct['name'] ?? '')) ?: 'WooCommerce Product';
+        $wcSlug = trim((string) ($wcProduct['slug'] ?? ''));
+        if ($wcSlug === '') {
+            $wcSlug = $this->slugify($parentName);
+        }
+
+        $source = $wcVariation ?? $wcProduct;
+        $name = $parentName;
+        if ($wcVariation !== null) {
+            $attributeOptions = $this->wcVariationOptions($source);
+            if ($attributeOptions !== []) {
+                $name .= ' (' . implode(' / ', $attributeOptions) . ')';
+            }
+        }
+
+        $sku = trim((string) ($source['sku'] ?? ''));
+        $matchKey = $sku !== '' ? $sku : ($wcVariationId > 0 ? $wcSlug . '-' . $wcVariationId : $wcSlug);
+        $price = round((float) ($source['price'] ?? 0), 2);
+        $stockValue = $source['stock_quantity'] ?? null;
+        if (!is_numeric($stockValue)) {
+            $stockValue = $wcProduct['stock_quantity'] ?? 0;
+        }
+        $stock = max(0, (int) $stockValue);
+        $image = $this->wcProductImageUrl($source);
+        if ($image === null && $wcVariation !== null) {
+            $image = $this->wcProductImageUrl($wcProduct);
+        }
+        $category = $this->resolveCategoryFromWc(
+            is_array($wcProduct['categories'] ?? null) ? array_values(array_filter($wcProduct['categories'], 'is_array')) : [],
+            $systemUserId
+        );
+
+        $link = $this->database->fetchOne(
+            'SELECT l.product_id, l.auto_created, p.name
+             FROM woocommerce_product_links l
+             JOIN products p ON p.id = l.product_id AND p.deleted_at IS NULL
+             WHERE l.store_id = :store_id AND l.wc_product_id = :wc_product_id AND l.wc_variation_id = :wc_variation_id
+             LIMIT 1',
+            [':store_id' => $store['id'], ':wc_product_id' => $wcProductId, ':wc_variation_id' => $wcVariationId]
+        );
+        if ($link !== null) {
+            if ((int) ($link['auto_created'] ?? 0) === 1) {
+                $this->database->execute(
+                    'UPDATE products
+                     SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock,
+                         category = :category, image = :image, updated_at = :updated_at
+                     WHERE id = :id',
+                    [
+                        ':name' => $name, ':sku' => $matchKey, ':sale_price' => $price, ':stock' => $stock,
+                        ':category' => $category, ':image' => $image, ':updated_at' => $this->database->nowUtc(),
+                        ':id' => $link['product_id'],
+                    ]
+                );
+                return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
+            }
+            return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
+        }
+
+        $existing = $this->database->fetchOne(
+            'SELECT id FROM products WHERE deleted_at IS NULL AND LOWER(TRIM(sku)) = LOWER(:sku) ORDER BY created_at ASC LIMIT 1',
+            [':sku' => $matchKey]
+        );
+        if ($existing !== null) {
+            $this->linkWcProduct((string) $store['id'], $wcProductId, $wcVariationId, $matchKey, (string) $existing['id'], false);
+            return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
+        }
+
+        $id = $this->uuid4();
+        $now = $this->database->nowUtc();
+        $slugCandidate = $sku !== ''
+            ? $wcSlug . '-' . $sku
+            : ($wcVariationId > 0 ? $wcSlug . '-' . $wcVariationId : $wcSlug);
+        $this->database->execute(
+            'INSERT INTO products (id, name, slug, sku, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :sku, :image, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)',
+            [
+                ':id' => $id, ':name' => $name, ':slug' => $this->uniqueSlug($this->slugify($slugCandidate)),
+                ':sku' => $matchKey, ':image' => $image, ':category' => $category, ':sale_price' => $price,
+                ':stock' => $stock, ':created_by' => $systemUserId, ':created_at' => $now, ':updated_at' => $now,
+            ]
+        );
+        $this->linkWcProduct((string) $store['id'], $wcProductId, $wcVariationId, $matchKey, $id, true);
+        return ['created' => 1, 'matched' => 0, 'updated' => 0, 'skipped' => 0];
+    }
+
+    /** @param array<string, int> $counters */
+    private function accumulateImportCounts(array &$counters, array $result): void
+    {
+        foreach (['created', 'matched', 'updated', 'skipped'] as $key) {
+            $counters[$key] += (int) ($result[$key] ?? 0);
+        }
+    }
+
+    /** @return array<int, string> */
+    private function wcVariationOptions(array $source): array
+    {
+        $options = [];
+        $attributes = is_array($source['attributes'] ?? null) ? $source['attributes'] : [];
+        foreach ($attributes as $attribute) {
+            if (!is_array($attribute)) {
+                continue;
+            }
+            $option = trim((string) ($attribute['option'] ?? ''));
+            if ($option === '') {
+                continue;
+            }
+            $exists = false;
+            foreach ($options as $existingOption) {
+                if (strcasecmp($existingOption, $option) === 0) {
+                    $exists = true;
+                    break;
+                }
+            }
+            if (!$exists) {
+                $options[] = $option;
+            }
+        }
+        return $options;
+    }
+
+    private function wcProductImageUrl(array $source): ?string
+    {
+        $images = is_array($source['images'] ?? null) ? $source['images'] : [];
+        foreach ($images as $image) {
+            $src = is_array($image) ? trim((string) ($image['src'] ?? '')) : '';
+            if ($src !== '') {
+                return $src;
+            }
+        }
+        $image = $source['image'] ?? null;
+        if (is_array($image) && trim((string) ($image['src'] ?? '')) !== '') {
+            return (string) $image['src'];
+        }
+        return null;
+    }
+
+    private function linkWcProduct(string $storeId, int $wcProductId, int $wcVariationId, string $sku, string $productId, bool $autoCreated): void
+    {
+        $this->database->execute(
+            'INSERT INTO woocommerce_product_links
+                (id, store_id, wc_product_id, wc_variation_id, sku, product_id, auto_created, created_at, updated_at)
+             VALUES (:id, :store_id, :wc_product_id, :wc_variation_id, :sku, :product_id, :auto_created, :created_at, :updated_at)
+             ON DUPLICATE KEY UPDATE sku = VALUES(sku), product_id = VALUES(product_id),
+                auto_created = VALUES(auto_created), updated_at = VALUES(updated_at)',
+            [
+                ':id' => $this->uuid4(), ':store_id' => $storeId, ':wc_product_id' => $wcProductId,
+                ':wc_variation_id' => $wcVariationId, ':sku' => $this->nullableString($sku !== '' ? $sku : null),
+                ':product_id' => $productId, ':auto_created' => $autoCreated ? 1 : 0,
+                ':created_at' => $this->database->nowUtc(), ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+    }
+
+    private function slugify(string $value): string
+    {
+        $slug = strtolower(trim($value));
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug) ?? '';
+        return trim($slug, '-');
+    }
+
+    private function uniqueSlug(string $candidate): ?string
+    {
+        $base = $candidate !== '' ? mb_substr($candidate, 0, 220) : 'woocommerce-product';
+        $slug = $base;
+        $counter = 1;
+        while ($this->database->fetchOne('SELECT id FROM products WHERE slug = :slug LIMIT 1', [':slug' => $slug]) !== null) {
+            $counter++;
+            $slug = mb_substr($base, 0, 230) . '-' . $counter;
+        }
+        return $slug;
+    }
+
     private function ensureSystemUser(): array
     {
         $existing = $this->database->fetchOne('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => self::SYSTEM_USER_ID]);
@@ -1060,8 +1354,10 @@ final class WooCommerceApi extends BaseService
             'webhookUrl' => $this->webhookUrl((string) $row['id'], (string) ($row['webhook_base_url'] ?? '')),
             'companyPageId' => (string) ($row['company_page_id'] ?? ''),
             'enabled' => !empty($row['enabled']), 'lastSyncedAt' => $this->toIso($row['last_synced_at'] ?? null),
+            'lastProductsSyncedAt' => $this->toIso($row['last_products_synced_at'] ?? null),
             'lastSyncStatus' => $this->nullableString($row['last_sync_status'] ?? null),
             'lastSyncMessage' => $this->nullableString($row['last_sync_message'] ?? null),
+            'productsSynced' => (int) ($row['products_synced'] ?? 0),
             'ordersSynced' => (int) ($row['orders_synced'] ?? 0),
             'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
         ];
@@ -1320,6 +1616,9 @@ final class WooCommerceApi extends BaseService
             throw new RuntimeException('WooCommerce database upgrade is incomplete. Run the latest database schema update first.');
         }
         if (!$this->columnExists('woocommerce_stores', 'webhook_base_url')) {
+            throw new RuntimeException('WooCommerce database upgrade is incomplete. Run the latest database schema update first.');
+        }
+        if (!$this->columnExists('woocommerce_stores', 'products_synced')) {
             throw new RuntimeException('WooCommerce database upgrade is incomplete. Run the latest database schema update first.');
         }
     }

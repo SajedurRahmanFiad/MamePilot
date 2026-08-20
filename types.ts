@@ -573,8 +573,10 @@ export interface WooCommerceStore {
   companyPageId: string;
   enabled: boolean;
   lastSyncedAt?: string | null;
+  lastProductsSyncedAt?: string | null;
   lastSyncStatus?: string | null;
   lastSyncMessage?: string | null;
+  productsSynced: number;
   ordersSynced: number;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -1274,6 +1276,7 @@ export interface ExpenseSummaryCsvRow {
 export interface ExpenseSummaryReport {
   totalOutflow: number;
   byCategory: NamedValuePoint[];
+  byPaymentMethod: NamedValuePoint[];
   recentExpenses: ExpenseSummaryRecentExpense[];
 }
 

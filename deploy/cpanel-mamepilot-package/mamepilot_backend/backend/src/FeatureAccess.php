@@ -272,6 +272,7 @@ final class FeatureAccess
         'testWooCommerceStore' => 'woocommerce',
         'registerWooCommerceWebhook' => 'woocommerce',
         'syncWooCommerceOrders' => 'woocommerce',
+        'syncWooCommerceProducts' => 'woocommerce',
         'fetchShopifyStores' => 'shopify',
         'saveShopifyStore' => 'shopify',
         'deleteShopifyStore' => 'shopify',

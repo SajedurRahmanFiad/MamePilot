@@ -4359,6 +4359,17 @@ final class OperationsApi extends BaseService
             $bindings
         );
 
+        $paymentMethodRows = $this->database->fetchAll(
+            'SELECT
+                COALESCE(NULLIF(t.payment_method, \'\'), \'N/A\') AS name,
+                COALESCE(SUM(t.amount), 0) AS value
+             FROM transactions t
+             WHERE ' . implode(' AND ', $conditions) . '
+             GROUP BY name
+             ORDER BY value DESC',
+            $bindings
+        );
+
         return [
             'totalOutflow' => (float) ($summary['totalOutflow'] ?? 0),
             'byCategory' => array_map(
@@ -4367,6 +4378,13 @@ final class OperationsApi extends BaseService
                     'value' => (float) ($row['value'] ?? 0),
                 ],
                 $categoryRows
+            ),
+            'byPaymentMethod' => array_map(
+                static fn(array $row): array => [
+                    'name' => (string) ($row['name'] ?? 'N/A'),
+                    'value' => (float) ($row['value'] ?? 0),
+                ],
+                $paymentMethodRows
             ),
             'recentExpenses' => array_map(
                 fn(array $row): array => [
