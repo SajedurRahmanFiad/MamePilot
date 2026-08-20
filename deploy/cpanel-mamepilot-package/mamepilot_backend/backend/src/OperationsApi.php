@@ -1740,8 +1740,11 @@ final class OperationsApi extends BaseService
 
     public function fetchOrders(array $params = []): array
     {
+        $isPos = !empty($params['pos']);
         $rows = $this->database->fetchAll(
-            'SELECT * FROM orders_with_customer_creator ORDER BY createdAt DESC'
+            'SELECT * FROM orders_with_customer_creator '
+            . ($isPos ? 'WHERE isPos = 1' : 'WHERE isPos = 0')
+            . ' ORDER BY createdAt DESC, id DESC'
         );
 
         return array_map(fn(array $row): array => $this->mapOrder($row), $rows);
@@ -1756,6 +1759,9 @@ final class OperationsApi extends BaseService
             return [];
         }
 
+        $isPos = !empty($params['pos']);
+        $scope = $isPos ? 'AND isPos = 1' : 'AND isPos = 0';
+
         $bindings = [
             ':search_order' => '%' . $search . '%',
             ':search_customer' => '%' . $search . '%',
@@ -1765,9 +1771,10 @@ final class OperationsApi extends BaseService
         $rows = $this->database->fetchAll(
             "SELECT id, orderNumber, customerName, customerPhone
              FROM orders_with_customer_creator
-             WHERE orderNumber LIKE :search_order
+             WHERE (orderNumber LIKE :search_order
                 OR customerName LIKE :search_customer
-                OR customerPhone LIKE :search_phone
+                OR customerPhone LIKE :search_phone)
+               {$scope}
              ORDER BY createdAt DESC, id DESC
              LIMIT {$limit}",
             $bindings
@@ -1788,6 +1795,11 @@ final class OperationsApi extends BaseService
         $filters = is_array($params['filters'] ?? null) ? $params['filters'] : $params;
         $where = 'WHERE 1=1';
         $bindings = [];
+
+        // Scope: 'pos' lists only point-of-sale orders; any other listing
+        // keeps POS sales off the Orders page.
+        $isPos = !empty($filters['pos']);
+        $where .= $isPos ? ' AND isPos = 1' : ' AND isPos = 0';
 
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
@@ -2055,6 +2067,7 @@ final class OperationsApi extends BaseService
                 items,
                 subtotal,
                 discount,
+                isPos,
                 shipping,
                 total,
                 paidAmount,
@@ -2115,10 +2128,15 @@ final class OperationsApi extends BaseService
         $limit = 50;
         $like = $search !== '' ? '%' . $search . '%' : null;
 
+        // Scope: 'pos' returns options seen on POS sales; anything else
+        // excludes POS sales so the Orders page never suggests them.
+        $isPos = !empty($params['pos']);
+        $isPosSql = $isPos ? 'isPos = 1' : 'isPos = 0';
+
         $result = [];
 
         if ($field === '' || $field === 'customerNames') {
-            $sql = 'SELECT DISTINCT customerName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(customerName, "")) <> ""';
+            $sql = 'SELECT DISTINCT customerName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND ' . $isPosSql . ' AND TRIM(COALESCE(customerName, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'customerNames') { $sql .= ' AND customerName LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY customerName LIMIT ' . $limit;
@@ -2126,7 +2144,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'customerPhones') {
-            $sql = 'SELECT DISTINCT customerPhone FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(customerPhone, "")) <> ""';
+            $sql = 'SELECT DISTINCT customerPhone FROM orders_with_customer_creator WHERE deletedAt IS NULL AND ' . $isPosSql . ' AND TRIM(COALESCE(customerPhone, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'customerPhones') { $sql .= ' AND customerPhone LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY customerPhone LIMIT ' . $limit;
@@ -2134,7 +2152,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'orderNumbers') {
-            $sql = 'SELECT DISTINCT orderNumber FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(orderNumber, "")) <> ""';
+            $sql = 'SELECT DISTINCT orderNumber FROM orders_with_customer_creator WHERE deletedAt IS NULL AND ' . $isPosSql . ' AND TRIM(COALESCE(orderNumber, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'orderNumbers') { $sql .= ' AND orderNumber LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY orderNumber LIMIT ' . $limit;
@@ -2142,7 +2160,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'companyNames') {
-            $sql = 'SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) AS companyName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")), "")) <> ""';
+            $sql = 'SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) AS companyName FROM orders_with_customer_creator WHERE deletedAt IS NULL AND ' . $isPosSql . ' AND TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")), "")) <> ""';
             $bindings = [];
             if ($like && $field === 'companyNames') { $sql .= ' AND JSON_UNQUOTE(JSON_EXTRACT(pageSnapshot, "$.name")) LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY companyName LIMIT ' . $limit;
@@ -2169,7 +2187,7 @@ final class OperationsApi extends BaseService
         $result = [];
 
         if ($field === '' || $field === 'names') {
-            $sql = 'SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(name, "")) <> ""';
+            $sql = 'SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND is_walkin = 0 AND TRIM(COALESCE(name, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'names') { $sql .= ' AND name LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY name LIMIT ' . $limit;
@@ -2177,7 +2195,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'phones') {
-            $sql = 'SELECT DISTINCT phone FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(phone, "")) <> ""';
+            $sql = 'SELECT DISTINCT phone FROM customers WHERE deleted_at IS NULL AND is_walkin = 0 AND TRIM(COALESCE(phone, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'phones') { $sql .= ' AND phone LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY phone LIMIT ' . $limit;
@@ -2185,7 +2203,7 @@ final class OperationsApi extends BaseService
         }
 
         if ($field === '' || $field === 'addresses') {
-            $sql = 'SELECT DISTINCT address FROM customers WHERE deleted_at IS NULL AND TRIM(COALESCE(address, "")) <> ""';
+            $sql = 'SELECT DISTINCT address FROM customers WHERE deleted_at IS NULL AND is_walkin = 0 AND TRIM(COALESCE(address, "")) <> ""';
             $bindings = [];
             if ($like && $field === 'addresses') { $sql .= ' AND address LIKE :q'; $bindings[':q'] = $like; }
             $sql .= ' ORDER BY address LIMIT ' . $limit;
@@ -5329,6 +5347,473 @@ final class OperationsApi extends BaseService
 
             return $this->mapOrder($row);
         });
+    }
+
+    /**
+     * Payment methods accepted at the point of sale. POS tenders are
+     * restricted to this whitelist so registered methods that need invoicing
+     * or gateway handling never appear at the register.
+     */
+    private const POS_LEGAL_TENDER = ['cash', 'bank_transfer', 'bkash', 'nagad', 'rocket', 'upay'];
+
+    /**
+     * @return array<int, array{id: string, name: string, label: string}>
+     */
+    private function posPaymentMethods(): array
+    {
+        $whitelist = array_values(self::POS_LEGAL_TENDER);
+        $placeholders = implode(', ', array_fill(0, count($whitelist), '?'));
+        $rows = $this->database->fetchAll(
+            'SELECT id, name FROM payment_methods
+             WHERE is_active = 1 AND id IN (' . $placeholders . ')',
+            [...$whitelist]
+        );
+        $byId = $this->keyBy($rows, 'id');
+
+        $methods = [];
+        foreach ($whitelist as $id) {
+            $name = trim((string) ($byId[$id]['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $methods[] = ['id' => $id, 'name' => $name, 'label' => $name];
+        }
+        if ($methods === []) {
+            $methods[] = ['id' => 'cash', 'name' => 'Cash', 'label' => 'Cash'];
+        }
+        return $methods;
+    }
+
+    public function fetchPosInit(array $params = []): array
+    {
+        return [
+            'paymentMethods' => $this->posPaymentMethods(),
+            'walkinCustomerId' => 'walkin-customer',
+            'legalTender' => array_values(self::POS_LEGAL_TENDER),
+        ];
+    }
+
+    /**
+     * Point-of-sale quick sale. Creates an order against the shared walk-in
+     * customer (or an explicitly chosen customer), captures VAT separately,
+     * and records each accepted tender as an Income transaction against the
+     * default income account. Tenders must cover the exact total unless the
+     * sale is explicitly held for later completion.
+     */
+    public function createPosOrder(array $params): array
+    {
+        $actor = $this->currentUser();
+        if (!$this->currentUserHasPermission('orders.create')) {
+            throw new RuntimeException('You do not have permission to create orders.');
+        }
+        $id = $this->stringId($params['id'] ?? null);
+
+        return $this->database->transaction(function () use ($actor, $id, $params): array {
+            $rawItems = is_array($params['items'] ?? null) ? $params['items'] : [];
+            $items = [];
+            foreach ($rawItems as $rawItem) {
+                if (!is_array($rawItem)) {
+                    throw new RuntimeException('Invalid sale item.');
+                }
+                $productId = trim((string) ($rawItem['productId'] ?? ''));
+                $productName = trim((string) ($rawItem['productName'] ?? $rawItem['name'] ?? ''));
+                $quantity = (float) ($rawItem['quantity'] ?? 0);
+                $rate = round((float) ($rawItem['rate'] ?? 0), 2);
+                if (!is_finite($quantity) || $quantity <= 0) {
+                    throw new RuntimeException('Every sale item needs a positive quantity.');
+                }
+                if (!is_finite($rate) || $rate <= 0) {
+                    throw new RuntimeException('Every sale item needs a positive rate.');
+                }
+                $amount = round($rate * $quantity, 2);
+                if (isset($rawItem['amount']) && abs(round((float) $rawItem['amount'], 2) - $amount) > 0.01) {
+                    throw new RuntimeException('Sale item amount does not match rate × quantity.');
+                }
+                $items[] = [
+                    'productId' => $productId,
+                    'productName' => $productName,
+                    'rate' => $rate,
+                    'quantity' => $quantity,
+                    'amount' => $amount,
+                ];
+            }
+            if ($items === []) {
+                throw new RuntimeException('Add at least one item to the sale.');
+            }
+
+            $items = $this->canonicalizeOrderItemProductSnapshots($items, 'Sale');
+            foreach ($items as $item) {
+                if (trim((string) ($item['productName'] ?? '')) === '') {
+                    throw new RuntimeException('Every sale item needs a product name.');
+                }
+            }
+
+            $subtotal = round(array_sum(array_map(static fn(array $item): float => (float) ($item['amount'] ?? 0), $items)), 2);
+            $discount = round((float) ($params['discount'] ?? 0), 2);
+            if ($discount < 0 || $discount > $subtotal) {
+                throw new RuntimeException('Discount must be between zero and the sale subtotal.');
+            }
+            $vatRate = round((float) ($params['vatRate'] ?? 0), 2);
+            if ($vatRate < 0 || $vatRate > 100) {
+                throw new RuntimeException('VAT rate must be between 0 and 100.');
+            }
+            $vatAmount = round(($subtotal - $discount) * $vatRate / 100, 2);
+            $total = round($subtotal - $discount + $vatAmount, 2);
+
+            $hold = !empty($params['hold']);
+            $tenderRows = [];
+            $tendered = 0.0;
+            if (!$hold) {
+                $legalTenderByName = [];
+                foreach ($this->posPaymentMethods() as $method) {
+                    $legalTenderByName[$method['id']] = $method['name'];
+                }
+                $tenders = is_array($params['tenders'] ?? null) ? $params['tenders'] : [];
+                foreach ($tenders as $tender) {
+                    if (!is_array($tender)) {
+                        throw new RuntimeException('Invalid tender.');
+                    }
+                    $method = trim((string) ($tender['method'] ?? $tender['methodId'] ?? ''));
+                    $amount = round((float) ($tender['amount'] ?? 0), 2);
+                    if ($method === '' || !isset($legalTenderByName[$method])) {
+                        throw new RuntimeException('The selected payment method is not accepted at the point of sale.');
+                    }
+                    if (!is_finite($amount) || $amount <= 0) {
+                        throw new RuntimeException('Tender amounts must be greater than zero.');
+                    }
+                    $tendered += $amount;
+                    $tenderRows[] = ['method' => $method, 'methodName' => $legalTenderByName[$method], 'amount' => $amount];
+                }
+
+                if ($tendered + 0.005 < $total) {
+                    throw new RuntimeException(
+                        'The sale is not fully paid: ' . number_format($tendered, 2, '.', '') . ' of '
+                        . number_format($total, 2, '.', '') . ' received.'
+                    );
+                }
+            }
+
+            $status = $hold ? 'On Hold' : 'Completed';
+            $paidAmount = $hold ? 0.0 : $total;
+            $changeAmount = $tendered > $total ? round($tendered - $total, 2) : 0.0;
+
+            $productIds = array_values(array_unique(array_filter(
+                array_map(static fn(array $item): string => trim((string) ($item['productId'] ?? '')), $items),
+                static fn(string $productId): bool => $productId !== ''
+            )));
+            if ($status === 'Completed' && $productIds !== []) {
+                [$productPlaceholders, $productBindings] = $this->inClause($productIds, 'pos');
+                $stockRows = $this->database->fetchAll(
+                    'SELECT id, name, stock FROM products WHERE deleted_at IS NULL AND id IN ('
+                    . implode(', ', $productPlaceholders) . ')',
+                    $productBindings
+                );
+                $stockByProduct = $this->keyBy($stockRows, 'id');
+                foreach ($items as $item) {
+                    $productId = trim((string) ($item['productId'] ?? ''));
+                    if ($productId === '') {
+                        continue;
+                    }
+                    $product = $stockByProduct[$productId] ?? null;
+                    $available = $product === null ? 0 : (int) ($product['stock'] ?? 0);
+                    $quantity = (float) ($item['quantity'] ?? 0);
+                    if ($product === null || $quantity > $available) {
+                        $productName = trim((string) ($item['productName'] ?? $productId));
+                        throw new RuntimeException(
+                            'Not enough stock for ' . $productName . ': ' . $available . ' left.'
+                        );
+                    }
+                }
+            }
+
+            $allocation = $this->allocateOrderNumber();
+            $orderDate = $this->normalizeDateOnly((string) ($params['orderDate'] ?? '')) ?: gmdate('Y-m-d');
+            $pageSelection = $this->resolveOrderPageSelection($params);
+            $stockUpdates = $this->applyOrderStockTransition('', $status, [], $items);
+            $customerId = trim((string) ($params['customerId'] ?? '')) ?: 'walkin-customer';
+            $notes = $this->nullableString($params['notes'] ?? null);
+            $now = $this->database->nowUtc();
+
+            $history = ['created' => $this->toIso($now)];
+            if (!$hold) {
+                $paymentLines = [];
+                foreach ($tenderRows as $tender) {
+                    $paymentLines[] = sprintf(
+                        'Payment of %s received by %s via %s on %s',
+                        number_format($tender['amount'], 2, '.', ''),
+                        trim((string) ($actor['name'] ?? 'Unknown user')),
+                        $tender['methodName'],
+                        $this->toIso($this->database->nowUtc())
+                    );
+                }
+                $history['payment'] = implode("\n", $paymentLines);
+            }
+
+            $this->database->execute(
+                'INSERT INTO orders (
+                    id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
+                    subtotal, discount, vat_rate, vat_amount, is_pos, shipping, total, paid_amount, notes, history, page_snapshot,
+                    payment_received_at,
+                    processed_at, courier_assigned_at, picked_at, completed_at, returned_at, cancelled_at,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
+                    :subtotal, :discount, :vat_rate, :vat_amount, :is_pos, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
+                    :payment_received_at,
+                    :processed_at, :courier_assigned_at, :picked_at, :completed_at, :returned_at, :cancelled_at,
+                    :created_at, :updated_at
+                )',
+                [
+                    ':id' => $id,
+                    ':order_number' => $allocation['orderNumber'],
+                    ':order_seq' => $allocation['next'],
+                    ':order_date' => $orderDate,
+                    ':customer_id' => $customerId,
+                    ':page_id' => $pageSelection['pageId'],
+                    ':created_by' => (string) $actor['id'],
+                    ':status' => $status,
+                    ':items' => $this->jsonEncode($items),
+                    ':subtotal' => $this->formatMoney($subtotal),
+                    ':discount' => $this->formatMoney($discount),
+                    ':vat_rate' => $this->formatMoney($vatRate),
+                    ':vat_amount' => $this->formatMoney($vatAmount),
+                    ':is_pos' => 1,
+                    ':shipping' => $this->formatMoney(0),
+                    ':total' => $this->formatMoney($total),
+                    ':paid_amount' => $this->formatMoney($paidAmount),
+                    ':notes' => $notes,
+                    ':history' => $this->jsonEncode($history),
+                    ':page_snapshot' => $this->jsonEncode($pageSelection['pageSnapshot']),
+                    ':payment_received_at' => $status === 'Completed' ? $now : null,
+                    ':processed_at' => null,
+                    ':courier_assigned_at' => null,
+                    ':picked_at' => null,
+                    ':completed_at' => $status === 'Completed' ? $now : null,
+                    ':returned_at' => null,
+                    ':cancelled_at' => null,
+                    ':created_at' => $now,
+                    ':updated_at' => $now,
+                ]
+            );
+
+            $this->applyResolvedProductStockUpdates($stockUpdates);
+            $this->syncCustomerOrderSummaries([$customerId]);
+            $this->syncWalletCreditForOrder([
+                'id' => $id,
+                'createdBy' => (string) $actor['id'],
+                'status' => $status,
+                'orderNumber' => $allocation['orderNumber'],
+                'orderDate' => $orderDate,
+                'createdAt' => $this->toIso($now),
+            ]);
+
+            if ($status === 'Completed') {
+                $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $id]);
+                if ($freshForCogs !== null) {
+                    $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
+                }
+
+                $defaults = $this->database->fetchOne(
+                    'SELECT default_account_id, income_category_id FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $accountId = trim((string) ($params['accountId'] ?? ''))
+                    ?: trim((string) ($defaults['default_account_id'] ?? ''));
+                if ($accountId === '') {
+                    $fallbackAccount = $this->database->fetchOne(
+                        'SELECT id FROM accounts ORDER BY created_at ASC, id ASC LIMIT 1'
+                    );
+                    $accountId = $fallbackAccount === null ? '' : (string) $fallbackAccount['id'];
+                }
+                if ($accountId === '') {
+                    throw new RuntimeException('No income account is set. Set a default account in Settings to accept point-of-sale payments.');
+                }
+                $categoryId = trim((string) ($defaults['income_category_id'] ?? '')) ?: 'income_sales';
+
+                $remainingToBook = $total;
+                foreach ($tenderRows as $tender) {
+                    $booking = round(min($tender['amount'], $remainingToBook), 2);
+                    if ($booking <= 0) {
+                        continue;
+                    }
+                    $this->createTransactionRecord([
+                        'date' => $now,
+                        'type' => 'Income',
+                        'category' => $categoryId,
+                        'accountId' => $accountId,
+                        'amount' => $booking,
+                        'description' => 'Payment for Order #' . $allocation['orderNumber'],
+                        'referenceId' => $id,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $tender['methodName'],
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $remainingToBook = round($remainingToBook - $booking, 2);
+                }
+            }
+
+            $row = $this->fetchOrderRowById($id);
+            if ($row === null) {
+                throw new RuntimeException('Created order could not be loaded.');
+            }
+
+            $order = $this->mapOrder($row);
+            $order['vatRate'] = $vatRate;
+            $order['vatAmount'] = $vatAmount;
+            $order['tenders'] = $tenderRows;
+            $order['change'] = $changeAmount;
+            return $order;
+        });
+    }
+
+    /** Pending (On Hold) POS sales against the walk-in customer, newest first. */
+    public function fetchPosPendingSales(array $params = []): array
+    {
+        $rows = $this->database->fetchAll(
+            'SELECT o.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, u.name AS creator_name
+             FROM orders o
+             LEFT JOIN customers c ON c.id = o.customer_id
+             LEFT JOIN users u ON u.id = o.created_by
+             WHERE o.deleted_at IS NULL
+               AND o.customer_id = :customer_id
+               AND o.status = :status
+             ORDER BY o.created_at DESC
+             LIMIT 50',
+            [':customer_id' => 'walkin-customer', ':status' => 'On Hold']
+        );
+        return array_values(array_map(fn(array $row): array => $this->mapOrder($row), $rows));
+    }
+
+    /** Cancel a pending POS sale so it can be rebuilt or abandoned. */
+    public function cancelPosPendingSale(array $params): ?array
+    {
+        $actor = $this->currentUser();
+        $id = trim((string) ($params['id'] ?? ''));
+        $extraHistory = is_array($params['history'] ?? null) ? $params['history'] : null;
+
+        return $this->database->transaction(function () use ($actor, $id, $extraHistory): ?array {
+            $row = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $id]
+            );
+            if ($row === null) {
+                throw new RuntimeException('Order not found.');
+            }
+            if (trim((string) ($row['customer_id'] ?? '')) !== 'walkin-customer'
+                || trim((string) ($row['status'] ?? '')) !== 'On Hold') {
+                throw new RuntimeException('Only pending point-of-sale orders can be cancelled here.');
+            }
+
+            $nextHistory = $this->jsonDecodeAssoc($row['history'] ?? []);
+            if (is_array($extraHistory)) {
+                $nextHistory = array_merge($nextHistory, $extraHistory);
+            }
+            if (trim((string) ($nextHistory['cancelled'] ?? '')) === '') {
+                $nextHistory['cancelled'] = 'POS sale cancelled by '
+                    . trim((string) ($actor['name'] ?? 'Unknown user'))
+                    . ' on ' . $this->toIso($this->database->nowUtc());
+            }
+
+            return $this->updateOrder(['id' => $id, 'updates' => ['status' => 'Cancelled', 'history' => $nextHistory]]);
+        });
+    }
+
+    private function posDraftId(string $userId): string
+    {
+        return 'pos-draft-' . md5($userId);
+    }
+
+    /** Persist (or overwrite) the current user's unfinished POS cart. */
+    public function savePosDraft(array $params): array
+    {
+        $actor = $this->currentUser();
+        $userId = (string) ($actor['id'] ?? '');
+        $looseItems = is_array($params['items'] ?? null) ? $params['items'] : [];
+        $items = [];
+        foreach ($looseItems as $rawItem) {
+            if (!is_array($rawItem)) {
+                continue;
+            }
+            $quantity = (float) ($rawItem['quantity'] ?? 0);
+            $rate = (float) ($rawItem['rate'] ?? 0);
+            if (!is_finite($quantity) || $quantity <= 0 || !is_finite($rate) || $rate < 0) {
+                continue;
+            }
+            $items[] = [
+                'productId' => trim((string) ($rawItem['productId'] ?? '')),
+                'productName' => trim((string) ($rawItem['productName'] ?? '')),
+                'originalRate' => round((float) ($rawItem['originalRate'] ?? $rate), 2),
+                'rate' => round($rate, 2),
+                'quantity' => round($quantity, 2),
+            ];
+        }
+        $data = [
+            'customerId' => trim((string) ($params['customerId'] ?? '')),
+            'items' => $items,
+            'vatRate' => round((float) ($params['vatRate'] ?? 0), 2),
+            'discountMode' => ($params['discountMode'] ?? null) === 'percent' ? 'percent' : 'fixed',
+            'discountValue' => round((float) ($params['discountValue'] ?? 0), 2),
+            'note' => $this->nullableString($params['note'] ?? null),
+            'allocations' => is_array($params['allocations'] ?? null) ? $params['allocations'] : [],
+            'received' => round((float) ($params['received'] ?? 0), 2),
+        ];
+        $this->database->execute(
+            'INSERT INTO pos_drafts (id, user_id, items, data, updated_at)
+             VALUES (:id, :user_id, :items, :data, :updated_at)
+             ON DUPLICATE KEY UPDATE
+               items = VALUES(items),
+               data = VALUES(data),
+               updated_at = VALUES(updated_at)',
+            [
+                ':id' => $this->posDraftId($userId),
+                ':user_id' => $userId,
+                ':items' => $this->jsonEncode($items),
+                ':data' => $this->jsonEncode($data),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+        return ['saved' => true];
+    }
+
+    public function fetchPosDraft(array $params = []): ?array
+    {
+        $actor = $this->currentUser();
+        $userId = (string) ($actor['id'] ?? '');
+        $row = $this->database->fetchOne(
+            'SELECT id, data, note, updated_at FROM pos_drafts WHERE user_id = :user_id LIMIT 1',
+            [':user_id' => $userId]
+        );
+        if ($row === null) {
+            return null;
+        }
+        $envelope = $this->jsonDecodeAssoc($row['data'] ?? []);
+        if ($envelope === []) {
+            return [
+                'draftId' => (string) $row['id'],
+                'items' => $this->jsonDecodeList($row['data'] ?? []),
+                'note' => $this->nullableString($row['note'] ?? null),
+                'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+            ];
+        }
+        return [
+            'draftId' => (string) $row['id'],
+            'customerId' => (string) ($envelope['customerId'] ?? ''),
+            'items' => is_array($envelope['items'] ?? null) ? $envelope['items'] : [],
+            'vatRate' => (float) ($envelope['vatRate'] ?? 0),
+            'discountMode' => ($envelope['discountMode'] ?? null) === 'percent' ? 'percent' : 'fixed',
+            'discountValue' => (float) ($envelope['discountValue'] ?? 0),
+            'note' => $this->nullableString($envelope['note'] ?? $row['note'] ?? null),
+            'allocations' => is_array($envelope['allocations'] ?? null) ? $envelope['allocations'] : [],
+            'received' => (float) ($envelope['received'] ?? 0),
+            'updatedAt' => $this->toIso($row['updated_at'] ?? null),
+        ];
+    }
+
+    public function clearPosDraft(array $params = []): array
+    {
+        $actor = $this->currentUser();
+        $userId = (string) ($actor['id'] ?? '');
+        $this->database->execute('DELETE FROM pos_drafts WHERE user_id = :user_id', [':user_id' => $userId]);
+        return ['cleared' => true];
     }
 
     private function normalizeSteadfastTrackingLink(mixed $value): ?string

@@ -136,8 +136,8 @@ export async function fetchCustomerFilterOptions(params?: { search?: string; fie
 export async function fetchCustomersMini() { return call<Array<{ id: string; name: string; phone?: string }>>('fetchCustomersMini'); }
 
 export async function fetchOrders() { return call<Order[]>('fetchOrders'); }
-export async function fetchOrderSearchPreview(search: string, limit: number = 10) {
-  return call<Array<{ id: string; orderNumber: string; customerName?: string; customerPhone?: string }>>('fetchOrderSearchPreview', { search, limit });
+export async function fetchOrderSearchPreview(search: string, limit: number = 10, pos?: boolean) {
+  return call<Array<{ id: string; orderNumber: string; customerName?: string; customerPhone?: string }>>('fetchOrderSearchPreview', { search, limit, pos });
 }
 export async function fetchDashboardSnapshot(params?: { filterRange?: string; customDates?: { from?: string; to?: string } }) {
   return call<DashboardSnapshot>('fetchDashboardSnapshot', params || {});
@@ -166,10 +166,10 @@ export async function fetchProductQuantitySoldReport(params?: { filterRange?: st
 export async function fetchCustomerSalesReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; search?: string }) {
   return call<CustomerSalesReportData>('fetchCustomerSalesReport', params || {});
 }
-export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean }, options?: ApiActionOptions) {
+export async function fetchOrdersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean; pos?: boolean }, options?: ApiActionOptions) {
   return call<{ data: Order[]; count: number }>('fetchOrdersPage', { page, pageSize, filters }, options);
 }
-export async function fetchOrderFilterOptions(params?: { search?: string; field?: string }) {
+export async function fetchOrderFilterOptions(params?: { search?: string; field?: string; pos?: boolean }) {
   return call<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }>('fetchOrderFilterOptions', params || {});
 }
 export async function fetchOrderById(id: string) { return call<Order | null>('fetchOrderById', { id }); }
@@ -883,4 +883,85 @@ export async function batchUpdateSettings(updates: { company?: Partial<CompanySe
   }
 
   return batchResult;
+}
+
+// ===== Point of Sale =====
+
+export type PosPaymentMethod = { id: string; name: string; label: string };
+export type PosOrderItem = { productId?: string; productName: string; originalRate?: number; rate: number; quantity: number; amount?: number };
+export type PosTender = { method: string; amount: number };
+export type PosTenderRecord = PosTender & { methodName: string };
+
+export type PosInit = {
+  paymentMethods: PosPaymentMethod[];
+  walkinCustomerId: string;
+  legalTender: string[];
+};
+
+export type PosCreatedOrder = import('../../types').Order & {
+  vatRate: number;
+  vatAmount: number;
+  change: number;
+  tenders: PosTenderRecord[];
+};
+
+export type PosDraft = {
+  draftId: string;
+  customerId?: string | null;
+  items: PosOrderItem[];
+  vatRate?: number;
+  discountMode?: 'fixed' | 'percent';
+  discountValue?: number;
+  note?: string | null;
+  allocations?: PosTender[];
+  received?: number;
+  updatedAt?: string | null;
+};
+
+export type CreatePosOrderPayload = {
+  id?: string;
+  customerId?: string;
+  items: PosOrderItem[];
+  vatRate?: number;
+  discount?: number;
+  tenders?: PosTender[];
+  notes?: string | null;
+  hold?: boolean;
+};
+
+export async function fetchPosInit(): Promise<PosInit> {
+  return call('fetchPosInit', {});
+}
+
+export async function fetchPosPendingSales(): Promise<import('../../types').Order[]> {
+  return call('fetchPosPendingSales', {});
+}
+
+export async function createPosOrder(payload: CreatePosOrderPayload): Promise<PosCreatedOrder> {
+  return call('createPosOrder', payload);
+}
+
+export async function cancelPosPendingSale(id: string): Promise<import('../../types').Order> {
+  return call('cancelPosPendingSale', { id });
+}
+
+export async function savePosDraft(payload: {
+  customerId?: string | null;
+  items: PosOrderItem[];
+  vatRate?: number;
+  discountMode?: 'fixed' | 'percent';
+  discountValue?: number;
+  note?: string | null;
+  allocations?: PosTender[];
+  received?: number;
+}): Promise<{ saved: boolean }> {
+  return call('savePosDraft', payload);
+}
+
+export async function fetchPosDraft(): Promise<PosDraft | null> {
+  return call('fetchPosDraft', {});
+}
+
+export async function clearPosDraft(): Promise<{ cleared: boolean }> {
+  return call('clearPosDraft', {});
 }

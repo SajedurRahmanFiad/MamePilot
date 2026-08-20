@@ -118,7 +118,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
   );
 };
 
-const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = ({ children, hideSidebar = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
@@ -146,6 +146,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isWhatsAppPage = location.pathname.startsWith('/whatsapp');
   const isMessengerPage = location.pathname.startsWith('/messenger');
   const isConversationPage = isWhatsAppPage || isMessengerPage;
+  const isPosPage = location.pathname === '/pos';
 
   // Use profile from Auth context if available, fallback to db.currentUser
   const user = profile || db.currentUser;
@@ -318,6 +319,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (pathname.startsWith('/messenger')) {
       return { title: 'Messenger', subtitle: 'Chat with customers on Messenger.' };
     }
+    if (pathname === '/pos') {
+      return { title: 'Point of Sale', subtitle: 'Walk-in sales, holds, and instant receipts.' };
+    }
+    if (pathname === '/pos-sales') {
+      return { title: 'POS Sales', subtitle: 'Every sale completed at the point of sale.' };
+    }
 
     return { title: 'Overview', subtitle: 'Manage your business workspace.' };
   }, [location.pathname]);
@@ -394,14 +401,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         />
       )}
 
-      <aside 
-        onMouseEnter={() => setIsSidebarHovered(true)}
-        onMouseLeave={() => setIsSidebarHovered(false)}
-        className={`fixed inset-y-0 left-0 z-50 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } overflow-hidden`}
-        style={sidebarTransitionStyle}
-      >
+      {!hideSidebar && (
+        <aside 
+          onMouseEnter={() => setIsSidebarHovered(true)}
+          onMouseLeave={() => setIsSidebarHovered(false)}
+          className={`fixed inset-y-0 left-0 z-50 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
+            isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          } overflow-hidden`}
+          style={sidebarTransitionStyle}
+        >
         <div className="flex flex-col h-full">
           <div className={isSidebarExpanded ? 'p-8 h-28' : 'px-3 py-4 h-28'}>
             <div className={`flex items-center h-full ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}>
@@ -486,15 +494,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 
         </div>
-      </aside>
+        </aside>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <ServiceAnnouncementBar />
         <header className={`flex-shrink-0 sticky top-0 z-40 ${theme.colors.bg.primary}/80 backdrop-blur-lg border-b ${theme.colors.border.primary} px-6 h-20 flex items-center`}>
           <div className="flex-1 min-w-0 flex items-center">
-            <button onClick={() => setIsSidebarOpen(true)} className={`lg:hidden p-2.5 hover:${theme.colors.bg.tertiary} ${theme.radius.md} ${theme.colors.text.secondary} border ${theme.colors.border.primary}`}>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
-            </button>
+            {!hideSidebar && (
+              <button onClick={() => setIsSidebarOpen(true)} className={`lg:hidden p-2.5 hover:${theme.colors.bg.tertiary} ${theme.radius.md} ${theme.colors.text.secondary} border ${theme.colors.border.primary}`}>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+              </button>
+            )}
 
             <div className="ml-4 min-w-0 flex-1 overflow-hidden">
               <style>{`
@@ -522,6 +533,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
 
           <div className="flex items-center gap-4 ml-auto">
+            {can('orders.create') && hasCapability('sales') && (
+              <Link
+                to="/pos"
+                title="Point of Sale"
+                className={`${theme.colors.primary[600]} text-white h-10 px-3 xl:px-4 flex items-center gap-2 ${theme.radius.md} ${theme.transitions.normal} shadow-lg shadow-[#0f2f57]/20 active:scale-95 ${
+                  isPosPage ? 'ring-2 ring-offset-2' : `hover:${theme.colors.primary[700]}`
+                }`}
+                style={isPosPage ? { boxShadow: `0 0 0 2px ${theme.colors.bg.primary}, 0 0 0 4px ${theme.colors.primary[600]}` } : undefined}
+              >
+                {ICONS.Pos}
+                <span className="hidden lg:inline text-sm font-bold min-w-0 truncate">Point of Sale</span>
+              </Link>
+            )}
             <NotificationCenterButton />
             <div className="relative">
               <button
@@ -611,10 +635,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </header>
 
-        <main className={`relative min-h-0 flex-1 animate-in fade-in duration-500 ${isConversationPage ? 'overflow-hidden p-0' : 'overflow-y-auto p-6 lg:p-10'}`}>
+        <main className={`relative min-h-0 flex-1 animate-in fade-in duration-500 ${isConversationPage ? 'overflow-hidden p-0' : isPosPage ? 'overflow-y-auto p-0' : 'overflow-y-auto p-6 lg:p-10'}`}>
           {!isConversationPage && <IncidentModeBanner />}
           {children}
-          {!isConversationPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
+          {!isConversationPage && !isPosPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
               © {new Date().getFullYear()} Mame Studios
               <span className="mx-2">|</span>
@@ -625,7 +649,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by <a href="https://facebook.com/mamestudios" target="_blank" rel="noopener noreferrer" className="hover:underline">Mame Studios</a></p>
           </footer>}
         </main>
-        {hasCapability('enterprise_ai_agent') && !isConversationPage && <MameChat />}
+        {hasCapability('enterprise_ai_agent') && !isConversationPage && !isPosPage && <MameChat />}
         {isCustomerCreateOpen && (
           <CustomerCreateModal isOpen onClose={() => setIsCustomerCreateOpen(false)} />
         )}

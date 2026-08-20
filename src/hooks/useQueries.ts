@@ -454,13 +454,14 @@ export function useCustomerSalesReportData(
 export function useOrderSearchPreview(
   search: string,
   limit: number = 10,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; pos?: boolean }
 ): UseQueryResult<Array<{ id: string; orderNumber: string; customerName?: string; customerPhone?: string }>, Error> {
   const normalizedSearch = String(search || '').trim();
+  const posScope = options?.pos ?? false;
 
   return useQuery({
-    queryKey: ['orders', 'search-preview', normalizedSearch, limit],
-    queryFn: () => fetchOrderSearchPreview(normalizedSearch, limit),
+    queryKey: ['orders', 'search-preview', normalizedSearch, limit, posScope],
+    queryFn: () => fetchOrderSearchPreview(normalizedSearch, limit, posScope),
     enabled: (options?.enabled ?? true) && normalizedSearch.length > 0,
     staleTime: 30 * 1000,
     refetchOnMount: false,
@@ -472,7 +473,7 @@ export function useOrderSearchPreview(
 export function useOrdersPage(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
-  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean },
+  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean; pos?: boolean },
   options?: { enabled?: boolean }
 ): UseQueryResult<{ data: Order[]; count: number }, Error> {
   return useQuery({
@@ -484,10 +485,11 @@ export function useOrdersPage(
   });
 }
 
-export function useOrderFilterOptions(): UseQueryResult<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }, Error> {
+export function useOrderFilterOptions(options?: { pos?: boolean }): UseQueryResult<{ customerNames?: string[]; customerPhones?: string[]; orderNumbers?: string[]; companyNames?: string[]; courierNames?: string[] }, Error> {
+  const posScope = options?.pos ?? false;
   return useQuery({
-    queryKey: ['orderFilterOptions'],
-    queryFn: () => fetchOrderFilterOptions(),
+    queryKey: ['orderFilterOptions', posScope],
+    queryFn: () => fetchOrderFilterOptions({ pos: posScope }),
     staleTime: 5 * 60 * 1000,
   });
 }

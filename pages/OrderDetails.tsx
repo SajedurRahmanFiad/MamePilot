@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
 import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmPartialDeliveryPayload, type ConfirmationStatus } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
-import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, PartialDeliveryConfirmModal, ConfirmationStatusDot } from '../components';
+import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme, resolveThemeColorPalette } from '../theme';
 import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults, useCourierTrackingEvents } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useConfirmPartialDelivery, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
@@ -115,7 +115,6 @@ const OrderDetails: React.FC = () => {
   const cancelSurveyCallMutation = useCancelSurveyCall();
   const [showDeleteOrderConfirmation, setShowDeleteOrderConfirmation] = useState(false);
   const [showReturnExchangeModal, setShowReturnExchangeModal] = useState(false);
-  const [showPartialDeliveryModal, setShowPartialDeliveryModal] = useState(false);
   
   const handleDeleteOrder = () => {
     setShowDeleteOrderConfirmation(true);
@@ -188,10 +187,12 @@ const OrderDetails: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient, currentCustomerPhone, courierHistoryMutation]);
 
-  // Auto-trigger partial delivery confirmation modal
+  // Auto-trigger partial delivery confirmation tab in the completion modal
   React.useEffect(() => {
-    if (order?.status === OrderStatus.PARTIALLY_DELIVERED && order?.partialDeliveryActionRequired && !showPartialDeliveryModal) {
-      setShowPartialDeliveryModal(true);
+    if (order?.status === OrderStatus.PARTIALLY_DELIVERED && order?.partialDeliveryActionRequired && !showCompletionModal) {
+      setCompletionForm((current) => ({ ...current, outcome: 'Partially Delivered' }));
+      setCompletionExpenseOnly(false);
+      setShowCompletionModal(true);
     }
   }, [order?.status, order?.partialDeliveryActionRequired]);
 
@@ -1415,6 +1416,16 @@ const OrderDetails: React.FC = () => {
     setShowCompletionModal(true);
   };
 
+  const openPartialDeliveryCompletion = () => {
+    if (!order) return;
+    setCompletionForm({
+      ...createCompletionForm(order),
+      outcome: 'Partially Delivered',
+    });
+    setCompletionExpenseOnly(false);
+    setShowCompletionModal(true);
+  };
+
   const openCourierCompletionExpense = () => {
     if (!order || !courierCompletionExpenseOutcome) return;
     const baseForm = createCompletionForm(order);
@@ -1448,7 +1459,9 @@ const OrderDetails: React.FC = () => {
   const handleConfirmPartialDelivery = async (payload: ConfirmPartialDeliveryPayload) => {
     try {
       const updatedOrder = await confirmPartialDeliveryMutation.mutateAsync(payload);
-      setShowPartialDeliveryModal(false);
+      setShowCompletionModal(false);
+      setCompletionExpenseOnly(false);
+      setCompletionForm(createCompletionForm());
       if ((updatedOrder.pendingTransactionCount || 0) > 0) {
         toast.info(
           `Partial delivery confirmed. ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} sent for admin approval.`
@@ -1769,7 +1782,7 @@ const OrderDetails: React.FC = () => {
                       </button>
                     )}
                     {order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (
-                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { setShowPartialDeliveryModal(true); setIsActionOpen(false); }}>
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openPartialDeliveryCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Confirm Partial Delivery
                       </button>
                     )}
@@ -2522,9 +2535,12 @@ const OrderDetails: React.FC = () => {
         order={order}
         form={completionForm}
         setForm={setCompletionForm}
-        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending}
+        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending || confirmPartialDeliveryMutation.isPending}
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : canMarkCurrentOrderCompleted}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : canMarkCurrentOrderReturned}
+        allowPartialDeliveryOutcome={!!order && order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned)}
+        onSubmitPartialDelivery={handleConfirmPartialDelivery}
+        partialDeliveryLoading={confirmPartialDeliveryMutation.isPending}
         expenseOnly={completionExpenseOnly}
         expenseOnlyStatusLabel={
           completionExpenseOnly && order
@@ -2783,14 +2799,6 @@ const OrderDetails: React.FC = () => {
         onSubmit={handleProcessReturnExchange}
         order={order}
         isLoading={processReturnExchangeMutation.isPending}
-      />
-
-      <PartialDeliveryConfirmModal
-        isOpen={showPartialDeliveryModal}
-        onClose={() => setShowPartialDeliveryModal(false)}
-        onSubmit={handleConfirmPartialDelivery}
-        order={order}
-        isLoading={confirmPartialDeliveryMutation.isPending}
       />
     </div>
   );

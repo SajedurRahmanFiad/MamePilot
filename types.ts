@@ -194,7 +194,7 @@ export const ORDER_STATUS_VALUES = Object.values(OrderStatus) as OrderStatus[];
 export type ConfirmationStatus = 'confirmed' | 'cancelled' | 'on_hold' | 'waiting';
 export type SurveyStatus = 'pending' | 'triggered' | 'initiated' | 'completed' | 'failed' | 'skipped';
 
-export type OrderCompletionOutcome = 'Delivered' | 'Returned';
+export type OrderCompletionOutcome = 'Delivered' | 'Returned' | 'Partially Delivered';
 
 export enum BillStatus {
   ON_HOLD = 'On Hold',
@@ -820,6 +820,9 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   discount: number;
+  vatRate?: number;
+  vatAmount?: number;
+  isPos?: boolean;
   shipping: number;
   total: number;
   notes?: string;

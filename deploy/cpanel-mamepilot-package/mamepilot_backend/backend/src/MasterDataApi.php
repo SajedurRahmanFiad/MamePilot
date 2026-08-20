@@ -592,7 +592,7 @@ final class MasterDataApi extends BaseService
         $rows = $this->database->fetchAll(
             'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
-             WHERE deleted_at IS NULL
+             WHERE deleted_at IS NULL AND is_walkin = 0
              ORDER BY created_at DESC'
         );
 
@@ -606,7 +606,7 @@ final class MasterDataApi extends BaseService
         $offset = ($page - 1) * $pageSize;
         $search = trim((string) ($params['search'] ?? ''));
 
-        $where = 'WHERE deleted_at IS NULL';
+        $where = 'WHERE deleted_at IS NULL AND is_walkin = 0';
         $bindings = [];
         if ($search !== '') {
             $where .= " AND CONVERT(CONCAT_WS(' ', id, name, phone, address, CAST(total_orders AS CHAR), CAST(due_amount AS CHAR), created_by, created_at) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_customer_search ESCAPE '='";
@@ -658,7 +658,7 @@ final class MasterDataApi extends BaseService
     public function fetchCustomersMini(array $params = []): array
     {
         return $this->database->fetchAll(
-            'SELECT id, name, phone FROM customers WHERE deleted_at IS NULL ORDER BY created_at DESC'
+            'SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND is_walkin = 0 ORDER BY created_at DESC'
         );
     }
 
@@ -735,6 +735,13 @@ final class MasterDataApi extends BaseService
         $id = trim((string) ($params['id'] ?? ''));
         if (str_starts_with($id, 'temp-')) {
             throw new RuntimeException('Cannot delete unsaved customer. Please refresh and try again.');
+        }
+        $row = $this->database->fetchOne(
+            'SELECT is_walkin FROM customers WHERE id = :id LIMIT 1',
+            [':id' => $id]
+        );
+        if ($row !== null && (int) ($row['is_walkin'] ?? 0) === 1) {
+            throw new RuntimeException('The walk-in customer used by the point of sale cannot be deleted.');
         }
         $this->softDelete('customers', $id);
         return ['success' => true];
@@ -1575,6 +1582,9 @@ final class MasterDataApi extends BaseService
         $this->requireAdmin();
         $id = trim((string) ($params['id'] ?? ''));
         $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        if ($id === 'cash' && array_key_exists('isActive', $updates) && !$updates['isActive']) {
+            throw new RuntimeException('Cash is a system payment method and cannot be disabled.');
+        }
         $payload = [];
         if (array_key_exists('name', $updates)) {
             $payload['name'] = trim((string) $updates['name']);
@@ -1592,9 +1602,13 @@ final class MasterDataApi extends BaseService
     public function deletePaymentMethod(array $params): array
     {
         $this->requireAdmin();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === 'cash') {
+            throw new RuntimeException('Cash is a system payment method and cannot be deleted.');
+        }
         $this->database->execute(
             'DELETE FROM payment_methods WHERE id = :id',
-            [':id' => trim((string) ($params['id'] ?? ''))]
+            [':id' => $id]
         );
         return ['success' => true];
     }

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
 import { Button, NumericInput } from './index';
 import { formatCurrency, ICONS } from '../constants';
-import { Order, OrderCompletionOutcome } from '../types';
+import { Order, OrderCompletionOutcome, ConfirmPartialDeliveryPayload } from '../types';
 import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
+import PartialDeliveryForm from './PartialDeliveryForm';
 
 export type OrderCompletionFormState = {
   outcome: OrderCompletionOutcome;
@@ -30,6 +31,9 @@ interface OrderCompletionModalProps {
   isLoading: boolean;
   allowDeliveredOutcome?: boolean;
   allowReturnedOutcome?: boolean;
+  allowPartialDeliveryOutcome?: boolean;
+  onSubmitPartialDelivery?: (payload: ConfirmPartialDeliveryPayload) => void | Promise<void>;
+  partialDeliveryLoading?: boolean;
   expenseOnly?: boolean;
   expenseOnlyStatusLabel?: string;
 }
@@ -41,9 +45,12 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   order,
   form,
   setForm,
-  isLoading,
+isLoading,
   allowDeliveredOutcome = true,
   allowReturnedOutcome = true,
+  allowPartialDeliveryOutcome = false,
+  onSubmitPartialDelivery,
+  partialDeliveryLoading = false,
   expenseOnly = false,
   expenseOnlyStatusLabel,
 }) => {
@@ -56,8 +63,9 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
     () => [
       ...(allowDeliveredOutcome ? ['Delivered' as const] : []),
       ...(allowReturnedOutcome ? ['Returned' as const] : []),
+      ...(allowPartialDeliveryOutcome && onSubmitPartialDelivery ? ['Partially Delivered' as const] : []),
     ],
-    [allowDeliveredOutcome, allowReturnedOutcome],
+    [allowDeliveredOutcome, allowReturnedOutcome, allowPartialDeliveryOutcome, onSubmitPartialDelivery],
   );
 
   useEffect(() => {
@@ -147,6 +155,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
   if (!isOpen || !order || availableOutcomes.length === 0) return null;
 
   const isReturned = form.outcome === 'Returned';
+  const isPartiallyDelivered = form.outcome === 'Partially Delivered';
   const additionalExpenseAccount =
     accounts.find((account) => account.id === systemDefaults?.defaultAccountId) || accounts[0] || null;
   const outstanding = Math.max(order.total - order.paidAmount, 0);
@@ -185,7 +194,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
         <div className="space-y-6">
           {(availableOutcomes.length > 1 || expenseOnly) && (
             <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-              {availableOutcomes.map((outcome) => (
+{availableOutcomes.map((outcome) => (
                 <button
                   key={outcome}
                   type="button"
@@ -203,14 +212,14 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
                       : 'text-gray-500 hover:text-gray-700'
                   } disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500 disabled:opacity-70 disabled:shadow-none`}
                 >
-                  {outcome === 'Delivered' ? ICONS.Check : ICONS.Return}
+                  {outcome === 'Delivered' ? ICONS.Check : outcome === 'Partially Delivered' ? ICONS.Clock : ICONS.Return}
                   <span className="hidden sm:inline">{expenseOnly && expenseOnlyStatusLabel ? expenseOnlyStatusLabel : outcome}</span>
                 </button>
               ))}
             </div>
           )}
 
-          {!isReturned && (
+{form.outcome === 'Delivered' && (
             <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-5 space-y-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-amber-700">Delivery Expenses</p>
@@ -404,21 +413,33 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
             </>
           )}
 
-          <div className="flex gap-4 pt-4">
-            <Button onClick={onClose} variant="ghost" disabled={isLoading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={onSubmit}
-              variant="primary"
-              size="md"
-              className="flex-1"
-              disabled={isLoading}
-              loading={isLoading}
-            >
-              {expenseOnly ? 'Add Expense' : isReturned ? 'Mark Returned' : 'Mark Delivered'}
-            </Button>
-          </div>
+{isPartiallyDelivered && (
+            <PartialDeliveryForm
+              order={order}
+              isActive={isOpen && isPartiallyDelivered}
+              isLoading={isLoading || partialDeliveryLoading}
+              onSubmit={onSubmitPartialDelivery!}
+              onCancel={onClose}
+            />
+          )}
+
+          {!isPartiallyDelivered && (
+            <div className="flex gap-4 pt-4">
+              <Button onClick={onClose} variant="ghost" disabled={isLoading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={onSubmit}
+                variant="primary"
+                size="md"
+                className="flex-1"
+                disabled={isLoading}
+                loading={isLoading}
+              >
+                {expenseOnly ? 'Add Expense' : isReturned ? 'Mark Returned' : 'Mark Delivered'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

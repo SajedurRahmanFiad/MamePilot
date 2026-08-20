@@ -60,6 +60,7 @@ const Login = lazyPage(() => import('./pages/Login'));
 const MaintenancePage = lazyPage(() => import('./pages/Maintenance'));
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const Orders = lazyPage(() => import('./pages/Orders'));
+const Pos = lazyPage(() => import('./pages/Pos'));
 const OrderForm = lazyPage(() => import('./pages/OrderForm'));
 const OrderDetails = lazyPage(() => import('./pages/OrderDetails'));
 const Bills = lazyPage(() => import('./pages/Bills'));
@@ -182,6 +183,9 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
     if (can('orders.view')) {
       preloaders.add(Orders.preload);
       preloaders.add(OrderDetails.preload);
+    }
+    if (can('orders.create')) {
+      preloaders.add(Pos.preload);
     }
     if (can('orders.create') || canAny(['orders.editOwn', 'orders.editAny'])) {
       preloaders.add(OrderForm.preload);
@@ -322,6 +326,12 @@ preloaders.add(DeveloperNotes.preload);
       
       <Route path="/orders" element={
         isAuthenticated ? (can('orders.view') ? <Layout><Orders /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/pos-sales" element={
+        isAuthenticated ? (can('orders.view') ? <Layout><Orders mode="pos" /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/pos" element={
+        isAuthenticated ? (can('orders.create') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout hideSidebar><Pos /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/orders/new" element={
         isAuthenticated ? (can('orders.create') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout><OrderForm /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

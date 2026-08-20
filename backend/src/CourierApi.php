@@ -1384,7 +1384,7 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $username === '' || $password === '' || $paperflyKey === '') {
             return ['checked' => 0, 'updated' => 0];
         }
-        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $limit = max(1, min(1000000, (int) ($params['limit'] ?? 1000000)));
         $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         $rows = $this->database->fetchAll(
@@ -1476,7 +1476,7 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $apiKey === '' || $secretKey === '') {
             return ['checked' => 0, 'updated' => 0];
         }
-        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $limit = max(1, min(1000000, (int) ($params['limit'] ?? 1000000)));
         $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         $rows = $this->database->fetchAll(
@@ -2176,7 +2176,7 @@ final class CourierApi extends BaseService
         if ($baseUrl === '' || $clientId === '' || $clientSecret === '') {
             return ['checked' => 0, 'updated' => 0];
         }
-        $limit = max(1, min(25, (int) ($params['limit'] ?? 10)));
+        $limit = max(1, min(1000000, (int) ($params['limit'] ?? 1000000)));
         $offset = max(0, min(1000000, (int) ($params['offset'] ?? 0)));
 
         // Get or refresh the access token

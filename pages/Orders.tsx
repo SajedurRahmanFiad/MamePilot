@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import PortalMenu from '../components/PortalMenu';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Order, OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, isEmployeeRole } from '../types';
+import { Order, OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, isEmployeeRole, type ConfirmPartialDeliveryPayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar from '../components/DynamicFilterBar';
@@ -13,7 +13,7 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
 import { useAccounts, useOrdersPage, useUsersMini, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAdOptions, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
-import { useAddCourierCompletionExpense, useCompletePickedOrder, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
+import { useAddCourierCompletionExpense, useCompletePickedOrder, useConfirmPartialDelivery, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
@@ -67,7 +67,8 @@ const getCourierFilterLabel = (value: string | null | undefined): string => {
   }
 };
 
-const Orders: React.FC = () => {
+const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
+  const isPosMode = mode === 'pos';
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -189,6 +190,7 @@ const Orders: React.FC = () => {
   const { data: paymentMethods = [] } = usePaymentMethods();
   const updateMutation = useUpdateOrder();
   const createTransactionMutation = useCreateTransaction();
+  const confirmPartialDeliveryMutation = useConfirmPartialDelivery();
 
   useEffect(() => {
     if (!shouldHydrateFromUrl) return;
@@ -354,6 +356,7 @@ const Orders: React.FC = () => {
     search: searchQuery,
     createdByIds,
     createdByNotIds,
+    pos: isPosMode,
   }, {
     enabled: canLoadOrders,
   });
@@ -361,7 +364,7 @@ const Orders: React.FC = () => {
 
   const { data: companySettings } = useCompanySettings();
   const { data: allMetaAds } = useMetaAdOptions(true);
-  const { data: orderFilterOpts } = useOrderFilterOptions();
+  const { data: orderFilterOpts } = useOrderFilterOptions({ pos: isPosMode });
 
   const sourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => {
     const ads = Array.isArray(allMetaAds?.ads) ? allMetaAds.ads : [];
@@ -805,9 +808,11 @@ const Orders: React.FC = () => {
     canAccessRecord(order.createdBy, 'orders.markReturnedOwn', 'orders.markReturnedAny');
 
   const openCompletionModal = (order: Order) => {
+    const needsPartialDeliveryAction =
+      order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired;
     setCompletionForm({
       ...createCompletionForm(order),
-      outcome: canDeliverOrder(order) ? 'Delivered' : 'Returned',
+      outcome: needsPartialDeliveryAction ? 'Partially Delivered' : canDeliverOrder(order) ? 'Delivered' : 'Returned',
     });
     setCompletionExpenseOnly(false);
     setCompletionOrder(order);
@@ -938,6 +943,25 @@ const Orders: React.FC = () => {
     } catch (err) {
       console.error(isExpenseOnly ? 'Failed to add completion expense:' : 'Failed to finalize order:', err);
       toast.error(err instanceof Error ? err.message : isExpenseOnly ? 'Could not add the expense. Please try again.' : 'Could not finalize the order. Please try again.');
+    }
+  };
+
+  const handleConfirmPartialDelivery = async (payload: ConfirmPartialDeliveryPayload) => {
+    try {
+      const updatedOrder = await confirmPartialDeliveryMutation.mutateAsync(payload);
+      setCompletionOrder(null);
+      setCompletionExpenseOnly(false);
+      setCompletionForm(createCompletionForm());
+      if ((updatedOrder.pendingTransactionCount || 0) > 0) {
+        toast.info(
+          `Partial delivery confirmed. ${updatedOrder.pendingTransactionCount} transaction${updatedOrder.pendingTransactionCount === 1 ? '' : 's'} sent for admin approval.`
+        );
+      } else {
+        toast.success('Partial delivery confirmed successfully');
+      }
+    } catch (err) {
+      console.error('Failed to confirm partial delivery:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to confirm partial delivery');
     }
   };
 
@@ -1175,7 +1199,7 @@ const Orders: React.FC = () => {
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <div className="hidden sm:block">
             <FilterBar
-              title="Orders"
+              title={isPosMode ? 'POS Sales' : 'Orders'}
               filterRange={effectiveFilterRange}
               setFilterRange={handleFilterRangeChange}
               customDates={effectiveCustomDates}
@@ -1191,18 +1215,18 @@ const Orders: React.FC = () => {
         </div>
         {canCreateOrders && (
           <Button
-            onClick={() => navigate('/orders/new')}
+            onClick={() => navigate(isPosMode ? '/pos' : '/orders/new')}
             variant="primary"
             size="md"
-            icon={ICONS.Plus}
+            icon={isPosMode ? ICONS.Pos : ICONS.Plus}
           >
-            New Order
+            {isPosMode ? 'Open POS' : 'New Order'}
           </Button>
         )}
       </div>
       <div className="sm:hidden">
         <FilterBar
-          title="Orders"
+          title={isPosMode ? 'POS Sales' : 'Orders'}
           filterRange={effectiveFilterRange}
           setFilterRange={handleFilterRangeChange}
           customDates={effectiveCustomDates}
@@ -1228,7 +1252,7 @@ const Orders: React.FC = () => {
           suggestionValues={freeTextMetadataValues}
           companies={companyNames}
           couriers={courierNames}
-          freeTextLabel="Orders"
+          freeTextLabel={isPosMode ? 'POS Sales' : 'Orders'}
           rawSearchValue={searchQuery}
           onRawSearchChange={setSearchQuery}
           onApply={(appliedFilters) => {
@@ -1432,7 +1456,7 @@ const Orders: React.FC = () => {
                 const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly || sentToPathao;
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
-                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && (canDeliverOrder(order) || canReturnOrder(order));
+                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired)) && (canDeliverOrder(order) || canReturnOrder(order));
                 const courierCompletionExpenseOutcome = order.status === OrderStatus.COMPLETED
                   ? 'Delivered'
                   : order.status === OrderStatus.RETURNED
@@ -1471,6 +1495,7 @@ const Orders: React.FC = () => {
                   || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
                 const settlementTotal = getOrderSettlementTotal(order);
+                const needsPartialAction = order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired;
                 const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.status === OrderStatus.CANCELLED ? order.total : settlementTotal, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
@@ -1491,7 +1516,11 @@ const Orders: React.FC = () => {
                   }} 
                   onMouseLeave={() => setHoveredRow(null)} 
                   onClick={() => navigate(`/orders/${order.id}`, { state: buildHistoryBackState(location) })} 
-                  className="group relative hover:bg-[#ebf4ff]/20 cursor-pointer transition-all"
+                  className={`group relative cursor-pointer transition-all ${
+                    needsPartialAction
+                      ? 'bg-red-50/60 hover:bg-red-100/70'
+                      : 'hover:bg-[#ebf4ff]/20'
+                  }`}
                 >
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
@@ -1508,9 +1537,9 @@ const Orders: React.FC = () => {
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
                         <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
-                        {order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        {needsPartialAction && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black uppercase tracking-widest">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                             Action Required
                           </span>
                         )}
@@ -1693,9 +1722,12 @@ const Orders: React.FC = () => {
         order={completionOrder}
         form={completionForm}
         setForm={setCompletionForm}
-        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending}
+        isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending || confirmPartialDeliveryMutation.isPending}
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : completionOrder ? canDeliverOrder(completionOrder) : false}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : completionOrder ? canReturnOrder(completionOrder) : false}
+        allowPartialDeliveryOutcome={!!completionOrder && completionOrder.status === OrderStatus.PARTIALLY_DELIVERED && completionOrder.partialDeliveryActionRequired && canDeliverOrder(completionOrder)}
+        onSubmitPartialDelivery={handleConfirmPartialDelivery}
+        partialDeliveryLoading={confirmPartialDeliveryMutation.isPending}
         expenseOnly={completionExpenseOnly}
         expenseOnlyStatusLabel={
           completionExpenseOnly && completionOrder

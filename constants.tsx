@@ -34,7 +34,9 @@ import {
   X,
   Clock3,
   RotateCcw,
-  TrendingUp
+  TrendingUp,
+  Banknote,
+  Lock
 } from 'lucide-react';
 
 const WhatsAppIcon = () => (
@@ -53,6 +55,7 @@ const MessengerIcon = () => (
 export const ICONS = {
   Dashboard: <LayoutDashboard size={20} />,
   Sales: <ShoppingCart size={20} />,
+  Pos: <Banknote size={20} />,
   Products: <Package size={20} />,
   Customers: <Users size={20} />,
   Vendors: <Briefcase size={20} />,
@@ -90,6 +93,7 @@ export const ICONS = {
   Clock: <Clock3 size={18} />,
   Return: <RotateCcw size={20} />,
   TrendingUp: <TrendingUp size={20} />,
+  Lock: <Lock size={16} />,
   WhatsApp: <WhatsAppIcon />,
   Messenger: <MessengerIcon />
 };

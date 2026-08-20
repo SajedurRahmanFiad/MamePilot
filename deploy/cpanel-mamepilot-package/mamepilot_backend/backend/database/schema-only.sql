@@ -3752,6 +3752,37 @@ CALL sp_add_col('messenger_settings', 'webhook_events_processed', 'INT NOT NULL 
 CALL sp_add_col('messenger_settings', 'last_webhook_at', 'DATETIME NULL');
 CALL sp_add_col('messenger_settings', 'last_webhook_status', 'VARCHAR(500) NULL');
 
+-- Migration: 2026-08-20_pos_draft_payload.sql
+CALL sp_add_col('pos_drafts', 'data', 'JSON NULL AFTER `note`');
+
+-- Migration: 2026-08-20_pos_module.sql
+CALL sp_add_col('customers', 'is_walkin', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `address`');
+
+-- Skipped data-mutating statement from 2026-08-20_pos_module.sql.
+
+CALL sp_add_col('orders', 'vat_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER `discount`');
+CALL sp_add_col('orders', 'vat_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `vat_rate`');
+
+CREATE TABLE IF NOT EXISTS `pos_drafts` (
+  `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
+  `items` JSON NOT NULL,
+  `note` TEXT NULL,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pos_drafts_user` (`user_id`),
+  CONSTRAINT `fk_pos_drafts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-08-20_pos_sales_page.sql
+-- Skipped data-mutating statement from 2026-08-20_pos_sales_page.sql.
+
+CALL sp_add_col('orders', 'is_pos', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `vat_amount`');
+
+CALL sp_create_idx('orders', 'idx_orders_is_pos', '`is_pos`');
+
+-- Skipped data-mutating statement from 2026-08-20_pos_sales_page.sql.
+
 -- Migration: 2026-08-20_steadfast_return_notice_action_required.sql
 CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
 
@@ -4143,6 +4174,133 @@ FROM bills b
 LEFT JOIN vendors v ON v.id = b.vendor_id
 LEFT JOIN users u ON u.id = b.created_by
 WHERE b.deleted_at IS NULL;
+
+-- Migration views: 2026-08-20_pos_module.sql
+-- Expose VAT through the order list view.
+DROP VIEW IF EXISTS `orders_with_customer_creator`;
+
+CREATE VIEW `orders_with_customer_creator` AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.page_id AS pageId,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.vat_rate AS vatRate,
+  o.vat_amount AS vatAmount,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.pathao_consignment_id AS pathaoConsignmentId,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd,
+  o.processed_at AS processedAt,
+  o.courier_assigned_at AS courierAssignedAt,
+  o.picked_at AS pickedAt,
+  o.completed_at AS completedAt,
+  o.returned_at AS returnedAt,
+  o.cancelled_at AS cancelledAt,
+  o.partial_delivered_at AS partialDeliveredAt,
+  o.exchange_processing_at AS exchangeProcessingAt,
+  o.exchange_picked_at AS exchangePickedAt,
+  o.exchange_delivered_at AS exchangeDeliveredAt,
+  o.exchange_returned_at AS exchangeReturnedAt,
+  o.exchange_cancelled_at AS exchangeCancelledAt,
+  o.payment_received_at AS paymentReceivedAt,
+  o.refund_issued_at AS refundIssuedAt
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
+
+-- Migration views: 2026-08-20_pos_sales_page.sql
+-- Expose the flag through the order list view.
+DROP VIEW IF EXISTS `orders_with_customer_creator`;
+
+CREATE VIEW `orders_with_customer_creator` AS
+SELECT
+  o.id,
+  o.order_number AS orderNumber,
+  o.order_date AS orderDate,
+  o.customer_id AS customerId,
+  c.name AS customerName,
+  c.phone AS customerPhone,
+  c.address AS customerAddress,
+  o.page_id AS pageId,
+  o.created_by AS createdBy,
+  u.name AS creatorName,
+  o.status,
+  o.items,
+  o.subtotal,
+  o.discount,
+  o.vat_rate AS vatRate,
+  o.vat_amount AS vatAmount,
+  o.is_pos AS isPos,
+  o.shipping,
+  o.total,
+  o.paid_amount AS paidAmount,
+  o.notes,
+  o.history,
+  o.page_snapshot AS pageSnapshot,
+  o.created_at AS createdAt,
+  o.deleted_at AS deletedAt,
+  o.deleted_by AS deletedBy,
+  o.carrybee_consignment_id AS carrybeeConsignmentId,
+  o.steadfast_consignment_id AS steadfastConsignmentId,
+  o.steadfast_invoice AS steadfastInvoice,
+  o.steadfast_tracking_link AS steadfastTrackingLink,
+  o.paperfly_tracking_number AS paperflyTrackingNumber,
+  o.pathao_consignment_id AS pathaoConsignmentId,
+  o.exchange_courier AS exchangeCourier,
+  o.exchange_steadfast_consignment_id AS exchangeSteadfastConsignmentId,
+  o.exchange_carrybee_consignment_id AS exchangeCarrybeeConsignmentId,
+  o.exchange_paperfly_tracking_number AS exchangePaperflyTrackingNumber,
+  o.exchange_pathao_consignment_id AS exchangePathaoConsignmentId,
+  o.exchange_courier_history AS exchangeCourierHistory,
+  o.source_ad AS sourceAd,
+  o.processed_at AS processedAt,
+  o.courier_assigned_at AS courierAssignedAt,
+  o.picked_at AS pickedAt,
+  o.completed_at AS completedAt,
+  o.returned_at AS returnedAt,
+  o.cancelled_at AS cancelledAt,
+  o.partial_delivered_at AS partialDeliveredAt,
+  o.exchange_processing_at AS exchangeProcessingAt,
+  o.exchange_picked_at AS exchangePickedAt,
+  o.exchange_delivered_at AS exchangeDeliveredAt,
+  o.exchange_returned_at AS exchangeReturnedAt,
+  o.exchange_cancelled_at AS exchangeCancelledAt,
+  o.payment_received_at AS paymentReceivedAt,
+  o.refund_issued_at AS refundIssuedAt
+FROM orders o
+LEFT JOIN customers c ON c.id = o.customer_id
+LEFT JOIN users u ON u.id = o.created_by
+WHERE o.deleted_at IS NULL;
 
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_modify_col;

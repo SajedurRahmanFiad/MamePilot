@@ -999,6 +999,10 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleDeletePayment = async (id: string) => {
+    if (id === 'cash') {
+      toast.warning('Cash is a system payment method and cannot be deleted.');
+      return;
+    }
     if (!confirm('Are you sure you want to delete this payment method?')) return;
     try {
       await deletePaymentMutation.mutateAsync(id);
@@ -2310,15 +2314,28 @@ const SettingsPage: React.FC = () => {
                   {paymentMethods.map(pm => (
                     <div key={pm.id} className="p-4 border rounded-lg bg-gray-50/50 hover:shadow-sm transition-all flex items-center justify-between">
                       <div className="flex-1">
-                        <p className="font-bold text-gray-800">{pm.name}</p>
-                        <p className="text-xs text-gray-400 mt-1">{pm.description || 'No description'}</p>
+                        <p className="font-bold text-gray-800 flex items-center gap-2">
+                          {pm.name}
+                          {pm.id === 'cash' && (
+                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 bg-gray-100 border border-gray-200 rounded-md px-1.5 py-0.5" title="System payment method">
+                              {ICONS.Lock} System
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">{pm.id === 'cash' ? 'Required system payment method — always available in the register.' : (pm.description || 'No description')}</p>
                       </div>
-                      <button
-                        onClick={() => handleDeletePayment(pm.id)}
-                        className="text-red-500 hover:text-red-700 px-2"
-                      >
-                        {ICONS.Delete}
-                      </button>
+                      {pm.id === 'cash' ? (
+                        <span title="Cash cannot be deleted" className="text-gray-300 px-2">
+                          {ICONS.Lock}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleDeletePayment(pm.id)}
+                          className="text-red-500 hover:text-red-700 px-2"
+                        >
+                          {ICONS.Delete}
+                        </button>
+                      )}
                     </div>
                   ))}
                   {paymentMethods.length === 0 && (
