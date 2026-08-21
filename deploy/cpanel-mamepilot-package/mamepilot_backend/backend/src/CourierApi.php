@@ -1364,8 +1364,6 @@ final class CourierApi extends BaseService
                 $collectsNothing = true;
             } elseif ($normalized === 'pending') {
                 $status = 'Picked';
-            } else {
-                $status = 'Picked';
             }
         }
 
@@ -2831,7 +2829,7 @@ final class CourierApi extends BaseService
             //   partial_delivered    → Partially Delivered
             //   pending              → Picked
             //   cancelled            → Returned
-            // Everything else (e.g. delivered_approval_pending) stays Picked.
+            // Everything else (e.g. in_review, delivered_approval_pending) is ignored.
             if ($event === 'return_status') return null;
             if ($status === 'cancelled') return 'Returned';
             if ($status === 'delivered') return 'Delivered';
