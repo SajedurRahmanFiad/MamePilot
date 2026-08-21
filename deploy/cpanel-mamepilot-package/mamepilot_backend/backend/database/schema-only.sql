@@ -3792,72 +3792,24 @@ CALL sp_add_col('woocommerce_stores', 'products_synced', 'INT NOT NULL DEFAULT 0
 CALL sp_add_col('woocommerce_stores', 'last_products_synced_at', 'DATETIME NULL AFTER products_synced');
 
 -- Migration: 2026-08-21_add_action_required_to_view.sql
--- Ensure all columns referenced by the view exist, then recreate the view.
--- sp_add_col is idempotent (skips if column already exists).
--- This merges changes from: 2026-08-15 (timestamps), 2026-08-16
--- (payment_received_at/refund_issued_at), 2026-08-20 (pos), and
--- 2026-08-21 (action-required flags) into a single safe migration.
-
--- 1. Ensure sp_add_col procedure exists (idempotent).
-DROP PROCEDURE IF EXISTS sp_add_col;
-
-DELIMITER $$
-CREATE PROCEDURE sp_add_col(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT)
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
-  ) THEN
-    SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
-
-PREPARE stmt FROM @sql;
-
-EXECUTE stmt;
-
-DEALLOCATE PREPARE stmt;
-
-END IF;
-
-END $$
-DELIMITER;
-
--- 2. Ensure all order columns that the view references exist.
 CALL sp_add_col('orders', 'vat_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 0');
-
 CALL sp_add_col('orders', 'vat_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0');
-
 CALL sp_add_col('orders', 'is_pos', 'TINYINT(1) NOT NULL DEFAULT 0');
-
 CALL sp_add_col('orders', 'processed_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'courier_assigned_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'picked_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'completed_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'returned_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'cancelled_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'partial_delivered_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'exchange_processing_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'exchange_picked_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'exchange_delivered_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'exchange_returned_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'exchange_cancelled_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'partial_delivery_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
-
 CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
-
 CALL sp_add_col('orders', 'payment_received_at', 'DATETIME NULL');
-
 CALL sp_add_col('orders', 'refund_issued_at', 'DATETIME NULL');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
@@ -4374,7 +4326,6 @@ LEFT JOIN users u ON u.id = o.created_by
 WHERE o.deleted_at IS NULL;
 
 -- Migration views: 2026-08-21_add_action_required_to_view.sql
--- 3. Recreate the view with the full column set.
 DROP VIEW IF EXISTS `orders_with_customer_creator`;
 
 CREATE VIEW `orders_with_customer_creator` AS

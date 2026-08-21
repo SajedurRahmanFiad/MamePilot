@@ -1,48 +1,28 @@
--- Ensure all columns referenced by the view exist, then recreate the view.
--- sp_add_col is idempotent (skips if column already exists).
--- This merges changes from: 2026-08-15 (timestamps), 2026-08-16
--- (payment_received_at/refund_issued_at), 2026-08-20 (pos), and
--- 2026-08-21 (action-required flags) into a single safe migration.
+-- Ensure all columns referenced by the view exist on the orders table,
+-- then recreate the view with the full column set.
+-- Uses ADD COLUMN IF NOT EXISTS (MariaDB 10.0+) so this works in phpMyAdmin.
 
--- 1. Ensure sp_add_col procedure exists (idempotent).
-DROP PROCEDURE IF EXISTS sp_add_col;
-DELIMITER $$
-CREATE PROCEDURE sp_add_col(IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT)
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
-  ) THEN
-    SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
-    PREPARE stmt FROM @sql;
-    EXECUTE stmt;
-    DEALLOCATE PREPARE stmt;
-  END IF;
-END $$
-DELIMITER ;
+ALTER TABLE `orders`
+  ADD COLUMN IF NOT EXISTS `vat_rate` DECIMAL(5,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `vat_amount` DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `is_pos` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `processed_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `courier_assigned_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `picked_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `completed_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `returned_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `cancelled_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `partial_delivered_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_processing_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_picked_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_delivered_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_returned_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `exchange_cancelled_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `partial_delivery_action_required` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `courier_return_action_required` TINYINT(1) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS `payment_received_at` DATETIME NULL,
+  ADD COLUMN IF NOT EXISTS `refund_issued_at` DATETIME NULL;
 
--- 2. Ensure all order columns that the view references exist.
-CALL sp_add_col('orders', 'vat_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 0');
-CALL sp_add_col('orders', 'vat_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0');
-CALL sp_add_col('orders', 'is_pos', 'TINYINT(1) NOT NULL DEFAULT 0');
-CALL sp_add_col('orders', 'processed_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'courier_assigned_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'picked_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'completed_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'returned_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'cancelled_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'partial_delivered_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'exchange_processing_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'exchange_picked_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'exchange_delivered_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'exchange_returned_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'exchange_cancelled_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'partial_delivery_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
-CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL DEFAULT 0');
-CALL sp_add_col('orders', 'payment_received_at', 'DATETIME NULL');
-CALL sp_add_col('orders', 'refund_issued_at', 'DATETIME NULL');
-
--- 3. Recreate the view with the full column set.
 DROP VIEW IF EXISTS `orders_with_customer_creator`;
 
 CREATE VIEW `orders_with_customer_creator` AS

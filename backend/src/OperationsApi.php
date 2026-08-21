@@ -2101,12 +2101,13 @@ final class OperationsApi extends BaseService
                 exchangeDeliveredAt,
                 exchangeReturnedAt,
                 exchangeCancelledAt,
-                partialDeliveryActionRequired,
-                courierReturnActionRequired";
+                act.partialDeliveryActionRequired,
+                act.courierReturnActionRequired";
 
         $rows = $this->database->fetchAll(
             "SELECT {$selectColumns}
              FROM orders_with_customer_creator
+             LEFT JOIN (SELECT id, partial_delivery_action_required AS partialDeliveryActionRequired, courier_return_action_required AS courierReturnActionRequired FROM orders) act ON act.id = orders_with_customer_creator.id
              {$where}
              ORDER BY createdAt DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
