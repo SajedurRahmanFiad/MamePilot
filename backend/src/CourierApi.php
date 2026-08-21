@@ -1353,14 +1353,15 @@ final class CourierApi extends BaseService
         $normalized = strtolower($rawStatus);
         $status = null;
 
+        $collectsNothing = false;
         if ($normalized !== '') {
-            if (strpos($normalized, 'delivered') !== false) {
+            if (strpos($normalized, 'partial') !== false) {
+                $status = 'Partially Delivered';
+            } elseif (strpos($normalized, 'delivered') !== false) {
                 $status = 'Delivered';
             } elseif (strpos($normalized, 'return') !== false || strpos($normalized, 'cancel') !== false) {
-                // Steadfast returns and cancelled approvals are cancellations
-                // from the merchant's perspective: nothing was collected, so
-                // they must never book paid-return income.
-                $status = 'Cancelled';
+                $status = 'Returned';
+                $collectsNothing = true;
             } else {
                 $status = 'Picked';
             }
@@ -1370,7 +1371,8 @@ final class CourierApi extends BaseService
             'rawStatus' => $rawStatus,
             'normalizedStatus' => $normalized,
             'status' => $status,
-            'isPickedOrBeyond' => $status !== null && $status !== 'Cancelled',
+            'collectsNothing' => $collectsNothing,
+            'isPickedOrBeyond' => $status !== null && $status !== 'Returned',
         ];
     }
 
@@ -1521,15 +1523,20 @@ final class CourierApi extends BaseService
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
             $updates = ['history' => $history];
 
-            if ($statusInfo['status'] === 'Delivered') {
+            if ($statusInfo['status'] === 'Partially Delivered') {
+                $updates['status'] = 'partially_delivered';
+                $updates['history']['partiallyDelivered'] = 'Marked partially delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivered items.';
+                $updates['partial_delivery_action_required'] = 1;
+                $updates['partial_delivered_at'] = gmdate('c');
+                $partialData = is_array($details['data']) ? $details['data'] : [];
+                $updates['partial_cod_amount'] = round(max(0, (float) ($partialData['cod_amount'] ?? 0)), 2);
+                $updates['partial_shipping_amount'] = round(max(0, (float) ($partialData['delivery_fee'] ?? 0)), 2);
+            } elseif ($statusInfo['status'] === 'Delivered') {
                 $updates['status'] = 'Completed';
                 $updates['history']['completed'] = 'Marked delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
             } elseif ($statusInfo['status'] === 'Returned') {
                 $updates['status'] = 'Returned';
                 $updates['history']['returned'] = 'Marked returned automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
-            } elseif ($statusInfo['status'] === 'Cancelled') {
-                $updates['status'] = 'Cancelled';
-                $updates['history']['cancelled'] = 'Marked cancelled automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
             } else {
                 $updates['status'] = 'Picked';
                 $updates['history']['picked'] = $updates['history']['picked'] ?? ('Marked picked automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c'));
@@ -1541,7 +1548,8 @@ final class CourierApi extends BaseService
                 is_array($details['data'] ?? null) ? $details['data'] : [],
                 (string) ($row['steadfast_consignment_id'] ?? ''),
                 (string) ($row['order_number'] ?? ''),
-                (string) $row['id']
+                (string) $row['id'],
+                empty($statusInfo['collectsNothing']) ? null : 0.0
             );
             $this->updateOrderAsCourierSystem([
                 'id' => (string) $row['id'],
@@ -2637,6 +2645,11 @@ final class CourierApi extends BaseService
             $collectedAmount = $this->firstWebhookNumber($containers, ['collected_amount']);
         }
 
+        // Steadfast cancel events collect nothing — prevent paid-return income booking.
+        if ($provider === 'steadfast' && (str_contains($eventName, 'cancel') || str_contains($rawStatus, 'cancel'))) {
+            $collectedAmount = 0.0;
+        }
+
         $rawStatus = $this->firstWebhookValue($containers, [
             'order_status_slug', 'order_status', 'delivery_status', 'status', 'tracking_status',
         ]);
@@ -2811,10 +2824,10 @@ final class CourierApi extends BaseService
             // has started; they carry no status field and must never cancel
             // the order. The order is flagged action-required instead, and
             // real status transitions are applied only from delivery_status
-            // notifications. Any return wording on an explicit delivery
-            // status, however, is an authoritative cancellation.
+            // notifications. Any return/cancel wording on an explicit delivery
+            // status maps to Returned.
             if ($event === 'return_status') return null;
-            if (str_contains($status, 'return')) return 'Cancelled';
+            if (str_contains($combined, 'return') || str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Returned';
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
@@ -3081,12 +3094,22 @@ final class CourierApi extends BaseService
      * terminal-transition income resolves the collected amount from it.
      *
      * @param array<string, mixed> $updates
+     * @param float|null $collectedAmountOverride When non-null, forces the charge's collected_amount to this value (e.g. 0 for Steadfast cancels to prevent paid-return income booking).
      */
-    private function attachSyncedCharge(array &$updates, string $provider, array $data, string $consignmentId, string $merchantReference, string $orderId): void
+    private function attachSyncedCharge(array &$updates, string $provider, array $data, string $consignmentId, string $merchantReference, string $orderId, ?float $collectedAmountOverride = null): void
     {
         $details = $this->syncChargeDetails($provider, $data, $consignmentId, $merchantReference);
+        if ($collectedAmountOverride !== null) {
+            $details['collectedAmount'] = max(0.0, $collectedAmountOverride);
+        }
         $charge = $this->upsertWebhookCharge($provider, $details, null, $orderId);
         if ($charge !== null && trim((string) ($charge['id'] ?? '')) !== '') {
+            if ($collectedAmountOverride !== null) {
+                $this->database->execute(
+                    'UPDATE courier_order_charges SET collected_amount = :amount WHERE id = :id',
+                    [':amount' => $this->formatMoney($collectedAmountOverride), ':id' => (string) $charge['id']]
+                );
+            }
             $updates['courierAutomaticExpense'] = [
                 'chargeId' => trim((string) $charge['id']),
                 'provider' => $provider,

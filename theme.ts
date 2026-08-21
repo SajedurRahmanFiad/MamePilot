@@ -196,7 +196,7 @@ export const theme = {
     // Neutral
     bg: {
       primary: 'bg-white',
-      secondary: 'bg-gray-50',
+      secondary: 'bg-[#ebedf0]',
       tertiary: 'bg-gray-100',
     },
     text: {

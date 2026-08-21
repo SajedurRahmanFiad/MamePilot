@@ -2100,7 +2100,9 @@ final class OperationsApi extends BaseService
                 exchangePickedAt,
                 exchangeDeliveredAt,
                 exchangeReturnedAt,
-                exchangeCancelledAt";
+                exchangeCancelledAt,
+                partialDeliveryActionRequired,
+                courierReturnActionRequired";
 
         $rows = $this->database->fetchAll(
             "SELECT {$selectColumns}

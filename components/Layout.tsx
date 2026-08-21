@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
-import { ArrowLeft, RotateCcw } from 'lucide-react';
+import { ArrowLeft, RotateCcw, ChevronLeft, ChevronDown } from 'lucide-react';
 import { db } from '../db';
 import { hasAdminAccess, isEmployeeRole } from '../types';
 import { theme } from '../theme';
@@ -33,9 +33,21 @@ interface SidebarItemProps {
   onClick?: () => void;
   children?: SidebarConfigItemWithActive[];
   expanded?: boolean;
+  expandOnFocus?: boolean;
+  onCollapsedGroupClick?: () => void;
 }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onClick, children, expanded = true }) => {
+const SidebarItem: React.FC<SidebarItemProps> = ({
+  to,
+  icon,
+  label,
+  active,
+  onClick,
+  children,
+  expanded = true,
+  expandOnFocus = false,
+  onCollapsedGroupClick,
+}) => {
   const [isOpen, setIsOpen] = useState(active);
 
   useEffect(() => {
@@ -44,53 +56,71 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
       return;
     }
 
-    if (active) {
+    if (active || expandOnFocus) {
       setIsOpen(true);
     }
-  }, [expanded, active]);
+  }, [expanded, active, expandOnFocus]);
+
+  const hasActiveChild = children?.some((c) => c.active) ?? false;
+  const rowActive = active && !hasActiveChild;
 
   const iconNode = (
-    <span className="flex items-center justify-center w-8 h-8 text-current">
-      {icon}
+    <span className="flex items-center justify-center w-11 h-8 shrink-0">
+      {active && !expanded ? (
+        <span className={`flex items-center justify-center w-10 h-10 rounded-full ${theme.colors.primary[600]} text-white shadow-md`}>
+          {icon}
+        </span>
+      ) : (
+        <span className="flex items-center justify-center w-8 h-8 text-current">
+          {icon}
+        </span>
+      )}
     </span>
   );
 
+  const rowClasses = `flex items-center w-full h-11 px-1 ${theme.radius.md} ${theme.transitions.colors}`;
+  const activeRowClasses = expanded ? `${theme.colors.primary[600]} text-white` : '';
+  const idleRowClasses = 'text-gray-500 hover:bg-gray-100 hover:text-gray-900';
+  const labelClasses = `text-sm font-medium whitespace-nowrap transition-all duration-300 ${
+    expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'
+  }`;
+  const rowMarkClasses = expanded ? (rowActive ? activeRowClasses : idleRowClasses) : idleRowClasses;
+
   if (children) {
-    const activeCollapsedClasses = `${theme.colors.primary[600]} text-white shadow-lg shadow-emerald-200/50`;
-    const activeExpandedClasses = `${theme.colors.primary[50]} ${theme.colors.primary.text}`;
     return (
-      <div className="space-y-1">
+      <div>
         <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center ${expanded ? 'justify-between' : 'justify-center'} w-full h-11 px-3 ${theme.radius.md} ${theme.transitions.colors} ${
-            active 
-              ? expanded
-                ? activeExpandedClasses
-                : activeCollapsedClasses
-              : `text-gray-500 hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text}`
-          }`}
+          type="button"
+          title={expanded ? undefined : label}
+          aria-expanded={isOpen}
+          onClick={() => {
+            if (!expanded) {
+              onCollapsedGroupClick?.();
+              return;
+            }
+            setIsOpen(!isOpen);
+          }}
+          className={`${rowClasses} ${rowMarkClasses}`}
         >
-          <div className={`flex items-center ${expanded ? 'gap-3' : ''}`}>
-            {iconNode}
-            <span className={`font-semibold text-sm ${expanded ? 'block text-left' : 'hidden'} leading-none`}>{label}</span>
-          </div>
-          {expanded && (
-            <div className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
+          {iconNode}
+          <span className={`${labelClasses} overflow-hidden`}>{label}</span>
+          <span className={`ml-auto transition-opacity duration-300 ${expanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+            <span className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
               {ICONS.ChevronRight}
-            </div>
-          )}
+            </span>
+          </span>
         </button>
         {isOpen && expanded && (
-          <div className="pl-11 space-y-1">
+          <div className="pl-9 pb-1 space-y-0.5">
             {children.map((child) => (
               <Link
                 key={child.key}
                 to={child.to ?? '#'}
                 onClick={onClick}
-                className={`block px-4 py-2 text-sm font-medium ${theme.radius.sm} ${theme.transitions.colors} ${
-                  child.active 
-                    ? `${theme.colors.primary[600]} text-white` 
-                    : `text-gray-400 hover:${theme.colors.primary.text} hover:${theme.colors.primary[50]}/30`
+                className={`block px-3 py-2 text-sm font-medium ${theme.radius.sm} ${theme.transitions.colors} ${
+                  child.active
+                    ? `${theme.colors.primary[600]} text-white`
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
                 }`}
               >
                 {child.label}
@@ -106,14 +136,11 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon, label, active, onCl
     <Link
       to={to || '#'}
       onClick={onClick}
-      className={`flex items-center ${expanded ? 'justify-start gap-3' : 'justify-center'} w-full h-11 px-3 ${theme.radius.md} ${theme.transitions.colors} ${
-        active 
-          ? `${theme.colors.primary[600]} text-white shadow-lg shadow-emerald-200/50` 
-          : `text-gray-500 hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text}`
-      }`}
+      title={expanded ? undefined : label}
+      className={`${rowClasses} ${rowMarkClasses}`}
     >
       {iconNode}
-      <span className={`font-semibold text-sm ${expanded ? 'block' : 'hidden'} leading-none`}>{label}</span>
+      <span className={`${labelClasses} min-w-0 overflow-hidden`}>{label}</span>
     </Link>
   );
 };
@@ -128,19 +155,26 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const { hasCapability, hasSubCapability } = useCapabilities(Boolean(profile));
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [isDockPinned, setIsDockPinned] = useState(false);
+  const [isDockHovered, setIsDockHovered] = useState(false);
+  const [focusedGroupKey, setFocusedGroupKey] = useState<string | null>(null);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isCustomerCreateOpen, setIsCustomerCreateOpen] = useState(false);
   const [isVendorCreateOpen, setIsVendorCreateOpen] = useState(false);
-  const isSidebarExpanded = isSidebarOpen || isSidebarHovered;
-  const sidebarWidth = isSidebarOpen || isSidebarExpanded ? 288 : 80;
-  const sidebarTransitionStyle = {
-    width: sidebarWidth,
-    minWidth: 80,
-    transition: 'width 220ms ease-in-out',
-    willChange: 'width',
+  const closeSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+    setIsDockPinned(false);
+    setFocusedGroupKey(null);
+  }, []);
+  const toggleDock = () => {
+    if (isDockPinned) {
+      closeSidebar();
+    } else {
+      setIsDockPinned(true);
+    }
   };
+  const isDockExpanded = isDockPinned || isDockHovered;
   const brandLoading = branding.mode === 'loading';
   const brandUnavailable = branding.mode === 'unavailable';
   const isWhatsAppPage = location.pathname.startsWith('/whatsapp');
@@ -383,6 +417,10 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
     return items.map(normalizeItem);
   }, [sidebarPermissionContext, location.pathname]);
 
+  const dividerIndex = sidebarItems.findIndex((item) =>
+    item.key === 'subscriptions' || item.key === 'settings' || item.key === 'developer'
+  );
+
   const quickActions = [
     can('orders.create') && hasCapability('sales') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
     can('bills.create') && hasCapability('purchases') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
@@ -394,76 +432,15 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
 
   return (
     <div className={`${theme.colors.bg.secondary} flex overflow-hidden`} style={{ minHeight: '100vh' }}>
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      <div
+        className={`fixed inset-0 z-[45] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-300 ease-in-out ${
+          isSidebarOpen || isDockExpanded ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'
+        }`}
+        onClick={closeSidebar}
+      />
 
       {!hideSidebar && (
-        <aside 
-          onMouseEnter={() => setIsSidebarHovered(true)}
-          onMouseLeave={() => setIsSidebarHovered(false)}
-          className={`fixed inset-y-0 left-0 z-50 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
-            isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          } overflow-hidden`}
-          style={sidebarTransitionStyle}
-        >
-        <div className="flex flex-col h-full">
-          <div className={isSidebarExpanded ? 'p-8 h-28' : 'px-3 py-4 h-28'}>
-            <div className={`flex items-center h-full ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}>
-            {brandLoading || brandUnavailable ? (
-              <div
-                className={`flex items-center ${isSidebarExpanded ? 'gap-3 justify-start' : 'justify-center'}`}
-                role="status"
-                aria-label={brandLoading ? 'Loading workspace branding' : 'Workspace branding unavailable'}
-              >
-                <div className={`h-10 w-10 rounded-full bg-gray-200 ${brandLoading ? 'animate-pulse' : ''}`} />
-                {isSidebarExpanded && (
-                  brandLoading ? (
-                    <div className="h-5 w-32 animate-pulse rounded bg-gray-200" />
-                  ) : (
-                    <span className={`text-sm font-semibold ${theme.colors.text.secondary}`}>Management</span>
-                  )
-                )}
-              </div>
-            ) : whiteLabelEnabled ? (
-              <>
-                <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white ${isSidebarExpanded ? '' : 'mx-auto'}`}>
-                  {branding.logo ? (
-                    <img
-                      src={branding.logo}
-                      alt={branding.name || 'Company logo'}
-                      className="w-10 h-10 rounded-full object-cover"
-                      onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-200" />
-                  )}
-                </div>
-
-                {isSidebarExpanded && (
-                  <div>
-                    <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
-                      {branding.name || 'Management'}
-                    </h1>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className={`flex items-center ${isSidebarExpanded ? 'justify-start' : 'justify-center'}`}>
-                <img
-                  src={isSidebarExpanded ? branding.logo : branding.compactLogo}
-                  alt="Mame Pilot"
-                  className={`object-contain ${isSidebarExpanded ? 'h-14 w-auto' : 'h-10 w-10 rounded-full'}`}
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
-                />
-              </div>
-            )}
-          </div>
-          </div>
-
+        <>
           <style>{`
             .sidebar-scrollbar-hidden {
               scrollbar-width: none;
@@ -476,33 +453,191 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
             }
           `}</style>
 
-          <nav className="sidebar-scrollbar-hidden flex-1 px-4 pb-8 space-y-1 overflow-y-auto">
-            {sidebarItems.map((item) => (
-            <SidebarItem
-              key={item.key}
-              expanded={isSidebarExpanded}
-              to={item.to}
-              icon={item.icon}
-              label={item.label}
-              active={item.active}
-              children={item.children}
-              onClick={() => setIsSidebarOpen(false)}
-            />
-          ))}
-            <div className="h-6" />
-          </nav>
+          {/* Mobile drawer (< md) */}
+          <aside className={`fixed inset-y-0 left-0 z-50 md:hidden w-72 ${theme.colors.bg.primary} border-r ${theme.colors.border.primary} transform overflow-hidden transition-transform duration-300 ${
+            isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}>
+            <div className="flex flex-col h-full">
+              <div className="p-8 h-28">
+                {brandLoading || brandUnavailable ? (
+                  <div className="flex items-center h-full gap-3 justify-start" role="status" aria-label={brandLoading ? 'Loading workspace branding' : 'Workspace branding unavailable'}>
+                    <div className={`h-10 w-10 rounded-full bg-gray-200 ${brandLoading ? 'animate-pulse' : ''}`} />
+                    {brandLoading ? (
+                      <div className="h-5 w-32 animate-pulse rounded bg-gray-200" />
+                    ) : (
+                      <span className={`text-sm font-semibold ${theme.colors.text.secondary}`}>Management</span>
+                    )}
+                  </div>
+                ) : whiteLabelEnabled ? (
+                  <div className="flex items-center h-full gap-3 justify-start">
+                    <div className={`p-1 ${theme.colors.primary[50]} rounded-full bg-white`}>
+                      {branding.logo ? (
+                        <img
+                          src={branding.logo}
+                          alt={branding.name || 'Company logo'}
+                          className="w-10 h-10 rounded-full object-cover"
+                          onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gray-200" />
+                      )}
+                    </div>
+                    <h1 className={`text-xl font-black ${theme.colors.text.primary} tracking-tight leading-none`}>
+                      {branding.name || 'Management'}
+                    </h1>
+                  </div>
+                ) : (
+                  <div className="flex items-center h-full justify-start">
+                    <img
+                      src={branding.logo}
+                      alt="Mame Pilot"
+                      className="object-contain h-14 w-auto"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
+                    />
+                  </div>
+                )}
+              </div>
 
+              <nav className="sidebar-scrollbar-hidden flex-1 px-3 pb-8 overflow-y-auto">
+                {sidebarItems.map((item, index) => (
+                  <React.Fragment key={item.key}>
+                    {index === dividerIndex && (
+                      <>
+                        <div className="h-4" />
+                        <div className="mx-3 border-t-2 border-gray-200" />
+                        <div className="h-3" />
+                      </>
+                    )}
+                    <div className="py-0.5">
+                      <SidebarItem
+                        expanded
+                        to={item.to}
+                        icon={item.icon}
+                        label={item.label}
+                        active={item.active}
+                        children={item.children}
+                        onClick={() => setIsSidebarOpen(false)}
+                      />
+                    </div>
+                  </React.Fragment>
+                ))}
+                <div className="h-6" />
+              </nav>
+            </div>
+          </aside>
 
-        </div>
-        </aside>
+          {/* Desktop & tablet floating pill dock (>= md) */}
+          <aside
+            onMouseEnter={() => setIsDockHovered(true)}
+            onMouseLeave={() => setIsDockHovered(false)}
+            className={`hidden md:flex fixed left-4 top-8 bottom-8 z-50 flex-col bg-white border border-gray-100 rounded-[36px] shadow-xl shadow-gray-900/10 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+              isDockExpanded ? 'w-[288px]' : 'w-[76px]'
+            }`}
+            style={{ willChange: 'width' }}
+          >
+            <div className="flex flex-col h-full">
+              <div className="px-3 pt-3 pb-6">
+                <div className="flex items-center w-full h-11">
+                  <button
+                    type="button"
+                    onClick={toggleDock}
+                    title={isDockExpanded ? 'Collapse navigation' : 'Expand navigation'}
+                    aria-expanded={isDockExpanded}
+                    className={`flex items-center w-full h-11 ${theme.radius.md} ${theme.transitions.colors} hover:bg-gray-100 ${
+                      isDockExpanded ? '' : 'justify-center'
+                    }`}
+                  >
+                    {brandLoading || brandUnavailable ? (
+                      <div className={`w-10 h-10 rounded-full bg-gray-200 shrink-0 ${brandLoading ? 'animate-pulse' : ''}`} />
+                    ) : whiteLabelEnabled ? (
+                      branding.logo ? (
+                        <img
+                          src={branding.logo}
+                          alt={branding.name || 'Company logo'}
+                          className="w-10 h-10 rounded-full object-cover shrink-0"
+                          onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gray-200 shrink-0" />
+                      )
+                    ) : (
+                      <img
+                        src={branding.compactLogo}
+                        alt="Mame Pilot"
+                        className="w-10 h-10 rounded-full object-cover shrink-0"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/Avatar.png'; }}
+                      />
+                    )}
+                    {isDockExpanded && (
+                      <span className={`ml-1 min-w-0 block text-base font-black ${theme.colors.text.primary} tracking-tight leading-none truncate`}>
+                        {branding.name || (whiteLabelEnabled ? 'Management' : 'Mame Pilot')}
+                      </span>
+                    )}
+                  </button>
+                  {isDockExpanded && (
+                    <button
+                      type="button"
+                      onClick={closeSidebar}
+                      title="Collapse navigation"
+                      className="shrink-0 ml-1 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-900 transition-colors duration-200"
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <nav className="sidebar-scrollbar-hidden flex-1 px-3 pb-6 overflow-y-auto">
+                {sidebarItems.map((item, index) => {
+                  if (dividerIndex >= 0 && index >= dividerIndex) return null;
+                  return (
+                    <React.Fragment key={item.key}>
+                      <div className="py-0.5">
+                        <SidebarItem
+                          expanded={isDockExpanded}
+                          to={item.to}
+                          icon={item.icon}
+                          label={item.label}
+                          active={item.active}
+                          children={item.children}
+                          expandOnFocus={focusedGroupKey === item.key}
+                          onCollapsedGroupClick={() => { setFocusedGroupKey(item.key); setIsDockPinned(true); }}
+                        />
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </nav>
+              {dividerIndex >= 0 && (
+                <div className="px-3 pb-6">
+                  <div className="mx-3 mb-3 border-t-2 border-gray-200" />
+                  {sidebarItems.slice(dividerIndex).map((item) => (
+                    <div key={item.key} className="py-0.5">
+                      <SidebarItem
+                        expanded={isDockExpanded}
+                        to={item.to}
+                        icon={item.icon}
+                        label={item.label}
+                        active={item.active}
+                        children={item.children}
+                        expandOnFocus={focusedGroupKey === item.key}
+                        onCollapsedGroupClick={() => { setFocusedGroupKey(item.key); setIsDockPinned(true); }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+        </>
       )}
 
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className={`flex-1 flex flex-col min-w-0 h-screen overflow-hidden ${!hideSidebar ? 'md:pl-28' : ''}`}>
         <ServiceAnnouncementBar />
-        <header className={`flex-shrink-0 sticky top-0 z-40 ${theme.colors.bg.primary}/80 backdrop-blur-lg border-b ${theme.colors.border.primary} px-6 h-20 flex items-center`}>
+        <header className={`flex-shrink-0 sticky top-0 z-40 px-6 h-20 flex items-center`}>
           <div className="flex-1 min-w-0 flex items-center">
             {!hideSidebar && (
-              <button onClick={() => setIsSidebarOpen(true)} className={`lg:hidden p-2.5 hover:${theme.colors.bg.tertiary} ${theme.radius.md} ${theme.colors.text.secondary} border ${theme.colors.border.primary}`}>
+              <button onClick={() => setIsSidebarOpen(true)} className={`md:hidden p-2.5 hover:${theme.colors.bg.tertiary} ${theme.radius.md} ${theme.colors.text.secondary} border ${theme.colors.border.primary}`}>
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
               </button>
             )}
@@ -536,9 +671,6 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
                 <h1 className={`text-lg font-black ${theme.colors.text.primary} tracking-tight truncate`}>
                   {pageHeader.title}
                 </h1>
-                <p className={`text-sm ${theme.colors.text.secondary} truncate`}>
-                  {pageHeader.subtitle}
-                </p>
               </div>
             </div>
           </div>
@@ -557,7 +689,6 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
                 <span className="hidden lg:inline text-sm font-bold min-w-0 truncate">Point of Sale</span>
               </Link>
             )}
-            <NotificationCenterButton />
             <div className="relative">
               <button
                 onClick={() => {
@@ -571,9 +702,10 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
                 }}
                 disabled={WRITE_FREEZE_ENABLED || quickActions.length === 0}
                 title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : isReadOnly ? 'Subscribe to continue. The app is currently in read-only mode.' : quickActions.length === 0 ? 'No quick actions available for this role' : 'Quick actions'}
-                className={`${theme.colors.primary[600]} text-white w-10 h-10 flex items-center justify-center ${theme.radius.md} ${theme.transitions.normal} shadow-lg shadow-[#0f2f57]/20 active:scale-95 ${WRITE_FREEZE_ENABLED || isReadOnly || quickActions.length === 0 ? 'cursor-not-allowed opacity-50' : `hover:${theme.colors.primary[700]}`}`}
+                className={`${theme.colors.primary[600]} text-white h-10 px-3 flex items-center gap-1.5 ${theme.radius.md} ${theme.transitions.normal} shadow-lg shadow-[#0f2f57]/20 active:scale-95 ${WRITE_FREEZE_ENABLED || isReadOnly || quickActions.length === 0 ? 'cursor-not-allowed opacity-50' : `hover:${theme.colors.primary[700]}`}`}
               >
                 {ICONS.Plus}
+                <ChevronDown size={14} />
               </button>
               {isPlusOpen && (
                 <>
@@ -603,6 +735,8 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
                 </>
               )}
             </div>
+
+            <NotificationCenterButton />
 
             <div className="relative">
               <button 
@@ -646,7 +780,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
           </div>
         </header>
 
-        <main className={`relative min-h-0 flex-1 animate-in fade-in duration-500 ${isConversationPage ? 'overflow-hidden p-0' : isPosPage ? 'overflow-y-auto p-0' : 'overflow-y-auto p-6 lg:p-10'}`}>
+        <main className={`relative min-h-0 flex-1 animate-in fade-in duration-500 ${isConversationPage ? 'overflow-hidden p-0' : isPosPage ? 'overflow-y-auto p-0' : 'overflow-y-auto px-6 pt-3 pb-6 lg:px-10 lg:pt-4 lg:pb-10'}`}>
           {!isConversationPage && <IncidentModeBanner />}
           {children}
           {!isConversationPage && !isPosPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>

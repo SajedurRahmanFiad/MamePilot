@@ -58,18 +58,25 @@ const rawSidebarConfig: SidebarConfigItem[] = [
     ],
   },
   {
-    key: 'orders',
-    label: 'Orders',
-    to: '/orders',
+    key: 'sales',
+    label: 'Sales',
     icon: ICONS.Sales,
-    visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sales'),
-  },
-  {
-    key: 'pos_sales',
-    label: 'POS Sales',
-    to: '/pos-sales',
-    icon: ICONS.Pos,
-    visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('pos'),
+    children: [
+      {
+        key: 'orders',
+        label: 'Orders',
+        to: '/orders',
+        icon: ICONS.Sales,
+        visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sales'),
+      },
+      {
+        key: 'pos_sales',
+        label: 'POS Sales',
+        to: '/pos-sales',
+        icon: ICONS.Pos,
+        visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('pos'),
+      },
+    ],
   },
   {
     key: 'customer_relationship',
@@ -167,14 +174,14 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.Banking,
         visible: ({ can, hasSubCapability }) => can('transactions.view') && hasSubCapability('transactions'),
       },
+      {
+        key: 'recurring_transactions',
+        label: 'Recurring Transactions',
+        to: '/recurring-transactions',
+        icon: ICONS.Clock,
+        visible: ({ can, hasCapability }) => can('transactions.view') && hasCapability('recurring_transactions'),
+      },
     ],
-  },
-  {
-    key: 'recurring_transactions',
-    label: 'Recurring Transactions',
-    to: '/recurring-transactions',
-    icon: ICONS.Clock,
-    visible: ({ can, hasCapability }) => can('transactions.view') && hasCapability('recurring_transactions'),
   },
   {
     key: 'human_resources',

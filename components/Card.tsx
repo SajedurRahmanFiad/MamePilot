@@ -88,26 +88,73 @@ const statCardVariants: Record<StatCardVariant, { bg: string; text: string; icon
 export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant = 'primary', bgColor, textColor: textColorProp, iconBgColor: iconBgColorProp, isProfitCard = false, profitValue, subtotalAmount, subtitle, subtitleTone = 'neutral', onClick, className = '', numericValue, showAbbreviated = false, subtotalNumericValue }) => {
   const style = statCardVariants[variant];
   
-  // Use provided colors or determine from profit card logic
-  let cardBgColor = bgColor || 'bg-white';
-  let textColor = textColorProp || style.text;
+  // Derive light border and icon colors from bgColor for the white card style
+  const deriveLightColors = (bg: string) => {
+    // Map Tailwind bg-* classes to their light border and icon bg equivalents
+    const colorMap: Record<string, { border: string; iconBg: string }> = {
+      'bg-blue-600': { border: 'border-blue-200', iconBg: 'bg-blue-100' },
+      'bg-blue-700': { border: 'border-blue-200', iconBg: 'bg-blue-100' },
+      'bg-purple-600': { border: 'border-purple-200', iconBg: 'bg-purple-100' },
+      'bg-purple-500': { border: 'border-purple-200', iconBg: 'bg-purple-100' },
+      'bg-amber-500': { border: 'border-amber-200', iconBg: 'bg-amber-100' },
+      'bg-amber-600': { border: 'border-amber-200', iconBg: 'bg-amber-100' },
+      'bg-indigo-700': { border: 'border-indigo-200', iconBg: 'bg-indigo-100' },
+      'bg-indigo-500': { border: 'border-indigo-200', iconBg: 'bg-indigo-100' },
+      'bg-indigo-600': { border: 'border-indigo-200', iconBg: 'bg-indigo-100' },
+      'bg-indigo-800': { border: 'border-indigo-200', iconBg: 'bg-indigo-100' },
+      'bg-violet-700': { border: 'border-violet-200', iconBg: 'bg-violet-100' },
+      'bg-violet-500': { border: 'border-violet-200', iconBg: 'bg-violet-100' },
+      'bg-violet-600': { border: 'border-violet-200', iconBg: 'bg-violet-100' },
+      'bg-violet-800': { border: 'border-violet-200', iconBg: 'bg-violet-100' },
+      'bg-orange-500': { border: 'border-orange-200', iconBg: 'bg-orange-100' },
+      'bg-orange-600': { border: 'border-orange-200', iconBg: 'bg-orange-100' },
+      'bg-orange-700': { border: 'border-orange-200', iconBg: 'bg-orange-100' },
+      'bg-orange-800': { border: 'border-orange-200', iconBg: 'bg-orange-100' },
+      'bg-sky-500': { border: 'border-sky-200', iconBg: 'bg-sky-100' },
+      'bg-sky-600': { border: 'border-sky-200', iconBg: 'bg-sky-100' },
+      'bg-cyan-500': { border: 'border-cyan-200', iconBg: 'bg-cyan-100' },
+      'bg-cyan-600': { border: 'border-cyan-200', iconBg: 'bg-cyan-100' },
+      'bg-teal-600': { border: 'border-teal-200', iconBg: 'bg-teal-100' },
+      'bg-teal-700': { border: 'border-teal-200', iconBg: 'bg-teal-100' },
+      'bg-emerald-500': { border: 'border-emerald-200', iconBg: 'bg-emerald-100' },
+      'bg-emerald-600': { border: 'border-emerald-200', iconBg: 'bg-emerald-100' },
+      'bg-emerald-700': { border: 'border-emerald-200', iconBg: 'bg-emerald-100' },
+      'bg-red-500': { border: 'border-red-200', iconBg: 'bg-red-100' },
+      'bg-red-600': { border: 'border-red-200', iconBg: 'bg-red-100' },
+      'bg-red-700': { border: 'border-red-200', iconBg: 'bg-red-100' },
+      'bg-rose-600': { border: 'border-rose-200', iconBg: 'bg-rose-100' },
+      'bg-rose-700': { border: 'border-rose-200', iconBg: 'bg-rose-100' },
+      'bg-green-700': { border: 'border-green-200', iconBg: 'bg-green-100' },
+      'bg-green-800': { border: 'border-green-200', iconBg: 'bg-green-100' },
+    };
+    return colorMap[bg] || { border: 'border-gray-200', iconBg: 'bg-gray-100' };
+  };
+
+  // Use white background with light colored border matching the original color
+  let cardBgColor = 'bg-white';
   let iconBgColor = iconBgColorProp || style.bg;
-  let borderStyle = '';
+  let borderStyle = bgColor ? deriveLightColors(bgColor).border : 'border-gray-200';
   
-  // Override with profit card colors if applicable and no custom colors provided
-  if (isProfitCard && profitValue !== undefined && !bgColor) {
+  // For profit card: use green or red tinted white card with dynamic text
+  if (isProfitCard && profitValue !== undefined) {
     if (profitValue >= 0) {
-      cardBgColor = 'bg-emerald-500';
-      textColor = 'text-white';
-      iconBgColor = 'bg-emerald-600';
+      cardBgColor = 'bg-emerald-50/50';
+      iconBgColor = 'bg-emerald-100';
+      borderStyle = 'border-emerald-200';
     } else {
-      cardBgColor = 'bg-red-500';
-      textColor = 'text-white';
-      iconBgColor = 'bg-red-600';
+      cardBgColor = 'bg-red-50/50';
+      iconBgColor = 'bg-red-100';
+      borderStyle = 'border-red-200';
     }
   }
+  
+  // Override iconBgColor with light version when bgColor is provided
+  if (bgColor && !isProfitCard) {
+    const lightColors = deriveLightColors(bgColor);
+    iconBgColor = iconBgColorProp || lightColors.iconBg;
+  }
 
-  const containerClasses = `p-4 flex items-start gap-3 text-left ${cardBgColor} rounded-xl shadow-lg border border-gray-100 ${borderStyle} ${className}`;
+  const containerClasses = `p-4 flex items-start gap-3 text-left ${cardBgColor} rounded-xl shadow-sm border ${borderStyle} ${className}`;
   const clickableClasses = onClick ? 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500' : '';
   const Container = onClick ? 'button' : 'div';
 
@@ -126,13 +173,18 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
     subtotalAmount && <span className="text-sm font-semibold">({subtotalAmount})</span>
   );
 
-  const subtitleClassName = textColor === 'text-white'
-    ? 'text-white/80'
-    : subtitleTone === 'positive'
-      ? 'text-emerald-600'
-      : subtitleTone === 'negative'
-        ? 'text-red-600'
-        : 'text-gray-500';
+  const subtitleClassName = subtitleTone === 'positive'
+    ? 'text-emerald-600'
+    : subtitleTone === 'negative'
+      ? 'text-red-600'
+      : 'text-gray-500';
+
+  const titleClassName = 'text-gray-400';
+  
+  // Dynamic text color for profit card
+  const valueTextClassName = isProfitCard && profitValue !== undefined
+    ? profitValue >= 0 ? 'text-emerald-600' : 'text-red-600'
+    : 'text-gray-900';
 
   return (
     <Container
@@ -141,12 +193,12 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
       className={`${containerClasses} ${clickableClasses}`}
     >
       <div className={`${iconBgColor} p-3 rounded-lg flex items-center justify-center`}>
-        <div className={textColor}>{icon}</div>
+        <div className="text-white">{icon}</div>
       </div>
       <div className="flex-1">
         {/* slightly smaller title text */}
-        <p className={`text-[10px] font-bold uppercase tracking-widest ${textColor === 'text-white' ? 'text-white/70' : 'text-gray-400'}`}>{title}</p>
-        <h3 className={`text-lg font-black mt-1 flex flex-wrap items-baseline gap-1 ${textColor}`}>
+        <p className={`text-[10px] font-bold uppercase tracking-widest ${titleClassName}`}>{title}</p>
+        <h3 className={`text-lg font-black mt-1 flex flex-wrap items-baseline gap-1 ${valueTextClassName}`}>
           {valueDisplay}
           {subtotalDisplay}
         </h3>

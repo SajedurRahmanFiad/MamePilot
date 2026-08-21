@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ICONS } from '../constants';
+import { theme } from '../theme';
 import type { AppNotification, NotificationDecision } from '../types';
 import { useMyNotifications, useMyNotificationsPaginated } from '../src/hooks/useQueries';
 import { useMarkNotificationRead, useRespondToNotification } from '../src/hooks/useMutations';
@@ -402,10 +403,9 @@ const NotificationCenterButton: React.FC = () => {
             inert={!isOpen}
             className={`fixed inset-y-0 right-0 z-[80] flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden border-l border-[#e4eef8] bg-white pt-[env(safe-area-inset-top)] shadow-[-24px_0_70px_rgba(15,47,87,0.18)] transition-transform duration-[360ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
+<div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Inbox</p>
-                <h3 className="mt-1 text-lg font-black text-gray-900">Notifications</h3>
+                <h3 className="text-lg font-black text-gray-900">Notifications</h3>
               </div>
               <button
                 type="button"
@@ -425,14 +425,14 @@ const NotificationCenterButton: React.FC = () => {
                   role="tab"
                   aria-selected={activeFilter === filter}
                   onClick={() => setActiveFilter(filter)}
-                  className={`rounded-full border px-3.5 py-2 text-xs font-black capitalize transition-all ${activeFilter === filter ? 'border-[#0f2f57] bg-[#0f2f57] text-white shadow-sm' : 'border-gray-200 bg-white text-gray-500 hover:border-[#c7dff5] hover:bg-[#f8fbff] hover:text-[#0f2f57]'}`}
+                  className={`rounded-full border px-3.5 py-2 text-xs font-black capitalize transition-all ${activeFilter === filter ? `border-[var(--primary-color,#0f2f57)] bg-[var(--primary-color,#0f2f57)] text-white shadow-sm` : `border-gray-200 bg-white text-gray-500 hover:border-[var(--primary-medium,#c7dff5)] hover:bg-[var(--primary-soft,#f8fbff)] ${theme.colors.primary.text}`}`}
                 >
                   {filter}
                 </button>
               ))}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
               {page === 1 && isPaginatedFetching && allNotifications.length === 0 ? (
                 <div className="px-3 py-10 text-center text-sm font-medium text-gray-400">Loading notifications...</div>
               ) : isFirstPageError && allNotifications.length === 0 ? (
@@ -528,26 +528,26 @@ const NotificationCenterButton: React.FC = () => {
                   </div>
                 </>
               )}
+              {!(page === 1 && isFirstPageFetching && allNotifications.length === 0) && filteredNotifications.length > 0 && (
+                <div className="mt-3 border-t border-gray-100 pt-3">
+                  {hasLoadMoreError && (
+                    <p className="mb-2 text-center text-xs font-medium text-red-500">Failed to load more notifications.</p>
+                  )}
+                  {hasMore ? (
+                    <button
+                      type="button"
+                      onClick={handleSeeMore}
+                      disabled={isLoadingMore || (isFirstPageError && allNotifications.length === 0)}
+                      className="w-full rounded-xl border border-[#c7dff5] bg-[#f8fbff] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-[#0f2f57] transition-all hover:bg-[#ebf4ff] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isLoadingMore ? 'Loading...' : hasLoadMoreError ? 'Try again' : 'See more'}
+                    </button>
+                  ) : (
+                    <p className="text-center text-xs font-medium text-gray-400">No more notifications</p>
+                  )}
+                </div>
+              )}
             </div>
-            {!(page === 1 && isFirstPageFetching && allNotifications.length === 0) && (
-              <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3">
-                {hasLoadMoreError && (
-                  <p className="mb-2 text-center text-xs font-medium text-red-500">Failed to load more notifications.</p>
-                )}
-                {hasMore ? (
-                  <button
-                    type="button"
-                    onClick={handleSeeMore}
-                    disabled={isLoadingMore || (isFirstPageError && allNotifications.length === 0)}
-                    className="w-full rounded-xl border border-[#c7dff5] bg-[#f8fbff] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-[#0f2f57] transition-all hover:bg-[#ebf4ff] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isLoadingMore ? 'Loading...' : hasLoadMoreError ? 'Try again' : 'See more'}
-                  </button>
-                ) : (
-                  <p className="text-center text-xs font-medium text-gray-400">No more notifications</p>
-                )}
-              </div>
-            )}
           </aside>
         </>
         , document.body,
