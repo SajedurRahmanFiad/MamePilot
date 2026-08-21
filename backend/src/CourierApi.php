@@ -1355,13 +1355,15 @@ final class CourierApi extends BaseService
 
         $collectsNothing = false;
         if ($normalized !== '') {
-            if (strpos($normalized, 'partial') !== false) {
+            if ($normalized === 'partial_delivered') {
                 $status = 'Partially Delivered';
-            } elseif (strpos($normalized, 'delivered') !== false) {
+            } elseif ($normalized === 'delivered') {
                 $status = 'Delivered';
-            } elseif (strpos($normalized, 'return') !== false || strpos($normalized, 'cancel') !== false) {
+            } elseif ($normalized === 'cancelled') {
                 $status = 'Returned';
                 $collectsNothing = true;
+            } elseif ($normalized === 'pending') {
+                $status = 'Picked';
             } else {
                 $status = 'Picked';
             }
@@ -2824,10 +2826,18 @@ final class CourierApi extends BaseService
             // has started; they carry no status field and must never cancel
             // the order. The order is flagged action-required instead, and
             // real status transitions are applied only from delivery_status
-            // notifications. Any return/cancel wording on an explicit delivery
-            // status maps to Returned.
+            // notifications. Exact status mapping:
+            //   delivered            → Delivered
+            //   partial_delivered    → Partially Delivered
+            //   pending              → Picked
+            //   cancelled            → Returned
+            // Everything else (e.g. delivered_approval_pending) stays Picked.
             if ($event === 'return_status') return null;
-            if (str_contains($combined, 'return') || str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Returned';
+            if ($status === 'cancelled') return 'Returned';
+            if ($status === 'delivered') return 'Delivered';
+            if ($status === 'partial_delivered') return 'Partially Delivered';
+            if ($status === 'pending') return 'Picked';
+            return null;
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
