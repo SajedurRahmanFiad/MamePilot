@@ -139,11 +139,11 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
   if (isProfitCard && profitValue !== undefined) {
     if (profitValue >= 0) {
       cardBgColor = 'bg-emerald-50/50';
-      iconBgColor = 'bg-emerald-100';
+      iconBgColor = 'bg-emerald-500';
       borderStyle = 'border-emerald-200';
     } else {
       cardBgColor = 'bg-red-50/50';
-      iconBgColor = 'bg-red-100';
+      iconBgColor = 'bg-red-500';
       borderStyle = 'border-red-200';
     }
   }
@@ -179,7 +179,9 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, variant 
       ? 'text-red-600'
       : 'text-gray-500';
 
-  const titleClassName = 'text-gray-400';
+  const titleClassName = isProfitCard && profitValue !== undefined
+    ? profitValue >= 0 ? 'text-emerald-500' : 'text-red-500'
+    : 'text-gray-400';
   
   // Dynamic text color for profit card
   const valueTextClassName = isProfitCard && profitValue !== undefined

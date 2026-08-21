@@ -1362,7 +1362,9 @@ SELECT
   o.exchange_picked_at AS exchangePickedAt,
   o.exchange_delivered_at AS exchangeDeliveredAt,
   o.exchange_returned_at AS exchangeReturnedAt,
-  o.exchange_cancelled_at AS exchangeCancelledAt
+  o.exchange_cancelled_at AS exchangeCancelledAt,
+  o.partial_delivery_action_required AS partialDeliveryActionRequired,
+  o.courier_return_action_required AS courierReturnActionRequired
 FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 LEFT JOIN users u ON u.id = o.created_by
