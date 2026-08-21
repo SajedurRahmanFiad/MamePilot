@@ -1741,9 +1741,10 @@ final class OperationsApi extends BaseService
     public function fetchOrders(array $params = []): array
     {
         $isPos = !empty($params['pos']);
+        $isPosCol = '(SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id)';
         $rows = $this->database->fetchAll(
             'SELECT * FROM orders_with_customer_creator '
-            . ($isPos ? 'WHERE isPos = 1' : 'WHERE isPos = 0')
+            . ($isPos ? "WHERE {$isPosCol} = 1" : "WHERE {$isPosCol} = 0")
             . ' ORDER BY createdAt DESC, id DESC'
         );
 
@@ -1760,7 +1761,7 @@ final class OperationsApi extends BaseService
         }
 
         $isPos = !empty($params['pos']);
-        $scope = $isPos ? 'AND isPos = 1' : 'AND isPos = 0';
+        $scope = $isPos ? 'AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 1' : 'AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 0';
 
         $bindings = [
             ':search_order' => '%' . $search . '%',
@@ -1799,7 +1800,7 @@ final class OperationsApi extends BaseService
         // Scope: 'pos' lists only point-of-sale orders; any other listing
         // keeps POS sales off the Orders page.
         $isPos = !empty($filters['pos']);
-        $where .= $isPos ? ' AND isPos = 1' : ' AND isPos = 0';
+        $where .= $isPos ? ' AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 1' : ' AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 0';
 
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
@@ -2067,7 +2068,7 @@ final class OperationsApi extends BaseService
                 items,
                 subtotal,
                 discount,
-                isPos,
+                (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) AS isPos,
                 shipping,
                 total,
                 paidAmount,
@@ -2101,13 +2102,12 @@ final class OperationsApi extends BaseService
                 exchangeDeliveredAt,
                 exchangeReturnedAt,
                 exchangeCancelledAt,
-                act.partialDeliveryActionRequired,
-                act.courierReturnActionRequired";
+                (SELECT partial_delivery_action_required FROM orders WHERE id = orders_with_customer_creator.id) AS partialDeliveryActionRequired,
+                (SELECT courier_return_action_required FROM orders WHERE id = orders_with_customer_creator.id) AS courierReturnActionRequired";
 
         $rows = $this->database->fetchAll(
             "SELECT {$selectColumns}
              FROM orders_with_customer_creator
-             LEFT JOIN (SELECT id, partial_delivery_action_required AS partialDeliveryActionRequired, courier_return_action_required AS courierReturnActionRequired FROM orders) act ON act.id = orders_with_customer_creator.id
              {$where}
              ORDER BY createdAt DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
@@ -2134,7 +2134,9 @@ final class OperationsApi extends BaseService
         // Scope: 'pos' returns options seen on POS sales; anything else
         // excludes POS sales so the Orders page never suggests them.
         $isPos = !empty($params['pos']);
-        $isPosSql = $isPos ? 'isPos = 1' : 'isPos = 0';
+        $isPosSql = $isPos
+            ? '(SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 1'
+            : '(SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 0';
 
         $result = [];
 
