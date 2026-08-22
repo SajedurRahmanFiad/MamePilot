@@ -31,6 +31,7 @@ interface OrderedChecklistProps {
 const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description, items, definitions, onChange, headerExtra, showWidth }) => {
   const definitionByKey = useMemo(() => new Map(definitions.map((definition) => [definition.key, definition])), [definitions]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [widthDrafts, setWidthDrafts] = useState<Record<string, string>>({});
 
   const moveItem = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || toIndex < 0 || toIndex >= items.length) return;
@@ -97,10 +98,16 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
                     min={10}
                     max={100}
                     step={5}
-                    value={item.widthPercent ?? 50}
-                    onChange={(e) => {
-                      const val = Math.min(100, Math.max(10, parseInt(e.target.value) || 50));
-                      onChange(items.map((candidate) => candidate.key === item.key ? { ...candidate, widthPercent: val } : { ...candidate }));
+                    value={widthDrafts[item.key] ?? String(item.widthPercent ?? 50)}
+                    onChange={(e) => setWidthDrafts((prev) => ({ ...prev, [item.key]: e.target.value }))}
+                    onBlur={(e) => {
+                      const raw = e.target.value;
+                      const num = parseInt(raw, 10);
+                      const val = isNaN(num) ? 50 : Math.min(100, Math.max(10, num));
+                      setWidthDrafts((prev) => { const next = { ...prev }; delete next[item.key]; return next; });
+                      if (val !== (item.widthPercent ?? 50)) {
+                        onChange(items.map((candidate) => candidate.key === item.key ? { ...candidate, widthPercent: val } : { ...candidate }));
+                      }
                     }}
                     className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-center text-xs font-bold outline-none focus:border-[#3c5a82] focus:bg-white"
                     title="Widget width %"

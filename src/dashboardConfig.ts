@@ -101,7 +101,11 @@ const normalizeItemSettings = (
     const key = String(item?.key || '');
     if (!definitionKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
-    normalized.push({ key, enabled: Boolean(item.enabled) });
+    const entry: DashboardItemSetting = { key, enabled: Boolean(item.enabled) };
+    if (item.widthPercent != null && typeof item.widthPercent === 'number') {
+      entry.widthPercent = item.widthPercent;
+    }
+    normalized.push(entry);
   }
 
   for (const definition of definitions) {
