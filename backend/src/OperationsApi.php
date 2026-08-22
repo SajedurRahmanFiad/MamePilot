@@ -4070,6 +4070,27 @@ final class OperationsApi extends BaseService
             ), 0, 5);
         }
 
+        $actionRequiredRows = $this->database->fetchAll(
+            "SELECT id, order_number AS orderNumber, customer_name AS customerName, total, partial_cod_amount AS partialCodAmount, created_at AS createdAt
+             FROM orders_with_customer_creator
+             WHERE deleted_at IS NULL
+               AND status = 'partially_delivered'
+               AND partial_delivery_action_required = 1
+             ORDER BY created_at DESC
+             LIMIT 5"
+        );
+        $actionRequiredOrders = array_map(
+            static fn(array $row): array => [
+                'id' => (string) ($row['id'] ?? ''),
+                'orderNumber' => (string) ($row['orderNumber'] ?? ''),
+                'customerName' => (string) ($row['customerName'] ?? ''),
+                'total' => (float) ($row['total'] ?? 0),
+                'partialCodAmount' => (float) ($row['partialCodAmount'] ?? 0),
+                'createdAt' => (string) ($row['createdAt'] ?? ''),
+            ],
+            $actionRequiredRows
+        );
+
         return [
             'totalSales' => $totalSales,
             'totalPurchases' => $totalPurchases,
@@ -4086,6 +4107,7 @@ final class OperationsApi extends BaseService
             'lowStockProducts' => $lowStockProducts,
             'lowStockThreshold' => $lowStockThreshold,
             'topCustomers' => $topCustomers,
+            'actionRequiredOrders' => $actionRequiredOrders,
         ];
     }
 
@@ -7209,6 +7231,7 @@ final class OperationsApi extends BaseService
         $categoryId = trim((string) ($params['categoryId'] ?? ''));
         $note = trim((string) ($params['note'] ?? ''));
         $recordedAt = $this->normalizeDateTimeInput((string) ($params['date'] ?? $this->database->nowUtc()));
+        $receivedAmount = (float) ($params['receivedAmount'] ?? 0);
 
         return $this->database->transaction(function () use (
             $actor,
@@ -7218,7 +7241,8 @@ final class OperationsApi extends BaseService
             $paymentMethod,
             $categoryId,
             $note,
-            $recordedAt
+            $recordedAt,
+            $receivedAmount
         ): array {
             $orderRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
@@ -7303,9 +7327,11 @@ final class OperationsApi extends BaseService
                 }
             }
             $deliveredItemValue = max(0.0, $totalItemValue - $returnedItemValue);
-            $codIncome = $totalItemValue > 0
-                ? round($totalCodDeferred * ($deliveredItemValue / $totalItemValue), 2)
-                : 0.0;
+            $codIncome = $receivedAmount > 0
+                ? $receivedAmount
+                : ($totalItemValue > 0
+                    ? round($totalCodDeferred * ($deliveredItemValue / $totalItemValue), 2)
+                    : 0.0);
 
             $createdTransactions = [];
 

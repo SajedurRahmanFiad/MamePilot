@@ -37,6 +37,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
   const [accountId, setAccountId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [note, setNote] = useState('');
+  const [receivedAmount, setReceivedAmount] = useState(0);
 
   useEffect(() => {
     if (!isActive || !order) return;
@@ -54,6 +55,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
 
     setItemSelections(selections);
     setNote('');
+    setReceivedAmount(order.partialCodAmount ?? 0);
 
     const fallbackAccountId = systemDefaults?.defaultAccountId || accounts[0]?.id || '';
     const fallbackPaymentMethod = systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '';
@@ -117,6 +119,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
       paymentMethod,
       note,
       date: new Date().toISOString(),
+      receivedAmount,
     };
 
     await onSubmit(payload);
@@ -206,6 +209,22 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
           <span className="font-bold text-gray-600">Returned item value</span>
           <span className="font-black text-orange-600">{formatCurrency(returnedValue)}</span>
         </div>
+      </div>
+
+      {/* Received amount */}
+      <div className="space-y-1">
+        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Received Amount (COD)</label>
+        <input
+          type="number"
+          value={receivedAmount || ''}
+          onChange={(e) => setReceivedAmount(parseFloat(e.target.value) || 0)}
+          disabled={isLoading}
+          placeholder="Amount received from courier"
+          className="w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
+        />
+        {order.partialCodAmount != null && order.partialCodAmount > 0 && (
+          <p className="text-[10px] text-gray-400">Courier reported: {formatCurrency(order.partialCodAmount)}</p>
+        )}
       </div>
 
       {/* Account selection */}

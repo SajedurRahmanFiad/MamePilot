@@ -85,6 +85,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardItemDefinition[] = [
   { key: 'employee.ordersByStatus', label: 'My Orders by Status', description: 'Clickable status breakdown for the signed-in user.', scope: 'employee', defaultFor: ['employee'], width: 'twoThirds' },
   { key: 'employee.performanceOverview', label: 'Performance Overview', description: 'Completion, active workflow, exception, and daily indicators.', scope: 'employee', defaultFor: ['employee'], width: 'oneThird' },
   { key: 'employee.orderActivity', label: 'Order Activity', description: 'Team ranking and the signed-in employee position.', scope: 'employee', defaultFor: ['employee'], width: 'full' },
+  { key: 'admin.actionRequired', label: 'Action Required', description: 'Orders awaiting partial delivery confirmation with courier-reported COD amounts.', scope: 'admin', defaultFor: ['admin'], width: 'full' },
 ];
 
 const normalizeItemSettings = (

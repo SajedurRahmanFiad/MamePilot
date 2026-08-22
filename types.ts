@@ -1193,6 +1193,15 @@ export interface DashboardTopCustomer {
   amount: number;
 }
 
+export interface DashboardActionRequiredOrder {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  total: number;
+  partialCodAmount: number;
+  createdAt: string;
+}
+
 export interface DashboardAdminSnapshot {
   totalSales: number;
   totalPurchases: number;
@@ -1209,6 +1218,7 @@ export interface DashboardAdminSnapshot {
   lowStockProducts: DashboardLowStockProduct[];
   lowStockThreshold: number;
   topCustomers: DashboardTopCustomer[];
+  actionRequiredOrders: DashboardActionRequiredOrder[];
 }
 
 export interface DashboardEmployeeStatusSnapshot {
@@ -2227,6 +2237,7 @@ export interface ConfirmPartialDeliveryPayload {
   categoryId?: string;
   note?: string;
   date?: string;
+  receivedAmount?: number;
 }
 
 export type NotificationActionKind = 'none' | 'link' | 'decision' | 'link_and_decision';

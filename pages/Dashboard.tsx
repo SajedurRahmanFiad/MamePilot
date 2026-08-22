@@ -299,6 +299,43 @@ const Dashboard: React.FC = () => {
       case 'admin.expensesByCategory': return (
         <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm md:p-8"><h3 className="mb-8 text-xl font-bold text-gray-900">Expenses by Category</h3><div className="h-[300px]">{!adminSnapshot ? <SectionState text={sectionPlaceholder} /> : <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={expenseByCategory} innerRadius={0} outerRadius={100} dataKey="value">{expenseByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip formatter={((value: any) => formatCurrency(roundDashboardValue(Number(value || 0)))) as any} /><Legend verticalAlign={isMobile ? 'bottom' : 'middle'} align={isMobile ? 'center' : 'right'} layout={isMobile ? 'horizontal' : 'vertical'} /></PieChart></ResponsiveContainer>}</div></div>
       );
+      case 'admin.actionRequired': return (
+        <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Action Required</h3>
+              <p className="mt-1 text-sm font-medium text-gray-500">Orders awaiting partial delivery confirmation.</p>
+            </div>
+            {canViewOrders && (
+              <button type="button" onClick={() => navigate('/orders?status=partially_delivered')} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 hover:bg-gray-50">View all</button>
+            )}
+          </div>
+          {!adminSnapshot ? (
+            <SectionState text={sectionPlaceholder} minHeight="min-h-[140px]" />
+          ) : adminSnapshot.actionRequiredOrders.length === 0 ? (
+            <p className="text-sm italic text-gray-400">No orders awaiting action.</p>
+          ) : (
+            <div className="space-y-3">
+              {adminSnapshot.actionRequiredOrders.map((order) => (
+                <div key={order.id} className="flex items-center justify-between border-b border-gray-50 pb-3 last:border-b-0">
+                  <div className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-gray-900">#{order.orderNumber}</span>
+                    <span className="text-xs font-medium text-gray-500">{order.customerName || 'Unknown customer'}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-black text-amber-600">{formatCurrency(order.partialCodAmount)}</span>
+                    {canViewOrders && (
+                      <button type="button" onClick={() => navigate(`/orders/${order.id}`)} className="rounded-lg bg-emerald-500 p-1.5 text-white hover:bg-emerald-600" title="Complete order">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
       case 'employee.ordersByStatus': return (
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-7"><div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h3 className="text-xl font-black text-gray-900">My Orders by Status</h3><p className="mt-1.5 text-sm font-medium text-gray-500">A clickable breakdown for the selected date range.</p></div><div className="rounded-full bg-[#eef5fb] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f2f57]">{employeeSnapshot ? `${employeeStatusTotal.toLocaleString('en-BD')} tracked orders` : inlinePlaceholder}</div></div>{!employeeSnapshot ? <SectionState text={sectionPlaceholder} minHeight="min-h-[180px]" /> : <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{employeeSnapshot.employeeStatusSnapshot.map((entry) => { const styles = EMPLOYEE_STATUS_STYLES[entry.status]; return <EmployeeStatusCard key={entry.status} title={entry.label} value={entry.value} total={Math.max(employeeStatusTotal, 1)} {...styles} onClick={canViewOrders ? () => handleOpenMyOrders(entry.status) : undefined} />; })}</div>}</section>
       );

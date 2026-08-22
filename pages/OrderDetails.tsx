@@ -827,6 +827,16 @@ const OrderDetails: React.FC = () => {
       };
     }
 
+    if (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired) {
+      return {
+        action: 'complete' as const,
+        label: 'Complete order',
+        nextStatus: OrderStatus.COMPLETED,
+        description: 'Confirm which items were delivered and finalize the order.',
+        enabled: canFinalizeOrders,
+      };
+    }
+
     if (order.status === OrderStatus.EXCHANGE_PICKED) {
       return {
         action: 'complete' as const,
@@ -1127,6 +1137,10 @@ const OrderDetails: React.FC = () => {
             }
             if (transition.action === 'complete' && (order?.status === OrderStatus.PICKED || order?.status === OrderStatus.EXCHANGE_PICKED)) {
               openCompletion();
+              return;
+            }
+            if (transition.action === 'complete' && order?.status === OrderStatus.PARTIALLY_DELIVERED) {
+              openPartialDeliveryCompletion();
               return;
             }
             if (transition.action === 'exchangePick') {
@@ -1601,7 +1615,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED);
-  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED);
+  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired));
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder
