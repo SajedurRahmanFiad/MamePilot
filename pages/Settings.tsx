@@ -41,6 +41,7 @@ import WooCommerceSettingsPanel from '../components/WooCommerceSettingsPanel';
 import ShopifySettingsPanel from '../components/ShopifySettingsPanel';
 import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
 import { writeSystemDefaultsCache } from '../src/utils/startupCache';
+import { useAutoSave } from '../src/hooks/useAutoSave';
 
 type SystemDefaultField = keyof Settings['defaults'];
 
@@ -500,7 +501,197 @@ const SettingsPage: React.FC = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams, toast, queryClient]);
 
+  // Auto-save refs to skip initial mount triggers
+  const companyInitRef = useRef(false);
+  const orderInitRef = useRef(false);
+  const defaultsInitRef = useRef(false);
+  const walletInitRef = useRef(false);
+  const courierInitRef = useRef(false);
+  const dashboardInitRef = useRef(false);
+  const permissionsInitRef = useRef(false);
+  const beSmartInitRef = useRef(false);
+  const metaAdsInitRef = useRef(false);
+  const voiceSurveyInitRef = useRef(false);
+
   const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
+
+  // Mark initial data as loaded after React Query delivers first data
+  useEffect(() => { if (companySettingsData) companyInitRef.current = true; }, [companySettingsData]);
+  useEffect(() => { if (orderSettingsData) orderInitRef.current = true; }, [orderSettingsData]);
+  useEffect(() => { if (systemDefaultsData) defaultsInitRef.current = true; }, [systemDefaultsData]);
+  useEffect(() => { if (walletSettingsData) walletInitRef.current = true; }, [walletSettingsData]);
+  useEffect(() => { if (courierSettingsData) courierInitRef.current = true; }, [courierSettingsData]);
+  useEffect(() => { if (dashboardSettingsData) dashboardInitRef.current = true; }, [dashboardSettingsData]);
+  useEffect(() => { if (permissionsSettingsData) permissionsInitRef.current = true; }, [permissionsSettingsData]);
+  useEffect(() => { if (beSmartSettingsData) beSmartInitRef.current = true; }, [beSmartSettingsData]);
+  useEffect(() => { if (metaAdsSettingsData) metaAdsInitRef.current = true; }, [metaAdsSettingsData]);
+  useEffect(() => { if (voiceSurveySettingsData) voiceSurveyInitRef.current = true; }, [voiceSurveySettingsData]);
+
+  // Auto-save: Company
+  const saveCompany = useCallback(async () => {
+    const normalizedCompany = normalizeCompanySettings(companySettings);
+    await batchUpdateMutation.mutateAsync({ company: normalizedCompany });
+    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+  }, [companySettings, batchUpdateMutation, queryClient]);
+  const { isPending: companySaving, trigger: triggerCompanySave } = useAutoSave({ save: saveCompany });
+  useEffect(() => {
+    if (!companyInitRef.current || loading) return;
+    triggerCompanySave();
+  }, [companySettings, loading, triggerCompanySave]);
+
+  // Auto-save: Order & Invoice
+  const saveOrder = useCallback(async () => {
+    await batchUpdateMutation.mutateAsync({ order: orderSettings, invoice: invoiceSettings });
+    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+  }, [orderSettings, invoiceSettings, batchUpdateMutation, queryClient]);
+  const { isPending: orderSaving, trigger: triggerOrderSave } = useAutoSave({ save: saveOrder });
+  useEffect(() => {
+    if (!orderInitRef.current || loading) return;
+    triggerOrderSave();
+  }, [orderSettings, invoiceSettings, loading, triggerOrderSave]);
+
+  // Auto-save: Defaults
+  const saveDefaults = useCallback(async () => {
+    const dirtyFields = Array.from(systemDefaultsDirtyFieldsRef.current);
+    if (dirtyFields.length === 0) return;
+    const payload = dirtyFields.reduce<Record<string, unknown>>((acc, field) => {
+      acc[field] = systemDefaults[field];
+      return acc;
+    }, {});
+    await batchUpdateMutation.mutateAsync({ defaults: payload });
+    systemDefaultsDirtyFieldsRef.current.clear();
+    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+  }, [systemDefaults, batchUpdateMutation, queryClient]);
+  const { isPending: defaultsSaving, trigger: triggerDefaultsSave } = useAutoSave({ save: saveDefaults });
+  useEffect(() => {
+    if (!defaultsInitRef.current || loading) return;
+    triggerDefaultsSave();
+  }, [systemDefaults, loading, triggerDefaultsSave]);
+
+  // Auto-save: Wallet
+  const saveWallet = useCallback(async () => {
+    await batchUpdateMutation.mutateAsync({ wallet: walletSettings });
+    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+  }, [walletSettings, batchUpdateMutation, queryClient]);
+  const { isPending: walletSaving, trigger: triggerWalletSave } = useAutoSave({ save: saveWallet });
+  useEffect(() => {
+    if (!walletInitRef.current || loading) return;
+    triggerWalletSave();
+  }, [walletSettings, loading, triggerWalletSave]);
+
+  // Auto-save: Courier
+  const saveCourier = useCallback(async () => {
+    if (!hasCapability('courier_automation')) return;
+    const enabledCourierSettings: Partial<CourierSettings> = {
+      automaticallyDeductShippingCosts: courierSettings.automaticallyDeductShippingCosts,
+      automaticallyMarkPaidAfterDelivery: courierSettings.automaticallyMarkPaidAfterDelivery,
+    };
+    if (canUseSteadfast) enabledCourierSettings.steadfast = courierSettings.steadfast;
+    if (canUseCarryBee) enabledCourierSettings.carryBee = courierSettings.carryBee;
+    if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
+    if (canUsePathao) enabledCourierSettings.pathao = courierSettings.pathao;
+    if (Object.keys(enabledCourierSettings).length <= 2) return;
+    await batchUpdateMutation.mutateAsync({ courier: enabledCourierSettings });
+    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+  }, [courierSettings, batchUpdateMutation, queryClient, hasCapability, canUseSteadfast, canUseCarryBee, canUsePaperfly, canUsePathao]);
+  const { isPending: courierSaving, trigger: triggerCourierSave } = useAutoSave({ save: saveCourier });
+  useEffect(() => {
+    if (!courierInitRef.current || loading) return;
+    triggerCourierSave();
+  }, [courierSettings, loading, triggerCourierSave]);
+
+  // Auto-save: Dashboard
+  const saveDashboard = useCallback(async () => {
+    const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
+    const persisted = cloneDashboardSettings(saved);
+    dashboardDirtyRef.current = false;
+    setDashboardDirty(false);
+    setDashboardSettings(persisted);
+    queryClient.setQueryData(['settings', 'dashboards'], persisted);
+    if (lowStockThresholdDirtyRef.current) {
+      const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
+      lowStockThresholdDirtyRef.current = false;
+      setLowStockThresholdDirty(false);
+      const defaultsData = savedDefaults?.data ?? savedDefaults;
+      if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
+    }
+  }, [dashboardSettings, lowStockThreshold, updateDashboardSettingsMutation, updateSystemDefaultsMutation, queryClient]);
+  const { isPending: dashboardSaving, trigger: triggerDashboardSave } = useAutoSave({ save: saveDashboard });
+  useEffect(() => {
+    if (!dashboardInitRef.current || loading || (!dashboardDirty && !lowStockThresholdDirty)) return;
+    triggerDashboardSave();
+  }, [dashboardSettings, lowStockThreshold, dashboardDirty, lowStockThresholdDirty, loading, triggerDashboardSave]);
+
+  // Auto-save: Permissions
+  const savePermissions = useCallback(async () => {
+    if (dashboardDirtyRef.current) {
+      const savedDashboards = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
+      const persistedDashboards = cloneDashboardSettings(savedDashboards);
+      dashboardDirtyRef.current = false;
+      setDashboardDirty(false);
+      setDashboardSettings(persistedDashboards);
+    }
+    const savedPermissions = await updatePermissionsSettingsMutation.mutateAsync(clonePermissionsSettings(permissionsSettings));
+    const persistedPermissions = clonePermissionsSettings(savedPermissions);
+    permissionsDirtyRef.current = false;
+    setPermissionsDirty(false);
+    setPermissionsSettings(persistedPermissions);
+    db.settings.permissions = persistedPermissions as any;
+    queryClient.setQueryData(['settings', 'permissions'], persistedPermissions);
+  }, [permissionsSettings, dashboardSettings, updatePermissionsSettingsMutation, updateDashboardSettingsMutation, queryClient]);
+  const { isPending: permissionsSaving, trigger: triggerPermissionsSave } = useAutoSave({ save: savePermissions });
+  useEffect(() => {
+    if (!permissionsInitRef.current || loading || (!permissionsDirty && !dashboardDirty)) return;
+    triggerPermissionsSave();
+  }, [permissionsSettings, dashboardSettings, permissionsDirty, dashboardDirty, loading, triggerPermissionsSave]);
+
+  // Auto-save: Be Smart
+  const saveBeSmart = useCallback(async () => {
+    await updateBeSmartSettingsMutation.mutateAsync({
+      smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
+      smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
+    });
+  }, [beSmartSettings, capabilities.sales, capabilities.purchases, updateBeSmartSettingsMutation]);
+  const { isPending: beSmartSaving, trigger: triggerBeSmartSave } = useAutoSave({ save: saveBeSmart });
+  useEffect(() => {
+    if (!beSmartInitRef.current || loading) return;
+    triggerBeSmartSave();
+  }, [beSmartSettings, loading, triggerBeSmartSave]);
+
+  // Auto-save: Meta Ads
+  const saveMetaAds = useCallback(async () => {
+    await updateMetaAdsSettingsMutation.mutateAsync(metaAdsSettings);
+    queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+  }, [metaAdsSettings, updateMetaAdsSettingsMutation, queryClient]);
+  const { isPending: metaAdsSaving, trigger: triggerMetaAdsSave } = useAutoSave({ save: saveMetaAds });
+  useEffect(() => {
+    if (!metaAdsInitRef.current || loading) return;
+    triggerMetaAdsSave();
+  }, [metaAdsSettings, loading, triggerMetaAdsSave]);
+
+  // Auto-save: Voice Survey
+  const saveVoiceSurvey = useCallback(async () => {
+    await updateVoiceSurveySettingsMutation.mutateAsync(voiceSurveySettings);
+    queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
+  }, [voiceSurveySettings, updateVoiceSurveySettingsMutation, queryClient]);
+  const { isPending: voiceSurveySaving, trigger: triggerVoiceSurveySave } = useAutoSave({ save: saveVoiceSurvey });
+  useEffect(() => {
+    if (!voiceSurveyInitRef.current || loading) return;
+    triggerVoiceSurveySave();
+  }, [voiceSurveySettings, loading, triggerVoiceSurveySave]);
+
+  const isTabSaving = activeTab === 'company' ? companySaving
+    : activeTab === 'order' ? orderSaving
+    : activeTab === 'defaults' ? defaultsSaving
+    : activeTab === 'wallet' ? walletSaving
+    : activeTab === 'courier' ? courierSaving
+    : activeTab === 'dashboard' ? dashboardSaving
+    : activeTab === 'permissions' ? permissionsSaving
+    : activeTab === 'be-smart' ? beSmartSaving
+    : activeTab === 'meta-ads' ? metaAdsSaving
+    : activeTab === 'voice-survey' ? voiceSurveySaving
+    : false;
+
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
     setCompanySettings((current) => normalizeCompanySettings({
       ...current,
@@ -646,173 +837,6 @@ const SettingsPage: React.FC = () => {
     setLowStockThreshold(next);
   }, []);
 
-  const handleSave = async () => {
-    if (activeTab === 'dashboard') {
-      const toastId = toast.loading('Saving dashboard layouts...');
-      try {
-        const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
-        const persisted = cloneDashboardSettings(saved);
-        dashboardDirtyRef.current = false;
-        setDashboardDirty(false);
-        setDashboardSettings(persisted);
-        queryClient.setQueryData(['settings', 'dashboards'], persisted);
-        if (lowStockThresholdDirtyRef.current) {
-          const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
-          lowStockThresholdDirtyRef.current = false;
-          setLowStockThresholdDirty(false);
-          const defaultsData = savedDefaults?.data ?? savedDefaults;
-          if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
-        }
-        toast.update(toastId, 'Dashboard layouts saved successfully!', 'success');
-      } catch (err) {
-        console.error('Failed to save dashboard layouts:', err);
-        toast.update(toastId, err instanceof Error ? err.message : 'Could not save dashboard layouts. Please try again.', 'error');
-      }
-      return;
-    }
-
-    if (activeTab === 'permissions') {
-      const toastId = toast.loading('Saving permissions...');
-      try {
-        if (dashboardDirtyRef.current) {
-          const savedDashboards = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
-          const persistedDashboards = cloneDashboardSettings(savedDashboards);
-          dashboardDirtyRef.current = false;
-          setDashboardDirty(false);
-          setDashboardSettings(persistedDashboards);
-        }
-        const savedPermissions = await updatePermissionsSettingsMutation.mutateAsync(
-          clonePermissionsSettings(permissionsSettings),
-        );
-        const persistedPermissions = clonePermissionsSettings(savedPermissions);
-        permissionsDirtyRef.current = false;
-        setPermissionsDirty(false);
-        setPermissionsSettings(persistedPermissions);
-        db.settings.permissions = persistedPermissions as any;
-        queryClient.setQueryData(['settings', 'permissions'], persistedPermissions);
-        toast.update(toastId, 'Permissions saved successfully!', 'success');
-      } catch (err) {
-        console.error('Failed to save permissions:', err);
-        toast.update(toastId, err instanceof Error ? err.message : 'Could not save permissions. Please try again.', 'error');
-      }
-      return;
-    }
-
-    let toastId: string | undefined;
-    try {
-      const updates: any = {};
-      switch (activeTab) {
-        case 'company': {
-          const normalizedCompany = normalizeCompanySettings(companySettings);
-          const hasUnnamedPage = normalizedCompany.pages.some((page) => !page.name.trim());
-          if (hasUnnamedPage) {
-            toast.warning('Please enter a page name for every company page.');
-            return;
-          }
-          updates.company = normalizedCompany;
-          break;
-        }
-        case 'order':
-          updates.order = orderSettings;
-          updates.invoice = invoiceSettings;
-          break;
-        case 'defaults': {
-          const dirtyFields = Array.from(systemDefaultsDirtyFieldsRef.current);
-          if (dirtyFields.length === 0) {
-            toast.info('No default-setting changes to save.');
-            return;
-          }
-          updates.defaults = dirtyFields.reduce<Record<string, unknown>>((payload, field) => {
-            payload[field] = systemDefaults[field];
-            return payload;
-          }, {});
-          break;
-        }
-        case 'wallet':
-          updates.wallet = walletSettings;
-          break;
-        case 'courier':
-          if (hasCapability('courier_automation')) {
-            const steadfastInvoice = courierSettings.steadfast.invoice.trim();
-            if (canUseSteadfast && steadfastInvoice !== '' && !/^[A-Za-z0-9_-]+$/.test(steadfastInvoice)) {
-              toast.warning('Steadfast invoice can only contain letters, numbers, hyphens, and underscores.');
-              return;
-            }
-            const enabledCourierSettings: Partial<CourierSettings> = {
-              automaticallyDeductShippingCosts: courierSettings.automaticallyDeductShippingCosts,
-              automaticallyMarkPaidAfterDelivery: courierSettings.automaticallyMarkPaidAfterDelivery,
-            };
-            if (canUseSteadfast) enabledCourierSettings.steadfast = { ...courierSettings.steadfast, invoice: steadfastInvoice };
-            if (canUseCarryBee) enabledCourierSettings.carryBee = courierSettings.carryBee;
-            if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
-            if (canUsePathao) enabledCourierSettings.pathao = courierSettings.pathao;
-            if (Object.keys(enabledCourierSettings).length === 0) {
-              toast.info('No courier providers are enabled for this subscription.');
-              return;
-            }
-            updates.courier = enabledCourierSettings;
-          }
-          break;
-        default:
-          toast.info('Changes on this tab are saved when you make them.');
-          return;
-      }
-
-      toastId = toast.loading('Saving settings...');
-
-      // Save the active settings section and use the server response to update local state.
-      const response = await batchUpdateMutation.mutateAsync(updates);
-
-      // Update mock db with server response (contains processed file paths, not base64).
-      if (response?.company) db.settings.company = response.company;
-      if (response?.order) db.settings.order = response.order;
-      if (response?.invoice) db.settings.invoice = response.invoice;
-      if (response?.defaults) {
-        db.settings.defaults = response.defaults;
-        writeSystemDefaultsCache(response.defaults);
-        if (updates.defaults) {
-          setSystemDefaults(response.defaults);
-          systemDefaultsDirtyFieldsRef.current.clear();
-        }
-      }
-      if (response?.courier) db.settings.courier = response.courier;
-      if (response?.wallet) {
-        db.settings.payroll = {
-          ...db.settings.payroll,
-          unitAmount: response.wallet.unitAmount,
-          countedStatuses: response.wallet.countedStatuses,
-        };
-      }
-      saveDb();
-
-      // Refetch server-processed data, such as uploaded logo paths.
-      queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
-      toast.update(toastId, 'Settings saved successfully!', 'success');
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-      const message = err instanceof Error ? err.message : 'Could not save the settings. Please try again.';
-      if (toastId !== undefined) {
-        toast.update(toastId, message, 'error');
-      } else {
-        toast.error(message);
-      }
-    }
-  };
-
-  const handleSaveBeSmart = async () => {
-    const toastId = toast.loading('Saving Be Smart settings...');
-    try {
-      const saved = await updateBeSmartSettingsMutation.mutateAsync({
-        smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
-        smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
-      });
-      setBeSmartSettings(saved);
-      toast.update(toastId, 'Be Smart settings saved.', 'success');
-    } catch (error) {
-      toast.update(toastId, error instanceof Error ? error.message : 'Could not save Be Smart settings.', 'error');
-    }
-  };
-
   const handleAddCategory = async () => {
     if (!categoryForm.name.trim()) {
       toast.warning('Please enter a category name');
@@ -864,28 +888,6 @@ const SettingsPage: React.FC = () => {
       // Reopen modal so user can try again
       setShowModal('category');
       setCategoryForm(formData);
-    }
-  };
-
-  const handleSaveMetaAdsSettings = async () => {
-    const toastId = toast.loading('Saving Meta Ads settings...');
-    try {
-      await updateMetaAdsSettingsMutation.mutateAsync(metaAdsSettings);
-      toast.update(toastId, 'Meta Ads settings saved.', 'success');
-      queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
-    } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to save Meta Ads settings.', 'error');
-    }
-  };
-
-  const handleSaveVoiceSurveySettings = async () => {
-    const toastId = toast.loading('Saving Voice Survey settings...');
-    try {
-      await updateVoiceSurveySettingsMutation.mutateAsync(voiceSurveySettings);
-      toast.update(toastId, 'Voice Survey settings saved.', 'success');
-      queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
-    } catch (err) {
-      toast.update(toastId, err instanceof Error ? err.message : 'Failed to save Voice Survey settings.', 'error');
     }
   };
 
@@ -1130,37 +1132,24 @@ const SettingsPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-4">
       <LoadingOverlay isLoading={loading} message="Loading settings..." />
       <div className="flex items-center justify-between">
         <div />
-        {activeTab === 'be-smart' && <Button
-          onClick={handleSaveBeSmart}
-          variant="primary"
-          size="md"
-          disabled={updateBeSmartSettingsMutation.isPending}
-        >
-          {updateBeSmartSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
-        </Button>}
-        {['company', 'order', 'defaults', 'wallet', 'courier', 'dashboard', 'permissions'].includes(activeTab) && <Button
-          onClick={handleSave}
-          variant="primary"
-          size="md"
-          disabled={activeTab === 'permissions'
-            ? (!permissionsDirty && !dashboardDirty) || updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending
-            : activeTab === 'dashboard'
-              ? (!dashboardDirty && !lowStockThresholdDirty) || updateDashboardSettingsMutation.isPending || updateSystemDefaultsMutation.isPending
-            : batchUpdateMutation.isPending}
-        >
-          {((activeTab === 'permissions' && (updatePermissionsSettingsMutation.isPending || updateDashboardSettingsMutation.isPending))
-            || (activeTab === 'dashboard' && (updateDashboardSettingsMutation.isPending || updateSystemDefaultsMutation.isPending))
-            || (!['permissions', 'dashboard'].includes(activeTab) && batchUpdateMutation.isPending))
-            ? 'Saving...'
-            : 'Save Changes'}
-        </Button>}
+        {isTabSaving ? (
+          <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+            <svg className="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+            Saving…
+          </span>
+        ) : (
+          <span className="flex items-center gap-2 text-sm font-medium text-emerald-600">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            Saved
+          </span>
+        )}
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
+      <div className="flex flex-col lg:flex-row gap-4">
         <div className="w-full lg:w-64 space-y-1">
           {tabs.map(tab => (
             <button
@@ -1839,9 +1828,6 @@ const SettingsPage: React.FC = () => {
                       <h4 className="text-base font-black text-gray-900">Meta App Settings</h4>
                       <p className="mt-1 text-sm text-gray-500">Store the Meta app credentials in the database so admins can manage them from Settings.</p>
                     </div>
-                    <Button type="button" onClick={handleSaveMetaAdsSettings} loading={updateMetaAdsSettingsMutation.isPending} icon={ICONS.Check}>
-                      Save Meta App
-                    </Button>
                   </div>
 
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -2086,13 +2072,6 @@ const SettingsPage: React.FC = () => {
                       Automatically call customers when orders are created. Customers press DTMF keys to confirm or cancel their orders.
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    onClick={handleSaveVoiceSurveySettings}
-                    loading={updateVoiceSurveySettingsMutation.isPending}
-                  >
-                    Save Voice Survey Settings
-                  </Button>
                 </div>
 
                 {/* Master Toggle */}

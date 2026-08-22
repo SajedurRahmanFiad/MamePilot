@@ -273,22 +273,23 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
       </div>
 
       {/* Submit */}
-      <div className="flex justify-end gap-3">
+      <div className="flex gap-4 pt-4">
         <Button
-          type="button"
           onClick={onCancel}
+          variant="ghost"
           disabled={isLoading}
-          className="px-6 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl"
         >
           Cancel
         </Button>
         <Button
-          type="button"
           onClick={handleSubmit}
+          variant="primary"
+          size="md"
+          className="flex-1"
           disabled={isLoading || !canSubmit}
-          className="px-6 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
+          loading={isLoading}
         >
-          {isLoading ? 'Confirming...' : 'Confirm Delivery'}
+          {isLoading ? 'Confirming...' : 'Mark Partially Delivered'}
         </Button>
       </div>
     </div>
