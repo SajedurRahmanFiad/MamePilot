@@ -256,27 +256,70 @@ const SettingsPage: React.FC = () => {
   const [carryBeeStores, setCarryBeeStores] = useState<Array<{ id: string; name: string }>>([]);
   const [loadingCarryBeeStores, setLoadingCarryBeeStores] = useState(false);
 
-  // Initialize forms when data loads from React Query
+  // Auto-save: per-tab refs
+  // `firstTriggerRef` — true until the first auto-save trigger (from init), then false. Prevents saving on initial data load.
+  // `justSavedRef` — set to true before a save call, consumed by init effects to skip re-initializing from server response.
+  const companyFirstTriggerRef = useRef(true);
+  const companyJustSavedRef = useRef(false);
+  const orderFirstTriggerRef = useRef(true);
+  const orderJustSavedRef = useRef(false);
+  const defaultsFirstTriggerRef = useRef(true);
+  const defaultsJustSavedRef = useRef(false);
+  const walletFirstTriggerRef = useRef(true);
+  const walletJustSavedRef = useRef(false);
+  const courierFirstTriggerRef = useRef(true);
+  const courierJustSavedRef = useRef(false);
+  const dashboardFirstTriggerRef = useRef(true);
+  const dashboardJustSavedRef = useRef(false);
+  const permissionsFirstTriggerRef = useRef(true);
+  const permissionsJustSavedRef = useRef(false);
+  const beSmartFirstTriggerRef = useRef(true);
+  const beSmartJustSavedRef = useRef(false);
+  const metaAdsFirstTriggerRef = useRef(true);
+  const metaAdsJustSavedRef = useRef(false);
+  const voiceSurveyFirstTriggerRef = useRef(true);
+  const voiceSurveyJustSavedRef = useRef(false);
+  const expandedCompanyPagesInitRef = useRef(false);
+
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
+
+  // Initialize forms when data loads from React Query.
+  // If we just saved, consume justSavedRef and skip — the local state is already correct.
   React.useEffect(() => {
+    if (companyJustSavedRef.current) { companyJustSavedRef.current = false; return; }
     const normalized = normalizeCompanySettings(companySettingsData || db.settings.company);
     setCompanySettings(normalized);
-    setExpandedCompanyPages(
-      normalized.pages.reduce<Record<string, boolean>>((acc, page) => {
-        acc[page.id] = false;
-        return acc;
-      }, {}),
-    );
+    if (!expandedCompanyPagesInitRef.current) {
+      expandedCompanyPagesInitRef.current = true;
+      setExpandedCompanyPages(
+        normalized.pages.reduce<Record<string, boolean>>((acc, page) => {
+          acc[page.id] = false;
+          return acc;
+        }, {}),
+      );
+    } else {
+      setExpandedCompanyPages((current) => {
+        const next: Record<string, boolean> = {};
+        for (const page of normalized.pages) {
+          next[page.id] = current[page.id] ?? false;
+        }
+        return next;
+      });
+    }
   }, [companySettingsData]);
 
   React.useEffect(() => {
+    if (orderJustSavedRef.current) { orderJustSavedRef.current = false; return; }
     if (orderSettingsData) setOrderSettings(orderSettingsData);
   }, [orderSettingsData]);
 
   React.useEffect(() => {
+    if (orderJustSavedRef.current) { orderJustSavedRef.current = false; return; }
     if (invoiceSettingsData) setInvoiceSettings(invoiceSettingsData);
   }, [invoiceSettingsData]);
 
   React.useEffect(() => {
+    if (defaultsJustSavedRef.current) { defaultsJustSavedRef.current = false; return; }
     if (systemDefaultsData) {
       setSystemDefaults((current) => {
         const next = {
@@ -330,10 +373,12 @@ const SettingsPage: React.FC = () => {
   const isDeveloper = user?.role === 'Developer';
 
   React.useEffect(() => {
+    if (courierJustSavedRef.current) { courierJustSavedRef.current = false; return; }
     if (courierSettingsData) setCourierSettings(courierSettingsData);
   }, [courierSettingsData]);
 
   React.useEffect(() => {
+    if (walletJustSavedRef.current) { walletJustSavedRef.current = false; return; }
     if (!walletSettingsData) return;
     const countedStatuses = (walletSettingsData.countedStatuses || []).filter((status): status is OrderStatus =>
       PAYROLL_STATUS_OPTIONS.includes(status as OrderStatus)
@@ -345,12 +390,14 @@ const SettingsPage: React.FC = () => {
   }, [walletSettingsData]);
 
   React.useEffect(() => {
+    if (permissionsJustSavedRef.current) { permissionsJustSavedRef.current = false; return; }
     if (permissionsSettingsData && !permissionsDirtyRef.current) {
       setPermissionsSettings(clonePermissionsSettings(permissionsSettingsData));
     }
   }, [permissionsSettingsData]);
 
   React.useEffect(() => {
+    if (dashboardJustSavedRef.current) { dashboardJustSavedRef.current = false; return; }
     if (dashboardSettingsData && !dashboardDirtyRef.current) {
       setDashboardSettings(cloneDashboardSettings(dashboardSettingsData));
     }
@@ -364,6 +411,7 @@ const SettingsPage: React.FC = () => {
   }, [systemDefaultsData?.lowStockThreshold]);
 
   React.useEffect(() => {
+    if (metaAdsJustSavedRef.current) { metaAdsJustSavedRef.current = false; return; }
     if (metaAdsSettingsData) {
       setMetaAdsSettings({
         appId: metaAdsSettingsData.appId || '',
@@ -384,6 +432,7 @@ const SettingsPage: React.FC = () => {
   }, [metaAdsSettingsData]);
 
   React.useEffect(() => {
+    if (voiceSurveyJustSavedRef.current) { voiceSurveyJustSavedRef.current = false; return; }
     if (voiceSurveySettingsData) {
       setVoiceSurveySettings({
         enabled: voiceSurveySettingsData.enabled ?? false,
@@ -400,6 +449,7 @@ const SettingsPage: React.FC = () => {
   }, [voiceSurveySettingsData]);
 
   React.useEffect(() => {
+    if (beSmartJustSavedRef.current) { beSmartJustSavedRef.current = false; return; }
     if (beSmartSettingsData) setBeSmartSettings(beSmartSettingsData);
   }, [beSmartSettingsData]);
 
@@ -501,87 +551,80 @@ const SettingsPage: React.FC = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams, toast, queryClient]);
 
-  // Auto-save refs to skip initial mount triggers
-  const companyInitRef = useRef(false);
-  const orderInitRef = useRef(false);
-  const defaultsInitRef = useRef(false);
-  const walletInitRef = useRef(false);
-  const courierInitRef = useRef(false);
-  const dashboardInitRef = useRef(false);
-  const permissionsInitRef = useRef(false);
-  const beSmartInitRef = useRef(false);
-  const metaAdsInitRef = useRef(false);
-  const voiceSurveyInitRef = useRef(false);
-
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
-
-  // Mark initial data as loaded after React Query delivers first data
-  useEffect(() => { if (companySettingsData) companyInitRef.current = true; }, [companySettingsData]);
-  useEffect(() => { if (orderSettingsData) orderInitRef.current = true; }, [orderSettingsData]);
-  useEffect(() => { if (systemDefaultsData) defaultsInitRef.current = true; }, [systemDefaultsData]);
-  useEffect(() => { if (walletSettingsData) walletInitRef.current = true; }, [walletSettingsData]);
-  useEffect(() => { if (courierSettingsData) courierInitRef.current = true; }, [courierSettingsData]);
-  useEffect(() => { if (dashboardSettingsData) dashboardInitRef.current = true; }, [dashboardSettingsData]);
-  useEffect(() => { if (permissionsSettingsData) permissionsInitRef.current = true; }, [permissionsSettingsData]);
-  useEffect(() => { if (beSmartSettingsData) beSmartInitRef.current = true; }, [beSmartSettingsData]);
-  useEffect(() => { if (metaAdsSettingsData) metaAdsInitRef.current = true; }, [metaAdsSettingsData]);
-  useEffect(() => { if (voiceSurveySettingsData) voiceSurveyInitRef.current = true; }, [voiceSurveySettingsData]);
-
   // Auto-save: Company
   const saveCompany = useCallback(async () => {
+    companyJustSavedRef.current = true;
     const normalizedCompany = normalizeCompanySettings(companySettings);
-    await batchUpdateMutation.mutateAsync({ company: normalizedCompany });
-    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+    const response = await batchUpdateMutation.mutateAsync({ company: normalizedCompany });
+    if (response?.company) {
+      db.settings.company = response.company;
+      queryClient.setQueryData(['settings', 'company'], response.company);
+    }
+    saveDb();
   }, [companySettings, batchUpdateMutation, queryClient]);
-  const { isPending: companySaving, trigger: triggerCompanySave } = useAutoSave({ save: saveCompany });
+  const { isSaving: companySaving, trigger: triggerCompanySave } = useAutoSave({ save: saveCompany });
   useEffect(() => {
-    if (!companyInitRef.current || loading) return;
+    if (companyFirstTriggerRef.current) { companyFirstTriggerRef.current = false; return; }
     triggerCompanySave();
-  }, [companySettings, loading, triggerCompanySave]);
+  }, [companySettings, triggerCompanySave]);
 
   // Auto-save: Order & Invoice
   const saveOrder = useCallback(async () => {
-    await batchUpdateMutation.mutateAsync({ order: orderSettings, invoice: invoiceSettings });
-    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+    orderJustSavedRef.current = true;
+    const response = await batchUpdateMutation.mutateAsync({ order: orderSettings, invoice: invoiceSettings });
+    if (response?.order) queryClient.setQueryData(['settings', 'order'], response.order);
+    if (response?.invoice) queryClient.setQueryData(['settings', 'invoice'], response.invoice);
+    saveDb();
   }, [orderSettings, invoiceSettings, batchUpdateMutation, queryClient]);
-  const { isPending: orderSaving, trigger: triggerOrderSave } = useAutoSave({ save: saveOrder });
+  const { isSaving: orderSaving, trigger: triggerOrderSave } = useAutoSave({ save: saveOrder });
   useEffect(() => {
-    if (!orderInitRef.current || loading) return;
+    if (orderFirstTriggerRef.current) { orderFirstTriggerRef.current = false; return; }
     triggerOrderSave();
-  }, [orderSettings, invoiceSettings, loading, triggerOrderSave]);
+  }, [orderSettings, invoiceSettings, triggerOrderSave]);
 
   // Auto-save: Defaults
   const saveDefaults = useCallback(async () => {
     const dirtyFields = Array.from(systemDefaultsDirtyFieldsRef.current);
     if (dirtyFields.length === 0) return;
+    defaultsJustSavedRef.current = true;
     const payload = dirtyFields.reduce<Record<string, unknown>>((acc, field) => {
       acc[field] = systemDefaults[field];
       return acc;
     }, {});
-    await batchUpdateMutation.mutateAsync({ defaults: payload });
+    const response = await batchUpdateMutation.mutateAsync({ defaults: payload });
     systemDefaultsDirtyFieldsRef.current.clear();
-    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+    if (response?.defaults) {
+      db.settings.defaults = response.defaults;
+      writeSystemDefaultsCache(response.defaults);
+      queryClient.setQueryData(['settings', 'defaults'], response.defaults);
+    }
+    saveDb();
   }, [systemDefaults, batchUpdateMutation, queryClient]);
-  const { isPending: defaultsSaving, trigger: triggerDefaultsSave } = useAutoSave({ save: saveDefaults });
+  const { isSaving: defaultsSaving, trigger: triggerDefaultsSave } = useAutoSave({ save: saveDefaults });
   useEffect(() => {
-    if (!defaultsInitRef.current || loading) return;
+    if (defaultsFirstTriggerRef.current) { defaultsFirstTriggerRef.current = false; return; }
     triggerDefaultsSave();
-  }, [systemDefaults, loading, triggerDefaultsSave]);
+  }, [systemDefaults, triggerDefaultsSave]);
 
   // Auto-save: Wallet
   const saveWallet = useCallback(async () => {
-    await batchUpdateMutation.mutateAsync({ wallet: walletSettings });
-    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+    walletJustSavedRef.current = true;
+    const response = await batchUpdateMutation.mutateAsync({ wallet: walletSettings });
+    if (response?.wallet) {
+      db.settings.payroll = { ...db.settings.payroll, unitAmount: response.wallet.unitAmount, countedStatuses: response.wallet.countedStatuses };
+    }
+    saveDb();
   }, [walletSettings, batchUpdateMutation, queryClient]);
-  const { isPending: walletSaving, trigger: triggerWalletSave } = useAutoSave({ save: saveWallet });
+  const { isSaving: walletSaving, trigger: triggerWalletSave } = useAutoSave({ save: saveWallet });
   useEffect(() => {
-    if (!walletInitRef.current || loading) return;
+    if (walletFirstTriggerRef.current) { walletFirstTriggerRef.current = false; return; }
     triggerWalletSave();
-  }, [walletSettings, loading, triggerWalletSave]);
+  }, [walletSettings, triggerWalletSave]);
 
   // Auto-save: Courier
   const saveCourier = useCallback(async () => {
     if (!hasCapability('courier_automation')) return;
+    courierJustSavedRef.current = true;
     const enabledCourierSettings: Partial<CourierSettings> = {
       automaticallyDeductShippingCosts: courierSettings.automaticallyDeductShippingCosts,
       automaticallyMarkPaidAfterDelivery: courierSettings.automaticallyMarkPaidAfterDelivery,
@@ -591,17 +634,19 @@ const SettingsPage: React.FC = () => {
     if (canUsePaperfly) enabledCourierSettings.paperfly = courierSettings.paperfly;
     if (canUsePathao) enabledCourierSettings.pathao = courierSettings.pathao;
     if (Object.keys(enabledCourierSettings).length <= 2) return;
-    await batchUpdateMutation.mutateAsync({ courier: enabledCourierSettings });
-    queryClient.invalidateQueries({ queryKey: ['settings'], exact: false });
+    const response = await batchUpdateMutation.mutateAsync({ courier: enabledCourierSettings });
+    if (response?.courier) db.settings.courier = response.courier;
+    saveDb();
   }, [courierSettings, batchUpdateMutation, queryClient, hasCapability, canUseSteadfast, canUseCarryBee, canUsePaperfly, canUsePathao]);
-  const { isPending: courierSaving, trigger: triggerCourierSave } = useAutoSave({ save: saveCourier });
+  const { isSaving: courierSaving, trigger: triggerCourierSave } = useAutoSave({ save: saveCourier });
   useEffect(() => {
-    if (!courierInitRef.current || loading) return;
+    if (courierFirstTriggerRef.current) { courierFirstTriggerRef.current = false; return; }
     triggerCourierSave();
-  }, [courierSettings, loading, triggerCourierSave]);
+  }, [courierSettings, triggerCourierSave]);
 
   // Auto-save: Dashboard
   const saveDashboard = useCallback(async () => {
+    dashboardJustSavedRef.current = true;
     const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
     const persisted = cloneDashboardSettings(saved);
     dashboardDirtyRef.current = false;
@@ -616,14 +661,16 @@ const SettingsPage: React.FC = () => {
       if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
     }
   }, [dashboardSettings, lowStockThreshold, updateDashboardSettingsMutation, updateSystemDefaultsMutation, queryClient]);
-  const { isPending: dashboardSaving, trigger: triggerDashboardSave } = useAutoSave({ save: saveDashboard });
+  const { isSaving: dashboardSaving, trigger: triggerDashboardSave } = useAutoSave({ save: saveDashboard });
   useEffect(() => {
-    if (!dashboardInitRef.current || loading || (!dashboardDirty && !lowStockThresholdDirty)) return;
+    if (dashboardFirstTriggerRef.current) { dashboardFirstTriggerRef.current = false; return; }
+    if (!dashboardDirty && !lowStockThresholdDirty) return;
     triggerDashboardSave();
-  }, [dashboardSettings, lowStockThreshold, dashboardDirty, lowStockThresholdDirty, loading, triggerDashboardSave]);
+  }, [dashboardSettings, lowStockThreshold, dashboardDirty, lowStockThresholdDirty, triggerDashboardSave]);
 
   // Auto-save: Permissions
   const savePermissions = useCallback(async () => {
+    permissionsJustSavedRef.current = true;
     if (dashboardDirtyRef.current) {
       const savedDashboards = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
       const persistedDashboards = cloneDashboardSettings(savedDashboards);
@@ -639,46 +686,50 @@ const SettingsPage: React.FC = () => {
     db.settings.permissions = persistedPermissions as any;
     queryClient.setQueryData(['settings', 'permissions'], persistedPermissions);
   }, [permissionsSettings, dashboardSettings, updatePermissionsSettingsMutation, updateDashboardSettingsMutation, queryClient]);
-  const { isPending: permissionsSaving, trigger: triggerPermissionsSave } = useAutoSave({ save: savePermissions });
+  const { isSaving: permissionsSaving, trigger: triggerPermissionsSave } = useAutoSave({ save: savePermissions });
   useEffect(() => {
-    if (!permissionsInitRef.current || loading || (!permissionsDirty && !dashboardDirty)) return;
+    if (permissionsFirstTriggerRef.current) { permissionsFirstTriggerRef.current = false; return; }
+    if (!permissionsDirty && !dashboardDirty) return;
     triggerPermissionsSave();
-  }, [permissionsSettings, dashboardSettings, permissionsDirty, dashboardDirty, loading, triggerPermissionsSave]);
+  }, [permissionsSettings, dashboardSettings, permissionsDirty, dashboardDirty, triggerPermissionsSave]);
 
   // Auto-save: Be Smart
   const saveBeSmart = useCallback(async () => {
+    beSmartJustSavedRef.current = true;
     await updateBeSmartSettingsMutation.mutateAsync({
       smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
       smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
     });
   }, [beSmartSettings, capabilities.sales, capabilities.purchases, updateBeSmartSettingsMutation]);
-  const { isPending: beSmartSaving, trigger: triggerBeSmartSave } = useAutoSave({ save: saveBeSmart });
+  const { isSaving: beSmartSaving, trigger: triggerBeSmartSave } = useAutoSave({ save: saveBeSmart });
   useEffect(() => {
-    if (!beSmartInitRef.current || loading) return;
+    if (beSmartFirstTriggerRef.current) { beSmartFirstTriggerRef.current = false; return; }
     triggerBeSmartSave();
-  }, [beSmartSettings, loading, triggerBeSmartSave]);
+  }, [beSmartSettings, triggerBeSmartSave]);
 
   // Auto-save: Meta Ads
   const saveMetaAds = useCallback(async () => {
+    metaAdsJustSavedRef.current = true;
     await updateMetaAdsSettingsMutation.mutateAsync(metaAdsSettings);
-    queryClient.invalidateQueries({ queryKey: ['meta-ads'], exact: false });
+    queryClient.setQueryData(['meta-ads', 'settings'], metaAdsSettings);
   }, [metaAdsSettings, updateMetaAdsSettingsMutation, queryClient]);
-  const { isPending: metaAdsSaving, trigger: triggerMetaAdsSave } = useAutoSave({ save: saveMetaAds });
+  const { isSaving: metaAdsSaving, trigger: triggerMetaAdsSave } = useAutoSave({ save: saveMetaAds });
   useEffect(() => {
-    if (!metaAdsInitRef.current || loading) return;
+    if (metaAdsFirstTriggerRef.current) { metaAdsFirstTriggerRef.current = false; return; }
     triggerMetaAdsSave();
-  }, [metaAdsSettings, loading, triggerMetaAdsSave]);
+  }, [metaAdsSettings, triggerMetaAdsSave]);
 
   // Auto-save: Voice Survey
   const saveVoiceSurvey = useCallback(async () => {
+    voiceSurveyJustSavedRef.current = true;
     await updateVoiceSurveySettingsMutation.mutateAsync(voiceSurveySettings);
-    queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
+    queryClient.setQueryData(['settings', 'voice-survey'], voiceSurveySettings);
   }, [voiceSurveySettings, updateVoiceSurveySettingsMutation, queryClient]);
-  const { isPending: voiceSurveySaving, trigger: triggerVoiceSurveySave } = useAutoSave({ save: saveVoiceSurvey });
+  const { isSaving: voiceSurveySaving, trigger: triggerVoiceSurveySave } = useAutoSave({ save: saveVoiceSurvey });
   useEffect(() => {
-    if (!voiceSurveyInitRef.current || loading) return;
+    if (voiceSurveyFirstTriggerRef.current) { voiceSurveyFirstTriggerRef.current = false; return; }
     triggerVoiceSurveySave();
-  }, [voiceSurveySettings, loading, triggerVoiceSurveySave]);
+  }, [voiceSurveySettings, triggerVoiceSurveySave]);
 
   const isTabSaving = activeTab === 'company' ? companySaving
     : activeTab === 'order' ? orderSaving
