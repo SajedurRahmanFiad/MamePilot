@@ -59,6 +59,7 @@ abstract class BaseService
         'admin.topCustomers' => 'admin',
         'admin.profitLoss' => 'admin',
         'admin.expensesByCategory' => 'admin',
+        'admin.actionRequired' => 'admin',
         'employee.ordersByStatus' => 'employee',
         'employee.performanceOverview' => 'employee',
         'employee.orderActivity' => 'employee',
@@ -82,6 +83,7 @@ abstract class BaseService
         'admin.topCustomers',
         'admin.profitLoss',
         'admin.expensesByCategory',
+        'admin.actionRequired',
     ];
     protected const EMPLOYEE_DEFAULT_DASHBOARD_KPIS = [
         'employee.allTimeOrders',
