@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+ignore_user_abort(true);
+set_time_limit(0);
+
 require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Auth;

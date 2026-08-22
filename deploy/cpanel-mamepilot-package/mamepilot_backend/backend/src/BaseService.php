@@ -1064,6 +1064,7 @@ abstract class BaseService
             return;
         }
 
+        $updates = $this->filterExistingColumns($table, $updates);
         $updates['updated_at'] = $this->database->nowUtc();
         [$setClause, $bindings] = $this->database->buildSetClause($updates);
         $bindings[':id'] = $id;
@@ -1824,6 +1825,20 @@ abstract class BaseService
             $this->columnExistsCache[$cacheKey] = true;
         }
         return $present;
+    }
+
+    /** Filter out columns that do not exist in the given table. */
+    private function filterExistingColumns(string $table, array $payload): array
+    {
+        if (!$this->tableExists($table)) return $payload;
+
+        $filtered = [];
+        foreach ($payload as $column => $value) {
+            if ($this->columnExists($table, $column)) {
+                $filtered[$column] = $value;
+            }
+        }
+        return $filtered;
     }
 
     protected function normalizeRoleName(string $role): string

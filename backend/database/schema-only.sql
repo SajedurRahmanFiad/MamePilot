@@ -1489,6 +1489,10 @@ CALL sp_create_idx('orders', 'idx_orders_pathao_consignment_id', '`pathao_consig
 
 CALL sp_create_unique_idx('orders', 'uq_orders_steadfast_invoice', '`steadfast_invoice`');
 
+CALL sp_add_col('orders', 'partial_cogs_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('orders', 'partial_shipping_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('orders', 'partial_cod_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+
 CALL sp_create_idx('users', 'idx_users_active_created_id', '`deleted_at`, `is_system`, `created_at`, `id`');
 CALL sp_create_idx('users', 'idx_users_active_role_name_id', '`deleted_at`, `is_system`, `role`, `name`, `id`');
 

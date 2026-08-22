@@ -1313,6 +1313,10 @@ ALTER TABLE `orders`
   ADD KEY IF NOT EXISTS `idx_orders_pathao_consignment_id` (`pathao_consignment_id`);
 ALTER TABLE `orders`
   ADD UNIQUE KEY IF NOT EXISTS `uq_orders_steadfast_invoice` (`steadfast_invoice`);
+ALTER TABLE `orders`
+  ADD COLUMN IF NOT EXISTS `partial_cogs_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `partial_shipping_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `partial_cod_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00;
 CREATE VIEW orders_with_customer_creator AS
 SELECT
   o.id,

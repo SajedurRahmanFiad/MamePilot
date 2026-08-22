@@ -9,6 +9,7 @@ use App\BusinessGrowthApi;
 use App\BusinessActionDispatcher;
 use App\Config;
 use App\CourierApi;
+use App\CourierStatusRequestScheduler;
 use App\Database;
 use App\DataManagementApi;
 use App\FeatureAccess;
@@ -53,6 +54,10 @@ try {
     $recurringScheduler = new \App\RecurringTransactionScheduler($database, $auth, $config);
     register_shutdown_function(static function () use ($recurringScheduler): void {
         $recurringScheduler->triggerIfNeeded();
+    });
+    $courierScheduler = new CourierStatusRequestScheduler($database, $config);
+    register_shutdown_function(static function () use ($courierScheduler): void {
+        $courierScheduler->triggerIfNeeded();
     });
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
     $featureAccess = new FeatureAccess($database, $auth);
