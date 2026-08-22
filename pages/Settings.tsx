@@ -1178,7 +1178,7 @@ const SettingsPage: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex-1 min-w-0 bg-white p-8 rounded-xl border border-gray-100 shadow-sm min-h-[500px]">
+        <div className="flex-1 min-w-0 bg-white p-6 rounded-xl border border-gray-100 shadow-sm min-h-[500px]">
           {activeTab === 'company' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex flex-col gap-4 border-b pb-4 md:flex-row md:items-end md:justify-between">

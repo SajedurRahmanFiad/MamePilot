@@ -1615,7 +1615,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED);
-  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired));
+  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED);
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder

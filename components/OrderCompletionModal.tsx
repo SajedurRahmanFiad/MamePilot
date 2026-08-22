@@ -63,13 +63,9 @@ isLoading,
     () => [
       ...(allowDeliveredOutcome ? ['Delivered' as const] : []),
       ...(allowReturnedOutcome ? ['Returned' as const] : []),
-      ...(allowPartialDeliveryOutcome && onSubmitPartialDelivery ? ['Partially Delivered' as const] : []),
+      ...(onSubmitPartialDelivery ? ['Partially Delivered' as const] : []),
     ],
-    // Note: onSubmitPartialDelivery is intentionally NOT a dependency. Call
-    // sites toggling the partial-delivery tab always pair it with
-    // allowPartialDeliveryOutcome, so tracking the handler here would make
-    // this memo (and every effect depending on it) recompute on every render.
-    [allowDeliveredOutcome, allowReturnedOutcome, allowPartialDeliveryOutcome],
+    [allowDeliveredOutcome, allowReturnedOutcome, onSubmitPartialDelivery],
   );
 
   useEffect(() => {
