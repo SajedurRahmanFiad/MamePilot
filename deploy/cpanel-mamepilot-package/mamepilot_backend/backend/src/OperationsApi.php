@@ -4070,26 +4070,34 @@ final class OperationsApi extends BaseService
             ), 0, 5);
         }
 
-        $actionRequiredRows = $this->database->fetchAll(
-            "SELECT id, order_number AS orderNumber, customer_name AS customerName, total, partial_cod_amount AS partialCodAmount, created_at AS createdAt
-             FROM orders_with_customer_creator
-             WHERE deleted_at IS NULL
-               AND status = 'partially_delivered'
-               AND partial_delivery_action_required = 1
-             ORDER BY created_at DESC
-             LIMIT 5"
-        );
-        $actionRequiredOrders = array_map(
-            static fn(array $row): array => [
-                'id' => (string) ($row['id'] ?? ''),
-                'orderNumber' => (string) ($row['orderNumber'] ?? ''),
-                'customerName' => (string) ($row['customerName'] ?? ''),
-                'total' => (float) ($row['total'] ?? 0),
-                'partialCodAmount' => (float) ($row['partialCodAmount'] ?? 0),
-                'createdAt' => (string) ($row['createdAt'] ?? ''),
-            ],
-            $actionRequiredRows
-        );
+        $actionRequiredOrders = [];
+        try {
+            $hasPartialCod = $this->columnExists('orders', 'partial_cod_amount');
+            $partialCodSelect = $hasPartialCod ? 'o.partial_cod_amount' : '0';
+            $actionRequiredRows = $this->database->fetchAll(
+                "SELECT o.id, o.order_number, c.name AS customer_name, o.total, {$partialCodSelect} AS partial_cod_amount, o.created_at
+                 FROM orders o
+                 LEFT JOIN customers c ON c.id = o.customer_id
+                 WHERE o.deleted_at IS NULL
+                   AND o.status = 'partially_delivered'
+                   AND o.partial_delivery_action_required = 1
+                 ORDER BY o.created_at DESC
+                 LIMIT 5"
+            );
+            $actionRequiredOrders = array_map(
+                static fn(array $row): array => [
+                    'id' => (string) ($row['id'] ?? ''),
+                    'orderNumber' => (string) ($row['order_number'] ?? ''),
+                    'customerName' => (string) ($row['customer_name'] ?? ''),
+                    'total' => (float) ($row['total'] ?? 0),
+                    'partialCodAmount' => (float) ($row['partial_cod_amount'] ?? 0),
+                    'createdAt' => (string) ($row['created_at'] ?? ''),
+                ],
+                $actionRequiredRows
+            );
+        } catch (\Throwable) {
+            // Gracefully degrade if column or query fails
+        }
 
         return [
             'totalSales' => $totalSales,
