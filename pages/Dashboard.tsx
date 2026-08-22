@@ -16,6 +16,7 @@ import {
   EMPLOYEE_DEFAULT_DASHBOARD_ID,
   dashboardHasScope,
   dashboardItemIsAvailable,
+  getDefaultWidgetWidthPercent,
   normalizeDashboardSettings,
 } from '../src/dashboardConfig';
 import {
@@ -349,12 +350,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const widgetWidthClass = (key: string) => {
-    const width = widgetDefinitionByKey.get(key)?.width || 'full';
-    if (width === 'half') return 'col-span-12 lg:col-span-6';
-    if (width === 'twoThirds') return 'col-span-12 xl:col-span-8';
-    if (width === 'oneThird') return 'col-span-12 xl:col-span-4';
-    return 'col-span-12';
+  const getWidgetWidthStyle = (setting: { key: string; widthPercent?: number }): React.CSSProperties => {
+    const percent = setting.widthPercent ?? getDefaultWidgetWidthPercent(setting.key);
+    return { flex: `0 0 calc(${percent}% - 1.5rem)`, minWidth: 0 };
   };
 
   return (
@@ -370,7 +368,7 @@ const Dashboard: React.FC = () => {
       <FilterBar filterRange={filterRange} setFilterRange={setFilterRange} customDates={customDates} setCustomDates={setCustomDates} includeTime={includeTime} setIncludeTime={setIncludeTime} />
 
       {enabledKpis.length > 0 && <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{enabledKpis.map((item) => <React.Fragment key={item.key}>{renderKpi(item.key)}</React.Fragment>)}</section>}
-      {enabledWidgets.length > 0 && <section className="grid grid-cols-12 gap-6">{enabledWidgets.map((item) => <div key={item.key} className={widgetWidthClass(item.key)}>{renderWidget(item.key)}</div>)}</section>}
+      {enabledWidgets.length > 0 && <section className="flex flex-wrap gap-6">{enabledWidgets.map((item) => <div key={item.key} style={getWidgetWidthStyle(item)}>{renderWidget(item.key)}</div>)}</section>}
       {enabledKpis.length === 0 && enabledWidgets.length === 0 && <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-8 py-16 text-center"><h2 className="text-xl font-black text-gray-900">This dashboard is empty</h2><p className="mt-2 text-sm font-medium text-gray-500">An administrator can enable KPI cards and widgets from Settings → Dashboard.</p></div>}
     </div>
   );

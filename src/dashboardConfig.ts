@@ -188,3 +188,14 @@ export const dashboardItemIsAvailable = (
   hasSubCapability: (key: string) => boolean,
 ): boolean => (definition.requiredCapabilities || []).every(hasCapability)
   && (definition.requiredSubCapabilities || []).every(hasSubCapability);
+
+export const getDefaultWidgetWidthPercent = (definitionKey: string): number => {
+  const definition = DASHBOARD_WIDGET_DEFINITIONS.find((d) => d.key === definitionKey);
+  if (!definition) return 100;
+  switch (definition.width) {
+    case 'half': return 50;
+    case 'twoThirds': return 67;
+    case 'oneThird': return 33;
+    default: return 100;
+  }
+};

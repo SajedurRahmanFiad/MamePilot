@@ -1994,7 +1994,12 @@ abstract class BaseService
             $key = trim((string) ($item['key'] ?? ''));
             if ($key === '' || !isset($registry[$key]) || isset($seen[$key])) continue;
             $seen[$key] = true;
-            $normalized[] = ['key' => $key, 'enabled' => !empty($item['enabled'])];
+            $widthPercent = isset($item['widthPercent']) ? (int) $item['widthPercent'] : null;
+            $entry = ['key' => $key, 'enabled' => !empty($item['enabled'])];
+            if ($widthPercent !== null && $widthPercent >= 10 && $widthPercent <= 100) {
+                $entry['widthPercent'] = $widthPercent;
+            }
+            $normalized[] = $entry;
         }
 
         $defaultKeys = [];

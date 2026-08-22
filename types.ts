@@ -151,6 +151,7 @@ export interface PermissionsSettings {
 export interface DashboardItemSetting {
   key: string;
   enabled: boolean;
+  widthPercent?: number;
 }
 
 export type OrderKpiTimeBasis = 'created_at' | 'status_at';

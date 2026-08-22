@@ -25,9 +25,10 @@ interface OrderedChecklistProps {
   definitions: typeof DASHBOARD_KPI_DEFINITIONS;
   onChange: (items: DashboardItemSetting[]) => void;
   headerExtra?: React.ReactNode;
+  showWidth?: boolean;
 }
 
-const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description, items, definitions, onChange, headerExtra }) => {
+const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description, items, definitions, onChange, headerExtra, showWidth }) => {
   const definitionByKey = useMemo(() => new Map(definitions.map((definition) => [definition.key, definition])), [definitions]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
@@ -89,6 +90,24 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
                 <button type="button" onClick={() => moveItem(index, index - 1)} disabled={index === 0} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-25" aria-label={`Move ${definition.label} up`}>↑</button>
                 <button type="button" onClick={() => moveItem(index, index + 1)} disabled={index === items.length - 1} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-25" aria-label={`Move ${definition.label} down`}>↓</button>
               </div>
+              {showWidth && item.enabled && (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={item.widthPercent ?? 50}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(10, parseInt(e.target.value) || 50));
+                      onChange(items.map((candidate) => candidate.key === item.key ? { ...candidate, widthPercent: val } : { ...candidate }));
+                    }}
+                    className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-center text-xs font-bold outline-none focus:border-[#3c5a82] focus:bg-white"
+                    title="Widget width %"
+                  />
+                  <span className="text-[10px] font-bold text-gray-400">%</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -245,10 +264,11 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
             />
             <OrderedChecklist
               title="Widgets"
-              description="Enabled widgets are rendered after the KPI cards in this exact order."
+              description="Enabled widgets are rendered after the KPI cards in this exact order. Set the width % for each widget (desktop only)."
               items={selectedDashboard.widgets}
               definitions={DASHBOARD_WIDGET_DEFINITIONS}
               onChange={(items) => updateSelected((dashboard) => ({ ...dashboard, widgets: items }))}
+              showWidth
             />
           </div>
         ) : (
