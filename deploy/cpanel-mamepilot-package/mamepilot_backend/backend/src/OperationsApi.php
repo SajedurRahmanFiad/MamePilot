@@ -5391,6 +5391,21 @@ final class OperationsApi extends BaseService
      */
     private const POS_LEGAL_TENDER = ['cash', 'bank_transfer', 'bkash', 'nagad', 'rocket', 'upay'];
 
+    private function ensureWalkinCustomer(): void
+    {
+        $row = $this->database->fetchOne(
+            'SELECT id FROM customers WHERE id = :id LIMIT 1',
+            [':id' => 'walkin-customer']
+        );
+        if ($row === null) {
+            $this->database->execute(
+                'INSERT INTO customers (id, name, phone, is_walkin, created_at, updated_at)
+                 VALUES (:id, :name, :phone, 1, :now, :now)',
+                [':id' => 'walkin-customer', ':name' => 'Walk-in Customer', ':phone' => '', ':now' => $this->database->nowUtc()]
+            );
+        }
+    }
+
     /**
      * @return array<int, array{id: string, name: string, label: string}>
      */
@@ -5421,6 +5436,8 @@ final class OperationsApi extends BaseService
 
     public function fetchPosInit(array $params = []): array
     {
+        $this->ensureWalkinCustomer();
+
         return [
             'paymentMethods' => $this->posPaymentMethods(),
             'walkinCustomerId' => 'walkin-customer',
@@ -5444,6 +5461,8 @@ final class OperationsApi extends BaseService
         $id = $this->stringId($params['id'] ?? null);
 
         return $this->database->transaction(function () use ($actor, $id, $params): array {
+            $this->ensureWalkinCustomer();
+
             $rawItems = is_array($params['items'] ?? null) ? $params['items'] : [];
             $items = [];
             foreach ($rawItems as $rawItem) {
