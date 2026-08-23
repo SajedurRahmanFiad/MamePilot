@@ -5398,10 +5398,11 @@ final class OperationsApi extends BaseService
             [':id' => 'walkin-customer']
         );
         if ($row === null) {
+            $now = $this->database->nowUtc();
             $this->database->execute(
                 'INSERT INTO customers (id, name, phone, is_walkin, created_at, updated_at)
-                 VALUES (:id, :name, :phone, 1, :now, :now)',
-                [':id' => 'walkin-customer', ':name' => 'Walk-in Customer', ':phone' => '', ':now' => $this->database->nowUtc()]
+                 VALUES (:id, :name, :phone, 1, :created_at, :updated_at)',
+                [':id' => 'walkin-customer', ':name' => 'Walk-in Customer', ':phone' => '', ':created_at' => $now, ':updated_at' => $now]
             );
         }
     }
