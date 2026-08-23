@@ -6,11 +6,11 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
-import { useCreateOrder, useUpdateOrder } from '../src/hooks/useMutations';
+import { useCreateOrder, useUpdateOrder, useCreateCustomer } from '../src/hooks/useMutations';
 import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -102,6 +102,14 @@ const OrderForm: React.FC = () => {
   // Cumulative map of all products seen across mini, search, and full caches.
   // Ensures addItem can find products even after the search filter changes the visible list.
   const allProductsRef = React.useRef<Map<string, any>>(new Map());
+
+  // Be Smart: order customer selection
+  const { capabilities } = useCapabilities(Boolean(user));
+  const hasBeSmart = Boolean(capabilities.be_smart);
+  const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
+  const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
+  const [orderSmartInput, setOrderSmartInput] = useState('');
+  const createCustomerMutation = useCreateCustomer();
 
   // Debounced search term to avoid firing on every keystroke
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -551,11 +559,41 @@ const OrderForm: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!pageId || !customerId || items.length === 0 || !orderNumber || orderNumber === 'Generating...' || orderNumber === 'ERROR') {
+    // When smart customer selection is enabled, resolve the smart input to a customer first
+    let resolvedCustomerId = customerId;
+    if (smartCustomerSelection && orderSmartInput.trim()) {
+      if (!pageId || items.length === 0 || !orderNumber || orderNumber === 'Generating...' || orderNumber === 'ERROR') {
+        const msg = !pageId
+          ? 'Please select a page.'
+          : !items.length
+            ? 'Please add at least one product.'
+            : 'Order number is still being generated. Please wait a moment.';
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        const created = await createCustomerMutation.mutateAsync({
+          name: '', phone: '', address: '', totalOrders: 0, dueAmount: 0,
+          smartInput: orderSmartInput.trim(),
+        });
+        resolvedCustomerId = created.id;
+      } catch (err) {
+        setSaving(false);
+        const msg = err instanceof Error ? err.message : 'Failed to resolve customer details.';
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
+    if (!pageId || !resolvedCustomerId || items.length === 0 || !orderNumber || orderNumber === 'Generating...' || orderNumber === 'ERROR') {
       const msg = !pageId
         ? 'Please select a page.'
-        : !customerId
-          ? 'Please select a customer.'
+        : !resolvedCustomerId
+          ? smartCustomerSelection ? 'Please enter customer details.' : 'Please select a customer.'
           : !items.length
             ? 'Please add at least one product.'
             : 'Order number is still being generated. Please wait a moment.';
@@ -596,7 +634,7 @@ const OrderForm: React.FC = () => {
         setPendingOrderData({
           orderNumber,
           orderDate,
-          customerId,
+          customerId: resolvedCustomerId,
           pageId,
           sourceAdId,
           selectedPage,
@@ -624,7 +662,7 @@ const OrderForm: React.FC = () => {
       const { date: dateStr, time: timeStr } = formatDateTimeParts(now);
 
       // Resolve temporary customer id (if any) to a real id before saving.
-      let finalCustomerId = customerId;
+      let finalCustomerId = resolvedCustomerId;
       if (isTempId(finalCustomerId)) {
         const realId = await waitForRealId(finalCustomerId, 7000);
         if (!realId) {
@@ -791,89 +829,107 @@ const OrderForm: React.FC = () => {
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="space-y-1 relative md:col-span-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Customer</label>
-            <div className="relative">
-              <button 
-                onClick={() => setShowCustomerSearch(!showCustomerSearch)}
-                className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
-              >
-                {selectedCustomer ? (
-                  <div className="flex-1 overflow-hidden">
-                    <span className="font-bold block text-sm text-gray-900">{selectedCustomer.name}</span>
-                    <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedCustomer.phone}</p>
-                    <p className="text-[10px] ${theme.colors.primary[600]} italic truncate mt-1">{selectedCustomer.address}</p>
-                  </div>
-                ) : <span className="text-gray-400 text-sm">Select Customer...</span>}
-                <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
-                   {ICONS.ChevronRight}
+            {smartCustomerSelection ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Customer Details</label>
                 </div>
-              </button>
-              
-              {showCustomerSearch && (
-                <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                  <div className="relative mb-2">
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
-                      {ICONS.Search}
-                    </div>
-                    <input 
-                      autoFocus 
-                      type="text" 
-                      placeholder="Search name or phone..." 
-                      className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" 
-                      value={custSearchTerm} 
-                      onChange={(e) => setCustSearchTerm(e.target.value)} 
-                    />
-                  </div>
-                  <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {(allVisibleCustomers || []).length === 0 && customersFetching ? (
-                      <div className="p-4 space-y-3">
-                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                <textarea
+                  autoFocus
+                  className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
+                  value={orderSmartInput}
+                  onChange={(e) => setOrderSmartInput(e.target.value)}
+                  placeholder={'Name\nPhone\nAddress'}
+                />
+                <p className="text-[10px] font-semibold text-gray-400">Paste customer name, phone, and address. The system will find or create the customer automatically when you save.</p>
+              </>
+            ) : (
+              <>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Customer</label>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowCustomerSearch(!showCustomerSearch)}
+                    className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+                  >
+                    {selectedCustomer ? (
+                      <div className="flex-1 overflow-hidden">
+                        <span className="font-bold block text-sm text-gray-900">{selectedCustomer.name}</span>
+                        <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedCustomer.phone}</p>
+                        <p className="text-[10px] ${theme.colors.primary[600]} italic truncate mt-1">{selectedCustomer.address}</p>
                       </div>
-                    ) : (allVisibleCustomers || []).length === 0 ? (
-                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
-                    ) : (
-                      (allVisibleCustomers || []).map((c: any) => (
-                        <div key={c.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#ebf4ff] transition-colors">
-                          <button 
-                            onClick={() => handleCustomerSelect(c)} 
-                            className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors"
-                          >
-                            <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{c.name}</p>
-                            <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60 truncate">{c.phone}</p>
-                          </button>
-                          {can('customers.edit') && (
-                            <button
-                              title="Edit customer"
-                              onClick={() => {
-                                setCustomerToEdit(c);
-                                setShowCustomerSearch(false);
-                              }}
-                              className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
-                            >
-                              {ICONS.Edit}
-                            </button>
-                          )}
+                    ) : <span className="text-gray-400 text-sm">Select Customer...</span>}
+                    <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
+                       {ICONS.ChevronRight}
+                    </div>
+                  </button>
+                  
+                  {showCustomerSearch && (
+                    <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                      <div className="relative mb-2">
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                          {ICONS.Search}
                         </div>
-                      ))
-                    )}
-                  </div>
-                  {can('customers.create') && (
-                    <button
-                      onClick={() => {
-                        const preFilledPhone = sanitizePhoneInput(custSearchTerm);
-                        setCustomerCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
-                        setShowCustomerSearch(false);
-                        setIsCustomerCreateOpen(true);
-                      }}
-                      className="w-full mt-2 py-3 ${theme.colors.primary[600]} text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors"
-                    >
-                      + Add New Customer
-                    </button>
+                        <input 
+                          autoFocus 
+                          type="text" 
+                          placeholder="Search name or phone..." 
+                          className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" 
+                          value={custSearchTerm} 
+                          onChange={(e) => setCustSearchTerm(e.target.value)} 
+                        />
+                      </div>
+                      <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                        {(allVisibleCustomers || []).length === 0 && customersFetching ? (
+                          <div className="p-4 space-y-3">
+                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                          </div>
+                        ) : (allVisibleCustomers || []).length === 0 ? (
+                          <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
+                        ) : (
+                          (allVisibleCustomers || []).map((c: any) => (
+                            <div key={c.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#ebf4ff] transition-colors">
+                              <button 
+                                onClick={() => handleCustomerSelect(c)} 
+                                className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors"
+                              >
+                                <p className="text-sm font-bold text-gray-800 group-hover:${theme.colors.primary[700]} truncate">{c.name}</p>
+                                <p className="text-[10px] text-gray-400 group-hover:${theme.colors.primary[600]}/60 truncate">{c.phone}</p>
+                              </button>
+                              {can('customers.edit') && (
+                                <button
+                                  title="Edit customer"
+                                  onClick={() => {
+                                    setCustomerToEdit(c);
+                                    setShowCustomerSearch(false);
+                                  }}
+                                  className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                                >
+                                  {ICONS.Edit}
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      {can('customers.create') && (
+                        <button
+                          onClick={() => {
+                            const preFilledPhone = sanitizePhoneInput(custSearchTerm);
+                            setCustomerCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
+                            setShowCustomerSearch(false);
+                            setIsCustomerCreateOpen(true);
+                          }}
+                          className="w-full mt-2 py-3 ${theme.colors.primary[600]} text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors"
+                        >
+                          + Add New Customer
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-1">

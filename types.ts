@@ -1735,6 +1735,8 @@ export interface LeadSuggestion {
 export interface BeSmartSettings {
   smartCustomerAdding: boolean;
   smartVendorAdding: boolean;
+  smartOrderCustomerSelection: boolean;
+  smartBillVendorSelection: boolean;
 }
 
 export interface BusinessRecommendation {

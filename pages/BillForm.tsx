@@ -6,12 +6,13 @@ import { BillStatus, OrderItem, Vendor } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, VendorCreateModal } from '../components';
 import { theme } from '../theme';
-import { useBill, useSystemDefaults, useVendor } from '../src/hooks/useQueries';
+import { useBill, useSystemDefaults, useVendor, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage } from '../src/services/supabaseQueries';
-import { useCreateBill, useUpdateBill } from '../src/hooks/useMutations';
+import { useCreateBill, useUpdateBill, useCreateVendor } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { getNextBillNumber } from '../src/services/supabaseQueries';
 
@@ -21,6 +22,14 @@ const BillForm: React.FC = () => {
   const user = db.currentUser;
   const { can, canAccessRecord } = useRolePermissions();
   const isEdit = Boolean(id);
+
+  // Be Smart: bill vendor selection
+  const { capabilities } = useCapabilities(Boolean(user));
+  const hasBeSmart = Boolean(capabilities.be_smart);
+  const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
+  const smartVendorSelection = hasBeSmart && Boolean(beSmartSettings?.smartBillVendorSelection);
+  const [billSmartInput, setBillSmartInput] = useState('');
+  const createVendorMutation = useCreateVendor();
 
   // Safety check
   if (!user) {
@@ -253,8 +262,32 @@ const BillForm: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!vendorId || items.length === 0) {
-      setError('Please select a vendor and add at least one product.');
+    // When smart vendor selection is enabled, resolve the smart input to a vendor first
+    let resolvedVendorId = vendorId;
+    if (smartVendorSelection && billSmartInput.trim()) {
+      if (items.length === 0 || !billNumber || billNumber === 'Generating...' || billNumber === 'ERROR') {
+        setError(!items.length ? 'Please add at least one product.' : 'Bill number is still being generated. Please wait a moment.');
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        const created = await createVendorMutation.mutateAsync({
+          name: '', phone: '', address: '', totalPurchases: 0, dueAmount: 0,
+          smartInput: billSmartInput.trim(),
+        });
+        resolvedVendorId = created.id;
+      } catch (err) {
+        setSaving(false);
+        const msg = err instanceof Error ? err.message : 'Failed to resolve vendor details.';
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
+    if (!resolvedVendorId || items.length === 0) {
+      setError(smartVendorSelection ? 'Please enter vendor details and add at least one product.' : 'Please select a vendor and add at least one product.');
       return;
     }
 
@@ -283,7 +316,7 @@ const BillForm: React.FC = () => {
       const billData = {
         billNumber,
         billDate,
-        vendorId,
+        vendorId: resolvedVendorId,
         createdBy: user.id,
         status: isEdit && existingBillData ? existingBillData.status : BillStatus.ON_HOLD,
         items,
@@ -378,74 +411,92 @@ const BillForm: React.FC = () => {
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
           <div className="space-y-1 relative md:col-span-2">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Vendor</label>
-            <div className="relative">
-              <button 
-                onClick={() => setShowVendorSearch(!showVendorSearch)}
-                className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
-              >
-                {selectedVendor ? (
-                  <div className="flex-1 overflow-hidden">
-                    <span className="font-bold block text-sm text-gray-900">{selectedVendor.name}</span>
-                    <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedVendor.phone}</p>
-                    <p className="text-[10px] text-gray-500 italic truncate mt-1">{selectedVendor.address}</p>
-                  </div>
-                ) : <span className="text-gray-400 text-sm">Select Vendor...</span>}
-                <div className={`transition-transform duration-200 ${showVendorSearch ? 'rotate-90' : ''}`}>
-                   {ICONS.ChevronRight}
+            {smartVendorSelection ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Vendor Details</label>
                 </div>
-              </button>
-              
-              {showVendorSearch && (
-                <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                  <div className="relative mb-2">
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
-                      {ICONS.Search}
-                    </div>
-                    <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
-                  </div>
-                  <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                    {(visibleVendors || []).length === 0 && vendorsFetching ? (
-                      <div className="p-4 space-y-3">
-                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                        <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                <textarea
+                  autoFocus
+                  className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
+                  value={billSmartInput}
+                  onChange={(e) => setBillSmartInput(e.target.value)}
+                  placeholder={'Business Name\nPhone\nAddress'}
+                />
+                <p className="text-[10px] font-semibold text-gray-400">Paste vendor business name, phone, and address. The system will find or create the vendor automatically when you save.</p>
+              </>
+            ) : (
+              <>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Vendor</label>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowVendorSearch(!showVendorSearch)}
+                    className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+                  >
+                    {selectedVendor ? (
+                      <div className="flex-1 overflow-hidden">
+                        <span className="font-bold block text-sm text-gray-900">{selectedVendor.name}</span>
+                        <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedVendor.phone}</p>
+                        <p className="text-[10px] text-gray-500 italic truncate mt-1">{selectedVendor.address}</p>
                       </div>
-                    ) : (visibleVendors || []).length === 0 ? (
-                      <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
-                    ) : (
-                      (visibleVendors || []).map((v: any) => (
-                        <div key={v.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#e6f0ff] transition-colors">
-                          <button onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors">
-                            <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{v.name}</p>
-                            <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60 truncate">{v.phone}</p>
-                          </button>
-                          {can('vendors.edit') && (
-                            <button
-                              title="Edit vendor"
-                              onClick={() => {
-                                setVendorToEdit(v);
-                                setShowVendorSearch(false);
-                              }}
-                              className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
-                            >
-                              {ICONS.Edit}
-                            </button>
-                          )}
+                    ) : <span className="text-gray-400 text-sm">Select Vendor...</span>}
+                    <div className={`transition-transform duration-200 ${showVendorSearch ? 'rotate-90' : ''}`}>
+                       {ICONS.ChevronRight}
+                    </div>
+                  </button>
+                  
+                  {showVendorSearch && (
+                    <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                      <div className="relative mb-2">
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                          {ICONS.Search}
                         </div>
-                      ))
-                    )}
-                  </div>
-                  {can('vendors.create') && (
-                    <Button onClick={() => {
-                      const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
-                      setVendorCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
-                      setShowVendorSearch(false);
-                      setIsVendorCreateOpen(true);
-                    }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                        <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
+                      </div>
+                      <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                        {(visibleVendors || []).length === 0 && vendorsFetching ? (
+                          <div className="p-4 space-y-3">
+                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                          </div>
+                        ) : (visibleVendors || []).length === 0 ? (
+                          <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
+                        ) : (
+                          (visibleVendors || []).map((v: any) => (
+                            <div key={v.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#e6f0ff] transition-colors">
+                              <button onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors">
+                                <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{v.name}</p>
+                                <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60 truncate">{v.phone}</p>
+                              </button>
+                              {can('vendors.edit') && (
+                                <button
+                                  title="Edit vendor"
+                                  onClick={() => {
+                                    setVendorToEdit(v);
+                                    setShowVendorSearch(false);
+                                  }}
+                                  className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                                >
+                                  {ICONS.Edit}
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      {can('vendors.create') && (
+                        <Button onClick={() => {
+                          const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
+                          setVendorCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
+                          setShowVendorSearch(false);
+                          setIsVendorCreateOpen(true);
+                        }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-1">

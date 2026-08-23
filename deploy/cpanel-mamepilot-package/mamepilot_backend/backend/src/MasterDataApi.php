@@ -3201,6 +3201,8 @@ final class MasterDataApi extends BaseService
         return [
             'smartCustomerAdding' => !empty($row['smart_customer_adding'] ?? false),
             'smartVendorAdding' => !empty($row['smart_vendor_adding'] ?? false),
+            'smartOrderCustomerSelection' => !empty($row['smart_order_customer_selection'] ?? false),
+            'smartBillVendorSelection' => !empty($row['smart_bill_vendor_selection'] ?? false),
         ];
     }
 
@@ -3216,6 +3218,8 @@ final class MasterDataApi extends BaseService
             [
                 'smart_customer_adding' => !empty($params['smartCustomerAdding']) ? 1 : 0,
                 'smart_vendor_adding' => !empty($params['smartVendorAdding']) ? 1 : 0,
+                'smart_order_customer_selection' => !empty($params['smartOrderCustomerSelection']) ? 1 : 0,
+                'smart_bill_vendor_selection' => !empty($params['smartBillVendorSelection']) ? 1 : 0,
             ],
             fn(): array => $this->fetchBeSmartSettings()
         );
@@ -4629,11 +4633,15 @@ final class MasterDataApi extends BaseService
         if ($text === '') throw new ApiException('Paste the raw name, phone, and address before saving.', 422, 'SMART_INPUT_REQUIRED');
 
         $capabilities = (new FeatureAccess($this->database, $this->auth))->fetchCapabilities();
-        $settingColumn = $contactType === 'vendor' ? 'smart_vendor_adding' : 'smart_customer_adding';
         $settings = $this->tableExists('be_smart_settings')
-            ? $this->database->fetchOne('SELECT smart_customer_adding, smart_vendor_adding FROM be_smart_settings LIMIT 1')
+            ? $this->database->fetchOne('SELECT smart_customer_adding, smart_vendor_adding, smart_order_customer_selection, smart_bill_vendor_selection FROM be_smart_settings LIMIT 1')
             : null;
-        if (empty($capabilities['be_smart']) || empty($settings[$settingColumn] ?? false)) {
+        if ($contactType === 'vendor') {
+            $allowed = !empty($settings['smart_vendor_adding'] ?? false) || !empty($settings['smart_bill_vendor_selection'] ?? false);
+        } else {
+            $allowed = !empty($settings['smart_customer_adding'] ?? false) || !empty($settings['smart_order_customer_selection'] ?? false);
+        }
+        if (empty($capabilities['be_smart']) || !$allowed) {
             throw new ApiException('Smart ' . $contactType . ' adding is not enabled.', 403, 'SMART_ADDING_DISABLED');
         }
 

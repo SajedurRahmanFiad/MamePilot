@@ -3816,6 +3816,10 @@ CALL sp_add_col('orders', 'courier_return_action_required', 'TINYINT(1) NOT NULL
 CALL sp_add_col('orders', 'payment_received_at', 'DATETIME NULL');
 CALL sp_add_col('orders', 'refund_issued_at', 'DATETIME NULL');
 
+-- Migration: 2026-08-23_smart_order_bill_selection.sql
+CALL sp_add_col('be_smart_settings', 'smart_order_customer_selection', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER smart_vendor_adding');
+CALL sp_add_col('be_smart_settings', 'smart_bill_vendor_selection', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER smart_order_customer_selection');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS

@@ -213,7 +213,7 @@ const SettingsPage: React.FC = () => {
   const [cogsBackfillStatus, setCogsBackfillStatus] = useState<OrderCogsBackfillStatus | null>(null);
   const [cogsBackfillRunning, setCogsBackfillRunning] = useState(false);
   const systemDefaultsDirtyFieldsRef = useRef<Set<SystemDefaultField>>(new Set());
-  const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false });
+  const [beSmartSettings, setBeSmartSettings] = useState<BeSmartSettings>({ smartCustomerAdding: false, smartVendorAdding: false, smartOrderCustomerSelection: false, smartBillVendorSelection: false });
   const [permissionsSettings, setPermissionsSettings] = useState<PermissionsSettings>(() =>
     clonePermissionsSettings(DEFAULT_ROLE_PERMISSION_SETTINGS),
   );
@@ -699,6 +699,8 @@ const SettingsPage: React.FC = () => {
     await updateBeSmartSettingsMutation.mutateAsync({
       smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
       smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
+      smartOrderCustomerSelection: Boolean(capabilities.sales) && beSmartSettings.smartOrderCustomerSelection,
+      smartBillVendorSelection: Boolean(capabilities.purchases) && beSmartSettings.smartBillVendorSelection,
     });
   }, [beSmartSettings, capabilities.sales, capabilities.purchases, updateBeSmartSettingsMutation]);
   const { isSaving: beSmartSaving, trigger: triggerBeSmartSave } = useAutoSave({ save: saveBeSmart });
@@ -1629,6 +1631,34 @@ const SettingsPage: React.FC = () => {
                     <div>
                       <p className="font-black text-gray-900">Smart vendor adding</p>
                       <p className="mt-1 text-sm font-medium text-gray-500">Use a single raw-details box on new and edit vendor pages.</p>
+                    </div>
+                  </label>
+                )}
+                {capabilities.sales && (
+                  <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-[#3c5a82]/30">
+                    <input
+                      type="checkbox"
+                      checked={beSmartSettings.smartOrderCustomerSelection}
+                      onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartOrderCustomerSelection: event.target.checked }))}
+                      className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <div>
+                      <p className="font-black text-gray-900">Use suitable name/guide for orders</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Replace the customer dropdown on the order form with a smart paste box. Paste customer details and the system will find or create the customer automatically.</p>
+                    </div>
+                  </label>
+                )}
+                {capabilities.purchases && (
+                  <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-[#3c5a82]/30">
+                    <input
+                      type="checkbox"
+                      checked={beSmartSettings.smartBillVendorSelection}
+                      onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartBillVendorSelection: event.target.checked }))}
+                      className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
+                    />
+                    <div>
+                      <p className="font-black text-gray-900">Use suitable name/guide for bills</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Replace the vendor dropdown on the bill form with a smart paste box. Paste vendor details and the system will find or create the vendor automatically.</p>
                     </div>
                   </label>
                 )}
