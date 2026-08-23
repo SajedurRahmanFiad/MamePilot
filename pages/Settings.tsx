@@ -1643,7 +1643,7 @@ const SettingsPage: React.FC = () => {
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
                     <div>
-                      <p className="font-black text-gray-900">Use suitable name/guide for orders</p>
+                      <p className="font-black text-gray-900">Smart customer selection</p>
                       <p className="mt-1 text-sm font-medium text-gray-500">Replace the customer dropdown on the order form with a smart paste box. Paste customer details and the system will find or create the customer automatically.</p>
                     </div>
                   </label>
@@ -1657,7 +1657,7 @@ const SettingsPage: React.FC = () => {
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
                     <div>
-                      <p className="font-black text-gray-900">Use suitable name/guide for bills</p>
+                      <p className="font-black text-gray-900">Smart vendor selection</p>
                       <p className="mt-1 text-sm font-medium text-gray-500">Replace the vendor dropdown on the bill form with a smart paste box. Paste vendor details and the system will find or create the vendor automatically.</p>
                     </div>
                   </label>

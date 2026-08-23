@@ -4,10 +4,14 @@ import { ICONS } from '../constants';
 interface InfoTooltipProps {
   message: string;
   label?: string;
+  position?: 'above' | 'below';
 }
 
-const InfoTooltip: React.FC<InfoTooltipProps> = ({ message, label = 'More information' }) => {
+const InfoTooltip: React.FC<InfoTooltipProps> = ({ message, label = 'More information', position = 'above' }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const posClass = position === 'below'
+    ? 'top-full left-0 z-50 mt-2'
+    : 'bottom-full left-0 z-30 mb-2';
 
   return (
     <span className="group relative inline-flex align-middle">
@@ -23,7 +27,7 @@ const InfoTooltip: React.FC<InfoTooltipProps> = ({ message, label = 'More inform
       </button>
       <span
         role="tooltip"
-        className={`absolute bottom-full left-0 z-30 mb-2 w-72 rounded-xl bg-gray-900 px-3 py-2 text-left text-xs font-medium normal-case leading-5 tracking-normal text-white shadow-xl transition-opacity ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 group-hover:opacity-100'}`}
+        className={`absolute ${posClass} w-72 rounded-xl bg-gray-900 px-3 py-2 text-left text-xs font-medium normal-case leading-5 tracking-normal text-white shadow-xl transition-opacity ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 group-hover:opacity-100'}`}
       >
         {message}
       </span>

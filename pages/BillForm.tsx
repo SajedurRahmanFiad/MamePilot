@@ -409,112 +409,127 @@ const BillForm: React.FC = () => {
       </div>
 
       <div className="bg-white p-6 rounded-lg border border-gray-100 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-          <div className="space-y-1 relative md:col-span-2">
-            {smartVendorSelection ? (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Vendor Details</label>
-                </div>
-                <textarea
-                  autoFocus
-                  className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
-                  value={billSmartInput}
-                  onChange={(e) => setBillSmartInput(e.target.value)}
-                  placeholder={'Business Name\nPhone\nAddress'}
+        {smartVendorSelection ? (
+          <div className="grid grid-cols-1 gap-6">
+            <div className="space-y-1 relative">
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Vendor Details</label>
+              </div>
+              <textarea
+                autoFocus
+                className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
+                value={billSmartInput}
+                onChange={(e) => setBillSmartInput(e.target.value)}
+                placeholder={'Paste the vendor details exactly as the vendor sent it.\n\nExample:\nRahim Traders\n01712345678\nHouse 12, Road 4, Mirpur, Dhaka'}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Date</label>
+                <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] focus:bg-white transition-all cursor-pointer font-bold text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Number</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={billNumber}
+                  placeholder="Generating..."
+                  className={`w-full px-4 py-3 bg-gray-100 border border-gray-100 rounded-xl font-mono text-sm font-bold ${billNumber === 'ERROR' ? 'text-red-600' : ''}`}
                 />
-                <p className="text-[10px] font-semibold text-gray-400">Paste vendor business name, phone, and address. The system will find or create the vendor automatically when you save.</p>
-              </>
-            ) : (
-              <>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Vendor</label>
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowVendorSearch(!showVendorSearch)}
-                    className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
-                  >
-                    {selectedVendor ? (
-                      <div className="flex-1 overflow-hidden">
-                        <span className="font-bold block text-sm text-gray-900">{selectedVendor.name}</span>
-                        <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedVendor.phone}</p>
-                        <p className="text-[10px] text-gray-500 italic truncate mt-1">{selectedVendor.address}</p>
-                      </div>
-                    ) : <span className="text-gray-400 text-sm">Select Vendor...</span>}
-                    <div className={`transition-transform duration-200 ${showVendorSearch ? 'rotate-90' : ''}`}>
-                       {ICONS.ChevronRight}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <div className="space-y-1 relative md:col-span-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Vendor</label>
+              <div className="relative">
+                <button 
+                  onClick={() => setShowVendorSearch(!showVendorSearch)}
+                  className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+                >
+                  {selectedVendor ? (
+                    <div className="flex-1 overflow-hidden">
+                      <span className="font-bold block text-sm text-gray-900">{selectedVendor.name}</span>
+                      <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedVendor.phone}</p>
+                      <p className="text-[10px] text-gray-500 italic truncate mt-1">{selectedVendor.address}</p>
                     </div>
-                  </button>
-                  
-                  {showVendorSearch && (
-                    <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                      <div className="relative mb-2">
-                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
-                          {ICONS.Search}
+                  ) : <span className="text-gray-400 text-sm">Select Vendor...</span>}
+                  <div className={`transition-transform duration-200 ${showVendorSearch ? 'rotate-90' : ''}`}>
+                     {ICONS.ChevronRight}
+                  </div>
+                </button>
+                
+                {showVendorSearch && (
+                  <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative mb-2">
+                      <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
+                        {ICONS.Search}
+                      </div>
+                      <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
+                    </div>
+                    <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
+                      {(visibleVendors || []).length === 0 && vendorsFetching ? (
+                        <div className="p-4 space-y-3">
+                          <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+                          <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                         </div>
-                        <input autoFocus type="text" placeholder="Search business or phone..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={vendorSearchTerm} onChange={(e) => setVendorSearchTerm(e.target.value)} />
-                      </div>
-                      <div className="max-h-[220px] overflow-y-auto space-y-0.5 custom-scrollbar">
-                        {(visibleVendors || []).length === 0 && vendorsFetching ? (
-                          <div className="p-4 space-y-3">
-                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                            <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
-                          </div>
-                        ) : (visibleVendors || []).length === 0 ? (
-                          <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
-                        ) : (
-                          (visibleVendors || []).map((v: any) => (
-                            <div key={v.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#e6f0ff] transition-colors">
-                              <button onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors">
-                                <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{v.name}</p>
-                                <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60 truncate">{v.phone}</p>
+                      ) : (visibleVendors || []).length === 0 ? (
+                        <div className="p-4 text-center text-gray-400 text-sm font-medium">No vendors found</div>
+                      ) : (
+                        (visibleVendors || []).map((v: any) => (
+                          <div key={v.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#e6f0ff] transition-colors">
+                            <button onClick={() => { setVendorId(v.id); setShowVendorSearch(false); setVendorSearchTerm(''); }} className="flex-1 min-w-0 px-4 py-2.5 text-left transition-colors">
+                              <p className="text-sm font-bold text-gray-800 group-hover:text-sky-700 truncate">{v.name}</p>
+                              <p className="text-[10px] text-gray-400 group-hover:text-sky-600/60 truncate">{v.phone}</p>
+                            </button>
+                            {can('vendors.edit') && (
+                              <button
+                                title="Edit vendor"
+                                onClick={() => {
+                                  setVendorToEdit(v);
+                                  setShowVendorSearch(false);
+                                }}
+                                className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                              >
+                                {ICONS.Edit}
                               </button>
-                              {can('vendors.edit') && (
-                                <button
-                                  title="Edit vendor"
-                                  onClick={() => {
-                                    setVendorToEdit(v);
-                                    setShowVendorSearch(false);
-                                  }}
-                                  className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
-                                >
-                                  {ICONS.Edit}
-                                </button>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                      {can('vendors.create') && (
-                        <Button onClick={() => {
-                          const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
-                          setVendorCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
-                          setShowVendorSearch(false);
-                          setIsVendorCreateOpen(true);
-                        }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                            )}
+                          </div>
+                        ))
                       )}
                     </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+                    {can('vendors.create') && (
+                      <Button onClick={() => {
+                        const preFilledPhone = sanitizePhoneInput(vendorSearchTerm);
+                        setVendorCreateInitialValues(preFilledPhone ? { phone: preFilledPhone } : undefined);
+                        setShowVendorSearch(false);
+                        setIsVendorCreateOpen(true);
+                      }} variant="secondary" size="sm" className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors" icon={ICONS.Plus}>Add New Vendor</Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Date</label>
-            <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] focus:bg-white transition-all cursor-pointer font-bold text-sm" />
-          </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Date</label>
+              <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] focus:bg-white transition-all cursor-pointer font-bold text-sm" />
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Number</label>
-            <input
-              type="text"
-              readOnly
-              value={billNumber}
-              placeholder="Generating..."
-              className={`w-full px-4 py-3 bg-gray-100 border border-gray-100 rounded-xl font-mono text-sm font-bold ${billNumber === 'ERROR' ? 'text-red-600' : ''}`}
-            />
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Bill Number</label>
+              <input
+                type="text"
+                readOnly
+                value={billNumber}
+                placeholder="Generating..."
+                className={`w-full px-4 py-3 bg-gray-100 border border-gray-100 rounded-xl font-mono text-sm font-bold ${billNumber === 'ERROR' ? 'text-red-600' : ''}`}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="border border-gray-100 rounded-lg overflow-visible bg-white">
           <table className="w-full text-left">

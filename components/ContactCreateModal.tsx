@@ -124,7 +124,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs font-black uppercase tracking-widest text-gray-400">{isCustomer ? 'Customer' : 'Vendor'} details</label>
-                  <InfoTooltip message="Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save." />
+                  <InfoTooltip position="below" message="Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save." />
                 </div>
                 <textarea
                   autoFocus
