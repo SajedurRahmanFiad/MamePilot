@@ -4649,7 +4649,7 @@ You're a very fast but extremely accurate information extractor.Extract from thi
 If there are multiple phone numbers, put the first in "phone" and rest in "additionalPhone" (comma-separated). If any field is missing, use 'N/A' for name and address, and 'N/A' for phone if no valid number is found.
 IMPORTANT:
     1. For phone numbers only: Remove any whitespaces, convert Bengali digits to English. Keep Bangladesh local phone number format - MUST BE 11 DIGITS and START WITH 0. If a number starts with +880 or just 1, convert it to 0 format.
-    2. Do not translate or modify name and address text, just extract as-is (except trimming). If missing, use 'N/A'. IMPORTANT: ALWAYS MAKE SURE THE PHONE NUMBER IS CORRECT BY EVERY DIGIT
+    2. Do not translate or modify name and address text, just extract as-is (except trimming). Preserve any emojis, special characters, or formatting in the address exactly as they appear. If missing, use 'N/A'. IMPORTANT: ALWAYS MAKE SURE THE PHONE NUMBER IS CORRECT BY EVERY DIGIT
     3. Remove labels like 'Name:', 'Phone:', 'Address:' if present.
     4. Return only the JSON object. Ignore any irrelevant extra text.
 
