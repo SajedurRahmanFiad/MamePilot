@@ -1515,7 +1515,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                     }).catch(() => {});
                   }} 
                   onMouseLeave={() => setHoveredRow(null)} 
-                  onClick={() => navigate(`/orders/${order.id}`, { state: buildHistoryBackState(location) })} 
+                  onClick={() => navigate(isPosMode ? `/pos-orders/${order.id}` : `/orders/${order.id}`, { state: buildHistoryBackState(location) })} 
                   className={`group relative cursor-pointer transition-all ${
                     needsPartialAction
                       ? 'bg-red-50/60 hover:bg-red-100/70'

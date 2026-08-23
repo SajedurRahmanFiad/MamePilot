@@ -110,6 +110,7 @@ const OrderReport = lazyPage(() => import('./pages/reports/OrderReport'));
 const ProductQuantitySold = lazyPage(() => import('./pages/reports/ProductQuantitySold'));
 const CustomerSalesReport = lazyPage(() => import('./pages/reports/CustomerSalesReport'));
 const UserActivityPerformanceReport = lazyPage(() => import('./pages/reports/UserActivityPerformanceReport'));
+const PosOrderDetails = lazyPage(() => import('./pages/PosOrderDetails'));
 const PrintOrder = lazyPage(() => import('./pages/PrintOrder'));
 const PrintBill = lazyPage(() => import('./pages/PrintBill'));
 const WalletPage = lazyPage(() => import('./pages/Wallet'));
@@ -329,6 +330,9 @@ preloaders.add(DeveloperNotes.preload);
       } />
       <Route path="/pos-sales" element={
         isAuthenticated ? (can('orders.view') && hasCapability('pos') ? <Layout><Orders mode="pos" /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/pos-orders/:id" element={
+        isAuthenticated ? (can('orders.view') && hasCapability('pos') ? <Layout><PosOrderDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/pos" element={
         isAuthenticated ? (can('orders.create') && hasCapability('pos') ? (writeDisabled ? <Navigate to="/orders" replace /> : <Layout hideSidebar><Pos /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

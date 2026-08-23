@@ -178,7 +178,7 @@ export const ROUTE_CAPABILITY_RULES: Array<{ pattern: RegExp; capability: AppCap
   { pattern: /^\/dashboard(?:\/|$)/, capability: 'dashboard' },
   { pattern: /^\/products(?:\/|$)|^\/batches(?:\/|$)|^\/batch-event-history(?:\/|$)/, capability: 'inventory' },
   { pattern: /^\/orders(?:\/|$)|^\/customers(?:\/|$)|^\/print-order(?:\/|$)/, capability: 'sales' },
-  { pattern: /^\/pos(?:\/|$)|^\/pos-sales(?:\/|$)/, capability: 'pos' },
+  { pattern: /^\/pos(?:\/|$)|^\/pos-sales(?:\/|$)|^\/pos-orders(?:\/|$)/, capability: 'pos' },
   { pattern: /^\/bills(?:\/|$)|^\/vendors(?:\/|$)|^\/print-bill(?:\/|$)/, capability: 'purchases' },
   { pattern: /^\/banking(?:\/|$)|^\/transactions(?:\/|$)/, capability: 'banking' },
   { pattern: /^\/users(?:\/|$)|^\/payroll(?:\/|$)|^\/wallet(?:\/|$)|^\/human-resource-dashboard(?:\/|$)/, capability: 'human_resources' },

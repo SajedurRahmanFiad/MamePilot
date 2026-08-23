@@ -359,6 +359,9 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
     if (pathname === '/pos-sales') {
       return { title: 'POS Sales', subtitle: 'Every sale completed at the point of sale.' };
     }
+    if (pathname.startsWith('/pos-orders/')) {
+      return { title: 'POS Order Details', subtitle: 'View the invoice and payment details for this POS sale.' };
+    }
 
     return { title: 'Overview', subtitle: 'Manage your business workspace.' };
   }, [location.pathname]);
