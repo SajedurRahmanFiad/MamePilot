@@ -143,12 +143,16 @@ const Dashboard: React.FC = () => {
   const { can, canViewAdminDashboard, canViewEmployeeDashboard, permissionsSettings, role } = useRolePermissions();
   const { hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const [includeTime, setIncludeTime] = useState(false);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsDesktop(window.innerWidth >= 1024);
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -351,7 +355,9 @@ const Dashboard: React.FC = () => {
   };
 
   const getWidgetWidthStyle = (setting: { key: string; widthPercent?: number }): React.CSSProperties => {
+    if (!isDesktop) return {};
     const percent = setting.widthPercent ?? getDefaultWidgetWidthPercent(setting.key);
+    if (percent >= 100) return {};
     return { flex: `0 0 calc(${percent}% - 1.5rem)`, minWidth: 0 };
   };
 

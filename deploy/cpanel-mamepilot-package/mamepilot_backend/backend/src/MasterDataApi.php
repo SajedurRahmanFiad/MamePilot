@@ -681,15 +681,35 @@ final class MasterDataApi extends BaseService
     {
         $params = $this->resolveSmartContactInput($params, 'customer');
         $actor = $this->currentUser();
+        $phone = trim((string) ($params['phone'] ?? ''));
+        $name = trim((string) ($params['name'] ?? ''));
+        $address = $this->nullableString($params['address'] ?? null);
+
+        if ($phone !== '') {
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM customers WHERE phone = :phone AND deleted_at IS NULL LIMIT 1',
+                [':phone' => $phone]
+            );
+            if ($existing) {
+                $payload = ['updated_at' => $this->database->nowUtc()];
+                if ($name !== '') $payload['name'] = $name;
+                if ($address !== null) $payload['address'] = $address;
+                if (count($payload) > 1) {
+                    $this->touchUpdate('customers', (string) $existing['id'], $payload);
+                }
+                return $this->fetchCustomerById(['id' => $existing['id']]) ?? throw new RuntimeException('Failed to update existing customer.');
+            }
+        }
+
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
             'INSERT INTO customers (id, name, phone, address, total_orders, due_amount, created_by, created_at, updated_at)
              VALUES (:id, :name, :phone, :address, :total_orders, :due_amount, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
-                ':name' => trim((string) ($params['name'] ?? '')),
-                ':phone' => trim((string) ($params['phone'] ?? '')),
-                ':address' => $this->nullableString($params['address'] ?? null),
+                ':name' => $name,
+                ':phone' => $phone,
+                ':address' => $address,
                 ':total_orders' => (int) ($params['totalOrders'] ?? 0),
                 ':due_amount' => $this->formatMoney($params['dueAmount'] ?? 0),
                 ':created_by' => (string) $actor['id'],
@@ -822,15 +842,35 @@ final class MasterDataApi extends BaseService
     {
         $params = $this->resolveSmartContactInput($params, 'vendor');
         $actor = $this->currentUser();
+        $phone = trim((string) ($params['phone'] ?? ''));
+        $name = trim((string) ($params['name'] ?? ''));
+        $address = $this->nullableString($params['address'] ?? null);
+
+        if ($phone !== '') {
+            $existing = $this->database->fetchOne(
+                'SELECT id FROM vendors WHERE phone = :phone AND deleted_at IS NULL LIMIT 1',
+                [':phone' => $phone]
+            );
+            if ($existing) {
+                $payload = ['updated_at' => $this->database->nowUtc()];
+                if ($name !== '') $payload['name'] = $name;
+                if ($address !== null) $payload['address'] = $address;
+                if (count($payload) > 1) {
+                    $this->touchUpdate('vendors', (string) $existing['id'], $payload);
+                }
+                return $this->fetchVendorById(['id' => $existing['id']]) ?? throw new RuntimeException('Failed to update existing vendor.');
+            }
+        }
+
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
             'INSERT INTO vendors (id, name, phone, address, total_purchases, due_amount, created_by, created_at, updated_at)
              VALUES (:id, :name, :phone, :address, :total_purchases, :due_amount, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
-                ':name' => trim((string) ($params['name'] ?? '')),
-                ':phone' => trim((string) ($params['phone'] ?? '')),
-                ':address' => $this->nullableString($params['address'] ?? null),
+                ':name' => $name,
+                ':phone' => $phone,
+                ':address' => $address,
                 ':total_purchases' => (int) ($params['totalPurchases'] ?? 0),
                 ':due_amount' => $this->formatMoney($params['dueAmount'] ?? 0),
                 ':created_by' => (string) $actor['id'],
