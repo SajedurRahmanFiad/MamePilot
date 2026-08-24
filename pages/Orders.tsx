@@ -1132,35 +1132,19 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
         payment: existingPaymentHistory ? `${existingPaymentHistory}\n${historyText}` : historyText,
       };
 
-      // Create income transaction for this payment
-      const incomeTxn = {
-        date: isoDatetime,
-        type: 'Income' as const,
-        category: db.settings.defaults.incomeCategoryId || 'income_sales',
-        accountId: paymentForm.accountId,
-        amount: paymentForm.amount,
-        description: `Payment for Order #${paymentOrder.orderNumber}`,
-        referenceId: paymentOrder.id,
-        contactId: paymentOrder.customerId,
-        paymentMethod: method,
-        createdBy: user?.id,
-      };
-      const createdTransaction = await createTransactionMutation.mutateAsync(incomeTxn as any);
-
       await updateMutation.mutateAsync({
         id: paymentOrder.id,
         updates: {
-          paidAmount: paymentOrder.paidAmount + paymentForm.amount,
           history: updatedHistory as any,
+          paymentAmount: paymentForm.amount,
+          paymentAccountId: paymentForm.accountId,
+          paymentMethod: method,
+          paymentDate: isoDatetime,
         },
       });
       setShowPaymentModal(false);
       setPaymentOrder(null);
-      if (createdTransaction?.approvalStatus === 'pending') {
-        toast.info('Payment recorded, and the income transaction is waiting for admin approval.');
-      } else {
-        toast.success('Payment recorded successfully');
-      }
+      toast.success('Payment recorded successfully');
     } catch (err) {
       console.error('Failed to record payment:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to record payment');

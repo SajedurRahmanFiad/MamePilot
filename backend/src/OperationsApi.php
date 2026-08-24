@@ -1428,12 +1428,7 @@ final class OperationsApi extends BaseService
         ) {
             $businessChanged = true;
         }
-        if (
-            array_key_exists('paidAmount', $updates)
-            && $this->formatMoney($updates['paidAmount']) !== $this->formatMoney($existingRow['paid_amount'] ?? 0)
-        ) {
-            $businessChanged = true;
-        }
+
         if (
             array_key_exists('history', $updates)
             && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
