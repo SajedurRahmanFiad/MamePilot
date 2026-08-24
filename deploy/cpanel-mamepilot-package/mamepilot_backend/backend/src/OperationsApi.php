@@ -5893,11 +5893,11 @@ final class OperationsApi extends BaseService
         float $paidAmount,
         string $triggerChargeId = ''
     ): ?array {
-        // Fire for terminal statuses triggered by courier webhooks, not just Delivered.
-        // This ensures COD collected amounts are always recorded as income for
-        // delivered and paid-return deliveries. Cancelled is intentionally excluded:
-        // a cancelled shipment collects nothing, so no income may be booked.
-        $terminalStatuses = ['Completed', 'Returned'];
+        // Fire for terminal statuses triggered by courier webhooks/syncs.
+        // Only Completed (delivered) generates income: the courier collected COD.
+        // Returned and Cancelled are excluded: a returned parcel collects nothing,
+        // so no income may be booked — only the shipping cost expense is recorded.
+        $terminalStatuses = ['Completed'];
         if (!in_array($nextStatus, $terminalStatuses, true) || $previousStatus === $nextStatus) {
             return null;
         }

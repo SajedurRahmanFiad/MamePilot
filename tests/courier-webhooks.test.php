@@ -1353,8 +1353,8 @@ try {
     $sfReturnPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $sfReturnId]);
     courierWebhookAssert((float) ($sfReturnPaid['paid_amount'] ?? -1) === 0.0, 'Steadfast return webhook marked the order partially paid.');
 
-    // CarryBee paid return: the courier collected money at the door, so the
-    // webhook's fee and collected amount both become transactions.
+    // CarryBee paid return: the courier collected money at the door, but a
+    // returned parcel never generates income — only the shipping fee is expensed.
     $cbPaidReturnId = 'cwh-cb-paid-return-' . $stamp;
     $cbPaidReturnNumber = 'CWH-CB-PAID-RETURN-' . $stamp;
     createCourierWebhookOrder($database, $actor, $nextSequence, $cbPaidReturnId, $cbPaidReturnNumber, 'Picked', $customerId, [
@@ -1377,11 +1377,11 @@ try {
     );
     $cbPaidReturnPayment = courierWebhookPayment($database, $cbPaidReturnId);
     courierWebhookAssert(
-        $cbPaidReturnPayment !== null && abs((float) $cbPaidReturnPayment['amount'] - 500.00) < 0.001,
-        'CarryBee paid-return collected amount was not booked as automatic income.'
+        $cbPaidReturnPayment === null,
+        'CarryBee paid-return created automatic income for a returned parcel.'
     );
     $cbPaidReturnPaid = $database->fetchOne('SELECT paid_amount FROM orders WHERE id = :id', [':id' => $cbPaidReturnId]);
-    courierWebhookAssert(abs((float) ($cbPaidReturnPaid['paid_amount'] ?? 0) - 500.00) < 0.001, 'CarryBee paid-return income was not added to paid_amount.');
+    courierWebhookAssert(abs((float) ($cbPaidReturnPaid['paid_amount'] ?? 0)) < 0.001, 'CarryBee paid-return incorrectly marked the order as paid.');
 
     // CarryBee plain return: fee expensed, nothing collected means no income.
     $cbReturnId = 'cwh-cb-return-money-' . $stamp;
