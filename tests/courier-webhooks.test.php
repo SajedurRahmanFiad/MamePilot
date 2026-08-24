@@ -1194,7 +1194,7 @@ try {
         'delivery_charge' => 12.5,
         'updated_at' => '2026-08-04 17:00:00',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $partialId) === 'partially_delivered', 'Steadfast partial did not map to partially_delivered.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $partialId) === 'pending_partial', 'Steadfast partial did not map to pending_partial.');
     $partialAutoExpense = courierWebhookExpense($database, $partialId);
     courierWebhookAssert($partialAutoExpense !== null && abs((float) $partialAutoExpense['amount'] - 12.50) < 0.001, 'Partial webhook fee was not expensed automatically.');
     $operations->confirmPartialDelivery(['orderId' => $partialId, 'returnedItems' => []]);
@@ -1229,7 +1229,7 @@ try {
         'delivery_charge' => 9.5,
         'updated_at' => '2026-08-04 17:30:00',
     ]), $steadfastHeaders);
-    courierWebhookAssert(courierWebhookOrderStatus($database, $partialOffId) === 'partially_delivered', 'Toggle-off partial did not map to partially_delivered.');
+    courierWebhookAssert(courierWebhookOrderStatus($database, $partialOffId) === 'pending_partial', 'Toggle-off partial did not map to pending_partial.');
     courierWebhookAssert(courierWebhookExpense($database, $partialOffId) === null, 'Toggle-off partial webhook created an automatic expense.');
     $operations->confirmPartialDelivery(['orderId' => $partialOffId, 'returnedItems' => []]);
     $partialOffShippingTx = $database->fetchOne(

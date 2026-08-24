@@ -809,7 +809,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
 
   const openCompletionModal = (order: Order) => {
     const needsPartialDeliveryAction =
-      order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired;
+      (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired;
     setCompletionForm({
       ...createCompletionForm(order),
       outcome: needsPartialDeliveryAction ? 'Partially Delivered' : canDeliverOrder(order) ? 'Delivered' : 'Returned',
@@ -1440,7 +1440,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                 const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly || sentToPathao;
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
-                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired)) && (canDeliverOrder(order) || canReturnOrder(order));
+                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || ((order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired)) && (canDeliverOrder(order) || canReturnOrder(order));
                 const courierCompletionExpenseOutcome = order.status === OrderStatus.COMPLETED
                   ? 'Delivered'
                   : order.status === OrderStatus.RETURNED
@@ -1479,7 +1479,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                   || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
                 const settlementTotal = getOrderSettlementTotal(order);
-                const needsPartialAction = order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired;
+                const needsPartialAction = (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired;
                 const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.status === OrderStatus.CANCELLED ? order.total : settlementTotal, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
@@ -1709,7 +1709,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
         isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending || confirmPartialDeliveryMutation.isPending}
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : completionOrder ? canDeliverOrder(completionOrder) : false}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : completionOrder ? canReturnOrder(completionOrder) : false}
-        allowPartialDeliveryOutcome={!!completionOrder && completionOrder.status === OrderStatus.PARTIALLY_DELIVERED && completionOrder.partialDeliveryActionRequired && canDeliverOrder(completionOrder)}
+        allowPartialDeliveryOutcome={!!completionOrder && (completionOrder.status === OrderStatus.PARTIALLY_DELIVERED || completionOrder.status === OrderStatus.PENDING_PARTIAL) && completionOrder.partialDeliveryActionRequired && canDeliverOrder(completionOrder)}
         onSubmitPartialDelivery={handleConfirmPartialDelivery}
         partialDeliveryLoading={confirmPartialDeliveryMutation.isPending}
         expenseOnly={completionExpenseOnly}

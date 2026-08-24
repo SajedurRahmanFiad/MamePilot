@@ -189,7 +189,7 @@ const OrderDetails: React.FC = () => {
 
   // Auto-trigger partial delivery confirmation tab in the completion modal
   React.useEffect(() => {
-    if (order?.status === OrderStatus.PARTIALLY_DELIVERED && order?.partialDeliveryActionRequired && !showCompletionModal) {
+    if ((order?.status === OrderStatus.PARTIALLY_DELIVERED || order?.status === OrderStatus.PENDING_PARTIAL) && order?.partialDeliveryActionRequired && !showCompletionModal) {
       setCompletionForm((current) => ({ ...current, outcome: 'Partially Delivered' }));
       setCompletionExpenseOnly(false);
       setShowCompletionModal(true);
@@ -289,7 +289,7 @@ const OrderDetails: React.FC = () => {
     if (order.status === OrderStatus.COMPLETED) {
       return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered'));
     }
-    if (order.status === OrderStatus.PARTIALLY_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Partially Delivered');
+    if (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) return timelineItems.findIndex((item) => item.label === 'Partially Delivered');
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
@@ -299,12 +299,13 @@ const OrderDetails: React.FC = () => {
   const getStatusDisplayName = (status: OrderStatus) => {
     if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange Delivered' : 'Delivered';
     if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange Delivered';
+    if (status === OrderStatus.PENDING_PARTIAL) return 'Pending Partial';
     return status;
   };
 
   const getFinalBranchStatus = (status: OrderStatus): OrderTimelineLabel | null => {
     if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered';
-    if (status === OrderStatus.PARTIALLY_DELIVERED) return 'Partially Delivered';
+    if (status === OrderStatus.PARTIALLY_DELIVERED || status === OrderStatus.PENDING_PARTIAL) return 'Partially Delivered';
     if (status === OrderStatus.EXCHANGE_PROCESSING) return 'Exchange processing';
     if (status === OrderStatus.EXCHANGE_PICKED) return 'Exchange picked';
     if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange delivered';
@@ -453,7 +454,7 @@ const OrderDetails: React.FC = () => {
 
   const getOrderProgressPercent = (activeOrder?: Order | null) => {
     if (!activeOrder) return 0;
-    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.PARTIALLY_DELIVERED].includes(activeOrder.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.PARTIALLY_DELIVERED, OrderStatus.PENDING_PARTIAL].includes(activeOrder.status)) {
       return 100;
     }
     const finalStepLabel = showExchangeTimeline ? 'Exchange delivered' : 'Delivered';
@@ -827,7 +828,7 @@ const OrderDetails: React.FC = () => {
       };
     }
 
-    if (order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired) {
+    if ((order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired) {
       return {
         action: 'complete' as const,
         label: 'Complete order',
@@ -1140,6 +1141,10 @@ const OrderDetails: React.FC = () => {
               return;
             }
             if (transition.action === 'complete' && order?.status === OrderStatus.PARTIALLY_DELIVERED) {
+              openPartialDeliveryCompletion();
+              return;
+            }
+            if (transition.action === 'complete' && order?.status === OrderStatus.PENDING_PARTIAL) {
               openPartialDeliveryCompletion();
               return;
             }
@@ -1795,7 +1800,7 @@ const OrderDetails: React.FC = () => {
                         {ICONS.Return} Return / Exchange
                       </button>
                     )}
-                    {order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (
+                    {(order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openPartialDeliveryCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Confirm Partial Delivery
                       </button>
@@ -2552,7 +2557,7 @@ const OrderDetails: React.FC = () => {
         isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending || confirmPartialDeliveryMutation.isPending}
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : canMarkCurrentOrderCompleted}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : canMarkCurrentOrderReturned}
-        allowPartialDeliveryOutcome={!!order && order.status === OrderStatus.PARTIALLY_DELIVERED && order.partialDeliveryActionRequired && (canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned)}
+        allowPartialDeliveryOutcome={!!order && (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired && (canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned)}
         onSubmitPartialDelivery={handleConfirmPartialDelivery}
         partialDeliveryLoading={confirmPartialDeliveryMutation.isPending}
         expenseOnly={completionExpenseOnly}

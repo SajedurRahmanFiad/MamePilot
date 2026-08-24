@@ -1799,8 +1799,19 @@ final class OperationsApi extends BaseService
 
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
-            $where .= ' AND status = :status';
-            $bindings[':status'] = $status;
+            $statusValues = array_map('trim', explode(',', $status));
+            if (count($statusValues) === 1) {
+                $where .= ' AND status = :status';
+                $bindings[':status'] = $statusValues[0];
+            } else {
+                $placeholders = [];
+                foreach ($statusValues as $i => $sv) {
+                    $key = ':status_' . $i;
+                    $placeholders[] = $key;
+                    $bindings[$key] = $sv;
+                }
+                $where .= ' AND status IN (' . implode(', ', $placeholders) . ')';
+            }
         }
 
         // Support exclusion filter from frontend: statusNot
@@ -1988,7 +1999,7 @@ final class OperationsApi extends BaseService
                 'completed' => 'completedAt',
                 'returned' => 'returnedAt',
                 'cancelled' => 'cancelledAt',
-                'partiallyDelivered' => 'partialDeliveredAt',
+            'partiallyDelivered' => 'partialDeliveredAt',
                 'exchangeProcessing' => 'exchangeProcessingAt',
                 'exchangePicked' => 'exchangePickedAt',
                 'exchangeDelivered' => 'exchangeDeliveredAt',
@@ -3328,6 +3339,7 @@ final class OperationsApi extends BaseService
             'Returned' => 'returned_at',
             'Cancelled' => 'cancelled_at',
             'partially_delivered' => 'partial_delivered_at',
+            'pending_partial' => 'partial_delivered_at',
             'Exchange processing' => 'exchange_processing_at',
             'Exchange picked' => 'exchange_picked_at',
             'Exchange delivered' => 'exchange_delivered_at',
@@ -3499,6 +3511,7 @@ final class OperationsApi extends BaseService
             'Picked' => 'picked',
             'Completed' => 'completed',
             'partially_delivered' => 'partiallyDelivered',
+            'pending_partial' => 'partiallyDelivered',
             'Exchange processing' => 'exchangeProcessing',
             'Exchange picked' => 'exchangePicked',
             'Exchange delivered' => 'exchangeDelivered',
@@ -4074,8 +4087,8 @@ final class OperationsApi extends BaseService
                  FROM orders o
                  LEFT JOIN customers c ON c.id = o.customer_id
                  WHERE o.deleted_at IS NULL
-                   AND o.status = 'partially_delivered'
-                   AND o.partial_delivery_action_required = 1
+                    AND o.status IN ('partially_delivered', 'pending_partial')
+                    AND o.partial_delivery_action_required = 1
                  ORDER BY o.created_at DESC
                  LIMIT 5"
             );
@@ -4979,7 +4992,7 @@ final class OperationsApi extends BaseService
             if ($status === 'On Hold') {
                 $onHoldCount++;
             }
-            if ($status === 'partially_delivered') {
+            if ($status === 'partially_delivered' || $status === 'pending_partial') {
                 $partialDeliveredCount++;
             }
 
@@ -6141,6 +6154,7 @@ final class OperationsApi extends BaseService
                     'Returned' => 'returned_at',
                     'Cancelled' => 'cancelled_at',
                     'partially_delivered' => 'partial_delivered_at',
+                    'pending_partial' => 'partial_delivered_at',
                     'Exchange processing' => 'exchange_processing_at',
                     'Exchange picked' => 'exchange_picked_at',
                     'Exchange delivered' => 'exchange_delivered_at',
@@ -6334,7 +6348,7 @@ final class OperationsApi extends BaseService
             // courier_order_charges row. Webhook-triggered updates carry the
             // triggering charge row; manual terminal transitions resolve the
             // stored charge for the order.
-            $expenseEligibleStatuses = ['Completed', 'Cancelled', 'Returned', 'partially_delivered', 'Exchange delivered'];
+            $expenseEligibleStatuses = ['Completed', 'Cancelled', 'Returned', 'partially_delivered', 'pending_partial', 'Exchange delivered'];
             $terminalExpenseTransition = $nextStatus !== $previousStatus
                 && in_array($nextStatus, $expenseEligibleStatuses, true);
             if (
@@ -6518,7 +6532,7 @@ final class OperationsApi extends BaseService
             }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
-            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered'];
+            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered', 'pending_partial'];
             $isTerminal = in_array($previousStatus, $terminalStatuses, true);
             $expenseOnlyForTerminal = $isTerminal
                 && $additionalExpenseAmount > 0
@@ -7281,7 +7295,7 @@ final class OperationsApi extends BaseService
             }
 
             $currentStatus = trim((string) ($orderRow['status'] ?? ''));
-            if ($currentStatus !== 'partially_delivered') {
+            if (!in_array($currentStatus, ['partially_delivered', 'pending_partial'], true)) {
                 throw new RuntimeException('Only partially delivered orders can be confirmed.');
             }
 
@@ -7463,31 +7477,24 @@ final class OperationsApi extends BaseService
             );
 
             $payload = [
-                'status' => 'Completed',
+                'status' => 'partially_delivered',
                 'items' => $this->jsonEncode($updatedItems),
                 'paid_amount' => $this->formatMoney($paidAmount),
                 'partial_delivery_action_required' => 0,
                 'partial_cogs_amount' => 0,
                 'partial_shipping_amount' => 0,
                 'partial_cod_amount' => 0,
-                'partial_delivered_at' => null,
+                'partial_delivered_at' => $recordedAt,
                 'history' => $this->jsonEncode($history),
             ];
 
             $this->touchUpdate('orders', $orderId, $payload);
 
-            // Sync COGS for the now-Completed status
-            $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
-            if ($freshForCogs !== null) {
-                $cogsTransaction = $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);
-                if ($cogsTransaction !== null) $createdTransactions[] = $cogsTransaction;
-            }
-
             $this->syncCustomerOrderSummaries([$customerId]);
             $this->syncWalletCreditForOrder([
                 'id' => $orderId,
                 'createdBy' => (string) ($orderRow['created_by'] ?? ''),
-                'status' => 'Completed',
+                'status' => 'partially_delivered',
                 'orderNumber' => $orderNumber,
                 'orderDate' => (string) ($orderRow['order_date'] ?? ''),
                 'createdAt' => $this->toIso($orderRow['created_at'] ?? null),

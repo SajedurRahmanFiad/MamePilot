@@ -51,6 +51,7 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
   [OrderStatus.PICKED]: { valueClass: 'text-cyan-500', barClass: 'bg-cyan-500', trackClass: 'bg-cyan-100' },
   [OrderStatus.COMPLETED]: { valueClass: 'text-emerald-500', barClass: 'bg-emerald-500', trackClass: 'bg-emerald-100' },
   [OrderStatus.PARTIALLY_DELIVERED]: { valueClass: 'text-amber-500', barClass: 'bg-amber-500', trackClass: 'bg-amber-100' },
+  [OrderStatus.PENDING_PARTIAL]: { valueClass: 'text-orange-500', barClass: 'bg-orange-500', trackClass: 'bg-orange-100' },
   [OrderStatus.EXCHANGE_PROCESSING]: { valueClass: 'text-blue-500', barClass: 'bg-blue-500', trackClass: 'bg-blue-100' },
   [OrderStatus.EXCHANGE_PICKED]: { valueClass: 'text-purple-500', barClass: 'bg-purple-500', trackClass: 'bg-purple-100' },
   [OrderStatus.EXCHANGE_DELIVERED]: { valueClass: 'text-emerald-500', barClass: 'bg-emerald-500', trackClass: 'bg-emerald-100' },
@@ -180,7 +181,7 @@ const Dashboard: React.FC = () => {
   const sectionPlaceholder = error ? 'Failed to load data.' : 'Loading...';
   const expenseByCategory = (adminSnapshot?.expenseByCategory ?? []).map((entry, index) => ({ ...entry, color: EXPENSE_COLORS[index % EXPENSE_COLORS.length] }));
 
-  const handleOpenOrdersByStatus = (status: OrderStatus) => {
+  const handleOpenOrdersByStatus = (status: OrderStatus | string) => {
     const params = new URLSearchParams({ status });
     if (filterRange !== 'All Time') params.set('range', filterRange);
     if (customDates.from) params.set('from', customDates.from);
@@ -239,7 +240,7 @@ const Dashboard: React.FC = () => {
   const showEmployeeWorkspace = dashboardHasScope(dashboard, 'employee');
 
   const renderKpi = (key: string): React.ReactNode => {
-    const orderCard = (title: string, countKey: keyof NonNullable<typeof adminSnapshot>['orderCounts'], status: OrderStatus, bgColor: string, iconBgColor: string, icon: React.ReactNode) => (
+    const orderCard = (title: string, countKey: keyof NonNullable<typeof adminSnapshot>['orderCounts'], status: OrderStatus | string, bgColor: string, iconBgColor: string, icon: React.ReactNode) => (
       <StatCard title={title} value={adminSnapshot ? adminSnapshot.orderCounts[countKey] : inlinePlaceholder} icon={icon} bgColor={bgColor} textColor="text-white" iconBgColor={iconBgColor} subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals[countKey]) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals[countKey] : undefined} onClick={canViewOrders ? () => handleOpenOrdersByStatus(status) : undefined} />
     );
     const paymentCard = (title: string, countKey: keyof NonNullable<typeof adminSnapshot>['paymentCounts'], paymentStatus: string, bgColor: string, iconBgColor: string, icon: React.ReactNode) => (
@@ -256,7 +257,7 @@ const Dashboard: React.FC = () => {
       case 'admin.courierAssignedOrders': return orderCard('Courier Assigned Orders', 'courierAssigned', OrderStatus.COURIER_ASSIGNED, 'bg-blue-600', 'bg-blue-700', ICONS.Courier);
       case 'admin.pickedOrders': return orderCard('Picked Orders', 'picked', OrderStatus.PICKED, 'bg-cyan-500', 'bg-cyan-600', ICONS.Courier);
       case 'admin.deliveredOrders': return orderCard('Delivered Orders', 'completed', OrderStatus.COMPLETED, 'bg-teal-600', 'bg-teal-700', ICONS.PlusCircle);
-      case 'admin.partiallyDeliveredOrders': return orderCard('Partially Delivered Orders', 'partiallyDelivered', OrderStatus.PARTIALLY_DELIVERED, 'bg-amber-500', 'bg-amber-600', ICONS.Clock);
+      case 'admin.partiallyDeliveredOrders': return orderCard('Partially Delivered Orders', 'partiallyDelivered', `${OrderStatus.PARTIALLY_DELIVERED},${OrderStatus.PENDING_PARTIAL}`, 'bg-amber-500', 'bg-amber-600', ICONS.Clock);
       case 'admin.exchangedOrders': return <StatCard title="Exchanged Orders" value={adminSnapshot ? adminSnapshot.orderCounts.exchangeTotal : inlinePlaceholder} icon={ICONS.Transfer} bgColor="bg-violet-700" textColor="text-white" iconBgColor="bg-violet-800" subtotalAmount={adminSnapshot ? formatCurrency(adminSnapshot.orderTotals.exchangeTotal) : undefined} subtotalNumericValue={!isMobile ? adminSnapshot?.orderTotals.exchangeTotal : undefined} />;
       case 'admin.exchangeProcessingOrders': return orderCard('Exchange Processing Orders', 'exchangeProcessing', OrderStatus.EXCHANGE_PROCESSING, 'bg-indigo-500', 'bg-indigo-600', ICONS.Transfer);
       case 'admin.exchangePickedOrders': return orderCard('Exchange Picked Orders', 'exchangePicked', OrderStatus.EXCHANGE_PICKED, 'bg-purple-500', 'bg-purple-600', ICONS.Courier);

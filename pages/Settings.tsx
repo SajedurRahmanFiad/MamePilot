@@ -271,6 +271,7 @@ const SettingsPage: React.FC = () => {
   const courierJustSavedRef = useRef(false);
   const dashboardFirstTriggerRef = useRef(true);
   const dashboardJustSavedRef = useRef(false);
+  const dashboardSavingRef = useRef(false);
   const permissionsFirstTriggerRef = useRef(true);
   const permissionsJustSavedRef = useRef(false);
   const beSmartFirstTriggerRef = useRef(true);
@@ -647,18 +648,23 @@ const SettingsPage: React.FC = () => {
   // Auto-save: Dashboard
   const saveDashboard = useCallback(async () => {
     dashboardJustSavedRef.current = true;
-    const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
-    const persisted = cloneDashboardSettings(saved);
-    dashboardDirtyRef.current = false;
-    setDashboardDirty(false);
-    setDashboardSettings(persisted);
-    queryClient.setQueryData(['settings', 'dashboards'], persisted);
-    if (lowStockThresholdDirtyRef.current) {
-      const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
-      lowStockThresholdDirtyRef.current = false;
-      setLowStockThresholdDirty(false);
-      const defaultsData = savedDefaults?.data ?? savedDefaults;
-      if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
+    dashboardSavingRef.current = true;
+    try {
+      const saved = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
+      const persisted = cloneDashboardSettings(saved);
+      dashboardDirtyRef.current = false;
+      setDashboardDirty(false);
+      setDashboardSettings(persisted);
+      queryClient.setQueryData(['settings', 'dashboards'], persisted);
+      if (lowStockThresholdDirtyRef.current) {
+        const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
+        lowStockThresholdDirtyRef.current = false;
+        setLowStockThresholdDirty(false);
+        const defaultsData = savedDefaults?.data ?? savedDefaults;
+        if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
+      }
+    } finally {
+      dashboardSavingRef.current = false;
     }
   }, [dashboardSettings, lowStockThreshold, updateDashboardSettingsMutation, updateSystemDefaultsMutation, queryClient]);
   const { isSaving: dashboardSaving, trigger: triggerDashboardSave } = useAutoSave({ save: saveDashboard });
@@ -671,7 +677,7 @@ const SettingsPage: React.FC = () => {
   // Auto-save: Permissions
   const savePermissions = useCallback(async () => {
     permissionsJustSavedRef.current = true;
-    if (dashboardDirtyRef.current) {
+    if (dashboardDirtyRef.current && !dashboardSavingRef.current) {
       const savedDashboards = await updateDashboardSettingsMutation.mutateAsync(cloneDashboardSettings(dashboardSettings));
       const persistedDashboards = cloneDashboardSettings(savedDashboards);
       dashboardDirtyRef.current = false;

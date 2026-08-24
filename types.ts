@@ -179,6 +179,7 @@ export enum OrderStatus {
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
+  PENDING_PARTIAL = 'pending_partial',
   PARTIALLY_DELIVERED = 'partially_delivered',
   EXCHANGE_PROCESSING = 'Exchange processing',
   EXCHANGE_PICKED = 'Exchange picked',

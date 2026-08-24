@@ -1524,13 +1524,26 @@ final class CourierApi extends BaseService
             $updates = ['history' => $history];
 
             if ($statusInfo['status'] === 'Partially Delivered') {
-                $updates['status'] = 'partially_delivered';
+                $updates['status'] = 'pending_partial';
                 $updates['history']['partiallyDelivered'] = 'Marked partially delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivered items.';
                 $updates['partial_delivery_action_required'] = 1;
                 $updates['partial_delivered_at'] = gmdate('c');
                 $partialData = is_array($details['data']) ? $details['data'] : [];
                 $updates['partial_cod_amount'] = round(max(0, (float) ($partialData['cod_amount'] ?? 0)), 2);
                 $updates['partial_shipping_amount'] = round(max(0, (float) ($partialData['delivery_fee'] ?? 0)), 2);
+                $orderItems = is_array(json_decode((string) ($row['items'] ?? '[]'), true))
+                    ? json_decode((string) ($row['items'] ?? '[]'), true)
+                    : [];
+                $totalCogs = 0.0;
+                foreach ($orderItems as $oi) {
+                    if (!is_array($oi)) continue;
+                    $qty = max(0, (float) ($oi['quantity'] ?? 0));
+                    $pid = trim((string) ($oi['productId'] ?? ''));
+                    if ($qty <= 0 || $pid === '') continue;
+                    $prod = $this->database->fetchOne('SELECT purchase_price FROM products WHERE id = :id LIMIT 1', [':id' => $pid]);
+                    $totalCogs += round(max(0.0, (float) ($prod['purchase_price'] ?? 0)) * $qty, 2);
+                }
+                $updates['partial_cogs_amount'] = round($totalCogs, 2);
             } elseif ($statusInfo['status'] === 'Delivered') {
                 $updates['status'] = 'Completed';
                 $updates['history']['completed'] = 'Marked delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
@@ -3133,7 +3146,7 @@ final class CourierApi extends BaseService
         $current = (string) ($order['status'] ?? '');
         $isExchange = (bool) ($order['isExchange'] ?? false);
         $chargeId = trim((string) ($charge['id'] ?? ''));
-        $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered'];
+        $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered', 'pending_partial'];
         $providerLabel = match ($provider) {
             'carrybee' => 'CarryBee',
             'paperfly' => 'Paperfly',
@@ -3154,7 +3167,7 @@ final class CourierApi extends BaseService
                 && in_array($current, ['Exchange processing', 'Exchange picked'], true);
             $target = match ($mapped) {
                 'Delivered' => $isExchange ? 'Exchange delivered' : 'Completed',
-                'Partially Delivered' => $isExchange ? null : 'partially_delivered',
+                'Partially Delivered' => $isExchange ? null : 'pending_partial',
                 'Returned' => $isExchange ? null : 'Returned',
                 'Cancelled' => $isExchange ? null : 'Cancelled',
                 'Picked' => $isExchange ? 'Exchange picked' : 'Picked',
