@@ -5961,14 +5961,18 @@ final class OperationsApi extends BaseService
             $collectedAmount = round((float) ($charge['collected_amount'] ?? 0), 2);
         }
 
-        if ($collectedAmount <= 0) {
-            return null;
-        }
         // Never let an automatic courier collection exceed the remaining order
         // balance: the order may already carry manual payments or refunds.
         $remainingDue = round(max(0.0, $orderTotal - $paidAmount), 2);
         if ($remainingDue <= 0.001) {
             return null;
+        }
+        // When the courier status API (e.g. Steadfast /status_by_cid/) does not
+        // return cod_amount, the charge stores collected_amount = 0.  Fall back
+        // to the remaining order due: a delivered COD order means the courier
+        // collected the full amount from the customer.
+        if ($collectedAmount <= 0) {
+            $collectedAmount = $remainingDue;
         }
         $paymentAmount = min($collectedAmount, $remainingDue);
         if ($paymentAmount <= 0.001) {
