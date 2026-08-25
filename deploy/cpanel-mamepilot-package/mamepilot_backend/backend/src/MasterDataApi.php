@@ -4670,6 +4670,8 @@ PROMPT;
 
         $extracted = null;
         $maxRetries = 5;
+        $backoffs = [500000, 1000000, 1500000, 2000000, 3000000];
+        $lastLlmError = null;
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             try {
                 $response = (new LlmClient($this->database, $this->config))->generateForFeature(
@@ -4689,16 +4691,15 @@ PROMPT;
                 }
                 $extracted = json_decode($json, true);
                 if (is_array($extracted)) break;
+                $lastLlmError = 'LLM returned invalid JSON';
             } catch (\RuntimeException $llmError) {
                 $detail = $llmError->getMessage();
                 if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
                     throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
                 }
-                if ($attempt === $maxRetries) {
-                    throw new ApiException('AI model failed after ' . $maxRetries . ' attempts. Please try again later.', 422, 'SMART_LLM_FAILED');
-                }
+                $lastLlmError = $detail;
             }
-            usleep(300000 * $attempt);
+            if ($attempt < $maxRetries) usleep($backoffs[$attempt - 1] ?? 3000000);
         }
 
         if (!is_array($extracted)) {
