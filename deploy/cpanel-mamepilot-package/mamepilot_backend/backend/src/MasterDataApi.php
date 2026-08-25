@@ -4646,25 +4646,29 @@ final class MasterDataApi extends BaseService
         }
 
         $prompt = <<<'PROMPT'
-You're a very fast but extremely accurate information extractor.Extract from this text and return ONLY valid JSON (no markdown, no extra text):
+You are an information extractor. Extract customer details from the text below and return ONLY valid JSON (no markdown fences, no extra text):
 {
-  "name": "<provided full customer name (typically the first line) or 'N/A'>",
+  "name": "<full customer name or 'N/A'>",
   "phone": "<primary phone number or 'N/A'>",
   "additionalPhone": "<comma-separated additional phones or empty string>",
   "address": "<full address or 'N/A'>"
 }
 
-If there are multiple phone numbers, put the first in "phone" and rest in "additionalPhone" (comma-separated). If any field is missing, use 'N/A' for name and address, and 'N/A' for phone if no valid number is found.
-IMPORTANT:
-    1. For phone numbers only: Remove any whitespaces, convert Bengali digits to English. Keep Bangladesh local phone number format - MUST BE 11 DIGITS and START WITH 0. If a number starts with +880 or just 1, convert it to 0 format.
-    2. Do not translate or modify name and address text, just extract as-is (except trimming). Preserve any emojis, special characters, or formatting in the address exactly as they appear. If missing, use 'N/A'. IMPORTANT: ALWAYS MAKE SURE THE PHONE NUMBER IS CORRECT BY EVERY DIGIT
-    3. Remove labels like 'Name:', 'Phone:', 'Address:' if present.
-    4. Return only the JSON object. Ignore any irrelevant extra text.
+The input text can be in any language (Bengali, English, Hindi, Arabic, etc.) and any format — a social media message, a chat message, a typed note, a forwarded order confirmation, etc.
 
-Text: 
+Rules:
+1. Phone numbers: Remove spaces/dashes. Convert Bengali/Arabic/Hindi digits to English. Must be 11 digits starting with 0 (Bangladesh format). Convert +880 or 880 prefix to 0 format.
+2. Name and address: Extract as-is without translation. Preserve emojis and special characters exactly.
+3. The name is a person's name — typically short, no digits, no pricing, no product names.
+4. The address is a location — street, area, city, district, or landmark.
+5. Ignore greetings, emojis, product details, pricing, order confirmations, and filler text.
+6. Return only the JSON object.
+
+Text:
 PROMPT;
         $prompt .= $text;
 
+        $extracted = null;
         try {
             $response = (new LlmClient($this->database, $this->config))->generateForFeature(
                 'information_extraction',
@@ -4673,24 +4677,27 @@ PROMPT;
                 [],
                 ['temperature' => 0.0, 'maxTokens' => 1024]
             );
+            $json = trim($response);
+            $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
+            $json = preg_replace('/\s*```$/', '', $json) ?? $json;
+            if (!str_starts_with($json, '{')) {
+                $start = strpos($json, '{');
+                $end = strrpos($json, '}');
+                if ($start !== false && $end !== false && $end > $start) $json = substr($json, $start, $end - $start + 1);
+            }
+            $extracted = json_decode($json, true);
         } catch (\RuntimeException $llmError) {
             $detail = $llmError->getMessage();
             if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
                 throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
             }
-            throw new ApiException('Could not extract customer details from the pasted text. Please try again or enter the details manually.', 422, 'SMART_LLM_FAILED');
         }
-        $json = trim($response);
-        $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
-        $json = preg_replace('/\s*```$/', '', $json) ?? $json;
-        if (!str_starts_with($json, '{')) {
-            $start = strpos($json, '{');
-            $end = strrpos($json, '}');
-            if ($start !== false && $end !== false && $end > $start) $json = substr($json, $start, $end - $start + 1);
-        }
-        $extracted = json_decode($json, true);
+
         if (!is_array($extracted)) {
-            throw new ApiException('The selected LLM did not return valid contact information. Please try again.', 422, 'SMART_EXTRACTION_INVALID_JSON');
+            $extracted = $this->regexFallbackExtractContact($text);
+        }
+        if (!is_array($extracted)) {
+            throw new ApiException('Could not extract customer details from the pasted text. Please enter the details manually.', 422, 'SMART_LLM_FAILED');
         }
 
         $phone = $this->normalizeBangladeshPhone((string) ($extracted['phone'] ?? ''));
@@ -4720,6 +4727,64 @@ PROMPT;
             if (preg_match('/^0\d{10}$/', $digits) === 1) return $digits;
         }
         return null;
+    }
+
+    private function regexFallbackExtractContact(string $text): ?array
+    {
+        $phone = $this->normalizeBangladeshPhone($text);
+        if ($phone === null) return null;
+
+        $lines = array_filter(array_map('trim', preg_split('/[\r\n]+/u', $text)));
+        $name = 'N/A';
+        $address = 'N/A';
+
+        $banglaNumberMap = ['০'=>'0','১'=>'1','২'=>'2','৩'=>'3','৪'=>'4','৫'=>'5','৬'=>'6','৭'=>'7','৮'=>'8','৯'=>'9'];
+        foreach ($lines as $line) {
+            $normalized = strtr($line, $banglaNumberMap);
+            $digitsOnly = preg_replace('/\D+/', '', $normalized);
+            if ($digitsOnly === $phone || preg_match('/0\d{10}/', $digitsOnly)) continue;
+
+            $value = preg_replace('/^\p{So}+\s*/u', '', $line);
+            $value = preg_replace('/^\p{N}+\s*/u', '', $value);
+            $value = trim($value);
+            if ($value === '') continue;
+
+            if (preg_match('/^(.+?)\s*[:\|]\s*(.+)$/u', $value, $m)) {
+                $label = trim($m[1]);
+                $val = trim($m[2]);
+                $labelLower = preg_replace('/[^\p{L}\p{N}]+/u', '', mb_strtolower($label, 'UTF-8'));
+                if (preg_match('/(name|phone|mobile|cell|tel|fax|email|e-mail|নাম|ফোন|নম্বর|নাম্বার|মোবাইল)/u', $labelLower)) {
+                    if (preg_match('/(phone|mobile|cell|tel|fax|ফোন|নম্বর|নাম্বার|মোবাইল)/u', $labelLower)) continue;
+                    if ($name === 'N/A') $name = $val;
+                } elseif (preg_match('/(address|addr|location|place|area|street|road|city|district|ঠিকানা|পুরো|এলাকা|সড়ক|রাস্তা|শহর|জেলা|উপজেলা|থানা|ইউনিয়ন|গ্রাম|বাড়ি|বাসা|ফ্ল্যাট|ব্লক|সেক্টর)/u', $labelLower)) {
+                    if ($address === 'N/A') $address = $val;
+                } else {
+                    if ($name === 'N/A') $name = $val;
+                }
+                continue;
+            }
+
+            $hasDigits = preg_match('/\d/', $value);
+            $hasSpecial = preg_match('/[$%&@#^*()+=\[\]{}<>\/\\~`]/', $value);
+            $wordCount = str_word_count($value);
+            $charCount = mb_strlen($value, 'UTF-8');
+
+            if ($hasDigits && $wordCount <= 2) continue;
+
+            if (!$hasDigits && !$hasSpecial && $wordCount >= 1 && $wordCount <= 5 && $charCount <= 40) {
+                if ($name === 'N/A') {
+                    $name = $value;
+                } elseif ($address === 'N/A' && $wordCount >= 2) {
+                    $address = $value;
+                }
+            } elseif ($wordCount >= 2 && $charCount > 10) {
+                if ($address === 'N/A') {
+                    $address = $value;
+                }
+            }
+        }
+
+        return ['name' => $name, 'phone' => $phone, 'address' => $address];
     }
 
     private function requireDeveloperUser(): array
