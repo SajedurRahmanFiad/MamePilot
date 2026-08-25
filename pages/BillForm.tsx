@@ -277,9 +277,15 @@ const BillForm: React.FC = () => {
           smartInput: billSmartInput.trim(),
         });
         resolvedVendorId = created.id;
-      } catch (err) {
+      } catch (err: any) {
         setSaving(false);
-        const msg = err instanceof Error ? err.message : 'Failed to resolve vendor details.';
+        const debug = err?.raw?.debug;
+        let msg = err instanceof Error ? err.message : 'Failed to resolve vendor details.';
+        if (debug) {
+          if (debug.llm_error) msg += '\nLLM: ' + debug.llm_error;
+          if (debug.raw_response) msg += '\nResponse: ' + debug.raw_response;
+          if (debug.regex_phone) msg += '\nRegex phone: ' + debug.regex_phone;
+        }
         setError(msg);
         toast.error(msg);
         return;
