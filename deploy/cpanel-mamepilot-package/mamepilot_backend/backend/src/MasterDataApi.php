@@ -4669,10 +4669,8 @@ PROMPT;
         $prompt .= $text;
 
         $extracted = null;
-        $maxRetries = 5;
-        $backoffs = [500000, 1000000, 1500000, 2000000, 3000000];
         $lastLlmError = null;
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
             try {
                 $response = (new LlmClient($this->database, $this->config))->generateForFeature(
                     'information_extraction',
@@ -4699,7 +4697,7 @@ PROMPT;
                 }
                 $lastLlmError = $detail;
             }
-            if ($attempt < $maxRetries) usleep($backoffs[$attempt - 1] ?? 3000000);
+            if ($attempt < 5) usleep(500000);
         }
 
         if (!is_array($extracted)) {
