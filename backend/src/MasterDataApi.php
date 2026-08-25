@@ -4669,28 +4669,36 @@ PROMPT;
         $prompt .= $text;
 
         $extracted = null;
-        try {
-            $response = (new LlmClient($this->database, $this->config))->generateForFeature(
-                'information_extraction',
-                $prompt,
-                'Return the JSON object now.',
-                [],
-                ['temperature' => 0.0, 'maxTokens' => 1024]
-            );
-            $json = trim($response);
-            $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
-            $json = preg_replace('/\s*```$/', '', $json) ?? $json;
-            if (!str_starts_with($json, '{')) {
-                $start = strpos($json, '{');
-                $end = strrpos($json, '}');
-                if ($start !== false && $end !== false && $end > $start) $json = substr($json, $start, $end - $start + 1);
+        $maxRetries = 5;
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            try {
+                $response = (new LlmClient($this->database, $this->config))->generateForFeature(
+                    'information_extraction',
+                    $prompt,
+                    'Return the JSON object now.',
+                    [],
+                    ['temperature' => 0.0, 'maxTokens' => 1024]
+                );
+                $json = trim($response);
+                $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
+                $json = preg_replace('/\s*```$/', '', $json) ?? $json;
+                if (!str_starts_with($json, '{')) {
+                    $start = strpos($json, '{');
+                    $end = strrpos($json, '}');
+                    if ($start !== false && $end !== false && $end > $start) $json = substr($json, $start, $end - $start + 1);
+                }
+                $extracted = json_decode($json, true);
+                if (is_array($extracted)) break;
+            } catch (\RuntimeException $llmError) {
+                $detail = $llmError->getMessage();
+                if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
+                    throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
+                }
+                if ($attempt === $maxRetries) {
+                    throw new ApiException('AI model failed after ' . $maxRetries . ' attempts. Please try again later.', 422, 'SMART_LLM_FAILED');
+                }
             }
-            $extracted = json_decode($json, true);
-        } catch (\RuntimeException $llmError) {
-            $detail = $llmError->getMessage();
-            if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
-                throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
-            }
+            usleep(300000 * $attempt);
         }
 
         if (!is_array($extracted)) {
