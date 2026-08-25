@@ -862,6 +862,8 @@ export interface Order {
     processing?: string;
     packed?: string;
     picked?: string;
+    partiallyDelivered?: string;
+    partialDeliveryConfirmed?: string;
     completed?: string;
     returned?: string;
     cancelled?: string;

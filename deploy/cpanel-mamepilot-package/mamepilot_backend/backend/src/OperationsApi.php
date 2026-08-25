@@ -7341,6 +7341,7 @@ final class OperationsApi extends BaseService
             $totalCodDeferred = (float) ($orderRow['partial_cod_amount'] ?? 0);
             $orderTotal = (float) ($orderRow['total'] ?? 0);
             $paidAmount = (float) ($orderRow['paid_amount'] ?? 0);
+            $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
 
             $systemDefaults = $this->database->fetchOne(
                 'SELECT default_account_id, default_payment_method, income_category_id, expense_category_id FROM system_defaults LIMIT 1'
@@ -7535,6 +7536,22 @@ final class OperationsApi extends BaseService
                 $note !== '' ? ' Note: ' . $note : ''
             );
 
+            if ($codIncome > 0) {
+                $history['payment'] = $this->appendHistoryText(
+                    (string) ($history['payment'] ?? ''),
+                    'COD collection recorded: ' . $this->formatMoney($codIncome) . '.'
+                );
+            }
+            if ($deliveredCogs > 0 || $totalShippingDeferred > 0) {
+                $expenseParts = [];
+                if ($deliveredCogs > 0) $expenseParts[] = 'COGS: ' . $this->formatMoney($deliveredCogs);
+                if ($totalShippingDeferred > 0) $expenseParts[] = 'Shipping: ' . $this->formatMoney($totalShippingDeferred);
+                $history['expense'] = $this->appendHistoryText(
+                    (string) ($history['expense'] ?? ''),
+                    'Partial delivery expenses recorded (' . implode(', ', $expenseParts) . ').'
+                );
+            }
+
             $payload = [
                 'status' => 'partially_delivered',
                 'items' => $this->jsonEncode($updatedItems),
@@ -7548,6 +7565,21 @@ final class OperationsApi extends BaseService
             ];
 
             $this->touchUpdate('orders', $orderId, $payload);
+
+            $afterOrderRow = $this->database->fetchOne(
+                'SELECT * FROM orders WHERE id = :id LIMIT 1',
+                [':id' => $orderId]
+            );
+            if ($afterOrderRow !== null) {
+                $this->recordOrderUndoEvent(
+                    $orderRow,
+                    $afterOrderRow,
+                    'confirm_partial_delivery',
+                    (string) ($actor['id'] ?? ''),
+                    [],
+                    $beforeUndoEffects
+                );
+            }
 
             $this->syncCustomerOrderSummaries([$customerId]);
             $this->syncWalletCreditForOrder([
