@@ -150,7 +150,14 @@ const CustomerForm: React.FC = () => {
           }
         } catch (err: any) {
           console.error('Create customer failed:', err);
-          setError(err instanceof Error ? err.message : 'Failed to create customer');
+          const debug = err?.raw?.debug;
+          let msg = err instanceof Error ? err.message : 'Failed to create customer';
+          if (debug) {
+            if (debug.llm_error) msg += '\nLLM: ' + debug.llm_error;
+            if (debug.raw_response) msg += '\nResponse: ' + debug.raw_response;
+            if (debug.regex_phone) msg += '\nRegex phone: ' + debug.regex_phone;
+          }
+          setError(msg);
         }
       }
     } catch (err) {

@@ -142,6 +142,7 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
       status: response.status,
       code: parsed?.code || 'HTTP_ERROR',
     });
+    (error as any).raw = parsed;
 
     if (typeof window !== 'undefined') {
       console.warn(`[api:${action}] HTTP ${response.status} failed`, {

@@ -4692,6 +4692,7 @@ PROMPT;
 
         $extracted = null;
         $lastLlmError = null;
+        $lastRawResponse = null;
         for ($attempt = 1; $attempt <= 5; $attempt++) {
             try {
                 $response = (new LlmClient($this->database, $this->config))->generateForFeature(
@@ -4701,6 +4702,7 @@ PROMPT;
                     [],
                     ['temperature' => 0.0, 'maxTokens' => 1024]
                 );
+                $lastRawResponse = $response;
                 $json = trim($response);
                 $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
                 $json = preg_replace('/\s*```$/', '', $json) ?? $json;
@@ -4711,13 +4713,13 @@ PROMPT;
                 }
                 $extracted = json_decode($json, true);
                 if (is_array($extracted)) break;
-                $lastLlmError = 'LLM returned invalid JSON';
+                $lastLlmError = 'LLM returned invalid JSON: ' . mb_substr(trim((string) $response), 0, 300);
             } catch (\RuntimeException $llmError) {
                 $detail = $llmError->getMessage();
-                if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
-                    throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
+                if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed') || str_contains($detail, 'not have an API key') || str_contains($detail, 'not have a model')) {
+                    throw new ApiException('AI configuration error: ' . $detail, 422, 'SMART_LLM_NOT_CONFIGURED');
                 }
-                $lastLlmError = $detail;
+                $lastLlmError = 'Attempt ' . $attempt . '/5 failed: ' . $detail;
             }
             if ($attempt < 5) usleep(500000);
         }
@@ -4726,7 +4728,17 @@ PROMPT;
             $extracted = $this->regexFallbackExtractContact($text);
         }
         if (!is_array($extracted)) {
-            throw new ApiException('Could not extract customer details from the pasted text. Please enter the details manually.', 422, 'SMART_LLM_FAILED');
+            $debug = [
+                'llm_error' => $lastLlmError,
+                'raw_response' => $lastRawResponse !== null ? mb_substr(trim((string) $lastRawResponse), 0, 500) : null,
+                'regex_phone' => $this->normalizeBangladeshPhone($text) ?? 'none',
+            ];
+            throw new ApiException(
+                'Could not extract customer details from the pasted text. Please enter the details manually.',
+                422,
+                'SMART_LLM_FAILED',
+                ['debug' => $debug] + $debug
+            );
         }
 
         $phone = $this->normalizeBangladeshPhone((string) ($extracted['phone'] ?? ''));
