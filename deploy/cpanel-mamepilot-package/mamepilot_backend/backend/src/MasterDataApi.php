@@ -4646,25 +4646,47 @@ final class MasterDataApi extends BaseService
         }
 
         $prompt = <<<'PROMPT'
-You are an information extractor. Extract customer details from the text below and return ONLY valid JSON (no markdown fences, no extra text):
+You are an information extraction engine. Your task is to extract the customer's Full Name, Phone Number, and Delivery Address from a raw Bengali or English order message.
+
+The input may contain: order confirmations, greetings, product names, marketing text, emojis, courier instructions, payment information, random conversations, multiple phone numbers, and labels such as "নাম", "Name", "Phone", "মোবাইল", "ঠিকানা", etc.
+
+EXTRACTION RULES
+
+1. NAME
+- Extract only the customer's actual name.
+- Remove any labels such as নাম:, Name:, Customer:, গ্রাহক:.
+- Preserve the original spelling, emojis, punctuation, and special characters if they are part of the name.
+- Do not translate or modify the name.
+
+2. PHONE NUMBER
+- Extract the customer's primary Bangladeshi mobile number.
+- Normalize the output to 01XXXXXXXXX.
+- Convert Bengali digits to English digits.
+- Remove spaces, hyphens, brackets, country codes, and other separators.
+- Examples: +8801712345678 → 01712345678, 01712-345678 → 01712345678, ০১৭১২৩৪৫৬৭৮ → 01712345678
+- If multiple numbers exist, choose the number most likely associated with the customer.
+- Ignore courier, support, business, and hotline numbers whenever possible.
+
+3. ADDRESS
+- Extract the complete delivery address.
+- Remove labels such as ঠিকানা:, Address:, Delivery Address:.
+- Preserve all emojis, punctuation, commas, slashes, hashtags, apartment numbers, road numbers, village names, and special characters.
+- Do not shorten, summarize, translate, or rewrite the address.
+
+4. GENERAL RULES
+- Ignore order confirmation text, product descriptions, prices, courier information, promotional messages, greetings, signatures, and payment instructions.
+- Do not hallucinate missing information.
+- If a field is not found, return an empty string.
+
+OUTPUT FORMAT
+Return ONLY valid JSON with no markdown fences and no extra text:
 {
-  "name": "<full customer name or 'N/A'>",
-  "phone": "<primary phone number or 'N/A'>",
-  "additionalPhone": "<comma-separated additional phones or empty string>",
-  "address": "<full address or 'N/A'>"
+"name": "",
+"phone": "",
+"address": ""
 }
 
-The input text can be in any language (Bengali, English, Hindi, Arabic, etc.) and any format — a social media message, a chat message, a typed note, a forwarded order confirmation, etc.
-
-Rules:
-1. Phone numbers: Remove spaces/dashes. Convert Bengali/Arabic/Hindi digits to English. Must be 11 digits starting with 0 (Bangladesh format). Convert +880 or 880 prefix to 0 format.
-2. Name and address: Extract as-is without translation. Preserve emojis and special characters exactly.
-3. The name is a person's name — typically short, no digits, no pricing, no product names.
-4. The address is a location — street, area, city, district, or landmark.
-5. Ignore greetings, emojis, product details, pricing, order confirmations, and filler text.
-6. Return only the JSON object.
-
-Text:
+INPUT:
 PROMPT;
         $prompt .= $text;
 
@@ -4675,7 +4697,7 @@ PROMPT;
                 $response = (new LlmClient($this->database, $this->config))->generateForFeature(
                     'information_extraction',
                     $prompt,
-                    'Return the JSON object now.',
+                    'Extract the customer details now.',
                     [],
                     ['temperature' => 0.0, 'maxTokens' => 1024]
                 );
