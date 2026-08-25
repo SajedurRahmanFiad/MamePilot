@@ -4665,13 +4665,21 @@ Text:
 PROMPT;
         $prompt .= $text;
 
-        $response = (new LlmClient($this->database, $this->config))->generateForFeature(
-            'information_extraction',
-            $prompt,
-            'Return the JSON object now.',
-            [],
-            ['temperature' => 0.0, 'maxTokens' => 1024]
-        );
+        try {
+            $response = (new LlmClient($this->database, $this->config))->generateForFeature(
+                'information_extraction',
+                $prompt,
+                'Return the JSON object now.',
+                [],
+                ['temperature' => 0.0, 'maxTokens' => 1024]
+            );
+        } catch (\RuntimeException $llmError) {
+            $detail = $llmError->getMessage();
+            if (str_contains($detail, 'No enabled LLM') || str_contains($detail, 'not installed')) {
+                throw new ApiException('No AI model is configured for information extraction. Ask an administrator to assign one in Developer Settings > LLMs.', 422, 'SMART_LLM_NOT_CONFIGURED');
+            }
+            throw new ApiException('Could not extract customer details from the pasted text. Please try again or enter the details manually.', 422, 'SMART_LLM_FAILED');
+        }
         $json = trim($response);
         $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
         $json = preg_replace('/\s*```$/', '', $json) ?? $json;
