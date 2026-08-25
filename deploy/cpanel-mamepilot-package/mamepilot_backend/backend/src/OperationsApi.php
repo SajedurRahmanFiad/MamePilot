@@ -6770,6 +6770,32 @@ final class OperationsApi extends BaseService
             $this->touchUpdate('orders', $orderId, $payload);
             $this->applyResolvedProductStockUpdates($stockUpdates);
 
+            // Resolve any stored courier charge and record the shipping cost
+            // expense, mirroring the webhook-triggered expense recording in
+            // updateOrder(). This ensures manual completions through the modal
+            // also create the shipping cost expense when the setting is enabled.
+            if ($this->tableExists('courier_order_charges')) {
+                $storedCharge = $this->database->fetchOne(
+                    "SELECT * FROM courier_order_charges
+                     WHERE order_id = :order_id AND expense_status <> 'recorded'
+                     ORDER BY updated_at DESC, created_at DESC
+                     LIMIT 1 FOR UPDATE",
+                    [':order_id' => $orderId]
+                );
+                if ($storedCharge !== null && trim((string) ($storedCharge['id'] ?? '')) !== '') {
+                    $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
+                        $actor,
+                        $orderId,
+                        (string) $storedCharge['id'],
+                        (string) $storedCharge['provider'],
+                        $this->database->nowUtc()
+                    );
+                    if ($automaticExpense !== null) {
+                        $createdTransactions[] = $automaticExpense;
+                    }
+                }
+            }
+
             if ($outcome === 'Delivered') {
                 $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
                 if ($freshForCogs !== null) {
@@ -7403,19 +7429,52 @@ final class OperationsApi extends BaseService
                      LIMIT 1',
                     [':order_id' => $orderId]
                 ) !== null;
-            if ($totalShippingDeferred > 0 && $effectiveAccountId !== '' && !$automaticShippingExpenseRecorded) {
-                $createdTransactions[] = $this->createTransactionRecord([
-                    'date' => $recordedAt,
-                    'type' => 'Expense',
-                    'category' => 'Courier Shipping Cost',
-                    'accountId' => $effectiveAccountId,
-                    'amount' => $totalShippingDeferred,
-                    'description' => "Courier shipping cost for partially delivered Order #{$orderNumber}",
-                    'referenceId' => $orderId,
-                    'contactId' => $customerId,
-                    'paymentMethod' => $defaultPaymentMethod,
-                    'history' => [],
-                ], (string) $actor['id'], $actor);
+            if (!$automaticShippingExpenseRecorded && $this->tableExists('courier_order_charges')) {
+                $storedCharge = $this->database->fetchOne(
+                    "SELECT * FROM courier_order_charges
+                     WHERE order_id = :order_id AND expense_status <> 'recorded'
+                     ORDER BY updated_at DESC, created_at DESC
+                     LIMIT 1 FOR UPDATE",
+                    [':order_id' => $orderId]
+                );
+                if ($storedCharge !== null && trim((string) ($storedCharge['id'] ?? '')) !== '') {
+                    $automaticExpense = $this->recordAutomaticCourierExpenseForOrder(
+                        $actor,
+                        $orderId,
+                        (string) $storedCharge['id'],
+                        (string) $storedCharge['provider'],
+                        $recordedAt
+                    );
+                    if ($automaticExpense !== null) {
+                        $createdTransactions[] = $automaticExpense;
+                    }
+                }
+            }
+            $autoDeductEnabled = (bool) ((
+                $this->database->fetchOne('SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1')
+                ?? []
+            )['automatically_deduct_shipping_costs'] ?? false);
+            if ($autoDeductEnabled && $totalShippingDeferred > 0 && $effectiveAccountId !== '' && !$automaticShippingExpenseRecorded) {
+                $alreadyRecordedShipping = !empty(array_filter(
+                    $createdTransactions,
+                    fn(array $t): bool => ($t['type'] ?? '') === 'Expense'
+                        && ($t['category'] ?? '') === 'Courier Shipping Cost'
+                        && ($t['referenceId'] ?? '') === $orderId
+                ));
+                if (!$alreadyRecordedShipping) {
+                    $createdTransactions[] = $this->createTransactionRecord([
+                        'date' => $recordedAt,
+                        'type' => 'Expense',
+                        'category' => 'Courier Shipping Cost',
+                        'accountId' => $effectiveAccountId,
+                        'amount' => $totalShippingDeferred,
+                        'description' => "Courier shipping cost for partially delivered Order #{$orderNumber}",
+                        'referenceId' => $orderId,
+                        'contactId' => $customerId,
+                        'paymentMethod' => $defaultPaymentMethod,
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                }
             }
 
             // 3. COD income (collected amount proportional to delivered items)

@@ -313,7 +313,7 @@ const Dashboard: React.FC = () => {
               <p className="mt-1 text-sm font-medium text-gray-500">Orders awaiting partial delivery confirmation.</p>
             </div>
             {canViewOrders && (
-              <button type="button" onClick={() => navigate('/orders?status=partially_delivered')} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 hover:bg-gray-50">View all</button>
+              <button type="button" onClick={() => navigate('/orders?status=pending_partial')} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 hover:bg-gray-50">View all</button>
             )}
           </div>
           {!adminSnapshot ? (
