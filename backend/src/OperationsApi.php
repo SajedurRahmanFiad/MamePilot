@@ -4081,7 +4081,17 @@ final class OperationsApi extends BaseService
         $actionRequiredOrders = [];
         try {
             $hasPartialCod = $this->columnExists('orders', 'partial_cod_amount');
+            $hasDeliveryAction = $this->columnExists('orders', 'delivery_action_required');
             $partialCodSelect = $hasPartialCod ? 'o.partial_cod_amount' : '0';
+            $deliveryActionFilter = $hasDeliveryAction
+                ? " UNION ALL
+                    SELECT o.id, o.order_number, c.name AS customer_name, o.total, 0 AS partial_cod_amount, o.created_at
+                    FROM orders o
+                    LEFT JOIN customers c ON c.id = o.customer_id
+                    WHERE o.deleted_at IS NULL
+                      AND o.status = 'pending_delivered'
+                      AND o.delivery_action_required = 1"
+                : '';
             $actionRequiredRows = $this->database->fetchAll(
                 "SELECT o.id, o.order_number, c.name AS customer_name, o.total, {$partialCodSelect} AS partial_cod_amount, o.created_at
                  FROM orders o
@@ -4089,8 +4099,9 @@ final class OperationsApi extends BaseService
                  WHERE o.deleted_at IS NULL
                     AND o.status IN ('partially_delivered', 'pending_partial')
                     AND o.partial_delivery_action_required = 1
-                 ORDER BY o.created_at DESC
-                 LIMIT 5"
+                 {$deliveryActionFilter}
+                 ORDER BY created_at DESC
+                 LIMIT 10"
             );
             $actionRequiredOrders = array_map(
                 static fn(array $row): array => [
@@ -6532,16 +6543,18 @@ final class OperationsApi extends BaseService
             }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
-            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered', 'pending_partial'];
+            $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered', 'pending_partial', 'pending_delivered'];
             $isTerminal = in_array($previousStatus, $terminalStatuses, true);
+            $isConfirmingPendingDelivered = $previousStatus === 'pending_delivered' && $outcome === 'Delivered';
             $expenseOnlyForTerminal = $isTerminal
                 && $additionalExpenseAmount > 0
                 && round(max(0.0, $amount), 2) <= 0
-                && round(max(0.0, $refundAmount), 2) <= 0;
+                && round(max(0.0, $refundAmount), 2) <= 0
+                && !$isConfirmingPendingDelivered;
             if (!$isTerminal && $previousStatus !== 'Picked' && $previousStatus !== 'Exchange picked') {
                 throw new RuntimeException('Only picked orders can be finalized from this modal.');
             }
-            if ($isTerminal && !$expenseOnlyForTerminal) {
+            if ($isTerminal && !$expenseOnlyForTerminal && !$isConfirmingPendingDelivered) {
                 throw new RuntimeException('This order is already in a terminal status. Use the expense-only action to add expenses.');
             }
 
@@ -6609,7 +6622,21 @@ final class OperationsApi extends BaseService
             }
 
             $beforeUndoEffects = $this->orderUndoEffectIds($orderId, $orderNumber);
-            $nextStatus = $outcome === 'Returned' ? 'Returned' : ($previousStatus === 'Exchange picked' ? 'Exchange delivered' : 'Completed');
+            $autoDeductShipping = (bool) ((
+                $this->database->fetchOne('SELECT automatically_deduct_shipping_costs FROM courier_settings LIMIT 1')
+                ?? []
+            )['automatically_deduct_shipping_costs'] ?? false);
+            if ($outcome === 'Returned') {
+                $nextStatus = 'Returned';
+            } elseif ($previousStatus === 'Exchange picked') {
+                $nextStatus = 'Exchange delivered';
+            } elseif ($previousStatus === 'pending_delivered') {
+                $nextStatus = 'Completed';
+            } elseif ($outcome === 'Delivered' && $autoDeductShipping && $previousStatus === 'Picked') {
+                $nextStatus = 'pending_delivered';
+            } else {
+                $nextStatus = 'Completed';
+            }
             $stockUpdates = $this->applyOrderStockTransition($previousStatus, $nextStatus, $previousItems, $previousItems);
             $linkedTransactions = $this->fetchOrderLinkedTransactionRows($orderId, $orderNumber, 'active');
             $existingIncome = 0.0;
@@ -6633,6 +6660,12 @@ final class OperationsApi extends BaseService
             $payload = [
                 'status' => $nextStatus,
             ];
+            if ($nextStatus === 'pending_delivered') {
+                $payload['delivery_action_required'] = 1;
+                $payload['partial_delivered_at'] = $recordedAt;
+            } elseif ($previousStatus === 'pending_delivered' && $nextStatus === 'Completed') {
+                $payload['delivery_action_required'] = 0;
+            }
             $statusTimestampColumnMap = [
                 'Completed' => 'completed_at',
                 'Returned' => 'returned_at',
@@ -6644,7 +6677,9 @@ final class OperationsApi extends BaseService
             }
             $createdTransactions = [];
 
-            if ($outcome === 'Delivered') {
+            // When transitioning to pending_delivered, skip all financial record creation.
+            // Income (COD), COGS, and shipping expenses will be created when confirming delivery.
+            if ($outcome === 'Delivered' && $nextStatus !== 'pending_delivered') {
                 $effectivePayment = round(max(0.0, $amount), 2);
                 $remainingDue = max(0.0, $orderTotal - $paidAmount);
                 if ($effectivePayment > $remainingDue) {
@@ -6715,6 +6750,14 @@ final class OperationsApi extends BaseService
                     );
                 }
                 $payload['history'] = $this->jsonEncode($history);
+            } elseif ($nextStatus === 'pending_delivered') {
+                $history['pendingDelivered'] = sprintf(
+                    'Delivery pending — awaiting confirmation by %s on %s at %s.',
+                    trim((string) ($actor['name'] ?? 'System')),
+                    $dateLabel,
+                    $timeLabel
+                );
+                $payload['history'] = $this->jsonEncode($history);
             } else {
                 if ($amount > 0) {
                     $createdTransactions[] = $this->createTransactionRecord([
@@ -6774,7 +6817,8 @@ final class OperationsApi extends BaseService
             // expense, mirroring the webhook-triggered expense recording in
             // updateOrder(). This ensures manual completions through the modal
             // also create the shipping cost expense when the setting is enabled.
-            if ($this->tableExists('courier_order_charges')) {
+            // Skip when setting pending_delivered — expenses created on confirmation.
+            if ($nextStatus !== 'pending_delivered' && $this->tableExists('courier_order_charges')) {
                 $storedCharge = $this->database->fetchOne(
                     "SELECT * FROM courier_order_charges
                      WHERE order_id = :order_id AND expense_status <> 'recorded'
@@ -6796,7 +6840,7 @@ final class OperationsApi extends BaseService
                 }
             }
 
-            if ($outcome === 'Delivered') {
+            if ($outcome === 'Delivered' && $nextStatus !== 'pending_delivered') {
                 $freshForCogs = $this->database->fetchOne('SELECT * FROM orders WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $orderId]);
                 if ($freshForCogs !== null) {
                     $cogsTransaction = $this->syncOrderPurchasePriceCogs($actor, $freshForCogs);

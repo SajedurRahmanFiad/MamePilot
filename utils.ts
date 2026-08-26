@@ -360,6 +360,7 @@ export const getOrderStatusHistoryField = (status: OrderStatus): string | null =
     [OrderStatus.COURIER_ASSIGNED]: 'courier',
     [OrderStatus.PICKED]: 'picked',
     [OrderStatus.COMPLETED]: 'completed',
+    [OrderStatus.PENDING_DELIVERED]: 'completed',
     [OrderStatus.PARTIALLY_DELIVERED]: 'partiallyDelivered',
     [OrderStatus.PENDING_PARTIAL]: 'partiallyDelivered',
     [OrderStatus.EXCHANGE_PROCESSING]: 'exchangeProcessing',

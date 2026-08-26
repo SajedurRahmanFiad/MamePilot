@@ -2562,6 +2562,9 @@ final class CourierApi extends BaseService
         } elseif ($provider === 'steadfast') {
             $apiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
             $secretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
+            if ($apiKey === '' && $secretKey === '') {
+                return;
+            }
             $expected = '';
             $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
             if ($provided !== '') {

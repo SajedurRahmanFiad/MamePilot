@@ -194,7 +194,12 @@ const OrderDetails: React.FC = () => {
       setCompletionExpenseOnly(false);
       setShowCompletionModal(true);
     }
-  }, [order?.status, order?.partialDeliveryActionRequired]);
+    if (order?.status === OrderStatus.PENDING_DELIVERED && order?.deliveryActionRequired && !showCompletionModal) {
+      setCompletionForm((current) => ({ ...current, outcome: 'Delivered' }));
+      setCompletionExpenseOnly(false);
+      setShowCompletionModal(true);
+    }
+  }, [order?.status, order?.partialDeliveryActionRequired, order?.deliveryActionRequired]);
 
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
   type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick';
@@ -206,7 +211,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Delivery pending' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -290,6 +295,7 @@ const OrderDetails: React.FC = () => {
       return timelineItems.findIndex((item) => item.label === (hasExchangedItems(order) ? 'Exchange delivered' : 'Delivered'));
     }
     if (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) return timelineItems.findIndex((item) => item.label === 'Partially Delivered');
+    if (order.status === OrderStatus.PENDING_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Delivery pending');
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
@@ -300,6 +306,7 @@ const OrderDetails: React.FC = () => {
     if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange Delivered' : 'Delivered';
     if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange Delivered';
     if (status === OrderStatus.PENDING_PARTIAL) return 'Pending Partial';
+    if (status === OrderStatus.PENDING_DELIVERED) return 'Pending Delivered';
     return status;
   };
 
@@ -454,7 +461,7 @@ const OrderDetails: React.FC = () => {
 
   const getOrderProgressPercent = (activeOrder?: Order | null) => {
     if (!activeOrder) return 0;
-    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.PARTIALLY_DELIVERED, OrderStatus.PENDING_PARTIAL].includes(activeOrder.status)) {
+    if ([OrderStatus.COMPLETED, OrderStatus.RETURNED, OrderStatus.CANCELLED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.PARTIALLY_DELIVERED, OrderStatus.PENDING_PARTIAL, OrderStatus.PENDING_DELIVERED].includes(activeOrder.status)) {
       return 100;
     }
     const finalStepLabel = showExchangeTimeline ? 'Exchange delivered' : 'Delivered';
@@ -513,6 +520,7 @@ const OrderDetails: React.FC = () => {
       { key: 'packed', label: 'Packed', icon: ICONS.ChevronRight, text: history.packed },
       { key: 'courier', label: 'Courier assigned', icon: ICONS.Courier, text: history.courier, timestamp: order.statusTimestamps?.courier },
       { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked, timestamp: order.statusTimestamps?.picked },
+      { key: 'pendingDelivered', label: 'Delivery pending', icon: ICONS.ChevronRight, text: history.pendingDelivered },
       { key: 'partiallyDelivered', label: 'Partially delivered', icon: ICONS.Check, text: history.partiallyDelivered },
       { key: 'partialDeliveryConfirmed', label: 'Partial delivery confirmed', icon: ICONS.Check, text: history.partialDeliveryConfirmed },
       { key: 'completed', label: 'Delivered', icon: ICONS.Check, text: history.completed, timestamp: order.statusTimestamps?.completed },
@@ -622,6 +630,7 @@ const OrderDetails: React.FC = () => {
       packed: 2,
       courier: 3,
       picked: 4,
+      pendingDelivered: 4.5,
       partiallyDelivered: 5,
       partialDeliveryConfirmed: 5.5,
       completed: 6,
@@ -1146,6 +1155,10 @@ const OrderDetails: React.FC = () => {
               openCompletion();
               return;
             }
+            if (transition.action === 'complete' && order?.status === OrderStatus.PENDING_DELIVERED) {
+              openCompletion();
+              return;
+            }
             if (transition.action === 'complete' && order?.status === OrderStatus.PARTIALLY_DELIVERED) {
               openPartialDeliveryCompletion();
               return;
@@ -1626,7 +1639,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const canMarkCurrentOrderPicked = canMoveCurrentOrderToPickedPermission && (order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED);
-  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED);
+  const canFinalizeCurrentOrder = canFinalizeOrders && (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || order.status === OrderStatus.PENDING_DELIVERED);
   const canShowActionsMenu =
     canEditCurrentOrder
     || canFinalizeCurrentOrder
@@ -1809,6 +1822,11 @@ const OrderDetails: React.FC = () => {
                     {(order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openPartialDeliveryCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Confirm Partial Delivery
+                      </button>
+                    )}
+                    {order.status === OrderStatus.PENDING_DELIVERED && order.deliveryActionRequired && (
+                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
+                        {ICONS.Check} Confirm Delivery
                       </button>
                     )}
                     {canAssignExchangeCourier && (

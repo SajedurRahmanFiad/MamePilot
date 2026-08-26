@@ -1440,7 +1440,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                 const sentToAnyCourier = sentToSteadfast || sentToCarryBee || sentToPaperfly || sentToPathao;
                 const canEditSelectedOrder = canEditOrder(order);
                 const canFinalizeSelectedOrder =
-                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || ((order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired)) && (canDeliverOrder(order) || canReturnOrder(order));
+                  (order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED || order.status === OrderStatus.PENDING_DELIVERED || ((order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired)) && (canDeliverOrder(order) || canReturnOrder(order));
                 const courierCompletionExpenseOutcome = order.status === OrderStatus.COMPLETED
                   ? 'Delivered'
                   : order.status === OrderStatus.RETURNED
@@ -1480,6 +1480,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                   || canDeleteSelectedOrder(order);
                 const settlementTotal = getOrderSettlementTotal(order);
                 const needsPartialAction = (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired;
+                const needsDeliveryAction = order.status === OrderStatus.PENDING_DELIVERED && order.deliveryActionRequired;
                 const paymentStatusLabel = getPaymentStatusLabel(order.paidAmount, order.status === OrderStatus.CANCELLED ? order.total : settlementTotal, order.history);
                 const isPartiallyPaid = paymentStatusLabel === 'Partially paid' || paymentStatusLabel === 'Partially Paid';
                 const isUnpaid = paymentStatusLabel === 'Unpaid';
@@ -1501,7 +1502,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                   onMouseLeave={() => setHoveredRow(null)} 
                   onClick={() => navigate(isPosMode ? `/pos-orders/${order.id}` : `/orders/${order.id}`, { state: buildHistoryBackState(location) })} 
                   className={`group relative cursor-pointer transition-all ${
-                    needsPartialAction
+                    needsPartialAction || needsDeliveryAction
                       ? 'bg-red-50/60 hover:bg-red-100/70'
                       : 'hover:bg-[#ebf4ff]/20'
                   }`}
@@ -1525,6 +1526,12 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black uppercase tracking-widest">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                             Action Required
+                          </span>
+                        )}
+                        {needsDeliveryAction && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            Confirm Delivery
                           </span>
                         )}
                         {order.courierReturnActionRequired && (

@@ -179,6 +179,7 @@ export enum OrderStatus {
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
+  PENDING_DELIVERED = 'pending_delivered',
   PENDING_PARTIAL = 'pending_partial',
   PARTIALLY_DELIVERED = 'partially_delivered',
   EXCHANGE_PROCESSING = 'Exchange processing',
@@ -862,6 +863,7 @@ export interface Order {
     processing?: string;
     packed?: string;
     picked?: string;
+    pendingDelivered?: string;
     partiallyDelivered?: string;
     partialDeliveryConfirmed?: string;
     completed?: string;
@@ -902,6 +904,8 @@ export interface Order {
   partialCodAmount?: number;
   // Steadfast return notice awaiting review
   courierReturnActionRequired?: boolean;
+  // Delivery action required (pending_delivered)
+  deliveryActionRequired?: boolean;
   // Dedicated status timestamp columns (UTC ISO strings)
   processedAt?: string;
   courierAssignedAt?: string;

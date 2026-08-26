@@ -52,6 +52,7 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
   [OrderStatus.COMPLETED]: { valueClass: 'text-emerald-500', barClass: 'bg-emerald-500', trackClass: 'bg-emerald-100' },
   [OrderStatus.PARTIALLY_DELIVERED]: { valueClass: 'text-amber-500', barClass: 'bg-amber-500', trackClass: 'bg-amber-100' },
   [OrderStatus.PENDING_PARTIAL]: { valueClass: 'text-orange-500', barClass: 'bg-orange-500', trackClass: 'bg-orange-100' },
+  [OrderStatus.PENDING_DELIVERED]: { valueClass: 'text-amber-500', barClass: 'bg-amber-500', trackClass: 'bg-amber-100' },
   [OrderStatus.EXCHANGE_PROCESSING]: { valueClass: 'text-blue-500', barClass: 'bg-blue-500', trackClass: 'bg-blue-100' },
   [OrderStatus.EXCHANGE_PICKED]: { valueClass: 'text-purple-500', barClass: 'bg-purple-500', trackClass: 'bg-purple-100' },
   [OrderStatus.EXCHANGE_DELIVERED]: { valueClass: 'text-emerald-500', barClass: 'bg-emerald-500', trackClass: 'bg-emerald-100' },
@@ -310,7 +311,7 @@ const Dashboard: React.FC = () => {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h3 className="text-xl font-bold text-gray-900">Action Required</h3>
-              <p className="mt-1 text-sm font-medium text-gray-500">Orders awaiting partial delivery confirmation.</p>
+              <p className="mt-1 text-sm font-medium text-gray-500">Orders awaiting partial delivery or delivery confirmation.</p>
             </div>
             {canViewOrders && (
               <button type="button" onClick={() => navigate('/orders?status=pending_partial')} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700 hover:bg-gray-50">View all</button>
