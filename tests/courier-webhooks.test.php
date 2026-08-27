@@ -1244,6 +1244,118 @@ try {
     );
     $database->execute('UPDATE courier_settings SET automatically_deduct_shipping_costs = 1');
 
+    // With both automation flags on, a delivered webhook must stage the order
+    // into pending_delivered (deferred accounting) instead of booking income
+    // and expense immediately. A follow-up delivered webhook confirms and
+    // posts the transactions.
+    $database->execute('UPDATE courier_settings SET automatically_record_sales_income = 1, automatically_mark_paid_after_delivery = 1');
+    $pendingDeliveredId = 'cwh-pending-delivered-' . $stamp;
+    $pendingDeliveredNumber = 'CWH-PENDING-DELIVERED-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $pendingDeliveredId, $pendingDeliveredNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-PENDING-DELIVERED-' . $stamp,
+        'total' => 1500,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-PENDING-DELIVERED-' . $stamp,
+        'invoice' => $pendingDeliveredNumber,
+        'status' => 'delivered',
+        'cod_amount' => 1500,
+        'delivery_charge' => 14.0,
+        'updated_at' => '2026-08-04 19:00:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(
+        courierWebhookOrderStatus($database, $pendingDeliveredId) === 'pending_delivered',
+        'Delivered webhook with both automation flags on did not stage into pending_delivered.'
+    );
+    $pendingActionRow = $database->fetchOne(
+        'SELECT delivery_action_required, partial_delivered_at FROM orders WHERE id = :id',
+        [':id' => $pendingDeliveredId]
+    );
+    courierWebhookAssert(
+        (int) ($pendingActionRow['delivery_action_required'] ?? 0) === 1,
+        'Delivered webhook with both automation flags on did not set delivery_action_required=1.'
+    );
+    courierWebhookAssert(
+        !empty($pendingActionRow['partial_delivered_at']),
+        'Delivered webhook with both automation flags on did not stamp partial_delivered_at.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $pendingDeliveredId) === null,
+        'Delivered webhook with both automation flags on booked an immediate shipping expense instead of deferring.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $pendingDeliveredId) === null,
+        'Delivered webhook with both automation flags on booked an immediate COD income instead of deferring.'
+    );
+
+    // The follow-up delivered webhook confirms the pending order and posts
+    // the deferred income + expense.
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-PENDING-DELIVERED-' . $stamp,
+        'invoice' => $pendingDeliveredNumber,
+        'status' => 'delivered',
+        'cod_amount' => 1500,
+        'delivery_charge' => 14.0,
+        'updated_at' => '2026-08-04 19:30:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(
+        courierWebhookOrderStatus($database, $pendingDeliveredId) === 'Completed',
+        'Follow-up delivered webhook did not advance pending_delivered to Completed.'
+    );
+    $confirmedActionRow = $database->fetchOne(
+        'SELECT delivery_action_required FROM orders WHERE id = :id',
+        [':id' => $pendingDeliveredId]
+    );
+    courierWebhookAssert(
+        (int) ($confirmedActionRow['delivery_action_required'] ?? 1) === 0,
+        'Follow-up delivered webhook did not clear delivery_action_required.'
+    );
+    $confirmedExpense = courierWebhookExpense($database, $pendingDeliveredId);
+    courierWebhookAssert(
+        $confirmedExpense !== null && abs((float) $confirmedExpense['amount'] - 14.00) < 0.001,
+        'Follow-up delivered webhook did not book the deferred shipping expense.'
+    );
+    $confirmedPayment = courierWebhookPayment($database, $pendingDeliveredId);
+    courierWebhookAssert(
+        $confirmedPayment !== null && abs((float) $confirmedPayment['amount'] - 1500.00) < 0.001,
+        'Follow-up delivered webhook did not book the deferred COD income.'
+    );
+
+    // With the income-automation flag off, the delivered webhook must jump
+    // straight to Completed and post the shipping expense + COD income
+    // immediately (the webhook already carries both values).
+    $database->execute('UPDATE courier_settings SET automatically_record_sales_income = 0');
+    $autoIncomeId = 'cwh-auto-income-' . $stamp;
+    $autoIncomeNumber = 'CWH-AUTO-INCOME-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $autoIncomeId, $autoIncomeNumber, 'Picked', $customerId, [
+        'steadfast' => 'SF-AUTO-INCOME-' . $stamp,
+        'total' => 850,
+    ]);
+    $courier->handleWebhook('steadfast', courierWebhookJson([
+        'notification_type' => 'delivery_status',
+        'consignment_id' => 'SF-AUTO-INCOME-' . $stamp,
+        'invoice' => $autoIncomeNumber,
+        'status' => 'delivered',
+        'cod_amount' => 850,
+        'delivery_charge' => 11.0,
+        'updated_at' => '2026-08-04 20:00:00',
+    ]), $steadfastHeaders);
+    courierWebhookAssert(
+        courierWebhookOrderStatus($database, $autoIncomeId) === 'Completed',
+        'Delivered webhook with income-automation off did not jump straight to Completed.'
+    );
+    courierWebhookAssert(
+        courierWebhookExpense($database, $autoIncomeId) !== null,
+        'Delivered webhook with income-automation off did not book an immediate shipping expense.'
+    );
+    courierWebhookAssert(
+        courierWebhookPayment($database, $autoIncomeId) !== null,
+        'Delivered webhook with income-automation off did not book an immediate COD income.'
+    );
+    $database->execute('UPDATE courier_settings SET automatically_record_sales_income = 1, automatically_mark_paid_after_delivery = 1');
+
     // Exchange deliveries book no automatic income; the money is settled
     // through the manual exchange flow.
     $exchangeIncomeId = 'cwh-exchange-income-' . $stamp;

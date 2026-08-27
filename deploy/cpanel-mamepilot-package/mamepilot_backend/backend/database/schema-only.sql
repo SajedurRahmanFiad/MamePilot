@@ -3852,6 +3852,9 @@ FROM orders o
 LEFT JOIN customers c ON c.id = o.customer_id
 WHERE o.deleted_at IS NULL;
 
+-- Migration: 2026-08-27_courier_sales_amount_automation.sql
+CALL sp_add_col('courier_settings', 'automatically_record_sales_income', 'TINYINT(1) NOT NULL DEFAULT 0');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS
