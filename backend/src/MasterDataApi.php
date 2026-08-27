@@ -4111,6 +4111,7 @@ final class MasterDataApi extends BaseService
         $hasFraudCheckerColumn = $this->columnExists('courier_settings', 'fraud_checker_api_key');
         return [
             'automaticallyDeductShippingCosts' => (bool) ($row['automatically_deduct_shipping_costs'] ?? false),
+            'automaticallyRecordSalesIncome' => (bool) ($row['automatically_record_sales_income'] ?? false),
             'automaticallyMarkPaidAfterDelivery' => (bool) ($row['automatically_mark_paid_after_delivery'] ?? false),
             'steadfast' => [
                 'baseUrl' => (string) ($row['steadfast_base_url'] ?? ''),
@@ -4228,6 +4229,9 @@ final class MasterDataApi extends BaseService
             'automatically_deduct_shipping_costs' => array_key_exists('automaticallyDeductShippingCosts', $params)
                 ? ((bool) $params['automaticallyDeductShippingCosts'] ? 1 : 0)
                 : (($current['automaticallyDeductShippingCosts'] ?? false) ? 1 : 0),
+            'automatically_record_sales_income' => array_key_exists('automaticallyRecordSalesIncome', $params)
+                ? ((bool) $params['automaticallyRecordSalesIncome'] ? 1 : 0)
+                : (($current['automaticallyRecordSalesIncome'] ?? false) ? 1 : 0),
             'automatically_mark_paid_after_delivery' => $automaticallyMarkPaid ? 1 : 0,
             'steadfast_base_url' => $steadfast['baseUrl'] ?? $current['steadfast']['baseUrl'],
             'steadfast_api_key' => $steadfast['apiKey'] ?? $current['steadfast']['apiKey'],
@@ -4334,6 +4338,7 @@ final class MasterDataApi extends BaseService
     {
         $definitions = [
             'automatically_deduct_shipping_costs' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'automatically_record_sales_income' => 'TINYINT(1) NOT NULL DEFAULT 0',
             'automatically_mark_paid_after_delivery' => 'TINYINT(1) NOT NULL DEFAULT 0',
             'carrybee_webhook_signature' => 'VARCHAR(500) NULL',
             'carrybee_webhook_header' => 'VARCHAR(128) NULL',

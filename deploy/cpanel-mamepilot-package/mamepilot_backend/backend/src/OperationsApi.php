@@ -6166,6 +6166,7 @@ final class OperationsApi extends BaseService
                     'Cancelled' => 'cancelled_at',
                     'partially_delivered' => 'partial_delivered_at',
                     'pending_partial' => 'partial_delivered_at',
+                    'pending_delivered' => 'partial_delivered_at',
                     'Exchange processing' => 'exchange_processing_at',
                     'Exchange picked' => 'exchange_picked_at',
                     'Exchange delivered' => 'exchange_delivered_at',
@@ -6324,6 +6325,9 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('partial_delivery_action_required', $updates)) {
                 $payload['partial_delivery_action_required'] = (int) ($updates['partial_delivery_action_required'] ?? 0);
+            }
+            if (array_key_exists('delivery_action_required', $updates)) {
+                $payload['delivery_action_required'] = (int) ($updates['delivery_action_required'] ?? 0);
             }
             if (array_key_exists('courier_return_action_required', $updates)) {
                 $payload['courier_return_action_required'] = (int) ($updates['courier_return_action_required'] ?? 0);

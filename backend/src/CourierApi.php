@@ -927,8 +927,15 @@ final class CourierApi extends BaseService
                 ];
 
                 if ($statusInfo['status'] === 'Delivered') {
-                    $updates['status'] = 'Completed';
-                    $updates['history']['completed'] = 'Marked delivered automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                    $deliveredTarget = $this->resolveDeliveredTargetStatus((string) ($row['status'] ?? ''), gmdate('c'));
+                    $updates['status'] = $deliveredTarget['status'];
+                    if (($deliveredTarget['pendingDelivered'] ?? false) === true) {
+                        $updates['delivery_action_required'] = 1;
+                        $updates['partial_delivered_at'] = gmdate('c');
+                        $updates['history']['pendingDelivered'] = 'Marked pending delivered automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivery.';
+                    } else {
+                        $updates['history']['completed'] = 'Marked delivered automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                    }
                 } elseif ($statusInfo['status'] === 'Returned') {
                     $updates['status'] = 'Returned';
                     $updates['history']['returned'] = 'Marked returned automatically from CarryBee transfer status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
@@ -1438,8 +1445,15 @@ final class CourierApi extends BaseService
             $updates = ['history' => $history];
 
             if ($statusInfo['status'] === 'Delivered') {
-                $updates['status'] = 'Completed';
-                $updates['history']['completed'] = 'Marked delivered automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+                $deliveredTarget = $this->resolveDeliveredTargetStatus((string) ($row['status'] ?? ''), gmdate('c'));
+                $updates['status'] = $deliveredTarget['status'];
+                if (($deliveredTarget['pendingDelivered'] ?? false) === true) {
+                    $updates['delivery_action_required'] = 1;
+                    $updates['partial_delivered_at'] = gmdate('c');
+                    $updates['history']['pendingDelivered'] = 'Marked pending delivered automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c') . '. Action required to confirm delivery.';
+                } else {
+                    $updates['history']['completed'] = 'Marked delivered automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
+                }
             } elseif ($statusInfo['status'] === 'Returned') {
                 $updates['status'] = 'Returned';
                 $updates['history']['returned'] = 'Marked returned automatically from Paperfly tracking status "' . $statusInfo['rawStatus'] . '" using reference "' . $referenceNumber . '" on ' . gmdate('c');
@@ -1545,8 +1559,15 @@ final class CourierApi extends BaseService
                 }
                 $updates['partial_cogs_amount'] = round($totalCogs, 2);
             } elseif ($statusInfo['status'] === 'Delivered') {
-                $updates['status'] = 'Completed';
-                $updates['history']['completed'] = 'Marked delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                $deliveredTarget = $this->resolveDeliveredTargetStatus((string) ($row['status'] ?? ''), gmdate('c'));
+                $updates['status'] = $deliveredTarget['status'];
+                if (($deliveredTarget['pendingDelivered'] ?? false) === true) {
+                    $updates['delivery_action_required'] = 1;
+                    $updates['partial_delivered_at'] = gmdate('c');
+                    $updates['history']['pendingDelivered'] = 'Marked pending delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivery.';
+                } else {
+                    $updates['history']['completed'] = 'Marked delivered automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                }
             } elseif ($statusInfo['status'] === 'Returned') {
                 $updates['status'] = 'Returned';
                 $updates['history']['returned'] = 'Marked returned automatically from Steadfast delivery status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
@@ -2297,8 +2318,15 @@ final class CourierApi extends BaseService
             $updates = ['history' => $history];
 
             if ($statusInfo['status'] === 'Delivered') {
-                $updates['status'] = 'Completed';
-                $updates['history']['completed'] = 'Marked delivered automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                $deliveredTarget = $this->resolveDeliveredTargetStatus((string) ($row['status'] ?? ''), gmdate('c'));
+                $updates['status'] = $deliveredTarget['status'];
+                if (($deliveredTarget['pendingDelivered'] ?? false) === true) {
+                    $updates['delivery_action_required'] = 1;
+                    $updates['partial_delivered_at'] = gmdate('c');
+                    $updates['history']['pendingDelivered'] = 'Marked pending delivered automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivery.';
+                } else {
+                    $updates['history']['completed'] = 'Marked delivered automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
+                }
             } elseif ($statusInfo['status'] === 'Returned') {
                 $updates['status'] = 'Returned';
                 $updates['history']['returned'] = 'Marked returned automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c');
@@ -2645,6 +2673,7 @@ final class CourierApi extends BaseService
             $eventAt = gmdate('Y-m-d H:i:s', (int) strtotime($eventAtRaw));
         }
 
+        $rawStatus = '';
         $codFee = $this->firstWebhookNumber($containers, ['cod_fee', 'cod_charge', 'collection_charge', 'collection_fee']);
         $deliveryFee = $this->firstWebhookNumber($containers, ['delivery_fee', 'delivery_charge', 'shipping_fee', 'shipping_charge']);
         $directTotal = $this->firstWebhookNumber($containers, ['total_charge', 'courier_charge', 'shipping_cost']);
@@ -3142,6 +3171,45 @@ final class CourierApi extends BaseService
         }
     }
 
+    /**
+     * Decide the target `orders.status` when a courier reports a "Delivered"
+     * event. The order is staged into `pending_delivered` (with action
+     * required) only when BOTH automation flags are on AND the previous
+     * status is `Picked` — mirroring the manual finalise path in
+     * `OperationsApi::completePickedOrder`. Otherwise the order completes
+     * immediately so the webhook/polled payload's already-known shipping
+     * fee + collected COD can post as automatic expense + income.
+     *
+     * @return array{status:string, delivery_action_required?:int, partial_delivered_at?:string, pendingDelivered:bool}
+     */
+    private function resolveDeliveredTargetStatus(string $previousStatus, string $recordedAt): array
+    {
+        $columns = 'automatically_deduct_shipping_costs';
+        if ($this->columnExists('courier_settings', 'automatically_record_sales_income')) {
+            $columns .= ', automatically_record_sales_income';
+        }
+        $row = $this->database->fetchOne(
+            "SELECT {$columns} FROM courier_settings LIMIT 1"
+        );
+        $autoDeductShipping = (bool) ($row['automatically_deduct_shipping_costs'] ?? false);
+        $autoRecordIncome = (bool) ($row['automatically_record_sales_income'] ?? false);
+
+        if (
+            $autoDeductShipping
+            && $autoRecordIncome
+            && $previousStatus === 'Picked'
+        ) {
+            return [
+                'status' => 'pending_delivered',
+                'delivery_action_required' => 1,
+                'partial_delivered_at' => $recordedAt,
+                'pendingDelivered' => true,
+            ];
+        }
+
+        return ['status' => 'Completed', 'pendingDelivered' => false];
+    }
+
     /** @return array<string, mixed> */
     private function buildWebhookOrderUpdates(string $provider, array $details, array $order, ?array $charge): array
     {
@@ -3168,8 +3236,13 @@ final class CourierApi extends BaseService
         if ($mapped !== null) {
             $mainEventDuringExchange = !$isExchange
                 && in_array($current, ['Exchange processing', 'Exchange picked'], true);
+            $delivered = $mapped === 'Delivered' && !$isExchange
+                ? $this->resolveDeliveredTargetStatus($current, $when)
+                : null;
             $target = match ($mapped) {
-                'Delivered' => $isExchange ? 'Exchange delivered' : 'Completed',
+                'Delivered' => $isExchange
+                    ? 'Exchange delivered'
+                    : ($delivered['status'] ?? 'Completed'),
                 'Partially Delivered' => $isExchange ? null : 'pending_partial',
                 'Returned' => $isExchange ? null : 'Returned',
                 'Cancelled' => $isExchange ? null : 'Cancelled',
@@ -3186,6 +3259,15 @@ final class CourierApi extends BaseService
                     // An authoritative status transition resolves any pending
                     // Steadfast return notice.
                     $updates['courier_return_action_required'] = 0;
+                    if ($target === 'pending_delivered') {
+                        $updates['delivery_action_required'] = 1;
+                        $updates['partial_delivered_at'] = $when;
+                    } elseif ($current === 'pending_delivered' && $target === 'Completed') {
+                        // A second delivered webhook while pending confirmation
+                        // clears the action flag so the order leaves
+                        // "action required" reports.
+                        $updates['delivery_action_required'] = 0;
+                    }
                     if ($mapped === 'Delivered') {
                         $key = $isExchange ? 'exchangeDelivered' : 'completed';
                         $history[$key] = sprintf(
