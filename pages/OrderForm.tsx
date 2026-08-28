@@ -8,7 +8,7 @@ import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage } from '../src/services/supabaseQueries';
+import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
 import { useCreateOrder, useUpdateOrder, useCreateCustomer } from '../src/hooks/useMutations';
 import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
@@ -109,6 +109,9 @@ const OrderForm: React.FC = () => {
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
   const [orderSmartInput, setOrderSmartInput] = useState('');
+  const [smartLookupUsed, setSmartLookupUsed] = useState(false);
+  const [smartLookupLoading, setSmartLookupLoading] = useState(false);
+  const [smartLookupCreated, setSmartLookupCreated] = useState(false);
   const createCustomerMutation = useCreateCustomer();
 
   // Debounced search term to avoid firing on every keystroke
@@ -558,10 +561,27 @@ const OrderForm: React.FC = () => {
     setCustSearchTerm('');
   };
 
+  const handleSmartLookup = async () => {
+    if (!orderSmartInput.trim()) return;
+    setSmartLookupLoading(true);
+    try {
+      const result = await lookupCustomerBySmartInput(orderSmartInput.trim());
+      seedCustomerCache(result.customer);
+      setCustomerId(result.customer.id);
+      setSmartLookupUsed(true);
+      setSmartLookupCreated(result.created);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to look up customer.';
+      toast.error(msg);
+    } finally {
+      setSmartLookupLoading(false);
+    }
+  };
+
   const handleSave = async () => {
     // When smart customer selection is enabled, resolve the smart input to a customer first
     let resolvedCustomerId = customerId;
-    if (smartCustomerSelection && orderSmartInput.trim()) {
+    if (smartCustomerSelection && orderSmartInput.trim() && !smartLookupUsed) {
       if (!pageId || items.length === 0 || !orderNumber || orderNumber === 'Generating...' || orderNumber === 'ERROR') {
         const msg = !pageId
           ? 'Please select a page.'
@@ -837,9 +857,30 @@ const OrderForm: React.FC = () => {
                 autoFocus
                 className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
                 value={orderSmartInput}
-                onChange={(e) => setOrderSmartInput(e.target.value)}
+                onChange={(e) => {
+                  setOrderSmartInput(e.target.value);
+                  if (smartLookupUsed) {
+                    setSmartLookupUsed(false);
+                    setSmartLookupCreated(false);
+                    setCustomerId('');
+                  }
+                }}
                 placeholder={'Paste the customer details exactly as the customer sent it.\n\nExample:\nRahim Ahmed\n01712345678\nHouse 12, Road 4, Mirpur, Dhaka'}
               />
+              <div className="flex items-center gap-2 mt-1">
+                {!smartLookupUsed ? (
+                  <button
+                    type="button"
+                    onClick={handleSmartLookup}
+                    disabled={smartLookupLoading || !orderSmartInput.trim()}
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    {smartLookupLoading ? 'Looking up...' : 'Lookup'}
+                  </button>
+                ) : smartLookupCreated ? (
+                  <span className="text-[11px] font-bold text-green-600">New customer</span>
+                ) : null}
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-1">

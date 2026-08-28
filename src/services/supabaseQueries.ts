@@ -125,6 +125,7 @@ export async function triggerGitUpdate(): Promise<GitUpdateDispatchResponse> {
 export async function fetchCustomers() { return call<Customer[]>('fetchCustomers'); }
 export async function fetchCustomerById(id: string) { return call<Customer | null>('fetchCustomerById', { id }); }
 export async function createCustomer(customer: Omit<Customer, 'id'>) { return call<Customer>('createCustomer', customer); }
+export async function lookupCustomerBySmartInput(smartInput: string) { return call<{ customer: Customer; created: boolean }>('lookupCustomerBySmartInput', { smartInput }); }
 export async function updateCustomer(id: string, updates: Partial<Customer>) { return call<Customer>('updateCustomer', { id, updates }); }
 export async function deleteCustomer(id: string) { await remove('deleteCustomer', id); }
 export async function fetchCustomersPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { createdByIds?: string[]; createdByNotIds?: string[]; name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; totalOrders?: { operator: string; value: string }; dueAmount?: { operator: string; value: string } }, options?: ApiActionOptions) {
@@ -307,6 +308,7 @@ export async function processBillReturn(payload: ProcessBillReturnPayload) { ret
 export async function fetchVendors() { return call<Vendor[]>('fetchVendors'); }
 export async function fetchVendorById(id: string) { return call<Vendor | null>('fetchVendorById', { id }); }
 export async function createVendor(vendor: Omit<Vendor, 'id'>) { return call<Vendor>('createVendor', vendor); }
+export async function lookupVendorBySmartInput(smartInput: string) { return call<{ vendor: Vendor; created: boolean }>('lookupVendorBySmartInput', { smartInput }); }
 export async function updateVendor(id: string, updates: Partial<Vendor>) { return call<Vendor>('updateVendor', { id, updates }); }
 export async function deleteVendor(id: string) { await remove('deleteVendor', id); }
 

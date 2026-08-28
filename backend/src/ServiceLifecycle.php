@@ -21,6 +21,8 @@ final class ServiceLifecycle
         'createBill',
         'createCategory',
         'createCustomer',
+        'lookupCustomerBySmartInput',
+        'lookupVendorBySmartInput',
         'createOrder',
         'createPaymentMethod',
         'createProduct',

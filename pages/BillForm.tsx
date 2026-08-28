@@ -8,7 +8,7 @@ import { Button, NumericInput, VendorCreateModal } from '../components';
 import { theme } from '../theme';
 import { useBill, useSystemDefaults, useVendor, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage } from '../src/services/supabaseQueries';
+import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage, lookupVendorBySmartInput } from '../src/services/supabaseQueries';
 import { useCreateBill, useUpdateBill, useCreateVendor } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -29,6 +29,9 @@ const BillForm: React.FC = () => {
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartVendorSelection = hasBeSmart && Boolean(beSmartSettings?.smartBillVendorSelection);
   const [billSmartInput, setBillSmartInput] = useState('');
+  const [smartLookupUsed, setSmartLookupUsed] = useState(false);
+  const [smartLookupLoading, setSmartLookupLoading] = useState(false);
+  const [smartLookupCreated, setSmartLookupCreated] = useState(false);
   const createVendorMutation = useCreateVendor();
 
   // Safety check
@@ -261,10 +264,26 @@ const BillForm: React.FC = () => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const handleSmartLookup = async () => {
+    if (!billSmartInput.trim()) return;
+    setSmartLookupLoading(true);
+    try {
+      const result = await lookupVendorBySmartInput(billSmartInput.trim());
+      setVendorId(result.vendor.id);
+      setSmartLookupUsed(true);
+      setSmartLookupCreated(result.created);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to look up vendor.';
+      toast.error(msg);
+    } finally {
+      setSmartLookupLoading(false);
+    }
+  };
+
   const handleSave = async () => {
     // When smart vendor selection is enabled, resolve the smart input to a vendor first
     let resolvedVendorId = vendorId;
-    if (smartVendorSelection && billSmartInput.trim()) {
+    if (smartVendorSelection && billSmartInput.trim() && !smartLookupUsed) {
       if (items.length === 0 || !billNumber || billNumber === 'Generating...' || billNumber === 'ERROR') {
         setError(!items.length ? 'Please add at least one product.' : 'Bill number is still being generated. Please wait a moment.');
         return;
@@ -425,9 +444,30 @@ const BillForm: React.FC = () => {
                 autoFocus
                 className="min-h-[120px] w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-medium leading-7 outline-none transition-all focus:border-[#3c5a82] focus:bg-white"
                 value={billSmartInput}
-                onChange={(e) => setBillSmartInput(e.target.value)}
+                onChange={(e) => {
+                  setBillSmartInput(e.target.value);
+                  if (smartLookupUsed) {
+                    setSmartLookupUsed(false);
+                    setSmartLookupCreated(false);
+                    setVendorId('');
+                  }
+                }}
                 placeholder={'Paste the vendor details exactly as the vendor sent it.\n\nExample:\nRahim Traders\n01712345678\nHouse 12, Road 4, Mirpur, Dhaka'}
               />
+              <div className="flex items-center gap-2 mt-1">
+                {!smartLookupUsed ? (
+                  <button
+                    type="button"
+                    onClick={handleSmartLookup}
+                    disabled={smartLookupLoading || !billSmartInput.trim()}
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    {smartLookupLoading ? 'Looking up...' : 'Lookup'}
+                  </button>
+                ) : smartLookupCreated ? (
+                  <span className="text-[11px] font-bold text-green-600">New vendor</span>
+                ) : null}
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-1">

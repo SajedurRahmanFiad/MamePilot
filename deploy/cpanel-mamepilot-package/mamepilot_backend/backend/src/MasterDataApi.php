@@ -721,6 +721,61 @@ final class MasterDataApi extends BaseService
         return $this->fetchCustomerById(['id' => $id]) ?? throw new RuntimeException('Failed to create customer.');
     }
 
+    public function lookupCustomerBySmartInput(array $params): array
+    {
+        $text = trim((string) ($params['smartInput'] ?? ''));
+        if ($text === '') {
+            throw new ApiException('Please paste the customer details first.', 422, 'SMART_INPUT_REQUIRED');
+        }
+
+        $resolved = $this->resolveSmartContactInput(['smartInput' => $text], 'customer');
+        $phone = trim((string) ($resolved['phone'] ?? ''));
+
+        if ($phone === '') {
+            throw new ApiException('A valid phone number could not be extracted from the text.', 422, 'SMART_NO_PHONE');
+        }
+
+        $existing = $this->database->fetchOne(
+            'SELECT id FROM customers WHERE phone = :phone AND deleted_at IS NULL LIMIT 1',
+            [':phone' => $phone]
+        );
+
+        if ($existing) {
+            $payload = ['updated_at' => $this->database->nowUtc()];
+            $name = trim((string) ($resolved['name'] ?? ''));
+            $address = $this->nullableString($resolved['address'] ?? null);
+            if ($name !== '') $payload['name'] = $name;
+            if ($address !== null) $payload['address'] = $address;
+            if (count($payload) > 1) {
+                $this->touchUpdate('customers', (string) $existing['id'], $payload);
+            }
+            $customer = $this->fetchCustomerById(['id' => $existing['id']]);
+            return ['customer' => $customer, 'created' => false];
+        }
+
+        $id = $this->stringId(null);
+        $actor = $this->currentUser();
+        $name = trim((string) ($resolved['name'] ?? ''));
+        $address = $this->nullableString($resolved['address'] ?? null);
+
+        $this->database->execute(
+            'INSERT INTO customers (id, name, phone, address, total_orders, due_amount, created_by, created_at, updated_at)
+             VALUES (:id, :name, :phone, :address, 0, 0.00, :created_by, :created_at, :updated_at)',
+            [
+                ':id' => $id,
+                ':name' => $name !== '' ? $name : 'N/A',
+                ':phone' => $phone,
+                ':address' => $address,
+                ':created_by' => (string) $actor['id'],
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+
+        $customer = $this->fetchCustomerById(['id' => $id]);
+        return ['customer' => $customer, 'created' => true];
+    }
+
     public function updateCustomer(array $params): array
     {
         $this->currentUser();
@@ -880,6 +935,61 @@ final class MasterDataApi extends BaseService
         );
 
         return $this->fetchVendorById(['id' => $id]) ?? throw new RuntimeException('Failed to create vendor.');
+    }
+
+    public function lookupVendorBySmartInput(array $params): array
+    {
+        $text = trim((string) ($params['smartInput'] ?? ''));
+        if ($text === '') {
+            throw new ApiException('Please paste the vendor details first.', 422, 'SMART_INPUT_REQUIRED');
+        }
+
+        $resolved = $this->resolveSmartContactInput(['smartInput' => $text], 'vendor');
+        $phone = trim((string) ($resolved['phone'] ?? ''));
+
+        if ($phone === '') {
+            throw new ApiException('A valid phone number could not be extracted from the text.', 422, 'SMART_NO_PHONE');
+        }
+
+        $existing = $this->database->fetchOne(
+            'SELECT id FROM vendors WHERE phone = :phone AND deleted_at IS NULL LIMIT 1',
+            [':phone' => $phone]
+        );
+
+        if ($existing) {
+            $payload = ['updated_at' => $this->database->nowUtc()];
+            $name = trim((string) ($resolved['name'] ?? ''));
+            $address = $this->nullableString($resolved['address'] ?? null);
+            if ($name !== '') $payload['name'] = $name;
+            if ($address !== null) $payload['address'] = $address;
+            if (count($payload) > 1) {
+                $this->touchUpdate('vendors', (string) $existing['id'], $payload);
+            }
+            $vendor = $this->fetchVendorById(['id' => $existing['id']]);
+            return ['vendor' => $vendor, 'created' => false];
+        }
+
+        $id = $this->stringId(null);
+        $actor = $this->currentUser();
+        $name = trim((string) ($resolved['name'] ?? ''));
+        $address = $this->nullableString($resolved['address'] ?? null);
+
+        $this->database->execute(
+            'INSERT INTO vendors (id, name, phone, address, total_purchases, due_amount, created_by, created_at, updated_at)
+             VALUES (:id, :name, :phone, :address, 0, 0.00, :created_by, :created_at, :updated_at)',
+            [
+                ':id' => $id,
+                ':name' => $name !== '' ? $name : 'N/A',
+                ':phone' => $phone,
+                ':address' => $address,
+                ':created_by' => (string) $actor['id'],
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+
+        $vendor = $this->fetchVendorById(['id' => $id]);
+        return ['vendor' => $vendor, 'created' => true];
     }
 
     public function updateVendor(array $params): array

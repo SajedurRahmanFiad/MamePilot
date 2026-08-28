@@ -116,6 +116,8 @@ final class FeatureAccess
         'fetchCustomerFilterOptions' => 'sales',
         'fetchCustomersMini' => 'sales',
         'createCustomer' => 'sales',
+        'lookupCustomerBySmartInput' => 'sales',
+        'lookupVendorBySmartInput' => 'purchases',
         'updateCustomer' => 'sales',
         'deleteCustomer' => 'sales',
         'fetchBills' => 'purchases',
