@@ -111,7 +111,7 @@ const OrderForm: React.FC = () => {
   const [orderSmartInput, setOrderSmartInput] = useState('');
   const [smartLookupUsed, setSmartLookupUsed] = useState(false);
   const [smartLookupLoading, setSmartLookupLoading] = useState(false);
-  const [smartLookupCreated, setSmartLookupCreated] = useState(false);
+  const [smartLookupFound, setSmartLookupFound] = useState<boolean | null>(null);
   const createCustomerMutation = useCreateCustomer();
 
   // Debounced search term to avoid firing on every keystroke
@@ -566,10 +566,12 @@ const OrderForm: React.FC = () => {
     setSmartLookupLoading(true);
     try {
       const result = await lookupCustomerBySmartInput(orderSmartInput.trim());
-      seedCustomerCache(result.customer);
-      setCustomerId(result.customer.id);
+      if (result.found && result.customer) {
+        seedCustomerCache(result.customer);
+        setCustomerId(result.customer.id);
+      }
       setSmartLookupUsed(true);
-      setSmartLookupCreated(result.created);
+      setSmartLookupFound(result.found);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to look up customer.';
       toast.error(msg);
@@ -581,7 +583,7 @@ const OrderForm: React.FC = () => {
   const handleSave = async () => {
     // When smart customer selection is enabled, resolve the smart input to a customer first
     let resolvedCustomerId = customerId;
-    if (smartCustomerSelection && orderSmartInput.trim() && !smartLookupUsed) {
+    if (smartCustomerSelection && orderSmartInput.trim()) {
       if (!pageId || items.length === 0 || !orderNumber || orderNumber === 'Generating...' || orderNumber === 'ERROR') {
         const msg = !pageId
           ? 'Please select a page.'
@@ -861,7 +863,7 @@ const OrderForm: React.FC = () => {
                   setOrderSmartInput(e.target.value);
                   if (smartLookupUsed) {
                     setSmartLookupUsed(false);
-                    setSmartLookupCreated(false);
+                    setSmartLookupFound(null);
                     setCustomerId('');
                   }
                 }}
@@ -877,9 +879,11 @@ const OrderForm: React.FC = () => {
                   >
                     {smartLookupLoading ? 'Looking up...' : 'Lookup'}
                   </button>
-                ) : smartLookupCreated ? (
+                ) : smartLookupFound ? (
+                  <span className="text-[11px] font-bold text-orange-500">Existing customer</span>
+                ) : (
                   <span className="text-[11px] font-bold text-green-600">New customer</span>
-                ) : null}
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">

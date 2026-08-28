@@ -741,39 +741,19 @@ final class MasterDataApi extends BaseService
         );
 
         if ($existing) {
-            $payload = ['updated_at' => $this->database->nowUtc()];
-            $name = trim((string) ($resolved['name'] ?? ''));
-            $address = $this->nullableString($resolved['address'] ?? null);
-            if ($name !== '') $payload['name'] = $name;
-            if ($address !== null) $payload['address'] = $address;
-            if (count($payload) > 1) {
-                $this->touchUpdate('customers', (string) $existing['id'], $payload);
-            }
             $customer = $this->fetchCustomerById(['id' => $existing['id']]);
-            return ['customer' => $customer, 'created' => false];
+            return ['customer' => $customer, 'found' => true];
         }
 
-        $id = $this->stringId(null);
-        $actor = $this->currentUser();
-        $name = trim((string) ($resolved['name'] ?? ''));
-        $address = $this->nullableString($resolved['address'] ?? null);
-
-        $this->database->execute(
-            'INSERT INTO customers (id, name, phone, address, total_orders, due_amount, created_by, created_at, updated_at)
-             VALUES (:id, :name, :phone, :address, 0, 0.00, :created_by, :created_at, :updated_at)',
-            [
-                ':id' => $id,
-                ':name' => $name !== '' ? $name : 'N/A',
-                ':phone' => $phone,
-                ':address' => $address,
-                ':created_by' => (string) $actor['id'],
-                ':created_at' => $this->database->nowUtc(),
-                ':updated_at' => $this->database->nowUtc(),
-            ]
-        );
-
-        $customer = $this->fetchCustomerById(['id' => $id]);
-        return ['customer' => $customer, 'created' => true];
+        return [
+            'customer' => null,
+            'found' => false,
+            'extracted' => [
+                'name' => trim((string) ($resolved['name'] ?? '')),
+                'phone' => $phone,
+                'address' => trim((string) ($resolved['address'] ?? '')),
+            ],
+        ];
     }
 
     public function updateCustomer(array $params): array
@@ -957,39 +937,19 @@ final class MasterDataApi extends BaseService
         );
 
         if ($existing) {
-            $payload = ['updated_at' => $this->database->nowUtc()];
-            $name = trim((string) ($resolved['name'] ?? ''));
-            $address = $this->nullableString($resolved['address'] ?? null);
-            if ($name !== '') $payload['name'] = $name;
-            if ($address !== null) $payload['address'] = $address;
-            if (count($payload) > 1) {
-                $this->touchUpdate('vendors', (string) $existing['id'], $payload);
-            }
             $vendor = $this->fetchVendorById(['id' => $existing['id']]);
-            return ['vendor' => $vendor, 'created' => false];
+            return ['vendor' => $vendor, 'found' => true];
         }
 
-        $id = $this->stringId(null);
-        $actor = $this->currentUser();
-        $name = trim((string) ($resolved['name'] ?? ''));
-        $address = $this->nullableString($resolved['address'] ?? null);
-
-        $this->database->execute(
-            'INSERT INTO vendors (id, name, phone, address, total_purchases, due_amount, created_by, created_at, updated_at)
-             VALUES (:id, :name, :phone, :address, 0, 0.00, :created_by, :created_at, :updated_at)',
-            [
-                ':id' => $id,
-                ':name' => $name !== '' ? $name : 'N/A',
-                ':phone' => $phone,
-                ':address' => $address,
-                ':created_by' => (string) $actor['id'],
-                ':created_at' => $this->database->nowUtc(),
-                ':updated_at' => $this->database->nowUtc(),
-            ]
-        );
-
-        $vendor = $this->fetchVendorById(['id' => $id]);
-        return ['vendor' => $vendor, 'created' => true];
+        return [
+            'vendor' => null,
+            'found' => false,
+            'extracted' => [
+                'name' => trim((string) ($resolved['name'] ?? '')),
+                'phone' => $phone,
+                'address' => trim((string) ($resolved['address'] ?? '')),
+            ],
+        ];
     }
 
     public function updateVendor(array $params): array

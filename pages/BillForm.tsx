@@ -31,7 +31,7 @@ const BillForm: React.FC = () => {
   const [billSmartInput, setBillSmartInput] = useState('');
   const [smartLookupUsed, setSmartLookupUsed] = useState(false);
   const [smartLookupLoading, setSmartLookupLoading] = useState(false);
-  const [smartLookupCreated, setSmartLookupCreated] = useState(false);
+  const [smartLookupFound, setSmartLookupFound] = useState<boolean | null>(null);
   const createVendorMutation = useCreateVendor();
 
   // Safety check
@@ -269,9 +269,11 @@ const BillForm: React.FC = () => {
     setSmartLookupLoading(true);
     try {
       const result = await lookupVendorBySmartInput(billSmartInput.trim());
-      setVendorId(result.vendor.id);
+      if (result.found && result.vendor) {
+        setVendorId(result.vendor.id);
+      }
       setSmartLookupUsed(true);
-      setSmartLookupCreated(result.created);
+      setSmartLookupFound(result.found);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to look up vendor.';
       toast.error(msg);
@@ -283,7 +285,7 @@ const BillForm: React.FC = () => {
   const handleSave = async () => {
     // When smart vendor selection is enabled, resolve the smart input to a vendor first
     let resolvedVendorId = vendorId;
-    if (smartVendorSelection && billSmartInput.trim() && !smartLookupUsed) {
+    if (smartVendorSelection && billSmartInput.trim()) {
       if (items.length === 0 || !billNumber || billNumber === 'Generating...' || billNumber === 'ERROR') {
         setError(!items.length ? 'Please add at least one product.' : 'Bill number is still being generated. Please wait a moment.');
         return;
@@ -448,7 +450,7 @@ const BillForm: React.FC = () => {
                   setBillSmartInput(e.target.value);
                   if (smartLookupUsed) {
                     setSmartLookupUsed(false);
-                    setSmartLookupCreated(false);
+                    setSmartLookupFound(null);
                     setVendorId('');
                   }
                 }}
@@ -464,9 +466,11 @@ const BillForm: React.FC = () => {
                   >
                     {smartLookupLoading ? 'Looking up...' : 'Lookup'}
                   </button>
-                ) : smartLookupCreated ? (
+                ) : smartLookupFound ? (
+                  <span className="text-[11px] font-bold text-orange-500">Existing vendor</span>
+                ) : (
                   <span className="text-[11px] font-bold text-green-600">New vendor</span>
-                ) : null}
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
