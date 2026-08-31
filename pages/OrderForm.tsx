@@ -17,6 +17,8 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { buildOrderPageSnapshot, getGlobalCompanyPage, normalizeCompanyPage, normalizeCompanySettings } from '../src/utils/companyPages';
+import { saveOrderFormDraft, restoreOrderFormDraft } from '../src/utils/formDraft';
+import { buildHistoryBackState } from '../src/utils/navigation';
 
 type CustomerSearchOption = Pick<Customer, 'id' | 'name'> & Partial<Customer>;
 
@@ -277,6 +279,7 @@ const OrderForm: React.FC = () => {
   const initializedRef = React.useRef(false);
   const orderNumberRequestedRef = React.useRef(false);
   const initializationGenerationRef = React.useRef(0);
+  const restoredFromDraftRef = React.useRef(false);
 
   // Reset before the initialization effect runs when the route/account
   // changes. The generation prevents an older preview request from writing
@@ -286,6 +289,28 @@ const OrderForm: React.FC = () => {
     orderNumberRequestedRef.current = false;
     initializationGenerationRef.current += 1;
   }, [id, user?.id]);
+
+  // Restore form draft from sessionStorage when navigating back from customer details
+  React.useEffect(() => {
+    if (initializedRef.current || restoredFromDraftRef.current) return;
+    const draft = restoreOrderFormDraft();
+    if (draft) {
+      restoredFromDraftRef.current = true;
+      setCustomerId(draft.customerId);
+      setPageId(draft.pageId);
+      setSourceAdId(draft.sourceAdId);
+      setOrderDate(draft.orderDate);
+      setOrderNumber(draft.orderNumber);
+      setItems(draft.items as OrderItem[]);
+      setDiscount(draft.discount);
+      setShipping(draft.shipping);
+      setNotes(draft.notes);
+      setOrderSmartInput(draft.orderSmartInput);
+      setSmartLookupUsed(draft.smartLookupUsed);
+      setSmartLookupFound(draft.smartLookupFound);
+      initializedRef.current = true;
+    }
+  }, []);
 
   React.useEffect(() => {
     // Only initialize the local form state once from server data. This
@@ -578,6 +603,25 @@ const OrderForm: React.FC = () => {
     } finally {
       setSmartLookupLoading(false);
     }
+  };
+
+  const handleViewCustomer = () => {
+    if (!customerId) return;
+    saveOrderFormDraft({
+      customerId,
+      pageId,
+      sourceAdId,
+      orderDate,
+      orderNumber,
+      items,
+      discount,
+      shipping,
+      notes,
+      orderSmartInput,
+      smartLookupUsed,
+      smartLookupFound,
+    });
+    navigate(`/customers/${customerId}`, { state: buildHistoryBackState(location) });
   };
 
   const handleSave = async () => {
@@ -880,7 +924,16 @@ const OrderForm: React.FC = () => {
                     {smartLookupLoading ? 'Looking up...' : 'Lookup'}
                   </button>
                 ) : smartLookupFound ? (
-                  <span className="text-[11px] font-bold text-orange-500">Existing customer</span>
+                  <>
+                    <span className="text-[11px] font-bold text-orange-500">Existing customer</span>
+                    <button
+                      type="button"
+                      onClick={handleViewCustomer}
+                      className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                    >
+                      View
+                    </button>
+                  </>
                 ) : (
                   <span className="text-[11px] font-bold text-green-600">New customer</span>
                 )}

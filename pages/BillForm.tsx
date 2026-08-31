@@ -15,10 +15,13 @@ import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { getNextBillNumber } from '../src/services/supabaseQueries';
+import { saveBillFormDraft, restoreBillFormDraft } from '../src/utils/formDraft';
+import { buildHistoryBackState } from '../src/utils/navigation';
 
 const BillForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const user = db.currentUser;
   const { can, canAccessRecord } = useRolePermissions();
   const isEdit = Boolean(id);
@@ -147,6 +150,27 @@ const BillForm: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const initializedRef = React.useRef(false);
+  const restoredFromDraftRef = React.useRef(false);
+
+  // Restore form draft from sessionStorage when navigating back from vendor details
+  React.useEffect(() => {
+    if (initializedRef.current || restoredFromDraftRef.current) return;
+    const draft = restoreBillFormDraft();
+    if (draft) {
+      restoredFromDraftRef.current = true;
+      setVendorId(draft.vendorId);
+      setBillDate(draft.billDate);
+      setBillNumber(draft.billNumber);
+      setItems(draft.items as OrderItem[]);
+      setDiscount(draft.discount);
+      setShipping(draft.shipping);
+      setNotes(draft.notes);
+      setBillSmartInput(draft.billSmartInput);
+      setSmartLookupUsed(draft.smartLookupUsed);
+      setSmartLookupFound(draft.smartLookupFound);
+      initializedRef.current = true;
+    }
+  }, []);
 
   // Initialize form with existing bill data when loaded
   React.useEffect(() => {
@@ -282,6 +306,23 @@ const BillForm: React.FC = () => {
     }
   };
 
+  const handleViewVendor = () => {
+    if (!vendorId) return;
+    saveBillFormDraft({
+      vendorId,
+      billDate,
+      billNumber,
+      items,
+      discount,
+      shipping,
+      notes,
+      billSmartInput,
+      smartLookupUsed,
+      smartLookupFound,
+    });
+    navigate(`/vendors/${vendorId}`, { state: buildHistoryBackState(location) });
+  };
+
   const handleSave = async () => {
     // When smart vendor selection is enabled, resolve the smart input to a vendor first
     let resolvedVendorId = vendorId;
@@ -405,7 +446,6 @@ const BillForm: React.FC = () => {
       : undefined);
 
   // If redirected back with a selectedVendorId in the URL, apply it and clean the URL
-  const location = useLocation();
   React.useEffect(() => {
     try {
       const params = new URLSearchParams(location.search);
@@ -467,7 +507,16 @@ const BillForm: React.FC = () => {
                     {smartLookupLoading ? 'Looking up...' : 'Lookup'}
                   </button>
                 ) : smartLookupFound ? (
-                  <span className="text-[11px] font-bold text-orange-500">Existing vendor</span>
+                  <>
+                    <span className="text-[11px] font-bold text-orange-500">Existing vendor</span>
+                    <button
+                      type="button"
+                      onClick={handleViewVendor}
+                      className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                    >
+                      View
+                    </button>
+                  </>
                 ) : (
                   <span className="text-[11px] font-bold text-green-600">New vendor</span>
                 )}
