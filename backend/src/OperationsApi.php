@@ -10477,7 +10477,7 @@ final class OperationsApi extends BaseService
             }
             $hasOutstandingTopUp = $isCommissionBased && $paymentSnapshot !== null && $estimatedAmount > 0;
             $hasBlockingPeriodOverlap = !empty($nonExactOverlapByEmployee[$employeeId]);
-            $remainingAmount = max(0.0, round((float) $estimatedAmount - (float) $paymentTotals['paidBaseAmount'], 2));
+            $remainingAmount = max(0.0, round((float) $estimatedAmount, 2));
             $paymentStatus = 'unpaid';
             if ($paymentTotals['paymentCount'] > 0) {
                 $paymentStatus = $remainingAmount > 0.01 ? 'partial' : 'paid';
@@ -11007,7 +11007,11 @@ final class OperationsApi extends BaseService
                     ':order_count_snapshot' => $orderCount,
                     ':compensation_type' => $compensationType,
                     ':fixed_salary_snapshot' => $isCommissionBased ? null : $this->formatMoney($fixedSalary ?? 0),
-                    ':base_amount_snapshot' => $this->formatMoney($baseAmount),
+                    ':base_amount_snapshot' => $this->formatMoney(
+                        $isPartial
+                            ? max(0.0, min($baseAmount, $netAmount - $bonusAmount + $deductionAmount))
+                            : $baseAmount
+                    ),
                     ':bonus_amount' => $this->formatMoney($bonusAmount),
                     ':deduction_amount' => $this->formatMoney($deductionAmount),
                     ':amount_snapshot' => $this->formatMoney($netAmount),
