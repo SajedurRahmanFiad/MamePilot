@@ -2043,6 +2043,7 @@ export interface PayrollPayment {
   bonusAmount?: number;
   deductionAmount?: number;
   netAmount?: number;
+  isPartial?: boolean;
   walletPayoutId?: string | null;
   accountId?: string | null;
   accountName?: string | null;
@@ -2071,7 +2072,7 @@ export interface PayrollSummaryRow {
   grossBaseAmount?: number;
   balancePeriodStart?: string | null;
   balancePeriodEnd?: string | null;
-  paymentStatus: 'paid' | 'unpaid';
+  paymentStatus: 'paid' | 'partial' | 'unpaid';
   paymentSnapshot?: PayrollPayment;
   paymentCount?: number;
   paidBaseAmount?: number;
@@ -2079,6 +2080,7 @@ export interface PayrollSummaryRow {
   paidBonusAmount?: number;
   paidDeductionAmount?: number;
   periodBaseAmount?: number;
+  remainingAmount?: number;
   hasOutstandingTopUp?: boolean;
   hasBlockingPeriodOverlap?: boolean;
   liveAmountDelta?: number;
@@ -2200,6 +2202,7 @@ export interface WalletPayout {
 export interface EmployeeWalletPayoutPayload {
   employeeId: string;
   amount: number;
+  requestedAmount?: number;
   accountId: string;
   paymentMethod: string;
   categoryId: string;

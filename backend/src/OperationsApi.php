@@ -10477,6 +10477,11 @@ final class OperationsApi extends BaseService
             }
             $hasOutstandingTopUp = $isCommissionBased && $paymentSnapshot !== null && $estimatedAmount > 0;
             $hasBlockingPeriodOverlap = !empty($nonExactOverlapByEmployee[$employeeId]);
+            $remainingAmount = max(0.0, round((float) $estimatedAmount - (float) $paymentTotals['paidBaseAmount'], 2));
+            $paymentStatus = 'unpaid';
+            if ($paymentTotals['paymentCount'] > 0) {
+                $paymentStatus = $remainingAmount > 0.01 ? 'partial' : 'paid';
+            }
             $summaries[] = [
                 'employeeId' => $employeeId,
                 'employeeName' => $employee['name'],
@@ -10491,7 +10496,7 @@ final class OperationsApi extends BaseService
                 'grossBaseAmount' => $grossBaseAmount,
                 'balancePeriodStart' => $balancePeriodStart,
                 'balancePeriodEnd' => $balancePeriodEnd,
-                'paymentStatus' => $paymentSnapshot ? 'paid' : 'unpaid',
+                'paymentStatus' => $paymentStatus,
                 'paymentSnapshot' => $paymentSnapshot,
                 'paymentCount' => (int) $paymentTotals['paymentCount'],
                 'paidBaseAmount' => $paymentTotals['paidBaseAmount'],
@@ -10499,6 +10504,7 @@ final class OperationsApi extends BaseService
                 'paidBonusAmount' => $paymentTotals['paidBonusAmount'],
                 'paidDeductionAmount' => $paymentTotals['paidDeductionAmount'],
                 'periodBaseAmount' => round((float) $paymentTotals['paidBaseAmount'] + $estimatedAmount, 2),
+                'remainingAmount' => $remainingAmount,
                 'hasOutstandingTopUp' => $hasOutstandingTopUp,
                 'hasBlockingPeriodOverlap' => $hasBlockingPeriodOverlap,
                 'liveAmountDelta' => $paymentSnapshot ? $estimatedAmount : 0,
@@ -10860,6 +10866,7 @@ final class OperationsApi extends BaseService
                     && trim((string) ($overlap['payment_method'] ?? '')) === trim((string) ($params['paymentMethod'] ?? ''))
                     && trim((string) ($overlap['category_id'] ?? '')) === trim((string) ($params['categoryId'] ?? ''));
             }
+            $hasExistingExactPayment = $overlap !== null && $isExactPeriod;
 
             $mappedEmployee = $this->mapUser($employee);
             $isCommissionBased = !empty($mappedEmployee['isCommissionBased'] ?? false);
@@ -10883,11 +10890,11 @@ final class OperationsApi extends BaseService
                 if ($baseAmount <= 0 && $isMatchingRetry && trim((string) ($overlap['wallet_payout_id'] ?? '')) !== '') {
                     return $this->buildPayrollPayoutResponse($overlap);
                 }
-                // Commission credits may legitimately accrue after an earlier
-                // payout for the exact same period. Permit only that positive
-                // top-up; fixed salary and partial-overlap duplicates stay blocked.
-                if (!$isCommissionBased || !$isExactPeriod || $baseAmount <= 0) {
+                if (!$isExactPeriod) {
                     throw new RuntimeException('This employee already has payroll recorded for an overlapping period.');
+                }
+                if ($baseAmount <= 0 && $bonusAmount <= 0) {
+                    throw new RuntimeException('There is no unpaid base amount or bonus for this employee in the selected period.');
                 }
             }
             if ($baseAmount <= 0 && $bonusAmount <= 0) {
@@ -10897,10 +10904,17 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Deduction cannot exceed base pay plus bonus.');
             }
             $netAmount = round($baseAmount + $bonusAmount - $deductionAmount, 2);
+            $maxNet = $netAmount;
+            $requestedAmount = round((float) ($params['requestedAmount'] ?? 0), 2);
+            $isPartial = false;
+            if ($requestedAmount > 0 && $requestedAmount < $maxNet) {
+                $netAmount = round($requestedAmount, 2);
+                $isPartial = true;
+            }
             if ($netAmount <= 0) {
                 throw new RuntimeException('Net payroll payout must be greater than zero.');
             }
-            if (array_key_exists('amount', $params) && abs((float) $params['amount'] - $netAmount) > 0.01) {
+            if (!$isPartial && array_key_exists('amount', $params) && abs((float) $params['amount'] - $netAmount) > 0.01) {
                 throw new RuntimeException('Payroll changed while this form was open. Refresh and review the recalculated net amount.');
             }
 
@@ -10943,8 +10957,9 @@ final class OperationsApi extends BaseService
                 : 'custom';
             $periodLabel = trim((string) ($params['periodLabel'] ?? '')) ?: ($periodStart . ' - ' . $periodEnd);
             $note = $this->nullableString($params['note'] ?? null);
+            $partialSuffix = $isPartial ? ' (partial payment of ' . $this->formatMoney($netAmount) . ')' : '';
             $description = 'Payroll payout to ' . (string) ($employee['name'] ?? 'Employee')
-                . ' (' . $periodLabel . '; base ' . $this->formatMoney($baseAmount)
+                . ' (' . $periodLabel . $partialSuffix . '; base ' . $this->formatMoney($baseAmount)
                 . ', bonus ' . $this->formatMoney($bonusAmount)
                 . ', deduction ' . $this->formatMoney($deductionAmount) . ')';
 
@@ -10969,14 +10984,14 @@ final class OperationsApi extends BaseService
                     id, employee_id, period_start, period_end, period_kind, period_label,
                     unit_amount_snapshot, counted_statuses_snapshot, order_count_snapshot,
                     compensation_type, fixed_salary_snapshot, base_amount_snapshot,
-                    bonus_amount, deduction_amount, amount_snapshot, wallet_payout_id,
+                    bonus_amount, deduction_amount, amount_snapshot, is_partial, wallet_payout_id,
                     transaction_id, account_id, payment_method, category_id,
                     paid_at, paid_by, note, created_at, updated_at
                 ) VALUES (
                     :id, :employee_id, :period_start, :period_end, :period_kind, :period_label,
                     :unit_amount_snapshot, :counted_statuses_snapshot, :order_count_snapshot,
                     :compensation_type, :fixed_salary_snapshot, :base_amount_snapshot,
-                    :bonus_amount, :deduction_amount, :amount_snapshot, :wallet_payout_id,
+                    :bonus_amount, :deduction_amount, :amount_snapshot, :is_partial, :wallet_payout_id,
                     :transaction_id, :account_id, :payment_method, :category_id,
                     :paid_at, :paid_by, :note, :created_at, :updated_at
                 )',
@@ -10996,6 +11011,7 @@ final class OperationsApi extends BaseService
                     ':bonus_amount' => $this->formatMoney($bonusAmount),
                     ':deduction_amount' => $this->formatMoney($deductionAmount),
                     ':amount_snapshot' => $this->formatMoney($netAmount),
+                    ':is_partial' => $isPartial ? 1 : 0,
                     ':wallet_payout_id' => $payoutId,
                     ':transaction_id' => $transactionId,
                     ':account_id' => $accountId,

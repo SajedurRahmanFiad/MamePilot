@@ -126,6 +126,7 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
   onPay,
 }) => {
   const isPaid = summary?.paymentStatus === 'paid';
+  const isPartial = summary?.paymentStatus === 'partial';
   const baseAmount = getPayrollBaseAmount(summary);
   const payment = summary?.paymentSnapshot;
   const compensationKind = getCompensationKind(
@@ -140,6 +141,9 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
   const netPaid = Number(summary?.paidNetAmount ?? payment?.amountSnapshot ?? payment?.netAmount ?? 0);
   const paidBonus = Number(summary?.paidBonusAmount ?? payment?.bonusAmount ?? 0);
   const paidDeduction = Number(summary?.paidDeductionAmount ?? payment?.deductionAmount ?? 0);
+  const remaining = Number(summary?.remainingAmount ?? 0);
+  const totalOwed = Number(summary?.periodBaseAmount ?? baseAmount);
+  const paidPercent = totalOwed > 0 ? Math.min(100, Math.round((netPaid / totalOwed) * 100)) : 0;
 
   return (
     <article className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition hover:border-[#c9daec] hover:shadow-md">
@@ -157,9 +161,13 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
               {getCompensationLabel(compensationKind)}
             </span>
             <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider ${
-              isPaid && !hasOutstandingTopUp && !hasBlockingPeriodOverlap ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+              isPaid && !hasOutstandingTopUp && !hasBlockingPeriodOverlap
+                ? 'bg-emerald-100 text-emerald-700'
+                : isPartial
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-amber-100 text-amber-700'
             }`}>
-              {hasBlockingPeriodOverlap ? 'Date overlap' : hasOutstandingTopUp ? 'Top-up due' : isPaid ? 'Paid' : 'Pending'}
+              {hasBlockingPeriodOverlap ? 'Date overlap' : hasOutstandingTopUp ? 'Top-up due' : isPartial ? 'Partial' : isPaid ? 'Paid' : 'Pending'}
             </span>
           </div>
         </div>
@@ -177,13 +185,28 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
         </div>
         <div>
           <p className="text-[9px] font-black uppercase tracking-[0.14em] text-gray-400">
-            {isPaid ? 'Net paid' : 'Current balance'}
+            {isPartial ? 'Remaining' : isPaid ? 'Net paid' : 'Current balance'}
           </p>
           <p className="mt-1 text-sm font-black text-gray-900">
-            {formatCurrency(isPaid ? netPaid : card.currentBalance)}
+            {isPartial ? formatCurrency(remaining) : formatCurrency(isPaid ? netPaid : card.currentBalance)}
           </p>
         </div>
       </div>
+
+      {isPartial && totalOwed > 0 && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-[9px] font-black text-gray-400 mb-1">
+            <span>Paid {formatCurrency(netPaid)} of {formatCurrency(totalOwed)}</span>
+            <span>{paidPercent}%</span>
+          </div>
+          <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-amber-400 transition-all"
+              style={{ width: `${paidPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-3 text-xs font-medium text-gray-500">
         <span className="truncate">{periodLabel}</span>
@@ -196,7 +219,7 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
         </span>
       </div>
 
-      {isPaid && (paidBonus > 0 || paidDeduction > 0) && (
+      {(isPaid || isPartial) && (paidBonus > 0 || paidDeduction > 0) && (
         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black">
           {paidBonus > 0 && (
             <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">+{formatCurrency(paidBonus)} bonus</span>
@@ -209,9 +232,9 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
 
       <Button
         type="button"
-        variant={isPaid && !hasOutstandingTopUp && !hasBlockingPeriodOverlap ? 'outline' : 'primary'}
+        variant={(isPaid && !hasOutstandingTopUp && !hasBlockingPeriodOverlap) || isPartial ? 'outline' : 'primary'}
         size="sm"
-        disabled={!canPay || hasBlockingPeriodOverlap || (isPaid && !hasOutstandingTopUp) || loadingSummary || !summary || compensationKind === 'unconfigured'}
+        disabled={!canPay || hasBlockingPeriodOverlap || (isPaid && !hasOutstandingTopUp && !isPartial) || loadingSummary || !summary || compensationKind === 'unconfigured'}
         onClick={() => onPay(card)}
         className="mt-4 w-full justify-center"
       >
@@ -219,6 +242,8 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
           ? 'Choose uncovered dates'
           : hasOutstandingTopUp
           ? 'Review top-up'
+          : isPartial
+            ? 'Pay remaining'
           : isPaid
             ? 'Payment recorded'
           : compensationKind === 'unconfigured'
@@ -234,6 +259,8 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
 type PayoutFormState = {
   bonusAmount: number;
   deductionAmount: number;
+  isPartialPayment: boolean;
+  partialAmount: number;
   accountId: string;
   paymentMethod: string;
   paidAt: string;
@@ -272,6 +299,8 @@ const Payroll: React.FC = () => {
   const [payoutForm, setPayoutForm] = useState<PayoutFormState>({
     bonusAmount: 0,
     deductionAmount: 0,
+    isPartialPayment: false,
+    partialAmount: 0,
     accountId: '',
     paymentMethod: '',
     paidAt: getTodayDate(),
@@ -397,16 +426,23 @@ const Payroll: React.FC = () => {
   const baseAmount = Number(selectedSummary?.estimatedAmount || 0);
   const bonusAmount = Math.max(0, Number(payoutForm.bonusAmount || 0));
   const deductionAmount = Math.max(0, Number(payoutForm.deductionAmount || 0));
-  const netAmount = roundMoney(baseAmount + bonusAmount - deductionAmount);
+  const fullNetAmount = roundMoney(baseAmount + bonusAmount - deductionAmount);
+  const effectiveNetAmount = payoutForm.isPartialPayment && payoutForm.partialAmount > 0
+    ? Math.min(roundMoney(payoutForm.partialAmount), fullNetAmount)
+    : fullNetAmount;
+  const netAmount = effectiveNetAmount;
+  const remainingAfterPayment = roundMoney(fullNetAmount - netAmount);
   const deductionIsInvalid = deductionAmount > baseAmount + bonusAmount;
   const accountIsInsufficient = !!selectedAccount && netAmount > selectedAccount.currentBalance;
+  const canPayThisPeriod = selectedSummary
+    && (selectedSummary.paymentStatus !== 'paid'
+      || selectedSummary.hasOutstandingTopUp === true
+      || (selectedCompensationKind === 'commission' && Number(selectedSummary.estimatedAmount || 0) > 0));
   const payoutFormReady = !!activePeriod
     && !!selectedSummary
     && selectedCompensationKind !== 'unconfigured'
     && selectedSummary.hasBlockingPeriodOverlap !== true
-    && (selectedSummary.paymentStatus !== 'paid' || selectedSummary.hasOutstandingTopUp === true || (
-      selectedCompensationKind === 'commission' && Number(selectedSummary.estimatedAmount || 0) > 0
-    ))
+    && canPayThisPeriod
     && netAmount > 0
     && !deductionIsInvalid
     && !accountIsInsufficient
@@ -420,6 +456,8 @@ const Payroll: React.FC = () => {
     setPayoutForm({
       bonusAmount: 0,
       deductionAmount: 0,
+      isPartialPayment: false,
+      partialAmount: 0,
       accountId: '',
       paymentMethod: '',
       paidAt: getTodayDate(),
@@ -485,6 +523,10 @@ const Payroll: React.FC = () => {
       toast.info('Payroll is already recorded for this employee in the selected period.');
       return;
     }
+    if (summary.paymentStatus === 'partial' && Number(summary.remainingAmount || 0) <= 0) {
+      toast.info('No remaining balance for this employee in the selected period.');
+      return;
+    }
     const compensationKind = getCompensationKind(
       summary.compensationType || card.compensationType,
       summary.isCommissionBased ?? card.isCommissionBased,
@@ -502,6 +544,8 @@ const Payroll: React.FC = () => {
     setPayoutForm({
       bonusAmount: 0,
       deductionAmount: 0,
+      isPartialPayment: false,
+      partialAmount: 0,
       accountId: '',
       paymentMethod: '',
       paidAt: getTodayDate(),
@@ -515,9 +559,7 @@ const Payroll: React.FC = () => {
       toast.warning('The selected dates overlap another payroll period. Choose a fully uncovered date range.');
       return;
     }
-    const canRecordCommissionTopUp = selectedCompensationKind === 'commission'
-      && (selectedSummary.hasOutstandingTopUp === true || Number(selectedSummary.estimatedAmount || 0) > 0);
-    if (selectedSummary.paymentStatus === 'paid' && !canRecordCommissionTopUp) {
+    if (!canPayThisPeriod) {
       toast.warning('Payroll is already recorded for this employee in the selected period.');
       return;
     }
@@ -542,11 +584,16 @@ const Payroll: React.FC = () => {
       return;
     }
 
-    const toastId = toast.loading(`Recording payroll for ${selectedCard.employeeName}...`);
+    const isPartial = payoutForm.isPartialPayment && netAmount < fullNetAmount;
+    const toastMessage = isPartial
+      ? `Recording partial payment of ${formatCurrency(netAmount)} for ${selectedCard.employeeName}...`
+      : `Recording payroll for ${selectedCard.employeeName}...`;
+    const toastId = toast.loading(toastMessage);
     try {
       await payEmployeeWalletMutation.mutateAsync({
         employeeId: selectedCard.employeeId,
         amount: netAmount,
+        requestedAmount: isPartial ? netAmount : undefined,
         bonusAmount,
         deductionAmount,
         periodStart: activePeriod.periodStart,
@@ -946,7 +993,9 @@ const Payroll: React.FC = () => {
               loading={payEmployeeWalletMutation.isPending}
               disabled={!payoutFormReady || accountsLoading || paymentMethodsLoading || categoriesLoading}
             >
-              Record {formatCurrency(Math.max(0, netAmount))}
+              {payoutForm.isPartialPayment && remainingAfterPayment > 0
+                ? `Pay ${formatCurrency(Math.max(0, netAmount))} now`
+                : `Record ${formatCurrency(Math.max(0, netAmount))}`}
             </Button>
           </>
         )}
@@ -1013,6 +1062,51 @@ const Payroll: React.FC = () => {
                   ? `Base pay is prorated from ${formatCurrency(selectedSummary?.fixedSalary ?? selectedCard.fixedSalary ?? 0)} monthly salary for the selected calendar days.`
                   : 'This employee has no configured compensation basis.'}
               {' '}The server recalculates this base before saving, so stale or duplicate payments are rejected.
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-amber-800">Partial payment</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Pay less than the full amount now. The remaining balance carries forward.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPayoutForm((current) => ({
+                    ...current,
+                    isPartialPayment: !current.isPartialPayment,
+                    partialAmount: current.isPartialPayment ? 0 : fullNetAmount,
+                  }))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    payoutForm.isPartialPayment ? 'bg-amber-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                    payoutForm.isPartialPayment ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+              {payoutForm.isPartialPayment && (
+                <div className="space-y-2 pt-1">
+                  <NumericInput
+                    label="Amount to pay now"
+                    value={payoutForm.partialAmount}
+                    onChange={(value) => setPayoutForm((current) => ({
+                      ...current,
+                      partialAmount: Math.max(0, Math.min(value, fullNetAmount)),
+                    }))}
+                    min={0}
+                    max={fullNetAmount}
+                    helperText={`Maximum payable: ${formatCurrency(fullNetAmount)}`}
+                  />
+                  <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs font-bold">
+                    <span className="text-gray-500">Remaining after payment</span>
+                    <span className={remainingAfterPayment > 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                      {formatCurrency(remainingAfterPayment)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">

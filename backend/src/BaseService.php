@@ -1662,6 +1662,7 @@ abstract class BaseService
             'deductionAmount' => (float) ($row['deduction_amount'] ?? $row['deductionAmount'] ?? 0),
             'amountSnapshot' => $netAmount,
             'netAmount' => $netAmount,
+            'isPartial' => (int) ($row['is_partial'] ?? 0) === 1,
             'walletPayoutId' => $this->nullableString($row['wallet_payout_id'] ?? $row['walletPayoutId'] ?? null),
             'transactionId' => $this->nullableString($row['transaction_id'] ?? $row['transactionId'] ?? null),
             'accountId' => $this->nullableString($row['account_id'] ?? $row['accountId'] ?? null),
