@@ -788,13 +788,13 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
           {children}
           {!isConversationPage && !isPosPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
-              © {new Date().getFullYear()} Mame Studios
+              © {new Date().getFullYear()} Md Sajedur Rahman Fiad
               <span className="mx-2">|</span>
               Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
               <span className="mx-2">|</span>
               All rights reserved.
             </p>
-            <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by <a href="https://facebook.com/mamestudios" target="_blank" rel="noopener noreferrer" className="hover:underline">Mame Studios</a></p>
+            <p className={`text-[11px] font-bold uppercase tracking-widest text-center md:text-left ${theme.colors.text.secondary}`}>developed by <a href="https://sajedurrahmanfiad.me" target="_blank" rel="noopener noreferrer" className="hover:underline">Md Sajedur Rahman Fiad</a></p>
           </footer>}
         </main>
         {hasCapability('enterprise_ai_agent') && !isConversationPage && !isPosPage && <MameChat />}
