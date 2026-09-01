@@ -10348,53 +10348,72 @@ final class OperationsApi extends BaseService
         $sql .= ' ORDER BY pp.paid_at DESC';
 
         $rows = $this->database->fetchAll($sql, $bindings);
-        $users = $this->database->fetchAll('SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE deleted_at IS NULL');
-        $userMap = $this->keyBy($users, 'id');
+        $userMap = [];
+        try {
+            $users = $this->database->fetchAll('SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE deleted_at IS NULL');
+            $userMap = $this->keyBy($users, 'id');
+        } catch (\Throwable $e) {
+            // Fallback: map names/roles from the payroll_payments rows themselves
+            foreach ($rows as $row) {
+                $empId = (string) ($row['employee_id'] ?? '');
+                if ($empId !== '' && !isset($userMap[$empId])) {
+                    $userMap[$empId] = ['id' => $empId, 'name' => $row['employee_name'] ?? null, 'role' => $row['employee_role'] ?? null];
+                }
+                $payerId = (string) ($row['paid_by'] ?? '');
+                if ($payerId !== '' && !isset($userMap[$payerId])) {
+                    $userMap[$payerId] = ['id' => $payerId, 'name' => null, 'role' => null];
+                }
+            }
+        }
         $history = array_map(fn(array $row): array => $this->mapPayrollPayment($row, $userMap), $rows);
 
-        $legacySql = 'SELECT wp.*, a.name AS account_name, c.name AS category_name
-                      FROM wallet_payouts wp
-                      LEFT JOIN accounts a ON a.id = wp.account_id
-                      LEFT JOIN categories c ON c.id = wp.category_id
-                      WHERE wp.payroll_payment_id IS NULL';
-        $legacyBindings = [];
-        $legacyEmployeeId = $isEmployee
-            ? (string) $currentUser['id']
-            : trim((string) ($params['employeeId'] ?? ''));
-        if ($legacyEmployeeId !== '') {
-            $legacySql .= ' AND wp.employee_id = :employee_id';
-            $legacyBindings[':employee_id'] = $legacyEmployeeId;
-        }
-        foreach ($this->database->fetchAll($legacySql . ' ORDER BY wp.paid_at DESC', $legacyBindings) as $legacy) {
-            $paidAtIso = $this->toIso($legacy['paid_at'] ?? null);
-            $localPaidDate = $this->localDateFromUtc($paidAtIso);
-            $filterStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
-            $filterEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
-            if (($filterStart !== '' && $localPaidDate < $filterStart) || ($filterEnd !== '' && $localPaidDate > $filterEnd)) {
-                continue;
+        try {
+            $legacySql = 'SELECT wp.*, a.name AS account_name, c.name AS category_name
+                          FROM wallet_payouts wp
+                          LEFT JOIN accounts a ON a.id = wp.account_id
+                          LEFT JOIN categories c ON c.id = wp.category_id
+                          WHERE wp.payroll_payment_id IS NULL';
+            $legacyBindings = [];
+            $legacyEmployeeId = $isEmployee
+                ? (string) $currentUser['id']
+                : trim((string) ($params['employeeId'] ?? ''));
+            if ($legacyEmployeeId !== '') {
+                $legacySql .= ' AND wp.employee_id = :employee_id';
+                $legacyBindings[':employee_id'] = $legacyEmployeeId;
             }
-            $history[] = $this->mapPayrollPayment(array_merge($legacy, [
-                'employee_name' => $userMap[(string) ($legacy['employee_id'] ?? '')]['name'] ?? null,
-                'employee_role' => $userMap[(string) ($legacy['employee_id'] ?? '')]['role'] ?? null,
-                'period_start' => $localPaidDate,
-                'period_end' => $localPaidDate,
-                'period_kind' => 'legacy',
-                'period_label' => 'Legacy wallet payout',
-                'unit_amount_snapshot' => 0,
-                'counted_statuses_snapshot' => '[]',
-                'order_count_snapshot' => 0,
-                'base_amount_snapshot' => (float) ($legacy['amount'] ?? 0),
-                'bonus_amount' => 0,
-                'deduction_amount' => 0,
-                'amount_snapshot' => (float) ($legacy['amount'] ?? 0),
-                'wallet_payout_id' => (string) ($legacy['id'] ?? ''),
-                'transaction_id' => $legacy['transaction_id'] ?? null,
-                'account_id' => $legacy['account_id'] ?? null,
-                'payment_method' => $legacy['payment_method'] ?? null,
-                'category_id' => $legacy['category_id'] ?? null,
-                'paid_by_name' => $userMap[(string) ($legacy['paid_by'] ?? '')]['name'] ?? null,
-                'created_at' => $legacy['created_at'] ?? $legacy['paid_at'] ?? null,
-            ]), $userMap);
+            foreach ($this->database->fetchAll($legacySql . ' ORDER BY wp.paid_at DESC', $legacyBindings) as $legacy) {
+                $paidAtIso = $this->toIso($legacy['paid_at'] ?? null);
+                $localPaidDate = $this->localDateFromUtc($paidAtIso);
+                $filterStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
+                $filterEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
+                if (($filterStart !== '' && $localPaidDate < $filterStart) || ($filterEnd !== '' && $localPaidDate > $filterEnd)) {
+                    continue;
+                }
+                $history[] = $this->mapPayrollPayment(array_merge($legacy, [
+                    'employee_name' => $userMap[(string) ($legacy['employee_id'] ?? '')]['name'] ?? null,
+                    'employee_role' => $userMap[(string) ($legacy['employee_id'] ?? '')]['role'] ?? null,
+                    'period_start' => $localPaidDate,
+                    'period_end' => $localPaidDate,
+                    'period_kind' => 'legacy',
+                    'period_label' => 'Legacy wallet payout',
+                    'unit_amount_snapshot' => 0,
+                    'counted_statuses_snapshot' => '[]',
+                    'order_count_snapshot' => 0,
+                    'base_amount_snapshot' => (float) ($legacy['amount'] ?? 0),
+                    'bonus_amount' => 0,
+                    'deduction_amount' => 0,
+                    'amount_snapshot' => (float) ($legacy['amount'] ?? 0),
+                    'wallet_payout_id' => (string) ($legacy['id'] ?? ''),
+                    'transaction_id' => $legacy['transaction_id'] ?? null,
+                    'account_id' => $legacy['account_id'] ?? null,
+                    'payment_method' => $legacy['payment_method'] ?? null,
+                    'category_id' => $legacy['category_id'] ?? null,
+                    'paid_by_name' => $userMap[(string) ($legacy['paid_by'] ?? '')]['name'] ?? null,
+                    'created_at' => $legacy['created_at'] ?? $legacy['paid_at'] ?? null,
+                ]), $userMap);
+            }
+        } catch (\Throwable $e) {
+            // Legacy payout query failed (e.g. table or column missing) – skip legacy entries
         }
         usort($history, static fn(array $left, array $right): int => strcmp(
             (string) ($right['paidAt'] ?? ''),

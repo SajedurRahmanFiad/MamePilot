@@ -1379,6 +1379,7 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
   bonus_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   deduction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  is_partial TINYINT(1) NOT NULL DEFAULT 0,
   wallet_payout_id VARCHAR(64) NULL,
   transaction_id VARCHAR(64) NULL,
   account_id VARCHAR(64) NULL,
@@ -1404,6 +1405,7 @@ CALL sp_add_col('payroll_payments', 'fixed_salary_snapshot', 'DECIMAL(12,2) NULL
 CALL sp_add_col('payroll_payments', 'base_amount_snapshot', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
 CALL sp_add_col('payroll_payments', 'bonus_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
 CALL sp_add_col('payroll_payments', 'deduction_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+CALL sp_add_col('payroll_payments', 'is_partial', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('payroll_payments', 'wallet_payout_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('payroll_payments', 'transaction_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('payroll_payments', 'account_id', 'VARCHAR(64) NULL');
