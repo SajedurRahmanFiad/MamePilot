@@ -174,7 +174,7 @@ const UserDetails: React.FC = () => {
               </div>
               <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Compensation</p>
-                <p className="text-sm font-bold text-gray-900">{user.isCommissionBased ? 'Commission Based' : 'Fixed Salary'}</p>
+                <p className="text-sm font-bold text-gray-900">{user.compensationType === 'hybrid' ? 'Hybrid (Fixed + Commission)' : user.isCommissionBased ? 'Commission Based' : 'Fixed Salary'}</p>
               </div>
               <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
@@ -211,10 +211,10 @@ const UserDetails: React.FC = () => {
           <SectionCard title="Employment & Compensation" subtitle="Role and salary information for this user.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InfoBlock label="System Role" value={formatTextValue(user.role)} />
-              <InfoBlock label="Compensation Model" value={user.isCommissionBased ? 'Commission Based' : 'Fixed Salary'} />
+              <InfoBlock label="Compensation Model" value={user.compensationType === 'hybrid' ? 'Hybrid (Fixed + Commission)' : user.isCommissionBased ? 'Commission Based' : 'Fixed Salary'} />
               <InfoBlock
                 label="Fixed Salary"
-                value={user.isCommissionBased ? 'Not applicable' : (user.fixedSalary != null ? formatCurrency(user.fixedSalary) : 'Not provided')}
+                value={user.compensationType === 'fixed' || user.compensationType === 'hybrid' ? (user.fixedSalary != null ? formatCurrency(user.fixedSalary) : 'Not provided') : 'Not applicable'}
               />
             </div>
           </SectionCard>

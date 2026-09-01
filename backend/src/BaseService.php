@@ -1321,12 +1321,24 @@ abstract class BaseService
         $fixedSalary = isset($row['fixed_salary']) || isset($row['fixedSalary'])
             ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'] ?? 0)
             : null;
+        $unitAmount = isset($row['unit_amount']) || isset($row['unitAmount'])
+            ? (float) ($row['unit_amount'] ?? $row['unitAmount'] ?? 0)
+            : null;
         // Historic employee rows defaulted is_commission_based to false while
         // leaving salary empty. Preserve their operational commission behavior;
         // fixed salary is authoritative only when a positive salary exists.
         $isCommissionBased = !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? false)
             || $fixedSalary === null
             || $fixedSalary <= 0;
+
+        // Hybrid: commission-based with a positive fixed salary set
+        if ($isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+            $compensationType = 'hybrid';
+        } elseif ($isCommissionBased) {
+            $compensationType = 'commission';
+        } else {
+            $compensationType = 'fixed';
+        }
 
         return [
             'id' => (string) $row['id'],
@@ -1346,8 +1358,9 @@ abstract class BaseService
             'nationality' => $this->nullableString($row['nationality'] ?? null),
             'cv' => $this->nullableString($row['cv'] ?? null),
             'isCommissionBased' => $isCommissionBased,
-            'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
+            'compensationType' => $compensationType,
             'fixedSalary' => $fixedSalary,
+            'unitAmount' => $unitAmount,
             'createdAt' => $this->toIso($row['created_at'] ?? null),
             'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
             'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),
@@ -1614,14 +1627,18 @@ abstract class BaseService
         $employee = $userMap[(string) ($row['employee_id'] ?? '')] ?? null;
         $payer = $userMap[(string) ($row['paid_by'] ?? '')] ?? null;
         $compensationType = trim((string) ($row['compensation_type'] ?? $row['compensationType'] ?? ''));
-        if (!in_array($compensationType, ['commission', 'fixed'], true)) {
+        if (!in_array($compensationType, ['commission', 'fixed', 'hybrid'], true)) {
             $employeeFixedSalary = ($employee['fixed_salary'] ?? $employee['fixedSalary'] ?? null) !== null
                 ? (float) ($employee['fixed_salary'] ?? $employee['fixedSalary'])
                 : null;
             $isCommissionBased = !empty($employee['is_commission_based'] ?? $employee['isCommissionBased'] ?? false)
                 || $employeeFixedSalary === null
                 || $employeeFixedSalary <= 0;
-            $compensationType = $isCommissionBased ? 'commission' : 'fixed';
+            if ($isCommissionBased && $employeeFixedSalary !== null && $employeeFixedSalary > 0) {
+                $compensationType = 'hybrid';
+            } else {
+                $compensationType = $isCommissionBased ? 'commission' : 'fixed';
+            }
         }
         $netAmount = (float) ($row['amount_snapshot'] ?? $row['amountSnapshot'] ?? 0);
         $baseAmount = array_key_exists('base_amount_snapshot', $row) || array_key_exists('baseAmountSnapshot', $row)
@@ -1653,7 +1670,7 @@ abstract class BaseService
             ),
             'orderCountSnapshot' => (int) ($row['order_count_snapshot'] ?? 0),
             'compensationType' => $compensationType,
-            'isCommissionBased' => $compensationType === 'commission',
+            'isCommissionBased' => in_array($compensationType, ['commission', 'hybrid'], true),
             'fixedSalarySnapshot' => ($row['fixed_salary_snapshot'] ?? $row['fixedSalarySnapshot'] ?? null) !== null
                 ? (float) ($row['fixed_salary_snapshot'] ?? $row['fixedSalarySnapshot'])
                 : null,
@@ -1691,6 +1708,9 @@ abstract class BaseService
             'isCommissionBased' => !empty($row['is_commission_based'] ?? $row['isCommissionBased'] ?? true),
             'fixedSalary' => ($row['fixed_salary'] ?? $row['fixedSalary'] ?? null) !== null
                 ? (float) ($row['fixed_salary'] ?? $row['fixedSalary'])
+                : null,
+            'unitAmount' => ($row['unit_amount'] ?? $row['unitAmount'] ?? null) !== null
+                ? (float) ($row['unit_amount'] ?? $row['unitAmount'])
                 : null,
             'balancePeriodStart' => $this->nullableString($row['balance_period_start'] ?? $row['balancePeriodStart'] ?? null),
             'balancePeriodEnd' => $this->nullableString($row['balance_period_end'] ?? $row['balancePeriodEnd'] ?? null),

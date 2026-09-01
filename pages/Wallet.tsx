@@ -81,6 +81,8 @@ const Wallet: React.FC = () => {
   const isFixedSalary = myWallet?.compensationType
     ? myWallet.compensationType === 'fixed' || myWallet.compensationType === 'fixed_salary'
     : myWallet?.isCommissionBased === false && Number(myWallet?.fixedSalary || 0) > 0;
+  const isHybrid = myWallet?.compensationType === 'hybrid'
+    || (myWallet?.isCommissionBased === true && Number(myWallet?.fixedSalary || 0) > 0);
   const baseEarned = myWallet?.baseEarned
     ?? (isFixedSalary ? (myWallet?.fixedSalary ?? 0) : Math.max(0, (myWallet?.totalEarned ?? 0) - (myWallet?.totalBonuses ?? 0)));
   const totalBonuses = myWallet?.totalBonuses ?? 0;
@@ -210,25 +212,30 @@ const Wallet: React.FC = () => {
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#0f2f57]">Employee compensation</p>
               <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${isFixedSalary ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                {isFixedSalary ? 'Fixed salary' : 'Commission based'}
+                {isHybrid ? 'Hybrid (Fixed + Commission)' : isFixedSalary ? 'Fixed salary' : 'Commission based'}
               </span>
             </div>
             <h1 className="mt-3 text-2xl font-black text-gray-900 md:text-3xl">My wallet</h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-gray-500">
-              {isFixedSalary
-                ? 'Your current salary cycle, payroll adjustments, and settled payments are shown together.'
-                : 'Follow every eligible order credit, reversal, payroll adjustment, and payment from one private ledger.'}
+              {isHybrid
+                ? 'Your fixed salary, eligible order credits, payroll adjustments, and settled payments are shown together.'
+                : isFixedSalary
+                  ? 'Your current salary cycle, payroll adjustments, and settled payments are shown together.'
+                  : 'Follow every eligible order credit, reversal, payroll adjustment, and payment from one private ledger.'}
             </p>
           </div>
           <div className="rounded-2xl border border-white bg-white/90 px-5 py-4 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">
-              {isFixedSalary ? 'Monthly base salary' : 'Current order rate'}
+              {isHybrid ? 'Monthly salary + Order rate' : isFixedSalary ? 'Monthly base salary' : 'Current order rate'}
             </p>
             <p className="mt-2 text-xl font-black text-[#0f2f57]">
-              {!isFixedSalary && walletSettingsError
-                ? 'Unavailable'
-                : formatCurrency(isFixedSalary ? (myWallet?.fixedSalary ?? 0) : walletSettings.unitAmount)}
-              {!isFixedSalary && <span className="ml-1 text-xs font-bold text-gray-400">per eligible order</span>}
+              {isHybrid
+                ? `${formatCurrency(myWallet?.fixedSalary ?? 0)}/mo`
+                : !isFixedSalary && walletSettingsError
+                  ? 'Unavailable'
+                  : formatCurrency(isFixedSalary ? (myWallet?.fixedSalary ?? 0) : (myWallet?.unitAmount ?? walletSettings.unitAmount))}
+              {isHybrid && <span className="ml-1 text-xs font-bold text-gray-400">+ {formatCurrency(myWallet?.unitAmount ?? walletSettings.unitAmount)} per order</span>}
+              {!isFixedSalary && !isHybrid && <span className="ml-1 text-xs font-bold text-gray-400">per eligible order</span>}
             </p>
             <p className="mt-1 text-xs font-semibold text-gray-500">Balance period: {balancePeriod}</p>
           </div>
@@ -245,9 +252,9 @@ const Wallet: React.FC = () => {
           tone={hasCarryForwardAdjustment ? 'border-rose-200 bg-rose-50/60' : 'border-[#d6e3f0] bg-[#f8fbff]'}
         />
         <SummaryCard
-          label={isFixedSalary ? 'Base salary' : 'Base commission earned'}
+          label={isHybrid ? 'Base earned' : isFixedSalary ? 'Base salary' : 'Base commission earned'}
           value={formatCurrency(baseEarned)}
-          hint={isFixedSalary ? 'Base entitlement for the current salary cycle.' : 'Eligible order credits before payroll adjustments.'}
+          hint={isHybrid ? 'Combined fixed salary and commission earned this period.' : isFixedSalary ? 'Base entitlement for the current salary cycle.' : 'Eligible order credits before payroll adjustments.'}
         />
         <SummaryCard
           label="Bonuses"
@@ -267,9 +274,9 @@ const Wallet: React.FC = () => {
           hint="Actual cash paid after bonuses and deductions."
         />
         <SummaryCard
-          label={isFixedSalary ? 'Salary cycle' : 'Credited orders'}
-          value={isFixedSalary ? balancePeriod : `${myWallet?.creditedOrders ?? 0}`}
-          hint={isFixedSalary ? 'The period used for this outstanding balance.' : 'Orders that currently qualify for commission.'}
+          label={isHybrid ? 'Orders credited' : isFixedSalary ? 'Salary cycle' : 'Credited orders'}
+          value={isFixedSalary && !isHybrid ? balancePeriod : `${myWallet?.creditedOrders ?? 0}`}
+          hint={isHybrid ? 'Eligible orders contributing to your commission earnings.' : isFixedSalary ? 'The period used for this outstanding balance.' : 'Orders that currently qualify for commission.'}
         />
       </section>
 

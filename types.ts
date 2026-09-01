@@ -224,8 +224,9 @@ export interface User {
   nationality?: string | null;
   cv?: string | null;
   isCommissionBased?: boolean;
-  compensationType?: 'commission' | 'fixed' | string;
+  compensationType?: 'commission' | 'fixed' | 'hybrid' | string;
   fixedSalary?: number | null;
+  unitAmount?: number | null;
   password?: string;
   createdAt?: string;
   deletedAt?: string;
@@ -2036,7 +2037,7 @@ export interface PayrollPayment {
   countedStatusesSnapshot: OrderStatus[];
   orderCountSnapshot: number;
   amountSnapshot: number;
-  compensationType?: 'commission' | 'fixed' | string;
+  compensationType?: 'commission' | 'fixed' | 'hybrid' | string;
   isCommissionBased?: boolean;
   fixedSalarySnapshot?: number | null;
   baseAmountSnapshot?: number;
@@ -2063,8 +2064,9 @@ export interface PayrollSummaryRow {
   employeeName: string;
   employeeRole: string;
   isCommissionBased?: boolean;
-  compensationType?: 'commission' | 'fixed' | string;
+  compensationType?: 'commission' | 'fixed' | 'hybrid' | string;
   fixedSalary?: number | null;
+  unitAmount?: number | null;
   countedOrderCount: number;
   unitAmount: number;
   estimatedAmount: number;
@@ -2104,8 +2106,9 @@ export interface WalletBalanceCard {
   employeeName: string;
   employeeRole: string;
   isCommissionBased: boolean;
-  compensationType?: 'commission' | 'fixed' | string;
+  compensationType?: 'commission' | 'fixed' | 'hybrid' | string;
   fixedSalary: number | null;
+  unitAmount?: number | null;
   currentBalance: number;
   totalEarned: number;
   totalPaid: number;

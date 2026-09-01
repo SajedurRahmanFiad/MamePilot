@@ -9340,7 +9340,9 @@ final class OperationsApi extends BaseService
         }
         $activeAmount = round($activeAmount, 2);
         $isPayable = $this->isWalletStatusPayable($status, $countedStatuses);
-        $unitAmount = round((float) ($effectiveSettings['unitAmount'] ?? 0), 2);
+        // Use per-user unit amount if set, otherwise fall back to global payroll settings
+        $userUnitAmount = ($creator['unit_amount'] ?? null) !== null ? (float) $creator['unit_amount'] : null;
+        $unitAmount = round($userUnitAmount ?? (float) ($effectiveSettings['unitAmount'] ?? 0), 2);
         $transition = $this->walletOrderTransition($activeAmount, $isPayable, $unitAmount);
         if ($transition === null) {
             return;
@@ -10042,9 +10044,20 @@ final class OperationsApi extends BaseService
 
             $isCommissionBased = !empty($employee['isCommissionBased'] ?? false);
             $fixedSalary = isset($employee['fixedSalary']) ? (float) $employee['fixedSalary'] : null;
+            $userUnitAmount = isset($employee['unitAmount']) ? (float) $employee['unitAmount'] : null;
+
+            // Hybrid: commission-based with a positive fixed salary
+            if ($isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+                $compensationType = 'hybrid';
+            } elseif ($isCommissionBased) {
+                $compensationType = 'commission';
+            } else {
+                $compensationType = 'fixed';
+            }
+
             $walletAmount = $walletAmounts[$employeeId] ?? [];
 
-            if (!$isCommissionBased) {
+            if ($compensationType === 'fixed') {
                 $periodMetrics = $fixedMetrics[$employeeId] ?? [];
                 $baseEarned = max(0.0, (float) ($fixedSalary ?? 0));
                 $basePaid = max(0.0, (float) ($periodMetrics['basePaid'] ?? 0));
@@ -10080,8 +10093,9 @@ final class OperationsApi extends BaseService
                 'employeeName' => (string) ($employee['name'] ?? 'Unknown Employee'),
                 'employeeRole' => (string) ($employee['role'] ?? 'Employee'),
                 'isCommissionBased' => $isCommissionBased,
-                'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
+                'compensationType' => $compensationType,
                 'fixedSalary' => $fixedSalary,
+                'unitAmount' => $userUnitAmount ?? $effectiveSettings['unitAmount'] ?? 0,
                 'balancePeriodStart' => $balancePeriodStart,
                 'balancePeriodEnd' => $balancePeriodEnd,
                 'baseEarned' => round($baseEarned, 2),
@@ -10141,9 +10155,12 @@ final class OperationsApi extends BaseService
                 if ((float) ($card['currentBalance'] ?? 0) > 0) {
                     $summary['employeesDue'] += 1;
                 }
-                if (empty($card['isCommissionBased'] ?? false)) {
+                $compensationType = (string) ($card['compensationType'] ?? 'commission');
+                if ($compensationType === 'fixed') {
                     $summary['fixedSalaryEmployees'] += 1;
                     $summary['totalFixedSalaryDue'] += (float) ($card['currentBalance'] ?? 0);
+                } elseif ($compensationType === 'hybrid') {
+                    $summary['hybridEmployees'] += 1;
                 }
 
                 return $summary;
@@ -10159,6 +10176,7 @@ final class OperationsApi extends BaseService
                 'totalCarryAdjustments' => 0.0,
                 'employeesDue' => 0,
                 'fixedSalaryEmployees' => 0,
+                'hybridEmployees' => 0,
                 'totalFixedSalaryDue' => 0.0,
             ]
         );
@@ -10234,7 +10252,7 @@ final class OperationsApi extends BaseService
         $currentUser = $this->currentUser();
         $rows = $this->database->fetchAll(
             "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality,
-                    is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+                    is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL AND role IN ('Employee')
              ORDER BY name ASC"
@@ -10450,19 +10468,42 @@ final class OperationsApi extends BaseService
             $employeeId = (string) $employee['id'];
             $isCommissionBased = !empty($employee['isCommissionBased'] ?? false);
             $fixedSalary = isset($employee['fixedSalary']) ? (float) $employee['fixedSalary'] : null;
-            if ($isCommissionBased) {
-                $count = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
-                $grossBaseAmount = (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0);
-                $estimatedAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
-                $balancePeriodStart = $this->walletCutoffDate();
-                $balancePeriodEnd = (new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone())))->format('Y-m-d');
+            $userUnitAmount = isset($employee['unitAmount']) ? (float) $employee['unitAmount'] : null;
+
+            // Hybrid: commission-based with a positive fixed salary
+            if ($isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+                $compensationType = 'hybrid';
+            } elseif ($isCommissionBased) {
+                $compensationType = 'commission';
             } else {
+                $compensationType = 'fixed';
+            }
+
+            if ($compensationType === 'fixed') {
                 $count = 0;
                 $grossBaseAmount = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
                 $paidMetrics = $fixedMetrics[$employeeId] ?? [];
                 $estimatedAmount = max(0.0, $grossBaseAmount - (float) ($paidMetrics['basePaid'] ?? 0));
                 $balancePeriodStart = $periodStart;
                 $balancePeriodEnd = $periodEnd;
+            } elseif ($compensationType === 'hybrid') {
+                $count = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $commissionBase = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
+                $commissionGrossBase = (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0);
+                $fixedBase = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
+                $grossBaseAmount = $commissionGrossBase + $fixedBase;
+                $paidMetrics = $fixedMetrics[$employeeId] ?? [];
+                $fixedPaid = (float) ($paidMetrics['basePaid'] ?? 0);
+                $commissionPaid = max(0.0, $commissionBase - max(0.0, $commissionBase - $fixedPaid));
+                $estimatedAmount = max(0.0, $fixedBase - $fixedPaid) + $commissionBase;
+                $balancePeriodStart = $this->walletCutoffDate();
+                $balancePeriodEnd = (new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone())))->format('Y-m-d');
+            } else {
+                $count = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $grossBaseAmount = (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0);
+                $estimatedAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
+                $balancePeriodStart = $this->walletCutoffDate();
+                $balancePeriodEnd = (new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone())))->format('Y-m-d');
             }
             $paymentSnapshot = $paymentByEmployee[$employeeId] ?? null;
             $paymentTotals = $paymentTotalsByEmployee[$employeeId] ?? [
@@ -10487,10 +10528,10 @@ final class OperationsApi extends BaseService
                 'employeeName' => $employee['name'],
                 'employeeRole' => $employee['role'],
                 'isCommissionBased' => $isCommissionBased,
-                'compensationType' => $isCommissionBased ? 'commission' : 'fixed',
+                'compensationType' => $compensationType,
                 'fixedSalary' => $fixedSalary,
                 'countedOrderCount' => $count,
-                'unitAmount' => (float) $settings['unitAmount'],
+                'unitAmount' => $userUnitAmount ?? (float) $settings['unitAmount'],
                 'estimatedAmount' => $estimatedAmount,
                 'baseAmount' => $estimatedAmount,
                 'grossBaseAmount' => $grossBaseAmount,
@@ -10643,7 +10684,7 @@ final class OperationsApi extends BaseService
 
         $walletSettings = $this->fetchWalletSettings();
         $employee = $this->database->fetchOne(
-            'SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            'SELECT id, name, role, is_commission_based, fixed_salary, unit_amount FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
             [':id' => (string) $currentUser['id']]
         );
         if ($employee === null) {
@@ -10870,20 +10911,41 @@ final class OperationsApi extends BaseService
 
             $mappedEmployee = $this->mapUser($employee);
             $isCommissionBased = !empty($mappedEmployee['isCommissionBased'] ?? false);
-            $compensationType = $isCommissionBased ? 'commission' : 'fixed';
             $fixedSalary = isset($mappedEmployee['fixedSalary']) ? (float) $mappedEmployee['fixedSalary'] : null;
+            $userUnitAmount = isset($mappedEmployee['unitAmount']) ? (float) $mappedEmployee['unitAmount'] : null;
+
+            // Hybrid: commission-based with a positive fixed salary
+            if ($isCommissionBased && $fixedSalary !== null && $fixedSalary > 0) {
+                $compensationType = 'hybrid';
+            } elseif ($isCommissionBased) {
+                $compensationType = 'commission';
+            } else {
+                $compensationType = 'fixed';
+            }
+
             $walletSettings = $this->fetchWalletSettings();
-            if ($isCommissionBased) {
+            if ($compensationType === 'fixed') {
+                $grossBaseAmount = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
+                $legacyMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
+                $baseAmount = max(0.0, $grossBaseAmount - (float) ($legacyMetrics[$employeeId]['basePaid'] ?? 0));
+                $orderCount = 0;
+            } elseif ($compensationType === 'hybrid') {
+                $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
+                $commissionMetrics = $this->fetchCommissionPayrollMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
+                $commissionBase = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
+                $commissionGrossBase = (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0);
+                $orderCount = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
+                $fixedBase = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
+                $grossBaseAmount = $commissionGrossBase + $fixedBase;
+                $legacyMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
+                $fixedPaid = (float) ($legacyMetrics[$employeeId]['basePaid'] ?? 0);
+                $baseAmount = max(0.0, $fixedBase - $fixedPaid) + $commissionBase;
+            } else {
                 $this->syncWalletCreditsForEmployees([$employeeId], $walletSettings);
                 $commissionMetrics = $this->fetchCommissionPayrollMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
                 $grossBaseAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['grossBaseAmount'] ?? 0));
                 $orderCount = (int) ($commissionMetrics[$employeeId]['orderCount'] ?? 0);
                 $baseAmount = max(0.0, (float) ($commissionMetrics[$employeeId]['baseAmount'] ?? 0));
-            } else {
-                $grossBaseAmount = $this->calculateFixedSalaryForPeriod(max(0.0, (float) ($fixedSalary ?? 0)), $periodStart, $periodEnd);
-                $legacyMetrics = $this->fetchFixedPayrollWalletMetricsByEmployeeIds([$employeeId], $periodStart, $periodEnd);
-                $baseAmount = max(0.0, $grossBaseAmount - (float) ($legacyMetrics[$employeeId]['basePaid'] ?? 0));
-                $orderCount = 0;
             }
             $baseAmount = round($baseAmount, 2);
             if ($overlap !== null) {
@@ -11002,11 +11064,11 @@ final class OperationsApi extends BaseService
                     ':period_end' => $periodEnd,
                     ':period_kind' => $periodKind,
                     ':period_label' => $periodLabel,
-                    ':unit_amount_snapshot' => $this->formatMoney($walletSettings['unitAmount'] ?? 0),
+                    ':unit_amount_snapshot' => $userUnitAmount ?? $this->formatMoney($walletSettings['unitAmount'] ?? 0),
                     ':counted_statuses_snapshot' => $this->jsonEncode($walletSettings['countedStatuses'] ?? []),
                     ':order_count_snapshot' => $orderCount,
                     ':compensation_type' => $compensationType,
-                    ':fixed_salary_snapshot' => $isCommissionBased ? null : $this->formatMoney($fixedSalary ?? 0),
+                    ':fixed_salary_snapshot' => in_array($compensationType, ['fixed', 'hybrid'], true) ? $this->formatMoney($fixedSalary ?? 0) : null,
                     ':base_amount_snapshot' => $this->formatMoney(
                         $isPartial
                             ? max(0.0, min($baseAmount, $netAmount - $bonusAmount + $deductionAmount))

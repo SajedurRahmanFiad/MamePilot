@@ -2644,6 +2644,7 @@ final class DataManagementApi extends BaseService
         }
         $commissionBased = $this->boolean($row, 'isCommissionBased', true);
         $fixedSalary = $this->text($row, 'fixedSalary') === '' ? null : max(0, $this->number($row, 'fixedSalary'));
+        $unitAmount = $this->text($row, 'unitAmount') === '' ? null : max(0, $this->number($row, 'unitAmount'));
         if ($role === 'Employee' && !$commissionBased && ($fixedSalary === null || $fixedSalary <= 0)) {
             throw new RuntimeException('A fixed-salary employee must have a Fixed Salary greater than zero.');
         }
@@ -2662,7 +2663,8 @@ final class DataManagementApi extends BaseService
             'nationality' => $this->nullableString($row['nationality'] ?? null),
             'cv' => $this->nullableString($row['cv'] ?? null),
             'is_commission_based' => $commissionBased ? 1 : 0,
-            'fixed_salary' => $commissionBased ? null : $fixedSalary,
+            'fixed_salary' => $commissionBased && !$fixedSalary ? null : $fixedSalary,
+            'unit_amount' => $unitAmount,
         ];
         if ($password !== '') {
             $data['password_hash'] = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);

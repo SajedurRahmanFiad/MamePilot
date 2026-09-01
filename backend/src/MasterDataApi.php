@@ -210,7 +210,7 @@ final class MasterDataApi extends BaseService
     public function fetchUsers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
              ORDER BY created_at DESC, name ASC'
@@ -243,7 +243,7 @@ final class MasterDataApi extends BaseService
         if ($search !== '') {
             $where .= " AND CONVERT(CONCAT_WS(' ',
                 id, name, phone, role, email, address, birthday, gender, blood_group, nationality,
-                CAST(is_commission_based AS CHAR), CAST(fixed_salary AS CHAR), created_at
+                CAST(is_commission_based AS CHAR), CAST(fixed_salary AS CHAR), CAST(unit_amount AS CHAR), created_at
             ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_user_search ESCAPE '='";
             $bindings[':raw_user_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
@@ -285,7 +285,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM users {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
              FROM users
              {$where}
              ORDER BY created_at DESC, id DESC
@@ -393,6 +393,7 @@ final class MasterDataApi extends BaseService
 
         $id = $this->stringId($params['id'] ?? null);
         $fixedSalaryInput = $params['fixedSalary'] ?? $params['fixed_salary'] ?? null;
+        $unitAmountInput = $params['unitAmount'] ?? $params['unit_amount'] ?? null;
         $hasCommissionSelection = array_key_exists('isCommissionBased', $params) || array_key_exists('is_commission_based', $params);
         $isCommissionBased = $hasCommissionSelection
             ? !empty($params['isCommissionBased'] ?? $params['is_commission_based'] ?? false)
@@ -400,6 +401,9 @@ final class MasterDataApi extends BaseService
         $fixedSalary = $isCommissionBased || $fixedSalaryInput === null || $fixedSalaryInput === ''
             ? null
             : (float) $fixedSalaryInput;
+        $unitAmount = $unitAmountInput === null || $unitAmountInput === ''
+            ? null
+            : max(0, (float) $unitAmountInput);
         if ($requestedRole === 'Employee' && !$isCommissionBased && ($fixedSalary === null || $fixedSalary <= 0)) {
             throw new RuntimeException('A fixed-salary employee must have a monthly salary greater than zero.');
         }
@@ -420,6 +424,7 @@ final class MasterDataApi extends BaseService
                 cv,
                 is_commission_based,
                 fixed_salary,
+                unit_amount,
                 password_hash,
                 created_at,
                 updated_at
@@ -439,6 +444,7 @@ final class MasterDataApi extends BaseService
                 :cv,
                 :is_commission_based,
                 :fixed_salary,
+                :unit_amount,
                 :password_hash,
                 :created_at,
                 :updated_at
@@ -459,6 +465,7 @@ final class MasterDataApi extends BaseService
                 ':cv' => $this->normalizeUploadedFileValue($params['cv'] ?? null, 'documents', null),
                 ':is_commission_based' => $isCommissionBased ? 1 : 0,
                 ':fixed_salary' => $fixedSalary,
+                ':unit_amount' => $unitAmount,
                 ':password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -541,6 +548,10 @@ final class MasterDataApi extends BaseService
         if (array_key_exists('fixedSalary', $updates) || array_key_exists('fixed_salary', $updates)) {
             $fixedSalary = $updates['fixedSalary'] ?? $updates['fixed_salary'] ?? null;
             $payload['fixed_salary'] = $fixedSalary === null || $fixedSalary === '' ? null : (float) $fixedSalary;
+        }
+        if (array_key_exists('unitAmount', $updates) || array_key_exists('unit_amount', $updates)) {
+            $unitAmount = $updates['unitAmount'] ?? $updates['unit_amount'] ?? null;
+            $payload['unit_amount'] = $unitAmount === null || $unitAmount === '' ? null : max(0, (float) $unitAmount);
         }
         if (!empty($updates['password'])) {
             $payload['password_hash'] = password_hash((string) $updates['password'], PASSWORD_BCRYPT, ['cost' => 12]);

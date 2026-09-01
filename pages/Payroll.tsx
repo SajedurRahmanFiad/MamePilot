@@ -51,7 +51,7 @@ const formatTimestamp = (value?: string): string => {
   return time ? `${date}, ${time}` : date;
 };
 
-type CompensationKind = 'commission' | 'fixed' | 'unconfigured';
+type CompensationKind = 'commission' | 'fixed' | 'hybrid' | 'unconfigured';
 
 const getCompensationKind = (
   value?: string,
@@ -59,7 +59,9 @@ const getCompensationKind = (
   fixedSalary?: number | null
 ): CompensationKind => {
   if (value === 'fixed' || value === 'fixed_salary') return 'fixed';
+  if (value === 'hybrid') return 'hybrid';
   if (value === 'commission') return 'commission';
+  if (isCommissionBased === true && fixedSalary != null && Number(fixedSalary) > 0) return 'hybrid';
   if (isCommissionBased === true) return 'commission';
   if (Number(fixedSalary || 0) > 0) return 'fixed';
   return 'unconfigured';
@@ -68,6 +70,7 @@ const getCompensationKind = (
 const getCompensationLabel = (kind: CompensationKind): string => {
   if (kind === 'fixed') return 'Fixed salary';
   if (kind === 'commission') return 'Commission';
+  if (kind === 'hybrid') return 'Hybrid';
   return 'Pay basis missing';
 };
 
@@ -156,7 +159,9 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
                 ? 'bg-[#e8f0fa] text-[#0f2f57]'
                 : compensationKind === 'fixed'
                   ? 'bg-violet-100 text-violet-700'
-                  : 'bg-rose-100 text-rose-700'
+                  : compensationKind === 'hybrid'
+                    ? 'bg-teal-100 text-teal-700'
+                    : 'bg-rose-100 text-rose-700'
             }`}>
               {getCompensationLabel(compensationKind)}
             </span>
@@ -215,7 +220,9 @@ const PayrollCard: React.FC<PayrollCardProps> = ({
             ? `${summary?.countedOrderCount || 0} credited orders`
             : compensationKind === 'fixed'
               ? `${formatCurrency(summary?.fixedSalary ?? card.fixedSalary ?? 0)}/month`
-              : 'Complete employee setup'}
+              : compensationKind === 'hybrid'
+                ? `${formatCurrency(summary?.fixedSalary ?? card.fixedSalary ?? 0)}/mo + ${summary?.countedOrderCount || 0} orders`
+                : 'Complete employee setup'}
         </span>
       </div>
 
@@ -645,9 +652,11 @@ const Payroll: React.FC = () => {
           <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
             getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot) === 'fixed'
               ? 'bg-violet-100 text-violet-700'
-              : getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot) === 'unconfigured'
-                ? 'bg-rose-100 text-rose-700'
-                : 'bg-[#e8f0fa] text-[#0f2f57]'
+              : getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot) === 'hybrid'
+                ? 'bg-teal-100 text-teal-700'
+                : getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot) === 'unconfigured'
+                  ? 'bg-rose-100 text-rose-700'
+                  : 'bg-[#e8f0fa] text-[#0f2f57]'
           }`}>
             {getCompensationLabel(getCompensationKind(item.compensationType, item.isCommissionBased, item.fixedSalarySnapshot))}
           </span>
@@ -871,7 +880,7 @@ const Payroll: React.FC = () => {
         <div>
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-gray-400">Compensation mix</p>
           <p className="mt-1 text-sm font-black text-gray-900">
-            {walletOverviewError ? 'Unavailable' : `${walletSummary.fixedSalaryEmployees} fixed · ${Math.max(0, totalEmployees - walletSummary.fixedSalaryEmployees)} commission`}
+            {walletOverviewError ? 'Unavailable' : `${walletSummary.fixedSalaryEmployees} fixed · ${walletSummary.hybridEmployees ?? 0} hybrid · ${Math.max(0, totalEmployees - walletSummary.fixedSalaryEmployees - (walletSummary.hybridEmployees ?? 0))} commission`}
           </p>
         </div>
       </section>
@@ -1060,7 +1069,9 @@ const Payroll: React.FC = () => {
                 ? `Base pay uses ${selectedSummary?.countedOrderCount || 0} eligible order credits and their recorded rates.`
                 : selectedCompensationKind === 'fixed'
                   ? `Base pay is prorated from ${formatCurrency(selectedSummary?.fixedSalary ?? selectedCard.fixedSalary ?? 0)} monthly salary for the selected calendar days.`
-                  : 'This employee has no configured compensation basis.'}
+                  : selectedCompensationKind === 'hybrid'
+                    ? `Base pay combines ${formatCurrency(selectedSummary?.fixedSalary ?? selectedCard.fixedSalary ?? 0)} monthly salary with ${selectedSummary?.countedOrderCount || 0} eligible order credits for the selected calendar days.`
+                    : 'This employee has no configured compensation basis.'}
               {' '}The server recalculates this base before saving, so stale or duplicate payments are rejected.
             </div>
 

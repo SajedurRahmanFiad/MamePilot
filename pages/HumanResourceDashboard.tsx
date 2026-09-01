@@ -127,7 +127,8 @@ const HumanResourceDashboard: React.FC = () => {
     const activePeople = users.filter((user) => !user.deletedAt);
     const employees = activePeople.filter((user) => user.role === 'Employee');
     const fixedEmployees = employees.filter((user) => user.isCommissionBased !== true && Number(user.fixedSalary || 0) > 0);
-    const commissionEmployees = employees.filter((user) => user.isCommissionBased === true);
+    const commissionEmployees = employees.filter((user) => user.isCommissionBased === true && (user.compensationType === 'commission' || (!user.fixedSalary || Number(user.fixedSalary) <= 0)));
+    const hybridEmployees = employees.filter((user) => user.compensationType === 'hybrid' || (user.isCommissionBased === true && Number(user.fixedSalary || 0) > 0));
     const compensationReady = employees.filter((user) =>
       user.isCommissionBased === true || Number(user.fixedSalary || 0) > 0
     );
@@ -352,7 +353,7 @@ const HumanResourceDashboard: React.FC = () => {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-black text-gray-900">{card.employeeName}</span>
                     <span className="mt-0.5 block text-[10px] font-black uppercase tracking-wider text-gray-400">
-                      {card.isCommissionBased ? 'Commission' : 'Fixed salary'}
+                      {card.compensationType === 'hybrid' ? 'Hybrid' : card.isCommissionBased ? 'Commission' : 'Fixed salary'}
                     </span>
                   </span>
                   <span className="text-sm font-black text-gray-900">{formatCurrency(card.currentBalance)}</span>

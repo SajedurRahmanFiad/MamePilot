@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS users (
   cv LONGTEXT NULL,
   is_commission_based TINYINT(1) NOT NULL DEFAULT 0,
   fixed_salary DECIMAL(12,2) NULL,
+  unit_amount DECIMAL(12,2) NULL,
   password_hash VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -4436,5 +4437,14 @@ WHERE o.deleted_at IS NULL;
 DROP PROCEDURE IF EXISTS sp_add_col;
 DROP PROCEDURE IF EXISTS sp_modify_col;
 DROP PROCEDURE IF EXISTS sp_create_idx;
-DROP PROCEDURE IF EXISTS sp_create_unique_idx;
-DROP PROCEDURE IF EXISTS sp_drop_idx;
+
+-- Migration: 2026-09-01_payroll_hybrid_compensation.sql
+-- Add per-user unit_amount and hybrid compensation support
+
+-- 1. Add unit_amount column to users table for per-user commission rate
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'unit_amount');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE users ADD COLUMN unit_amount DECIMAL(12,2) NULL AFTER fixed_salary',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

@@ -55,11 +55,17 @@ const UserForm: React.FC = () => {
     cv: '',
     isCommissionBased: true,
     fixedSalary: null,
+    unitAmount: null,
+    compensationType: 'commission',
   });
 
   // Initialize form with existing user data when loaded
   React.useEffect(() => {
     if (existingUser) {
+      // Derive compensation type from existing data
+      const existingCompensationType = existingUser.compensationType === 'hybrid'
+        ? 'hybrid'
+        : existingUser.isCommissionBased ? 'commission' : 'fixed';
       setForm({
         ...existingUser,
         password: '',
@@ -73,6 +79,8 @@ const UserForm: React.FC = () => {
         cv: existingUser.cv || '',
         isCommissionBased: Boolean(existingUser.isCommissionBased),
         fixedSalary: existingUser.fixedSalary ?? null,
+        unitAmount: existingUser.unitAmount ?? null,
+        compensationType: existingCompensationType,
       });
     }
   }, [existingUser]);
@@ -135,8 +143,15 @@ const UserForm: React.FC = () => {
     bloodGroup: showExtendedProfile ? (form.bloodGroup || '') : '',
     nationality: showExtendedProfile ? (form.nationality || '') : '',
     cv: showExtendedProfile ? (form.cv || '') : '',
-    isCommissionBased: isEmployeeTarget ? Boolean(form.isCommissionBased) : false,
-    fixedSalary: isEmployeeTarget && !form.isCommissionBased ? form.fixedSalary ?? null : null,
+    isCommissionBased: isEmployeeTarget
+      ? (form.compensationType === 'commission' || form.compensationType === 'hybrid')
+      : false,
+    fixedSalary: isEmployeeTarget && (form.compensationType === 'fixed' || form.compensationType === 'hybrid')
+      ? form.fixedSalary ?? null
+      : null,
+    unitAmount: isEmployeeTarget && (form.compensationType === 'commission' || form.compensationType === 'hybrid')
+      ? form.unitAmount ?? null
+      : null,
   });
 
   const handleSave = async () => {
@@ -148,8 +163,12 @@ const UserForm: React.FC = () => {
       toast.warning('Please fill mandatory fields (Name, Phone, Password)');
       return;
     }
-    if (isEmployeeTarget && !form.isCommissionBased && Number(form.fixedSalary || 0) <= 0) {
+    if (isEmployeeTarget && form.compensationType === 'fixed' && Number(form.fixedSalary || 0) <= 0) {
       toast.warning('Enter a fixed monthly salary greater than zero.');
+      return;
+    }
+    if (isEmployeeTarget && form.compensationType === 'hybrid' && Number(form.fixedSalary || 0) <= 0) {
+      toast.warning('Enter a fixed monthly salary greater than zero for hybrid compensation.');
       return;
     }
 
@@ -360,20 +379,31 @@ const UserForm: React.FC = () => {
                         <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Compensation Type</label>
                         <select
                           className="w-full rounded-xl border bg-white px-4 py-3 focus:ring-2 focus:ring-[#3c5a82]"
-                          value={form.isCommissionBased ? 'commission' : 'fixed'}
-                          onChange={(event) => setFormValue('isCommissionBased', event.target.value === 'commission')}
+                          value={form.compensationType || (form.isCommissionBased ? 'commission' : 'fixed')}
+                          onChange={(event) => {
+                            const selected = event.target.value;
+                            setFormValue('compensationType', selected);
+                            if (selected === 'hybrid') {
+                              setFormValue('isCommissionBased', true);
+                            } else {
+                              setFormValue('isCommissionBased', selected === 'commission');
+                            }
+                          }}
                         >
                           <option value="commission">Commission per eligible order</option>
                           <option value="fixed">Fixed monthly salary</option>
+                          <option value="hybrid">Hybrid (Fixed salary + Commission)</option>
                         </select>
                         <p className="text-xs font-medium text-gray-500">
-                          {form.isCommissionBased
+                          {form.compensationType === 'commission'
                             ? 'Eligible orders add credits to the employee wallet.'
-                            : 'Payroll calculates the salary for the selected calendar period.'}
+                            : form.compensationType === 'fixed'
+                              ? 'Payroll calculates the salary for the selected calendar period.'
+                              : 'Combines a fixed monthly salary with per-order commission credits.'}
                         </p>
                       </div>
 
-                      {!form.isCommissionBased && (
+                      {form.compensationType === 'fixed' && (
                         <div className="space-y-1">
                           <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Monthly Salary <span className="text-rose-500">*</span></label>
                           <NumericInput
@@ -384,6 +414,44 @@ const UserForm: React.FC = () => {
                           />
                           <p className="text-xs font-medium text-gray-500">Must be greater than zero before this employee can be paid.</p>
                         </div>
+                      )}
+
+                      {form.compensationType === 'commission' && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Amount</label>
+                          <NumericInput
+                            value={form.unitAmount ?? ''}
+                            onChange={(value) => setFormValue('unitAmount', value)}
+                            placeholder="Leave empty to use global default"
+                            className="rounded-xl border bg-white"
+                          />
+                          <p className="text-xs font-medium text-gray-500">Amount per eligible order. Falls back to the global wallet setting if left empty.</p>
+                        </div>
+                      )}
+
+                      {form.compensationType === 'hybrid' && (
+                        <>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Monthly Salary <span className="text-rose-500">*</span></label>
+                            <NumericInput
+                              value={form.fixedSalary ?? ''}
+                              onChange={(value) => setFormValue('fixedSalary', value)}
+                              placeholder="Enter monthly salary"
+                              className="rounded-xl border bg-white"
+                            />
+                            <p className="text-xs font-medium text-gray-500">Must be greater than zero before this employee can be paid.</p>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Amount</label>
+                            <NumericInput
+                              value={form.unitAmount ?? ''}
+                              onChange={(value) => setFormValue('unitAmount', value)}
+                              placeholder="Leave empty to use global default"
+                              className="rounded-xl border bg-white"
+                            />
+                            <p className="text-xs font-medium text-gray-500">Amount per eligible order. Falls back to the global wallet setting if left empty.</p>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
