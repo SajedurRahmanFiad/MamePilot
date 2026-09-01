@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS users (
   cv LONGTEXT NULL,
   is_commission_based TINYINT(1) NOT NULL DEFAULT 0,
   fixed_salary DECIMAL(12,2) NULL,
+  unit_amount DECIMAL(12,2) NULL,
   password_hash VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -3854,6 +3855,9 @@ WHERE o.deleted_at IS NULL;
 
 -- Migration: 2026-08-27_courier_sales_amount_automation.sql
 CALL sp_add_col('courier_settings', 'automatically_record_sales_income', 'TINYINT(1) NOT NULL DEFAULT 0');
+
+-- Migration: 2026-09-01_user_unit_amount.sql
+CALL sp_add_col('users', 'unit_amount', 'DECIMAL(12,2) NULL AFTER fixed_salary');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
