@@ -2664,8 +2664,10 @@ final class DataManagementApi extends BaseService
             'cv' => $this->nullableString($row['cv'] ?? null),
             'is_commission_based' => $commissionBased ? 1 : 0,
             'fixed_salary' => $commissionBased && !$fixedSalary ? null : $fixedSalary,
-            'unit_amount' => $unitAmount,
         ];
+        if ($unitAmount !== null) {
+            $data['unit_amount'] = $unitAmount;
+        }
         if ($password !== '') {
             $data['password_hash'] = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
         }

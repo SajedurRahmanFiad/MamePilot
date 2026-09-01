@@ -9310,6 +9310,17 @@ final class OperationsApi extends BaseService
             return;
         }
 
+        // Attach per-user unit_amount when the column exists
+        try {
+            $unitRow = $this->database->fetchOne(
+                'SELECT unit_amount FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                [':id' => $createdBy]
+            );
+            $creator['unit_amount'] = $unitRow['unit_amount'] ?? null;
+        } catch (\Throwable $e) {
+            $creator['unit_amount'] = null;
+        }
+
         // Legacy employee rows have false + no salary. They remain commission
         // based until a positive fixed salary is deliberately configured.
         $fixedSalary = ($creator['fixed_salary'] ?? null) !== null ? (float) $creator['fixed_salary'] : null;
@@ -10252,12 +10263,29 @@ final class OperationsApi extends BaseService
         $currentUser = $this->currentUser();
         $rows = $this->database->fetchAll(
             "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality,
-                    is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
+                    is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL AND role IN ('Employee')
              ORDER BY name ASC"
         );
         $employees = array_map(fn(array $row): array => $this->mapUser($row), $rows);
+
+        // Attach per-user unit_amount when the column exists; fall back silently on older schemas
+        try {
+            $unitRows = $this->database->fetchAll(
+                "SELECT id, unit_amount FROM users WHERE role IN ('Employee') AND deleted_at IS NULL"
+            );
+            $unitMap = [];
+            foreach ($unitRows as $ur) {
+                $unitMap[(string) $ur['id']] = ($ur['unit_amount'] ?? null) !== null ? (float) $ur['unit_amount'] : null;
+            }
+            foreach ($employees as &$emp) {
+                $emp['unitAmount'] = $unitMap[$emp['id']] ?? null;
+            }
+            unset($emp);
+        } catch (\Throwable $e) {
+            // Column unit_amount does not exist yet – leave unitAmount unset
+        }
 
         if ($this->hasAdminAccess((string) ($currentUser['role'] ?? ''))) {
             return $employees;
@@ -10684,9 +10712,21 @@ final class OperationsApi extends BaseService
 
         $walletSettings = $this->fetchWalletSettings();
         $employee = $this->database->fetchOne(
-            'SELECT id, name, role, is_commission_based, fixed_salary, unit_amount FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            'SELECT id, name, role, is_commission_based, fixed_salary FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
             [':id' => (string) $currentUser['id']]
         );
+        // Attach per-user unit_amount when the column exists
+        if ($employee !== null) {
+            try {
+                $unitRow = $this->database->fetchOne(
+                    'SELECT unit_amount FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                    [':id' => (string) $currentUser['id']]
+                );
+                $employee['unit_amount'] = $unitRow['unit_amount'] ?? null;
+            } catch (\Throwable $e) {
+                // Column unit_amount does not exist yet
+            }
+        }
         if ($employee === null) {
             return [
                 'employeeId' => (string) $currentUser['id'],

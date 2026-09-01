@@ -210,11 +210,25 @@ final class MasterDataApi extends BaseService
     public function fetchUsers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
              ORDER BY created_at DESC, name ASC'
         );
+        // Attach per-user unit_amount when the column exists
+        try {
+            $unitRows = $this->database->fetchAll('SELECT id, unit_amount FROM users WHERE deleted_at IS NULL');
+            $unitMap = [];
+            foreach ($unitRows as $ur) {
+                $unitMap[(string) $ur['id']] = ($ur['unit_amount'] ?? null) !== null ? (float) $ur['unit_amount'] : null;
+            }
+            foreach ($rows as &$row) {
+                $row['unit_amount'] = $unitMap[(string) $row['id']] ?? null;
+            }
+            unset($row);
+        } catch (\Throwable $e) {
+            // Column unit_amount does not exist yet
+        }
 
         return array_map(fn(array $row): array => $this->mapUser($row), $rows);
     }
@@ -243,7 +257,7 @@ final class MasterDataApi extends BaseService
         if ($search !== '') {
             $where .= " AND CONVERT(CONCAT_WS(' ',
                 id, name, phone, role, email, address, birthday, gender, blood_group, nationality,
-                CAST(is_commission_based AS CHAR), CAST(fixed_salary AS CHAR), CAST(unit_amount AS CHAR), created_at
+                CAST(is_commission_based AS CHAR), CAST(fixed_salary AS CHAR), created_at
             ) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :raw_user_search ESCAPE '='";
             $bindings[':raw_user_search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
         }
@@ -285,13 +299,31 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM users {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, unit_amount, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, role, image, email, address, birthday, gender, blood_group, nationality, is_commission_based, fixed_salary, created_at, deleted_at, deleted_by
              FROM users
              {$where}
              ORDER BY created_at DESC, id DESC
              LIMIT {$pageSize} OFFSET {$offset}",
             $bindings
         );
+        // Attach per-user unit_amount when the column exists
+        try {
+            $allIds = array_map(fn(array $r): string => (string) $r['id'], $rows);
+            if ($allIds !== []) {
+                [$ph, $b] = $this->inClause($allIds, 'uq');
+                $unitRows = $this->database->fetchAll("SELECT id, unit_amount FROM users WHERE id IN (" . implode(',', $ph) . ")", $b);
+                $unitMap = [];
+                foreach ($unitRows as $ur) {
+                    $unitMap[(string) $ur['id']] = ($ur['unit_amount'] ?? null) !== null ? (float) $ur['unit_amount'] : null;
+                }
+                foreach ($rows as &$row) {
+                    $row['unit_amount'] = $unitMap[(string) $row['id']] ?? null;
+                }
+                unset($row);
+            }
+        } catch (\Throwable $e) {
+            // Column unit_amount does not exist yet
+        }
         $roleRows = $this->database->fetchAll(
             'SELECT DISTINCT role FROM users WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0 ORDER BY role ASC'
         );
@@ -424,7 +456,6 @@ final class MasterDataApi extends BaseService
                 cv,
                 is_commission_based,
                 fixed_salary,
-                unit_amount,
                 password_hash,
                 created_at,
                 updated_at
@@ -444,7 +475,6 @@ final class MasterDataApi extends BaseService
                 :cv,
                 :is_commission_based,
                 :fixed_salary,
-                :unit_amount,
                 :password_hash,
                 :created_at,
                 :updated_at
@@ -465,12 +495,19 @@ final class MasterDataApi extends BaseService
                 ':cv' => $this->normalizeUploadedFileValue($params['cv'] ?? null, 'documents', null),
                 ':is_commission_based' => $isCommissionBased ? 1 : 0,
                 ':fixed_salary' => $fixedSalary,
-                ':unit_amount' => $unitAmount,
                 ':password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
             ]
         );
+        // Set per-user unit_amount when the column exists
+        if ($unitAmount !== null) {
+            try {
+                $this->database->execute('UPDATE users SET unit_amount = :ua WHERE id = :id', [':ua' => $unitAmount, ':id' => $id]);
+            } catch (\Throwable $e) {
+                // Column unit_amount does not exist yet – ignore
+            }
+        }
 
         return $this->fetchUserById(['id' => $id]) ?? throw new RuntimeException('Failed to create user.');
     }
