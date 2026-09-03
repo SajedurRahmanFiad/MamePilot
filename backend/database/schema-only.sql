@@ -3858,6 +3858,11 @@ WHERE o.deleted_at IS NULL;
 -- Migration: 2026-08-27_courier_sales_amount_automation.sql
 CALL sp_add_col('courier_settings', 'automatically_record_sales_income', 'TINYINT(1) NOT NULL DEFAULT 0');
 
+-- Migration: 2026-09-01_payroll_payments_is_partial.sql
+-- Add is_partial column to payroll_payments (TINYINT(1) DEFAULT 0) if not already present.
+-- Existing rows default to 0 (full payment).
+CALL sp_add_col('payroll_payments', 'is_partial', 'TINYINT(1) NOT NULL DEFAULT 0');
+
 -- Migration: 2026-09-01_user_unit_amount.sql
 CALL sp_add_col('users', 'unit_amount', 'DECIMAL(12,2) NULL AFTER fixed_salary');
 

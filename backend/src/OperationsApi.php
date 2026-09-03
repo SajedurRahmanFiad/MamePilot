@@ -10334,16 +10334,27 @@ final class OperationsApi extends BaseService
             $sql .= ' AND pp.employee_id = :employee_id';
             $bindings[':employee_id'] = trim((string) $params['employeeId']);
         }
-        if (!empty($params['periodStart']) && !empty($params['periodEnd'])) {
-            $sql .= ' AND pp.period_start <= :period_end AND pp.period_end >= :period_start';
-            $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
-            $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
-        } elseif (!empty($params['periodStart'])) {
-            $sql .= ' AND pp.period_end >= :period_start';
-            $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
-        } elseif (!empty($params['periodEnd'])) {
-            $sql .= ' AND pp.period_start <= :period_end';
-            $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
+        if (!empty($params['paidAtFrom'])) {
+            $sql .= ' AND pp.paid_at >= :paid_at_from';
+            $bindings[':paid_at_from'] = $this->normalizeDateTimeInput((string) $params['paidAtFrom']);
+        }
+        if (!empty($params['paidAtTo'])) {
+            $sql .= ' AND pp.paid_at <= :paid_at_to';
+            $bindings[':paid_at_to'] = $this->normalizeDateTimeInput((string) $params['paidAtTo']);
+        }
+        if (!empty($params['periodStart']) || !empty($params['periodEnd'])) {
+            // Keep accepting the old period parameters for non-UI callers.
+            if (!empty($params['periodStart']) && !empty($params['periodEnd'])) {
+                $sql .= ' AND pp.period_start <= :period_end AND pp.period_end >= :period_start';
+                $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
+                $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
+            } elseif (!empty($params['periodStart'])) {
+                $sql .= ' AND pp.period_end >= :period_start';
+                $bindings[':period_start'] = $this->normalizeDateOnly((string) $params['periodStart']);
+            } elseif (!empty($params['periodEnd'])) {
+                $sql .= ' AND pp.period_start <= :period_end';
+                $bindings[':period_end'] = $this->normalizeDateOnly((string) $params['periodEnd']);
+            }
         }
         $sql .= ' ORDER BY pp.paid_at DESC';
 
@@ -10384,9 +10395,14 @@ final class OperationsApi extends BaseService
             foreach ($this->database->fetchAll($legacySql . ' ORDER BY wp.paid_at DESC', $legacyBindings) as $legacy) {
                 $paidAtIso = $this->toIso($legacy['paid_at'] ?? null);
                 $localPaidDate = $this->localDateFromUtc($paidAtIso);
-                $filterStart = $this->normalizeDateOnly((string) ($params['periodStart'] ?? ''));
-                $filterEnd = $this->normalizeDateOnly((string) ($params['periodEnd'] ?? ''));
-                if (($filterStart !== '' && $localPaidDate < $filterStart) || ($filterEnd !== '' && $localPaidDate > $filterEnd)) {
+                $filterStart = !empty($params['paidAtFrom'])
+                    ? $this->normalizeDateTimeInput((string) $params['paidAtFrom'])
+                    : '';
+                $filterEnd = !empty($params['paidAtTo'])
+                    ? $this->normalizeDateTimeInput((string) $params['paidAtTo'])
+                    : '';
+                $legacyPaidAt = $paidAtIso ? (string) $paidAtIso : ((string) ($legacy['paid_at'] ?? ''));
+                if (($filterStart !== '' && $legacyPaidAt < $filterStart) || ($filterEnd !== '' && $legacyPaidAt > $filterEnd)) {
                     continue;
                 }
                 $history[] = $this->mapPayrollPayment(array_merge($legacy, [

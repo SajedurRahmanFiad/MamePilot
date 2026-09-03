@@ -465,6 +465,18 @@ const ProductForm: React.FC = () => {
                     />
                   </span>
 
+                  {/* Badge 6: Discount scope dropdown (only for discount action) */}
+                  {rule.action === 'discount' && (
+                    <select
+                      value={rule.discountScope || 'product'}
+                      onChange={e => updatePricingRule(rule.id, { discountScope: e.target.value as 'product' | 'order' })}
+                      className="bg-white border border-gray-200 rounded-full px-3 py-1.5 text-sm font-bold focus:ring-2 focus:ring-[#3c5a82] cursor-pointer"
+                    >
+                      <option value="product">Per product</option>
+                      <option value="order">Order total</option>
+                    </select>
+                  )}
+
                   {/* Delete rule button */}
                   <button
                     type="button"

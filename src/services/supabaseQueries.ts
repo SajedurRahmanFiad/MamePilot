@@ -10,6 +10,7 @@ import type {
   Customer,
   CustomerSalesReportData,
   Order,
+  OrderUpdate,
   OrderUndoPlan,
   OrderUndoResult,
   PayrollPayment,
@@ -180,7 +181,7 @@ export async function fetchEmployeeOrderCounts(createdByIds: string[], filters?:
 }
 export async function getNextOrderNumber(): Promise<string> { return call<string>('getNextOrderNumber'); }
 export async function createOrder(order: Omit<Order, 'id'>) { return call<Order>('createOrder', order); }
-export async function updateOrder(id: string, updates: Partial<Order>) { return call<Order | null>('updateOrder', { id, updates }); }
+export async function updateOrder(id: string, updates: OrderUpdate) { return call<Order | null>('updateOrder', { id, updates }); }
 export async function deleteOrder(id: string) { await remove('deleteOrder', id); }
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
 export async function confirmPartialDelivery(payload: ConfirmPartialDeliveryPayload) { return call<Order>('confirmPartialDelivery', payload); }
@@ -568,7 +569,7 @@ export async function fetchRechargeHistory(): Promise<Array<{ id: string; localR
 export async function fetchPayrollSettings(): Promise<PayrollSettings> { return call<PayrollSettings>('fetchPayrollSettings'); }
 export async function updatePayrollSettings(updates: Partial<PayrollSettings>): Promise<PayrollSettings> { return call<PayrollSettings>('updatePayrollSettings', updates); }
 export async function fetchPayrollEmployees(): Promise<User[]> { return call<User[]>('fetchPayrollEmployees'); }
-export async function fetchPayrollHistory(params?: { periodStart?: string; periodEnd?: string; employeeId?: string; currentUser?: Pick<User, 'id' | 'role'> | null; }): Promise<PayrollPayment[]> {
+export async function fetchPayrollHistory(params?: { paidAtFrom?: string; paidAtTo?: string; employeeId?: string; currentUser?: Pick<User, 'id' | 'role'> | null; }): Promise<PayrollPayment[]> {
   return call<PayrollPayment[]>('fetchPayrollHistory', params || {});
 }
 export async function fetchPayrollSummaries(params: { periodStart: string; periodEnd: string; employeeId?: string; currentUser?: Pick<User, 'id' | 'role' | 'name'> | null; }): Promise<PayrollSummaryRow[]> {

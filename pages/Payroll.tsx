@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button, LoadingOverlay, Modal, NumericInput, Table } from '../components';
 import type { TableColumn } from '../components/Table';
+import FilterBar, { type FilterRange } from '../components/FilterBar';
 import Pagination from '../src/components/Pagination';
 import { formatCurrency } from '../constants';
 import {
@@ -39,7 +40,7 @@ import {
   getCurrentMonthValue,
   type PayrollPeriodSelection,
 } from '../src/utils/payroll';
-import { formatDateTimeParts, getTodayDate } from '../utils';
+import { formatDateTimeParts, getDateTimeFilters, getTodayDate } from '../utils';
 
 const normalizeCategoryName = (value?: string): string => (value || '').trim().toLowerCase();
 
@@ -301,6 +302,9 @@ const Payroll: React.FC = () => {
   const [deletingPayoutId, setDeletingPayoutId] = useState<string | null>(null);
   const [cardsPage, setCardsPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyFilterRange, setHistoryFilterRange] = useState<FilterRange>('All Time');
+  const [historyCustomDates, setHistoryCustomDates] = useState({ from: '', to: '' });
+  const [historyIncludeTime, setHistoryIncludeTime] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [payoutForm, setPayoutForm] = useState<PayoutFormState>({
@@ -320,6 +324,10 @@ const Payroll: React.FC = () => {
   );
   const periodStart = activePeriod?.periodStart;
   const periodEnd = activePeriod?.periodEnd;
+  const historyDateFilters = useMemo(
+    () => getDateTimeFilters(historyFilterRange, historyCustomDates),
+    [historyFilterRange, historyCustomDates]
+  );
   const isPayoutModalOpen = !!selectedCard;
 
   const { data: systemDefaults, isPending: defaultsLoading } = useSystemDefaults();
@@ -334,6 +342,7 @@ const Payroll: React.FC = () => {
         totalPaid: 0,
         employeesDue: 0,
         fixedSalaryEmployees: 0,
+        hybridEmployees: 0,
         totalFixedSalaryDue: 0,
       },
     },
@@ -349,6 +358,7 @@ const Payroll: React.FC = () => {
         totalPaid: 0,
         employeesDue: 0,
         fixedSalaryEmployees: 0,
+        hybridEmployees: 0,
         totalFixedSalaryDue: 0,
       },
     },
@@ -363,7 +373,12 @@ const Payroll: React.FC = () => {
     canViewPayroll ? periodStart : undefined,
     canViewPayroll ? periodEnd : undefined
   );
-  const { data: payrollHistory = [], isPending: historyLoading, isError: historyError } = usePayrollHistory(periodStart, periodEnd, undefined, canViewPayroll);
+  const { data: payrollHistory = [], isPending: historyLoading, isError: historyError } = usePayrollHistory(
+    historyDateFilters.from,
+    historyDateFilters.to,
+    undefined,
+    canViewPayroll
+  );
   const { data: walletSettings = { unitAmount: 0, countedStatuses: [] }, isError: walletSettingsError } = useWalletSettings();
   const { data: accounts = [], isPending: accountsLoading } = useAccounts({ enabled: canViewPayroll && isPayoutModalOpen });
   const { data: paymentMethods = [], isPending: paymentMethodsLoading } = usePaymentMethods(true, { enabled: canViewPayroll && isPayoutModalOpen });
@@ -960,10 +975,22 @@ const Payroll: React.FC = () => {
       </section>
 
       <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-6">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Audit trail</p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
           <h2 className="mt-2 text-xl font-black text-gray-900">Payment history</h2>
-          <p className="mt-1 text-sm font-medium text-gray-500">Base, adjustments, funding source, and payer for the selected period.</p>
+            <p className="mt-1 text-sm font-medium text-gray-500">Base, adjustments, funding source, and payer for the selected history range.</p>
+          </div>
+          <FilterBar
+            filterRange={historyFilterRange}
+            setFilterRange={(range) => { setHistoryPage(1); setHistoryFilterRange(range); }}
+            customDates={historyCustomDates}
+            setCustomDates={(dates) => { setHistoryPage(1); setHistoryCustomDates(dates); }}
+            includeTime={historyIncludeTime}
+            setIncludeTime={(include) => { setHistoryPage(1); setHistoryIncludeTime(include); }}
+            compact
+            ranges={['All Time', 'Today', 'Last 7 days', 'Last 30 days', 'This Week', 'This Month', 'This Year', 'Custom']}
+            showOnMobile
+          />
         </div>
 
         {historyError ? (

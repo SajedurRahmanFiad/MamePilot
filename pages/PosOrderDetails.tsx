@@ -249,10 +249,10 @@ const PosOrderDetails: React.FC = () => {
                     <span className="font-bold text-emerald-600 flex-shrink-0">-{formatCurrency(order.discount)}</span>
                   </div>
                 )}
-                {order.vatAmount > 0 && (
+                {Number(order.vatAmount || 0) > 0 && (
                   <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
                     <span className="text-gray-400 font-bold uppercase flex-shrink-0">Tax ({order.vatRate}%)</span>
-                    <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.vatAmount)}</span>
+                    <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.vatAmount || 0)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center py-2 sm:py-3 lg:py-4 border-t-2 border-[#0f2f57] gap-2">

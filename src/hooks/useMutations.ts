@@ -123,6 +123,7 @@ import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import type {
   Customer,
   Order,
+  OrderUpdate,
   OrderUndoResult,
   Bill,
   Account,
@@ -684,7 +685,7 @@ export function useCreateOrder(): UseMutationResult<Order, Error, Omit<Order, 'i
   });
 }
 
-export function useUpdateOrder(): UseMutationResult<Order, Error, { id: string; updates: Partial<Order> }, unknown> {
+export function useUpdateOrder(): UseMutationResult<Order, Error, { id: string; updates: OrderUpdate }, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, updates }) => updateOrder(id, updates),

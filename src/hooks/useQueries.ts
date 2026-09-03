@@ -1737,19 +1737,19 @@ export function usePayrollSummaries(
 }
 
 export function usePayrollHistory(
-  periodStart?: string,
-  periodEnd?: string,
+  paidAtFrom?: string,
+  paidAtTo?: string,
   employeeId?: string,
   enabled: boolean = true
 ): UseQueryResult<PayrollPayment[], Error> {
   const currentUser = db.currentUser ?? null;
 
   return useQuery({
-    queryKey: ['payroll', 'history', periodStart, periodEnd, employeeId, currentUser?.id, currentUser?.role],
+    queryKey: ['payroll', 'history', paidAtFrom, paidAtTo, employeeId, currentUser?.id, currentUser?.role],
     queryFn: () =>
       fetchPayrollHistory({
-        periodStart,
-        periodEnd,
+        paidAtFrom,
+        paidAtTo,
         employeeId,
         currentUser,
       }),

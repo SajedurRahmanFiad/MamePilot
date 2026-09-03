@@ -431,6 +431,7 @@ export interface DynamicPricingRule {
   quantity: number;
   action: 'discount' | 'setRate';
   amount: number;
+  discountScope?: 'product' | 'order';
 }
 
 export interface Unit {
@@ -452,6 +453,7 @@ export interface OrderItem {
   // Dynamic pricing fields
   originalRate?: number;
   dynamicDiscount?: number;
+  dynamicDiscountScope?: 'product' | 'order';
   // Optional return/exchange tracking fields (populated after partial returns/exchanges)
   returnedQty?: number;
   exchangedQty?: number;
@@ -930,6 +932,13 @@ export interface Order {
   pendingTransactionIds?: string[];
   courierAutomaticExpenseRecorded?: boolean;
 }
+
+export type OrderUpdate = Partial<Order> & {
+  paymentAmount?: number;
+  paymentAccountId?: string;
+  paymentMethod?: string;
+  paymentDate?: string;
+};
 
 export interface OrderUndoStockAdjustment {
   productId: string;
@@ -2134,6 +2143,7 @@ export interface WalletBalanceSummary {
   totalCarryAdjustments?: number;
   employeesDue: number;
   fixedSalaryEmployees: number;
+  hybridEmployees: number;
   totalFixedSalaryDue: number;
 }
 

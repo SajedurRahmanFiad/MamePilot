@@ -30,12 +30,12 @@ function applyDynamicPricing(
   dynamicPricingJson: string | undefined | null,
   quantity: number,
   originalRate: number,
-): { action: 'none' | 'setRate' | 'discount'; adjustedRate: number; discountPerUnit: number } {
-  if (!dynamicPricingJson) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+): { action: 'none' | 'setRate' | 'discount'; adjustedRate: number; discountPerUnit: number; discountScope: 'product' | 'order' } {
+  if (!dynamicPricingJson) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0, discountScope: 'product' };
 
   try {
     const rules: DynamicPricingRule[] = JSON.parse(dynamicPricingJson);
-    if (!Array.isArray(rules) || rules.length === 0) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+    if (!Array.isArray(rules) || rules.length === 0) return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0, discountScope: 'product' };
 
     // Find the best matching rule (last matching rule wins for specificity)
     let bestRule: DynamicPricingRule | null = null;
@@ -52,16 +52,21 @@ function applyDynamicPricing(
 
     if (bestRule) {
       if (bestRule.action === 'discount') {
-        return { action: 'discount', adjustedRate: originalRate, discountPerUnit: Math.min(bestRule.amount, Math.max(0, originalRate)) };
+        return {
+          action: 'discount',
+          adjustedRate: originalRate,
+          discountPerUnit: Math.min(bestRule.amount, Math.max(0, originalRate)),
+          discountScope: bestRule.discountScope || 'product',
+        };
       } else if (bestRule.action === 'setRate') {
-        return { action: 'setRate', adjustedRate: Math.max(0, bestRule.amount), discountPerUnit: 0 };
+        return { action: 'setRate', adjustedRate: Math.max(0, bestRule.amount), discountPerUnit: 0, discountScope: 'product' };
       }
     }
   } catch {
     // Ignore invalid JSON
   }
 
-  return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0 };
+  return { action: 'none', adjustedRate: originalRate, discountPerUnit: 0, discountScope: 'product' };
 }
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -436,7 +441,23 @@ const OrderForm: React.FC = () => {
   // For "setRate" rules: rate is already adjusted, amount reflects the new rate
   // For "discount" rules: rate stays original, discount is tracked per-unit
   const subtotal = items.reduce((sum, item) => sum + item.rate * item.quantity, 0);
-  const dynamicDiscountTotal = items.reduce((sum, item) => sum + (item.dynamicDiscount || 0) * item.quantity, 0);
+  const dynamicDiscountTotal = React.useMemo(() => {
+    let total = 0;
+    const orderScopeSeen = new Set<string>();
+    for (const item of items) {
+      if (!item.dynamicDiscount || item.dynamicDiscount <= 0) continue;
+      if (item.dynamicDiscountScope === 'order') {
+        const key = `${item.productId}:${item.dynamicDiscount}`;
+        if (!orderScopeSeen.has(key)) {
+          orderScopeSeen.add(key);
+          total += item.dynamicDiscount;
+        }
+      } else {
+        total += item.dynamicDiscount * item.quantity;
+      }
+    }
+    return Math.min(subtotal, total);
+  }, [items, subtotal]);
   const parsedDiscount = parseFloat(discount) || 0;
   const parsedShipping = parseFloat(shipping) || 0;
   const calculatedTotal = roundMoney(Math.max(0, subtotal + parsedShipping));
@@ -482,6 +503,7 @@ const OrderForm: React.FC = () => {
 
     let itemRate = product.salePrice;
     let itemDiscount = 0;
+    let itemDiscountScope: 'product' | 'order' = 'product';
 
     if (pricing.action === 'setRate') {
       // setRate: change the rate, track original for strikethrough display
@@ -489,6 +511,7 @@ const OrderForm: React.FC = () => {
     } else if (pricing.action === 'discount') {
       // discount: keep original rate, track per-unit discount for auto-populating discount field
       itemDiscount = pricing.discountPerUnit;
+      itemDiscountScope = pricing.discountScope;
     }
 
     const newItem: OrderItem = {
@@ -499,6 +522,7 @@ const OrderForm: React.FC = () => {
       amount: itemRate,
       originalRate: pricing.action !== 'none' ? product.salePrice : undefined,
       dynamicDiscount: itemDiscount > 0 ? itemDiscount : undefined,
+      dynamicDiscountScope: itemDiscount > 0 ? itemDiscountScope : undefined,
     };
     setItems(prev => [...prev, newItem]);
     if (!isMultiSelectMode) {
@@ -531,16 +555,19 @@ const OrderForm: React.FC = () => {
       item.rate = pricing.adjustedRate;
       item.originalRate = baseRate;
       item.dynamicDiscount = undefined;
+      item.dynamicDiscountScope = undefined;
     } else if (pricing.action === 'discount') {
       // discount: keep original rate, track discount
       item.rate = baseRate;
       item.originalRate = baseRate;
       item.dynamicDiscount = pricing.discountPerUnit;
+      item.dynamicDiscountScope = pricing.discountScope;
     } else {
       // no rule matches
       item.rate = baseRate;
       item.originalRate = undefined;
       item.dynamicDiscount = undefined;
+      item.dynamicDiscountScope = undefined;
     }
 
     item.amount = item.rate * newQty;
