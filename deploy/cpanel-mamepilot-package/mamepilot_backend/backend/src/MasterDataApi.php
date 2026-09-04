@@ -4399,6 +4399,9 @@ final class MasterDataApi extends BaseService
             'pathao_default_weight' => array_key_exists('defaultWeight', $pathao) ? (float) $pathao['defaultWeight'] : $current['pathao']['defaultWeight'],
             'pathao_default_delivery_type' => array_key_exists('defaultDeliveryType', $pathao) ? (int) $pathao['defaultDeliveryType'] : $current['pathao']['defaultDeliveryType'],
             'pathao_default_item_type' => array_key_exists('defaultItemType', $pathao) ? (int) $pathao['defaultItemType'] : $current['pathao']['defaultItemType'],
+            'pathao_access_token' => $pathao['accessToken'] ?? $current['pathao']['accessToken'] ?? '',
+            'pathao_refresh_token' => $pathao['refreshToken'] ?? $current['pathao']['refreshToken'] ?? '',
+            'pathao_token_expires_at' => $pathao['tokenExpiresAt'] ?? $current['pathao']['tokenExpiresAt'] ?? '',
             'pathao_webhook_header' => array_key_exists('webhookHeader', $pathao)
                 ? trim((string) $pathao['webhookHeader'])
                 : ($current['pathao']['webhookHeader'] ?? 'X-MamePilot-Webhook-Secret'),

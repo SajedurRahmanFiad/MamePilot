@@ -80,7 +80,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               refreshToken: result.refreshToken || refreshToken,
               tokenExpiresAt: expiresAt,
             },
-          } as any);
+          });
           await refetchCourierSettings();
           return result.accessToken;
         }
@@ -101,7 +101,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               refreshToken: result.refreshToken || '',
               tokenExpiresAt: expiresAt,
             },
-          } as any);
+          });
           await refetchCourierSettings();
           return result.accessToken;
         }
