@@ -374,7 +374,7 @@ const Products: React.FC = () => {
                 />
                 <div>
                   <p className="font-bold text-gray-900">{product.name}</p>
-                  {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {safeDecodeURIComponent(product.sku)}</p>}
+                  {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400" title={safeDecodeURIComponent(product.sku)}>SKU: {safeDecodeURIComponent(product.sku).length > 20 ? safeDecodeURIComponent(product.sku).slice(0, 20) + '...' : safeDecodeURIComponent(product.sku)}</p>}
                 </div>
               </div>
             ),

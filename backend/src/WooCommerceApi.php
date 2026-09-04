@@ -595,10 +595,7 @@ final class WooCommerceApi extends BaseService
             $wcNumber = trim((string) ($wcOrder['number'] ?? $wcOrderId));
             $wcStatus = trim((string) ($wcOrder['status'] ?? 'unknown'));
             $customerNote = trim(strip_tags((string) ($wcOrder['customer_note'] ?? '')));
-            $notes = 'WooCommerce order #' . $wcNumber . ' from ' . (string) $store['store_name'] . '. WooCommerce status: ' . $wcStatus . '.';
-            if ($customerNote !== '') {
-                $notes .= "\nCustomer note: " . $customerNote;
-            }
+            $notes = '';
             $paidAt = trim((string) ($wcOrder['date_paid_gmt'] ?? $wcOrder['date_paid'] ?? ''));
             $totalRefunded = max(0.0, (float) ($wcOrder['total_refunded'] ?? 0));
             $paidAmount = $paidAt !== '' ? max(0.0, min($total, round($total - $totalRefunded, 2))) : 0.0;
@@ -617,7 +614,7 @@ final class WooCommerceApi extends BaseService
                 'paidAmount' => $paidAmount,
                 'notes' => $notes,
                 'sourceAd' => 'WooCommerce',
-                'history' => ['created' => 'Imported from WooCommerce by WooCommerce on ' . $historyTime . '.'],
+                'history' => ['created' => 'Imported from WooCommerce automatically on ' . $historyTime . '.'],
             ]));
 
             $now = $this->database->nowUtc();

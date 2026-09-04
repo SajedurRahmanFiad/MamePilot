@@ -9,7 +9,13 @@ import { OrderStatus, BillStatus } from './types';
 export const safeDecodeURIComponent = (value?: string | null): string => {
   if (!value) return '';
   try {
-    return decodeURIComponent(value);
+    const first = decodeURIComponent(value);
+    if (first === value) return first;
+    try {
+      return decodeURIComponent(first);
+    } catch {
+      return first;
+    }
   } catch {
     return String(value);
   }

@@ -379,14 +379,12 @@ GRAPHQL, ['first' => 50, 'after' => $cursor]);
                 if ($address === '') $address = (string) ($customer['address'] ?? '');
                 $orderDate = $this->parseDateOnly((string) ($order['created_at'] ?? $order['createdAt'] ?? '')) ?: gmdate('Y-m-d');
                 $orderName = trim((string) ($order['name'] ?? $order['order_number'] ?? $remoteId));
-                $notes = 'Shopify order ' . $orderName . ' [' . (string) $store['store_name'] . ']';
-                $note = trim(strip_tags((string) ($order['note'] ?? '')));
-                if ($note !== '') $notes .= "\n" . $note;
+                $notes = '';
                 $saved = $this->withSystemUser($systemUser, fn(): array => $this->operations->createOrder([
                     'customerId' => $customer['id'], 'pageId' => (string) $store['company_page_id'], 'orderDate' => $orderDate,
                     'status' => 'On Hold', 'items' => $items, 'subtotal' => $subtotal, 'discount' => $discount,
                     'shipping' => $shipping, 'total' => $total, 'paidAmount' => $paid, 'notes' => $notes,
-                    'sourceAd' => 'Shopify', 'history' => ['created' => 'Imported from Shopify on ' . gmdate('c') . '.'],
+                    'sourceAd' => 'Shopify', 'history' => ['created' => 'Imported from Shopify automatically on ' . gmdate('c') . '.'],
                 ]));
                 $this->saveOrderLink($store, $remoteId, $order, (string) $saved['id'], 'imported', $dedupeKey, 'Imported successfully.');
                 $this->database->execute('UPDATE shopify_stores SET orders_synced = orders_synced + 1, last_orders_synced_at = :now, updated_at = :now WHERE id = :id', [':now' => $this->database->nowUtc(), ':id' => $store['id']]);
