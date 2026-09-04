@@ -67,7 +67,7 @@ const SettingsPage: React.FC = () => {
     canManagePermissions,
     canSyncAds,
   } = useRolePermissions();
-  const { hasCapability, hasSubCapability, capabilities } = useCapabilities(Boolean(user));
+  const { hasCapability, hasSubCapability, capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
   const canUseSteadfast = hasSubCapability('steadfast_courier');
   const canUseCarryBee = hasSubCapability('carrybee_courier');
   const canUsePaperfly = hasSubCapability('paperfly_courier');
@@ -1162,6 +1162,7 @@ const SettingsPage: React.FC = () => {
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
 
   React.useEffect(() => {
+    if (capabilitiesLoading) return;
     if (tabs.some((tab) => tab.id === activeTab)) {
       return;
     }
@@ -1170,7 +1171,7 @@ const SettingsPage: React.FC = () => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('tab');
     setSearchParams(nextParams, { replace: true });
-  }, [activeTab, availableTabIds, searchParams, setSearchParams]);
+  }, [activeTab, availableTabIds, searchParams, setSearchParams, capabilitiesLoading]);
 
   if (!user) {
     return <div className="p-8 text-center text-gray-500">Loading settings access...</div>;

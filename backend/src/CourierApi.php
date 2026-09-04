@@ -1931,8 +1931,11 @@ final class CourierApi extends BaseService
     {
         $baseUrl = $this->trimBaseUrl($params);
         $accessToken = trim((string) ($params['accessToken'] ?? ''));
-        if ($baseUrl === '' || $accessToken === '') {
-            throw new RuntimeException('Pathao access token is not configured.');
+        if ($baseUrl === '') {
+            throw new RuntimeException('Pathao base URL is not configured. Open Settings and enter the Pathao API base URL.');
+        }
+        if ($accessToken === '') {
+            throw new RuntimeException('Pathao access token is not configured. Open Settings, enter your Pathao credentials, and save. The token will be generated automatically.');
         }
 
         return $this->pathaoLocationCollection($this->request(
