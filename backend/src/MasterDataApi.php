@@ -4490,9 +4490,14 @@ final class MasterDataApi extends BaseService
         ];
         foreach ($definitions as $column => $definition) {
             if (!$this->columnExists('courier_settings', $column)) {
-                $this->database->execute(
-                    "ALTER TABLE `courier_settings` ADD COLUMN `{$column}` {$definition}"
-                );
+                try {
+                    $this->database->execute(
+                        "ALTER TABLE `courier_settings` ADD COLUMN `{$column}` {$definition}"
+                    );
+                } catch (\Throwable) {
+                    // Column creation may fail on restricted hosting. The save
+                    // will still work for existing columns via filterExistingColumns.
+                }
             }
         }
     }

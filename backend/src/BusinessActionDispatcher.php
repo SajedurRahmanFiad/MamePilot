@@ -197,8 +197,11 @@ final class BusinessActionDispatcher
         }
 
         // Provider settings win so a model-supplied value can never replace a
-        // developer-managed endpoint, token, key, or secret.
-        return array_merge($payload, $providerSettings);
+        // developer-managed endpoint, token, key, or secret. Empty DB values
+        // (e.g. when columns are missing) are skipped so the frontend-provided
+        // fallback values are used instead.
+        $nonEmptyProvider = array_filter($providerSettings, static fn($v): bool => $v !== '' && $v !== null);
+        return array_merge($payload, $nonEmptyProvider);
     }
 
     /** @return array<string, mixed> */

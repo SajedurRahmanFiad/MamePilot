@@ -139,7 +139,11 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
       try {
         const token = await ensureValidToken();
         if (!token || cancelled) return;
-        const items = await fetchPathaoCities();
+        const pathaoSettings = courierSettings?.pathao;
+        const items = await fetchPathaoCities({
+          baseUrl: pathaoSettings?.baseUrl,
+          accessToken: token,
+        });
         if (!cancelled) setCities(items);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao cities');
@@ -160,7 +164,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
     let cancelled = false;
     setError(null);
     setLoadingZones(true);
-    void fetchPathaoZones({ cityId: selectedCity })
+    void fetchPathaoZones({ cityId: selectedCity, baseUrl: courierSettings?.pathao?.baseUrl, accessToken: courierSettings?.pathao?.accessToken })
       .then((items) => { if (!cancelled) setZones(items); })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao zones'); })
       .finally(() => { if (!cancelled) setLoadingZones(false); });
@@ -176,7 +180,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
     let cancelled = false;
     setError(null);
     setLoadingAreas(true);
-    void fetchPathaoAreas({ zoneId: selectedZone })
+    void fetchPathaoAreas({ zoneId: selectedZone, baseUrl: courierSettings?.pathao?.baseUrl, accessToken: courierSettings?.pathao?.accessToken })
       .then((items) => { if (!cancelled) setAreas(items); })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao areas'); })
       .finally(() => { if (!cancelled) setLoadingAreas(false); });
