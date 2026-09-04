@@ -6,6 +6,15 @@
 import type { Bill, Order, Transaction } from './types';
 import { OrderStatus, BillStatus } from './types';
 
+export const safeDecodeURIComponent = (value?: string | null): string => {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return String(value);
+  }
+};
+
 const DYNAMIC_TEXT_FILTER_PREFIX = '__mp_filter_v1__:';
 
 export const encodeDynamicTextFilterValue = (value: string, contains: boolean): string => (

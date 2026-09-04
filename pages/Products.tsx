@@ -18,7 +18,7 @@ import { useSearch } from '../src/contexts/SearchContext';
 import { useResettablePage } from '../src/hooks/useResettablePage';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
-import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, safeDecodeURIComponent } from '../utils';
 
 const withImageCacheVersion = (imageUrl: string, version: number): string => {
   if (!imageUrl || version <= 0 || imageUrl.startsWith('data:')) return imageUrl;
@@ -374,7 +374,7 @@ const Products: React.FC = () => {
                 />
                 <div>
                   <p className="font-bold text-gray-900">{product.name}</p>
-                  {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {product.sku}</p>}
+                  {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {safeDecodeURIComponent(product.sku)}</p>}
                 </div>
               </div>
             ),

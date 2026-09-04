@@ -17,7 +17,7 @@ import { formatAge } from '../src/utils/batchUtils';
 import { useSearch } from '../src/contexts/SearchContext';
 import { useResettablePage } from '../src/hooks/useResettablePage';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
-import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
+import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, safeDecodeURIComponent } from '../utils';
 import BatchEventModal from '../components/BatchEventModal';
 
 const Batches: React.FC = () => {
@@ -400,7 +400,7 @@ const Batches: React.FC = () => {
             render: (_name, batch) => (
               <div>
                 <p className="font-bold text-gray-900">{batch.name}</p>
-                {batch.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {batch.sku}</p>}
+                {batch.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400">SKU: {safeDecodeURIComponent(batch.sku)}</p>}
               </div>
             ),
           },

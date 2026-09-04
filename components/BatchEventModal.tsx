@@ -6,6 +6,7 @@ import { Button, NumericInput } from '../components';
 import { ICONS } from '../constants';
 import { theme } from '../theme';
 import { formatAge } from '../src/utils/batchUtils';
+import { safeDecodeURIComponent } from '../utils';
 
 interface BatchEventModalProps {
   isOpen: boolean;
@@ -168,7 +169,7 @@ const BatchEventModal: React.FC<BatchEventModalProps> = ({ isOpen, onClose, onSu
                           <p className="text-sm font-bold text-gray-800">{batch.name}</p>
                           <p className="text-[10px] text-gray-500">
                             Pop: {batch.population} | Age: {formatAge(batch.averageAgeDays)}
-                            {batch.sku ? ` | SKU: ${batch.sku}` : ''}
+                            {batch.sku ? ` | SKU: ${safeDecodeURIComponent(batch.sku)}` : ''}
                           </p>
                         </button>
                       ))
