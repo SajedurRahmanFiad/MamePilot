@@ -738,8 +738,8 @@ final class MessengerApi extends BaseService
 
     private function touchConversation(array $contact, string $preview, string $type, string $at, bool $inbound): void
     {
-        $sql = 'UPDATE messenger_contacts SET last_message_preview = :preview, last_message_type = :type, last_message_at = :at, updated_at = :updated';
-        if ($inbound) $sql .= ', unread_count = unread_count + 1, last_user_message_at = :at';
+        $sql = 'UPDATE messenger_contacts SET last_message_type = :type, last_message_at = :at, updated_at = :updated';
+        if ($inbound) $sql .= ', last_message_preview = :preview, unread_count = unread_count + 1, last_user_message_at = :at';
         $sql .= ' WHERE id = :id';
         $this->database->execute($sql, [':preview' => $this->preview($preview), ':type' => $type, ':at' => $at, ':updated' => $this->database->nowUtc(), ':id' => $contact['id']]);
     }

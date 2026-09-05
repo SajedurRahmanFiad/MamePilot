@@ -1490,13 +1490,17 @@ final class WooCommerceApi extends BaseService
 
     private function normalizePhone(string $phone): string
     {
-        $digits = preg_replace('/\D+/', '', $phone) ?? '';
-        if (str_starts_with($digits, '880') && strlen($digits) >= 13) {
-            $digits = '0' . substr($digits, 3);
-        } elseif (strlen($digits) === 10 && str_starts_with($digits, '1')) {
-            $digits = '0' . $digits;
+        $digits = preg_replace('/[^0-9]/', '', $phone) ?? '';
+        if (strlen($digits) === 11 && $digits[0] === '0') {
+            return $digits;
         }
-        return strlen($digits) > 10 ? substr($digits, -10) : $digits;
+        if (strlen($digits) === 10 && $digits[0] !== '0') {
+            return '0' . $digits;
+        }
+        if (strlen($digits) === 13 && str_starts_with($digits, '880')) {
+            return '0' . substr($digits, 3);
+        }
+        return $digits;
     }
 
     private function acquireCustomerLock(array $wcOrder): ?string
