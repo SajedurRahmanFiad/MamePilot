@@ -1956,6 +1956,7 @@ export interface MessengerContact {
   unreadCount: number;
   lastMessagePreview: string;
   lastMessageType: string;
+  lastMessageDirection: string;
   lastMessageAt: string | null;
   lastUserMessageAt: string | null;
   canReply: boolean;

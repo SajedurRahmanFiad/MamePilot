@@ -738,10 +738,10 @@ final class MessengerApi extends BaseService
 
     private function touchConversation(array $contact, string $preview, string $type, string $at, bool $inbound): void
     {
-        $sql = 'UPDATE messenger_contacts SET last_message_type = :type, last_message_at = :at, updated_at = :updated';
-        if ($inbound) $sql .= ', last_message_preview = :preview, unread_count = unread_count + 1, last_user_message_at = :at';
+        $sql = 'UPDATE messenger_contacts SET last_message_preview = :preview, last_message_type = :type, last_message_at = :at, last_message_direction = :direction, updated_at = :updated';
+        if ($inbound) $sql .= ', unread_count = unread_count + 1, last_user_message_at = :at';
         $sql .= ' WHERE id = :id';
-        $this->database->execute($sql, [':preview' => $this->preview($preview), ':type' => $type, ':at' => $at, ':updated' => $this->database->nowUtc(), ':id' => $contact['id']]);
+        $this->database->execute($sql, [':preview' => $this->preview($preview), ':type' => $type, ':at' => $at, ':direction' => $inbound ? 'inbound' : 'outbound', ':updated' => $this->database->nowUtc(), ':id' => $contact['id']]);
     }
 
     private function touchUserWindow(array $contact, string $at): void
@@ -909,7 +909,8 @@ final class MessengerApi extends BaseService
             'firstName' => (string) ($row['first_name'] ?? ''), 'lastName' => (string) ($row['last_name'] ?? ''),
             'profilePictureUrl' => (string) ($row['profile_picture_url'] ?? ''), 'locale' => (string) ($row['locale'] ?? ''),
             'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => (string) ($row['last_message_preview'] ?? ''),
-            'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null),
+            'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageDirection' => (string) ($row['last_message_direction'] ?? ''),
+            'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null),
             'lastUserMessageAt' => $this->toIso($lastResolved), 'canReply' => $window !== 'closed', 'replyWindow' => $window,
             'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
         ];
