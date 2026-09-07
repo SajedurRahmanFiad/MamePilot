@@ -6363,7 +6363,7 @@ final class OperationsApi extends BaseService
             // courier_order_charges row. Webhook-triggered updates carry the
             // triggering charge row; manual terminal transitions resolve the
             // stored charge for the order.
-            $expenseEligibleStatuses = ['Completed', 'Cancelled', 'Returned', 'partially_delivered', 'pending_partial', 'Exchange delivered'];
+            $expenseEligibleStatuses = ['Completed', 'Cancelled', 'Returned', 'partially_delivered', 'pending_partial', 'pending_delivered', 'Exchange delivered'];
             $terminalExpenseTransition = $nextStatus !== $previousStatus
                 && in_array($nextStatus, $expenseEligibleStatuses, true);
             if (

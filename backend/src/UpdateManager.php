@@ -126,6 +126,7 @@ final class UpdateManager
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
             $courierStatusSchedule = (new CourierStatusScheduler($this->config))->ensureInstalled();
             $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
+            $agentQueueSchedule = (new AgentQueueScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -140,6 +141,7 @@ final class UpdateManager
                 'automaticCallingSchedule' => $autoCallSchedule,
                 'courierStatusSchedule' => $courierStatusSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
+                'agentQueueSchedule' => $agentQueueSchedule,
                 'updatedAt' => gmdate('c'),
             ];
         } catch (\Throwable $exception) {
@@ -205,6 +207,7 @@ final class UpdateManager
             $autoCallSchedule = (new AutoCallScheduler($this->config))->ensureInstalled();
             $courierStatusSchedule = (new CourierStatusScheduler($this->config))->ensureInstalled();
             $updateSchedule = (new UpdateScheduler($this->config))->ensureInstalled();
+            $agentQueueSchedule = (new AgentQueueScheduler($this->config))->ensureInstalled();
 
             $result = [
                 'updated' => true,
@@ -219,6 +222,7 @@ final class UpdateManager
                 'automaticCallingSchedule' => $autoCallSchedule,
                 'courierStatusSchedule' => $courierStatusSchedule,
                 'automaticUpdateSchedule' => $updateSchedule,
+                'agentQueueSchedule' => $agentQueueSchedule,
                 'updatedAt' => gmdate('c'),
             ];
             (new AuditLog($this->config))->append('update.git_success', $result);

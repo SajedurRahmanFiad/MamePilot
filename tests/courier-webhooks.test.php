@@ -1280,17 +1280,19 @@ try {
         !empty($pendingActionRow['partial_delivered_at']),
         'Delivered webhook with both automation flags on did not stamp partial_delivered_at.'
     );
+    $pendingDeliveredExpense = courierWebhookExpense($database, $pendingDeliveredId);
     courierWebhookAssert(
-        courierWebhookExpense($database, $pendingDeliveredId) === null,
-        'Delivered webhook with both automation flags on booked an immediate shipping expense instead of deferring.'
+        $pendingDeliveredExpense !== null && abs((float) $pendingDeliveredExpense['amount'] - 14.00) < 0.001,
+        'Delivered webhook with both automation flags on did not book the shipping expense on pending_delivered.'
     );
     courierWebhookAssert(
         courierWebhookPayment($database, $pendingDeliveredId) === null,
         'Delivered webhook with both automation flags on booked an immediate COD income instead of deferring.'
     );
 
-    // The follow-up delivered webhook confirms the pending order and posts
-    // the deferred income + expense.
+    // The follow-up delivered webhook confirms the pending order to Completed.
+    // The shipping expense was already booked on the first webhook; the
+    // idempotent recorder returns the existing transaction without doubling.
     $courier->handleWebhook('steadfast', courierWebhookJson([
         'notification_type' => 'delivery_status',
         'consignment_id' => 'SF-PENDING-DELIVERED-' . $stamp,
@@ -1315,7 +1317,7 @@ try {
     $confirmedExpense = courierWebhookExpense($database, $pendingDeliveredId);
     courierWebhookAssert(
         $confirmedExpense !== null && abs((float) $confirmedExpense['amount'] - 14.00) < 0.001,
-        'Follow-up delivered webhook did not book the deferred shipping expense.'
+        'Follow-up delivered webhook did not preserve the shipping expense.'
     );
     $confirmedPayment = courierWebhookPayment($database, $pendingDeliveredId);
     courierWebhookAssert(

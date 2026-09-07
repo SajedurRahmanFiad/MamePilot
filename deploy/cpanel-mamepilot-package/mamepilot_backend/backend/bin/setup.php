@@ -6,6 +6,7 @@ use App\Config;
 use App\Database;
 use App\MigrationManager;
 use App\SchemaManager;
+use App\AgentQueueScheduler;
 use App\AutoCallScheduler;
 use App\CourierStatusScheduler;
 use App\UpdateScheduler;
@@ -40,6 +41,9 @@ echo 'Courier confirmation schedule: ' . $courierStatusSchedule['message'] . "\n
 
 $updateSchedule = (new UpdateScheduler($config))->ensureInstalled();
 echo 'Automatic update schedule: ' . $updateSchedule['message'] . "\n";
+
+$agentQueueSchedule = (new AgentQueueScheduler($config))->ensureInstalled();
+echo 'Agent queue schedule: ' . $agentQueueSchedule['message'] . "\n";
 
 function getOption(string $name): ?string
 {

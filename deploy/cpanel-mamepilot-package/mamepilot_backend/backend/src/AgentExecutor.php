@@ -1151,6 +1151,10 @@ final class AgentExecutor extends BaseService
 
     private function dispatchBackgroundWorker(string $runId): void
     {
+        // Self-heal: ensure the periodic cron is installed so stale/missed runs
+        // are picked up even without an active HTTP request.
+        (new AgentQueueScheduler($this->config))->ensureInstalled();
+
         $script = dirname(__DIR__) . '/bin/process_agent_queue.php';
         if (!is_file($script)) return;
         $php = PHP_BINARY ?: 'php';
