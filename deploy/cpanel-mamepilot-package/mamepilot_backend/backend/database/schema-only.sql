@@ -1557,6 +1557,12 @@ CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_type_employee_paid_
 
 CALL sp_create_idx('recurring_transactions', 'idx_recurring_active_next_run_id', '`is_active`, `next_run_at`, `id`');
 
+CALL sp_create_idx('orders', 'idx_orders_pl_report', '`deleted_at`, `status`, `order_date`, `paid_amount`, `page_id`');
+
+CALL sp_create_idx('bills', 'idx_bills_pl_report', '`deleted_at`, `bill_date`, `paid_amount`');
+
+CALL sp_create_idx('transactions', 'idx_transactions_pl_report', '`deleted_at`, `type`, `category`, `date`');
+
 -- ─── Batch Management Tables ───────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS batch_categories (

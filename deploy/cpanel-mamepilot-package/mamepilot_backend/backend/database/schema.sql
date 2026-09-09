@@ -1619,6 +1619,13 @@ ALTER TABLE `payroll_payments`
   ADD INDEX IF NOT EXISTS `idx_payroll_payments_type_employee_paid_id` (`compensation_type`, `employee_id`, `paid_at`, `id`);
 ALTER TABLE `recurring_transactions`
   ADD INDEX IF NOT EXISTS `idx_recurring_active_next_run_id` (`is_active`, `next_run_at`, `id`);
+-- ─── Profit & Loss Report Composite Indexes ────────────────────────
+ALTER TABLE `orders`
+  ADD INDEX IF NOT EXISTS `idx_orders_pl_report` (`deleted_at`, `status`, `order_date`, `paid_amount`, `page_id`);
+ALTER TABLE `bills`
+  ADD INDEX IF NOT EXISTS `idx_bills_pl_report` (`deleted_at`, `bill_date`, `paid_amount`);
+ALTER TABLE `transactions`
+  ADD INDEX IF NOT EXISTS `idx_transactions_pl_report` (`deleted_at`, `type`, `category`, `date`);
 
 -- ─── Batch Management Tables ───────────────────────────────────────
 

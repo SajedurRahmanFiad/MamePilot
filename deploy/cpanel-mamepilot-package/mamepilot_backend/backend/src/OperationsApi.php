@@ -4634,131 +4634,212 @@ final class OperationsApi extends BaseService
             }
         }
 
+        // --- Cache lookup ---
+        $cacheKey = $this->buildProfitLossCacheKey($normalizedParams);
+        $cached = $this->getProfitLossCache($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
+
         $filters = $this->buildDashboardDateFilters($normalizedParams);
         $hasCompanyFilter = !empty($companyPageIds);
 
-        $transactionConditions = ['t.deleted_at IS NULL'];
-        $transactionBindings = [];
-        $this->applyDashboardDateTimeBounds('t.date', $filters, $transactionConditions, $transactionBindings, 'profit_loss_txn');
-        $transactionIncomeCompanyCondition = '1 = 1';
+        // --- Build company filter fragments (shared across queries) ---
+        $companyBindings = [];
+        // Note: company filter bindings are added by buildProfitLossCompanyFilter
+        // with unique prefixes per subquery (pl_q1, pl_q2, etc.) for PDO compatibility.
+
+        // --- Single query: 6 CTE-like subqueries via CROSS JOIN ---
+        // Each subquery needs unique placeholder names for PDO (EMULATE_PREPARES=false)
+        $orderCompanyWhere1 = $this->buildProfitLossCompanyFilter('o', 'pl_q1', $companyPageIds, $companyBindings);
+        $orderCompanyWhere2 = $this->buildProfitLossCompanyFilter('o', 'pl_q2', $companyPageIds, $companyBindings);
+        $orderCompanyWhere3 = $this->buildProfitLossCompanyFilter('o', 'pl_q3', $companyPageIds, $companyBindings);
+
+        $txnCompanyConditionForSales = '1 = 1';
+        $txnCompanyConditionForExpenses = '1 = 1';
+        $txnCompanyConditionForIncome = '1 = 1';
         if ($hasCompanyFilter) {
-            $orClauses = [];
+            // For transaction-linked sales: match the linked order's company
+            $txnOrClauses = [];
             foreach ($companyPageIds as $i => $cid) {
-                $orClauses[] = '(company_income_order.page_id = :profit_loss_txn_page_' . $i . ' OR (
-                    NULLIF(TRIM(company_income_order.page_id), \'\') IS NULL
-                    AND JSON_UNQUOTE(JSON_EXTRACT(company_income_order.page_snapshot, \'$.id\')) = :profit_loss_txn_snap_' . $i . '
+                $txnOrClauses[] = '(t_co_income.page_id = :pl_txn_inc_page_' . $i . ' OR (
+                    NULLIF(TRIM(t_co_income.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(t_co_income.page_snapshot, \'$.id\')) = :pl_txn_inc_snap_' . $i . '
                 ))';
-                $transactionBindings[':profit_loss_txn_page_' . $i] = $cid;
-                $transactionBindings[':profit_loss_txn_snap_' . $i] = $cid;
+                $companyBindings[':pl_txn_inc_page_' . $i] = $cid;
+                $companyBindings[':pl_txn_inc_snap_' . $i] = $cid;
             }
-            $transactionIncomeCompanyCondition = 'EXISTS (
-                SELECT 1 FROM orders company_income_order
-                WHERE company_income_order.id = t.reference_id
-                  AND company_income_order.deleted_at IS NULL
-                  AND (' . implode(' OR ', $orClauses) . ')
+            $txnCompanyConditionForSales = 'EXISTS (
+                SELECT 1 FROM orders t_co_income
+                WHERE t_co_income.id = t.reference_id AND t_co_income.deleted_at IS NULL
+                AND (' . implode(' OR ', $txnOrClauses) . ')
+            )';
+
+            // For expenses: include if no linked order, or linked order matches company
+            $expOrClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $expOrClauses[] = '(t_co_exp.page_id = :pl_exp_page_' . $i . ' OR (
+                    NULLIF(TRIM(t_co_exp.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(t_co_exp.page_snapshot, \'$.id\')) = :pl_exp_snap_' . $i . '
+                ))';
+            }
+            $txnCompanyConditionForExpenses = '(
+                t.reference_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM orders t_no_link WHERE t_no_link.id = t.reference_id)
+                OR EXISTS (
+                    SELECT 1 FROM orders t_co_exp
+                    WHERE t_co_exp.id = t.reference_id AND t_co_exp.deleted_at IS NULL
+                    AND (' . implode(' OR ', $expOrClauses) . ')
+                )
+            )';
+
+            // For income categories: same pattern as expenses
+            $incOrClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $incOrClauses[] = '(t_co_inc.page_id = :pl_inc_page_' . $i . ' OR (
+                    NULLIF(TRIM(t_co_inc.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(t_co_inc.page_snapshot, \'$.id\')) = :pl_inc_snap_' . $i . '
+                ))';
+            }
+            $txnCompanyConditionForIncome = '(
+                t.reference_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM orders t_no_link2 WHERE t_no_link2.id = t.reference_id)
+                OR EXISTS (
+                    SELECT 1 FROM orders t_co_inc
+                    WHERE t_co_inc.id = t.reference_id AND t_co_inc.deleted_at IS NULL
+                    AND (' . implode(' OR ', $incOrClauses) . ')
+                )
             )';
         }
 
-        $transactionSummary = $this->database->fetchOne(
-            'SELECT
-                COALESCE(SUM(CASE WHEN t.type = \'Income\' AND t.reference_id IS NOT NULL AND ' . $transactionIncomeCompanyCondition . ' THEN t.amount ELSE 0 END), 0) AS salesFromTransactions,
-                COALESCE(SUM(CASE WHEN t.type = \'Expense\' AND t.category = \'expense_purchases\' THEN t.amount ELSE 0 END), 0) AS purchasesFromTransactions,
-                COALESCE(SUM(CASE WHEN t.type = \'Expense\' AND COALESCE(t.category, \'\') <> \'expense_purchases\' THEN t.amount ELSE 0 END), 0) AS otherExpenses
-             FROM transactions t
-             WHERE ' . implode(' AND ', $transactionConditions),
-            $transactionBindings
-        ) ?? [];
-
-        $orderConditions = [
-            'o.deleted_at IS NULL',
-            'o.status IN (:profit_loss_completed_status, :profit_loss_exchange_delivered_status)',
-        ];
-        $orderBindings = [
-            ':profit_loss_completed_status' => 'Completed',
-            ':profit_loss_exchange_delivered_status' => 'Exchange delivered',
-        ];
-        $this->applyDashboardDateBounds('o.order_date', $filters, $orderConditions, $orderBindings, 'profit_loss_order');
-        if ($hasCompanyFilter) {
-            $orClauses = [];
-            foreach ($companyPageIds as $i => $cid) {
-                $orClauses[] = '(o.page_id = :profit_loss_order_page_' . $i . ' OR (
-                    NULLIF(TRIM(o.page_id), \'\') IS NULL
-                    AND JSON_UNQUOTE(JSON_EXTRACT(o.page_snapshot, \'$.id\')) = :profit_loss_order_snap_' . $i . '
-                ))';
-                $orderBindings[':profit_loss_order_page_' . $i] = $cid;
-                $orderBindings[':profit_loss_order_snap_' . $i] = $cid;
-            }
-            $orderConditions[] = '(' . implode(' OR ', $orClauses) . ')';
+        // Transaction date bounds (unique per subquery for PDO named params)
+        $txnDateSub1 = '';
+        $txnDateSub2 = '';
+        $txnDateSub3 = '';
+        if (!empty($filters['fromDateTime'])) {
+            $txnDateSub1 = ' AND t.date >= :pl_txn1_from';
+            $txnDateSub2 = ' AND t.date >= :pl_txn2_from';
+            $txnDateSub3 = ' AND t.date >= :pl_txn3_from';
+            $companyBindings[':pl_txn1_from'] = $filters['fromDateTime'];
+            $companyBindings[':pl_txn2_from'] = $filters['fromDateTime'];
+            $companyBindings[':pl_txn3_from'] = $filters['fromDateTime'];
+        }
+        if (!empty($filters['toDateTime'])) {
+            $txnDateSub1 .= ' AND t.date <= :pl_txn1_to';
+            $txnDateSub2 .= ' AND t.date <= :pl_txn2_to';
+            $txnDateSub3 .= ' AND t.date <= :pl_txn3_to';
+            $companyBindings[':pl_txn1_to'] = $filters['toDateTime'];
+            $companyBindings[':pl_txn2_to'] = $filters['toDateTime'];
+            $companyBindings[':pl_txn3_to'] = $filters['toDateTime'];
         }
 
-        $orderSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0) AS grossSales, COUNT(*) AS orderCount
-             FROM orders o
-             WHERE ' . implode(' AND ', $orderConditions),
-            $orderBindings
-        ) ?? [];
-
-        try {
-            $profitLossQuantitySql = $this->orderItemJsonValue('o', 'profit_loss_item_seq', 'quantity');
-            $productsSoldRow = $this->database->fetchOne(
-                'SELECT COALESCE(SUM(CAST(COALESCE(NULLIF(' . $profitLossQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS productsSold
-                 FROM orders o
-                 INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'profit_loss_item_seq') . '
-                 WHERE ' . implode(' AND ', $orderConditions),
-                $orderBindings
-            );
-            $productsSold = (float) ($productsSoldRow['productsSold'] ?? 0);
-        } catch (\Throwable) {
-            $orderItemsRows = $this->database->fetchAll(
-                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions),
-                $orderBindings
-            );
-            $productsSold = 0;
-            foreach ($orderItemsRows as $orderRow) {
-                foreach ($this->jsonDecodeList($orderRow['items'] ?? null) as $item) {
-                    if (is_array($item)) $productsSold += (float) ($item['quantity'] ?? 0);
-                }
-            }
+        // Order date bounds (unique per subquery)
+        $orderDateSub1 = '';
+        $orderDateSub2 = '';
+        if (!empty($filters['fromDate'])) {
+            $orderDateSub1 = ' AND o.order_date >= :pl_ord1_from';
+            $orderDateSub2 = ' AND o.order_date >= :pl_ord2_from';
+            $companyBindings[':pl_ord1_from'] = $filters['fromDate'];
+            $companyBindings[':pl_ord2_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $orderDateSub1 .= ' AND o.order_date <= :pl_ord1_to';
+            $orderDateSub2 .= ' AND o.order_date <= :pl_ord2_to';
+            $companyBindings[':pl_ord1_to'] = $filters['toDate'];
+            $companyBindings[':pl_ord2_to'] = $filters['toDate'];
         }
 
-        $billConditions = ['deleted_at IS NULL'];
-        $billBindings = [];
-        $this->applyDashboardDateBounds('bill_date', $filters, $billConditions, $billBindings, 'profit_loss_bill');
+        // Bill date bounds
+        $billDateFrom = '';
+        $billDateTo = '';
+        if (!empty($filters['fromDate'])) {
+            $billDateFrom = ' AND bill_date >= :pl_bill_from';
+            $companyBindings[':pl_bill_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $billDateTo = ' AND bill_date <= :pl_bill_to';
+            $companyBindings[':pl_bill_to'] = $filters['toDate'];
+        }
 
-        $billSummary = $this->database->fetchOne(
-            'SELECT COALESCE(SUM(CASE WHEN COALESCE(paid_amount, 0) > 0 THEN paid_amount ELSE 0 END), 0) AS totalPurchases
-             FROM bills
-             WHERE ' . implode(' AND ', $billConditions),
-            $billBindings
-        ) ?? [];
+        // --- Compute productsSold SQL (with PHP fallback on failure) ---
+        $productsSoldSubquery = $this->buildProfitLossProductsSoldSubquery($orderCompanyWhere3);
 
-        $expenseConditions = [
-            't.deleted_at IS NULL',
-            "t.type = 'Expense'",
-            "COALESCE(t.category, '') <> 'expense_purchases'",
-        ];
+        // --- Unified query: all metrics in one round-trip ---
+        $sql = 'SELECT
+            (SELECT COALESCE(SUM(CASE
+                WHEN t.type = \'Income\' AND t.reference_id IS NOT NULL AND ' . $txnCompanyConditionForSales . ' THEN t.amount
+                ELSE 0
+            END), 0)
+            FROM transactions t
+            WHERE t.deleted_at IS NULL' . $txnDateSub1 . '
+            ) AS salesFromTransactions,
+
+            (SELECT COALESCE(SUM(CASE
+                WHEN t.type = \'Expense\' AND t.category = \'expense_purchases\' THEN t.amount
+                ELSE 0
+            END), 0)
+            FROM transactions t
+            WHERE t.deleted_at IS NULL AND t.type = \'Expense\'' . $txnDateSub2 . '
+            ) AS purchasesFromTransactions,
+
+            (SELECT COALESCE(SUM(CASE
+                WHEN t.type = \'Expense\' AND COALESCE(t.category, \'\') <> \'expense_purchases\' THEN t.amount
+                ELSE 0
+            END), 0)
+            FROM transactions t
+            WHERE t.deleted_at IS NULL AND t.type = \'Expense\'' . $txnDateSub3 . '
+            ) AS otherExpenses,
+
+            (SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0)
+            FROM orders o
+            WHERE o.deleted_at IS NULL
+            AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderDateSub1 . $orderCompanyWhere1 . '
+            ) AS grossSales,
+
+            (SELECT COUNT(*)
+            FROM orders o
+            WHERE o.deleted_at IS NULL
+            AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderDateSub2 . $orderCompanyWhere2 . '
+            ) AS orderCount,
+
+            ' . $productsSoldSubquery . ' AS productsSold,
+
+            (SELECT COALESCE(SUM(CASE WHEN COALESCE(paid_amount, 0) > 0 THEN paid_amount ELSE 0 END), 0)
+            FROM bills
+            WHERE deleted_at IS NULL' . $billDateFrom . $billDateTo . '
+            ) AS totalPurchases
+
+        ';
+
+        $metrics = $this->database->fetchOne($sql, $companyBindings) ?? [];
+
+        $salesFromTransactions = (float) ($metrics['salesFromTransactions'] ?? 0);
+        $purchasesFromTransactions = (float) ($metrics['purchasesFromTransactions'] ?? 0);
+        $grossSales = $salesFromTransactions > 0
+            ? $salesFromTransactions
+            : (float) ($metrics['grossSales'] ?? 0);
+        $costOfPurchases = $purchasesFromTransactions > 0
+            ? $purchasesFromTransactions
+            : (float) ($metrics['totalPurchases'] ?? 0);
+
+        // Products sold: try SQL subquery, fallback to PHP processing
+        $productsSold = (float) ($metrics['productsSold'] ?? 0);
+        if ($productsSold === 0.0 && $grossSales > 0) {
+            // SQL subquery may have failed (seq table missing), fallback to PHP
+            $productsSold = $this->computeProfitLossProductsSoldFallback($filters, $orderCompanyWhere, $companyBindings);
+        }
+
+        // --- Expense rows (separate query - needs GROUP BY) ---
+        $expenseConditions = ['t.deleted_at IS NULL', "t.type = 'Expense'", "COALESCE(t.category, '') <> 'expense_purchases'"];
         $expenseBindings = [];
         $this->applyDashboardDateTimeBounds('t.date', $filters, $expenseConditions, $expenseBindings, 'profit_loss_expense');
         if ($hasCompanyFilter) {
-            $orClauses = [];
+            $expenseConditions[] = $txnCompanyConditionForExpenses;
+            // Add expense-specific company bindings (separate from unified query bindings)
             foreach ($companyPageIds as $i => $cid) {
-                $orClauses[] = '(company_expense_order.page_id = :profit_loss_exp_page_' . $i . ' OR (
-                    NULLIF(TRIM(company_expense_order.page_id), \'\') IS NULL
-                    AND JSON_UNQUOTE(JSON_EXTRACT(company_expense_order.page_snapshot, \'$.id\')) = :profit_loss_exp_snap_' . $i . '
-                ))';
-                $expenseBindings[':profit_loss_exp_page_' . $i] = $cid;
-                $expenseBindings[':profit_loss_exp_snap_' . $i] = $cid;
+                $expenseBindings[':pl_exp_page_' . $i] = $cid;
+                $expenseBindings[':pl_exp_snap_' . $i] = $cid;
             }
-            $expenseConditions[] = '(
-                t.reference_id IS NULL
-                OR NOT EXISTS (SELECT 1 FROM orders linked_expense_order WHERE linked_expense_order.id = t.reference_id)
-                OR EXISTS (
-                  SELECT 1 FROM orders company_expense_order
-                  WHERE company_expense_order.id = t.reference_id
-                    AND company_expense_order.deleted_at IS NULL
-                    AND (' . implode(' OR ', $orClauses) . ')
-                )
-            )';
         }
 
         $expenseRows = $this->database->fetchAll(
@@ -4773,32 +4854,17 @@ final class OperationsApi extends BaseService
             $expenseBindings
         );
 
-        $incomeConditions = [
-            't.deleted_at IS NULL',
-            "t.type = 'Income'",
-        ];
+        // --- Income rows (separate query - needs GROUP BY) ---
+        $incomeConditions = ['t.deleted_at IS NULL', "t.type = 'Income'"];
         $incomeBindings = [];
         $this->applyDashboardDateTimeBounds('t.date', $filters, $incomeConditions, $incomeBindings, 'profit_loss_income');
         if ($hasCompanyFilter) {
-            $orClauses = [];
+            $incomeConditions[] = $txnCompanyConditionForIncome;
+            // Add income-specific company bindings (separate from unified query bindings)
             foreach ($companyPageIds as $i => $cid) {
-                $orClauses[] = '(company_income_cat_order.page_id = :profit_loss_inc_page_' . $i . ' OR (
-                    NULLIF(TRIM(company_income_cat_order.page_id), \'\') IS NULL
-                    AND JSON_UNQUOTE(JSON_EXTRACT(company_income_cat_order.page_snapshot, \'$.id\')) = :profit_loss_inc_snap_' . $i . '
-                ))';
-                $incomeBindings[':profit_loss_inc_page_' . $i] = $cid;
-                $incomeBindings[':profit_loss_inc_snap_' . $i] = $cid;
+                $incomeBindings[':pl_inc_page_' . $i] = $cid;
+                $incomeBindings[':pl_inc_snap_' . $i] = $cid;
             }
-            $incomeConditions[] = '(
-                t.reference_id IS NULL
-                OR NOT EXISTS (SELECT 1 FROM orders linked_income_order WHERE linked_income_order.id = t.reference_id)
-                OR EXISTS (
-                  SELECT 1 FROM orders company_income_cat_order
-                  WHERE company_income_cat_order.id = t.reference_id
-                    AND company_income_cat_order.deleted_at IS NULL
-                    AND (' . implode(' OR ', $orClauses) . ')
-                )
-            )';
         }
 
         $incomeRows = $this->database->fetchAll(
@@ -4813,14 +4879,6 @@ final class OperationsApi extends BaseService
             $incomeBindings
         );
 
-        $salesFromTransactions = (float) ($transactionSummary['salesFromTransactions'] ?? 0);
-        $purchasesFromTransactions = (float) ($transactionSummary['purchasesFromTransactions'] ?? 0);
-        $grossSales = $salesFromTransactions > 0
-            ? $salesFromTransactions
-            : (float) ($orderSummary['grossSales'] ?? 0);
-        $costOfPurchases = $purchasesFromTransactions > 0
-            ? $purchasesFromTransactions
-            : (float) ($billSummary['totalPurchases'] ?? 0);
         $grossProfit = $grossSales - $costOfPurchases;
         $expenses = array_map(
             static fn(array $row): array => [
@@ -4843,10 +4901,10 @@ final class OperationsApi extends BaseService
             $incomeRows
         );
 
-        return [
+        $result = [
             'companyPageIds' => $companyPageIds,
             'sharedCostsConsolidated' => $hasCompanyFilter,
-            'orderCount' => (int) ($orderSummary['orderCount'] ?? 0),
+            'orderCount' => (int) ($metrics['orderCount'] ?? 0),
             'productsSold' => $productsSold,
             'grossSales' => $grossSales,
             'costOfPurchases' => $costOfPurchases,
@@ -4856,6 +4914,166 @@ final class OperationsApi extends BaseService
             'totalOperatingExpenses' => $totalOperatingExpenses,
             'netProfit' => $grossProfit - $totalOperatingExpenses,
         ];
+
+        // --- Cache store ---
+        $this->setProfitLossCache($cacheKey, $result);
+
+        return $result;
+    }
+
+    private function buildProfitLossCacheKey(array $normalizedParams): string
+    {
+        $filterRange = $normalizedParams['filterRange'] ?? 'All Time';
+        $customDates = $normalizedParams['customDates'] ?? [];
+        $from = $customDates['from'] ?? '';
+        $to = $customDates['to'] ?? '';
+        $companyIds = $normalizedParams['companyPageIds'] ?? [];
+        sort($companyIds);
+        $raw = $filterRange . '|' . $from . '|' . $to . '|' . implode(',', $companyIds);
+        return hash('sha256', $raw);
+    }
+
+    private function ensureProfitLossCacheTable(): void
+    {
+        if ($this->tableExists('profit_loss_cache')) {
+            return;
+        }
+        $this->database->execute(
+            'CREATE TABLE IF NOT EXISTS profit_loss_cache (
+                cache_key VARCHAR(64) NOT NULL,
+                report_data LONGTEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (cache_key),
+                KEY idx_pl_cache_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    private function getProfitLossCache(string $cacheKey): ?array
+    {
+        try {
+            $this->ensureProfitLossCacheTable();
+            $ttlMinutes = 5;
+            $row = $this->database->fetchOne(
+                'SELECT report_data FROM profit_loss_cache
+                 WHERE cache_key = :key AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :ttl MINUTE)',
+                [':key' => $cacheKey, ':ttl' => $ttlMinutes]
+            );
+            if ($row !== null) {
+                $decoded = json_decode((string) ($row['report_data'] ?? ''), true);
+                if (is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        } catch (\Throwable) {
+            // Cache table may not exist yet; proceed without cache
+        }
+        return null;
+    }
+
+    private function setProfitLossCache(string $cacheKey, array $data): void
+    {
+        try {
+            $this->ensureProfitLossCacheTable();
+            $json = json_encode($data, JSON_THROW_ON_ERROR);
+            $existing = $this->database->fetchOne(
+                'SELECT cache_key FROM profit_loss_cache WHERE cache_key = :key',
+                [':key' => $cacheKey]
+            );
+            if ($existing !== null) {
+                $this->database->execute(
+                    'UPDATE profit_loss_cache SET report_data = :data, created_at = UTC_TIMESTAMP() WHERE cache_key = :key',
+                    [':data' => $json, ':key' => $cacheKey]
+                );
+            } else {
+                $this->database->execute(
+                    'INSERT INTO profit_loss_cache (cache_key, report_data, created_at) VALUES (:key, :data, UTC_TIMESTAMP())',
+                    [':key' => $cacheKey, ':data' => $json]
+                );
+            }
+            // Purge stale entries
+            $this->database->execute(
+                'DELETE FROM profit_loss_cache WHERE created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)'
+            );
+        } catch (\Throwable) {
+            // Cache write failure is non-fatal
+        }
+    }
+
+    public function invalidateProfitLossCache(): void
+    {
+        try {
+            if ($this->tableExists('profit_loss_cache')) {
+                $this->database->execute('DELETE FROM profit_loss_cache');
+            }
+        } catch (\Throwable) {
+            // Non-fatal
+        }
+    }
+
+    private function buildProfitLossProductsSoldSubquery(string $orderCompanyWhere): string
+    {
+        try {
+            $profitLossQuantitySql = $this->orderItemJsonValue('o', 'profit_loss_item_seq', 'quantity');
+            return '(SELECT COALESCE(SUM(CAST(COALESCE(NULLIF(' . $profitLossQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0)
+                FROM orders o
+                INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'profit_loss_item_seq') . '
+                WHERE o.deleted_at IS NULL
+                AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderCompanyWhere . '
+            )';
+        } catch (\Throwable) {
+            return '0';
+        }
+    }
+
+    private function buildProfitLossCompanyFilter(string $tableAlias, string $prefix, array $companyPageIds, array &$bindings): string
+    {
+        if (empty($companyPageIds)) {
+            return '';
+        }
+        $orClauses = [];
+        foreach ($companyPageIds as $i => $cid) {
+            $pageKey = ":{$prefix}_page_{$i}";
+            $snapKey = ":{$prefix}_snap_{$i}";
+            $orClauses[] = "({$tableAlias}.page_id = {$pageKey} OR (
+                NULLIF(TRIM({$tableAlias}.page_id), '') IS NULL
+                AND JSON_UNQUOTE(JSON_EXTRACT({$tableAlias}.page_snapshot, '$.id')) = {$snapKey}
+            ))";
+            $bindings[$pageKey] = $cid;
+            $bindings[$snapKey] = $cid;
+        }
+        return ' AND (' . implode(' OR ', $orClauses) . ')';
+    }
+
+    private function computeProfitLossProductsSoldFallback(array $filters, string $orderCompanyWhere, array $companyBindings): float
+    {
+        try {
+            $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
+            $orderBindings = [];
+            if (!empty($filters['fromDate'])) {
+                $orderConditions[] = 'o.order_date >= :pl_fb_from';
+                $orderBindings[':pl_fb_from'] = $filters['fromDate'];
+            }
+            if (!empty($filters['toDate'])) {
+                $orderConditions[] = 'o.order_date <= :pl_fb_to';
+                $orderBindings[':pl_fb_to'] = $filters['toDate'];
+            }
+            $rows = $this->database->fetchAll(
+                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions),
+                $orderBindings
+            );
+            $productsSold = 0;
+            foreach ($rows as $row) {
+                foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                    if (is_array($item)) {
+                        $productsSold += (float) ($item['quantity'] ?? 0);
+                    }
+                }
+            }
+            return $productsSold;
+        } catch (\Throwable) {
+            return 0.0;
+        }
     }
 
     public function fetchOrderReport(array $params = []): array
@@ -5398,6 +5616,8 @@ final class OperationsApi extends BaseService
             if ($row === null) {
                 throw new RuntimeException('Created order could not be loaded.');
             }
+
+            $this->invalidateProfitLossCache();
 
             return $this->mapOrder($row);
         });
@@ -6459,6 +6679,8 @@ final class OperationsApi extends BaseService
                     $automaticExpenseTransactionId
                 );
             }
+
+            $this->invalidateProfitLossCache();
 
             return $this->mapOrder($row);
         });
@@ -7982,6 +8204,8 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Created bill could not be loaded.');
             }
 
+            $this->invalidateProfitLossCache();
+
             return $this->mapBill($row);
         });
     }
@@ -8196,6 +8420,8 @@ final class OperationsApi extends BaseService
                 $createdTransactions,
                 static fn(array $transaction): bool => (string) ($transaction['approvalStatus'] ?? 'approved') === 'pending'
             ));
+
+            $this->invalidateProfitLossCache();
 
             return $bill;
         });
@@ -8886,7 +9112,9 @@ final class OperationsApi extends BaseService
     {
         $actor = $this->currentUser();
 
-        return $this->database->transaction(fn() => $this->createTransactionRecord($params, (string) $actor['id'], $actor));
+        $result = $this->database->transaction(fn() => $this->createTransactionRecord($params, (string) $actor['id'], $actor));
+        $this->invalidateProfitLossCache();
+        return $result;
     }
 
     public function updateTransaction(array $params): array
@@ -9038,6 +9266,8 @@ final class OperationsApi extends BaseService
                     (string) ($record['approvalStatus'] ?? 'approved')
                 );
             }
+
+            $this->invalidateProfitLossCache();
 
             return $record;
         });
