@@ -633,10 +633,12 @@ const Bills: React.FC = () => {
           const vendorNameNotFilter = appliedFilters.find((f) => f.type === 'Vendor Name' && (f.operator === '≠' || f.operator === 'does not contain'));
           const vendorPhoneFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && (f.operator === '=' || f.operator === 'contains'));
           const vendorPhoneNotFilter = appliedFilters.find((f) => f.type === 'Vendor Phone' && (f.operator === '≠' || f.operator === 'does not contain'));
-          const billStatusFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '=');
-          const billStatusNotFilter = appliedFilters.find((f) => f.type === 'Bill Status' && f.operator === '≠');
-          const paymentStatusFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '=');
-          const paymentStatusNotFilter = appliedFilters.find((f) => f.type === 'Payment Status' && f.operator === '≠');
+          const billStatusFilters = appliedFilters.filter((f) => f.type === 'Bill Status');
+          const billStatusEqFilters = billStatusFilters.filter((f) => f.operator === '=');
+          const billStatusNotFilters = billStatusFilters.filter((f) => f.operator === '≠');
+          const paymentStatusFilters = appliedFilters.filter((f) => f.type === 'Payment Status');
+          const paymentStatusEqFilters = paymentStatusFilters.filter((f) => f.operator === '=');
+          const paymentStatusNotFilters = paymentStatusFilters.filter((f) => f.operator === '≠');
 
           setBillIdFilter(billIdFilter ? encodeTextValue(billIdFilter) : '');
           setBillIdNotFilter(billIdNotFilter ? encodeTextValue(billIdNotFilter) : '');
@@ -644,10 +646,10 @@ const Bills: React.FC = () => {
           setVendorNameNotFilter(vendorNameNotFilter ? encodeTextValue(vendorNameNotFilter) : '');
           setVendorPhoneFilter(vendorPhoneFilter ? encodeTextValue(vendorPhoneFilter) : '');
           setVendorPhoneNotFilter(vendorPhoneNotFilter ? encodeTextValue(vendorPhoneNotFilter) : '');
-          setBillStatusFilter(billStatusFilter?.value ?? 'all');
-          setBillStatusNotFilter(billStatusNotFilter?.value ?? '');
-          setPaymentStatusFilter(paymentStatusFilter?.value ?? 'all');
-          setPaymentStatusNotFilter(paymentStatusNotFilter?.value ?? '');
+          setBillStatusFilter(billStatusEqFilters.length > 0 ? billStatusEqFilters.map(f => f.value).join(',') : 'all');
+          setBillStatusNotFilter(billStatusNotFilters.length > 0 ? billStatusNotFilters.map(f => f.value).join(',') : '');
+          setPaymentStatusFilter(paymentStatusEqFilters.length > 0 ? paymentStatusEqFilters.map(f => f.value).join(',') : 'all');
+          setPaymentStatusNotFilter(paymentStatusNotFilters.length > 0 ? paymentStatusNotFilters.map(f => f.value).join(',') : '');
         }}
       />
 

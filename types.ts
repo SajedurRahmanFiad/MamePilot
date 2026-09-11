@@ -1350,6 +1350,18 @@ export interface ProfitLossReport {
   expenses: ProfitLossExpenseLine[];
   totalOperatingExpenses: number;
   netProfit: number;
+  nonDeliveredIncome: number;
+}
+
+export interface CompanywisePerformanceReport {
+  deliveredOrders: number;
+  exchangeDeliveredOrders: number;
+  productsSold: number;
+  income: number;
+  nonDeliveredIncome: number;
+  shippingCost: number;
+  cogs: number;
+  profit: number;
 }
 
 export interface OrderReportOrder {

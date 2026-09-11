@@ -2,11 +2,12 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../db';
-import { formatCurrency, ICONS } from '../../constants';
+import { formatCurrency, ICONS, getStatusDisplayName } from '../../constants';
 import { ReportPageSkeleton } from '../../components';
 import { theme } from '../../theme';
 import { useCompanySettings, useProfitLossReport } from '../../src/hooks/useQueries';
 import { normalizeCompanySettings } from '../../src/utils/companyPages';
+import { OrderStatus } from '../../types';
 
 const PLRow: React.FC<{ label: string; amount: number; isBold?: boolean; isTotal?: boolean; indent?: boolean }> = ({ label, amount, isBold, isTotal, indent }) => (
   <div className={`flex justify-between py-2 ${isBold ? 'font-bold text-gray-900' : 'text-gray-600'} ${isTotal ? 'border-t-2 border-gray-100 pt-4 mt-2' : ''} ${indent ? 'pl-6' : ''}`}>
@@ -243,6 +244,16 @@ const ProfitLoss: React.FC = () => {
             <PLRow label="Gross Sales (Delivered Orders)" amount={plData?.grossSales || 0} />
           )}
           <PLRow label="Total Revenue" amount={plData?.grossSales || 0} isBold isTotal />
+          {(plData?.nonDeliveredIncome ?? 0) > 0 && (() => {
+            const nonDeliveredStatuses = Object.values(OrderStatus).filter(
+              (s) => s !== OrderStatus.COMPLETED && s !== OrderStatus.EXCHANGE_DELIVERED
+            ).map(getStatusDisplayName);
+            return (
+              <p className="text-[10px] text-gray-400 italic mt-1">
+                Includes {formatCurrency(plData!.nonDeliveredIncome)} from orders with statuses: {nonDeliveredStatuses.join(', ')}.
+              </p>
+            );
+          })()}
 
           <div className="pt-8">
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Cost of Goods Sold</h4>

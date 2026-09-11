@@ -110,6 +110,7 @@ const OrderReport = lazyPage(() => import('./pages/reports/OrderReport'));
 const ProductQuantitySold = lazyPage(() => import('./pages/reports/ProductQuantitySold'));
 const CustomerSalesReport = lazyPage(() => import('./pages/reports/CustomerSalesReport'));
 const UserActivityPerformanceReport = lazyPage(() => import('./pages/reports/UserActivityPerformanceReport'));
+const CompanywisePerformance = lazyPage(() => import('./pages/reports/CompanywisePerformance'));
 const PosOrderDetails = lazyPage(() => import('./pages/PosOrderDetails'));
 const PrintOrder = lazyPage(() => import('./pages/PrintOrder'));
 const PrintBill = lazyPage(() => import('./pages/PrintBill'));
@@ -540,6 +541,9 @@ preloaders.add(DeveloperNotes.preload);
       } />
       <Route path="/reports/profit-loss" element={
         isAuthenticated ? (can('reports.view') ? <Layout><ProfitLoss /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/reports/companywise-performance" element={
+        isAuthenticated ? (can('reports.view') ? <Layout><CompanywisePerformance /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/reports/orders" element={
         isAuthenticated ? (can('reports.view') ? <Layout><OrderReport /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

@@ -699,19 +699,19 @@ const Transactions: React.FC = () => {
           setCreatedByFilter(createdByFilter?.value ?? 'all');
           setCreatedByNotFilter(createdByNotFilter?.value ?? '');
 
-          const categoryEqFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '=');
-          const categoryNeFilter = appliedFilters.find((f) => f.type === 'Category' && f.operator === '≠');
-          setCategoryFilter(categoryEqFilter?.value ?? 'all');
-          setCategoryNotFilter(categoryNeFilter?.value ?? '');
+          const categoryEqFilters = appliedFilters.filter((f) => f.type === 'Category' && f.operator === '=');
+          const categoryNeFilters = appliedFilters.filter((f) => f.type === 'Category' && f.operator === '≠');
+          setCategoryFilter(categoryEqFilters.length > 0 ? categoryEqFilters.map(f => f.value).join(',') : 'all');
+          setCategoryNotFilter(categoryNeFilters.length > 0 ? categoryNeFilters.map(f => f.value).join(',') : '');
 
-          const typeEqFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '=');
-          const typeNeFilter = appliedFilters.find((f) => f.type === 'Type' && f.operator === '≠');
-          if (typeEqFilter) {
-            setTypeTab(typeEqFilter.value as 'All' | 'Income' | 'Expense' | 'Transfer');
+          const typeEqFilters = appliedFilters.filter((f) => f.type === 'Type' && f.operator === '=');
+          const typeNeFilters = appliedFilters.filter((f) => f.type === 'Type' && f.operator === '≠');
+          if (typeEqFilters.length > 0) {
+            setTypeTab(typeEqFilters[0].value as 'All' | 'Income' | 'Expense' | 'Transfer');
             setTypeNotFilter('');
-          } else if (typeNeFilter) {
+          } else if (typeNeFilters.length > 0) {
             setTypeTab('All');
-            setTypeNotFilter(typeNeFilter.value);
+            setTypeNotFilter(typeNeFilters.map(f => f.value).join(','));
           } else {
             setTypeTab('All');
             setTypeNotFilter('');
@@ -732,10 +732,10 @@ const Transactions: React.FC = () => {
           setPaymentMethodFilter(paymentMethodFilter ? encodeTextValue(paymentMethodFilter) : '');
           setPaymentMethodNotFilter(paymentMethodNotFilter ? encodeTextValue(paymentMethodNotFilter) : '');
 
-          const approvalStatusFilter = appliedFilters.find((f) => f.type === 'Approval Status' && f.operator === '=');
-          const approvalStatusNotFilter = appliedFilters.find((f) => f.type === 'Approval Status' && f.operator === '≠');
-          setApprovalStatusFilter(approvalStatusFilter?.value ?? '');
-          setApprovalStatusNotFilter(approvalStatusNotFilter?.value ?? '');
+          const approvalStatusEqFilters = appliedFilters.filter((f) => f.type === 'Approval Status' && f.operator === '=');
+          const approvalStatusNeFilters = appliedFilters.filter((f) => f.type === 'Approval Status' && f.operator === '≠');
+          setApprovalStatusFilter(approvalStatusEqFilters.length > 0 ? approvalStatusEqFilters.map(f => f.value).join(',') : '');
+          setApprovalStatusNotFilter(approvalStatusNeFilters.length > 0 ? approvalStatusNeFilters.map(f => f.value).join(',') : '');
         }}
       />
 

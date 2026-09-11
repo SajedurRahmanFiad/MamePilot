@@ -300,8 +300,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       display,
     };
 
-    const nextFilters = filters.filter((filter) => filter.type !== combined.type);
-    nextFilters.push(combined);
+    const nextFilters = [...filters, combined];
     pendingLocalSyncRef.current = {
       submitted: filterSignature(nextFilters),
       previousExternal: acceptedExternalSignatureRef.current,

@@ -199,10 +199,13 @@ const DeveloperWebhooks: React.FC = () => {
   const handleApplyFilters = useCallback((appliedFilters: CombinedFilter[]) => {
     setPage(1);
     const byType = (type: string, operator?: string) => appliedFilters.find((f) => f.type === type && (!operator || f.operator === operator));
+    const allByType = (type: string, operator?: string) => appliedFilters.filter((f) => f.type === type && (!operator || f.operator === operator));
     setProviderFilter(byType('Provider', '=')?.value ?? '');
     setProviderNotFilter(byType('Provider', '≠')?.value ?? '');
-    setStatusFilter(byType('Processing Status', '=')?.value ?? '');
-    setStatusNotFilter(byType('Processing Status', '≠')?.value ?? '');
+    const statusEq = allByType('Processing Status', '=');
+    const statusNe = allByType('Processing Status', '≠');
+    setStatusFilter(statusEq.length > 0 ? statusEq.map(f => f.value).join(',') : '');
+    setStatusNotFilter(statusNe.length > 0 ? statusNe.map(f => f.value).join(',') : '');
     const eventName = byType('Event Name');
     setEventNameFilter(eventName ? { operator: eventName.operator, value: eventName.value } : null);
     const consignment = byType('Consignment');

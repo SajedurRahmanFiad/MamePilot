@@ -17,6 +17,7 @@ import {
   fetchExpenseSummaryCsv,
   fetchIncomeVsExpenseReport,
   fetchProfitLossReport,
+  fetchCompanywisePerformanceReport,
   fetchProductQuantitySoldReport,
   fetchCustomerSalesReport,
   fetchOrderReport,
@@ -169,6 +170,7 @@ import type {
   PayrollSummaryRow,
   ProductQuantitySoldReport,
   ProfitLossReport,
+  CompanywisePerformanceReport,
   RecycleBinPage,
   NotificationListResponse,
   NotificationListPageResponse,
@@ -361,6 +363,32 @@ export function useProfitLossReport(
     queryKey: ['reports', 'profit-loss', filterRange, normalizedCustomDates.from, normalizedCustomDates.to, sortedIds],
     queryFn: () =>
       fetchProfitLossReport({
+        filterRange,
+        customDates: normalizedCustomDates,
+        companyPageIds,
+      }),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useCompanywisePerformanceReport(
+  filterRange: string = 'This Year',
+  customDates: { from: string; to: string } = { from: '', to: '' },
+  companyPageIds: string[] = [],
+  options?: { enabled?: boolean }
+): UseQueryResult<CompanywisePerformanceReport, Error> {
+  const normalizedCustomDates = {
+    from: String(customDates?.from || ''),
+    to: String(customDates?.to || ''),
+  };
+  const sortedIds = [...companyPageIds].sort().join(',');
+
+  return useQuery({
+    queryKey: ['reports', 'companywise-performance', filterRange, normalizedCustomDates.from, normalizedCustomDates.to, sortedIds],
+    queryFn: () =>
+      fetchCompanywisePerformanceReport({
         filterRange,
         customDates: normalizedCustomDates,
         companyPageIds,

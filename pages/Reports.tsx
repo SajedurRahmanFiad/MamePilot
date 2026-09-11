@@ -13,6 +13,7 @@ import {
   fetchProductQuantitySoldReport,
   fetchProfitLossReport,
   fetchOrderReport,
+  fetchCompanywisePerformanceReport,
 } from '../src/services/supabaseQueries';
 
 const ReportCard: React.FC<{ 
@@ -104,6 +105,20 @@ const Reports: React.FC = () => {
           void queryClient.prefetchQuery({
             queryKey: ['reports', 'profit-loss', 'This Year', '', '', ''],
             queryFn: () => fetchProfitLossReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageIds: [] }),
+          });
+        }
+      },
+      {
+        title: 'Companywise Performance',
+        description: 'Per-company delivered orders, income, shipping costs, COGS, and profit/loss.',
+        icon: ICONS.Briefcase,
+        color: 'bg-indigo-50 text-indigo-600',
+        to: '/reports/companywise-performance',
+        requiredCapabilities: ['sales', 'purchases'] as AppCapabilityKey[],
+        onPrefetch: () => {
+          void queryClient.prefetchQuery({
+            queryKey: ['reports', 'companywise-performance', 'This Year', '', '', ''],
+            queryFn: () => fetchCompanywisePerformanceReport({ filterRange: 'This Year', customDates: { from: '', to: '' }, companyPageIds: [] }),
           });
         }
       },

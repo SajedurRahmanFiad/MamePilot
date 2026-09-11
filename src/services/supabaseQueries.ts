@@ -26,6 +26,7 @@ import type {
   PermissionsSettings,
   ProductQuantitySoldReport,
   ProfitLossReport,
+  CompanywisePerformanceReport,
   RecycleBinPage,
   RecycleBinEntityType,
   RecycleBinItem,
@@ -158,6 +159,9 @@ export async function fetchIncomeVsExpenseReport() {
 }
 export async function fetchProfitLossReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[] }) {
   return call<ProfitLossReport>('fetchProfitLossReport', params || {});
+}
+export async function fetchCompanywisePerformanceReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[] }) {
+  return call<CompanywisePerformanceReport>('fetchCompanywisePerformanceReport', params || {});
 }
 export async function fetchOrderReport(params?: { filterRange?: string; customDates?: { from?: string; to?: string }; companyPageIds?: string[]; dateMode?: OrderReportDateMode }) {
   return call<OrderReportData>('fetchOrderReport', params || {});

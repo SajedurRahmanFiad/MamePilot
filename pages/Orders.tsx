@@ -536,39 +536,59 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     };
 
     if (urlStatusTab && urlStatusTab !== 'All') {
-      filters.push({
-        id: `status-${urlStatusTab}`,
-        type: 'Order Status',
-        operator: '=',
-        value: urlStatusTab,
-        display: urlStatusTab,
+      urlStatusTab.split(',').forEach((status) => {
+        const trimmed = status.trim();
+        if (trimmed) {
+          filters.push({
+            id: `status-${trimmed}`,
+            type: 'Order Status',
+            operator: '=',
+            value: trimmed,
+            display: getStatusDisplayName(trimmed),
+          });
+        }
       });
     }
     if (urlStatusNot) {
-      filters.push({
-        id: `statusNot-${urlStatusNot}`,
-        type: 'Order Status',
-        operator: '≠',
-        value: urlStatusNot,
-        display: urlStatusNot,
+      urlStatusNot.split(',').forEach((status) => {
+        const trimmed = status.trim();
+        if (trimmed) {
+          filters.push({
+            id: `statusNot-${trimmed}`,
+            type: 'Order Status',
+            operator: '≠',
+            value: trimmed,
+            display: getStatusDisplayName(trimmed),
+          });
+        }
       });
     }
     if (urlPaymentStatus) {
-      filters.push({
-        id: `paymentStatus-${urlPaymentStatus}`,
-        type: 'Payment Status',
-        operator: '=',
-        value: urlPaymentStatus,
-        display: urlPaymentStatus,
+      urlPaymentStatus.split(',').forEach((ps) => {
+        const trimmed = ps.trim();
+        if (trimmed) {
+          filters.push({
+            id: `paymentStatus-${trimmed}`,
+            type: 'Payment Status',
+            operator: '=',
+            value: trimmed,
+            display: trimmed,
+          });
+        }
       });
     }
     if (urlPaymentStatusNot) {
-      filters.push({
-        id: `paymentStatusNot-${urlPaymentStatusNot}`,
-        type: 'Payment Status',
-        operator: '≠',
-        value: urlPaymentStatusNot,
-        display: urlPaymentStatusNot,
+      urlPaymentStatusNot.split(',').forEach((ps) => {
+        const trimmed = ps.trim();
+        if (trimmed) {
+          filters.push({
+            id: `paymentStatusNot-${trimmed}`,
+            type: 'Payment Status',
+            operator: '≠',
+            value: trimmed,
+            display: trimmed,
+          });
+        }
       });
     }
     if (urlOrderNumber) {
@@ -1247,33 +1267,42 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
             // keep existing pagination reset
             setPage(1);
 
-            const statusFilter = appliedFilters.find(f => f.type === 'Order Status');
-            if (statusFilter) {
-              if (statusFilter.operator === '≠') {
-                // Exclude this status on the server
-                setStatusTab('All');
-                setStatusNot(statusFilter.value);
-                params.statusNot = statusFilter.value;
-              } else {
-                setStatusTab(statusFilter.value as OrderStatus | 'All');
+            const statusFilters = appliedFilters.filter(f => f.type === 'Order Status');
+            const statusEqFilters = statusFilters.filter(f => f.operator === '=');
+            const statusNotFilters = statusFilters.filter(f => f.operator === '≠');
+            if (statusEqFilters.length > 0 || statusNotFilters.length > 0) {
+              if (statusEqFilters.length > 0) {
+                const statusValues = statusEqFilters.map(f => f.value).join(',');
+                setStatusTab(statusValues as OrderStatus | 'All');
                 setStatusNot('');
-                params.status = statusFilter.value;
+                params.status = statusValues;
+              }
+              if (statusNotFilters.length > 0) {
+                const statusNotValues = statusNotFilters.map(f => f.value).join(',');
+                setStatusTab('All');
+                setStatusNot(statusNotValues);
+                params.statusNot = statusNotValues;
               }
             } else {
               setStatusTab('All');
               setStatusNot('');
             }
 
-                const paymentFilter = appliedFilters.find(f => f.type === 'Payment Status');
-                if (paymentFilter) {
-                  if (paymentFilter.operator === '≠') {
-                    setPaymentStatus('');
-                    setPaymentStatusNot(paymentFilter.value);
-                    params.paymentStatusNot = paymentFilter.value;
-                  } else {
-                    setPaymentStatus(paymentFilter.value);
+                const paymentFilters = appliedFilters.filter(f => f.type === 'Payment Status');
+                const paymentEqFilters = paymentFilters.filter(f => f.operator === '=');
+                const paymentNotFilters = paymentFilters.filter(f => f.operator === '≠');
+                if (paymentEqFilters.length > 0 || paymentNotFilters.length > 0) {
+                  if (paymentEqFilters.length > 0) {
+                    const paymentValues = paymentEqFilters.map(f => f.value).join(',');
+                    setPaymentStatus(paymentValues);
                     setPaymentStatusNot('');
-                    params.paymentStatus = paymentFilter.value;
+                    params.paymentStatus = paymentValues;
+                  }
+                  if (paymentNotFilters.length > 0) {
+                    const paymentNotValues = paymentNotFilters.map(f => f.value).join(',');
+                    setPaymentStatus('');
+                    setPaymentStatusNot(paymentNotValues);
+                    params.paymentStatusNot = paymentNotValues;
                   }
                 } else {
                   setPaymentStatus('');

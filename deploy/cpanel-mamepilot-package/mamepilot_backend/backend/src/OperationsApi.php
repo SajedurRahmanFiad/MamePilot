@@ -1814,11 +1814,22 @@ final class OperationsApi extends BaseService
             }
         }
 
-        // Support exclusion filter from frontend: statusNot
+        // Support exclusion filter from frontend: statusNot (comma-separated)
         $statusNot = trim((string) ($filters['statusNot'] ?? ''));
         if ($statusNot !== '') {
-            $where .= ' AND status <> :status_not';
-            $bindings[':status_not'] = $statusNot;
+            $statusNotValues = array_map('trim', explode(',', $statusNot));
+            if (count($statusNotValues) === 1) {
+                $where .= ' AND status <> :status_not';
+                $bindings[':status_not'] = $statusNotValues[0];
+            } else {
+                $notPlaceholders = [];
+                foreach ($statusNotValues as $i => $sv) {
+                    $key = ':status_not_' . $i;
+                    $notPlaceholders[] = $key;
+                    $bindings[$key] = $sv;
+                }
+                $where .= ' AND status NOT IN (' . implode(', ', $notPlaceholders) . ')';
+            }
         }
         // Keep the server-side filter mutually exclusive and aligned with the
         // payment badges used by the list and detail screens.
@@ -1833,13 +1844,33 @@ final class OperationsApi extends BaseService
         END)";
         $paymentStatus = trim((string) ($filters['paymentStatus'] ?? ''));
         if ($paymentStatus !== '') {
-            $where .= " AND {$paymentStatusSql} = :payment_status";
-            $bindings[':payment_status'] = $paymentStatus;
+            $paymentStatusValues = array_map('trim', explode(',', $paymentStatus));
+            if (count($paymentStatusValues) === 1) {
+                $where .= " AND {$paymentStatusSql} = :payment_status";
+                $bindings[':payment_status'] = $paymentStatusValues[0];
+            } else {
+                $psOrClauses = [];
+                foreach ($paymentStatusValues as $i => $psv) {
+                    $psOrClauses[] = "{$paymentStatusSql} = :payment_status_{$i}";
+                    $bindings[":payment_status_{$i}"] = $psv;
+                }
+                $where .= ' AND (' . implode(' OR ', $psOrClauses) . ')';
+            }
         }
         $paymentStatusNot = trim((string) ($filters['paymentStatusNot'] ?? ''));
         if ($paymentStatusNot !== '') {
-            $where .= " AND {$paymentStatusSql} <> :payment_status_not";
-            $bindings[':payment_status_not'] = $paymentStatusNot;
+            $paymentStatusNotValues = array_map('trim', explode(',', $paymentStatusNot));
+            if (count($paymentStatusNotValues) === 1) {
+                $where .= " AND {$paymentStatusSql} <> :payment_status_not";
+                $bindings[':payment_status_not'] = $paymentStatusNotValues[0];
+            } else {
+                $psnAndClauses = [];
+                foreach ($paymentStatusNotValues as $i => $psnv) {
+                    $psnAndClauses[] = "{$paymentStatusSql} <> :payment_status_not_{$i}";
+                    $bindings[":payment_status_not_{$i}"] = $psnv;
+                }
+                $where .= ' AND (' . implode(' AND ', $psnAndClauses) . ')';
+            }
         }
 
         $sourceAd = trim((string) ($filters['sourceAd'] ?? ''));
@@ -4654,6 +4685,7 @@ final class OperationsApi extends BaseService
         $orderCompanyWhere1 = $this->buildProfitLossCompanyFilter('o', 'pl_q1', $companyPageIds, $companyBindings);
         $orderCompanyWhere2 = $this->buildProfitLossCompanyFilter('o', 'pl_q2', $companyPageIds, $companyBindings);
         $orderCompanyWhere3 = $this->buildProfitLossCompanyFilter('o', 'pl_q3', $companyPageIds, $companyBindings);
+        $orderCompanyWhere4 = $this->buildProfitLossCompanyFilter('o', 'pl_q4', $companyPageIds, $companyBindings);
 
         $txnCompanyConditionForSales = '1 = 1';
         $txnCompanyConditionForExpenses = '1 = 1';
@@ -4716,21 +4748,26 @@ final class OperationsApi extends BaseService
         $txnDateSub1 = '';
         $txnDateSub2 = '';
         $txnDateSub3 = '';
+        $txnDateSub4 = '';
         if (!empty($filters['fromDateTime'])) {
             $txnDateSub1 = ' AND t.date >= :pl_txn1_from';
             $txnDateSub2 = ' AND t.date >= :pl_txn2_from';
             $txnDateSub3 = ' AND t.date >= :pl_txn3_from';
+            $txnDateSub4 = ' AND t.date >= :pl_txn4_from';
             $companyBindings[':pl_txn1_from'] = $filters['fromDateTime'];
             $companyBindings[':pl_txn2_from'] = $filters['fromDateTime'];
             $companyBindings[':pl_txn3_from'] = $filters['fromDateTime'];
+            $companyBindings[':pl_txn4_from'] = $filters['fromDateTime'];
         }
         if (!empty($filters['toDateTime'])) {
             $txnDateSub1 .= ' AND t.date <= :pl_txn1_to';
             $txnDateSub2 .= ' AND t.date <= :pl_txn2_to';
             $txnDateSub3 .= ' AND t.date <= :pl_txn3_to';
+            $txnDateSub4 .= ' AND t.date <= :pl_txn4_to';
             $companyBindings[':pl_txn1_to'] = $filters['toDateTime'];
             $companyBindings[':pl_txn2_to'] = $filters['toDateTime'];
             $companyBindings[':pl_txn3_to'] = $filters['toDateTime'];
+            $companyBindings[':pl_txn4_to'] = $filters['toDateTime'];
         }
 
         // Order date bounds (unique per subquery)
@@ -4792,8 +4829,7 @@ final class OperationsApi extends BaseService
 
             (SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0)
             FROM orders o
-            WHERE o.deleted_at IS NULL
-            AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderDateSub1 . $orderCompanyWhere1 . '
+            WHERE o.deleted_at IS NULL' . $orderDateSub1 . $orderCompanyWhere1 . '
             ) AS grossSales,
 
             (SELECT COUNT(*)
@@ -4807,7 +4843,18 @@ final class OperationsApi extends BaseService
             (SELECT COALESCE(SUM(CASE WHEN COALESCE(paid_amount, 0) > 0 THEN paid_amount ELSE 0 END), 0)
             FROM bills
             WHERE deleted_at IS NULL' . $billDateFrom . $billDateTo . '
-            ) AS totalPurchases
+            ) AS totalPurchases,
+
+            (SELECT COALESCE(SUM(CASE
+                WHEN t.type = \'Income\' AND t.reference_id IS NOT NULL AND t.amount > 0 THEN t.amount
+                ELSE 0
+            END), 0)
+            FROM transactions t
+            INNER JOIN orders o ON o.id = t.reference_id AND o.deleted_at IS NULL
+            WHERE t.deleted_at IS NULL
+            AND t.type = \'Income\'
+            AND o.status NOT IN (\'Completed\', \'Exchange delivered\')' . $txnDateSub4 . $orderCompanyWhere4 . '
+            ) AS nonDeliveredIncome
 
         ';
 
@@ -4815,6 +4862,7 @@ final class OperationsApi extends BaseService
 
         $salesFromTransactions = (float) ($metrics['salesFromTransactions'] ?? 0);
         $purchasesFromTransactions = (float) ($metrics['purchasesFromTransactions'] ?? 0);
+        $nonDeliveredIncome = (float) ($metrics['nonDeliveredIncome'] ?? 0);
         $grossSales = $salesFromTransactions > 0
             ? $salesFromTransactions
             : (float) ($metrics['grossSales'] ?? 0);
@@ -4913,12 +4961,203 @@ final class OperationsApi extends BaseService
             'expenses' => $expenses,
             'totalOperatingExpenses' => $totalOperatingExpenses,
             'netProfit' => $grossProfit - $totalOperatingExpenses,
+            'nonDeliveredIncome' => $nonDeliveredIncome,
         ];
 
         // --- Cache store ---
         $this->setProfitLossCache($cacheKey, $result);
 
         return $result;
+    }
+
+    public function fetchCompanywisePerformanceReport(array $params = []): array
+    {
+        $this->ensureReportsViewPermission();
+
+        $normalizedParams = $this->normalizeProfitLossFilterParams($params);
+        $companyPageIds = $normalizedParams['companyPageIds'] ?? [];
+        if (!empty($companyPageIds)) {
+            $validPages = [];
+            foreach ($this->fetchCompanyPages() as $companyPage) {
+                $validPages[(string) ($companyPage['id'] ?? '')] = true;
+            }
+            foreach ($companyPageIds as $cid) {
+                if (!isset($validPages[$cid])) {
+                    throw new RuntimeException('Select a valid company for the Companywise Performance report.');
+                }
+            }
+        }
+
+        $filters = $this->buildDashboardDateFilters($normalizedParams);
+        $hasCompanyFilter = !empty($companyPageIds);
+
+        // Transaction-company condition (for shipping/cogs queries)
+        $txnCompanyCondition = '1 = 1';
+        $txnCompanyBindings = [];
+        if ($hasCompanyFilter) {
+            $txnOrClauses = [];
+            foreach ($companyPageIds as $i => $cid) {
+                $txnOrClauses[] = '(t_co.page_id = :cw_txn_page_' . $i . ' OR (
+                    NULLIF(TRIM(t_co.page_id), \'\') IS NULL
+                    AND JSON_UNQUOTE(JSON_EXTRACT(t_co.page_snapshot, \'$.id\')) = :cw_txn_snap_' . $i . '
+                ))';
+                $txnCompanyBindings[':cw_txn_page_' . $i] = $cid;
+                $txnCompanyBindings[':cw_txn_snap_' . $i] = $cid;
+            }
+            $txnCompanyCondition = 'EXISTS (
+                SELECT 1 FROM orders t_co
+                WHERE t_co.id = t.reference_id AND t_co.deleted_at IS NULL
+                AND (' . implode(' OR ', $txnOrClauses) . ')
+            )';
+        }
+
+        // --- Delivered orders count (separate query, unique bindings) ---
+        $deliveredBindings = [];
+        $deliveredCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_d', $companyPageIds, $deliveredBindings);
+        $deliveredDateCond = '';
+        if (!empty($filters['fromDate'])) {
+            $deliveredDateCond .= ' AND o.order_date >= :cw_d_from';
+            $deliveredBindings[':cw_d_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $deliveredDateCond .= ' AND o.order_date <= :cw_d_to';
+            $deliveredBindings[':cw_d_to'] = $filters['toDate'];
+        }
+        $deliveredOrders = (int) ($this->database->fetchOne(
+            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Completed\'' . $deliveredDateCond . $deliveredCompanyWhere,
+            $deliveredBindings
+        )['cnt'] ?? 0);
+
+        // --- Exchange delivered orders count (separate query, unique bindings) ---
+        $exchangeBindings = [];
+        $exchangeCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_x', $companyPageIds, $exchangeBindings);
+        $exchangeDateCond = '';
+        if (!empty($filters['fromDate'])) {
+            $exchangeDateCond .= ' AND o.order_date >= :cw_x_from';
+            $exchangeBindings[':cw_x_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $exchangeDateCond .= ' AND o.order_date <= :cw_x_to';
+            $exchangeBindings[':cw_x_to'] = $filters['toDate'];
+        }
+        $exchangeDeliveredOrders = (int) ($this->database->fetchOne(
+            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Exchange delivered\'' . $exchangeDateCond . $exchangeCompanyWhere,
+            $exchangeBindings
+        )['cnt'] ?? 0);
+
+        // --- Income from delivered + exchange delivered orders ---
+        $incomeBindings = [];
+        $incomeCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_i', $companyPageIds, $incomeBindings);
+        $incomeDateCond = '';
+        if (!empty($filters['fromDate'])) {
+            $incomeDateCond .= ' AND o.order_date >= :cw_i_from';
+            $incomeBindings[':cw_i_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $incomeDateCond .= ' AND o.order_date <= :cw_i_to';
+            $incomeBindings[':cw_i_to'] = $filters['toDate'];
+        }
+        $income = (float) ($this->database->fetchOne(
+            'SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0) AS total
+             FROM orders o
+             WHERE o.deleted_at IS NULL AND o.status IN (\'Completed\', \'Exchange delivered\')' . $incomeDateCond . $incomeCompanyWhere,
+            $incomeBindings
+        )['total'] ?? 0);
+
+        // --- Income from other (non-delivered, non-exchange-delivered) orders ---
+        $nonDelBindings = [];
+        $nonDelCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_nd', $companyPageIds, $nonDelBindings);
+        $nonDelDateCond = '';
+        if (!empty($filters['fromDate'])) {
+            $nonDelDateCond .= ' AND o.order_date >= :cw_nd_from';
+            $nonDelBindings[':cw_nd_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $nonDelDateCond .= ' AND o.order_date <= :cw_nd_to';
+            $nonDelBindings[':cw_nd_to'] = $filters['toDate'];
+        }
+        $nonDeliveredIncome = (float) ($this->database->fetchOne(
+            'SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0) AS total
+             FROM orders o
+             WHERE o.deleted_at IS NULL AND o.status NOT IN (\'Completed\', \'Exchange delivered\')' . $nonDelDateCond . $nonDelCompanyWhere,
+            $nonDelBindings
+        )['total'] ?? 0);
+
+        // --- Products sold (separate query, unique bindings) ---
+        $productsSold = $this->computeCompanywiseProductsSold($filters, $companyPageIds);
+
+        // --- Shipping costs (separate query, unique bindings) ---
+        $shippingConditions = [
+            't.deleted_at IS NULL',
+            "t.type = 'Expense'",
+            $txnCompanyCondition,
+            "(LOWER(t.description) LIKE '%shipping cost%' OR LOWER(t.description) LIKE '%courier shipping%')",
+        ];
+        $shippingBindings = $txnCompanyBindings;
+        $this->applyDashboardDateTimeBounds('t.date', $filters, $shippingConditions, $shippingBindings, 'cw_ship');
+        $shippingCost = (float) ($this->database->fetchOne(
+            'SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE ' . implode(' AND ', $shippingConditions),
+            $shippingBindings
+        )['total'] ?? 0);
+
+        // --- COGS (separate query, unique bindings) ---
+        $cogsConditions = [
+            't.deleted_at IS NULL',
+            "t.type = 'Expense'",
+            "t.category = 'expense_purchases'",
+            $txnCompanyCondition,
+        ];
+        $cogsBindings = $txnCompanyBindings;
+        $this->applyDashboardDateTimeBounds('t.date', $filters, $cogsConditions, $cogsBindings, 'cw_cogs');
+        $cogs = (float) ($this->database->fetchOne(
+            'SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE ' . implode(' AND ', $cogsConditions),
+            $cogsBindings
+        )['total'] ?? 0);
+
+        $profit = $income - $shippingCost - $cogs;
+
+        return [
+            'deliveredOrders' => $deliveredOrders,
+            'exchangeDeliveredOrders' => $exchangeDeliveredOrders,
+            'productsSold' => $productsSold,
+            'income' => $income,
+            'nonDeliveredIncome' => $nonDeliveredIncome,
+            'shippingCost' => $shippingCost,
+            'cogs' => $cogs,
+            'profit' => $profit,
+        ];
+    }
+
+    private function computeCompanywiseProductsSold(array $filters, array $companyPageIds): float
+    {
+        try {
+            $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
+            $bindings = [];
+            $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_ps', $companyPageIds, $bindings);
+            if (!empty($filters['fromDate'])) {
+                $orderConditions[] = 'o.order_date >= :cw_ps_from';
+                $bindings[':cw_ps_from'] = $filters['fromDate'];
+            }
+            if (!empty($filters['toDate'])) {
+                $orderConditions[] = 'o.order_date <= :cw_ps_to';
+                $bindings[':cw_ps_to'] = $filters['toDate'];
+            }
+            $rows = $this->database->fetchAll(
+                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
+                $bindings
+            );
+            $productsSold = 0;
+            foreach ($rows as $row) {
+                foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                    if (is_array($item)) {
+                        $productsSold += (float) ($item['quantity'] ?? 0);
+                    }
+                }
+            }
+            return $productsSold;
+        } catch (\Throwable) {
+            return 0.0;
+        }
     }
 
     private function buildProfitLossCacheKey(array $normalizedParams): string
