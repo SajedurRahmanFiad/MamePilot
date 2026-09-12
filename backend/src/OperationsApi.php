@@ -5009,14 +5009,28 @@ final class OperationsApi extends BaseService
         $txnCompanyCondition = '1 = 1';
         $txnCompanyBindings = [];
         if ($hasCompanyFilter) {
+            $companyNamesById = [];
+            foreach ($this->fetchCompanyPages() as $companyPage) {
+                $pageId = trim((string) ($companyPage['id'] ?? ''));
+                $pageName = trim((string) ($companyPage['name'] ?? ''));
+                if ($pageId !== '' && $pageName !== '') {
+                    $companyNamesById[$pageId] = $pageName;
+                }
+            }
             $txnOrClauses = [];
             foreach ($companyPageIds as $i => $cid) {
-                $txnOrClauses[] = '(t_co.page_id = :cw_txn_page_' . $i . ' OR (
+                $txnCompanyMatch = 't_co.page_id = :cw_txn_page_' . $i . ' OR (
                     NULLIF(TRIM(t_co.page_id), \'\') IS NULL
                     AND JSON_UNQUOTE(JSON_EXTRACT(t_co.page_snapshot, \'$.id\')) = :cw_txn_snap_' . $i . '
-                ))';
+                )';
                 $txnCompanyBindings[':cw_txn_page_' . $i] = $cid;
                 $txnCompanyBindings[':cw_txn_snap_' . $i] = $cid;
+                $companyName = $companyNamesById[(string) $cid] ?? '';
+                if ($companyName !== '') {
+                    $txnCompanyMatch .= ' OR JSON_UNQUOTE(JSON_EXTRACT(t_co.page_snapshot, \'$.name\')) = :cw_txn_name_' . $i;
+                    $txnCompanyBindings[':cw_txn_name_' . $i] = $companyName;
+                }
+                $txnOrClauses[] = '(' . $txnCompanyMatch . ')';
             }
             $txnCompanyCondition = 'EXISTS (
                 SELECT 1 FROM orders t_co

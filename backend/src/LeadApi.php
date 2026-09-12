@@ -107,44 +107,65 @@ final class LeadApi extends BaseService
 
     private function runAnalysis(array $lead, bool $allowOrder): array
     {
-        $model = $this->activeModelRow($lead);
-        if ($model === null) return $lead;
+        $preferredModel = $this->activeModelRow($lead);
+        if ($preferredModel === null) return $lead;
         $messages = $this->conversationMessages($lead);
         if ($messages === []) return $lead;
-        $runId = $this->uuid4();
-        $this->database->execute('INSERT INTO lead_analysis_runs (id, lead_id, trigger_message_id, model_id, status, created_at) VALUES (:id, :lead, :message, :model, \'running\', :created)', [':id' => $runId, ':lead' => $lead['id'], ':message' => $messages[count($messages) - 1]['id'], ':model' => $model['id'], ':created' => $this->database->nowUtc()]);
-        try {
-            $system = $this->analysisSystemPrompt($model);
-            $history = array_map(static fn(array $message): array => ['role' => $message['direction'] === 'outbound' ? 'assistant' : 'user', 'content' => $message['text']], array_slice($messages, -30));
-            $media = [];
-            foreach (array_slice($messages, -4) as $message) {
-                if ($message['mediaUrl'] === '') continue;
-                $type = strtolower((string) $message['type']);
-                if ($type === 'image' && empty($model['supports_vision'])) continue;
-                if ($type === 'audio' && empty($model['supports_audio'])) continue;
-                $media[] = $this->prepareMediaInput($message);
-            }
-            $prompt = $this->analysisUserPrompt($lead, $messages);
-            $result = '';
-            for ($attempt = 0; $attempt < 3; $attempt++) {
-                $result = (new LlmClient($this->database, $this->config))->generateMultimodal($this->mapModel($model), $system, $prompt, $history, $media, ['temperature' => (float) $model['temperature'], 'maxTokens' => (int) $model['max_tokens']]);
-                $decoded = json_decode($this->extractJson($result), true);
-                if (!is_array($decoded)) throw new RuntimeException('Lead analysis did not return valid JSON.');
-                if (isset($decoded['toolCall']) && is_array($decoded['toolCall'])) {
-                    $toolResult = $this->runTool($decoded['toolCall'], $lead);
-                    $prompt .= "\n\nTOOL RESULT (use this data; do not invent IDs):\n" . ($this->jsonEncode($toolResult) ?? '{}') . "\nReturn the final profile JSON now.";
+        $candidateModels = $this->candidateModelRows($preferredModel);
+        $lastException = null;
+
+        foreach ($candidateModels as $model) {
+            $runId = $this->uuid4();
+            $this->database->execute('INSERT INTO lead_analysis_runs (id, lead_id, trigger_message_id, model_id, status, created_at) VALUES (:id, :lead, :message, :model, \'running\', :created)', [':id' => $runId, ':lead' => $lead['id'], ':message' => $messages[count($messages) - 1]['id'], ':model' => $model['id'], ':created' => $this->database->nowUtc()]);
+            try {
+                $system = $this->analysisSystemPrompt($model);
+                $history = array_map(static fn(array $message): array => ['role' => $message['direction'] === 'outbound' ? 'assistant' : 'user', 'content' => $message['text']], array_slice($messages, -30));
+                $media = [];
+                foreach (array_slice($messages, -4) as $message) {
+                    if ($message['mediaUrl'] === '') continue;
+                    $type = strtolower((string) $message['type']);
+                    if ($type === 'image' && empty($model['supports_vision'])) continue;
+                    if ($type === 'audio' && empty($model['supports_audio'])) continue;
+                    $media[] = $this->prepareMediaInput($message);
+                }
+                $prompt = $this->analysisUserPrompt($lead, $messages);
+                $result = '';
+                for ($attempt = 0; $attempt < 3; $attempt++) {
+                    try {
+                        $result = (new LlmClient($this->database, $this->config))->generateMultimodal($this->mapModel($model), $system, $prompt, $history, $media, ['temperature' => (float) $model['temperature'], 'maxTokens' => (int) $model['max_tokens']]);
+                    } catch (\Throwable $exception) {
+                        $lastException = $exception;
+                        if ($this->isRateLimitedFailure($exception) && $attempt < 2) {
+                            continue;
+                        }
+                        if ($this->isRateLimitedFailure($exception) && $this->hasNextModelCandidate($candidateModels, $model)) {
+                            break 2;
+                        }
+                        throw $exception;
+                    }
+                    $decoded = json_decode($this->extractJson($result), true);
+                    if (!is_array($decoded)) throw new RuntimeException('Lead analysis did not return valid JSON.');
+                    if (isset($decoded['toolCall']) && is_array($decoded['toolCall'])) {
+                        $toolResult = $this->runTool($decoded['toolCall'], $lead);
+                        $prompt .= "\n\nTOOL RESULT (use this data; do not invent IDs):\n" . ($this->jsonEncode($toolResult) ?? '{}') . "\nReturn the final profile JSON now.";
+                        continue;
+                    }
+                    $profile = $this->normalizeAnalysis($decoded, $lead, $messages);
+                    $this->saveAnalysis($lead, $runId, $profile, $messages[count($messages) - 1]['id']);
+                    $this->database->execute("UPDATE lead_analysis_runs SET status = 'completed', result_json = :result, completed_at = :completed WHERE id = :id", [':result' => $this->jsonEncode($profile), ':completed' => $this->database->nowUtc(), ':id' => $runId]);
+                    return $this->leadRow((string) $lead['id']) ?: $lead;
+                }
+                throw new RuntimeException('The analysis model did not return a final profile.');
+            } catch (\Throwable $exception) {
+                $lastException = $exception;
+                $this->database->execute("UPDATE lead_analysis_runs SET status = 'failed', error_message = :error, completed_at = :completed WHERE id = :id", [':error' => mb_substr($exception->getMessage(), 0, 1000), ':completed' => $this->database->nowUtc(), ':id' => $runId]);
+                if ($this->isRateLimitedFailure($exception) && $this->hasNextModelCandidate($candidateModels, $model)) {
                     continue;
                 }
-                $profile = $this->normalizeAnalysis($decoded, $lead, $messages);
-                $this->saveAnalysis($lead, $runId, $profile, $messages[count($messages) - 1]['id']);
-                $this->database->execute("UPDATE lead_analysis_runs SET status = 'completed', result_json = :result, completed_at = :completed WHERE id = :id", [':result' => $this->jsonEncode($profile), ':completed' => $this->database->nowUtc(), ':id' => $runId]);
-                return $this->leadRow((string) $lead['id']) ?: $lead;
+                throw $exception;
             }
-            throw new RuntimeException('The analysis model did not return a final profile.');
-        } catch (\Throwable $exception) {
-            $this->database->execute("UPDATE lead_analysis_runs SET status = 'failed', error_message = :error, completed_at = :completed WHERE id = :id", [':error' => mb_substr($exception->getMessage(), 0, 1000), ':completed' => $this->database->nowUtc(), ':id' => $runId]);
-            throw $exception;
         }
+        throw $lastException ?? new RuntimeException('The analysis model did not return a final profile.');
     }
 
     private function normalizeAnalysis(array $decoded, array $lead, array $messages): array
@@ -377,6 +398,45 @@ final class LeadApi extends BaseService
             }, $profile['interest']);
         }
         return $profile;
+    }
+
+    private function candidateModelRows(array $preferred): array
+    {
+        $rows = [];
+        $id = (string) ($preferred['id'] ?? '');
+        if ($this->tableExists('multimodal_llm_configurations')) {
+            $rows = $this->database->fetchAll('SELECT * FROM multimodal_llm_configurations WHERE enabled = 1 ORDER BY updated_at DESC, created_at DESC');
+        }
+        if ($rows === []) {
+            return [$preferred];
+        }
+        $filtered = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            if ($id !== '' && (string) ($row['id'] ?? '') === $id) continue;
+            $filtered[] = $row;
+        }
+        if ($id !== '' && !empty($preferred['id'])) array_unshift($filtered, $preferred);
+        return $filtered === [] ? [$preferred] : $filtered;
+    }
+
+    private function hasNextModelCandidate(array $models, array $current): bool
+    {
+        $currentId = (string) ($current['id'] ?? '');
+        $seen = false;
+        foreach ($models as $model) {
+            if (!is_array($model)) continue;
+            $id = (string) ($model['id'] ?? '');
+            if ($currentId !== '' && $id === $currentId) { $seen = true; continue; }
+            if ($seen) return true;
+        }
+        return false;
+    }
+
+    private function isRateLimitedFailure(\Throwable $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+        return str_contains($message, 'http 429') || str_contains($message, 'http 4') || str_contains($message, '429') || str_contains($message, 'http 429:') || str_contains($message, 'rate limit') || str_contains($message, 'quota') || str_contains($message, 'HTTP 429');
     }
 
     private function saveEvent(string $leadId, string $type, array $payload): void { $this->database->execute('INSERT INTO lead_events (lead_id, event_type, payload_json, created_at) VALUES (:lead, :type, :payload, :created)', [':lead' => $leadId, ':type' => $type, ':payload' => $this->jsonEncode($payload), ':created' => $this->database->nowUtc()]); }
