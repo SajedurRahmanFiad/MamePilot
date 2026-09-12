@@ -11,9 +11,9 @@ const legacyProfileValues = (profile?: LeadProfileJson) => {
     ? identity.map((item) => item && typeof item === 'object' && 'value' in item ? String(item.value || '') : '').filter(Boolean)
     : [];
   return {
-    name: Array.isArray(identity) ? values[0] : profile.identity?.name?.value,
-    phone: Array.isArray(identity) ? values.find((value) => /^\+?[\d\s().-]{8,}$/.test(value)) : profile.identity?.phone?.value,
-    address: Array.isArray(identity) ? values[2] : profile.identity?.address?.value,
+    name: Array.isArray(identity) ? values[0] : profile?.identity?.name?.value,
+    phone: Array.isArray(identity) ? values.find((value) => /^\+?[\d\s().-]{8,}$/.test(value)) : profile?.identity?.phone?.value,
+    address: Array.isArray(identity) ? values[2] : profile?.identity?.address?.value,
     product: profile?.interest?.[0]?.productName || (profile?.interest?.[0] as { value?: string } | undefined)?.value,
   };
 };

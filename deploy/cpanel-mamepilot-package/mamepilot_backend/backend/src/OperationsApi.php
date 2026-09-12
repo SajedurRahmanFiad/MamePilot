@@ -5289,16 +5289,31 @@ final class OperationsApi extends BaseService
         if (empty($companyPageIds)) {
             return '';
         }
+        $companyNamesById = [];
+        foreach ($this->fetchCompanyPages() as $companyPage) {
+            $pageId = trim((string) ($companyPage['id'] ?? ''));
+            $pageName = trim((string) ($companyPage['name'] ?? ''));
+            if ($pageId !== '' && $pageName !== '') {
+                $companyNamesById[$pageId] = $pageName;
+            }
+        }
         $orClauses = [];
         foreach ($companyPageIds as $i => $cid) {
             $pageKey = ":{$prefix}_page_{$i}";
             $snapKey = ":{$prefix}_snap_{$i}";
-            $orClauses[] = "({$tableAlias}.page_id = {$pageKey} OR (
+            $companyMatch = "{$tableAlias}.page_id = {$pageKey} OR (
                 NULLIF(TRIM({$tableAlias}.page_id), '') IS NULL
                 AND JSON_UNQUOTE(JSON_EXTRACT({$tableAlias}.page_snapshot, '$.id')) = {$snapKey}
-            ))";
+            )";
             $bindings[$pageKey] = $cid;
             $bindings[$snapKey] = $cid;
+            $companyName = $companyNamesById[(string) $cid] ?? '';
+            if ($companyName !== '') {
+                $nameKey = ":{$prefix}_name_{$i}";
+                $companyMatch .= " OR JSON_UNQUOTE(JSON_EXTRACT({$tableAlias}.page_snapshot, '$.name')) = {$nameKey}";
+                $bindings[$nameKey] = $companyName;
+            }
+            $orClauses[] = "({$companyMatch})";
         }
         return ' AND (' . implode(' OR ', $orClauses) . ')';
     }
