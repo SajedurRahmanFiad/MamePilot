@@ -746,20 +746,21 @@ final class MessengerApi extends BaseService
 
     private function touchConversation(array $contact, string $preview, string $type, string $at, bool $inbound): void
     {
-        $sql = 'UPDATE messenger_contacts SET
-                    last_message_preview = CASE WHEN last_message_at IS NULL OR last_message_at <= :preview_at THEN :preview ELSE last_message_preview END,
-                    last_message_type = CASE WHEN last_message_at IS NULL OR last_message_at <= :type_at THEN :type ELSE last_message_type END,
-                    last_message_at = CASE WHEN last_message_at IS NULL OR last_message_at <= :message_at THEN :message_at_value ELSE last_message_at END,
-                    last_message_direction = CASE WHEN last_message_at IS NULL OR last_message_at <= :direction_at THEN :direction ELSE last_message_direction END,
-                    updated_at = :updated';
-        if ($inbound) $sql .= ', unread_count = unread_count + 1, last_user_message_at = :user_message_at';
-        $sql .= ' WHERE id = :id';
-        $this->database->execute($sql, [
-            ':preview_at' => $at, ':preview' => $this->preview($preview), ':type_at' => $at, ':type' => $type,
-            ':message_at' => $at, ':message_at_value' => $at, ':direction_at' => $at,
-            ':direction' => $inbound ? 'inbound' : 'outbound', ':updated' => $this->database->nowUtc(),
-            ':user_message_at' => $at, ':id' => $contact['id'],
-        ]);
+        $lastMessage = $this->database->fetchOne('SELECT last_message_at FROM messenger_contacts WHERE id = ? LIMIT 1', [$contact['id']]);
+        $isLatest = trim((string) ($lastMessage['last_message_at'] ?? '')) === '' || (string) $lastMessage['last_message_at'] <= $at;
+        $updated = $this->database->nowUtc();
+        if ($isLatest) {
+            $this->database->execute(
+                'UPDATE messenger_contacts SET last_message_preview = ?, last_message_type = ?, last_message_at = ?, last_message_direction = ?, updated_at = ? WHERE id = ?',
+                [$this->preview($preview), $type, $at, $inbound ? 'inbound' : 'outbound', $updated, $contact['id']]
+            );
+        }
+        if ($inbound) {
+            $this->database->execute(
+                'UPDATE messenger_contacts SET unread_count = unread_count + 1, last_user_message_at = ?, updated_at = ? WHERE id = ?',
+                [$at, $updated, $contact['id']]
+            );
+        }
     }
 
     private function touchUserWindow(array $contact, string $at): void
@@ -929,7 +930,7 @@ final class MessengerApi extends BaseService
             'firstName' => (string) ($row['first_name'] ?? ''), 'lastName' => (string) ($row['last_name'] ?? ''),
             'profilePictureUrl' => (string) ($row['profile_picture_url'] ?? ''), 'locale' => (string) ($row['locale'] ?? ''),
             'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => $preview,
-            'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageDirection' => (string) ($row['last_message_direction'] ?? ''),
+            'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageDirection' => ((int) ($row['unread_count'] ?? 0) > 0 && ($row['last_message_direction'] ?? '') === 'inbound') ? 'inbound' : '',
             'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null),
             'lastUserMessageAt' => $this->toIso($lastResolved), 'canReply' => $window !== 'closed', 'replyWindow' => $window,
             'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null),
