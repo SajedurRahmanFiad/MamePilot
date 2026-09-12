@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ICONS } from '../constants';
 import { formatDate } from '../utils';
 
-export type FilterOperator = '=' | '≠' | 'contains' | 'does not contain' | '<' | '>' | 'on' | 'before' | 'after';
+export type FilterOperator = '=' | '≠' | 'contains' | 'does not contain' | '<' | '>' | 'on' | 'before' | 'after' | 'within';
 
-type FilterValueType = 'text' | 'number' | 'date';
+type FilterValueType = 'text' | 'number' | 'date' | 'date-range';
 
 interface FilterValueOption {
   value: string;
@@ -84,6 +84,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   const [stage, setStage] = useState(0);
   const [currentType, setCurrentType] = useState<string | null>(null);
   const [currentOperator, setCurrentOperator] = useState<FilterOperator | null>(null);
+  const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [filters, setFilters] = useState<CombinedFilter[]>(() => initialFilters ?? []);
   const [chipsWidth, setChipsWidth] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -275,6 +276,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     setCurrentOperator(singleOperator ? operator : null);
     setStage(singleOperator ? 2 : (operators.length > 1 ? 1 : 2));
     setInputValue('');
+    setDateRange({ from: '', to: '' });
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -282,6 +284,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     setCurrentOperator(op);
     setStage(2);
     setInputValue('');
+    setDateRange({ from: '', to: '' });
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
@@ -314,6 +317,30 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     setCurrentOperator(null);
     setStage(0);
     setInputValue('');
+  };
+
+  const handleSelectDateRange = () => {
+    if (!currentType || !dateRange.from || !dateRange.to) return;
+    const combined: CombinedFilter = {
+      id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
+      type: currentType,
+      operator: currentOperator ?? 'within',
+      value: `${dateRange.from}|${dateRange.to}`,
+      display: `${formatDateDisplay(dateRange.from)} - ${formatDateDisplay(dateRange.to)}`,
+    };
+    const nextFilters = [...filters, combined];
+    pendingLocalSyncRef.current = {
+      submitted: filterSignature(nextFilters),
+      previousExternal: acceptedExternalSignatureRef.current,
+      submittedAt: Date.now(),
+    };
+    setFilters(nextFilters);
+    onApply?.(nextFilters);
+    setCurrentType(null);
+    setCurrentOperator(null);
+    setStage(0);
+    setInputValue('');
+    setDateRange({ from: '', to: '' });
   };
 
   const handleRemoveFilter = (id: string) => {
@@ -360,6 +387,40 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     const hasDefinedOptions = Boolean(definition?.values || definition?.suggestions || definition?.renderOptions);
     const allowCustom = definition?.allowCustomValue ?? !hasDefinedOptions;
     const labelFormatter = definition?.valueLabelFormatter ?? ((value: string) => value);
+
+    if (valueType === 'date-range' || (valueType === 'date' && currentOperator === 'within')) {
+      return (
+        <div className="p-3 space-y-2">
+          <input
+            type="date"
+            value={dateRange.from}
+            onChange={(e) => setDateRange((current) => ({ ...current, from: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label="Start date"
+          />
+          <input
+            type="date"
+            value={dateRange.to}
+            onChange={(e) => setDateRange((current) => ({ ...current, to: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label="End date"
+          />
+          {dateRange.from && dateRange.to && (
+            <button
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                handleSelectDateRange();
+                setIsOpen(false);
+              }}
+              className="w-full px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-bold hover:bg-blue-600 transition-colors"
+            >
+              Select {formatDateDisplay(dateRange.from)} - {formatDateDisplay(dateRange.to)}
+            </button>
+          )}
+        </div>
+      );
+    }
 
     // Date picker for date filters
     if (valueType === 'date') {

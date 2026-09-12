@@ -1,174 +1,87 @@
-# Messenger Long-Lived Token Guide
+# Meta System User Token Guide (Production Recommended)
 
-This guide explains how to create a long-lived Facebook user token, exchange it for a Page access token, and save that Page token in MamePilot.
+This guide explains how to generate a Meta System User access token. This is the recommended method for a production deployment of MamePilot. 
+
+Unlike personal user tokens, System User tokens belong to your Meta Business Account. They do not expire when you change your personal Facebook password, ensuring MamePilot maintains a permanent, stable connection to your Facebook Page inbox.
 
 ## Before You Start
 
 You need:
+- A Meta Business Account (Business Manager).
+- Administrator access to the Meta Business Account.
+- The Facebook Page added to your Business Account.
+- The Meta app configured for Messenger added to your Business Account.
 
-- A Meta Developer account.
-- A Meta app configured for Facebook Page Messenger.
-- Administrator access to the Facebook Page.
-- The Meta App ID and App Secret.
-- The Facebook Page ID.
+*Note: If your App or Page is only in your personal developer account, you must transfer or link them to your Business Account first.*
 
-Never share your App Secret or a complete access token. Treat both as passwords.
+## Step 1: Create a System User
 
-## Token Types
+1. Open [Meta Business Settings](https://business.facebook.com/settings).
+2. In the left sidebar, under **Users**, click **System Users**.
+3. Click **Add** to create a new system user.
+4. Name the system user (e.g., `MamePilot Server`).
+5. Set the System User Role to **Admin System User**. 
+6. Click **Create System User**.
 
-You will use three different values during this process:
+*(Note: While standard system users can work, an Admin System User is highly recommended for API integrations to prevent permission conflicts with Page management scopes).*
 
-1. **Short-lived user token**: generated temporarily by Graph API Explorer.
-2. **Long-lived user token**: created by exchanging the short-lived user token.
-3. **Page access token**: retrieved from the long-lived user token and saved in MamePilot.
+## Step 2: Assign Assets to the System User
 
-MamePilot needs the **Page access token**, not the short-lived user token.
+The System User cannot generate a working token until it is granted explicit access to both your Facebook Page and your Meta App.
 
-## Step 1: Find the App ID and App Secret
+1. Select your new System User and click **Add Assets**.
+2. **Assign the Page:**
+   - Under **Asset Type**, select **Pages**.
+   - Check the box next to your Facebook Page.
+   - Under **Full Control**, toggle the switch to give the System User complete access.
+3. **Assign the App:**
+   - Under **Asset Type**, select **Apps**.
+   - Check the box next to your Messenger App.
+   - Under **Full Control**, toggle the switch.
+4. Click **Save Changes**.
 
-1. Open [Meta for Developers](https://developers.facebook.com/).
-2. Select the app used for Messenger.
-3. Open **App settings** and then **Basic**.
-4. Copy the **App ID**.
-5. Click **Show** beside **App Secret** and copy it securely.
+## Step 3: Generate the Initial Token
 
-Do not put the App Secret in a screenshot, chat message, public document, or source-code repository.
-
-## Step 2: Generate a Short-Lived User Token
-
-1. Open [Graph API Explorer](https://developers.facebook.com/tools/explorer/).
-2. Select your Messenger app in the application dropdown.
-3. Click **Get Token**.
-4. Choose **Get User Access Token**.
-5. Select the permissions required by your Messenger app, such as:
+1. With the System User still selected, click **Generate New Token**.
+2. Select your Messenger App from the dropdown list.
+3. Under **Token Expiration**, select **Never**.
+4. Scroll down to the **Available Permissions** list and select the following scopes:
    - `pages_manage_metadata`
    - `pages_messaging`
    - `pages_read_engagement`
-   - `business_management`, if Meta requests it
-6. Complete the Facebook authorization steps.
-7. Copy the generated token into a temporary secure location.
+   - `pages_show_list` 
+5. Click **Generate Token**.
+6. A popup will display your permanent token. **Copy this token immediately.** Meta will only show it to you this one time.
 
-This is the **short-lived user token**. Do not paste it into MamePilot yet.
+## Step 4: Exchange for a Page Access Token
 
-## Step 3: Exchange It for a Long-Lived User Token
+*Important: Meta's New Pages Experience strictly requires a Page Access Token to subscribe apps to page events (like webhooks). The token generated in Step 3 is a System User Token. You must exchange it to avoid HTTP 400 errors during the MamePilot subscription check.*
 
-The exchange request uses the Meta Graph API. Replace every placeholder in this URL:
+Open your Windows Command Prompt (`cmd`) and run the following single-line `curl` command. Replace `YOUR_SYSTEM_USER_TOKEN` with the token you just copied:
 
-```text
-https://graph.facebook.com/v26.0/oauth/access_token?grant_type=fb_exchange_token&client_id=YOUR_APP_ID&client_secret=YOUR_APP_SECRET&fb_exchange_token=YOUR_SHORT_LIVED_USER_TOKEN
+```cmd
+curl -X GET "https://graph.facebook.com/v26.0/me/accounts?fields=id,name,access_token&access_token=YOUR_SYSTEM_USER_TOKEN"
 ```
 
-Replace:
+In the JSON response, find the object whose `id` matches your MamePilot Page ID. Copy its `access_token`. This is your **permanent Page access token**.
 
-- `YOUR_APP_ID` with the Meta App ID.
-- `YOUR_APP_SECRET` with the Meta App Secret.
-- `YOUR_SHORT_LIVED_USER_TOKEN` with the token copied from Graph API Explorer.
-
-Keep the URL on one line. Do not include the placeholder text, quotes, spaces, or line breaks.
-
-### Run the Exchange in PowerShell
-
-PowerShell is safer than putting the secret into a browser address bar because the App Secret is less likely to be saved in browser history.
-
-```powershell
-$appId = "YOUR_APP_ID"
-$appSecret = "YOUR_APP_SECRET"
-$shortToken = "YOUR_SHORT_LIVED_USER_TOKEN"
-
-$url = "https://graph.facebook.com/v26.0/oauth/access_token?grant_type=fb_exchange_token&client_id=$appId&client_secret=$appSecret&fb_exchange_token=$shortToken"
-
-Invoke-RestMethod -Uri $url -Method Get
-```
-
-A successful response looks similar to this:
-
-```json
-{
-  "access_token": "EAAB...",
-  "token_type": "bearer",
-  "expires_in": 5183944
-}
-```
-
-Copy the value of `access_token`. This is your **long-lived user token**.
-
-If Meta returns an error, verify that:
-
-- The App ID belongs to the selected Meta app.
-- The App Secret belongs to the same app.
-- The short-lived token was generated for the same app.
-- The token has not already expired.
-- The required permissions were granted.
-
-## Step 4: Get the Page Access Token
-
-Use the long-lived user token to list the Pages available to that Facebook account:
-
-```text
-https://graph.facebook.com/v26.0/me/accounts?fields=id,name,access_token&access_token=YOUR_LONG_LIVED_USER_TOKEN
-```
-
-In PowerShell:
-
-```powershell
-$longToken = "YOUR_LONG_LIVED_USER_TOKEN"
-
-Invoke-RestMethod `
-  -Uri "https://graph.facebook.com/v26.0/me/accounts?fields=id,name,access_token&access_token=$longToken" `
-  -Method Get
-```
-
-A successful response looks similar to this:
-
-```json
-{
-  "data": [
-    {
-      "id": "123456789012345",
-      "name": "Your Facebook Page",
-      "access_token": "EAAB_PAGE_TOKEN..."
-    }
-  ]
-}
-```
-
-Find the object whose `id` matches your Messenger Page ID. Copy that object's `access_token`. This is the **Page access token** that MamePilot requires.
-
-## Step 5: Save the Page Token in MamePilot
+## Step 5: Save the Token in MamePilot
 
 1. Sign in to MamePilot.
 2. Open **Settings**.
 3. Open **Messenger**.
 4. Enter the Facebook **Page ID**.
-5. Paste the Page `access_token` into **Page access token**.
+5. Paste the final **Page access token** (from Step 4) into **Page access token**.
 6. Click **Save Messenger**.
 7. Click **Test connection**.
-8. Confirm that the connection test succeeds.
+8. Confirm that the connection test succeeds. (The HTTP 400 warning should no longer appear).
 
-If the server uses the `MESSENGER_PAGE_ACCESS_TOKEN` environment variable, update that value too. The server environment may take precedence over the value saved in the settings database.
-
-## Step 6: Verify Messenger Sending
-
-After the connection test succeeds:
-
-1. Open the Messenger inbox in MamePilot.
-2. Open an existing conversation.
-3. Send a short test message.
-4. Confirm that the message is delivered on Facebook Messenger.
-
-If sending fails with `Session has expired`, generate a replacement Page token and repeat Step 5.
+If your server relies on environment variables, update the `MESSENGER_PAGE_ACCESS_TOKEN` variable in your production environment and restart the server.
 
 ## Security Rules
 
-- Never commit tokens or App Secrets to Git.
-- Never send tokens through chat, email, or screenshots.
-- Do not paste the App Secret into the MamePilot Page token field.
-- Use HTTPS for the production MamePilot deployment.
-- If a token is exposed, revoke or regenerate it immediately.
-- Record the token expiration date and renew it before it expires.
-
-## Recommended Production Option
-
-For a production integration, consider using a Meta Business System User token assigned to the Facebook Page and Messenger app. System User tokens are more suitable for server-to-server integrations because they do not depend on a personal Facebook login session.
-
-The exact System User permissions depend on the Meta Business setup. The token must have access to the Page and the Messenger-related app permissions required by the integration.
+- **Treat this token like a master password.** Admin System User tokens are incredibly powerful and provide deep access to your Business assets.
+- Never commit the token to version control (Git).
+- Never send the token through chat, email, or screenshots.
+- Use HTTPS/TLS for your production MamePilot deployment.
+- If this token is ever exposed, go back to Meta Business Settings, select the System User, and immediately click **Revoke Token**.

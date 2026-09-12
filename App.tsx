@@ -55,6 +55,7 @@ import { useMaintenanceStatus } from './src/hooks/useQueries';
 import { capabilityForPath } from './src/utils/capabilities';
 import StartupScreen from './components/StartupScreen';
 import PipraPayReturnHandler from './components/PipraPayReturnHandler';
+import PrivacyPolicyPage from './pages/PrivacyPolicy';
 
 const Login = lazyPage(() => import('./pages/Login'));
 const MaintenancePage = lazyPage(() => import('./pages/Maintenance'));
@@ -270,9 +271,10 @@ preloaders.add(DeveloperNotes.preload);
   const maintenanceEnabled = maintenanceQuery.data?.maintenanceEnabled ?? false;
   const isMaintenanceRoute = location.pathname === '/maintenance' || location.pathname.startsWith('/maintenance');
   const isLoginRoute = location.pathname === '/login';
+  const isPrivacyPolicyRoute = location.pathname === '/privacy-policy';
   const isDeveloperRoute = activeUser?.role === 'Developer' && location.pathname.startsWith('/developer');
 
-  if (maintenanceEnabled && !isDeveloper && !isLoginRoute && !isMaintenanceRoute) {
+  if (maintenanceEnabled && !isDeveloper && !isLoginRoute && !isPrivacyPolicyRoute && !isMaintenanceRoute) {
     return <Navigate to="/maintenance" replace />;
   }
 
@@ -286,6 +288,7 @@ preloaders.add(DeveloperNotes.preload);
       <PipraPayReturnHandler />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route path="/maintenance" element={
           maintenanceEnabled ? <MaintenancePage /> : (isAuthenticated ? <Navigate to={defaultProtectedRoute} replace /> : <Navigate to="/login" replace />)
         } />
@@ -602,6 +605,10 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  if (window.location.pathname === '/privacy-policy') {
+    return <PrivacyPolicyPage />;
+  }
+
   return (
     <BrandingProvider>
       <NetworkProvider>

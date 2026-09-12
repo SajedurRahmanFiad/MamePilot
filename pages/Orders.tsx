@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Order, OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, isEmployeeRole, type ConfirmPartialDeliveryPayload } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
-import DynamicFilterBar from '../components/DynamicFilterBar';
+import DynamicFilterBar, { formatDateDisplay, type CombinedFilter } from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, CommonPaymentModal, ConfirmationStatusDot } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -460,6 +460,11 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
         },
       },
       {
+        type: 'Created',
+        operators: ['on', 'before', 'after', 'within'] as const,
+        valueType: 'date' as const,
+      },
+      {
         type: 'Order ID',
         operators: ['=', '≠', 'contains', 'does not contain'] as const,
         values: orderNumberOptions,
@@ -522,7 +527,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
   }, [location.pathname, location.search]);
 
   const initialFilters = useMemo(() => {
-    const filters: Array<{ id: string; type: string; operator: '=' | '≠' | 'contains' | 'does not contain'; value: string; display?: string }> = [];
+    const filters: CombinedFilter[] = [];
     const getCreatorFilterLabel = (value: string) => value === 'admins' ? 'Admins'
       : value === 'employees' ? 'Employees'
         : value === 'developers' ? 'Developers'
@@ -632,6 +637,13 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     }
     if (urlCreatedByNot) {
       filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot, display: getCreatorFilterLabel(urlCreatedByNot) });
+    }
+    if (urlCustomDates.from || urlCustomDates.to) {
+      const operator = urlCustomDates.from && urlCustomDates.to ? 'within' : urlCustomDates.from ? 'after' : 'before';
+      const value = urlCustomDates.from && urlCustomDates.to
+        ? `${urlCustomDates.from}|${urlCustomDates.to}`
+        : urlCustomDates.from || urlCustomDates.to;
+      filters.push({ id: 'created-date', type: 'Created', operator: operator as CombinedFilter['operator'], value, display: urlCustomDates.from && urlCustomDates.to ? `${formatDateDisplay(urlCustomDates.from)} - ${formatDateDisplay(urlCustomDates.to)}` : formatDateDisplay(value) });
     }
     return filters;
   }, [
@@ -1322,6 +1334,22 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
             } else {
               setCreatedByFilter('all');
               setCreatedByNot('');
+            }
+
+            const createdDateFilter = appliedFilters.find(f => f.type === 'Created');
+            if (createdDateFilter) {
+              const [from, to] = createdDateFilter.operator === 'within'
+                ? createdDateFilter.value.split('|')
+                : createdDateFilter.operator === 'after'
+                  ? [createdDateFilter.value, '']
+                  : createdDateFilter.operator === 'before'
+                    ? ['', createdDateFilter.value]
+                    : [createdDateFilter.value, createdDateFilter.value];
+              setFilterRange('Custom');
+              setCustomDates({ from: from || '', to: to || '' });
+            } else {
+              setFilterRange('All Time');
+              setCustomDates({ from: '', to: '' });
             }
 
             const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && (f.operator === '=' || f.operator === 'contains'));

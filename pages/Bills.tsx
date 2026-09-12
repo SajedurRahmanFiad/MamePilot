@@ -7,7 +7,7 @@ import { db } from '../db';
 import { Bill, BillStatus, hasAdminAccess, isEmployeeRole } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusLabel, getStatusColor } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
-import DynamicFilterBar from '../components/DynamicFilterBar';
+import DynamicFilterBar, { formatDateDisplay } from '../components/DynamicFilterBar';
 import { Button, TableLoadingSkeleton } from '../components';
 import { theme } from '../theme';
 import { useBillsPage, useUsersMini, useSystemDefaults, useBillFilterOptions } from '../src/hooks/useQueries';
@@ -275,6 +275,11 @@ const Bills: React.FC = () => {
         },
       },
       {
+        type: 'Created',
+        operators: ['on', 'before', 'after', 'within'] as const,
+        valueType: 'date' as const,
+      },
+      {
         type: 'Bill ID',
         operators: ['=', '≠', 'contains', 'does not contain'] as const,
         allowCustomValue: true,
@@ -338,6 +343,13 @@ const Bills: React.FC = () => {
     };
     if (effectiveCreatedByFilter !== 'all') filters.push({ id: 'created-by', type: 'Created by', operator: '=', value: effectiveCreatedByFilter, display: getCreatorFilterLabel(effectiveCreatedByFilter) });
     if (effectiveCreatedByNotFilter) filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠', value: effectiveCreatedByNotFilter, display: getCreatorFilterLabel(effectiveCreatedByNotFilter) });
+    if (effectiveCustomDates.from || effectiveCustomDates.to) {
+      const operator = effectiveCustomDates.from && effectiveCustomDates.to ? 'within' : effectiveCustomDates.from ? 'after' : 'before';
+      const value = effectiveCustomDates.from && effectiveCustomDates.to
+        ? `${effectiveCustomDates.from}|${effectiveCustomDates.to}`
+        : effectiveCustomDates.from || effectiveCustomDates.to;
+      filters.push({ id: 'created-date', type: 'Created', operator, value, display: effectiveCustomDates.from && effectiveCustomDates.to ? `${formatDateDisplay(effectiveCustomDates.from)} - ${formatDateDisplay(effectiveCustomDates.to)}` : formatDateDisplay(value) });
+    }
     addTextFilter('bill-id', 'Bill ID', effectiveBillIdFilter);
     addTextFilter('bill-id-not', 'Bill ID', effectiveBillIdNotFilter, true);
     addTextFilter('vendor-name', 'Vendor Name', effectiveVendorNameFilter);
@@ -625,6 +637,22 @@ const Bills: React.FC = () => {
           } else {
             setCreatedByFilter('all');
             setCreatedByNotFilter('');
+          }
+
+          const createdDateFilter = appliedFilters.find((f) => f.type === 'Created');
+          if (createdDateFilter) {
+            const [from, to] = createdDateFilter.operator === 'within'
+              ? createdDateFilter.value.split('|')
+              : createdDateFilter.operator === 'after'
+                ? [createdDateFilter.value, '']
+                : createdDateFilter.operator === 'before'
+                  ? ['', createdDateFilter.value]
+                  : [createdDateFilter.value, createdDateFilter.value];
+            setFilterRange('Custom');
+            setCustomDates({ from: from || '', to: to || '' });
+          } else {
+            setFilterRange('All Time');
+            setCustomDates({ from: '', to: '' });
           }
 
           const billIdFilter = appliedFilters.find((f) => f.type === 'Bill ID' && (f.operator === '=' || f.operator === 'contains'));
