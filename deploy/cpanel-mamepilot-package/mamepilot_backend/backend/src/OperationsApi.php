@@ -1797,20 +1797,36 @@ final class OperationsApi extends BaseService
         $isPos = !empty($filters['pos']);
         $where .= $isPos ? ' AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 1' : ' AND (SELECT is_pos FROM orders WHERE id = orders_with_customer_creator.id) = 0';
 
+        $exchangeDeliveredItemExistsSql = "(
+            COALESCE(items, '') LIKE '%\"isExchangeReplacement\":true%'
+            OR COALESCE(items, '') REGEXP '\"exchangedQty\"[[:space:]]*:[[:space:]]*(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*([.][0-9]+)?)'
+        )";
+        $buildStatusCondition = function (string $statusValue, string $bindingKey) use ($exchangeDeliveredItemExistsSql, &$bindings): string {
+            if ($statusValue === 'Completed') {
+                $bindings[$bindingKey] = $statusValue;
+                return "(status = {$bindingKey} AND NOT {$exchangeDeliveredItemExistsSql})";
+            }
+            if ($statusValue === 'Exchange delivered') {
+                $bindings[$bindingKey] = $statusValue;
+                $completedBindingKey = $bindingKey . '_completed';
+                $bindings[$completedBindingKey] = 'Completed';
+                return "(status = {$bindingKey} OR (status = {$completedBindingKey} AND {$exchangeDeliveredItemExistsSql}))";
+            }
+            $bindings[$bindingKey] = $statusValue;
+            return "status = {$bindingKey}";
+        };
+
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'All') {
             $statusValues = array_map('trim', explode(',', $status));
             if (count($statusValues) === 1) {
-                $where .= ' AND status = :status';
-                $bindings[':status'] = $statusValues[0];
+                $where .= ' AND ' . $buildStatusCondition($statusValues[0], ':status');
             } else {
-                $placeholders = [];
+                $statusConditions = [];
                 foreach ($statusValues as $i => $sv) {
-                    $key = ':status_' . $i;
-                    $placeholders[] = $key;
-                    $bindings[$key] = $sv;
+                    $statusConditions[] = $buildStatusCondition($sv, ':status_' . $i);
                 }
-                $where .= ' AND status IN (' . implode(', ', $placeholders) . ')';
+                $where .= ' AND (' . implode(' OR ', $statusConditions) . ')';
             }
         }
 
@@ -1819,16 +1835,14 @@ final class OperationsApi extends BaseService
         if ($statusNot !== '') {
             $statusNotValues = array_map('trim', explode(',', $statusNot));
             if (count($statusNotValues) === 1) {
-                $where .= ' AND status <> :status_not';
-                $bindings[':status_not'] = $statusNotValues[0];
+                $where .= ' AND NOT (' . $buildStatusCondition($statusNotValues[0], ':status_not') . ')';
             } else {
-                $notPlaceholders = [];
+                $notConditions = [];
                 foreach ($statusNotValues as $i => $sv) {
                     $key = ':status_not_' . $i;
-                    $notPlaceholders[] = $key;
-                    $bindings[$key] = $sv;
+                    $notConditions[] = 'NOT (' . $buildStatusCondition($sv, $key) . ')';
                 }
-                $where .= ' AND status NOT IN (' . implode(', ', $notPlaceholders) . ')';
+                $where .= ' AND ' . implode(' AND ', $notConditions);
             }
         }
         // Keep the server-side filter mutually exclusive and aligned with the
@@ -5011,6 +5025,11 @@ final class OperationsApi extends BaseService
             )';
         }
 
+        $exchangeDeliveredItemCondition = "(
+            COALESCE(o.items, '') LIKE '%\"isExchangeReplacement\":true%'
+            OR COALESCE(o.items, '') REGEXP '\"exchangedQty\"[[:space:]]*:[[:space:]]*(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*([.][0-9]+)?)'
+        )";
+
         // --- Delivered orders count (separate query, unique bindings) ---
         $deliveredBindings = [];
         $deliveredCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_d', $companyPageIds, $deliveredBindings);
@@ -5024,7 +5043,7 @@ final class OperationsApi extends BaseService
             $deliveredBindings[':cw_d_to'] = $filters['toDate'];
         }
         $deliveredOrders = (int) ($this->database->fetchOne(
-            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Completed\'' . $deliveredDateCond . $deliveredCompanyWhere,
+            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Completed\' AND NOT ' . $exchangeDeliveredItemCondition . $deliveredDateCond . $deliveredCompanyWhere,
             $deliveredBindings
         )['cnt'] ?? 0);
 
@@ -5041,7 +5060,7 @@ final class OperationsApi extends BaseService
             $exchangeBindings[':cw_x_to'] = $filters['toDate'];
         }
         $exchangeDeliveredOrders = (int) ($this->database->fetchOne(
-            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Exchange delivered\'' . $exchangeDateCond . $exchangeCompanyWhere,
+            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND (o.status = \'Exchange delivered\' OR (o.status = \'Completed\' AND ' . $exchangeDeliveredItemCondition . '))' . $exchangeDateCond . $exchangeCompanyWhere,
             $exchangeBindings
         )['cnt'] ?? 0);
 
