@@ -1737,6 +1737,8 @@ export interface Lead {
   sourceChannel: string;
   messengerContactId?: string | null;
   whatsappContactId?: string | null;
+  name?: string | null;
+  phone?: string | null;
   assignedModelId?: string | null;
   status: LeadStatus | string;
   stage: string;

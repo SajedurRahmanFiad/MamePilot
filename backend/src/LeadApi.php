@@ -149,7 +149,9 @@ final class LeadApi extends BaseService
 
     private function normalizeAnalysis(array $decoded, array $lead, array $messages): array
     {
-        $profile = is_array($decoded['profile'] ?? null) ? $decoded['profile'] : $decoded;
+        $previousProfile = $this->jsonDecodeAssoc($lead['profile_json'] ?? []);
+        $latestProfile = is_array($decoded['profile'] ?? null) ? $decoded['profile'] : $decoded;
+        $profile = array_replace_recursive($previousProfile, $latestProfile);
         $profile['schemaVersion'] = 1;
         if (!isset($profile['suggestions']) && isset($decoded['suggestions'])) $profile['suggestions'] = $decoded['suggestions'];
         $profile['sales'] = is_array($profile['sales'] ?? null) ? $profile['sales'] : [];
@@ -243,7 +245,7 @@ final class LeadApi extends BaseService
 
     private function analysisSystemPrompt(array $model): string
     {
-        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, or order confirmations. When product/customer/ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence. An order is confirmed only by an explicit customer confirmation.";
+        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, customer order counts, or order confirmations. Only state a customer's order history when it comes from a verified exact customer match, preferably an exact phone match returned by find_customer; never infer identity from a similar name alone. When product/customer/ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence. An order is confirmed only by an explicit customer confirmation.";
     }
 
     private function analysisUserPrompt(array $lead, array $messages): string
@@ -357,6 +359,12 @@ final class LeadApi extends BaseService
     }
 
     private function saveEvent(string $leadId, string $type, array $payload): void { $this->database->execute('INSERT INTO lead_events (lead_id, event_type, payload_json, created_at) VALUES (:lead, :type, :payload, :created)', [':lead' => $leadId, ':type' => $type, ':payload' => $this->jsonEncode($payload), ':created' => $this->database->nowUtc()]); }
+
+    private function stringOrNull($value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        return $value === '' ? null : $value;
+    }
 
     private function ensureTables(): void
     {

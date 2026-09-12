@@ -107,12 +107,6 @@ export const Dialog: React.FC<DialogProps> = ({
   cancelText = 'Cancel',
   variant = 'info',
 }) => {
-  const colorClass = {
-    info: theme.colors.primary,
-    warning: theme.colors.warning,
-    danger: theme.colors.danger,
-  }[variant];
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
       <p className="text-gray-600 mb-6">{message}</p>
@@ -131,7 +125,9 @@ export const Dialog: React.FC<DialogProps> = ({
           className={`${theme.buttons.base} ${
             variant === 'danger'
               ? theme.buttons.danger
-              : `${colorClass[500 as keyof typeof colorClass]} text-white hover:${colorClass[700]}`
+              : variant === 'warning'
+                ? 'bg-orange-600 text-white hover:bg-orange-700'
+                : `${theme.colors.primary[600]} text-white hover:${theme.colors.primary[700]}`
           } ${theme.buttons.sizes.md}`}
         >
           {confirmText}

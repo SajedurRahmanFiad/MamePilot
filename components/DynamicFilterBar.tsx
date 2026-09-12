@@ -165,8 +165,9 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       setCurrentType(null);
       setCurrentOperator(null);
       setInputValue(currentType || filters.length > 0 ? '' : (rawSearchValue ?? ''));
-      if (inputRef.current === document.activeElement) {
-        inputRef.current.blur();
+      const input = inputRef.current;
+      if (input && input === document.activeElement) {
+        input.blur();
       }
     }
   }, [currentType, filters.length, isOpen, rawSearchValue]);
@@ -175,7 +176,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
   // moving between stages, so an unmounted option cannot reset the badges.
   useEffect(() => {
     if (!isOpen) return;
-    const onDocClick = (e: MouseEvent) => {
+    const onDocClick = (e: Event) => {
       const container = containerRef.current;
       if (!container) return;
       // Selecting a dropdown item changes the stage and unmounts that button
@@ -184,8 +185,8 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
       // The composed path is captured for the whole event dispatch and keeps
       // the original ancestry, so it remains reliable across that rerender.
       if (e.composedPath().includes(container)) return;
-      const target = e.target as Node | null;
-      if (target && container.contains(target)) return;
+      const target = e.target;
+      if (target instanceof Node && container.contains(target)) return;
       setIsOpen(false);
     };
     document.addEventListener('mousedown', onDocClick);
@@ -333,7 +334,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     const normalizedQuery = query.trim().toLowerCase();
     const buildOptions = (items: Array<string | FilterValueOption>) => {
       return normalizeFilterValues(items).filter((item) =>
-        !normalizedQuery || item.label.toLowerCase().includes(normalizedQuery) || item.value.toLowerCase().includes(normalizedQuery)
+        !normalizedQuery || (item.label ?? '').toLowerCase().includes(normalizedQuery) || item.value.toLowerCase().includes(normalizedQuery)
       );
     };
     if (definition.renderOptions) {

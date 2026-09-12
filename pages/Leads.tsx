@@ -38,7 +38,7 @@ const Leads: React.FC = () => {
   const columns = useMemo(() => [
     { key: 'name', label: 'Lead', render: (_: unknown, lead: Lead) => <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 text-sm font-black text-indigo-700">{(lead.name || 'L').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div><div className="min-w-0"><span className="block truncate font-bold text-gray-900">{lead.name || 'Unknown lead'}</span><span className="block truncate text-xs text-gray-400">{lead.phone || 'Phone not captured'}</span></div></div> },
     { key: 'sourceChannel', label: 'Channel', render: (value: string) => <span className="inline-flex items-center gap-1.5 text-sm font-bold text-gray-600">{value === 'whatsapp' ? <Smartphone size={15} className="text-emerald-600" /> : <MessageCircle size={15} className="text-blue-600" />}{label(value)}</span> },
-    { key: 'score', label: 'Order chance', render: (value: number) => <Score value={value} /> },
+    { key: 'orderProbability', label: 'Order chance', render: (value: number) => <Score value={value} /> },
     { key: 'status', label: 'Stage', render: (value: string) => <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusStyles[value] || statusStyles.active}`}>{label(value)}</span> },
     { key: 'lastMessagePreview', label: 'Last message', render: (value: string) => <span className="block max-w-[260px] truncate text-sm text-gray-600">{value || 'No message preview'}</span> },
     { key: 'updatedAt', label: 'Updated', render: (value: string) => <span className="text-sm text-gray-500">{formatDate(value)}</span> },
