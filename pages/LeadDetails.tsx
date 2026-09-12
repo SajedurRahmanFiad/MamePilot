@@ -5,8 +5,8 @@ import { useLead, useLeadIntelligence } from '../src/hooks/useQueries';
 import { useAnalyzeLead } from '../src/hooks/useMutations';
 import type { LeadProfileJson } from '../types';
 
-const legacyProfileValues = (profile: LeadProfileJson) => {
-  const identity = profile.identity as unknown;
+const legacyProfileValues = (profile?: LeadProfileJson) => {
+  const identity = profile?.identity as unknown;
   const values = Array.isArray(identity)
     ? identity.map((item) => item && typeof item === 'object' && 'value' in item ? String(item.value || '') : '').filter(Boolean)
     : [];
@@ -14,7 +14,7 @@ const legacyProfileValues = (profile: LeadProfileJson) => {
     name: Array.isArray(identity) ? values[0] : profile.identity?.name?.value,
     phone: Array.isArray(identity) ? values.find((value) => /^\+?[\d\s().-]{8,}$/.test(value)) : profile.identity?.phone?.value,
     address: Array.isArray(identity) ? values[2] : profile.identity?.address?.value,
-    product: profile.interest?.[0]?.productName || (profile.interest?.[0] as { value?: string } | undefined)?.value,
+    product: profile?.interest?.[0]?.productName || (profile?.interest?.[0] as { value?: string } | undefined)?.value,
   };
 };
 
@@ -27,7 +27,7 @@ const LeadDetails: React.FC = () => {
   const analyze = useAnalyzeLead();
   const lead = intelligenceQuery.data || leadQuery.data;
   const rawProfile = lead?.profile;
-  const profileValues = legacyProfileValues(rawProfile as LeadProfileJson);
+  const profileValues = legacyProfileValues(rawProfile);
   const profile: LeadProfileJson = rawProfile ? {
     ...rawProfile,
     identity: {
