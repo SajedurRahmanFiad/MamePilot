@@ -3,6 +3,20 @@ import { ArrowLeft, Clipboard, Loader2, RefreshCw } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLead, useLeadIntelligence } from '../src/hooks/useQueries';
 import { useAnalyzeLead } from '../src/hooks/useMutations';
+import type { LeadProfileJson } from '../types';
+
+const legacyProfileValues = (profile: LeadProfileJson) => {
+  const identity = profile.identity as unknown;
+  const values = Array.isArray(identity)
+    ? identity.map((item) => item && typeof item === 'object' && 'value' in item ? String(item.value || '') : '').filter(Boolean)
+    : [];
+  return {
+    name: Array.isArray(identity) ? values[0] : profile.identity?.name?.value,
+    phone: Array.isArray(identity) ? values.find((value) => /^\+?[\d\s().-]{8,}$/.test(value)) : profile.identity?.phone?.value,
+    address: Array.isArray(identity) ? values[2] : profile.identity?.address?.value,
+    product: profile.interest?.[0]?.productName || (profile.interest?.[0] as { value?: string } | undefined)?.value,
+  };
+};
 
 const LeadDetails: React.FC = () => {
   const { id } = useParams();
@@ -12,7 +26,21 @@ const LeadDetails: React.FC = () => {
   const intelligenceQuery = useLeadIntelligence({ leadId: id }, Boolean(id));
   const analyze = useAnalyzeLead();
   const lead = intelligenceQuery.data || leadQuery.data;
-  const profile = lead?.profile || {};
+  const rawProfile = lead?.profile;
+  const profileValues = legacyProfileValues(rawProfile as LeadProfileJson);
+  const profile: LeadProfileJson = rawProfile ? {
+    ...rawProfile,
+    identity: {
+      ...(!Array.isArray(rawProfile.identity) ? rawProfile.identity : {}),
+      name: profileValues.name ? { value: profileValues.name } : undefined,
+      phone: profileValues.phone ? { value: profileValues.phone } : undefined,
+      address: profileValues.address ? { value: profileValues.address } : undefined,
+    },
+    interest: rawProfile.interest?.map((interest) => ({
+      ...interest,
+      productName: interest.productName || (interest as { value?: string }).value,
+    })),
+  } : { schemaVersion: 1 };
   const copy = async (value: string) => { if (value) await navigator.clipboard?.writeText(value); };
   if (leadQuery.isPending && !lead) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-indigo-600" /></div>;
   if (intelligenceQuery.error && !lead) return <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-red-600">{(intelligenceQuery.error as Error).message}</div>;

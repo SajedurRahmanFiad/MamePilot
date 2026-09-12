@@ -151,7 +151,7 @@ final class LeadApi extends BaseService
     {
         $previousProfile = $this->jsonDecodeAssoc($lead['profile_json'] ?? []);
         $latestProfile = is_array($decoded['profile'] ?? null) ? $decoded['profile'] : $decoded;
-        $profile = array_replace_recursive($previousProfile, $latestProfile);
+        $profile = $this->normalizeProfileShape(array_replace_recursive($previousProfile, $latestProfile));
         $profile['schemaVersion'] = 1;
         if (!isset($profile['suggestions']) && isset($decoded['suggestions'])) $profile['suggestions'] = $decoded['suggestions'];
         $profile['sales'] = is_array($profile['sales'] ?? null) ? $profile['sales'] : [];
@@ -352,10 +352,31 @@ final class LeadApi extends BaseService
 
     private function mapLead(array $row): array
     {
-        $profile = $this->jsonDecodeAssoc($row['profile_json'] ?? []);
+        $profile = $this->normalizeProfileShape($this->jsonDecodeAssoc($row['profile_json'] ?? []));
         $name = trim((string) ($row['messenger_name'] ?? $row['whatsapp_name'] ?? $row['whatsapp_profile'] ?? '')) ?: (string) ($profile['identity']['name']['value'] ?? 'Unknown lead');
         $phone = (string) ($row['whatsapp_phone'] ?? ($profile['identity']['phone']['value'] ?? ''));
         return ['id' => (string) $row['id'], 'name' => $name, 'phone' => $phone, 'lastMessagePreview' => (string) ($row['messenger_preview'] ?? $row['whatsapp_preview'] ?? ''), 'sourceChannel' => (string) $row['source_channel'], 'messengerContactId' => $row['messenger_contact_id'] ?? null, 'whatsappContactId' => $row['whatsapp_contact_id'] ?? null, 'assignedModelId' => $row['assigned_model_id'] ?? null, 'status' => (string) $row['status'], 'stage' => (string) $row['stage'], 'score' => (float) $row['score'], 'orderProbability' => (float) $row['order_probability'], 'profile' => $profile, 'lastAnalyzedMessageId' => $row['last_analyzed_message_id'] ?? null, 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
+    }
+
+    private function normalizeProfileShape(array $profile): array
+    {
+        if (array_is_list($profile['identity'] ?? null)) {
+            $identity = [];
+            foreach ($profile['identity'] as $field) {
+                if (!is_array($field) || trim((string) ($field['value'] ?? '')) === '') continue;
+                $value = trim((string) $field['value']);
+                $key = preg_match('/^\+?[\d\s().-]{8,}$/', $value) === 1 ? 'phone' : (isset($identity['name']) ? 'address' : 'name');
+                $identity[$key] = $field;
+            }
+            $profile['identity'] = $identity;
+        }
+        if (is_array($profile['interest'] ?? null)) {
+            $profile['interest'] = array_map(static function (array $interest): array {
+                if (!isset($interest['productName']) && isset($interest['value'])) $interest['productName'] = (string) $interest['value'];
+                return $interest;
+            }, $profile['interest']);
+        }
+        return $profile;
     }
 
     private function saveEvent(string $leadId, string $type, array $payload): void { $this->database->execute('INSERT INTO lead_events (lead_id, event_type, payload_json, created_at) VALUES (:lead, :type, :payload, :created)', [':lead' => $leadId, ':type' => $type, ':payload' => $this->jsonEncode($payload), ':created' => $this->database->nowUtc()]); }
