@@ -5133,19 +5133,7 @@ final class OperationsApi extends BaseService
             $shippingBindings
         )['total'] ?? 0);
 
-        // --- COGS (separate query, unique bindings) ---
-        $cogsConditions = [
-            't.deleted_at IS NULL',
-            "t.type = 'Expense'",
-            "t.category = 'expense_purchases'",
-            $txnCompanyCondition,
-        ];
-        $cogsBindings = $txnCompanyBindings;
-        $this->applyDashboardDateTimeBounds('t.date', $filters, $cogsConditions, $cogsBindings, 'cw_cogs');
-        $cogs = (float) ($this->database->fetchOne(
-            'SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE ' . implode(' AND ', $cogsConditions),
-            $cogsBindings
-        )['total'] ?? 0);
+        $cogs = $this->computeCompanywiseCogs($filters, $companyPageIds);
 
         $profit = $income - $shippingCost - $cogs;
 
@@ -5191,6 +5179,59 @@ final class OperationsApi extends BaseService
         } catch (\Throwable) {
             return 0.0;
         }
+    }
+
+    private function computeCompanywiseCogs(array $filters, array $companyPageIds): float
+    {
+        $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
+        $bindings = [];
+        $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_cogs', $companyPageIds, $bindings);
+        if (!empty($filters['fromDate'])) {
+            $orderConditions[] = 'o.order_date >= :cw_cogs_from';
+            $bindings[':cw_cogs_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $orderConditions[] = 'o.order_date <= :cw_cogs_to';
+            $bindings[':cw_cogs_to'] = $filters['toDate'];
+        }
+
+        $rows = $this->database->fetchAll(
+            'SELECT o.status, o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
+            $bindings
+        );
+        $purchasePrices = [];
+        $cogs = 0.0;
+        foreach ($rows as $row) {
+            $status = trim((string) ($row['status'] ?? ''));
+            foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                if (!empty($item['isExchangeReplacement']) && $status !== 'Exchange delivered') {
+                    continue;
+                }
+                $quantity = max(0.0, (float) ($item['quantity'] ?? 0));
+                if (empty($item['isExchangeReplacement'])) {
+                    $quantity = max(0.0, $quantity - (float) ($item['returnedQty'] ?? 0) - (float) ($item['exchangedQty'] ?? 0));
+                }
+                if ($quantity <= 0) {
+                    continue;
+                }
+                $productId = trim((string) ($item['productId'] ?? ''));
+                if ($productId === '') {
+                    continue;
+                }
+                if (!array_key_exists($productId, $purchasePrices)) {
+                    $product = $this->database->fetchOne(
+                        'SELECT purchase_price FROM products WHERE id = :id LIMIT 1',
+                        [':id' => $productId]
+                    );
+                    $purchasePrices[$productId] = max(0.0, (float) ($product['purchase_price'] ?? 0));
+                }
+                $cogs += $purchasePrices[$productId] * $quantity;
+            }
+        }
+        return round($cogs, 2);
     }
 
     private function buildProfitLossCacheKey(array $normalizedParams): string
