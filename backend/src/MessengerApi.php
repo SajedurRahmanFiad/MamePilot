@@ -746,10 +746,20 @@ final class MessengerApi extends BaseService
 
     private function touchConversation(array $contact, string $preview, string $type, string $at, bool $inbound): void
     {
-        $sql = 'UPDATE messenger_contacts SET last_message_preview = :preview, last_message_type = :type, last_message_at = :at, last_message_direction = :direction, updated_at = :updated';
-        if ($inbound) $sql .= ', unread_count = unread_count + 1, last_user_message_at = :at';
+        $sql = 'UPDATE messenger_contacts SET
+                    last_message_preview = CASE WHEN last_message_at IS NULL OR last_message_at <= :preview_at THEN :preview ELSE last_message_preview END,
+                    last_message_type = CASE WHEN last_message_at IS NULL OR last_message_at <= :type_at THEN :type ELSE last_message_type END,
+                    last_message_at = CASE WHEN last_message_at IS NULL OR last_message_at <= :message_at THEN :message_at_value ELSE last_message_at END,
+                    last_message_direction = CASE WHEN last_message_at IS NULL OR last_message_at <= :direction_at THEN :direction ELSE last_message_direction END,
+                    updated_at = :updated';
+        if ($inbound) $sql .= ', unread_count = unread_count + 1, last_user_message_at = :user_message_at';
         $sql .= ' WHERE id = :id';
-        $this->database->execute($sql, [':preview' => $this->preview($preview), ':type' => $type, ':at' => $at, ':direction' => $inbound ? 'inbound' : 'outbound', ':updated' => $this->database->nowUtc(), ':id' => $contact['id']]);
+        $this->database->execute($sql, [
+            ':preview_at' => $at, ':preview' => $this->preview($preview), ':type_at' => $at, ':type' => $type,
+            ':message_at' => $at, ':message_at_value' => $at, ':direction_at' => $at,
+            ':direction' => $inbound ? 'inbound' : 'outbound', ':updated' => $this->database->nowUtc(),
+            ':user_message_at' => $at, ':id' => $contact['id'],
+        ]);
     }
 
     private function touchUserWindow(array $contact, string $at): void
