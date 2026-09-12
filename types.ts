@@ -1905,6 +1905,7 @@ export interface WhatsAppContact {
   unreadCount: number;
   lastMessagePreview: string;
   lastMessageType: string;
+  lastMessageDirection: string;
   lastMessageAt: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;

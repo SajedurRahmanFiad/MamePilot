@@ -379,20 +379,30 @@ final class WhatsAppApi extends BaseService
             $bindings[':search_preview'] = '%' . $search . '%';
         }
         if ($filter === 'unread') {
-            $where[] = 'unread_count > 0';
+            $where[] = "EXISTS (SELECT 1 FROM whatsapp_messages WHERE whatsapp_messages.contact_id = whatsapp_contacts.id AND whatsapp_messages.direction = 'inbound' AND whatsapp_messages.status <> 'read')";
         }
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
         $countRow = $this->database->fetchOne('SELECT COUNT(*) AS total FROM whatsapp_contacts ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
         $rows = $this->database->fetchAll(
-            'SELECT id, wa_id, phone_number, name, profile_name, unread_count, last_message_preview,
-                    last_message_type, last_message_at, created_at, updated_at
+                'SELECT id, wa_id, phone_number, name, profile_name, unread_count, last_message_preview,
+                    last_message_type, last_message_at, created_at, updated_at,
+                    (SELECT direction FROM whatsapp_messages
+                     WHERE whatsapp_messages.contact_id = whatsapp_contacts.id
+                     ORDER BY message_at DESC, created_at DESC, id DESC LIMIT 1) AS last_message_direction,
+                    (SELECT COUNT(*) FROM whatsapp_messages
+                     WHERE whatsapp_messages.contact_id = whatsapp_contacts.id
+                       AND whatsapp_messages.direction = \'inbound\'
+                       AND whatsapp_messages.status <> \'read\') AS actual_unread_count
              FROM whatsapp_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
             $bindings
         );
 
         return [
-            'data' => array_map(fn(array $row): array => $this->mapContact($row), $rows),
+            'data' => array_map(function (array $row): array {
+                $row['unread_count'] = $row['actual_unread_count'] ?? $row['unread_count'] ?? 0;
+                return $this->mapContact($row);
+            }, $rows),
             'count' => (int) ($countRow['total'] ?? 0),
             'configured' => $this->isConfigured($this->settingsRow()),
         ];
@@ -1242,7 +1252,9 @@ final class WhatsAppApi extends BaseService
     private function mapContact(array $row): array
     {
         $name = trim((string) ($row['name'] ?? '')) ?: trim((string) ($row['profile_name'] ?? '')) ?: (string) ($row['wa_id'] ?? 'Unknown contact');
-        return ['id' => (string) ($row['id'] ?? ''), 'waId' => (string) ($row['wa_id'] ?? ''), 'phoneNumber' => (string) ($row['phone_number'] ?? $row['wa_id'] ?? ''), 'name' => $name, 'profileName' => (string) ($row['profile_name'] ?? ''), 'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => (string) ($row['last_message_preview'] ?? ''), 'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
+        $preview = (string) ($row['last_message_preview'] ?? '');
+        if (($row['last_message_direction'] ?? '') === 'outbound' && $preview !== '') $preview = 'You: ' . $preview;
+        return ['id' => (string) ($row['id'] ?? ''), 'waId' => (string) ($row['wa_id'] ?? ''), 'phoneNumber' => (string) ($row['phone_number'] ?? $row['wa_id'] ?? ''), 'name' => $name, 'profileName' => (string) ($row['profile_name'] ?? ''), 'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => $preview, 'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageDirection' => (string) ($row['last_message_direction'] ?? ''), 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
     }
 
     /** @return array<string, mixed> */

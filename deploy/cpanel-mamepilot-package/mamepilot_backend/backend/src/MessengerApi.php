@@ -196,17 +196,25 @@ final class MessengerApi extends BaseService
             $where[] = '(name LIKE :name OR first_name LIKE :first OR last_name LIKE :last OR psid LIKE :psid OR last_message_preview LIKE :preview)';
             foreach ([':name', ':first', ':last', ':psid', ':preview'] as $key) $bindings[$key] = '%' . $search . '%';
         }
-        if ($filter === 'unread') $where[] = 'unread_count > 0';
+        if ($filter === 'unread') $where[] = "EXISTS (SELECT 1 FROM messenger_messages WHERE messenger_messages.contact_id = messenger_contacts.id AND messenger_messages.direction = 'inbound' AND messenger_messages.status <> 'read')";
         $whereSql = $where === [] ? '' : 'WHERE ' . implode(' AND ', $where);
         $count = $this->database->fetchOne('SELECT COUNT(*) AS total FROM messenger_contacts ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
         $rows = $this->database->fetchAll(
-            'SELECT * FROM messenger_contacts ' . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+                        "SELECT messenger_contacts.*,
+                                        (SELECT COUNT(*) FROM messenger_messages
+                                         WHERE messenger_messages.contact_id = messenger_contacts.id
+                                             AND messenger_messages.direction = 'inbound'
+                                               AND messenger_messages.status <> 'read') AS actual_unread_count
+                         FROM messenger_contacts " . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
             $bindings
         );
         $settings = $this->settingsRow();
         return [
-            'data' => array_map(fn(array $row): array => $this->mapContact($row, $settings), $rows),
+            'data' => array_map(function (array $row): array {
+                $row['unread_count'] = $row['actual_unread_count'] ?? $row['unread_count'] ?? 0;
+                return $this->mapContact($row, $settings);
+            }, $rows),
             'count' => (int) ($count['total'] ?? 0),
             'configured' => $this->isConfigured($settings),
         ];
@@ -904,11 +912,13 @@ final class MessengerApi extends BaseService
         $humanEnabled = !empty($this->settingsWithEnvironment($settings)['human_agent_enabled']);
         $window = $age <= 86400 ? 'standard' : (($humanEnabled && $age <= 604800) ? 'human_agent' : 'closed');
         $name = trim((string) ($row['name'] ?? '')) ?: trim((string) (($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? ''))) ?: 'Messenger customer';
+        $preview = (string) ($row['last_message_preview'] ?? '');
+        if (($row['last_message_direction'] ?? '') === 'outbound' && $preview !== '') $preview = 'You: ' . $preview;
         return [
             'id' => (string) ($row['id'] ?? ''), 'psid' => (string) ($row['psid'] ?? ''), 'name' => $name,
             'firstName' => (string) ($row['first_name'] ?? ''), 'lastName' => (string) ($row['last_name'] ?? ''),
             'profilePictureUrl' => (string) ($row['profile_picture_url'] ?? ''), 'locale' => (string) ($row['locale'] ?? ''),
-            'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => (string) ($row['last_message_preview'] ?? ''),
+            'unreadCount' => (int) ($row['unread_count'] ?? 0), 'lastMessagePreview' => $preview,
             'lastMessageType' => (string) ($row['last_message_type'] ?? ''), 'lastMessageDirection' => (string) ($row['last_message_direction'] ?? ''),
             'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null),
             'lastUserMessageAt' => $this->toIso($lastResolved), 'canReply' => $window !== 'closed', 'replyWindow' => $window,
