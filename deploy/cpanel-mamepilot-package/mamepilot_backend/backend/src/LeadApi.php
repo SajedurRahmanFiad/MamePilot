@@ -360,7 +360,7 @@ final class LeadApi extends BaseService
 
     private function normalizeProfileShape(array $profile): array
     {
-        if (array_is_list($profile['identity'] ?? null)) {
+        if (is_array($profile['identity'] ?? null) && array_is_list($profile['identity'])) {
             $identity = [];
             foreach ($profile['identity'] as $field) {
                 if (!is_array($field) || trim((string) ($field['value'] ?? '')) === '') continue;
