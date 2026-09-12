@@ -135,7 +135,7 @@ const MessageBubble: React.FC<{
         </div>
         {message.quickReplies?.length > 0 && <div className="mt-1.5 flex flex-wrap justify-end gap-1.5">{message.quickReplies.map((reply, index) => <span key={`${reply.title}-${index}`} className="rounded-full border border-[#0866ff] bg-white px-3 py-1 text-xs font-bold text-[#0866ff]">{reply.title}</span>)}</div>}
         {message.reaction && <button type="button" onClick={() => onReact('')} className={`absolute -bottom-3 ${outgoing ? 'right-1' : 'left-1'} rounded-full border-2 border-white bg-white px-1.5 py-0.5 text-sm shadow`}>{message.reaction}</button>}
-        <div className={`mt-1 flex items-center gap-1 px-1 text-[10px] text-gray-400 ${outgoing ? 'justify-end' : 'justify-start'}`}><span>{formatTime(message.messageAt)}</span>{outgoing && <span className="flex items-center gap-0.5">{message.status === 'read' || message.status === 'delivered' ? <><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /></> : <Check size={11} />}</span>}{message.status === 'failed' && <AlertCircle size={12} className="text-red-500" />}</div>
+        <div className={`mt-1 flex items-center gap-1 px-1 text-[10px] text-gray-400 ${outgoing ? 'justify-end' : 'justify-start'}`}><span>{formatTime(message.messageAt)}</span>{outgoing && message.status === 'sending' && <span>Sending...</span>}{outgoing && message.status !== 'sending' && <span className="flex items-center gap-0.5">{message.status === 'read' || message.status === 'delivered' ? <><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /><Check size={11} className={message.status === 'read' ? 'text-[#0866ff]' : ''} /></> : <Check size={11} />}</span>}{message.status === 'failed' && <AlertCircle size={12} className="text-red-500" />}</div>
         {message.errorMessage && <p className="max-w-sm px-1 text-right text-[11px] font-medium text-red-600">{message.errorMessage}</p>}
       </div>
       {!outgoing && <button type="button" onClick={onReply} className="mb-1 rounded-full p-1.5 text-gray-400 opacity-0 transition hover:bg-gray-100 group-hover:opacity-100 focus:opacity-100"><Reply size={16} /></button>}
@@ -174,6 +174,8 @@ const MessengerPage: React.FC = () => {
   const [choicesOpen, setChoicesOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessengerMessage | null>(null);
+  const [pendingMessages, setPendingMessages] = useState<MessengerMessage[]>([]);
+  const [selectedAttachment, setSelectedAttachment] = useState<{ file: File; dataUrl: string } | null>(null);
   const [recording, setRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -189,7 +191,7 @@ const MessengerPage: React.FC = () => {
   const contactPageCount = Math.max(1, Math.ceil(contactCount / CONTACT_PAGE_SIZE));
   const messagesQuery = useMessengerMessages(selectedId, Boolean(selectedId));
   const leadIntelligence = useLeadIntelligence({ channel: 'messenger', contactId: selectedId || undefined }, infoOpen && Boolean(selectedId));
-  const messages = messagesQuery.data?.data || [];
+  const messages = [...(messagesQuery.data?.data || []), ...pendingMessages.filter((message) => message.contactId === selectedId)];
   const selectedContact = messagesQuery.data?.contact || contacts.find((contact) => contact.id === selectedId) || null;
   const markRead = useMarkMessengerConversationRead();
   const sendText = useSendMessengerMessage();
@@ -233,8 +235,11 @@ const MessengerPage: React.FC = () => {
   const handleSendText = async (text = draft) => {
     if (!selectedId || !text.trim() || busy) return;
     stopTyping();
-    try { await sendText.mutateAsync({ contactId: selectedId, text: text.trim(), replyToMid: replyingTo?.mid || undefined }); setDraft(''); setReplyingTo(null); setEmojiOpen(false); }
-    catch (error) { toast.error(friendlyError(error, 'Message could not be sent. Please try again.')); }
+    const pending = createPendingMessage(selectedId, 'text', text.trim(), replyingTo?.mid || '');
+    setPendingMessages((current) => [...current, pending]);
+    setDraft(''); setReplyingTo(null); setEmojiOpen(false);
+    try { await sendText.mutateAsync({ contactId: selectedId, text: text.trim(), replyToMid: pending.replyToMid || undefined }); setPendingMessages((current) => current.filter((message) => message.id !== pending.id)); }
+    catch (error) { setPendingMessages((current) => current.map((message) => message.id === pending.id ? { ...message, status: 'failed', errorMessage: friendlyError(error, 'Message could not be sent. Please try again.') } : message)); toast.error(friendlyError(error, 'Message could not be sent. Please try again.')); }
   };
   const sendSuggestedReply = async (suggestion: { id: string; text: string }) => {
     if (!selectedId || busy) return;
@@ -246,12 +251,21 @@ const MessengerPage: React.FC = () => {
     }
   };
   const fileToDataUrl = (file: File) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(new Error('Could not read the selected file.')); reader.readAsDataURL(file); });
-  const sendFile = async (file: File) => {
-    if (!selectedId) return;
-    try { const dataUrl = await fileToDataUrl(file); await sendMedia.mutateAsync({ contactId: selectedId, dataUrl, fileName: file.name, mimeType: file.type || 'application/octet-stream', replyToMid: replyingTo?.mid || undefined }); setReplyingTo(null); }
-    catch (error) { toast.error(friendlyError(error, 'Attachment could not be sent. Please try again.')); }
+  const createPendingMessage = (contactId: string, type: string, text: string, replyToMid = '', dataUrl = '', fileName = ''): MessengerMessage => ({
+    id: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`, mid: '', contactId, direction: 'outbound', type, text,
+    attachmentUrl: dataUrl, attachmentId: '', attachments: dataUrl ? [{ type, url: dataUrl, title: fileName }] : [], mimeType: '', fileName,
+    status: 'sending', errorCode: '', errorMessage: '', replyToMid, reaction: '', reactionActor: '', quickReplies: [],
+    messageAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  const sendFile = async (file: File, dataUrl: string) => {
+    if (!selectedId || sendMedia.isPending) return;
+    const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'file';
+    const pending = createPendingMessage(selectedId, type, '', replyingTo?.mid || '', dataUrl, file.name);
+    setPendingMessages((current) => [...current, pending]); setSelectedAttachment(null); setReplyingTo(null);
+    try { await sendMedia.mutateAsync({ contactId: selectedId, dataUrl, fileName: file.name, mimeType: file.type || 'application/octet-stream', replyToMid: pending.replyToMid || undefined }); setPendingMessages((current) => current.filter((message) => message.id !== pending.id)); }
+    catch (error) { setPendingMessages((current) => current.map((message) => message.id === pending.id ? { ...message, status: 'failed', errorMessage: friendlyError(error, 'Attachment could not be sent. Please try again.') } : message)); toast.error(friendlyError(error, 'Attachment could not be sent. Please try again.')); }
   };
-  const handleFiles = async (files: FileList | null) => { for (const file of Array.from(files || [])) await sendFile(file); if (fileInputRef.current) fileInputRef.current.value = ''; };
+  const handleFiles = async (files: FileList | null) => { const file = files?.[0]; if (file) setSelectedAttachment({ file, dataUrl: await fileToDataUrl(file) }); if (fileInputRef.current) fileInputRef.current.value = ''; };
   const toggleRecording = async () => {
     if (recording) { recorderRef.current?.stop(); setRecording(false); return; }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { toast.error('Voice recording is not supported in this browser.'); return; }
@@ -259,7 +273,7 @@ const MessengerPage: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); recorderStreamRef.current = stream; audioChunksRef.current = [];
       const recorder = new MediaRecorder(stream); recorderRef.current = recorder;
       recorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
-      recorder.onstop = async () => { const mimeType = (recorder.mimeType || 'audio/webm').split(';')[0]; const blob = new Blob(audioChunksRef.current, { type: mimeType }); stream.getTracks().forEach((track) => track.stop()); recorderStreamRef.current = null; const file = new File([blob], `voice-${Date.now()}.webm`, { type: mimeType }); await sendFile(file); };
+      recorder.onstop = async () => { const mimeType = (recorder.mimeType || 'audio/webm').split(';')[0]; const blob = new Blob(audioChunksRef.current, { type: mimeType }); stream.getTracks().forEach((track) => track.stop()); recorderStreamRef.current = null; const file = new File([blob], `voice-${Date.now()}.webm`, { type: mimeType }); await sendFile(file, await fileToDataUrl(file)); };
       recorder.start(); setRecording(true);
     } catch { toast.error('Microphone access was not available.'); }
   };
@@ -290,6 +304,7 @@ const MessengerPage: React.FC = () => {
           </div>
           <footer className="shrink-0 border-t border-gray-100 bg-white px-2 pb-3 pt-2 sm:px-4">
             {replyingTo && <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-xl bg-gray-50 px-3 py-2"><div className="min-w-0 flex-1 border-l-2 border-[#0866ff] pl-3"><p className="text-xs font-black text-[#0866ff]">Replying to {replyingTo.direction === 'outbound' ? 'your Page' : selectedContact.name}</p><p className="truncate text-xs text-gray-500">{replyingTo.text || replyingTo.fileName || replyingTo.type}</p></div><button type="button" onClick={() => setReplyingTo(null)} className="rounded-full p-1.5 hover:bg-gray-200"><X size={15} /></button></div>}
+            {selectedAttachment && <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-2.5"><div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">{selectedAttachment.file.type.startsWith('image/') ? <img src={selectedAttachment.dataUrl} alt={selectedAttachment.file.name} className="h-full w-full object-cover" /> : selectedAttachment.file.type.startsWith('video/') ? <video src={selectedAttachment.dataUrl} className="h-full w-full object-cover" /> : <FileText className="text-[#0866ff]" />}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-gray-800">{selectedAttachment.file.name}</p><p className="text-xs text-gray-500">Ready to send</p></div><button type="button" onClick={() => setSelectedAttachment(null)} className="rounded-full p-2 text-gray-500 hover:bg-white" aria-label="Remove attachment"><X size={17} /></button><button type="button" disabled={busy} onClick={() => sendFile(selectedAttachment.file, selectedAttachment.dataUrl)} className="rounded-full bg-[#0866ff] p-2.5 text-white hover:bg-blue-700 disabled:opacity-40" aria-label="Send attachment"><Send size={18} fill="currentColor" /></button></div>}
             <div className="relative mx-auto flex max-w-3xl items-end gap-1.5">
               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => handleFiles(event.target.files)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.txt" />
               <div className="relative"><button type="button" disabled={!selectedContact.canReply || busy} onClick={() => setMoreOpen((value) => !value)} className="rounded-full p-2.5 text-[#0866ff] hover:bg-blue-50 disabled:opacity-40"><Plus size={22} /></button>{moreOpen && <div className="absolute bottom-full left-0 z-30 mb-2 w-52 rounded-2xl border border-gray-100 bg-white p-2 shadow-xl"><button type="button" onClick={() => { fileInputRef.current?.click(); setMoreOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold hover:bg-gray-50"><Paperclip size={18} className="text-[#0866ff]" /> Add attachment</button><button type="button" onClick={() => { setChoicesOpen(true); setMoreOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold hover:bg-gray-50"><MoreHorizontal size={18} className="text-[#0866ff]" /> Reply choices</button><button type="button" onClick={() => { setCardOpen(true); setMoreOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold hover:bg-gray-50"><ImageIcon size={18} className="text-[#0866ff]" /> Share a card</button></div>}</div>
