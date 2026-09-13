@@ -5005,40 +5005,6 @@ final class OperationsApi extends BaseService
         $filters = $this->buildDashboardDateFilters($normalizedParams);
         $hasCompanyFilter = !empty($companyPageIds);
 
-        // Transaction-company condition (for shipping/cogs queries)
-        $txnCompanyCondition = '1 = 1';
-        $txnCompanyBindings = [];
-        if ($hasCompanyFilter) {
-            $companyNamesById = [];
-            foreach ($this->fetchCompanyPages() as $companyPage) {
-                $pageId = trim((string) ($companyPage['id'] ?? ''));
-                $pageName = trim((string) ($companyPage['name'] ?? ''));
-                if ($pageId !== '' && $pageName !== '') {
-                    $companyNamesById[$pageId] = $pageName;
-                }
-            }
-            $txnOrClauses = [];
-            foreach ($companyPageIds as $i => $cid) {
-                $txnCompanyMatch = 't_co.page_id = :cw_txn_page_' . $i . ' OR (
-                    NULLIF(TRIM(t_co.page_id), \'\') IS NULL
-                    AND JSON_UNQUOTE(JSON_EXTRACT(t_co.page_snapshot, \'$.id\')) = :cw_txn_snap_' . $i . '
-                )';
-                $txnCompanyBindings[':cw_txn_page_' . $i] = $cid;
-                $txnCompanyBindings[':cw_txn_snap_' . $i] = $cid;
-                $companyName = $companyNamesById[(string) $cid] ?? '';
-                if ($companyName !== '') {
-                    $txnCompanyMatch .= ' OR JSON_UNQUOTE(JSON_EXTRACT(t_co.page_snapshot, \'$.name\')) = :cw_txn_name_' . $i;
-                    $txnCompanyBindings[':cw_txn_name_' . $i] = $companyName;
-                }
-                $txnOrClauses[] = '(' . $txnCompanyMatch . ')';
-            }
-            $txnCompanyCondition = 'EXISTS (
-                SELECT 1 FROM orders t_co
-                WHERE t_co.id = t.reference_id AND t_co.deleted_at IS NULL
-                AND (' . implode(' OR ', $txnOrClauses) . ')
-            )';
-        }
-
         $exchangeDeliveredItemCondition = "(
             COALESCE(o.items, '') LIKE '%\"isExchangeReplacement\":true%'
             OR COALESCE(o.items, '') REGEXP '\"exchangedQty\"[[:space:]]*:[[:space:]]*(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*([.][0-9]+)?)'
@@ -5119,15 +5085,41 @@ final class OperationsApi extends BaseService
         // --- Products sold (separate query, unique bindings) ---
         $productsSold = $this->computeCompanywiseProductsSold($filters, $companyPageIds);
 
-        // --- Shipping costs (separate query, unique bindings) ---
+        // --- Shipping costs for all orders created in the selected period ---
+        $shippingCategory = $this->database->fetchOne(
+            "SELECT id FROM categories WHERE name = 'Shipping Costs' AND type = 'Expense' LIMIT 1"
+        );
+        $shippingOrderConditions = ['shipping_order.deleted_at IS NULL'];
+        $shippingOrderBindings = [];
+        if (!empty($filters['fromDate'])) {
+            $shippingOrderConditions[] = 'shipping_order.order_date >= :cw_ship_order_from';
+            $shippingOrderBindings[':cw_ship_order_from'] = $filters['fromDate'];
+        }
+        if (!empty($filters['toDate'])) {
+            $shippingOrderConditions[] = 'shipping_order.order_date <= :cw_ship_order_to';
+            $shippingOrderBindings[':cw_ship_order_to'] = $filters['toDate'];
+        }
+        $shippingOrderCompanyWhere = $this->buildProfitLossCompanyFilter(
+            'shipping_order',
+            'cw_ship_order',
+            $companyPageIds,
+            $shippingOrderBindings
+        );
         $shippingConditions = [
             't.deleted_at IS NULL',
             "t.type = 'Expense'",
-            $txnCompanyCondition,
-            "(LOWER(t.description) LIKE '%shipping cost%' OR LOWER(t.description) LIKE '%courier shipping%')",
+            't.category = :cw_ship_category',
+            'EXISTS (
+                SELECT 1
+                FROM orders shipping_order
+                WHERE shipping_order.id = t.reference_id
+                  AND ' . implode(' AND ', $shippingOrderConditions) . $shippingOrderCompanyWhere . '
+            )',
         ];
-        $shippingBindings = $txnCompanyBindings;
-        $this->applyDashboardDateTimeBounds('t.date', $filters, $shippingConditions, $shippingBindings, 'cw_ship');
+        $shippingBindings = array_merge(
+            [':cw_ship_category' => trim((string) ($shippingCategory['id'] ?? '')) ?: 'expense_shipping'],
+            $shippingOrderBindings
+        );
         $shippingCost = (float) ($this->database->fetchOne(
             'SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE ' . implode(' AND ', $shippingConditions),
             $shippingBindings
