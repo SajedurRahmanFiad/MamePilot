@@ -2562,6 +2562,31 @@ final class OperationsApi extends BaseService
             ], $events);
         }
 
+        $order['additionalExpenses'] = [];
+        $additionalExpenseRows = $this->database->fetchAll(
+            "SELECT COALESCE(NULLIF(c.name, ''), NULLIF(t.category, ''), 'Uncategorized') AS category_name,
+                    COALESCE(SUM(t.amount), 0) AS amount
+             FROM transactions t
+             LEFT JOIN categories c ON c.id = t.category
+             WHERE t.deleted_at IS NULL
+               AND t.type = 'Expense'
+               AND t.reference_id = :order_id
+               AND t.description LIKE :description_prefix
+             GROUP BY category_name
+             ORDER BY category_name ASC",
+            [
+                ':order_id' => (string) $row['id'],
+                ':description_prefix' => 'Additional delivery expense for Order #%',
+            ]
+        );
+        $order['additionalExpenses'] = array_values(array_map(
+            static fn(array $expense): array => [
+                'categoryName' => (string) ($expense['category_name'] ?? 'Uncategorized'),
+                'amount' => (float) ($expense['amount'] ?? 0),
+            ],
+            $additionalExpenseRows
+        ));
+
         $order['courierAutomaticExpenseRecorded'] = false;
         if ($this->tableExists('courier_order_charges')) {
             $autoCharge = $this->database->fetchOne(

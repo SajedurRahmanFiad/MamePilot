@@ -930,6 +930,10 @@ export interface Order {
   creatorName?: string;
   pendingTransactionCount?: number;
   pendingTransactionIds?: string[];
+  additionalExpenses?: Array<{
+    categoryName: string;
+    amount: number;
+  }>;
   courierAutomaticExpenseRecorded?: boolean;
 }
 

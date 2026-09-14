@@ -954,6 +954,7 @@ const OrderDetails: React.FC = () => {
   if (!user) return <div className="p-8 text-center text-gray-500">Loading order access...</div>;
   if (loading) return <div className="p-8 text-center text-gray-500">Loading order...</div>;
   if (orderError || !order) return <div className="p-8 text-center text-gray-500">{orderError?.message || 'Order not found.'}</div>;
+  const additionalExpenses = order.additionalExpenses ?? [];
   let canEditCurrentOrder = false;
   if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
     canEditCurrentOrder = can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
@@ -2085,6 +2086,12 @@ const OrderDetails: React.FC = () => {
                     <span className="text-xs text-gray-500 font-medium">Customer Refund Due</span>
                     <span className="font-bold text-orange-600">{formatCurrency(Math.max(order.paidAmount - settlementTotal, 0))}</span>
                   </div>
+                  {additionalExpenses.map((expense) => (
+                    <div key={expense.categoryName} className="flex justify-between items-center py-2 border-t border-gray-100">
+                      <span className="text-xs text-gray-500 font-medium">{expense.categoryName}</span>
+                      <span className="font-bold text-gray-900">{formatCurrency(expense.amount)}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="space-y-2 pt-2">
@@ -2179,6 +2186,15 @@ const OrderDetails: React.FC = () => {
                               {getTimelineLabel(item, index)}
                               <span className={`text-xs font-medium ${isUnavailableBranch ? 'text-gray-400' : 'text-gray-500'}`}>{getStatusSuffix(item, index)}</span>
                             </div>
+                            {isActive && additionalExpenses.length > 0 && (
+                              <div className="mt-1 space-y-0.5 text-xs text-gray-600">
+                                {additionalExpenses.map((expense) => (
+                                  <div key={expense.categoryName}>
+                                    {expense.categoryName}: {formatCurrency(expense.amount)}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
