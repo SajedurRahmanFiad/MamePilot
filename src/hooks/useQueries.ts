@@ -501,7 +501,7 @@ export function useOrderSearchPreview(
 export function useOrdersPage(
   page: number = 1,
   pageSize: number = DEFAULT_PAGE_SIZE,
-  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean; pos?: boolean },
+  filters?: { status?: string; statusNot?: string; paymentStatus?: string; paymentStatusNot?: string; orderNumber?: string; orderNumberNot?: string; customerName?: string; customerNameNot?: string; customerPhone?: string; customerPhoneNot?: string; company?: string; companyNot?: string; courier?: string; courierNot?: string; sourceAd?: string; sourceAdNot?: string; from?: string; to?: string; createdFrom?: string; createdTo?: string; search?: string; createdByIds?: string[]; createdByNotIds?: string[]; statusHistoryField?: string | null; filterByStatusChange?: boolean; pos?: boolean },
   options?: { enabled?: boolean }
 ): UseQueryResult<{ data: Order[]; count: number }, Error> {
   return useQuery({

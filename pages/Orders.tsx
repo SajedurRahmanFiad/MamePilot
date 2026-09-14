@@ -133,6 +133,10 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     from: searchParams.get('from') || '',
     to: searchParams.get('to') || '',
   };
+  const urlCreatedDates = {
+    from: searchParams.get('createdFrom') || '',
+    to: searchParams.get('createdTo') || '',
+  };
   const urlIncludeTime = searchParams.get('includeTime') === 'true';
   const { searchQuery, setSearchQuery } = useUrlSyncedSearchQuery(searchParams.get('search') || '');
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
@@ -140,6 +144,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
 
   const [filterRange, setFilterRange] = useState<FilterRange>(urlFilterRange);
   const [customDates, setCustomDates] = useState(urlCustomDates);
+  const [createdDates, setCreatedDates] = useState(urlCreatedDates);
   const [includeTime, setIncludeTime] = useState<boolean>(urlIncludeTime);
   const [statusTab, setStatusTab] = useState<OrderStatus | 'All'>(urlStatusTab);
   const [statusNot, setStatusNot] = useState<string>(urlStatusNot);
@@ -216,6 +221,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     setCreatedByNot(urlCreatedByNot);
     setFilterRange(urlFilterRange);
     setCustomDates(urlCustomDates);
+    setCreatedDates(urlCreatedDates);
     setIncludeTime(urlIncludeTime);
     setSyncedSearchParams(currentSearchParams);
   }, [
@@ -237,6 +243,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     urlCreatedByNot,
     urlFilterRange,
     urlCustomDates,
+    urlCreatedDates,
     urlIncludeTime,
     currentSearchParams,
   ]);
@@ -283,6 +290,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
   const effectiveCreatedByNot = shouldHydrateFromUrl ? urlCreatedByNot : createdByNot;
   const effectiveFilterRange = shouldHydrateFromUrl ? urlFilterRange : filterRange;
   const effectiveCustomDates = shouldHydrateFromUrl ? urlCustomDates : customDates;
+  const effectiveCreatedDates = shouldHydrateFromUrl ? urlCreatedDates : createdDates;
   const effectiveIncludeTime = shouldHydrateFromUrl ? urlIncludeTime : includeTime;
 
   // Compute server-side created_at range based on selected filter
@@ -351,6 +359,8 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     sourceAdNot: effectiveSourceAdNot || undefined,
     from: timeFilters.from,
     to: timeFilters.to,
+    createdFrom: effectiveCreatedDates.from,
+    createdTo: effectiveCreatedDates.to,
     statusHistoryField,
     filterByStatusChange,
     search: searchQuery,
@@ -638,12 +648,12 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     if (urlCreatedByNot) {
       filters.push({ id: `createdByNot-${urlCreatedByNot}`, type: 'Created by', operator: '≠', value: urlCreatedByNot, display: getCreatorFilterLabel(urlCreatedByNot) });
     }
-    if (urlCustomDates.from || urlCustomDates.to) {
-      const operator = urlCustomDates.from && urlCustomDates.to ? 'within' : urlCustomDates.from ? 'after' : 'before';
-      const value = urlCustomDates.from && urlCustomDates.to
-        ? `${urlCustomDates.from}|${urlCustomDates.to}`
-        : urlCustomDates.from || urlCustomDates.to;
-      filters.push({ id: 'created-date', type: 'Created', operator: operator as CombinedFilter['operator'], value, display: urlCustomDates.from && urlCustomDates.to ? `${formatDateDisplay(urlCustomDates.from)} - ${formatDateDisplay(urlCustomDates.to)}` : formatDateDisplay(value) });
+    if (urlCreatedDates.from || urlCreatedDates.to) {
+      const operator = urlCreatedDates.from && urlCreatedDates.to ? 'within' : urlCreatedDates.from ? 'after' : 'before';
+      const value = urlCreatedDates.from && urlCreatedDates.to
+        ? `${urlCreatedDates.from}|${urlCreatedDates.to}`
+        : urlCreatedDates.from || urlCreatedDates.to;
+      filters.push({ id: 'created-date', type: 'Created', operator: operator as CombinedFilter['operator'], value, display: urlCreatedDates.from && urlCreatedDates.to ? `${formatDateDisplay(urlCreatedDates.from)} - ${formatDateDisplay(urlCreatedDates.to)}` : formatDateDisplay(value) });
     }
     return filters;
   }, [
@@ -665,6 +675,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     urlSourceAdNot,
     urlCreatedByFilter,
     urlCreatedByNot,
+    urlCreatedDates,
     users,
     getSourceAdLabel,
   ]);
@@ -693,6 +704,8 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     if (effectiveFilterRange && effectiveFilterRange !== 'All Time') params.range = effectiveFilterRange;
     if (effectiveCustomDates.from) params.from = effectiveCustomDates.from;
     if (effectiveCustomDates.to) params.to = effectiveCustomDates.to;
+    if (effectiveCreatedDates.from) params.createdFrom = effectiveCreatedDates.from;
+    if (effectiveCreatedDates.to) params.createdTo = effectiveCreatedDates.to;
     if (effectiveIncludeTime) params.includeTime = 'true';
     if (effectiveCreatedByFilter && effectiveCreatedByFilter !== 'all') params.createdBy = effectiveCreatedByFilter;
     if (effectiveCreatedByNot) params.createdByNot = effectiveCreatedByNot;
@@ -725,6 +738,8 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     effectiveFilterRange,
     effectiveCustomDates.from,
     effectiveCustomDates.to,
+    effectiveCreatedDates.from,
+    effectiveCreatedDates.to,
     effectiveIncludeTime,
     effectiveCreatedByFilter,
     effectiveCreatedByNot,
@@ -1345,11 +1360,9 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                   : createdDateFilter.operator === 'before'
                     ? ['', createdDateFilter.value]
                     : [createdDateFilter.value, createdDateFilter.value];
-              setFilterRange('Custom');
-              setCustomDates({ from: from || '', to: to || '' });
+              setCreatedDates({ from: from || '', to: to || '' });
             } else {
-              setFilterRange('All Time');
-              setCustomDates({ from: '', to: '' });
+              setCreatedDates({ from: '', to: '' });
             }
 
             const orderIdFilter = appliedFilters.find(f => f.type === 'Order ID' && (f.operator === '=' || f.operator === 'contains'));
@@ -1454,7 +1467,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
 
             // other filters => search string
             const searchTerms = appliedFilters
-              .filter(f => !['Order Status', 'Payment Status', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone', 'Company', 'Assigned courier', 'Source Ad'].includes(f.type))
+              .filter(f => !['Order Status', 'Payment Status', 'Created', 'Created by', 'Order ID', 'Customer Name', 'Customer Phone', 'Company', 'Assigned courier', 'Source Ad'].includes(f.type))
               .map(f => f.value);
             if (searchTerms.length > 0) params.search = searchTerms.join(' ');
 
@@ -1462,6 +1475,8 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
             if (filterRange && filterRange !== 'All Time') params.range = filterRange;
             if (customDates.from) params.from = customDates.from;
             if (customDates.to) params.to = customDates.to;
+            if (createdDates.from) params.createdFrom = createdDates.from;
+            if (createdDates.to) params.createdTo = createdDates.to;
             if (includeTime) params.includeTime = 'true';
 
             setSearchParams(params, { replace: true });

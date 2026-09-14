@@ -2073,6 +2073,15 @@ final class OperationsApi extends BaseService
             $bindings[':to'] = $toFilter;
         }
 
+        if (!empty($filters['createdFrom'])) {
+            $where .= ' AND createdAt >= :created_from';
+            $bindings[':created_from'] = $this->normalizeDateTimeInput((string) $filters['createdFrom']);
+        }
+        if (!empty($filters['createdTo'])) {
+            $where .= ' AND createdAt <= :created_to';
+            $bindings[':created_to'] = $this->normalizeDateTimeInput((string) $filters['createdTo']);
+        }
+
         $createdByIds = is_array($filters['createdByIds'] ?? null) ? $filters['createdByIds'] : [];
         $createdByIds = array_values(array_filter(array_map('strval', $createdByIds), static fn(string $id): bool => trim($id) !== ''));
         if ($createdByIds !== []) {
