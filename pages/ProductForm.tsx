@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { db } from '../db';
-import { Product, DynamicPricingRule, UserRole, isEmployeeRole } from '../types';
+import { Product, DynamicPricingRule, UserRole, isEmployeeRole, VaccineDosageRule, VaccineScheduleRule } from '../types';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { compressImage } from '../utils';
@@ -113,6 +113,8 @@ const ProductForm: React.FC = () => {
   // Dynamic pricing state
   const [dynamicPricingEnabled, setDynamicPricingEnabled] = useState(false);
   const [pricingRules, setPricingRules] = useState<DynamicPricingRule[]>([]);
+  const [dosageRules, setDosageRules] = useState<VaccineDosageRule[]>([]);
+  const [scheduleRules, setScheduleRules] = useState<VaccineScheduleRule[]>([]);
 
   // Determine if selected unit allows fractional stock
   const selectedUnit = useMemo(() => units.find(u => u.id === form.unitId), [units, form.unitId]);
@@ -146,8 +148,19 @@ const ProductForm: React.FC = () => {
     return { valid: true, error: null };
   }, [dynamicPricingEnabled, pricingRules]);
 
+  const dosageValidation = useMemo(() => {
+    if (!isVaccineCenter || dosageRules.length === 0) return { valid: true, error: null };
+    for (const rule of dosageRules) {
+      const schedule = scheduleRules.find(item => item.dosageRuleId === rule.id);
+      if (rule.ageFrom === '' || rule.ageFrom < 0 || rule.dosageCount < 1 || (rule.operator === 'between' && (rule.ageTo === undefined || rule.ageTo === '' || rule.ageTo < rule.ageFrom)) || (rule.hasBoosterDose && (schedule?.boosterInterval === undefined || schedule.boosterInterval === '' || schedule.boosterInterval < 0))) {
+        return { valid: false, error: 'All dosage rules must have valid ages and at least one dosage.' };
+      }
+    }
+    return { valid: true, error: null };
+  }, [dosageRules, isVaccineCenter, scheduleRules]);
+
   // Check if save should be disabled
-  const isSaveDisabled = saving || (dynamicPricingEnabled && !pricingValidation.valid);
+  const isSaveDisabled = saving || (dynamicPricingEnabled && !pricingValidation.valid) || (isVaccineCenter && !dosageValidation.valid);
 
   // Initialize form with existing product data when loaded
   React.useEffect(() => {
@@ -168,8 +181,28 @@ const ProductForm: React.FC = () => {
           // Ignore invalid JSON
         }
       }
+      if (existingProduct.recommendedDoseSequence) {
+        try {
+          const saved = JSON.parse(existingProduct.recommendedDoseSequence);
+          if (Array.isArray(saved?.dosageRules)) setDosageRules(saved.dosageRules);
+          if (Array.isArray(saved?.scheduleRules)) setScheduleRules(saved.scheduleRules);
+        } catch {
+          // Ignore legacy plain-text values
+        }
+      }
     }
   }, [existingProduct]);
+
+  React.useEffect(() => {
+    setScheduleRules(previous => dosageRules.map(rule => {
+      const existing = previous.find(schedule => schedule.dosageRuleId === rule.id);
+      return {
+        dosageRuleId: rule.id,
+        intervals: Array.from({ length: rule.dosageCount }, (_, index) => existing?.intervals[index] ?? (index === 0 ? 0 : 1)),
+        boosterInterval: rule.hasBoosterDose ? (existing?.boosterInterval ?? '') : undefined,
+      };
+    }));
+  }, [dosageRules]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,10 +241,12 @@ const ProductForm: React.FC = () => {
           ? JSON.stringify(pricingRules)
           : undefined,
         ...(isVaccineCenter ? {
-          manufacturer: form.manufacturer || null,
+          manufacturer: null,
           batchLotNumber: form.batchLotNumber || null,
           expiryDate: form.expiryDate || null,
-          recommendedDoseSequence: form.recommendedDoseSequence || null,
+          recommendedDoseSequence: dosageRules.length > 0
+            ? JSON.stringify({ dosageRules, scheduleRules })
+            : null,
           notes: form.notes || null,
         } : {}),
       };
@@ -259,6 +294,35 @@ const ProductForm: React.FC = () => {
     setPricingRules(prev => prev.filter(rule => rule.id !== id));
   };
 
+  const addDosageRule = () => {
+    setDosageRules(prev => [...prev, {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 8),
+      operator: '<',
+      ageFrom: '',
+      dosageCount: 1,
+    }]);
+  };
+
+  const updateDosageRule = (id: string, updates: Partial<VaccineDosageRule>) => {
+    setDosageRules(prev => prev.map(rule => rule.id === id ? { ...rule, ...updates } : rule));
+  };
+
+  const removeDosageRule = (id: string) => {
+    setDosageRules(prev => prev.filter(rule => rule.id !== id));
+  };
+
+  const updateScheduleInterval = (dosageRuleId: string, index: number, value: number) => {
+    setScheduleRules(previous => previous.map(schedule => schedule.dosageRuleId === dosageRuleId
+      ? { ...schedule, intervals: schedule.intervals.map((interval, intervalIndex) => intervalIndex === index ? Math.max(0, value) : interval) }
+      : schedule));
+  };
+
+  const updateBoosterInterval = (dosageRuleId: string, value: number | '') => {
+    setScheduleRules(previous => previous.map(schedule => schedule.dosageRuleId === dosageRuleId
+      ? { ...schedule, boosterInterval: value === '' ? '' : Math.max(0, value) }
+      : schedule));
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -302,8 +366,7 @@ const ProductForm: React.FC = () => {
         {isVaccineCenter && (
           <div className="grid gap-4 md:grid-cols-2 border-t pt-6">
             {[
-              ['Manufacturer', 'manufacturer', 'text'], ['Batch/Lot Number', 'batchLotNumber', 'text'],
-              ['Expiry Date', 'expiryDate', 'date'], ['Recommended Dose/Sequence', 'recommendedDoseSequence', 'text'],
+              ['Batch/Lot Number', 'batchLotNumber', 'text'], ['Expiry Date', 'expiryDate', 'date'],
             ].map(([label, key, type]) => (
               <label key={key} className="space-y-1">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</span>
@@ -422,6 +485,139 @@ const ProductForm: React.FC = () => {
             />
           </div>
         </div>
+
+        {isVaccineCenter && (
+          <div className="space-y-4 border-t pt-6">
+            <div>
+              <h3 className="text-sm font-bold text-gray-700">Recommended Dose</h3>
+              <p className="text-xs text-gray-500 mt-1">Set the age rules and number of doses.</p>
+            </div>
+
+            {dosageRules.map(rule => (
+              <div key={rule.id} className="flex flex-wrap items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 text-sm font-bold text-gray-600">If age</span>
+                <select
+                  value={rule.operator}
+                  onChange={e => updateDosageRule(rule.id, { operator: e.target.value as VaccineDosageRule['operator'] })}
+                  className="bg-white border border-gray-200 rounded-full px-3 py-1.5 text-sm font-bold focus:ring-2 focus:ring-[#3c5a82] cursor-pointer"
+                >
+                  <option value="&lt;">&lt;</option>
+                  <option value="&gt;">&gt;</option>
+                  <option value="between">between</option>
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  value={rule.ageFrom}
+                  onChange={e => updateDosageRule(rule.id, { ageFrom: e.target.value === '' ? '' : Number(e.target.value) })}
+                  className="w-16 bg-white border border-gray-200 rounded-full px-2 py-1.5 text-sm font-bold text-center"
+                  aria-label="Starting age"
+                />
+                {rule.operator === 'between' && (
+                  <>
+                    <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 text-sm font-bold text-gray-600">and</span>
+                    <input
+                      type="number"
+                      min={rule.ageFrom === '' ? undefined : rule.ageFrom}
+                      value={rule.ageTo ?? ''}
+                      onChange={e => updateDosageRule(rule.id, { ageTo: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-16 bg-white border border-gray-200 rounded-full px-2 py-1.5 text-sm font-bold text-center"
+                      aria-label="Ending age"
+                    />
+                  </>
+                )}
+                <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 text-sm font-bold text-gray-600">number of dosage =</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={rule.dosageCount}
+                  onChange={e => updateDosageRule(rule.id, { dosageCount: Math.max(1, Number(e.target.value) || 1) })}
+                  className="w-16 bg-white border border-gray-200 rounded-full px-2 py-1.5 text-sm font-bold text-center"
+                  aria-label="Number of dosage"
+                />
+                <div className="basis-full flex items-center gap-2 pt-1">
+                  <input
+                    id={`booster-dose-${rule.id}`}
+                    type="checkbox"
+                    checked={rule.hasBoosterDose ?? false}
+                    onChange={e => updateDosageRule(rule.id, { hasBoosterDose: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
+                  />
+                  <label htmlFor={`booster-dose-${rule.id}`} className="text-sm font-bold text-gray-600">Has booster dose</label>
+                  <button type="button" onClick={() => removeDosageRule(rule.id)} className="ml-auto text-gray-400 hover:text-red-500 transition-colors" aria-label="Remove dosage rule">×</button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addDosageRule}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#3c5a82] bg-[#ebf4ff] rounded-xl hover:bg-[#d4e8ff] transition-colors"
+            >
+              + Add Dosage Rule
+            </button>
+
+            {dosageRules.length > 0 && (
+              <div className="space-y-3 border-t pt-4">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-700">Schedule</h3>
+                  <p className="text-xs text-gray-500 mt-1">Each division corresponds to one dosage rule.</p>
+                </div>
+                {dosageRules.map((rule, ruleIndex) => {
+                  const schedule = scheduleRules.find(item => item.dosageRuleId === rule.id);
+                  return (
+                    <div key={rule.id} className="space-y-2 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                      <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">Rule {ruleIndex + 1}</div>
+                      {schedule?.intervals.map((interval, doseIndex) => (
+                        <div key={`${rule.id}-${doseIndex}`} className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">Dose {doseIndex + 1} =&gt;</span>
+                          {doseIndex === 0 ? (
+                            <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">Day 0</span>
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">After</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={interval}
+                                onChange={e => updateScheduleInterval(rule.id, doseIndex, Number(e.target.value))}
+                                className="w-16 bg-white border border-gray-200 rounded-full px-2 py-1.5 font-bold text-center"
+                                aria-label={`Months after dose ${doseIndex}`}
+                              />
+                              <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">months</span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      {rule.hasBoosterDose && (
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">Booster dose =&gt;</span>
+                          <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">After</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={schedule?.boosterInterval ?? ''}
+                            onChange={e => updateBoosterInterval(rule.id, e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-16 bg-white border border-gray-200 rounded-full px-2 py-1.5 font-bold text-center"
+                            aria-label={`Booster interval for rule ${ruleIndex + 1}`}
+                          />
+                          <span className="inline-flex items-center bg-white px-3 py-1.5 rounded-full border border-gray-200 font-bold text-gray-600">months</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!dosageValidation.valid && dosageValidation.error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm font-medium text-red-600">{dosageValidation.error}</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Dynamic Pricing Section */}
         <div className="space-y-4 border-t pt-6">

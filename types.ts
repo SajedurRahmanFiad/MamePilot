@@ -448,6 +448,21 @@ export interface DynamicPricingRule {
   discountScope?: 'product' | 'order';
 }
 
+export interface VaccineDosageRule {
+  id: string;
+  operator: '<' | '>' | 'between';
+  ageFrom: number | '';
+  ageTo?: number | '';
+  dosageCount: number;
+  hasBoosterDose?: boolean;
+}
+
+export interface VaccineScheduleRule {
+  dosageRuleId: string;
+  intervals: number[];
+  boosterInterval?: number | '';
+}
+
 export interface Unit {
   id: string;
   name: string;
