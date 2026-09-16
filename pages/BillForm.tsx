@@ -13,6 +13,7 @@ import { useCreateBill, useUpdateBill, useCreateVendor } from '../src/hooks/useM
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { formatDateTimeParts, getTodayDate, sanitizePhoneInput } from '../utils';
 import { getNextBillNumber } from '../src/services/supabaseQueries';
 import { saveBillFormDraft, restoreBillFormDraft } from '../src/utils/formDraft';
@@ -27,7 +28,8 @@ const BillForm: React.FC = () => {
   const isEdit = Boolean(id);
 
   // Be Smart: bill vendor selection
-  const { capabilities } = useCapabilities(Boolean(user));
+  const { capabilities, settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartVendorSelection = hasBeSmart && Boolean(beSmartSettings?.smartBillVendorSelection);
@@ -634,7 +636,7 @@ const BillForm: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Product Item</th>
+                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{terminology.item} Item</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Cost Rate</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
@@ -671,14 +673,14 @@ const BillForm: React.FC = () => {
               <tr>
                 <td colSpan={5} className="px-6 py-5 relative">
                   <div className="relative">
-                    <Button onClick={() => { setShowProductSearch(prev => !prev); setSelectedProductIds(new Set()); setSearchTerm(''); }} variant="secondary" size="sm" icon={ICONS.Plus} className={`border-2 border-dashed ${theme.colors.primary.border}`}>Add an item</Button>
+                    <Button onClick={() => { setShowProductSearch(prev => !prev); setSelectedProductIds(new Set()); setSearchTerm(''); }} variant="secondary" size="sm" icon={ICONS.Plus} className={`border-2 border-dashed ${theme.colors.primary.border}`}>Add {terminology.itemLower}</Button>
                     {showProductSearch && (
                       <div className="absolute top-full left-0 mt-3 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                         <div className="relative mb-2">
                           <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-300">
                             {ICONS.Search}
                           </div>
-                          <input autoFocus type="text" placeholder="Search product..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                          <input autoFocus type="text" placeholder={`Search ${terminology.itemLower}...`} className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-[#3c5a82] text-sm font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                         <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
                           {products.length === 0 && (productsMiniLoading || productsSearchLoading) ? (
@@ -688,7 +690,7 @@ const BillForm: React.FC = () => {
                               <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                             </div>
                           ) : products.length === 0 ? (
-                            <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                            <div className="p-4 text-center text-gray-400 text-sm font-medium">No {terminology.itemsLower} found</div>
                           ) : (
                             products.map(p => (
                               <button

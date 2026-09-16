@@ -2590,7 +2590,7 @@ export function useSyncLicenseCapabilities(): UseMutationResult<CapabilitySettin
 export function useCreateOrUpdateCentralLicense(): UseMutationResult<
   CapabilitySettings,
   Error,
-  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; businessMode?: 'general_retail' | 'vaccine_center'; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
   unknown
 > {
   const queryClient = useQueryClient();

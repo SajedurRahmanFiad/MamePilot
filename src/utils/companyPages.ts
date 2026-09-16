@@ -79,6 +79,8 @@ export function normalizeCompanySettings(settings: PartialCompanySettings): Comp
     email: globalPage.email,
     address: globalPage.address,
     pages: normalizedPages,
+    weightUnit: settings?.weightUnit === 'pound' || settings?.weightUnit === 'gram' ? settings.weightUnit : 'kg',
+    heightUnit: settings?.heightUnit === 'feet-inches' ? 'feet-inches' : 'cm',
   };
 }
 

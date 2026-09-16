@@ -12,8 +12,9 @@ import {
   SUB_CAPABILITY_LABELS,
   normalizeSubCapabilities,
 } from '../src/utils/capabilities';
-import type { AppCapabilityKey, AppCapabilityMap, LicenseTier, SubCapabilityKey, SubCapabilityMap } from '../types';
+import type { AppCapabilityKey, AppCapabilityMap, BusinessMode, LicenseTier, SubCapabilityKey, SubCapabilityMap } from '../types';
 import { formatDate, formatDateTime } from '../utils';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 const StatCard: React.FC<{ label: string; value: string; hint?: string; valueColor?: string }> = ({ label, value, hint, valueColor }) => (
   <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
@@ -51,12 +52,14 @@ const DeveloperSubscriptions: React.FC = () => {
   const { data: overview, isPending: loadingOverview } = useServiceSubscriptionOverview(true);
   const { data: usage, isPending: loadingUsage } = useLocalUsageSummary(true);
   const { data: capabilitySettings, isPending: loadingCapabilities } = useCapabilitySettings(true);
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   const [licenseApiUrl, setLicenseApiUrl] = useState('');
   const [ownerToken, setOwnerToken] = useState('');
   const [clientName, setClientName] = useState('');
   const [renewalDate, setRenewalDate] = useState('');
   const [selectedTierKey, setSelectedTierKey] = useState('');
+  const [businessMode, setBusinessMode] = useState<BusinessMode>('general_retail');
   const [overrideCapabilities, setOverrideCapabilities] = useState<AppCapabilityMap>(() => normalizeCapabilities(null));
   const [overrideSubCapabilities, setOverrideSubCapabilities] = useState<SubCapabilityMap>({});
   const [expandedCapabilities, setExpandedCapabilities] = useState<Record<string, boolean>>({});
@@ -87,6 +90,7 @@ const DeveloperSubscriptions: React.FC = () => {
     setLicenseApiUrl(capabilitySettings.licenseApiUrl || '');
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
     setClientName(capabilitySettings.clientName || '');
+    setBusinessMode(capabilitySettings.businessMode || 'general_retail');
     const caps = normalizeCapabilities(capabilitySettings.capabilities);
     setOverrideCapabilities(caps);
     // Extract sub-capabilities from the capabilities response if present
@@ -167,6 +171,7 @@ const DeveloperSubscriptions: React.FC = () => {
         clientName: clientName || window.location.hostname,
         domain: window.location.hostname,
         renewalDate: renewalDate || null,
+        businessMode,
         pricingMetadata: buildPriceOverride(monthlyPriceOverride, yearlyPriceOverride),
       });
       toast.update(toastId, 'Subscription access saved.', 'success');
@@ -282,6 +287,25 @@ const DeveloperSubscriptions: React.FC = () => {
             <span className="text-xs font-black uppercase tracking-widest text-gray-400">Renewal Date</span>
             <input type="date" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={renewalDate} onChange={(e) => setRenewalDate(e.target.value)} />
           </label>
+          <fieldset className="space-y-2 md:col-span-2">
+            <legend className="text-xs font-black uppercase tracking-widest text-gray-400">Business Mode</legend>
+            <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Business Mode">
+              {([
+                ['general_retail', 'General Retail', 'Use Products and Customers terminology.'],
+                ['vaccine_center', 'Vaccine center', 'Use Vaccines and Patients terminology with clinical fields.'],
+              ] as const).map(([value, label, description]) => (
+                <label key={value} className={`cursor-pointer rounded-xl border p-4 transition-colors ${businessMode === value ? 'border-[#0f2f57] bg-[#f8fbff]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                  <span className="flex items-start gap-3">
+                    <input type="radio" name="business-mode" value={value} checked={businessMode === value} onChange={() => setBusinessMode(value)} className="mt-1 h-4 w-4 text-[#0f2f57] focus:ring-[#0f2f57]" />
+                    <span>
+                      <span className="block text-sm font-black text-gray-900">{label}</span>
+                      <span className="mt-1 block text-xs font-medium text-gray-500">{description}</span>
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </div>
 
         <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
@@ -458,8 +482,8 @@ const DeveloperSubscriptions: React.FC = () => {
           <StatCard label="Transactions" value={String(usage?.totalTransactions || 0)} />
           <StatCard label="Orders" value={String(usage?.totalOrders || 0)} />
           <StatCard label="Bills" value={String(usage?.totalBills || 0)} />
-          <StatCard label="Customers" value={String(usage?.totalCustomers || 0)} />
-          <StatCard label="Products" value={String(usage?.totalProducts || 0)} />
+          <StatCard label={terminology.customers} value={String(usage?.totalCustomers || 0)} />
+          <StatCard label={terminology.items} value={String(usage?.totalProducts || 0)} />
         </div>
       </section>
 

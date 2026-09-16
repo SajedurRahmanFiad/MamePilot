@@ -3,6 +3,8 @@ import { Button, NumericInput } from './index';
 import { formatCurrency, ICONS } from '../constants';
 import { Order, OrderCompletionOutcome, ConfirmPartialDeliveryPayload } from '../types';
 import { useAccounts, useCategories, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import PartialDeliveryForm from './PartialDeliveryForm';
 
 export type OrderCompletionFormState = {
@@ -58,6 +60,8 @@ isLoading,
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: categories = [] } = useCategories('Expense');
   const { data: systemDefaults } = useSystemDefaults();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const shippingCostsCategory = categories.find((category) => category.name === 'Shipping Costs') ?? null;
   const availableOutcomes = useMemo<OrderCompletionOutcome[]>(
     () => [
@@ -351,7 +355,7 @@ isLoading,
               {!expenseOnly && order.paidAmount > 0 && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Refund to Customer</p>
+                    <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Refund to {terminology.customer}</p>
                     <span className="text-xs font-bold text-emerald-600">
                       Already paid: {formatCurrency(order.paidAmount)}
                     </span>

@@ -10,6 +10,7 @@ import { useProduct, useCategories, useUnits } from '../src/hooks/useQueries';
 import { useCreateProduct, useUpdateProduct } from '../src/hooks/useMutations';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { getPreservedRouteState } from '../src/utils/navigation';
 
 function slugify(text: string): string {
@@ -27,7 +28,10 @@ const ProductForm: React.FC = () => {
   const isEdit = Boolean(id);
   const user = db.currentUser;
   const { canCreateProducts, canEditProducts } = useRolePermissions();
-  const { capabilities, isLoading: capabilitiesLoading } = useCapabilities();
+  const { capabilities, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities();
+  const businessMode = capabilitySettings?.businessMode || 'general_retail';
+  const isVaccineCenter = businessMode === 'vaccine_center';
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   // Check if Shopify or WooCommerce is enabled
   const showSkuField = useMemo(() => {
@@ -59,8 +63,8 @@ const ProductForm: React.FC = () => {
     return (
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
-        <p className="text-gray-500 mb-6">You don't have permission to edit products. Contact an administrator for assistance.</p>
-        <Button onClick={handleClose} variant="primary">Back to Products</Button>
+        <p className="text-gray-500 mb-6">You don't have permission to edit {terminology.itemsLower}. Contact an administrator for assistance.</p>
+        <Button onClick={handleClose} variant="primary">Back to {terminology.items}</Button>
       </div>
     );
   }
@@ -70,8 +74,8 @@ const ProductForm: React.FC = () => {
     return (
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
-        <p className="text-gray-500 mb-6">You don't have permission to create products. Contact an administrator for assistance.</p>
-        <Button onClick={handleClose} variant="primary">Back to Products</Button>
+        <p className="text-gray-500 mb-6">You don't have permission to create {terminology.itemsLower}. Contact an administrator for assistance.</p>
+        <Button onClick={handleClose} variant="primary">Back to {terminology.items}</Button>
       </div>
     );
   }
@@ -96,6 +100,11 @@ const ProductForm: React.FC = () => {
     salePrice: 0,
     purchasePrice: 0,
     stock: 0,
+    manufacturer: '',
+    batchLotNumber: '',
+    expiryDate: '',
+    recommendedDoseSequence: '',
+    notes: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +207,13 @@ const ProductForm: React.FC = () => {
         dynamicPricing: dynamicPricingEnabled && pricingRules.length > 0
           ? JSON.stringify(pricingRules)
           : undefined,
+        ...(isVaccineCenter ? {
+          manufacturer: form.manufacturer || null,
+          batchLotNumber: form.batchLotNumber || null,
+          expiryDate: form.expiryDate || null,
+          recommendedDoseSequence: form.recommendedDoseSequence || null,
+          notes: form.notes || null,
+        } : {}),
       };
 
       if (isEdit) {
@@ -211,13 +227,13 @@ const ProductForm: React.FC = () => {
           },
           (err) => {
             setSaving(false);
-            setError(err instanceof Error ? err.message : 'Failed to create product');
+            setError(err instanceof Error ? err.message : `Failed to create ${terminology.itemLower}`);
           }
         );
       }
     } catch (err) {
-      console.error('Failed to save product:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save product');
+      console.error(`Failed to save ${terminology.itemLower}:`, err);
+      setError(err instanceof Error ? err.message : `Failed to save ${terminology.itemLower}`);
       setSaving(false);
     }
   };
@@ -246,7 +262,7 @@ const ProductForm: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Product' : 'Add Product'}</h2>
+        <h2 className="text-2xl font-bold text-gray-900">{isEdit ? `Edit ${terminology.item}` : `Add ${terminology.item}`}</h2>
         <button onClick={handleClose} className="px-4 py-2 border rounded-xl text-gray-500 font-bold bg-white hover:bg-gray-50">
           Cancel
         </button>
@@ -255,7 +271,7 @@ const ProductForm: React.FC = () => {
       <div className="bg-white p-8 rounded-lg border border-gray-100 shadow-sm space-y-6">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Product Name</label>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{terminology.item} Name</label>
             <input
               type="text"
               className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]`}
@@ -266,7 +282,7 @@ const ProductForm: React.FC = () => {
                   setForm(prev => ({ ...prev, slug: slugify(prev.name || '') }));
                 }
               }}
-              placeholder="e.g. Cotton Polo T-Shirt"
+              placeholder={isVaccineCenter ? 'e.g. AstraZeneca COVID-19' : 'e.g. Cotton Polo T-Shirt'}
             />
           </div>
           <div className="flex-1 space-y-1">
@@ -283,6 +299,24 @@ const ProductForm: React.FC = () => {
           </div>
         </div>
 
+        {isVaccineCenter && (
+          <div className="grid gap-4 md:grid-cols-2 border-t pt-6">
+            {[
+              ['Manufacturer', 'manufacturer', 'text'], ['Batch/Lot Number', 'batchLotNumber', 'text'],
+              ['Expiry Date', 'expiryDate', 'date'], ['Recommended Dose/Sequence', 'recommendedDoseSequence', 'text'],
+            ].map(([label, key, type]) => (
+              <label key={key} className="space-y-1">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</span>
+                <input type={type} className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={String(form[key as keyof typeof form] || '')} onChange={e => setForm({ ...form, [key]: e.target.value })} />
+              </label>
+            ))}
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notes</span>
+              <textarea className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+            </label>
+          </div>
+        )}
+
         {showSkuField && (
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">SKU</label>
@@ -293,7 +327,7 @@ const ProductForm: React.FC = () => {
               onChange={e => setForm({ ...form, sku: e.target.value })}
               placeholder="e.g. SHIRT-BLACK-L"
             />
-            <p className="text-xs text-gray-400">Shopify uses the SKU to match this product and prevent duplicate imports.</p>
+            <p className="text-xs text-gray-400">Shopify uses the SKU to match this {terminology.itemLower} and prevent duplicate imports.</p>
           </div>
         )}
 
@@ -327,7 +361,7 @@ const ProductForm: React.FC = () => {
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Product Image</label>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{terminology.item} Image</label>
           <div className="flex items-center gap-6">
             <div className="w-24 h-24 rounded-lg border border-dashed border-gray-300 flex items-center justify-center overflow-hidden bg-gray-50">
               {form.image ? (
@@ -519,7 +553,7 @@ const ProductForm: React.FC = () => {
             className="w-full"
             disabled={isSaveDisabled}
           >
-            {saving ? 'Saving...' : isEdit ? 'Update Product Item' : 'Create Product Item'}
+            {saving ? 'Saving...' : isEdit ? `Update ${terminology.item}` : `Create ${terminology.item}`}
           </Button>
           {dynamicPricingEnabled && !pricingValidation.valid && (
             <p className="text-sm text-red-500 text-center">Please fix the pricing rules above before saving.</p>

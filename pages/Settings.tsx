@@ -42,6 +42,7 @@ import ShopifySettingsPanel from '../components/ShopifySettingsPanel';
 import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
 import { writeSystemDefaultsCache } from '../src/utils/startupCache';
 import { useAutoSave } from '../src/hooks/useAutoSave';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 type SystemDefaultField = keyof Settings['defaults'];
 
@@ -67,7 +68,8 @@ const SettingsPage: React.FC = () => {
     canManagePermissions,
     canSyncAds,
   } = useRolePermissions();
-  const { hasCapability, hasSubCapability, capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const { hasCapability, hasSubCapability, capabilities, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const canUseSteadfast = hasSubCapability('steadfast_courier');
   const canUseCarryBee = hasSubCapability('carrybee_courier');
   const canUsePaperfly = hasSubCapability('paperfly_courier');
@@ -703,12 +705,12 @@ const SettingsPage: React.FC = () => {
   const saveBeSmart = useCallback(async () => {
     beSmartJustSavedRef.current = true;
     await updateBeSmartSettingsMutation.mutateAsync({
-      smartCustomerAdding: Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
-      smartVendorAdding: Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
-      smartOrderCustomerSelection: Boolean(capabilities.sales) && beSmartSettings.smartOrderCustomerSelection,
-      smartBillVendorSelection: Boolean(capabilities.purchases) && beSmartSettings.smartBillVendorSelection,
+      smartCustomerAdding: capabilitySettings?.businessMode !== 'vaccine_center' && Boolean(capabilities.sales) && beSmartSettings.smartCustomerAdding,
+      smartVendorAdding: capabilitySettings?.businessMode !== 'vaccine_center' && Boolean(capabilities.purchases) && beSmartSettings.smartVendorAdding,
+      smartOrderCustomerSelection: capabilitySettings?.businessMode !== 'vaccine_center' && Boolean(capabilities.sales) && beSmartSettings.smartOrderCustomerSelection,
+      smartBillVendorSelection: capabilitySettings?.businessMode !== 'vaccine_center' && Boolean(capabilities.purchases) && beSmartSettings.smartBillVendorSelection,
     });
-  }, [beSmartSettings, capabilities.sales, capabilities.purchases, updateBeSmartSettingsMutation]);
+  }, [beSmartSettings, capabilities.sales, capabilities.purchases, capabilitySettings?.businessMode, updateBeSmartSettingsMutation]);
   const { isSaving: beSmartSaving, trigger: triggerBeSmartSave } = useAutoSave({ save: saveBeSmart });
   useEffect(() => {
     if (beSmartFirstTriggerRef.current) { beSmartFirstTriggerRef.current = false; return; }
@@ -1143,6 +1145,7 @@ const SettingsPage: React.FC = () => {
     canEditCompanySettings ? { id: 'company', label: 'Company', icon: ICONS.Dashboard } : null,
     canEditOrderInvoiceSettings ? { id: 'order', label: 'Order & Invoice', icon: ICONS.Sales } : null,
     canEditDefaults ? { id: 'defaults', label: 'Defaults', icon: ICONS.Settings } : null,
+    capabilitySettings?.businessMode === 'vaccine_center' && hasAdminAccess(user?.role) ? { id: 'vaccine-center', label: 'Vaccine Center Settings', icon: ICONS.Products } : null,
     capabilities.be_smart && hasAdminAccess(user?.role) ? { id: 'be-smart', label: 'Be Smart', icon: ICONS.Bell } : null,
     canUsePayroll && canEditWalletSettings ? { id: 'wallet', label: 'Wallet', icon: ICONS.Payroll } : null,
     hasCapability('marketing') && canSyncAds ? { id: 'meta-ads', label: 'Meta Ads', icon: ICONS.Bell } : null,
@@ -1507,7 +1510,7 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Product Selection Mode</label>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{terminology.item} Selection Mode</label>
                   <select
                     value={systemDefaults.productSelectionMode}
                     onChange={e => setSystemDefaultField('productSelectionMode', e.target.value)}
@@ -1527,9 +1530,9 @@ const SettingsPage: React.FC = () => {
                         className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
                       />
                       <span>
-                        <span className="block text-sm font-bold text-gray-800">Calculate COGS from product purchase prices</span>
+                        <span className="block text-sm font-bold text-gray-800">Calculate COGS from {terminology.itemLower} purchase prices</span>
                         <span className="mt-1 block text-xs leading-5 text-gray-600">
-                          When an order is delivered, create one Purchases expense using each delivered product's current purchase price × quantity. This option is available because Bills &amp; Purchases is not active.
+                          When an order is delivered, create one Purchases expense using each delivered {terminology.itemLower}'s current purchase price × quantity. This option is available because Bills &amp; Purchases is not active.
                         </span>
                       </span>
                     </label>
@@ -1601,6 +1604,40 @@ const SettingsPage: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'vaccine-center' && capabilitySettings?.businessMode === 'vaccine_center' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="border-b border-gray-100 pb-4">
+                <h3 className="text-xl font-black text-gray-900">Vaccine Center Settings</h3>
+                <p className="mt-1 text-sm font-medium text-gray-500">Choose the units used when recording patient measurements.</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Default weight unit</span>
+                  <select
+                    value={companySettings.weightUnit || 'kg'}
+                    onChange={(event) => setCompanySettings((current) => ({ ...current, weightUnit: event.target.value as 'pound' | 'kg' | 'gram' }))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-semibold outline-none focus:border-[#3c5a82] focus:bg-white"
+                  >
+                    <option value="pound">Pound (lb)</option>
+                    <option value="kg">Kilogram (kg)</option>
+                    <option value="gram">Gram (g)</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-400">Default height unit</span>
+                  <select
+                    value={companySettings.heightUnit || 'cm'}
+                    onChange={(event) => setCompanySettings((current) => ({ ...current, heightUnit: event.target.value as 'feet-inches' | 'cm' }))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-semibold outline-none focus:border-[#3c5a82] focus:bg-white"
+                  >
+                    <option value="feet-inches">Feet and inches (ft/in)</option>
+                    <option value="cm">Centimeters (cm)</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'be-smart' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="border-b border-gray-100 pb-4">
@@ -1612,18 +1649,25 @@ const SettingsPage: React.FC = () => {
                 The final phone number is normalized again on the server and is saved only when it is exactly 11 digits and starts with 0.
               </div>
 
+              {capabilitySettings?.businessMode === 'vaccine_center' && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-800">
+                  Be Smart cannot be enabled for vaccine centers because patient forms require all clinical fields.
+                </div>
+              )}
+
               <div className="grid gap-4">
                 {capabilities.sales && (
                   <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-[#3c5a82]/30">
                     <input
                       type="checkbox"
                       checked={beSmartSettings.smartCustomerAdding}
+                      disabled={capabilitySettings?.businessMode === 'vaccine_center'}
                       onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartCustomerAdding: event.target.checked }))}
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
                     <div>
-                      <p className="font-black text-gray-900">Smart customer adding</p>
-                      <p className="mt-1 text-sm font-medium text-gray-500">Use a single raw-details box on new and edit customer pages.</p>
+                      <p className="font-black text-gray-900">Smart {terminology.customerLower} adding</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Use a single raw-details box on new and edit {terminology.customerLower} pages.</p>
                     </div>
                   </label>
                 )}
@@ -1632,6 +1676,7 @@ const SettingsPage: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={beSmartSettings.smartVendorAdding}
+                      disabled={capabilitySettings?.businessMode === 'vaccine_center'}
                       onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartVendorAdding: event.target.checked }))}
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
@@ -1646,12 +1691,13 @@ const SettingsPage: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={beSmartSettings.smartOrderCustomerSelection}
+                      disabled={capabilitySettings?.businessMode === 'vaccine_center'}
                       onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartOrderCustomerSelection: event.target.checked }))}
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
                     <div>
-                      <p className="font-black text-gray-900">Smart customer selection</p>
-                      <p className="mt-1 text-sm font-medium text-gray-500">Replace the customer dropdown on the order form with a smart paste box. Paste customer details and the system will find or create the customer automatically.</p>
+                      <p className="font-black text-gray-900">Smart {terminology.customerLower} selection</p>
+                      <p className="mt-1 text-sm font-medium text-gray-500">Replace the {terminology.customerLower} dropdown on the order form with a smart paste box. Paste {terminology.customerLower} details and the system will find or create the {terminology.customerLower} automatically.</p>
                     </div>
                   </label>
                 )}
@@ -1660,6 +1706,7 @@ const SettingsPage: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={beSmartSettings.smartBillVendorSelection}
+                      disabled={capabilitySettings?.businessMode === 'vaccine_center'}
                       onChange={(event) => setBeSmartSettings((current) => ({ ...current, smartBillVendorSelection: event.target.checked }))}
                       className="mt-1 h-5 w-5 rounded border-gray-300 text-[#3c5a82] focus:ring-[#3c5a82]"
                     />
@@ -2418,7 +2465,7 @@ const SettingsPage: React.FC = () => {
           {activeTab === 'units' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex items-center justify-between border-b pb-4">
-                <h3 className="text-xl font-bold text-gray-800">Product Units</h3>
+                <h3 className="text-xl font-bold text-gray-800">{terminology.item} Units</h3>
                 <Button
                   onClick={() => setShowModal('unit')}
                   variant="primary"
@@ -3190,7 +3237,7 @@ const SettingsPage: React.FC = () => {
                 >
                   <option value="Income">Income</option>
                   <option value="Expense">Expense</option>
-                  <option value="Product">Product</option>
+                  <option value="Product">{terminology.item}</option>
                   {hasSubCapability('batch_management') && (
                     <option value="Batch">Batch</option>
                   )}
@@ -3250,7 +3297,7 @@ const SettingsPage: React.FC = () => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={() => setShowModal(null)}></div>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 p-8 space-y-6">
-            <h3 className="text-xl font-bold text-gray-900">Add Product Unit</h3>
+            <h3 className="text-xl font-bold text-gray-900">Add {terminology.item} Unit</h3>
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Name</label>

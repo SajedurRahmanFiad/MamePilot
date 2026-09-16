@@ -6,6 +6,7 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
@@ -111,7 +112,8 @@ const OrderForm: React.FC = () => {
   const allProductsRef = React.useRef<Map<string, any>>(new Map());
 
   // Be Smart: order customer selection
-  const { capabilities } = useCapabilities(Boolean(user));
+  const { capabilities, settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
@@ -659,7 +661,7 @@ const OrderForm: React.FC = () => {
         const msg = !pageId
           ? 'Please select a page.'
           : !items.length
-            ? 'Please add at least one product.'
+            ? `Please add at least one ${terminology.itemLower}.`
             : 'Order number is still being generated. Please wait a moment.';
         setError(msg);
         toast.error(msg);
@@ -688,7 +690,7 @@ const OrderForm: React.FC = () => {
         : !resolvedCustomerId
           ? smartCustomerSelection ? 'Please enter customer details.' : 'Please select a customer.'
           : !items.length
-            ? 'Please add at least one product.'
+            ? `Please add at least one ${terminology.itemLower}.`
             : 'Order number is still being generated. Please wait a moment.';
       setError(msg);
       toast.error(msg);
@@ -924,7 +926,7 @@ const OrderForm: React.FC = () => {
           <div className="grid grid-cols-1 gap-6">
             <div className="space-y-1 relative">
               <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Customer Details</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">{terminology.customer} Details</label>
               </div>
               <textarea
                 autoFocus
@@ -938,7 +940,7 @@ const OrderForm: React.FC = () => {
                     setCustomerId('');
                   }
                 }}
-                placeholder={'Paste the customer details exactly as the customer sent it.\n\nExample:\nRahim Ahmed\n01712345678\nHouse 12, Road 4, Mirpur, Dhaka'}
+                placeholder={`Paste the ${terminology.customerLower} details exactly as the ${terminology.customerLower} sent it.\n\nExample:\nRahim Ahmed\n01712345678\nHouse 12, Road 4, Mirpur, Dhaka`}
               />
               <div className="flex items-center gap-2 mt-1">
                 {!smartLookupUsed ? (
@@ -952,7 +954,7 @@ const OrderForm: React.FC = () => {
                   </button>
                 ) : smartLookupFound ? (
                   <>
-                    <span className="text-[11px] font-bold text-orange-500">Existing customer</span>
+                    <span className="text-[11px] font-bold text-orange-500">Existing {terminology.customerLower}</span>
                     <button
                       type="button"
                       onClick={handleViewCustomer}
@@ -962,7 +964,7 @@ const OrderForm: React.FC = () => {
                     </button>
                   </>
                 ) : (
-                  <span className="text-[11px] font-bold text-green-600">New customer</span>
+                  <span className="text-[11px] font-bold text-green-600">New {terminology.customerLower}</span>
                 )}
               </div>
             </div>
@@ -991,7 +993,7 @@ const OrderForm: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="space-y-1 relative md:col-span-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select Customer</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select {terminology.customer}</label>
               <div className="relative">
                 <button 
                   onClick={() => setShowCustomerSearch(!showCustomerSearch)}
@@ -1003,7 +1005,7 @@ const OrderForm: React.FC = () => {
                       <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedCustomer.phone}</p>
                       <p className="text-[10px] ${theme.colors.primary[600]} italic truncate mt-1">{selectedCustomer.address}</p>
                     </div>
-                  ) : <span className="text-gray-400 text-sm">Select Customer...</span>}
+                  ) : <span className="text-gray-400 text-sm">Select {terminology.customer}...</span>}
                   <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
                      {ICONS.ChevronRight}
                   </div>
@@ -1031,7 +1033,7 @@ const OrderForm: React.FC = () => {
                           <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                         </div>
                       ) : (allVisibleCustomers || []).length === 0 ? (
-                        <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
+                        <div className="p-4 text-center text-gray-400 text-sm font-medium">No {terminology.customersLower} found</div>
                       ) : (
                         (allVisibleCustomers || []).map((c: any) => (
                           <div key={c.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#ebf4ff] transition-colors">
@@ -1068,7 +1070,7 @@ const OrderForm: React.FC = () => {
                         }}
                         className="w-full mt-2 py-3 ${theme.colors.primary[600]} text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors"
                       >
-                        + Add New Customer
+                        + Add New {terminology.customer}
                       </button>
                     )}
                   </div>
@@ -1190,7 +1192,7 @@ const OrderForm: React.FC = () => {
           <table className="w-full min-w-max text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Product Item</th>
+                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{terminology.item} Item</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Rate</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
@@ -1268,7 +1270,7 @@ const OrderForm: React.FC = () => {
               <div className="max-h-[260px] overflow-y-auto space-y-0.5 custom-scrollbar">
                 {productsSearchQuery.isError && productSearchSettled ? (
                   <div className="p-4 text-center text-red-500 text-sm font-medium">
-                    Unable to search products. Please try again.
+                    Unable to search {terminology.itemsLower}. Please try again.
                   </div>
                 ) : products.length === 0 && (!productSearchSettled || productsSearchQuery.isFetching) ? (
                   <div className="p-4 space-y-3">
@@ -1277,7 +1279,7 @@ const OrderForm: React.FC = () => {
                     <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                   </div>
                 ) : products.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                  <div className="p-4 text-center text-gray-400 text-sm font-medium">No {terminology.itemsLower} found</div>
                 ) : (
                   products.map(p => (
                     <button
@@ -1330,7 +1332,7 @@ const OrderForm: React.FC = () => {
                     onClick={addSelectedItems}
                     className={`w-full py-2.5 ${theme.colors.primary[600]} text-white font-bold text-sm rounded-xl hover:${theme.colors.primary[700]} transition-all flex items-center justify-center gap-2`}
                   >
-                    {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
+                    {ICONS.Check} Add {selectedProductIds.size} {selectedProductIds.size > 1 ? terminology.itemsLower : terminology.itemLower}
                   </button>
                 </div>
               )}

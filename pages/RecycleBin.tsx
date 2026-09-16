@@ -1,3 +1,5 @@
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import React, { useEffect, useState, useMemo } from 'react';
 import { Button, Table } from '../components';
 import DynamicFilterBar, { formatDateDisplay } from '../components/DynamicFilterBar';
@@ -40,6 +42,9 @@ const formatTimestamp = (value?: string): string => {
 
 const RecycleBin: React.FC = () => {
   const { user } = useAuth();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const entityLabels = { ...ENTITY_LABELS, customer: terminology.customer, product: terminology.item };
   const toast = useToastNotifications();
   const { data: systemDefaults } = useSystemDefaults();
   const pageSize = systemDefaults?.recordsPerPage || DEFAULT_PAGE_SIZE;
@@ -89,7 +94,7 @@ const RecycleBin: React.FC = () => {
   }, [recycleBinFilterOpts]);
 
   const recycleBinFilterDefinitions = useMemo(() => {
-    const entityTypeOptions = Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }));
+    const entityTypeOptions = Object.entries(entityLabels).map(([value, label]) => ({ value, label }));
 
     return [
       {
@@ -130,11 +135,11 @@ const RecycleBin: React.FC = () => {
   const initialFilters = useMemo(() => {
     const filters = [];
     if (typeFilter !== 'all') {
-      const label = ENTITY_LABELS[typeFilter as RecycleBinEntityType];
+      const label = entityLabels[typeFilter as RecycleBinEntityType];
       filters.push({ id: 'entity-type', type: 'Entity Type', operator: '=' as const, value: typeFilter, display: label });
     }
     if (typeNotFilter) {
-      const label = ENTITY_LABELS[typeNotFilter as RecycleBinEntityType];
+      const label = entityLabels[typeNotFilter as RecycleBinEntityType];
       filters.push({ id: 'entity-type-not', type: 'Entity Type', operator: '≠' as const, value: typeNotFilter, display: label || typeNotFilter });
     }
     if (deletedByFilter) {
@@ -171,7 +176,7 @@ const RecycleBin: React.FC = () => {
   }, [page, totalPages]);
 
   const handleRestore = async (item: RecycleBinItem) => {
-    if (!confirm(`Restore this ${ENTITY_LABELS[item.entityType].toLowerCase()} from the recycle bin?`)) {
+    if (!confirm(`Restore this ${entityLabels[item.entityType].toLowerCase()} from the recycle bin?`)) {
       return;
     }
 
@@ -275,7 +280,7 @@ const RecycleBin: React.FC = () => {
             label: 'Type',
             render: (value: RecycleBinEntityType) => (
               <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${ENTITY_BADGES[value]}`}>
-                {ENTITY_LABELS[value]}
+                {entityLabels[value]}
               </span>
             ),
           },

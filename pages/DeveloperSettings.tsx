@@ -479,6 +479,7 @@ const DeveloperSettings: React.FC = () => {
                 </label>
               </div>
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
+                <p><span className="font-black text-gray-900">Business Mode:</span> {capabilitySettings?.businessMode === 'vaccine_center' ? 'Vaccine center' : 'General Retail'}</p>
                 <p><span className="font-black text-gray-900">Plan:</span> {capabilitySettings?.planName || 'Local/manual'}</p>
                 <p><span className="font-black text-gray-900">Status:</span> {capabilitySettings?.licenseStatus || 'local'}</p>
                 <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? formatDateTime(capabilitySettings.lastSyncedAt) : 'Never'}</p>

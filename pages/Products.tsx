@@ -19,6 +19,8 @@ import { useResettablePage } from '../src/hooks/useResettablePage';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue, safeDecodeURIComponent } from '../utils';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 const withImageCacheVersion = (imageUrl: string, version: number): string => {
   if (!imageUrl || version <= 0 || imageUrl.startsWith('data:')) return imageUrl;
@@ -35,6 +37,10 @@ const Products: React.FC = () => {
   const toast = useToastNotifications();
   const { searchQuery, setSearchQuery } = useSearch();
   const { user } = useAuth();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const productLabel = terminology.item;
+  const productPlural = terminology.items;
   const {
     data: systemDefaults,
     isPending: systemDefaultsLoading,
@@ -287,14 +293,14 @@ const Products: React.FC = () => {
   const filteredProducts = products;
 
   const handleDelete = async (productId: string) => {
-    if (!confirm('Move this product to the recycle bin? You can restore it later.')) return;
+    if (!confirm(`Move this ${productLabel.toLowerCase()} to the recycle bin? You can restore it later.`)) return;
     try {
       await deleteProductMutation.mutateAsync(productId);
       // Cache updated deterministically by mutation hook
-      toast.success('Product moved to the recycle bin');
+      toast.success(`${productLabel} moved to the recycle bin`);
     } catch (err) {
-      console.error('Failed to delete product:', err);
-      toast.error('Failed to delete product');
+      console.error(`Failed to delete ${productLabel.toLowerCase()}:`, err);
+      toast.error(`Failed to delete ${productLabel.toLowerCase()}`);
     }
   };
 
@@ -306,7 +312,7 @@ const Products: React.FC = () => {
             filterDefinitions={productFilterDefinitions}
             initialFilters={initialFilters}
             users={users}
-            freeTextLabel="Products"
+            freeTextLabel={productPlural}
             rawSearchValue={searchQuery}
             onRawSearchChange={setSearchQuery}
             onApply={(appliedFilters) => {
@@ -356,7 +362,7 @@ const Products: React.FC = () => {
             size="md"
             icon={ICONS.Plus}
           >
-            Add Product
+            Add {productLabel}
           </Button>
         )}
       </div>
@@ -460,7 +466,7 @@ const Products: React.FC = () => {
         ]}
         data={filteredProducts}
         loading={!canLoadProducts || isFetching}
-        emptyMessage="No products found"
+        emptyMessage={`No ${productPlural.toLowerCase()} found`}
       />
       <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} disabled={isFetching} />
     </div>

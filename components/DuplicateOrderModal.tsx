@@ -3,6 +3,8 @@ import { Order } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { formatDate } from '../utils';
 import { Modal } from './Modal';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 interface DuplicateOrderModalProps {
   isOpen: boolean;
@@ -19,6 +21,8 @@ export const DuplicateOrderModal: React.FC<DuplicateOrderModalProps> = ({
   onCancel,
   isLoading = false,
 }) => {
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   if (!isOpen || !duplicateOrder) return null;
 
   return (
@@ -52,7 +56,7 @@ export const DuplicateOrderModal: React.FC<DuplicateOrderModalProps> = ({
           <div className="flex items-start gap-3">
             <div className="text-amber-600 mt-1">{ICONS.AlertCircle}</div>
             <div>
-              <p className="text-sm font-bold text-gray-900">We found an order with the same customer and products.</p>
+              <p className="text-sm font-bold text-gray-900">We found an order with the same customer and {terminology.itemsLower}.</p>
               <p className="text-sm text-gray-600 mt-2">Are you sure you want to create a duplicate?</p>
             </div>
           </div>
@@ -82,7 +86,7 @@ export const DuplicateOrderModal: React.FC<DuplicateOrderModalProps> = ({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 text-xs font-bold text-gray-500 uppercase">Product</th>
+                      <th className="text-left py-2 text-xs font-bold text-gray-500 uppercase">{terminology.item}</th>
                       <th className="text-center py-2 text-xs font-bold text-gray-500 uppercase">Qty</th>
                       <th className="text-right py-2 text-xs font-bold text-gray-500 uppercase">Rate</th>
                       <th className="text-right py-2 text-xs font-bold text-gray-500 uppercase">Amount</th>

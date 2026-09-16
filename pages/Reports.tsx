@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ICONS } from '../constants';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import type { AppCapabilityKey } from '../types';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import {
   fetchCustomerSalesReport,
   fetchExpenseSummaryReport,
@@ -48,7 +49,8 @@ const ReportCard: React.FC<{
 
 const Reports: React.FC = () => {
   const queryClient = useQueryClient();
-  const { hasCapability, isDeveloper } = useCapabilities();
+  const { hasCapability, isDeveloper, settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   const reportCategories = useMemo(() => {
     const allReports = [
@@ -137,8 +139,8 @@ const Reports: React.FC = () => {
         }
       },
       {
-        title: 'Product Quantity Sold',
-        description: 'Track sold quantities per product for the selected period.',
+        title: `${terminology.item} Quantity Sold`,
+        description: `Track sold quantities per ${terminology.itemLower} for the selected period.`,
         icon: ICONS.Products,
         color: 'bg-emerald-50 text-emerald-600',
         to: '/reports/product-quantity-sold',
@@ -151,8 +153,8 @@ const Reports: React.FC = () => {
         }
       },
       {
-        title: 'Customer Sales Report',
-        description: 'Compare customers by order count, quantity, and sales amount.',
+        title: `${terminology.customer} Sales Report`,
+        description: `Compare ${terminology.customersLower} by order count, quantity, and sales amount.`,
         icon: ICONS.Customers,
         color: 'bg-cyan-50 text-cyan-600',
         to: '/reports/customer-sales',

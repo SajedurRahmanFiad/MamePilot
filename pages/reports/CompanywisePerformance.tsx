@@ -6,6 +6,8 @@ import { formatCurrency, ICONS } from '../../constants';
 import { ReportPageSkeleton } from '../../components';
 import { theme } from '../../theme';
 import { useCompanySettings, useCompanywisePerformanceReport } from '../../src/hooks/useQueries';
+import { useCapabilities } from '../../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../../src/utils/businessMode';
 import { normalizeCompanySettings } from '../../src/utils/companyPages';
 
 const MetricRow: React.FC<{ label: string; value: string | number; isBold?: boolean; isTotal?: boolean; isCurrency?: boolean }> = ({ label, value, isBold, isTotal, isCurrency = true }) => (
@@ -26,6 +28,8 @@ const CompanywisePerformance: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const reportFilterRange = dateRange === 'currentMonth' ? 'This Month' : dateRange === 'custom' ? 'Custom' : 'This Year';
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   const { data: companySettingsData, isPending: isCompanyLoading } = useCompanySettings();
   const companySettings = useMemo(
@@ -233,7 +237,7 @@ const CompanywisePerformance: React.FC = () => {
             </div>
             <div className="flex-1 min-w-[120px] text-center border-l border-gray-100 pl-4">
               <p className="text-2xl font-black text-gray-900">{reportData?.productsSold ?? 0}</p>
-              <p className="text-xs font-bold text-gray-500 mt-1">Products Sold</p>
+              <p className="text-xs font-bold text-gray-500 mt-1">{terminology.items} Sold</p>
             </div>
           </div>
 

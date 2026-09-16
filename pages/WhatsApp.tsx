@@ -166,7 +166,7 @@ const NewConversationModal: React.FC<{
         </label>
         <label className="mt-4 block space-y-2 text-sm font-bold text-gray-700">
           <span>Name <span className="font-normal text-gray-400">(optional)</span></span>
-          <input value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-emerald-500" placeholder="Customer name" />
+          <input value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-emerald-500" placeholder="Patient name" />
         </label>
         <button type="submit" disabled={pending || !phone.trim()} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
           {pending && <Loader2 size={17} className="animate-spin" />} Start conversation
@@ -357,7 +357,7 @@ const WhatsApp: React.FC = () => {
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="shrink-0 bg-emerald-700 px-4 pb-3 pt-4 text-white">
         <div className="mb-3 flex items-center justify-between">
-          <div><h1 className="text-lg font-black">WhatsApp</h1><p className="text-[11px] font-medium text-emerald-100">Customer conversations</p></div>
+          <div><h1 className="text-lg font-black">WhatsApp</h1><p className="text-[11px] font-medium text-emerald-100">{terminology.customers} conversations</p></div>
           <div className="flex items-center gap-1">
             <button onClick={() => contactsQuery.refetch()} className="rounded-full p-2 hover:bg-emerald-600" aria-label="Refresh chats"><RefreshCw size={18} className={contactsQuery.isFetching ? 'animate-spin' : ''} /></button>
             <button onClick={() => setShowNewChat(true)} className="rounded-full p-2 hover:bg-emerald-600" aria-label="New chat"><Plus size={20} /></button>

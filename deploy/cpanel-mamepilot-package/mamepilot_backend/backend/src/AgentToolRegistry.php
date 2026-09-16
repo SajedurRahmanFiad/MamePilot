@@ -686,11 +686,13 @@ final class AgentToolRegistry
         if (str_ends_with($action, 'Page')) return $strictObject($pageFields);
         if (in_array($action, ['createCustomer', 'createVendor'], true)) return $strictObject([
             'name' => ['type' => 'string', 'minLength' => 1], 'phone' => ['type' => 'string', 'minLength' => 1], 'address' => ['type' => 'string'],
+            'age' => ['type' => 'number'], 'gender' => ['type' => 'string'], 'dateOfBirth' => ['type' => 'string'], 'weight' => ['type' => 'number'], 'height' => ['type' => 'number'], 'bloodGroup' => ['type' => 'string'], 'guardianName' => ['type' => 'string'], 'emergencyContact' => ['type' => 'string'], 'additionalNotes' => ['type' => 'string'],
         ], ['name', 'phone']);
         if ($action === 'createProduct') return $strictObject([
             'name' => ['type' => 'string', 'minLength' => 1], 'category' => ['type' => 'string'], 'unitId' => ['type' => 'string'],
             'salePrice' => ['type' => 'number', 'minimum' => 0], 'purchasePrice' => ['type' => 'number', 'minimum' => 0],
             'stock' => ['type' => 'number', 'minimum' => 0], 'dynamicPricing' => ['type' => 'string'],
+            'manufacturer' => ['type' => 'string'], 'batchLotNumber' => ['type' => 'string'], 'expiryDate' => ['type' => 'string'], 'recommendedDoseSequence' => ['type' => 'string'], 'notes' => ['type' => 'string'],
         ], ['name', 'salePrice', 'purchasePrice', 'stock']);
         if ($action === 'createAccount') return $strictObject([
             'name' => ['type' => 'string', 'minLength' => 1], 'type' => ['type' => 'string', 'minLength' => 1],
@@ -748,6 +750,7 @@ final class AgentToolRegistry
             'id' => ['type' => 'string', 'minLength' => 1],
             'updates' => ['type' => 'object', 'properties' => [
                 'name' => ['type' => 'string', 'minLength' => 1], 'phone' => ['type' => 'string', 'minLength' => 1], 'address' => ['type' => 'string'],
+                'age' => ['type' => 'number'], 'gender' => ['type' => 'string'], 'dateOfBirth' => ['type' => 'string'], 'weight' => ['type' => 'number'], 'height' => ['type' => 'number'], 'bloodGroup' => ['type' => 'string'], 'guardianName' => ['type' => 'string'], 'emergencyContact' => ['type' => 'string'], 'additionalNotes' => ['type' => 'string'],
             ], 'additionalProperties' => false],
         ], ['id', 'updates']);
         if ($action === 'updateProduct') return $strictObject([
@@ -757,6 +760,7 @@ final class AgentToolRegistry
                 'category' => ['type' => 'string'], 'unitId' => ['type' => 'string'],
                 'salePrice' => ['type' => 'number', 'minimum' => 0], 'purchasePrice' => ['type' => 'number', 'minimum' => 0],
                 'stock' => ['type' => 'number', 'minimum' => 0], 'dynamicPricing' => ['type' => 'string'],
+                'manufacturer' => ['type' => 'string'], 'batchLotNumber' => ['type' => 'string'], 'expiryDate' => ['type' => 'string'], 'recommendedDoseSequence' => ['type' => 'string'], 'notes' => ['type' => 'string'],
             ], 'additionalProperties' => false],
         ], ['id', 'updates']);
         if ($action === 'updateAccount') return $strictObject([

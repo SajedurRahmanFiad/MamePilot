@@ -3,11 +3,21 @@ import { Customer, Vendor } from '../types';
 import { sanitizePhoneInput } from '../utils';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { useBeSmartSettings } from '../src/hooks/useQueries';
+import { useBeSmartSettings, useCompanySettings } from '../src/hooks/useQueries';
 import { useCreateCustomer, useCreateVendor, useUpdateCustomer, useUpdateVendor } from '../src/hooks/useMutations';
 import { Button } from './Button';
 import InfoTooltip from './InfoTooltip';
 import { Modal } from './Modal';
+import { getBusinessTerminology } from '../src/utils/businessMode';
+
+const getHeightParts = (height: number | null | undefined, unit: 'feet-inches' | 'cm') => {
+  if (height === null || height === undefined || Number.isNaN(Number(height))) return { height: '', heightFeet: '', heightInches: '' };
+  if (unit === 'feet-inches') {
+    const totalInches = Number(height);
+    return { height: '', heightFeet: String(Math.floor(totalInches / 12)), heightInches: String(Math.round(totalInches % 12)) };
+  }
+  return { height: String(height), heightFeet: '', heightInches: '' };
+};
 
 type ContactKind = 'customer' | 'vendor';
 
@@ -15,6 +25,15 @@ interface ContactFormValues {
   name: string;
   phone: string;
   address: string;
+  age: string;
+  gender: string;
+  dateOfBirth: string;
+  weight: string;
+  height: string;
+  bloodGroup: string;
+  guardianName: string;
+  emergencyContact: string;
+  additionalNotes: string;
   smartInput?: string;
 }
 
@@ -22,7 +41,7 @@ interface ContactCreateModalBaseProps {
   kind: ContactKind;
   isOpen: boolean;
   onClose: () => void;
-  initialValues?: Partial<Pick<ContactFormValues, 'name' | 'phone' | 'address'>>;
+  initialValues?: Partial<ContactFormValues>;
   editing?: boolean;
   smartMode: boolean;
   isLoading: boolean;
@@ -41,12 +60,19 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
   isPending,
   onSubmit,
 }) => {
-  const [form, setForm] = useState({ name: '', phone: '', address: '' });
   const [smartInput, setSmartInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const isCustomer = kind === 'customer';
-  const entityLabel = isCustomer ? 'customer' : 'vendor';
+  const { settings: capabilitySettings } = useCapabilities();
+  const { data: companySettings } = useCompanySettings();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
+  const weightUnit = companySettings?.weightUnit || 'kg';
+  const heightUnit = companySettings?.heightUnit || 'cm';
+  const entityLabel = isCustomer ? terminology.customerLower : 'vendor';
   const nameLabel = isCustomer ? 'Full Name' : 'Business Name';
+
+  const [form, setForm] = useState({ name: '', phone: '', address: '', age: '', gender: '', dateOfBirth: '', weight: '', height: '', bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '' });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -54,11 +80,21 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
       name: initialValues?.name || '',
       phone: initialValues?.phone || '',
       address: initialValues?.address || '',
+      age: initialValues?.age?.toString() || '',
+      gender: initialValues?.gender || '',
+      dateOfBirth: initialValues?.dateOfBirth?.slice(0, 10) || '',
+      weight: initialValues?.weight?.toString() || '',
+      ...getHeightParts(initialValues?.height, heightUnit),
+      height: initialValues?.height?.toString() || '',
+      bloodGroup: initialValues?.bloodGroup || '',
+      guardianName: initialValues?.guardianName || '',
+      emergencyContact: initialValues?.emergencyContact || '',
+      additionalNotes: initialValues?.additionalNotes || '',
     };
     setForm(nextForm);
     setSmartInput([nextForm.name, nextForm.phone, nextForm.address].filter(Boolean).join('\n'));
     setError(null);
-  }, [initialValues?.address, initialValues?.name, initialValues?.phone, isOpen]);
+  }, [heightUnit, initialValues?.additionalNotes, initialValues?.address, initialValues?.age, initialValues?.bloodGroup, initialValues?.dateOfBirth, initialValues?.emergencyContact, initialValues?.gender, initialValues?.guardianName, initialValues?.height, initialValues?.name, initialValues?.phone, initialValues?.weight, isOpen]);
 
   const handleClose = () => {
     if (!isPending) onClose();
@@ -96,7 +132,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={isCustomer ? (editing ? 'Edit Customer' : 'New Customer') : (editing ? 'Edit Vendor' : 'New Vendor')}
+      title={isCustomer ? (editing ? `Edit ${terminology.customer}` : `New ${terminology.customer}`) : (editing ? 'Edit Vendor' : 'New Vendor')}
       size="md"
       contentClassName="space-y-5"
       footer={(
@@ -104,8 +140,8 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
           <Button onClick={handleClose} variant="secondary" disabled={isPending}>Cancel</Button>
           <Button onClick={handleSave} variant="primary" loading={isPending} disabled={isLoading || isPending}>
             {isPending
-              ? (isCustomer ? (editing ? 'Updating Customer...' : 'Adding Customer...') : (editing ? 'Updating Vendor...' : 'Adding Vendor...'))
-              : (isCustomer ? (editing ? 'Update Customer' : 'Add Customer') : (editing ? 'Update Vendor' : 'Add Vendor'))}
+              ? (isCustomer ? (editing ? `Updating ${terminology.customer}...` : `Adding ${terminology.customer}...`) : (editing ? 'Updating Vendor...' : 'Adding Vendor...'))
+              : (isCustomer ? (editing ? `Update ${terminology.customer}` : `Add ${terminology.customer}`) : (editing ? 'Update Vendor' : 'Add Vendor'))}
           </Button>
         </>
       )}
@@ -119,11 +155,11 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
               <p className="text-sm font-bold text-red-600">{String(error)}</p>
             </div>
           )}
-          {smartMode ? (
+          {smartMode && !isVaccineCenter ? (
             <div className="space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
-                  <label className="text-xs font-black uppercase tracking-widest text-gray-400">{isCustomer ? 'Customer' : 'Vendor'} details</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-gray-400">{isCustomer ? terminology.customer : 'Vendor'} details</label>
                   <InfoTooltip position="below" message="Name, phone, and address can be on separate lines or mixed together. They will be extracted when you save." />
                 </div>
                 <textarea
@@ -167,14 +203,30 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
                   }}
                 />
               </div>
-              <div className="space-y-2">
+              {!isVaccineCenter && <div className="space-y-2">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest">Address</label>
                 <textarea
                   className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 focus:border-[#3c5a82] focus:bg-white rounded-lg font-medium h-28 transition-all outline-none"
                   value={form.address}
                   onChange={(event) => setForm({ ...form, address: event.target.value })}
                 />
-              </div>
+              </div>}
+              {isCustomer && isVaccineCenter && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Age</span><input type="number" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.age} onChange={event => setForm({ ...form, age: event.target.value })} /></label>
+                  <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Gender</span><select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.gender} onChange={event => setForm({ ...form, gender: event.target.value })}><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Non-Binary">Non-Binary</option></select></label>
+                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Date of Birth</span><input type="date" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.dateOfBirth} onChange={event => setForm({ ...form, dateOfBirth: event.target.value })} /></label>
+                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Weight ({weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'})</span><div className="relative"><input type="number" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 font-medium outline-none" value={form.weight} onChange={event => setForm({ ...form, weight: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">{weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'}</span></div></label>
+                  {heightUnit === 'feet-inches' ? <label className="space-y-3 md:col-span-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Height (ft/in)</span><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Feet</span><div className="relative"><input aria-label="Height feet" type="number" min="0" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.heightFeet} onChange={event => setForm({ ...form, heightFeet: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">ft</span></div></div><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Inches</span><div className="relative"><input aria-label="Height inches" type="number" min="0" max="11" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.heightInches} onChange={event => setForm({ ...form, heightInches: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">in</span></div></div></div></label> : <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Height (cm)</span><div className="relative"><input type="number" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.height} onChange={event => setForm({ ...form, height: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">cm</span></div></label>}
+                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Blood Group</span><select className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.bloodGroup} onChange={event => setForm({ ...form, bloodGroup: event.target.value })}><option value="">Select blood group</option><option value="A+">A+</option><option value="A-">A-</option><option value="B+">B+</option><option value="B-">B-</option><option value="AB+">AB+</option><option value="AB-">AB-</option><option value="O+">O+</option><option value="O-">O-</option></select></label>
+                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Guardian/Parent Name</span><input type="text" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.guardianName} onChange={event => setForm({ ...form, guardianName: event.target.value })} /></label>
+                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Emergency Contact</span><input type="text" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.emergencyContact} onChange={event => setForm({ ...form, emergencyContact: event.target.value })} /></label>
+                  <label className="space-y-2 md:col-span-2">
+                    <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Additional Notes</span>
+                    <textarea className="w-full px-4 py-3 bg-gray-50 border border-gray-200 focus:border-[#3c5a82] focus:bg-white rounded-xl font-medium outline-none" value={form.additionalNotes} onChange={(event) => setForm({ ...form, additionalNotes: event.target.value })} />
+                  </label>
+                </div>
+              )}
             </>
           )}
         </>
@@ -186,7 +238,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
 interface CustomerCreateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialValues?: Partial<Pick<ContactFormValues, 'name' | 'phone' | 'address'>>;
+  initialValues?: Partial<ContactFormValues>;
   onCreated?: (customer: Customer) => void;
   editingCustomer?: (Pick<Customer, 'id'> & Partial<Customer>) | null;
   onUpdated?: (customer: Customer) => void;
@@ -194,12 +246,13 @@ interface CustomerCreateModalProps {
 
 export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated, editingCustomer, onUpdated }) => {
   const { user, isLoading: authLoading } = useAuth();
-  const { capabilities, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const { capabilities, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(isOpen && hasBeSmart);
   const createMutation = useCreateCustomer();
   const updateMutation = useUpdateCustomer();
-  const smartMode = hasBeSmart && Boolean(beSmartSettings?.smartCustomerAdding);
+  const smartMode = hasBeSmart && !isVaccineCenter && Boolean(beSmartSettings?.smartCustomerAdding);
   const editing = Boolean(editingCustomer);
 
   return (
@@ -208,7 +261,7 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
       isOpen={isOpen}
       onClose={onClose}
       initialValues={editingCustomer
-        ? { name: editingCustomer.name, phone: editingCustomer.phone, address: editingCustomer.address }
+        ? { name: editingCustomer.name, phone: editingCustomer.phone, address: editingCustomer.address, age: editingCustomer.age, gender: editingCustomer.gender, dateOfBirth: editingCustomer.dateOfBirth, weight: editingCustomer.weight, height: editingCustomer.height, bloodGroup: editingCustomer.bloodGroup, guardianName: editingCustomer.guardianName, emergencyContact: editingCustomer.emergencyContact, additionalNotes: editingCustomer.additionalNotes }
         : initialValues}
       editing={editing}
       smartMode={smartMode}
@@ -220,7 +273,12 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
             id: editingCustomer.id,
             updates: values.smartInput
               ? { smartInput: values.smartInput }
-              : { name: values.name, phone: values.phone, address: values.address },
+              : { name: values.name, phone: values.phone, address: isVaccineCenter ? '' : values.address, ...(isVaccineCenter ? {
+                age: values.age === '' ? null : Number(values.age), gender: values.gender || null, dateOfBirth: values.dateOfBirth || null,
+                weight: values.weight === '' ? null : Number(values.weight), height: heightUnit === 'feet-inches' ? (values.heightFeet === '' ? null : Number(values.heightFeet) * 12 + Number(values.heightInches || 0)) : (values.height === '' ? null : Number(values.height)),
+                bloodGroup: values.bloodGroup || null, guardianName: values.guardianName || null, emergencyContact: values.emergencyContact || null,
+                additionalNotes: values.additionalNotes || null,
+              } : {}) },
           });
           onUpdated?.(updated);
           return;
@@ -228,7 +286,13 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
         const created = await createMutation.mutateAsync({
           name: values.name,
           phone: values.phone,
-          address: values.address,
+          address: isVaccineCenter ? '' : values.address,
+          ...(isVaccineCenter ? {
+            age: values.age === '' ? null : Number(values.age), gender: values.gender || null, dateOfBirth: values.dateOfBirth || null,
+            weight: values.weight === '' ? null : Number(values.weight), height: heightUnit === 'feet-inches' ? (values.heightFeet === '' ? null : Number(values.heightFeet) * 12 + Number(values.heightInches || 0)) : (values.height === '' ? null : Number(values.height)),
+            bloodGroup: values.bloodGroup || null, guardianName: values.guardianName || null, emergencyContact: values.emergencyContact || null,
+            additionalNotes: values.additionalNotes || null,
+          } : {}),
           totalOrders: 0,
           dueAmount: 0,
           ...(values.smartInput ? { smartInput: values.smartInput } : {}),

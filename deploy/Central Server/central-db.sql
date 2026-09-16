@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS licenses (
   client_name VARCHAR(255) NOT NULL,
   domain VARCHAR(255) NULL,
   tier_key VARCHAR(64) NOT NULL,
+  business_mode VARCHAR(32) NOT NULL DEFAULT 'general_retail',
   status VARCHAR(64) NOT NULL DEFAULT 'active',
   renewal_date DATETIME NULL,
   capability_overrides LONGTEXT NULL,
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS maintenance_settings (
 
 ALTER TABLE licenses
   ADD COLUMN IF NOT EXISTS pricing_metadata LONGTEXT NULL AFTER override_enabled,
-  ADD COLUMN IF NOT EXISTS sub_capability_overrides LONGTEXT NULL AFTER capability_overrides;
+  ADD COLUMN IF NOT EXISTS sub_capability_overrides LONGTEXT NULL AFTER capability_overrides,
+  ADD COLUMN IF NOT EXISTS business_mode VARCHAR(32) NOT NULL DEFAULT 'general_retail' AFTER tier_key;
 
 INSERT INTO maintenance_settings (id, enabled) VALUES ('maintenance', 0)
   ON DUPLICATE KEY UPDATE id = VALUES(id);

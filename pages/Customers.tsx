@@ -22,6 +22,8 @@ import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { decodeDynamicTextFilterValue, encodeDynamicTextFilterValue } from '../utils';
 import { useSubscriptionReadOnly } from '../src/contexts/SubscriptionReadOnlyContext';
 import { WRITE_FREEZE_ENABLED, WRITE_FREEZE_MESSAGE } from '../src/config/incidentMode';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
@@ -29,6 +31,10 @@ const Customers: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
   const { user } = useAuth();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const entityLabel = terminology.customer;
+  const entityPlural = terminology.customers;
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const openCreateRequested = Boolean((location.state as { openCreateCustomer?: boolean } | null)?.openCreateCustomer);
   const [isCreateCustomerOpen, setIsCreateCustomerOpen] = React.useState(openCreateRequested);
@@ -312,7 +318,7 @@ const Customers: React.FC = () => {
   const filteredCustomers = customers;
 
   const handleDelete = async (customerId: string) => {
-    if (!confirm('Move this customer to the recycle bin? You can restore it later.')) return;
+    if (!confirm(`Move this ${terminology.customerLower} to the recycle bin? You can restore it later.`)) return;
 
     // If this is an optimistic local-only item (temp id), remove it from the cache
     if (isTempId(customerId)) {
@@ -320,13 +326,13 @@ const Customers: React.FC = () => {
         if (!old) return old;
         return old.filter(c => c.id !== customerId);
       });
-      toast.success('Customer removed from this list.');
+      toast.success(`${terminology.customer} removed from this list.`);
       return;
     }
 
     try {
       await deleteCustomerMutation.mutateAsync(customerId);
-      toast.success('Customer moved to the recycle bin');
+      toast.success(`${terminology.customer} moved to the recycle bin`);
     } catch (err) {
       console.error('Failed to delete customer:', err);
       const msg = getErrorMessage(err);
@@ -346,7 +352,7 @@ const Customers: React.FC = () => {
           filterDefinitions={customerFilterDefinitions}
           initialFilters={initialFilters}
           users={users}
-          freeTextLabel="Customers"
+          freeTextLabel={entityPlural}
           rawSearchValue={searchQuery}
           onRawSearchChange={setSearchQuery}
           onApply={(appliedFilters) => {
@@ -400,7 +406,7 @@ const Customers: React.FC = () => {
             disabled={WRITE_FREEZE_ENABLED}
             title={WRITE_FREEZE_ENABLED ? WRITE_FREEZE_MESSAGE : undefined}
           >
-            New Customer
+            New {entityLabel}
           </Button>
         )}
       </div>
@@ -414,7 +420,7 @@ const Customers: React.FC = () => {
         columns={[
           {
             key: 'name',
-            label: 'Customer Name',
+            label: `${entityLabel} Name`,
             nowrap: true,
             render: (_, customer) => (
               <div className="flex min-w-max items-center gap-3">
@@ -503,7 +509,7 @@ const Customers: React.FC = () => {
           }).catch(() => {});
         }}
         onRowClick={(customer) => navigate(`/customers/${customer.id}`, { state: buildHistoryBackState(location) })}
-        emptyMessage="No customers found"
+        emptyMessage={`No ${entityPlural.toLowerCase()} found`}
       />
       <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} disabled={isFetching} />
       {isCreateCustomerOpen && <CustomerCreateModal isOpen onClose={handleCloseCreateCustomer} />}

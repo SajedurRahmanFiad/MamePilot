@@ -1662,7 +1662,7 @@ const OrderDetails: React.FC = () => {
 
     // No courier history at all — brand new customer, cannot assess risk
     if (totalParcels === 0) {
-      return { label: 'New Customer', message: 'No delivery history available', className: 'bg-gray-100 text-gray-600 border-gray-200' };
+      return { label: `New ${terminology.customer}`, message: 'No delivery history available', className: 'bg-gray-100 text-gray-600 border-gray-200' };
     }
 
     // Very few parcels and no successful deliveries — not enough data to judge
@@ -1676,10 +1676,10 @@ const OrderDetails: React.FC = () => {
 
     // Enough data — use percentage-based classification
     if (fraudPercentage >= 90) {
-      return { label: 'Trusted Customer', message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+      return { label: `Trusted ${terminology.customer}`, message: 'Safe to send', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
     }
     if (fraudPercentage >= 70) {
-      return { label: 'Standard Customer', message: 'Send with normal checks', className: 'bg-blue-100 text-blue-700 border-blue-200' };
+      return { label: `Standard ${terminology.customer}`, message: 'Send with normal checks', className: 'bg-blue-100 text-blue-700 border-blue-200' };
     }
     if (fraudPercentage >= 40) {
       return { label: 'Moderate Risk', message: 'Confirm before sending', className: 'bg-amber-100 text-amber-700 border-amber-200' };

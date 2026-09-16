@@ -238,6 +238,15 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
+  age?: number | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  weight?: number | null;
+  height?: number | null;
+  bloodGroup?: string | null;
+  guardianName?: string | null;
+  emergencyContact?: string | null;
+  additionalNotes?: string | null;
   totalOrders: number;
   dueAmount: number;
   createdBy?: string;
@@ -276,6 +285,11 @@ export interface Product {
   purchasePrice: number;
   stock: number;
   dynamicPricing?: string;
+  manufacturer?: string | null;
+  batchLotNumber?: string | null;
+  expiryDate?: string | null;
+  recommendedDoseSequence?: string | null;
+  notes?: string | null;
   createdBy?: string;
   deletedAt?: string;
   deletedBy?: string;
@@ -537,6 +551,8 @@ export interface CompanySettings {
   email: string;
   address: string;
   pages: CompanyPage[];
+  weightUnit?: 'pound' | 'kg' | 'gram';
+  heightUnit?: 'feet-inches' | 'cm';
 }
 
 export interface FraudCheckerSettings {
@@ -1553,6 +1569,7 @@ export interface LicenseTier {
 export interface CapabilitySettings {
   capabilities: AppCapabilityMap & { subCapabilities?: SubCapabilityMap };
   subCapabilities?: SubCapabilityMap;
+  businessMode?: BusinessMode;
   tierKey?: string | null;
   planName?: string | null;
   licenseStatus: string;
@@ -1575,6 +1592,8 @@ export interface CapabilitySettings {
   licenseApiUrl?: string;
   licenseOwnerToken?: string;
 }
+
+export type BusinessMode = 'general_retail' | 'vaccine_center';
 
 export interface PaymentGatewaySettings {
   piprapayBaseUrl: string;

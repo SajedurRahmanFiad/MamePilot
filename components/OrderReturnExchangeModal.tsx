@@ -6,6 +6,8 @@ import { Order, OrderItem, ReturnExchangeAction, ReturnExchangeItemSelection, Pr
 import { useAccounts, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
 import { fetchProductsSearch } from '../src/services/supabaseQueries';
 import { calculateReturnAdjustment } from '../utils';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 interface OrderReturnExchangeModalProps {
   isOpen: boolean;
@@ -32,6 +34,8 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: systemDefaults } = useSystemDefaults();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   const [activeTab, setActiveTab] = useState<TabKey>('partialReturn');
   const [itemSelections, setItemSelections] = useState<ReturnExchangeItemSelection[]>([]);
@@ -534,7 +538,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
                         </div>
                       ))}
 
-                      {/* Add replacement product */}
+                      {/* Add replacement item */}
                       {activeExchangeItemIdx === idx ? (
                         <div className="relative">
                           <div className="relative">
@@ -558,7 +562,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
                                   <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                                 </div>
                               ) : searchResults.length === 0 ? (
-                                <div className="p-4 text-center text-gray-400 text-sm font-medium">No products found</div>
+                                <div className="p-4 text-center text-gray-400 text-sm font-medium">No {terminology.itemsLower} found</div>
                               ) : (
                                 searchResults.map((product) => (
                                   <button
@@ -594,7 +598,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
                           onClick={() => setActiveExchangeItemIdx(idx)}
                           className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition"
                         >
-                          {ICONS.Plus} Add replacement product
+                          {ICONS.Plus} Add replacement {terminology.itemLower}
                         </button>
                       )}
                     </div>
@@ -668,7 +672,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
               {computedRefund > 0 && (
                 <div className="border-t border-gray-200 pt-2 space-y-3">
                   <div className="flex justify-between text-sm">
-                    <span className="font-bold text-orange-600">Refund to customer</span>
+                    <span className="font-bold text-orange-600">Refund to {terminology.customerLower}</span>
                     <span className="font-black text-orange-600">{formatCurrency(computedRefund)}</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -708,7 +712,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
               {computedCollection > 0 && (
                 <div className="border-t border-gray-200 pt-2 space-y-3">
                   <div className="flex justify-between text-sm">
-                    <span className="font-bold text-emerald-600">Customer pays extra</span>
+                    <span className="font-bold text-emerald-600">{terminology.customer} pays extra</span>
                     <span className="font-black text-emerald-600">{formatCurrency(computedCollection)}</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

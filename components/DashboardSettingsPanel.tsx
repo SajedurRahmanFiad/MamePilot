@@ -8,6 +8,8 @@ import {
   normalizeDashboardConfiguration,
 } from '../src/dashboardConfig';
 import { ICONS } from '../constants';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { Button } from './Button';
 
 interface DashboardSettingsPanelProps {
@@ -124,6 +126,24 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
 };
 
 const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false, lowStockThreshold = 10, onLowStockThresholdChange }) => {
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const dashboardWidgetDefinitions = useMemo(
+    () => DASHBOARD_WIDGET_DEFINITIONS.map((definition) => {
+      if (definition.key === 'admin.topSoldProducts') {
+        return { ...definition, label: `Top 5 Sold ${terminology.items}`, description: `Best-selling ${terminology.itemsLower} by quantity.` };
+      }
+      if (definition.key === 'admin.lowStockProducts') {
+        return { ...definition, label: `Low Stock ${terminology.items}`, description: `${terminology.items} and batches at or below the low-stock threshold.` };
+      }
+      return definition;
+    }),
+    [terminology.items, terminology.itemsLower],
+  );
+  const dashboardKpiDefinitions = useMemo(
+    () => DASHBOARD_KPI_DEFINITIONS,
+    [],
+  );
   const [selectedDashboardId, setSelectedDashboardId] = useState(value.dashboards[0]?.id || '');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newDashboardName, setNewDashboardName] = useState('');
@@ -235,7 +255,7 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
               title="KPI Cards"
               description="Enabled cards are rendered first in this exact order. Returned Orders is available here as an additional card."
               items={selectedDashboard.kpiCards}
-              definitions={DASHBOARD_KPI_DEFINITIONS}
+              definitions={dashboardKpiDefinitions}
               onChange={(items) => updateSelected((dashboard) => ({ ...dashboard, kpiCards: items }))}
               headerExtra={
                 <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
@@ -273,7 +293,7 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
               title="Widgets"
               description="Enabled widgets are rendered after the KPI cards in this exact order. Set the width % for each widget (desktop only)."
               items={selectedDashboard.widgets}
-              definitions={DASHBOARD_WIDGET_DEFINITIONS}
+              definitions={dashboardWidgetDefinitions}
               onChange={(items) => updateSelected((dashboard) => ({ ...dashboard, widgets: items }))}
               showWidth
             />

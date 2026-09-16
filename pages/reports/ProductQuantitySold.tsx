@@ -3,12 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import FilterBar, { FilterRange } from '../../components/FilterBar';
 import { ReportPageSkeleton } from '../../components';
 import { useProductQuantitySoldReport } from '../../src/hooks/useQueries';
+import { useCapabilities } from '../../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../../src/utils/businessMode';
 import { formatCurrency } from '../../constants';
 import { useSearch } from '../../src/contexts/SearchContext';
 
 const ProductQuantitySold: React.FC = () => {
   const navigate = useNavigate();
   const { searchQuery } = useSearch();
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const [filterRange, setFilterRange] = useState<FilterRange>('All Time');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const deferredSearchQuery = React.useDeferredValue(searchQuery);
@@ -27,7 +31,7 @@ const ProductQuantitySold: React.FC = () => {
           <button onClick={() => navigate('/reports')} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 text-gray-500">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
           </button>
-          <h2 className="text-2xl font-bold text-gray-900">Product Quantity Sold</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{terminology.item} Quantity Sold</h2>
         </div>
         <div className="hidden sm:block">
           <FilterBar
@@ -50,14 +54,14 @@ const ProductQuantitySold: React.FC = () => {
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">Sold Quantity by Product</h3>
+          <h3 className="font-bold text-gray-900">Sold Quantity by {terminology.item}</h3>
           <span className="text-xs font-black text-gray-500 uppercase tracking-widest">Total Qty: {totalQty}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Product</th>
+                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{terminology.item}</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Quantity Sold</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Revenue</th>
               </tr>
@@ -65,7 +69,7 @@ const ProductQuantitySold: React.FC = () => {
             <tbody className="divide-y divide-gray-50">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-6 py-16 text-center text-gray-400 italic font-medium">No sold product data for this period.</td>
+                  <td colSpan={3} className="px-6 py-16 text-center text-gray-400 italic font-medium">No sold {terminology.itemLower} data for this period.</td>
                 </tr>
               ) : (
                 rows.map((row, idx) => (

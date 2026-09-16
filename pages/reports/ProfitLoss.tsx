@@ -6,6 +6,8 @@ import { formatCurrency, ICONS, getStatusDisplayName } from '../../constants';
 import { ReportPageSkeleton } from '../../components';
 import { theme } from '../../theme';
 import { useCompanySettings, useProfitLossReport } from '../../src/hooks/useQueries';
+import { useCapabilities } from '../../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../../src/utils/businessMode';
 import { normalizeCompanySettings } from '../../src/utils/companyPages';
 import { OrderStatus } from '../../types';
 
@@ -27,6 +29,8 @@ const ProfitLoss: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const reportFilterRange = dateRange === 'currentMonth' ? 'This Month' : dateRange === 'custom' ? 'Custom' : 'This Year';
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   const { data: companySettingsData, isPending: isCompanyLoading } = useCompanySettings();
   const companySettings = useMemo(
@@ -231,7 +235,7 @@ const ProfitLoss: React.FC = () => {
             </div>
             <div className="flex-1 text-center border-l border-gray-100 pl-6">
               <p className="text-2xl font-black text-gray-900">{plData?.productsSold ?? 0}</p>
-              <p className="text-xs font-bold text-gray-500 mt-1">Products Sold</p>
+              <p className="text-xs font-bold text-gray-500 mt-1">{terminology.items} Sold</p>
             </div>
           </div>
 

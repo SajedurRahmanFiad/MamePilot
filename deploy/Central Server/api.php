@@ -36,6 +36,7 @@ declare(strict_types=1);
  *   client_name VARCHAR(255) NOT NULL,
  *   domain VARCHAR(255) NULL,
  *   tier_key VARCHAR(64) NOT NULL,
+ *   business_mode VARCHAR(32) NOT NULL DEFAULT 'general_retail',
  *   status VARCHAR(64) NOT NULL DEFAULT 'active',
  *   renewal_date DATETIME NULL,
  *   capability_overrides LONGTEXT NULL,
@@ -297,6 +298,7 @@ function ensureLicensePricingSchema(PDO $pdo): void
     $definitions = [
         'pricing_metadata' => 'LONGTEXT NULL AFTER `override_enabled`',
         'sub_capability_overrides' => 'LONGTEXT NULL AFTER `capability_overrides`',
+        'business_mode' => "VARCHAR(32) NOT NULL DEFAULT 'general_retail' AFTER `tier_key`",
     ];
     foreach ($definitions as $column => $definition) {
         $statement = $pdo->prepare(
@@ -319,6 +321,13 @@ function ensureLicensePricingSchema(PDO $pdo): void
     }
 
     $checked = true;
+}
+
+function normalizeBusinessMode($value): string
+{
+    return in_array((string) $value, ['general_retail', 'vaccine_center'], true)
+        ? (string) $value
+        : 'general_retail';
 }
 
 function mysqlUtcDateTime($value): ?string
@@ -542,6 +551,7 @@ function resolveLicense(PDO $pdo, string $licenseKey): array
         'domain' => $license['domain'] ?? null,
         'status' => $license['status'] ?? 'active',
         'tier_key' => $tier['tier_key'],
+        'business_mode' => normalizeBusinessMode($license['business_mode'] ?? null),
         'plan_name' => $tier['tier_name'],
         'renewal_date' => $license['renewal_date'] ?? null,
         'override_enabled' => $overrideEnabled,
@@ -1057,20 +1067,22 @@ try {
             $clientName = $domain !== '' ? $domain : 'MamePilot Client';
         }
 
-        $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
-
         $existing = $pdo->prepare('SELECT license_key FROM licenses WHERE license_key = :license_key LIMIT 1');
         $existing->execute([':license_key' => $licenseKey]);
-        if ($existing->fetch()) {
+        $existingLicense = $existing->fetch();
+        $businessMode = normalizeBusinessMode($body['business_mode'] ?? $body['businessMode'] ?? ($existingLicense['business_mode'] ?? 'general_retail'));
+        $pricingMetadata = pricingMetadataFrom($body['pricing_metadata'] ?? $body['pricingMetadata'] ?? []);
+
+        if ($existingLicense) {
             $statement = $pdo->prepare(
                 'UPDATE licenses
-                 SET client_name = :client_name, domain = :domain, tier_key = :tier_key, status = :status, renewal_date = :renewal_date, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
+                 SET client_name = :client_name, domain = :domain, tier_key = :tier_key, business_mode = :business_mode, status = :status, renewal_date = :renewal_date, pricing_metadata = :pricing_metadata, updated_at = CURRENT_TIMESTAMP
                  WHERE license_key = :license_key'
             );
         } else {
             $statement = $pdo->prepare(
-                'INSERT INTO licenses (license_key, client_name, domain, tier_key, status, renewal_date, pricing_metadata)
-                 VALUES (:license_key, :client_name, :domain, :tier_key, :status, :renewal_date, :pricing_metadata)'
+                'INSERT INTO licenses (license_key, client_name, domain, tier_key, business_mode, status, renewal_date, pricing_metadata)
+                 VALUES (:license_key, :client_name, :domain, :tier_key, :business_mode, :status, :renewal_date, :pricing_metadata)'
             );
         }
 
@@ -1079,6 +1091,7 @@ try {
             ':client_name' => $clientName,
             ':domain' => $domain !== '' ? $domain : null,
             ':tier_key' => $tierKey,
+            ':business_mode' => $businessMode,
             ':status' => trim((string) ($body['status'] ?? 'active')) ?: 'active',
             ':renewal_date' => trim((string) ($body['renewal_date'] ?? '')) ?: null,
             ':pricing_metadata' => $pricingMetadata !== []

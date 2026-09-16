@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, NumericInput } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { submitPaperflyOrder, submitPaperflyExchangeOrder } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -25,6 +27,8 @@ function formatHistoryMoment(): string {
 export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
   const queryClient = useQueryClient();
   const { data: courierSettings } = useCourierSettings();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const toast = useToastNotifications();
   const updateOrder = useUpdateOrder();
 
@@ -237,15 +241,15 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Name</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Name</label>
               <p className="text-gray-900">{customer?.name || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Phone</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Phone</label>
               <p className="text-gray-900">{normalizedCustomerPhone || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Address</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Address</label>
               <p className="text-gray-900">{normalizedCustomerAddress || '-'}</p>
             </div>
             <div>

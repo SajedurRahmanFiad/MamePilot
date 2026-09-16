@@ -3935,8 +3935,12 @@ final class OperationsApi extends BaseService
         $topProductConditions = ['deleted_at IS NULL', 'status = :dashboard_top_product_status'];
         $topProductBindings = [':dashboard_top_product_status' => 'Completed'];
         $this->applyDashboardDateBounds('order_date', $filters, $topProductConditions, $topProductBindings, 'dashboard_top_product');
+        $usePhpOrderItemAggregation = empty($filters['fromDate']) && empty($filters['toDate']);
 
         try {
+            if ($usePhpOrderItemAggregation) {
+                throw new RuntimeException('Use PHP order-item aggregation for all-time dashboard data.');
+            }
             $topProductIdSql = $this->orderItemJsonValue('o', 'top_product_seq', 'productId');
             $topProductNameSql = $this->orderItemJsonValue('o', 'top_product_seq', 'productName');
             $topProductQuantitySql = $this->orderItemJsonValue('o', 'top_product_seq', 'quantity');
@@ -4034,6 +4038,9 @@ final class OperationsApi extends BaseService
                 $this->applyDashboardDateBounds('order_date', $filters, $topBatchConditions, $topBatchBindings, 'dashboard_top_batch');
 
                 try {
+                    if ($usePhpOrderItemAggregation) {
+                        throw new RuntimeException('Use PHP order-item aggregation for all-time dashboard data.');
+                    }
                     $topBatchIdSql = $this->orderItemJsonValue('o', 'top_batch_seq', 'productId');
                     $topBatchNameSql = $this->orderItemJsonValue('o', 'top_batch_seq', 'productName');
                     $topBatchQuantitySql = $this->orderItemJsonValue('o', 'top_batch_seq', 'quantity');

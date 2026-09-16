@@ -11,6 +11,7 @@ import { useAuth } from '../src/contexts/AuthProvider';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { formatDate, formatDateTimeParts, getTodayDate } from '../utils';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 
 const CustomerDetails: React.FC = () => {
   const { id } = useParams();
@@ -18,6 +19,8 @@ const CustomerDetails: React.FC = () => {
   const location = useLocation();
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const { user } = useAuth();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const isVaccineCenter = (capabilitySettings?.businessMode || 'general_retail') === 'vaccine_center';
   
   // Query data - ALL HOOKS MUST BE AT TOP, CALLED UNCONDITIONALLY
   const { data: customer } = useCustomer(id || '');
@@ -110,7 +113,7 @@ const CustomerDetails: React.FC = () => {
   };
 
   if (!customer) {
-    return <div className="p-8 text-center text-gray-500">Customer not found.</div>;
+    return <div className="p-8 text-center text-gray-500">{isVaccineCenter ? 'Patient not found.' : 'Customer not found.'}</div>;
   }
 
   return (
@@ -133,7 +136,7 @@ const CustomerDetails: React.FC = () => {
           }} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 text-gray-500">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
           </button>
-          <h2 className="text-2xl font-bold text-gray-900">Customer Profile</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{isVaccineCenter ? 'Patient Profile' : 'Customer Profile'}</h2>
         </div>
         <div className="flex gap-2">
           {canEditCustomers && (
@@ -202,6 +205,24 @@ const CustomerDetails: React.FC = () => {
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Address</p>
                 <p className="text-sm text-gray-700 font-medium leading-relaxed">{customer.address}</p>
               </div>
+              {isVaccineCenter && (
+                <div className="grid grid-cols-2 gap-4 border-t border-gray-50 pt-4">
+                  {[
+                    ['Age', customer.age], ['Gender', customer.gender], ['Date of Birth', customer.dateOfBirth ? formatDate(customer.dateOfBirth) : null],
+                    ['Weight', customer.weight], ['Height', customer.height], ['Blood Group', customer.bloodGroup],
+                    ['Guardian/Parent', customer.guardianName], ['Emergency Contact', customer.emergencyContact],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{label}</p>
+                      <p className="text-sm text-gray-700 font-medium">{value || 'N/A'}</p>
+                    </div>
+                  ))}
+                  <div className="col-span-2 space-y-1">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Additional Notes</p>
+                    <p className="text-sm text-gray-700 font-medium whitespace-pre-wrap">{customer.additionalNotes || 'N/A'}</p>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4 pt-2">
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Orders</p>
@@ -252,7 +273,7 @@ const CustomerDetails: React.FC = () => {
                 <tbody className="divide-y divide-gray-50">
                   {customerOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">No orders found for this customer.</td>
+                      <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">No orders found for this {isVaccineCenter ? 'patient' : 'customer'}.</td>
                     </tr>
                   ) : (
                     customerOrders.map((order) => (

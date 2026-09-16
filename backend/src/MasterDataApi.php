@@ -732,6 +732,17 @@ final class MasterDataApi extends BaseService
         $phone = trim((string) ($params['phone'] ?? ''));
         $name = trim((string) ($params['name'] ?? ''));
         $address = $this->nullableString($params['address'] ?? null);
+        $patientFields = [
+            'age' => isset($params['age']) && $params['age'] !== '' ? (int) $params['age'] : null,
+            'gender' => $this->nullableString($params['gender'] ?? null),
+            'date_of_birth' => $this->nullableString($params['dateOfBirth'] ?? null),
+            'weight' => isset($params['weight']) && $params['weight'] !== '' ? (float) $params['weight'] : null,
+            'height' => isset($params['height']) && $params['height'] !== '' ? (float) $params['height'] : null,
+            'blood_group' => $this->nullableString($params['bloodGroup'] ?? null),
+            'guardian_name' => $this->nullableString($params['guardianName'] ?? null),
+            'emergency_contact' => $this->nullableString($params['emergencyContact'] ?? null),
+            'additional_notes' => $this->nullableString($params['additionalNotes'] ?? null),
+        ];
 
         if ($phone !== '') {
             $existing = $this->database->fetchOne(
@@ -751,13 +762,22 @@ final class MasterDataApi extends BaseService
 
         $id = $this->stringId($params['id'] ?? null);
         $this->database->execute(
-            'INSERT INTO customers (id, name, phone, address, total_orders, due_amount, created_by, created_at, updated_at)
-             VALUES (:id, :name, :phone, :address, :total_orders, :due_amount, :created_by, :created_at, :updated_at)',
+            'INSERT INTO customers (id, name, phone, address, age, gender, date_of_birth, weight, height, blood_group, guardian_name, emergency_contact, additional_notes, total_orders, due_amount, created_by, created_at, updated_at)
+             VALUES (:id, :name, :phone, :address, :age, :gender, :date_of_birth, :weight, :height, :blood_group, :guardian_name, :emergency_contact, :additional_notes, :total_orders, :due_amount, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => $name,
                 ':phone' => $phone,
                 ':address' => $address,
+                ':age' => $patientFields['age'],
+                ':gender' => $patientFields['gender'],
+                ':date_of_birth' => $patientFields['date_of_birth'],
+                ':weight' => $patientFields['weight'],
+                ':height' => $patientFields['height'],
+                ':blood_group' => $patientFields['blood_group'],
+                ':guardian_name' => $patientFields['guardian_name'],
+                ':emergency_contact' => $patientFields['emergency_contact'],
+                ':additional_notes' => $patientFields['additional_notes'],
                 ':total_orders' => (int) ($params['totalOrders'] ?? 0),
                 ':due_amount' => $this->formatMoney($params['dueAmount'] ?? 0),
                 ':created_by' => (string) $actor['id'],
@@ -820,6 +840,17 @@ final class MasterDataApi extends BaseService
         }
         if (array_key_exists('address', $updates)) {
             $payload['address'] = $this->nullableString($updates['address']);
+        }
+        foreach ([
+            'age' => 'age', 'gender' => 'gender', 'dateOfBirth' => 'date_of_birth', 'weight' => 'weight',
+            'height' => 'height', 'bloodGroup' => 'blood_group', 'guardianName' => 'guardian_name',
+            'emergencyContact' => 'emergency_contact', 'additionalNotes' => 'additional_notes',
+        ] as $input => $column) {
+            if (array_key_exists($input, $updates)) {
+                $payload[$column] = in_array($input, ['age', 'weight', 'height'], true)
+                    ? ($updates[$input] === '' || $updates[$input] === null ? null : (float) $updates[$input])
+                    : $this->nullableString($updates[$input]);
+            }
         }
         if (array_key_exists('totalOrders', $updates)) {
             $payload['total_orders'] = (int) $updates['totalOrders'];
@@ -1060,6 +1091,11 @@ final class MasterDataApi extends BaseService
                 purchase_price,
                 stock,
                 dynamic_pricing,
+                manufacturer,
+                batch_lot_number,
+                expiry_date,
+                recommended_dose_sequence,
+                notes,
                 created_by,
                 created_at,
                 deleted_at,
@@ -1137,7 +1173,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, slug, sku, category, unit_id, sale_price, purchase_price, stock, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, slug, sku, category, unit_id, sale_price, purchase_price, stock, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, deleted_at, deleted_by
              FROM products
              {$where}
              ORDER BY created_at DESC, id DESC
@@ -1389,8 +1425,8 @@ final class MasterDataApi extends BaseService
         $slug = $this->generateProductSlug($params['slug'] ?? null, $name);
         $sku = $this->normalizeProductSku($params['sku'] ?? null);
         $this->database->execute(
-            'INSERT INTO products (id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, created_by, created_at, updated_at)
-             VALUES (:id, :name, :slug, :sku, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :created_by, :created_at, :updated_at)',
+            'INSERT INTO products (id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :sku, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :manufacturer, :batch_lot_number, :expiry_date, :recommended_dose_sequence, :notes, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => $name,
@@ -1403,6 +1439,11 @@ final class MasterDataApi extends BaseService
                 ':purchase_price' => $this->formatMoney($params['purchasePrice'] ?? 0),
                 ':stock' => (int) ($params['stock'] ?? 0),
                 ':dynamic_pricing' => $this->nullableString($params['dynamicPricing'] ?? null),
+                ':manufacturer' => $this->nullableString($params['manufacturer'] ?? null),
+                ':batch_lot_number' => $this->nullableString($params['batchLotNumber'] ?? null),
+                ':expiry_date' => $this->nullableString($params['expiryDate'] ?? null),
+                ':recommended_dose_sequence' => $this->nullableString($params['recommendedDoseSequence'] ?? null),
+                ':notes' => $this->nullableString($params['notes'] ?? null),
                 ':created_by' => (string) $actor['id'],
                 ':created_at' => $this->database->nowUtc(),
                 ':updated_at' => $this->database->nowUtc(),
@@ -1464,6 +1505,14 @@ final class MasterDataApi extends BaseService
         }
         if (array_key_exists('dynamicPricing', $updates)) {
             $payload['dynamic_pricing'] = $this->nullableString($updates['dynamicPricing']);
+        }
+        foreach ([
+            'manufacturer' => 'manufacturer', 'batchLotNumber' => 'batch_lot_number', 'expiryDate' => 'expiry_date',
+            'recommendedDoseSequence' => 'recommended_dose_sequence', 'notes' => 'notes',
+        ] as $input => $column) {
+            if (array_key_exists($input, $updates)) {
+                $payload[$column] = $this->nullableString($updates[$input]);
+            }
         }
 
         $this->touchUpdate('products', $id, $payload);
@@ -1854,12 +1903,20 @@ final class MasterDataApi extends BaseService
             'address' => (string) ($globalPage['address'] ?? ''),
             'logo' => (string) ($globalPage['logo'] ?? '/uploads/Avatar.png'),
             'pages' => $pages,
+            'weightUnit' => in_array((string) ($row['weight_unit'] ?? ''), ['pound', 'kg', 'gram'], true) ? (string) $row['weight_unit'] : 'kg',
+            'heightUnit' => ($row['height_unit'] ?? '') === 'feet-inches' ? 'feet-inches' : 'cm',
         ];
     }
 
     public function updateCompanySettings(array $params): array
     {
         $this->requireAdmin();
+        if (!$this->columnExists('company_settings', 'weight_unit')) {
+            $this->database->execute("ALTER TABLE `company_settings` ADD COLUMN `weight_unit` VARCHAR(16) NOT NULL DEFAULT 'kg'");
+        }
+        if (!$this->columnExists('company_settings', 'height_unit')) {
+            $this->database->execute("ALTER TABLE `company_settings` ADD COLUMN `height_unit` VARCHAR(16) NOT NULL DEFAULT 'cm'");
+        }
         $current = $this->fetchCompanySettings();
         $pages = [];
 
@@ -1903,6 +1960,8 @@ final class MasterDataApi extends BaseService
                 'address' => $globalPage['address'] ?? $current['address'],
                 'logo' => $globalPage['logo'] ?? $current['logo'],
                 'pages' => $this->jsonEncode($pages),
+                'weight_unit' => in_array((string) ($params['weightUnit'] ?? $current['weightUnit'] ?? 'kg'), ['pound', 'kg', 'gram'], true) ? (string) ($params['weightUnit'] ?? $current['weightUnit'] ?? 'kg') : 'kg',
+                'height_unit' => ($params['heightUnit'] ?? $current['heightUnit'] ?? 'cm') === 'feet-inches' ? 'feet-inches' : 'cm',
             ],
             fn(): array => $this->fetchCompanySettings()
         );
@@ -2209,8 +2268,16 @@ final class MasterDataApi extends BaseService
             'licenseKey' => $isDeveloper ? (string) ($row['license_key'] ?? '') : '',
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
+            'businessMode' => $this->normalizeBusinessMode($row['business_mode'] ?? null),
             'webhookUrl' => $isDeveloper ? (string) ($row['webhook_url'] ?? '') : '',
         ];
+    }
+
+    private function normalizeBusinessMode($value): string
+    {
+        return in_array((string) $value, ['general_retail', 'vaccine_center'], true)
+            ? (string) $value
+            : 'general_retail';
     }
 
     /** @return array<string, mixed> */
@@ -2413,9 +2480,10 @@ final class MasterDataApi extends BaseService
             'last_sync_message' => array_key_exists('lastSyncMessage', $params) ? $this->nullableString($params['lastSyncMessage']) : 'Saved manually by developer.',
             'webhook_url' => array_key_exists('webhookUrl', $params) ? $this->nullableString($params['webhookUrl']) : ($row['webhook_url'] ?? null),
             'webhook_secret' => array_key_exists('webhookSecret', $params) ? $this->nullableString($params['webhookSecret']) : ($row['webhook_secret'] ?? null),
+            'business_mode' => $this->normalizeBusinessMode($params['businessMode'] ?? $row['business_mode'] ?? null),
         ];
 
-        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'show_inactive_subscription_features', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret'] as $column) {
+        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'show_inactive_subscription_features', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret', 'business_mode'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -2460,6 +2528,7 @@ final class MasterDataApi extends BaseService
         $definitions = [
             'tier_key' => 'VARCHAR(64) NULL',
             'show_inactive_subscription_features' => 'TINYINT(1) NOT NULL DEFAULT 1',
+            'business_mode' => "VARCHAR(32) NOT NULL DEFAULT 'general_retail'",
         ];
         $missing = [];
         foreach ($definitions as $column => $definition) {
@@ -2555,6 +2624,7 @@ final class MasterDataApi extends BaseService
             'domain' => trim((string) ($params['domain'] ?? $host)),
             'tier_key' => $tierKey,
             'status' => trim((string) ($params['status'] ?? 'active')),
+            'business_mode' => $this->normalizeBusinessMode($params['businessMode'] ?? $settingsRow['business_mode'] ?? 'general_retail'),
             'renewal_date' => $params['renewalDate'] ?? $settingsRow['renewal_date'] ?? null,
             'pricing_metadata' => $pricingMetadata,
         ];
@@ -2972,6 +3042,7 @@ final class MasterDataApi extends BaseService
             'licenseKey' => $licenseKey,
             'licenseApiUrl' => $apiUrl,
             'licenseOwnerToken' => $ownerToken,
+            'businessMode' => $this->normalizeBusinessMode($payload['business_mode'] ?? $payload['businessMode'] ?? $existingRow['business_mode'] ?? null),
             'tierKey' => $payload['tier_key'] ?? $payload['tierKey'] ?? $existingRow['tier_key'] ?? null,
             'planName' => $payload['plan_name'] ?? $payload['planName'] ?? $existingRow['plan_name'] ?? null,
             'licenseStatus' => $payload['status'] ?? 'active',

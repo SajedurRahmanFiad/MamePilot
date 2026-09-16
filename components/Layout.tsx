@@ -19,6 +19,7 @@ import ServiceAnnouncementBar from './ServiceAnnouncementBar';
 import MameChat from './MameChat';
 import { useAppBranding } from '../src/contexts/BrandingProvider';
 import { CustomerCreateModal, VendorCreateModal } from './ContactCreateModal';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 
 type SidebarConfigItemWithActive = SidebarConfigItem & {
   active: boolean;
@@ -152,7 +153,8 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const branding = useAppBranding();
   const whiteLabelEnabled = branding.mode === 'white-label';
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
-  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(profile));
+  const { hasCapability, hasSubCapability, settings: capabilitySettings } = useCapabilities(Boolean(profile));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDockPinned, setIsDockPinned] = useState(false);
@@ -207,13 +209,13 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
       return { title: 'Orders', subtitle: 'Track sales orders, fulfillment, and payment progress.' };
     }
     if (pathname.startsWith('/customers/new')) {
-      return { title: 'New Customer', subtitle: 'Add a new customer profile and contact details.' };
+      return { title: `New ${terminology.customer}`, subtitle: `Add a new ${terminology.customerLower} profile and contact details.` };
     }
     if (pathname.startsWith('/customers/edit/')) {
-      return { title: 'Edit Customer', subtitle: 'Update customer details and account information.' };
+      return { title: `Edit ${terminology.customer}`, subtitle: `Update ${terminology.customerLower} details and account information.` };
     }
     if (pathname.startsWith('/customers')) {
-      return { title: 'Customers', subtitle: 'Review customer records, activity, and outstanding balances.' };
+      return { title: terminology.customers, subtitle: `Review ${terminology.customersLower} records, activity, and outstanding balances.` };
     }
     if (pathname.startsWith('/vendors/new')) {
       return { title: 'New Vendor', subtitle: 'Create a vendor record for purchase workflows.' };
@@ -255,13 +257,13 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
       return { title: 'Banking & Accounts', subtitle: 'Manage balances, accounts, and cash-flow records.' };
     }
     if (pathname.startsWith('/products/new')) {
-      return { title: 'Add Product', subtitle: 'Create a product entry for inventory and sales.' };
+      return { title: `Add ${terminology.item}`, subtitle: `Create a ${terminology.itemLower} entry for inventory and sales.` };
     }
     if (pathname.startsWith('/products/edit/')) {
-      return { title: 'Edit Product', subtitle: 'Update product details and pricing.' };
+      return { title: `Edit ${terminology.item}`, subtitle: `Update ${terminology.itemLower} details and pricing.` };
     }
     if (pathname.startsWith('/products')) {
-      return { title: 'Products Catalog', subtitle: 'Manage inventory, pricing, and product details.' };
+      return { title: `${terminology.items} Catalog`, subtitle: `Manage inventory, pricing, and ${terminology.itemsLower} details.` };
     }
     if (pathname.startsWith('/batches/new')) {
       return { title: 'New Batch', subtitle: 'Create a new batch of living products.' };
@@ -348,10 +350,10 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
       return { title: 'Grow Your Business', subtitle: 'AI-powered recommendations to optimize your product portfolio and boost sales.' };
     }
     if (pathname.startsWith('/whatsapp')) {
-      return { title: 'WhatsApp', subtitle: 'Chat with customers on WhatsApp.' };
+      return { title: 'WhatsApp', subtitle: `Chat with ${terminology.customersLower} on WhatsApp.` };
     }
     if (pathname.startsWith('/messenger')) {
-      return { title: 'Messenger', subtitle: 'Chat with customers on Messenger.' };
+      return { title: 'Messenger', subtitle: `Chat with ${terminology.customersLower} on Messenger.` };
     }
     if (pathname === '/pos') {
       return { title: 'Point of Sale', subtitle: 'Walk-in sales, holds, and instant receipts.' };
@@ -404,8 +406,9 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
       isAdminAccessUser,
       isEmployeeUser,
       isDeveloper,
+      businessMode: capabilitySettings?.businessMode || 'general_retail',
     }),
-    [can, hasCapability, hasSubCapability, canViewDashboard, isAdminAccessUser, isEmployeeUser, isDeveloper]
+    [can, hasCapability, hasSubCapability, canViewDashboard, isAdminAccessUser, isEmployeeUser, isDeveloper, capabilitySettings?.businessMode]
   );
 
   const sidebarItems = useMemo(() => {
@@ -427,7 +430,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const quickActions = [
     can('orders.create') && hasCapability('sales') ? { label: 'New Order', to: '/orders/new', icon: ICONS.Sales } : null,
     can('bills.create') && hasCapability('purchases') ? { label: 'New Bill', to: '/bills/new', icon: ICONS.Briefcase } : null,
-    can('customers.create') && hasCapability('sales') ? { label: 'New Customer', onClick: () => setIsCustomerCreateOpen(true), icon: ICONS.Customers } : null,
+    can('customers.create') && hasCapability('sales') ? { label: `New ${terminology.customer}`, onClick: () => setIsCustomerCreateOpen(true), icon: ICONS.Customers } : null,
     can('vendors.create') && hasCapability('purchases') ? { label: 'New Vendor', onClick: () => setIsVendorCreateOpen(true), icon: ICONS.Vendors } : null,
     can('transactions.create') && hasCapability('banking') ? { label: 'Add Income', to: '/transactions/new/income', icon: ICONS.PlusCircle } : null,
     can('transactions.create') && hasCapability('banking') ? { label: 'Add Expense', to: '/transactions/new/expense', icon: ICONS.Delete } : null,

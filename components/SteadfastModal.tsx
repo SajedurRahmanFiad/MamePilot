@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { submitSteadfastOrder } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -26,6 +28,8 @@ function formatHistoryMoment(): string {
 export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
   const queryClient = useQueryClient();
   const { data: courierSettings } = useCourierSettings();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const toast = useToastNotifications();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,15 +262,15 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
               <p className="text-gray-900">{order?.orderNumber || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Name</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Name</label>
               <p className="text-gray-900">{customer?.name || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Phone</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Phone</label>
               <p className="text-gray-900">{customer?.phone || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Address</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Address</label>
               <p className="text-gray-900">{customer?.address || '-'}</p>
             </div>
             <div>

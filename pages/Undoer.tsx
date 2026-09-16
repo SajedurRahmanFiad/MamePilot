@@ -291,7 +291,7 @@ const OrderSummary: React.FC<{ plan: OrderUndoPlan }> = ({ plan }) => {
       <div className="text-left sm:text-right"><p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Current status</p><span className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-black ${getStatusColor(order.status)}`}>{order.status}</span></div>
     </div>
     <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-4">
-      <SummaryValue icon={<User size={14} />} label="Customer" value={order.customerName || 'Unknown'} />
+      <SummaryValue icon={<User size={14} />} label={order.customerName ? 'Customer' : 'Customer'} value={order.customerName || 'Unknown'} />
       <SummaryValue icon={<History size={14} />} label="Order date" value={order.orderDate ? formatDate(order.orderDate) : '—'} />
       <SummaryValue icon={<ReceiptText size={14} />} label="Total" value={formatCurrency(order.total)} />
       <SummaryValue icon={<Banknote size={14} />} label="Paid" value={formatCurrency(order.paidAmount)} />

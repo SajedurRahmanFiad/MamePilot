@@ -1,6 +1,6 @@
 import React from 'react';
 import { ICONS } from '../constants';
-import type { PermissionKey, AppCapabilityKey, SubCapabilityKey } from '../types';
+import type { PermissionKey, AppCapabilityKey, SubCapabilityKey, BusinessMode } from '../types';
 
 export type SidebarPermissionContext = {
   can: (permission: PermissionKey) => boolean;
@@ -10,6 +10,7 @@ export type SidebarPermissionContext = {
   isAdminAccessUser: boolean;
   isEmployeeUser: boolean;
   isDeveloper: boolean;
+  businessMode?: BusinessMode;
 };
 
 export interface SidebarConfigItem {
@@ -355,5 +356,13 @@ const filterSidebarItems = (
 };
 
 export const buildSidebarItems = (context: SidebarPermissionContext) => {
-  return filterSidebarItems(rawSidebarConfig, context);
+  const items = filterSidebarItems(rawSidebarConfig, context);
+  if (context.businessMode !== 'vaccine_center') return items;
+
+  const rename = (item: SidebarConfigItem): SidebarConfigItem => ({
+    ...item,
+    label: item.key === 'products' ? 'Vaccines' : item.key === 'customers' ? 'Patients' : item.label,
+    children: item.children?.map(rename),
+  });
+  return items.map(rename);
 };

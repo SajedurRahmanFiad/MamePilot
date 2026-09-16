@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import {
   submitPathaoOrder,
   generatePathaoToken,
@@ -41,6 +43,8 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
     refetch: refetchCourierSettings,
   } = useCourierSettings();
   const toast = useToastNotifications();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const updateOrder = useUpdateOrder();
@@ -317,15 +321,15 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               <p className="text-gray-900">{order?.orderNumber || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Name</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Name</label>
               <p className="text-gray-900">{customer?.name || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Phone</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Phone</label>
               <p className="text-gray-900">{customer?.phone || '-'}</p>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Address</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Address</label>
               <p className="text-gray-900">{customer?.address || '-'}</p>
             </div>
             <div>

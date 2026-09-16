@@ -29,7 +29,9 @@ import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { CustomerCreateModal } from '../components/ContactCreateModal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { handlePrintOrder } from '../src/utils/printUtils';
 import { sanitizePhoneInput } from '../utils';
 import {
@@ -80,12 +82,14 @@ export default function Pos() {
   const navigate = useNavigate();
   const toast = useToastNotifications();
   const { can } = useRolePermissions();
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const permission = can('orders.create');
 
   // ---- Customer selection (identical logic & visuals to the order form) ----
   // The walk-in customer is the default selection so every sale has a valid
   // customer unless the cashier explicitly picks another one.
-  const [customer, setCustomer] = useState<CustomerSearchOption | null>(WALKIN_CUSTOMER);
+  const [customer, setCustomer] = useState<CustomerSearchOption | null>(() => ({ ...WALKIN_CUSTOMER, name: `Walk-in ${terminology.customer}` }));
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [custSearchTerm, setCustSearchTerm] = useState('');
   const [debouncedCustSearch, setDebouncedCustSearch] = useState('');
@@ -124,9 +128,10 @@ export default function Pos() {
     setCustSearchTerm('');
   };
 
+  const walkInLabel = `Walk-in ${terminology.customer}`;
   const customerDisplay = customer
     ? customer.id === WALKIN_ID
-      ? { name: 'Walk-in Customer', phone: 'No permanent record' }
+      ? { name: walkInLabel, phone: 'No permanent record' }
       : { name: customer.name, phone: customer.phone || '' }
     : null;
 
@@ -267,7 +272,7 @@ export default function Pos() {
           setDiscountValue(String(draft.discountValue ?? 0));
           setNote(draft.note ?? '');
           if (draft.customerId) {
-            setCustomer({ id: draft.customerId, name: draft.customerId === WALKIN_ID ? 'Walk-in Customer' : '', phone: '', totalOrders: 0, dueAmount: 0 });
+            setCustomer({ id: draft.customerId, name: draft.customerId === WALKIN_ID ? walkInLabel : '', phone: '', totalOrders: 0, dueAmount: 0 });
           }
           if (draft.allocations) {
             const next: Record<string, string> = {};
@@ -661,7 +666,7 @@ export default function Pos() {
                   <p className="text-[10px] text-gray-500 leading-none mt-0.5">{customerDisplay.phone}</p>
                 </div>
               ) : (
-                <span className="text-gray-400 text-sm">Select Customer...</span>
+                <span className="text-gray-400 text-sm">Select {terminology.customer}...</span>
               )}
               <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
                 <ChevronRight size={16} />
@@ -690,7 +695,7 @@ export default function Pos() {
                       <div className="h-10 bg-gray-100 rounded-xl animate-pulse w-full"></div>
                     </div>
                   ) : (allVisibleCustomers || []).length === 0 ? (
-                    <div className="p-4 text-center text-gray-400 text-sm font-medium">No customers found</div>
+                    <div className="p-4 text-center text-gray-400 text-sm font-medium">No {terminology.customersLower} found</div>
                   ) : (
                     (allVisibleCustomers || []).map((c: CustomerSearchOption) => (
                       <div key={c.id} className="group flex items-center gap-1 rounded-lg hover:bg-[#ebf4ff] transition-colors">
@@ -703,7 +708,7 @@ export default function Pos() {
                         </button>
                         {can('customers.edit') && (
                           <button
-                            title="Edit customer"
+                            title={`Edit ${terminology.customerLower}`}
                             onClick={() => {
                               setCustomerToEdit(c);
                               setShowCustomerSearch(false);
@@ -727,14 +732,14 @@ export default function Pos() {
                     }}
                     className="w-full mt-2 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors flex items-center justify-center gap-2"
                   >
-                    <UserPlus size={14} /> + Add New Customer
+                    <UserPlus size={14} /> + Add New {terminology.customer}
                   </button>
                 )}
                 <button
                   onClick={selectWalkIn}
                   className="w-full mt-1 py-3 text-[10px] font-black uppercase tracking-widest border-t border-gray-50 hover:bg-[#ebf4ff] transition-colors flex items-center justify-center gap-2"
                 >
-                  <UserRound size={14} /> Walk-in Customer
+                  <UserRound size={14} /> {walkInLabel}
                 </button>
               </div>
             )}
