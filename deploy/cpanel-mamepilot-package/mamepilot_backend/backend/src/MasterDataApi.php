@@ -5380,6 +5380,36 @@ PROMPT;
             // Fall back to basic detail if central fetch fails
         }
 
+        // The central server only knows users after they have sent a receipt.
+        // Merge this deployment's local roster so unread users are visible too.
+        $capabilityRow = $this->capabilityRow();
+        $localLicenseKey = trim((string) ($capabilityRow['license_key'] ?? ''));
+        $targetDeployments = $this->normalizeNotificationTargetRoles($notification['targetDeployments'] ?? $notification['target_deployments'] ?? []);
+        $deploymentScope = trim((string) ($notification['deploymentScope'] ?? $notification['deployment_scope'] ?? 'all'));
+        $localDeploymentAllowed = $deploymentScope === 'all'
+            || ($deploymentScope === 'include' && in_array($localLicenseKey, $targetDeployments, true))
+            || ($deploymentScope === 'exclude' && !in_array($localLicenseKey, $targetDeployments, true));
+        if ($localLicenseKey !== '' && $localDeploymentAllowed) {
+            $localRecipients = array_map(
+                fn(array $row): array => array_merge($this->mapNotificationRecipient($row), [
+                    'deploymentKey' => $localLicenseKey,
+                ]),
+                $this->fetchNotificationTargetViewerRows($notification)
+            );
+            $localUserIds = array_fill_keys(array_map(
+                static fn(array $recipient): string => (string) ($recipient['userId'] ?? ''),
+                $localRecipients
+            ), true);
+            $recipients = array_values(array_filter(
+                $recipients,
+                static fn(array $recipient): bool => !(
+                    (string) ($recipient['deploymentKey'] ?? '') === $localLicenseKey
+                    && isset($localUserIds[(string) ($recipient['userId'] ?? '')])
+                )
+            ));
+            $recipients = array_merge($recipients, $localRecipients);
+        }
+
         if ($recipients === []) {
             $recipients = [
                 [

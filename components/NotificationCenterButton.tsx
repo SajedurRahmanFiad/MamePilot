@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { db } from '../db';
 import { ICONS } from '../constants';
-import { theme } from '../theme';
+import { resolveThemeColorPalette, theme } from '../theme';
 import type { AppNotification, NotificationDecision } from '../types';
-import { useMyNotifications, useMyNotificationsPaginated } from '../src/hooks/useQueries';
+import { useMyNotifications, useMyNotificationsPaginated, useSystemDefaults } from '../src/hooks/useQueries';
 import { useMarkNotificationRead, useRespondToNotification } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { buildHistoryBackState } from '../src/utils/navigation';
@@ -64,6 +65,11 @@ const NotificationCenterButton: React.FC = () => {
   const location = useLocation();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { data: systemDefaults } = useSystemDefaults();
+  const notificationTheme = useMemo(
+    () => resolveThemeColorPalette(String(systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57')),
+    [systemDefaults?.themeColor]
+  );
   const { data: unreadData } = useMyNotifications(true); // Keep for the badge count
   const markReadMutation = useMarkNotificationRead();
   const respondMutation = useRespondToNotification();
@@ -410,6 +416,10 @@ const NotificationCenterButton: React.FC = () => {
             aria-label="Notifications"
             aria-hidden={!isOpen}
             inert={!isOpen}
+            style={{
+              '--notification-primary': notificationTheme.primary,
+              '--notification-primary-dark': notificationTheme.dark,
+            } as React.CSSProperties}
             className={`fixed inset-y-0 right-0 z-[80] flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden border-l border-[#e4eef8] bg-white pt-[env(safe-area-inset-top)] shadow-[-24px_0_70px_rgba(15,47,87,0.18)] transition-transform duration-[360ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
           >
 <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
@@ -505,7 +515,7 @@ const NotificationCenterButton: React.FC = () => {
                             {canLink && (
                               <button
                                 onClick={() => openNotificationLink(notification, actionConfig.linkUrl)}
-                                className="w-full rounded-xl bg-[#0f2f57] px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[#143b6d] sm:w-auto"
+                                className="w-full rounded-xl bg-[var(--notification-primary)] px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[var(--notification-primary-dark)] sm:w-auto"
                               >
                                 {actionConfig.linkLabel || 'Open'}
                               </button>
@@ -516,14 +526,14 @@ const NotificationCenterButton: React.FC = () => {
                                 <button
                                   onClick={() => handleDecision(notification, 'accepted')}
                                   disabled={isPendingDecision}
-                                  className="w-full rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                  className="w-full rounded-xl bg-[var(--notification-primary)] px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[var(--notification-primary-dark)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                                 >
                                   {actionConfig.acceptLabel || 'Accept'}
                                 </button>
                                 <button
                                   onClick={() => handleDecision(notification, 'declined')}
                                   disabled={isPendingDecision}
-                                  className="w-full rounded-xl bg-red-500 px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                  className="w-full rounded-xl bg-[var(--notification-primary)] px-3.5 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all hover:bg-[var(--notification-primary-dark)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                                 >
                                   {actionConfig.declineLabel || 'Decline'}
                                 </button>
