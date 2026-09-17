@@ -2834,6 +2834,30 @@ final class MasterDataApi extends BaseService
         return array_values(array_filter($response['notifications'], static fn($item): bool => is_array($item)));
     }
 
+    private function syncCentralDeploymentUsers(): void
+    {
+        $settingsRow = $this->capabilityRow();
+        $apiUrl = trim((string) ($settingsRow['license_api_url'] ?? ''));
+        $ownerToken = trim((string) ($settingsRow['license_owner_token'] ?? ''));
+        $licenseKey = trim((string) ($settingsRow['license_key'] ?? ''));
+        if ($apiUrl === '' || $licenseKey === '') return;
+
+        $users = $this->database->fetchAll(
+            'SELECT id, name, role
+             FROM users
+             WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+             ORDER BY id ASC'
+        );
+        $this->centralLicenseRequest($apiUrl, $ownerToken, 'sync_deployment_users', [
+            'licenseKey' => $licenseKey,
+            'users' => array_map(static fn(array $user): array => [
+                'userId' => (string) ($user['id'] ?? ''),
+                'userName' => (string) ($user['name'] ?? ''),
+                'userRole' => (string) ($user['role'] ?? ''),
+            ], $users),
+        ]);
+    }
+
     /** Coordinate central notification refreshes across concurrent PHP requests. */
     private function claimCentralNotificationSyncWindow(string $scope): bool
     {
@@ -6306,6 +6330,11 @@ PROMPT;
         }
 
         try {
+            try {
+                $this->syncCentralDeploymentUsers();
+            } catch (Throwable) {
+                // Older central servers can continue serving notifications without roster sync.
+            }
             if (!$this->claimCentralNotificationSyncWindow('user-' . (string) ($user['id'] ?? ''))) {
                 throw new RuntimeException('Central notification cache is still fresh.');
             }
@@ -6394,6 +6423,11 @@ PROMPT;
         }
 
         try {
+            try {
+                $this->syncCentralDeploymentUsers();
+            } catch (Throwable) {
+                // Older central servers can continue serving notifications without roster sync.
+            }
             // The unread-summary and paginated feed are requested together by
             // the notification center. Share one per-user throttle so opening
             // it cannot issue two central-server reads in the same window.

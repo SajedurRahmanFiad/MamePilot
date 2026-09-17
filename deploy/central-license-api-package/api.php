@@ -1165,13 +1165,14 @@ try {
         }
 
         $notificationStatement = $pdo->prepare(
-            'SELECT target_deployments, deployment_scope
+            'SELECT target_roles, target_deployments, deployment_scope
              FROM notifications
              WHERE id = :notification_id
              LIMIT 1'
         );
         $notificationStatement->execute([':notification_id' => $notificationId]);
         $notificationRow = $notificationStatement->fetch() ?: [];
+        $targetRoles = capabilitiesFrom($notificationRow['target_roles'] ?? '[]');
         $targetDeployments = capabilitiesFrom($notificationRow['target_deployments'] ?? '[]');
         $deploymentScope = trim((string) ($notificationRow['deployment_scope'] ?? 'all'));
 
@@ -1253,6 +1254,54 @@ try {
                     'licenseKey' => $key,
                     'clientName' => $name !== '' ? $name : $key,
                     'domain' => $row['deployment_domain'] ?? null,
+                ];
+            }
+        }
+
+        if (tableExists($pdo, 'deployment_users')) {
+            $roleBindings = [];
+            $rolePlaceholders = [];
+            foreach ($targetRoles as $index => $targetRole) {
+                $placeholder = ':target_role_' . $index;
+                $rolePlaceholders[] = $placeholder;
+                $roleBindings[$placeholder] = $targetRole;
+            }
+            $rosterWhere = $deploymentWhere;
+            if ($rolePlaceholders !== []) {
+                $rosterWhere .= ' AND du.user_role IN (' . implode(', ', $rolePlaceholders) . ')';
+            }
+            $rosterStatement = $pdo->prepare(
+                'SELECT du.user_id, du.user_name, du.user_role, l.license_key, l.client_name, l.domain
+                 FROM deployment_users du
+                 INNER JOIN licenses l ON l.license_key = du.license_key
+                 WHERE ' . $rosterWhere . '
+                 ORDER BY l.client_name ASC, du.user_name ASC, du.user_id ASC'
+            );
+            $rosterStatement->execute($deploymentBindings + $roleBindings);
+            $knownRecipients = [];
+            foreach ($recipients as $recipient) {
+                $knownRecipients[(string) ($recipient['deploymentKey'] ?? '') . ':' . (string) ($recipient['userId'] ?? '')] = true;
+            }
+            while ($row = $rosterStatement->fetch()) {
+                $key = trim((string) ($row['license_key'] ?? ''));
+                $userId = trim((string) ($row['user_id'] ?? ''));
+                if ($key === '' || $userId === '' || isset($knownRecipients[$key . ':' . $userId])) continue;
+                $recipients[] = [
+                    'userId' => $userId,
+                    'userName' => $row['user_name'] ?? null,
+                    'userRole' => $row['user_role'] ?? null,
+                    'deploymentKey' => $key,
+                    'deploymentName' => (string) ($row['client_name'] ?? $key),
+                    'isRead' => false,
+                    'readAt' => null,
+                    'actionResult' => null,
+                    'actedAt' => null,
+                ];
+                $knownRecipients[$key . ':' . $userId] = true;
+                $deploymentMap[$key] = [
+                    'licenseKey' => $key,
+                    'clientName' => (string) ($row['client_name'] ?? $key),
+                    'domain' => $row['domain'] ?? null,
                 ];
             }
         }

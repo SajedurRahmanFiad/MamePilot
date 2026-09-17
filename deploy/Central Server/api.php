@@ -1178,13 +1178,14 @@ try {
         }
 
         $notificationStatement = $pdo->prepare(
-            'SELECT target_deployments, deployment_scope
+            'SELECT target_roles, target_deployments, deployment_scope
              FROM notifications
              WHERE id = :notification_id
              LIMIT 1'
         );
         $notificationStatement->execute([':notification_id' => $notificationId]);
         $notificationRow = $notificationStatement->fetch() ?: [];
+        $targetRoles = capabilitiesFrom($notificationRow['target_roles'] ?? '[]');
         $targetDeployments = capabilitiesFrom($notificationRow['target_deployments'] ?? '[]');
         $deploymentScope = trim((string) ($notificationRow['deployment_scope'] ?? 'all'));
 
@@ -1270,6 +1271,54 @@ try {
             }
         }
 
+        if (tableExists($pdo, 'deployment_users')) {
+            $roleBindings = [];
+            $rolePlaceholders = [];
+            foreach ($targetRoles as $index => $targetRole) {
+                $placeholder = ':target_role_' . $index;
+                $rolePlaceholders[] = $placeholder;
+                $roleBindings[$placeholder] = $targetRole;
+            }
+            $rosterWhere = $deploymentWhere;
+            if ($rolePlaceholders !== []) {
+                $rosterWhere .= ' AND du.user_role IN (' . implode(', ', $rolePlaceholders) . ')';
+            }
+            $rosterStatement = $pdo->prepare(
+                'SELECT du.user_id, du.user_name, du.user_role, l.license_key, l.client_name, l.domain
+                 FROM deployment_users du
+                 INNER JOIN licenses l ON l.license_key = du.license_key
+                 WHERE ' . $rosterWhere . '
+                 ORDER BY l.client_name ASC, du.user_name ASC, du.user_id ASC'
+            );
+            $rosterStatement->execute($deploymentBindings + $roleBindings);
+            $knownRecipients = [];
+            foreach ($recipients as $recipient) {
+                $knownRecipients[(string) ($recipient['deploymentKey'] ?? '') . ':' . (string) ($recipient['userId'] ?? '')] = true;
+            }
+            while ($row = $rosterStatement->fetch()) {
+                $key = trim((string) ($row['license_key'] ?? ''));
+                $userId = trim((string) ($row['user_id'] ?? ''));
+                if ($key === '' || $userId === '' || isset($knownRecipients[$key . ':' . $userId])) continue;
+                $recipients[] = [
+                    'userId' => $userId,
+                    'userName' => $row['user_name'] ?? null,
+                    'userRole' => $row['user_role'] ?? null,
+                    'deploymentKey' => $key,
+                    'deploymentName' => (string) ($row['client_name'] ?? $key),
+                    'isRead' => false,
+                    'readAt' => null,
+                    'actionResult' => null,
+                    'actedAt' => null,
+                ];
+                $knownRecipients[$key . ':' . $userId] = true;
+                $deploymentMap[$key] = [
+                    'licenseKey' => $key,
+                    'clientName' => (string) ($row['client_name'] ?? $key),
+                    'domain' => $row['domain'] ?? null,
+                ];
+            }
+        }
+
         $receiptDeploymentKeys = [];
         foreach ($recipients as $recipient) {
             $receiptKey = trim((string) ($recipient['deploymentKey'] ?? ''));
@@ -1300,6 +1349,54 @@ try {
             'recipients' => $recipients,
             'deployments' => array_values($deploymentMap),
         ]);
+    }
+
+    if ($action === 'sync_deployment_users') {
+        requireOwnerToken();
+        $licenseKey = trim((string) ($body['licenseKey'] ?? $body['license_key'] ?? ''));
+        $users = is_array($body['users'] ?? null) ? $body['users'] : [];
+        if ($licenseKey === '') respond(400, ['error' => 'licenseKey is required.']);
+        if (!tableExists($pdo, 'deployment_users')) respond(500, ['error' => 'deployment_users table is missing. Run the central database migration first.']);
+
+        $licenseCheck = $pdo->prepare('SELECT 1 FROM licenses WHERE license_key = :license_key LIMIT 1');
+        $licenseCheck->execute([':license_key' => $licenseKey]);
+        if (!$licenseCheck->fetch()) respond(404, ['error' => 'Deployment license not found.']);
+
+        $validIds = [];
+        $statement = $pdo->prepare(
+            'INSERT INTO deployment_users (license_key, user_id, user_name, user_role, updated_at)
+             VALUES (:license_key, :user_id, :user_name, :user_role, CURRENT_TIMESTAMP)
+             ON DUPLICATE KEY UPDATE user_name = VALUES(user_name), user_role = VALUES(user_role), updated_at = CURRENT_TIMESTAMP'
+        );
+        foreach ($users as $user) {
+            if (!is_array($user)) continue;
+            $userId = trim((string) ($user['userId'] ?? $user['user_id'] ?? ''));
+            if ($userId === '') continue;
+            $validIds[] = $userId;
+            $statement->execute([
+                ':license_key' => $licenseKey,
+                ':user_id' => $userId,
+                ':user_name' => trim((string) ($user['userName'] ?? $user['user_name'] ?? '')),
+                ':user_role' => trim((string) ($user['userRole'] ?? $user['user_role'] ?? '')),
+            ]);
+        }
+
+        if ($validIds === []) {
+            $delete = $pdo->prepare('DELETE FROM deployment_users WHERE license_key = :license_key');
+            $delete->execute([':license_key' => $licenseKey]);
+        } else {
+            $placeholders = [];
+            $bindings = [':license_key' => $licenseKey];
+            foreach (array_values(array_unique($validIds)) as $index => $userId) {
+                $placeholder = ':user_id_' . $index;
+                $placeholders[] = $placeholder;
+                $bindings[$placeholder] = $userId;
+            }
+            $pdo->prepare(
+                'DELETE FROM deployment_users WHERE license_key = :license_key AND user_id NOT IN (' . implode(', ', $placeholders) . ')'
+            )->execute($bindings);
+        }
+        respond(200, ['success' => true, 'userCount' => count(array_unique($validIds))]);
     }
 
     respond(400, ['error' => 'Unknown action.']);

@@ -110,6 +110,16 @@ ALTER TABLE notification_receipts
   DEFAULT CHARSET = utf8mb4,
   COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS deployment_users (
+  license_key VARCHAR(255) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  user_name VARCHAR(255) NOT NULL,
+  user_role VARCHAR(64) NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (license_key, user_id),
+  KEY idx_deployment_users_license (license_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS webhook_subscriptions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   license_key VARCHAR(255) NOT NULL,
