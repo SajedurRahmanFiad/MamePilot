@@ -128,6 +128,11 @@ CREATE TABLE IF NOT EXISTS products (
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   stock INT NOT NULL DEFAULT 0,
   dynamic_pricing LONGTEXT NULL,
+  manufacturer VARCHAR(255) NULL,
+  batch_lot_number VARCHAR(255) NULL,
+  expiry_date DATE NULL,
+  recommended_dose_sequence TEXT NULL,
+  notes TEXT NULL,
   created_by VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -154,7 +159,12 @@ ALTER TABLE `units`
 ALTER TABLE `products`
   ADD COLUMN IF NOT EXISTS `slug` VARCHAR(255) NULL,
   ADD COLUMN IF NOT EXISTS `unit_id` VARCHAR(64) NULL,
-  ADD COLUMN IF NOT EXISTS `dynamic_pricing` LONGTEXT NULL;
+  ADD COLUMN IF NOT EXISTS `dynamic_pricing` LONGTEXT NULL,
+  ADD COLUMN IF NOT EXISTS `manufacturer` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `batch_lot_number` VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS `expiry_date` DATE NULL,
+  ADD COLUMN IF NOT EXISTS `recommended_dose_sequence` TEXT NULL,
+  ADD COLUMN IF NOT EXISTS `notes` TEXT NULL;
 SET @mamepilot_product_unit_fk_sql = (
   SELECT IF(
     EXISTS(

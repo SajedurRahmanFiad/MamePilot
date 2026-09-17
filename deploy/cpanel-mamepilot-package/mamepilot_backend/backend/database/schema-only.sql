@@ -258,6 +258,11 @@ CREATE TABLE IF NOT EXISTS products (
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   stock INT NOT NULL DEFAULT 0,
   dynamic_pricing LONGTEXT NULL,
+  manufacturer VARCHAR(255) NULL,
+  batch_lot_number VARCHAR(255) NULL,
+  expiry_date DATE NULL,
+  recommended_dose_sequence TEXT NULL,
+  notes TEXT NULL,
   created_by VARCHAR(64) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -282,6 +287,11 @@ CALL sp_add_col('units', 'is_fraction', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('products', 'slug', 'VARCHAR(255) NULL');
 CALL sp_add_col('products', 'unit_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('products', 'dynamic_pricing', 'LONGTEXT NULL');
+CALL sp_add_col('products', 'manufacturer', 'VARCHAR(255) NULL');
+CALL sp_add_col('products', 'batch_lot_number', 'VARCHAR(255) NULL');
+CALL sp_add_col('products', 'expiry_date', 'DATE NULL');
+CALL sp_add_col('products', 'recommended_dose_sequence', 'TEXT NULL');
+CALL sp_add_col('products', 'notes', 'TEXT NULL');
 
 SET @mamepilot_product_unit_fk_sql = (
   SELECT IF(
