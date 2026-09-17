@@ -5416,6 +5416,45 @@ PROMPT;
             $recipients = array_merge($recipients, $localRecipients);
         }
 
+        // Older central API deployments may return receipts only. Fill in any
+        // targeted deployments that have no receipt so they remain visible.
+        try {
+            $allDeployments = $this->fetchCentralDeployments();
+            $recipientDeploymentKeys = array_fill_keys(array_values(array_filter(array_map(
+                static fn(array $recipient): string => trim((string) ($recipient['deploymentKey'] ?? '')),
+                $recipients
+            ))), true);
+            foreach ($allDeployments as $deployment) {
+                $deploymentKey = trim((string) ($deployment['licenseKey'] ?? $deployment['license_key'] ?? ''));
+                if ($deploymentKey === '' || isset($recipientDeploymentKeys[$deploymentKey])) continue;
+                $deploymentAllowed = $deploymentScope === 'all'
+                    || ($deploymentScope === 'include' && in_array($deploymentKey, $targetDeployments, true))
+                    || ($deploymentScope === 'exclude' && !in_array($deploymentKey, $targetDeployments, true));
+                if (!$deploymentAllowed) continue;
+
+                $deploymentName = trim((string) ($deployment['clientName'] ?? $deployment['client_name'] ?? $deploymentKey));
+                $recipients[] = [
+                    'userId' => $deploymentKey . ':pending',
+                    'userName' => 'Not viewed',
+                    'userRole' => null,
+                    'deploymentKey' => $deploymentKey,
+                    'deploymentName' => $deploymentName,
+                    'isRead' => false,
+                    'readAt' => null,
+                    'actionResult' => null,
+                    'actedAt' => null,
+                ];
+                $deployments[] = [
+                    'licenseKey' => $deploymentKey,
+                    'clientName' => $deploymentName,
+                    'domain' => $deployment['domain'] ?? null,
+                ];
+                $recipientDeploymentKeys[$deploymentKey] = true;
+            }
+        } catch (Throwable) {
+            // The receipt/local roster remains usable if deployment listing fails.
+        }
+
         if ($recipients === []) {
             $recipients = [
                 [
