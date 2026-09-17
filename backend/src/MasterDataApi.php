@@ -5390,9 +5390,15 @@ PROMPT;
             || ($deploymentScope === 'include' && in_array($localLicenseKey, $targetDeployments, true))
             || ($deploymentScope === 'exclude' && !in_array($localLicenseKey, $targetDeployments, true));
         if ($localLicenseKey !== '' && $localDeploymentAllowed) {
+            $localDeployment = array_values(array_filter(
+                $deployments,
+                static fn(array $deployment): bool => (string) ($deployment['licenseKey'] ?? $deployment['license_key'] ?? '') === $localLicenseKey
+            ))[0] ?? null;
+            $localDeploymentName = trim((string) ($localDeployment['clientName'] ?? $localDeployment['client_name'] ?? $localLicenseKey));
             $localRecipients = array_map(
                 fn(array $row): array => array_merge($this->mapNotificationRecipient($row), [
                     'deploymentKey' => $localLicenseKey,
+                    'deploymentName' => $localDeploymentName,
                 ]),
                 $this->fetchNotificationTargetViewerRows($notification)
             );
