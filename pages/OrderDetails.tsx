@@ -16,6 +16,7 @@ import { handlePrintOrder } from '../src/utils/printUtils';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import {
   buildLocalDateTime,
   formatActivityStatusTimestamp,
@@ -43,7 +44,8 @@ const OrderDetails: React.FC = () => {
   const { user: authUser } = useAuth();
   const user = authUser || db.currentUser;
   const { can, canAccessRecord, isAdminAccessUser } = useRolePermissions();
-  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
+  const { settings: capabilitySettings, hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const createCompletionForm = (activeOrder?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
     date: getTodayDate(),

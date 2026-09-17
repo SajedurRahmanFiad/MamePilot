@@ -165,6 +165,15 @@ CREATE TABLE IF NOT EXISTS customers (
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(64) NOT NULL,
   address TEXT NULL,
+  age INT NULL,
+  gender VARCHAR(32) NULL,
+  date_of_birth DATE NULL,
+  weight DECIMAL(8,2) NULL,
+  height DECIMAL(8,2) NULL,
+  blood_group VARCHAR(16) NULL,
+  guardian_name VARCHAR(255) NULL,
+  emergency_contact VARCHAR(64) NULL,
+  additional_notes TEXT NULL,
   total_orders INT NOT NULL DEFAULT 0,
   due_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   fraud_check_result LONGTEXT NULL,
@@ -191,6 +200,15 @@ CALL sp_add_col('customers', 'fraud_check_result', 'LONGTEXT NULL');
 CALL sp_add_col('customers', 'fraud_check_percentage', 'DECIMAL(5,2) NULL');
 CALL sp_add_col('customers', 'fraud_check_phone', 'VARCHAR(64) NULL');
 CALL sp_add_col('customers', 'fraud_checked_at', 'DATETIME NULL');
+CALL sp_add_col('customers', 'age', 'INT NULL');
+CALL sp_add_col('customers', 'gender', 'VARCHAR(32) NULL');
+CALL sp_add_col('customers', 'date_of_birth', 'DATE NULL');
+CALL sp_add_col('customers', 'weight', 'DECIMAL(8,2) NULL');
+CALL sp_add_col('customers', 'height', 'DECIMAL(8,2) NULL');
+CALL sp_add_col('customers', 'blood_group', 'VARCHAR(16) NULL');
+CALL sp_add_col('customers', 'guardian_name', 'VARCHAR(255) NULL');
+CALL sp_add_col('customers', 'emergency_contact', 'VARCHAR(64) NULL');
+CALL sp_add_col('customers', 'additional_notes', 'TEXT NULL');
 
 CREATE TABLE IF NOT EXISTS vendors (
   id VARCHAR(64) NOT NULL,
