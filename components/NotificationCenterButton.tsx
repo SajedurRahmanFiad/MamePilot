@@ -299,6 +299,15 @@ const NotificationCenterButton: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!isOpen || allNotifications.length === 0) return;
+
+    const visibleUnread = allNotifications.filter((notification) => !notification.isRead);
+    if (visibleUnread.length === 0) return;
+
+    void Promise.all(visibleUnread.map((notification) => markAsRead(notification)));
+  }, [allNotifications, isOpen]);
+
   const openNotificationLink = async (notification: AppNotification, url?: string) => {
     await markAsRead(notification);
 

@@ -134,6 +134,7 @@ function db(): PDO
     ]);
     // PHP's default timezone does not affect MySQL CURRENT_TIMESTAMP. Force the
     // connection to UTC so timestamps can be safely serialized with a Z suffix.
+    $pdo->exec("SET NAMES utf8mb4");
     $pdo->exec("SET time_zone = '+00:00'");
     return $pdo;
 }
@@ -1163,6 +1164,46 @@ try {
             respond(200, ['recipients' => [], 'deployments' => []]);
         }
 
+        $notificationStatement = $pdo->prepare(
+            'SELECT target_deployments, deployment_scope
+             FROM notifications
+             WHERE id = :notification_id
+             LIMIT 1'
+        );
+        $notificationStatement->execute([':notification_id' => $notificationId]);
+        $notificationRow = $notificationStatement->fetch() ?: [];
+        $targetDeployments = capabilitiesFrom($notificationRow['target_deployments'] ?? '[]');
+        $deploymentScope = trim((string) ($notificationRow['deployment_scope'] ?? 'all'));
+
+        $deploymentBindings = [];
+        $deploymentWhere = 'l.status = \'active\'';
+        if ($deploymentScope === 'include' && $targetDeployments !== []) {
+            $deploymentPlaceholders = [];
+            foreach ($targetDeployments as $index => $targetDeployment) {
+                $placeholder = ':target_deployment_' . $index;
+                $deploymentPlaceholders[] = $placeholder;
+                $deploymentBindings[$placeholder] = $targetDeployment;
+            }
+            $deploymentWhere .= ' AND l.license_key IN (' . implode(', ', $deploymentPlaceholders) . ')';
+        } elseif ($deploymentScope === 'exclude' && $targetDeployments !== []) {
+            $deploymentPlaceholders = [];
+            foreach ($targetDeployments as $index => $targetDeployment) {
+                $placeholder = ':excluded_deployment_' . $index;
+                $deploymentPlaceholders[] = $placeholder;
+                $deploymentBindings[$placeholder] = $targetDeployment;
+            }
+            $deploymentWhere .= ' AND l.license_key NOT IN (' . implode(', ', $deploymentPlaceholders) . ')';
+        }
+
+        $deploymentStatement = $pdo->prepare(
+            'SELECT l.license_key, l.client_name, l.domain
+             FROM licenses l
+             WHERE ' . $deploymentWhere . '
+             ORDER BY l.client_name ASC'
+        );
+        $deploymentStatement->execute($deploymentBindings);
+        $targetedDeployments = $deploymentStatement->fetchAll();
+
         $hasLicenseKeyCol = false;
         try {
             $colCheck = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'notification_receipts' AND column_name = 'license_key' LIMIT 1");
@@ -1214,6 +1255,32 @@ try {
                     'domain' => $row['deployment_domain'] ?? null,
                 ];
             }
+        }
+
+        $receiptDeploymentKeys = [];
+        foreach ($recipients as $recipient) {
+            $receiptKey = trim((string) ($recipient['deploymentKey'] ?? ''));
+            if ($receiptKey !== '') $receiptDeploymentKeys[$receiptKey] = true;
+        }
+        foreach ($targetedDeployments as $deployment) {
+            $key = trim((string) ($deployment['license_key'] ?? ''));
+            if ($key === '' || isset($receiptDeploymentKeys[$key])) continue;
+            $recipients[] = [
+                'userId' => $key . ':pending',
+                'userName' => 'Not viewed',
+                'userRole' => null,
+                'deploymentKey' => $key,
+                'deploymentName' => (string) ($deployment['client_name'] ?? $key),
+                'isRead' => false,
+                'readAt' => null,
+                'actionResult' => null,
+                'actedAt' => null,
+            ];
+            $deploymentMap[$key] = [
+                'licenseKey' => $key,
+                'clientName' => (string) ($deployment['client_name'] ?? $key),
+                'domain' => $deployment['domain'] ?? null,
+            ];
         }
 
         respond(200, [
