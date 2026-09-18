@@ -148,7 +148,7 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
               {(item.name || '?').slice(0, 1).toUpperCase()}
             </div>
           )}
-          <div className="min-w-0">
+          <div className="invoice-address-content flex min-w-0 flex-col gap-0">
             <span className={`invoice-item-name block break-words text-[11px] font-bold sm:text-[12px] lg:text-[13px] ${item.muted ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.name}</span>
             {item.badge && <div className="invoice-item-badge mt-0.5">{item.badge}</div>}
           </div>
@@ -381,6 +381,16 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
           }
           .invoice-address-value {
             font-size: 0.88rem !important;
+          }
+          .invoice-address-content {
+            gap: 0 !important;
+          }
+          .invoice-address-label,
+          .invoice-address-value {
+            display: block !important;
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+            line-height: 1.1 !important;
           }
           .invoice-item-table th {
             font-size: 0.8rem !important;
