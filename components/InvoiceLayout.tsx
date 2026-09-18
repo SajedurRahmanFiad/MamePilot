@@ -171,7 +171,7 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
         {customerTitle}
       </div>
 
-      <div className="mt-3 grid grid-cols-[minmax(125px,1.2fr)_minmax(120px,1.5fr)] items-center gap-3">
+      <div className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-0">
         <div className="min-w-0 pr-3">
           <h3 className="invoice-customer-name text-[11px] font-black text-slate-900 break-words sm:text-xs lg:text-sm">{customer?.name || 'Walk-in Customer'}</h3>
           {customerSubtitle ?? (customer?.phone ? <p className="invoice-customer-sub mt-0.5 text-[9px] font-medium text-gray-500 sm:text-[10px]">{customer.phone}</p> : null)}
@@ -183,7 +183,7 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
           </span>
           <div className="min-w-0">
             <p className="invoice-address-label text-[8px] font-medium text-gray-500 sm:text-[9px]">{customerAddressLabel}</p>
-            <p className="invoice-address-value text-[10px] font-black text-slate-900 break-words whitespace-pre-line sm:text-xs">{customerAddress || customer?.address || 'N/A'}</p>
+            <p className="invoice-address-value text-[10px] font-black text-slate-900 whitespace-pre-line sm:text-xs">{customerAddress || customer?.address || 'N/A'}</p>
           </div>
         </div>
       </div>
