@@ -638,7 +638,7 @@ final class MasterDataApi extends BaseService
     public function fetchCustomers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
-            'SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
+            'SELECT id, name, phone, address, age, gender, weight, height, blood_group, guardian_name, emergency_contact, additional_notes, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
              WHERE deleted_at IS NULL AND is_walkin = 0
              ORDER BY created_at DESC'
@@ -689,7 +689,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM customers {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, phone, address, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, phone, address, age, gender, weight, height, blood_group, guardian_name, emergency_contact, additional_notes, total_orders, due_amount, created_by, created_at, deleted_at, deleted_by
              FROM customers
              {$where}
              ORDER BY created_at DESC, id DESC
@@ -1252,7 +1252,7 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    stock, dynamic_pricing, category, 'product' AS item_type,
+                    stock, dynamic_pricing, category, recommended_dose_sequence, 'product' AS item_type,
                     NULL AS population, NULL AS average_age_days
                  FROM products
                  WHERE deleted_at IS NULL AND (name LIKE :p_search_name OR sku LIKE :p_search_sku)
@@ -1269,7 +1269,7 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type,
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
                     population, average_age_days
                  FROM batches
                  WHERE deleted_at IS NULL AND (name LIKE :b_search_name OR sku LIKE :b_search_sku)
@@ -1336,7 +1336,7 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    stock, dynamic_pricing, category, 'product' AS item_type,
+                          stock, dynamic_pricing, category, recommended_dose_sequence, 'product' AS item_type,
                     NULL AS population, NULL AS average_age_days
                  FROM products {$productWhere}
              )";
@@ -1347,7 +1347,7 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, 'batch' AS item_type,
+                    population AS stock, 0 AS dynamic_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
                     population, average_age_days
                  FROM batches
                  {$batchWhere}
@@ -1898,6 +1898,7 @@ final class MasterDataApi extends BaseService
         return [
             'id' => (string) ($row['id'] ?? 'company-default'),
             'name' => (string) ($globalPage['name'] ?? 'Mame Pilot'),
+            'tagline' => (string) ($globalPage['tagline'] ?? ($row['tagline'] ?? '')),
             'phone' => (string) ($globalPage['phone'] ?? '+880'),
             'email' => (string) ($globalPage['email'] ?? 'info@company.com'),
             'address' => (string) ($globalPage['address'] ?? ''),
@@ -1917,11 +1918,27 @@ final class MasterDataApi extends BaseService
         if (!$this->columnExists('company_settings', 'height_unit')) {
             $this->database->execute("ALTER TABLE `company_settings` ADD COLUMN `height_unit` VARCHAR(16) NOT NULL DEFAULT 'cm'");
         }
+        if (!$this->columnExists('company_settings', 'tagline')) {
+            $this->database->execute("ALTER TABLE `company_settings` ADD COLUMN `tagline` TEXT NULL");
+        }
         $current = $this->fetchCompanySettings();
         $pages = [];
 
         if (array_key_exists('pages', $params)) {
             $pages = $this->normalizeCompanyPages($params['pages'], $current);
+            if (array_key_exists('tagline', $params)) {
+                $globalIndex = 0;
+                foreach ($pages as $index => $page) {
+                    if ((bool) ($page['isGlobalBranding'] ?? false)) {
+                        $globalIndex = $index;
+                        break;
+                    }
+                }
+                $pages[$globalIndex] = $this->normalizeCompanyPage(
+                    [...$pages[$globalIndex], 'tagline' => $params['tagline']],
+                    $globalIndex,
+                );
+            }
         } else {
             $pages = $this->normalizeCompanyPages($current['pages'] ?? [], $current);
             $globalIndex = 0;
@@ -1937,6 +1954,7 @@ final class MasterDataApi extends BaseService
                 [
                     ...$pages[$globalIndex],
                     'name' => $params['name'] ?? $pages[$globalIndex]['name'],
+                    'tagline' => $params['tagline'] ?? $pages[$globalIndex]['tagline'],
                     'phone' => $params['phone'] ?? $pages[$globalIndex]['phone'],
                     'email' => $params['email'] ?? $pages[$globalIndex]['email'],
                     'address' => array_key_exists('address', $params) ? $params['address'] : $pages[$globalIndex]['address'],
@@ -1955,6 +1973,7 @@ final class MasterDataApi extends BaseService
             'company-default',
             [
                 'name' => $globalPage['name'] ?? $current['name'],
+                'tagline' => $globalPage['tagline'] ?? ($current['tagline'] ?? ''),
                 'phone' => $globalPage['phone'] ?? $current['phone'],
                 'email' => $globalPage['email'] ?? $current['email'],
                 'address' => $globalPage['address'] ?? $current['address'],

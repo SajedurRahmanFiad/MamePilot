@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Customer, Order, OrderStatus, OrderItem, DynamicPricingRule } from '../types';
+import { Customer, Order, OrderStatus, OrderItem, DynamicPricingRule, Product, VaccineDosageRule, VaccineScheduleRule } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
@@ -9,7 +9,7 @@ import { useCapabilities } from '../src/hooks/useCapabilities';
 import { getBusinessTerminology } from '../src/utils/businessMode';
 import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { fetchProductsSearchPage, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
+import { fetchProductsSearchPage, fetchProductById, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
 import { useCreateOrder, useUpdateOrder, useCreateCustomer } from '../src/hooks/useMutations';
 import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
@@ -72,6 +72,42 @@ function applyDynamicPricing(
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
+const formatDoseDate = (date: Date): string => {
+  const day = date.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+  return `${day}${suffix} ${date.toLocaleString('en-US', { month: 'long' })}, ${date.getFullYear()}`;
+};
+
+const addMonths = (date: Date, months: number): Date => {
+  const result = new Date(date);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(originalDay, lastDay));
+  return result;
+};
+
+const getMatchingDosageRule = (rules: VaccineDosageRule[], age: number): VaccineDosageRule | null => {
+  const matchingRule = rules.find((rule) => {
+    if (rule.ageFrom === '' || rule.ageFrom === undefined) return false;
+    if (rule.operator === '<') return age < rule.ageFrom;
+    if (rule.operator === '>') return age > rule.ageFrom;
+    return rule.ageTo !== undefined && rule.ageTo !== '' && age >= rule.ageFrom && age <= rule.ageTo;
+  });
+  return matchingRule || null;
+};
+
+type VaccineDoseDisplay = {
+  productName: string;
+  productId: string;
+  doseLabel: string;
+  date: string;
+  dateInput: string;
+  interval: number;
+  isFirstDose: boolean;
+};
+
 const OrderForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -114,6 +150,7 @@ const OrderForm: React.FC = () => {
   // Be Smart: order customer selection
   const { capabilities, settings: capabilitySettings } = useCapabilities(Boolean(user));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
@@ -173,6 +210,8 @@ const OrderForm: React.FC = () => {
   const [orderNumber, setOrderNumber] = useState('Generating...');
   const [orderNumberLoading, setOrderNumberLoading] = useState(false);
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [orderProductDetails, setOrderProductDetails] = useState<Record<string, Product>>({});
+  const [firstDoseDates, setFirstDoseDates] = useState<Record<string, string>>({});
   // Keep discount/shipping as strings for the inputs to avoid
   // controlled-number UX problems; parse when calculating/saving.
   const [discount, setDiscount] = useState('0');
@@ -271,15 +310,28 @@ const OrderForm: React.FC = () => {
 
   const seedCustomerCache = (customer: Pick<Customer, 'id'> & Partial<Customer>) => {
     if (!customer.id) return;
-    queryClient.setQueryData(['customer', customer.id], (existing: Customer | null | undefined) => ({
-      id: customer.id,
-      name: customer.name ?? existing?.name ?? '',
-      phone: customer.phone ?? existing?.phone ?? '',
-      address: customer.address ?? existing?.address ?? '',
-      totalOrders: customer.totalOrders ?? existing?.totalOrders ?? 0,
-      dueAmount: customer.dueAmount ?? existing?.dueAmount ?? 0,
-      createdBy: customer.createdBy ?? existing?.createdBy,
-    }));
+    queryClient.setQueryData(
+      ['customer', customer.id],
+      (existing: Customer | null | undefined) => ({
+        id: customer.id,
+        name: customer.name ?? existing?.name ?? '',
+        phone: customer.phone ?? existing?.phone ?? '',
+        address: customer.address ?? existing?.address ?? '',
+        age: customer.age ?? existing?.age ?? null,
+        gender: customer.gender ?? existing?.gender ?? null,
+        dateOfBirth: customer.dateOfBirth ?? existing?.dateOfBirth ?? null,
+        weight: customer.weight ?? existing?.weight ?? null,
+        height: customer.height ?? existing?.height ?? null,
+        bloodGroup: customer.bloodGroup ?? existing?.bloodGroup ?? null,
+        guardianName: customer.guardianName ?? existing?.guardianName ?? null,
+        emergencyContact: customer.emergencyContact ?? existing?.emergencyContact ?? null,
+        additionalNotes: customer.additionalNotes ?? existing?.additionalNotes ?? null,
+        totalOrders: customer.totalOrders ?? existing?.totalOrders ?? 0,
+        dueAmount: customer.dueAmount ?? existing?.dueAmount ?? 0,
+        createdBy: customer.createdBy ?? existing?.createdBy,
+      }),
+      { updatedAt: 0 },
+    );
   };
 
   // Initialize form with existing order data when loaded
@@ -526,6 +578,7 @@ const OrderForm: React.FC = () => {
       dynamicDiscount: itemDiscount > 0 ? itemDiscount : undefined,
       dynamicDiscountScope: itemDiscount > 0 ? itemDiscountScope : undefined,
     };
+    setOrderProductDetails((previous) => ({ ...previous, [product.id]: product as Product }));
     setItems(prev => [...prev, newItem]);
     if (!isMultiSelectMode) {
       setShowProductSearch(false);
@@ -539,6 +592,38 @@ const OrderForm: React.FC = () => {
     setShowProductSearch(false);
     setSearchTerm('');
   };
+
+  React.useEffect(() => {
+    if (!isVaccineCenter || items.length === 0) return;
+    let active = true;
+    const missingProductIds = Array.from(new Set(
+      items
+        .map((item) => String(item.productId || '').trim())
+        .filter((productId) => productId && !orderProductDetails[productId]),
+    ));
+    if (missingProductIds.length === 0) return;
+
+    Promise.all(missingProductIds.map(async (productId) => {
+      try {
+        return await fetchProductById(productId);
+      } catch {
+        return null;
+      }
+    })).then((fetchedProducts) => {
+      if (!active) return;
+      setOrderProductDetails((previous) => {
+        const next = { ...previous };
+        fetchedProducts.forEach((product) => {
+          if (product?.id) next[product.id] = product as Product;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isVaccineCenter, items, orderProductDetails]);
 
   const updateQuantity = (index: number, qty: number) => {
     const newItems = [...items];
@@ -902,6 +987,60 @@ const OrderForm: React.FC = () => {
       ? [selectedCustomer, ...baseVisibleCustomers]
       : baseVisibleCustomers;
 
+  const vaccineDoseDisplay = React.useMemo<VaccineDoseDisplay[]>(() => {
+    if (!isVaccineCenter || selectedCustomer?.age === null || selectedCustomer?.age === undefined || !orderDate) return [];
+    const patientAge = selectedCustomer.age;
+
+    return items.flatMap((item) => {
+      const product = orderProductDetails[item.productId]
+        ?? allProductsRef.current.get(item.productId)
+        ?? products.find((candidate) => candidate.id === item.productId) as Product | undefined;
+      const dosageSequence = (product as (Product & { recommended_dose_sequence?: string | null }) | undefined)?.recommendedDoseSequence
+        ?? (product as (Product & { recommended_dose_sequence?: string | null }) | undefined)?.recommended_dose_sequence;
+      if (!dosageSequence) return [];
+      const firstDoseDate = firstDoseDates[product.id] || orderDate;
+      const firstDoseStartDate = new Date(`${firstDoseDate}T00:00:00`);
+      if (Number.isNaN(firstDoseStartDate.getTime())) return [];
+
+      try {
+        const saved = (typeof dosageSequence === 'string' ? JSON.parse(dosageSequence) : dosageSequence) as {
+          dosageRules?: VaccineDosageRule[];
+          scheduleRules?: VaccineScheduleRule[];
+        };
+        if (!Array.isArray(saved.dosageRules) || !Array.isArray(saved.scheduleRules)) return [];
+
+        const dosageRule = getMatchingDosageRule(saved.dosageRules, patientAge);
+        if (!dosageRule) return [];
+        const schedule = saved.scheduleRules.find((entry) => entry.dosageRuleId === dosageRule.id);
+        if (!schedule) return [];
+
+        const doses = schedule.intervals.slice(0, dosageRule.dosageCount).map((interval, index) => ({
+          productName: item.productName,
+          productId: product.id,
+          doseLabel: `Dose ${index + 1}`,
+          date: formatDoseDate(addMonths(firstDoseStartDate, Number(interval) || 0)),
+          dateInput: addMonths(firstDoseStartDate, Number(interval) || 0).toISOString().slice(0, 10),
+          interval: Number(interval) || 0,
+          isFirstDose: index === 0,
+        }));
+        if (dosageRule.hasBoosterDose && schedule.boosterInterval !== undefined && schedule.boosterInterval !== '') {
+          doses.push({
+            productName: item.productName,
+            productId: product.id,
+            doseLabel: 'Booster dose',
+            date: formatDoseDate(addMonths(firstDoseStartDate, Number(schedule.boosterInterval) || 0)),
+            dateInput: addMonths(firstDoseStartDate, Number(schedule.boosterInterval) || 0).toISOString().slice(0, 10),
+            interval: Number(schedule.boosterInterval) || 0,
+            isFirstDose: false,
+          });
+        }
+        return doses;
+      } catch {
+        return [];
+      }
+    });
+  }, [firstDoseDates, isVaccineCenter, items, orderDate, orderProductDetails, products, selectedCustomer?.age]);
+
   if (isEdit && !existingOrderLoading && !existingOrderData) {
     return (
       <div className="p-8 text-center">
@@ -1003,6 +1142,9 @@ const OrderForm: React.FC = () => {
                     <div className="flex-1 overflow-hidden">
                       <span className="font-bold block text-sm text-gray-900">{selectedCustomer.name}</span>
                       <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedCustomer.phone}</p>
+                      {isVaccineCenter && (
+                        <p className="text-[10px] text-gray-500 leading-none mt-1">Age: {selectedCustomer.age ?? 'N/A'}</p>
+                      )}
                       <p className="text-[10px] ${theme.colors.primary[600]} italic truncate mt-1">{selectedCustomer.address}</p>
                     </div>
                   ) : <span className="text-gray-400 text-sm">Select {terminology.customer}...</span>}
@@ -1239,6 +1381,45 @@ const OrderForm: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {isVaccineCenter && selectedCustomer && items.length > 0 && (
+          <section className="border border-[#c7dff5] rounded-lg bg-[#f7fbff] p-5 space-y-4" aria-label="Vaccine dosage schedule">
+            <div>
+              <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">Dosage Schedule</h3>
+            </div>
+            {selectedCustomer.age === null || selectedCustomer.age === undefined ? (
+              <p className="text-sm text-gray-500">The selected patient does not have an age recorded.</p>
+            ) : vaccineDoseDisplay.length === 0 ? (
+              <p className="text-sm text-gray-500">No matching dosage schedule was found for this patient.</p>
+            ) : (
+              <div className="space-y-3">
+                {vaccineDoseDisplay.map((dose, index) => (
+                  <div key={`${dose.productName}-${dose.doseLabel}-${index}`} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between border-t border-[#dceafb] pt-3 first:border-t-0 first:pt-0">
+                    <div>
+                      <p className="text-sm font-bold text-gray-800">{dose.productName}</p>
+                      <p className="text-xs text-gray-500">{dose.doseLabel}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-black text-[#3c5a82]">{dose.date}</p>
+                      {dose.isFirstDose && (
+                        <input
+                          type="date"
+                          value={dose.dateInput}
+                          onChange={(event) => setFirstDoseDates((previous) => ({
+                            ...previous,
+                            [dose.productId]: event.target.value,
+                          }))}
+                          className="h-8 w-8 appearance-none rounded-lg border border-[#c7dff5] bg-white p-1 text-transparent focus:ring-2 focus:ring-[#3c5a82] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-datetime-edit]:hidden"
+                          aria-label={`Select first dose date for ${dose.productName}`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         <div className="relative mt-2">
           <button

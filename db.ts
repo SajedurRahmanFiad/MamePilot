@@ -13,7 +13,7 @@ const defaultSettings: Settings = {
     address: '',
   }),
   order: { prefix: 'BDH-', nextNumber: 1 },
-  invoice: { title: 'Tax Invoice', logoWidth: 60, logoHeight: 60, footer: 'Thank you for choosing Mame Pilot!' },
+  invoice: { logoWidth: 60, logoHeight: 60, footer: 'Thank you for choosing Mame Pilot!' },
   defaults: {
     defaultAccountId: '',
     defaultPaymentMethod: 'Cash',

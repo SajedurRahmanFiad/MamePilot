@@ -551,6 +551,7 @@ export interface ProcessBillReturnPayload {
 export interface CompanyPage {
   id: string;
   name: string;
+  tagline: string;
   logo: string;
   phone: string;
   email: string;
@@ -561,6 +562,7 @@ export interface CompanyPage {
 export interface CompanySettings {
   id?: string;
   name: string;
+  tagline: string;
   logo: string;
   phone: string;
   email: string;
@@ -1489,7 +1491,6 @@ export interface Settings {
     nextNumber: number;
   };
   invoice: {
-    title: string;
     logoWidth: number;
     logoHeight: number;
     footer: string;

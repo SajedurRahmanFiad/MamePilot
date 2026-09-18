@@ -55,6 +55,17 @@ const rgbToHex = (r: number, g: number, b: number) => {
   return `#${pad(r)}${pad(g)}${pad(b)}`;
 };
 
+export const mixThemeColorWithWhite = (themeColor: string, whiteRatio: number = 0.88) => {
+  const rgb = hexToRgb(themeColor);
+  if (!rgb) return '#eef2f3';
+  const ratio = Math.max(0, Math.min(1, whiteRatio));
+  return rgbToHex(
+    rgb.r + (255 - rgb.r) * ratio,
+    rgb.g + (255 - rgb.g) * ratio,
+    rgb.b + (255 - rgb.b) * ratio,
+  );
+};
+
 const rgbToHsl = (r: number, g: number, b: number) => {
   const rNorm = r / 255;
   const gNorm = g / 255;

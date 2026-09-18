@@ -46,7 +46,7 @@ const CustomerForm: React.FC = () => {
   const smartMode = hasBeSmart && !isVaccineCenter && Boolean(beSmartSettings?.smartCustomerAdding);
   
   const [form, setForm] = useState({
-    name: '', phone: '', address: '', age: '', gender: '', dateOfBirth: '', weight: '', height: '', heightFeet: '', heightInches: '',
+    name: '', phone: '', address: '', age: '', gender: '', weight: '', height: '', heightFeet: '', heightInches: '',
     bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '',
   });
   const [smartInput, setSmartInput] = useState('');
@@ -67,7 +67,7 @@ const CustomerForm: React.FC = () => {
         name: customer.name,
         phone: customer.phone,
         address: customer.address,
-        age: customer.age?.toString() || '', gender: customer.gender || '', dateOfBirth: customer.dateOfBirth?.slice(0, 10) || '',
+        age: customer.age?.toString() || '', gender: customer.gender || '',
         weight: customer.weight?.toString() || '', ...getHeightParts(customer.height, heightUnit), bloodGroup: customer.bloodGroup || '',
         guardianName: customer.guardianName || '', emergencyContact: customer.emergencyContact || '', additionalNotes: customer.additionalNotes || '',
       });
@@ -81,7 +81,7 @@ const CustomerForm: React.FC = () => {
       const cachedCustomers = queryClient.getQueryData<Customer[]>(['customers']) || [];
       const optimistic = cachedCustomers.find(c => c.id === id);
       if (optimistic) {
-        setForm({ name: optimistic.name, phone: optimistic.phone, address: optimistic.address, age: optimistic.age?.toString() || '', gender: optimistic.gender || '', dateOfBirth: optimistic.dateOfBirth?.slice(0, 10) || '', weight: optimistic.weight?.toString() || '', ...getHeightParts(optimistic.height, heightUnit), bloodGroup: optimistic.bloodGroup || '', guardianName: optimistic.guardianName || '', emergencyContact: optimistic.emergencyContact || '', additionalNotes: optimistic.additionalNotes || '' });
+        setForm({ name: optimistic.name, phone: optimistic.phone, address: optimistic.address, age: optimistic.age?.toString() || '', gender: optimistic.gender || '', weight: optimistic.weight?.toString() || '', ...getHeightParts(optimistic.height, heightUnit), bloodGroup: optimistic.bloodGroup || '', guardianName: optimistic.guardianName || '', emergencyContact: optimistic.emergencyContact || '', additionalNotes: optimistic.additionalNotes || '' });
         setSmartInput([optimistic.name, optimistic.phone, optimistic.address].filter(Boolean).join('\n'));
         initializedRef.current = true;
       }
@@ -98,7 +98,7 @@ const CustomerForm: React.FC = () => {
       name: preFill?.name || '',
       phone: preFill?.phone || '',
       address: preFill?.address || '',
-      age: '', gender: '', dateOfBirth: '', weight: '', height: '', heightFeet: '', heightInches: '', bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '',
+      age: '', gender: '', weight: '', height: '', heightFeet: '', heightInches: '', bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '',
     });
     setSmartInput([preFill?.name, preFill?.phone, preFill?.address].filter(Boolean).join('\n'));
     initializedRef.current = true;
@@ -136,7 +136,7 @@ const CustomerForm: React.FC = () => {
         const updates: Partial<Customer> = smartMode
           ? { smartInput: smartInput.trim() }
           : { name: form.name, phone: form.phone, address: isVaccineCenter ? '' : form.address, ...(isVaccineCenter ? {
-            age: form.age === '' ? null : Number(form.age), gender: form.gender || null, dateOfBirth: form.dateOfBirth || null,
+            age: form.age === '' ? null : Number(form.age), gender: form.gender || null,
             weight: form.weight === '' ? null : Number(form.weight), height: heightUnit === 'feet-inches' ? (form.heightFeet === '' ? null : Number(form.heightFeet) * 12 + Number(form.heightInches || 0)) : (form.height === '' ? null : Number(form.height)),
             bloodGroup: form.bloodGroup || null, guardianName: form.guardianName || null, emergencyContact: form.emergencyContact || null,
             additionalNotes: form.additionalNotes || null,
@@ -149,7 +149,7 @@ const CustomerForm: React.FC = () => {
           phone: smartMode ? '' : form.phone,
           address: isVaccineCenter ? '' : (smartMode ? '' : form.address),
           ...(isVaccineCenter ? {
-            age: form.age === '' ? null : Number(form.age), gender: form.gender || null, dateOfBirth: form.dateOfBirth || null,
+            age: form.age === '' ? null : Number(form.age), gender: form.gender || null,
             weight: form.weight === '' ? null : Number(form.weight), height: heightUnit === 'feet-inches' ? (form.heightFeet === '' ? null : Number(form.heightFeet) * 12 + Number(form.heightInches || 0)) : (form.height === '' ? null : Number(form.height)),
             bloodGroup: form.bloodGroup || null, guardianName: form.guardianName || null, emergencyContact: form.emergencyContact || null,
             additionalNotes: form.additionalNotes || null,
@@ -273,7 +273,6 @@ const CustomerForm: React.FC = () => {
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Age</span><input type="number" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.age} onChange={e => setForm({ ...form, age: e.target.value })} /></label>
                 <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Gender</span><select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Non-Binary">Non-Binary</option></select></label>
-                <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Date of Birth</span><input type="date" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} /></label>
                 <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Weight ({weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'})</span><div className="relative"><input type="number" className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.weight} onChange={e => setForm({ ...form, weight: e.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">{weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'}</span></div></label>
                 {heightUnit === 'feet-inches' ? <label className="space-y-3 md:col-span-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Height (ft/in)</span><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Feet</span><div className="relative"><input aria-label="Height feet" type="number" min="0" placeholder="0" className="w-full px-4 py-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.heightFeet} onChange={e => setForm({ ...form, heightFeet: e.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">ft</span></div></div><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Inches</span><div className="relative"><input aria-label="Height inches" type="number" min="0" max="11" placeholder="0" className="w-full px-4 py-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.heightInches} onChange={e => setForm({ ...form, heightInches: e.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">in</span></div></div></div></label> : <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Height (cm)</span><div className="relative"><input type="number" placeholder="0" className="w-full px-4 py-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.height} onChange={e => setForm({ ...form, height: e.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">cm</span></div></label>}
                 <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Blood Group</span><select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.bloodGroup} onChange={e => setForm({ ...form, bloodGroup: e.target.value })}><option value="">Select blood group</option><option value="A+">A+</option><option value="A-">A-</option><option value="B+">B+</option><option value="B-">B-</option><option value="AB+">AB+</option><option value="AB-">AB-</option><option value="O+">O+</option><option value="O-">O-</option></select></label>

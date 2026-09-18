@@ -365,14 +365,21 @@ const ProductForm: React.FC = () => {
 
         {isVaccineCenter && (
           <div className="grid gap-4 md:grid-cols-2 border-t pt-6">
-            {[
-              ['Batch/Lot Number', 'batchLotNumber', 'text'], ['Expiry Date', 'expiryDate', 'date'],
-            ].map(([label, key, type]) => (
-              <label key={key} className="space-y-1">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</span>
-                <input type={type} className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={String(form[key as keyof typeof form] || '')} onChange={e => setForm({ ...form, [key]: e.target.value })} />
-              </label>
-            ))}
+            <label className="space-y-1">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Batch/Lot Number</span>
+              <input type="text" className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.batchLotNumber || ''} onChange={e => setForm({ ...form, batchLotNumber: e.target.value })} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit</span>
+              <select
+                className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-emerald-500"
+                value={form.unitId || ''}
+                onChange={e => setForm({...form, unitId: e.target.value || undefined})}
+              >
+                <option value="">No Unit</option>
+                {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
             <label className="space-y-1 md:col-span-2">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notes</span>
               <textarea className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82]" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
@@ -408,20 +415,22 @@ const ProductForm: React.FC = () => {
           />
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit</label>
-            <select
-              className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-emerald-500"
-              value={form.unitId || ''}
-              onChange={e => setForm({...form, unitId: e.target.value || undefined})}
-            >
-              <option value="">No Unit</option>
-              {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+        {!isVaccineCenter && (
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1 space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit</label>
+              <select
+                className="w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-emerald-500"
+                value={form.unitId || ''}
+                onChange={e => setForm({...form, unitId: e.target.value || undefined})}
+              >
+                <option value="">No Unit</option>
+                {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="flex-1" />
           </div>
-          <div className="flex-1" />
-        </div>
+        )}
 
         <div className="space-y-1">
             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{terminology.item} Image</label>

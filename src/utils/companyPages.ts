@@ -22,6 +22,7 @@ export function normalizeCompanyPage(
   return {
     id,
     name,
+    tagline: String(page?.tagline ?? fallback.tagline ?? ''),
     logo: String(page?.logo || fallback.logo || (index === 0 ? DEFAULT_COMPANY_LOGO : '')),
     phone: String(page?.phone ?? fallback.phone ?? DEFAULT_COMPANY_PHONE),
     email: String(page?.email ?? fallback.email ?? DEFAULT_COMPANY_EMAIL),
@@ -36,6 +37,7 @@ export function normalizeCompanySettings(settings: PartialCompanySettings): Comp
     {
       id: settings?.id || DEFAULT_PAGE_ID,
       name: settings?.name,
+      tagline: settings?.tagline,
       logo: settings?.logo,
       phone: settings?.phone,
       email: settings?.email,
@@ -74,6 +76,7 @@ export function normalizeCompanySettings(settings: PartialCompanySettings): Comp
   return {
     id: String(settings?.id || 'company-default'),
     name: globalPage.name,
+    tagline: globalPage.tagline,
     logo: globalPage.logo,
     phone: globalPage.phone,
     email: globalPage.email,
@@ -101,11 +104,17 @@ export function getOrderCompanyPage(
   order: Partial<Order> | null | undefined,
   settings: PartialCompanySettings,
 ): CompanyPage {
+  const normalizedSettings = normalizeCompanySettings(settings);
+  const currentPage = normalizedSettings.pages.find((page) => page.id === order?.pageId)
+    || getGlobalCompanyPage(normalizedSettings);
+
   if (order?.pageSnapshot && Object.keys(order.pageSnapshot).length > 0) {
-    return normalizeCompanyPage(order.pageSnapshot, 0);
+    const snapshot = normalizeCompanyPage(order.pageSnapshot, 0);
+    return {
+      ...snapshot,
+      tagline: snapshot.tagline.trim() || currentPage.tagline,
+    };
   }
 
-  const normalizedSettings = normalizeCompanySettings(settings);
-  const matchedPage = normalizedSettings.pages.find((page) => page.id === order?.pageId);
-  return matchedPage || getGlobalCompanyPage(normalizedSettings);
+  return currentPage;
 }

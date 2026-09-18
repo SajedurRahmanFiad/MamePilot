@@ -95,6 +95,7 @@ const SUB_CAPABILITY_KEYS = [
     'hr_management', 'payroll', 'accounts', 'transactions', 'transfer',
     'steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier',
     'recycle_bin', 'undoer',
+    'batch_management',
 ];
 
 date_default_timezone_set('UTC');

@@ -52,6 +52,7 @@ try {
         'pathao_courier' => true,
         'recycle_bin' => true,
         'undoer' => false,
+        'batch_management' => false,
     ];
 
     $saved = $master->updateCapabilitySettings([
@@ -119,8 +120,9 @@ try {
     $centralSchema = (string) file_get_contents($root . '/deploy/Central Server/central-db.sql');
     subCapabilityAssert(
         str_contains($centralApi, 'sub_capability_overrides = :sub_capability_overrides')
-            && str_contains($centralApi, "'sub_capabilities' => \$overrideEnabled ? \$subCapabilityOverrides : []"),
-        'The central license API does not persist and resolve sub-capability overrides.'
+            && str_contains($centralApi, "'sub_capabilities' => \$overrideEnabled ? \$subCapabilityOverrides : []")
+            && str_contains($centralApi, "'batch_management'"),
+        'The central license API does not persist and resolve sub-capability overrides for batch management.'
     );
     subCapabilityAssert(
         str_contains($centralSchema, 'ADD COLUMN IF NOT EXISTS sub_capability_overrides LONGTEXT NULL'),

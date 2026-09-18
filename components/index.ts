@@ -25,6 +25,7 @@ export { DuplicateOrderModal } from './DuplicateOrderModal';
 export { default as Layout } from './Layout';
 
 export { default as LoadingOverlay } from './LoadingOverlay';
+export { default as InvoiceLayout } from './InvoiceLayout';
 export { default as StartupScreen } from './StartupScreen';
 
 export { default as TableLoadingSkeleton } from './TableLoadingSkeleton';

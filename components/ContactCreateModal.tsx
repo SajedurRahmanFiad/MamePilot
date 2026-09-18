@@ -27,7 +27,6 @@ interface ContactFormValues {
   address: string;
   age: string;
   gender: string;
-  dateOfBirth: string;
   weight: string;
   height: string;
   bloodGroup: string;
@@ -72,7 +71,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
   const entityLabel = isCustomer ? terminology.customerLower : 'vendor';
   const nameLabel = isCustomer ? 'Full Name' : 'Business Name';
 
-  const [form, setForm] = useState({ name: '', phone: '', address: '', age: '', gender: '', dateOfBirth: '', weight: '', height: '', bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '' });
+  const [form, setForm] = useState({ name: '', phone: '', address: '', age: '', gender: '', weight: '', height: '', bloodGroup: '', guardianName: '', emergencyContact: '', additionalNotes: '' });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,7 +81,6 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
       address: initialValues?.address || '',
       age: initialValues?.age?.toString() || '',
       gender: initialValues?.gender || '',
-      dateOfBirth: initialValues?.dateOfBirth?.slice(0, 10) || '',
       weight: initialValues?.weight?.toString() || '',
       ...getHeightParts(initialValues?.height, heightUnit),
       height: initialValues?.height?.toString() || '',
@@ -94,7 +92,7 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
     setForm(nextForm);
     setSmartInput([nextForm.name, nextForm.phone, nextForm.address].filter(Boolean).join('\n'));
     setError(null);
-  }, [heightUnit, initialValues?.additionalNotes, initialValues?.address, initialValues?.age, initialValues?.bloodGroup, initialValues?.dateOfBirth, initialValues?.emergencyContact, initialValues?.gender, initialValues?.guardianName, initialValues?.height, initialValues?.name, initialValues?.phone, initialValues?.weight, isOpen]);
+  }, [heightUnit, initialValues?.additionalNotes, initialValues?.address, initialValues?.age, initialValues?.bloodGroup, initialValues?.emergencyContact, initialValues?.gender, initialValues?.guardianName, initialValues?.height, initialValues?.name, initialValues?.phone, initialValues?.weight, isOpen]);
 
   const handleClose = () => {
     if (!isPending) onClose();
@@ -215,7 +213,6 @@ const ContactCreateModalBase: React.FC<ContactCreateModalBaseProps> = ({
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Age</span><input type="number" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.age} onChange={event => setForm({ ...form, age: event.target.value })} /></label>
                   <label className="space-y-2"><span className="text-xs font-black text-gray-400 uppercase tracking-widest">Gender</span><select className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium outline-none" value={form.gender} onChange={event => setForm({ ...form, gender: event.target.value })}><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Non-Binary">Non-Binary</option></select></label>
-                  <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Date of Birth</span><input type="date" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.dateOfBirth} onChange={event => setForm({ ...form, dateOfBirth: event.target.value })} /></label>
                   <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Weight ({weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'})</span><div className="relative"><input type="number" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-12 font-medium outline-none" value={form.weight} onChange={event => setForm({ ...form, weight: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">{weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg'}</span></div></label>
                   {heightUnit === 'feet-inches' ? <label className="space-y-3 md:col-span-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Height (ft/in)</span><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Feet</span><div className="relative"><input aria-label="Height feet" type="number" min="0" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.heightFeet} onChange={event => setForm({ ...form, heightFeet: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">ft</span></div></div><div className="space-y-1.5"><span className="block text-xs font-bold text-gray-500">Inches</span><div className="relative"><input aria-label="Height inches" type="number" min="0" max="11" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.heightInches} onChange={event => setForm({ ...form, heightInches: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">in</span></div></div></div></label> : <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Height (cm)</span><div className="relative"><input type="number" placeholder="0" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 font-medium outline-none" value={form.height} onChange={event => setForm({ ...form, height: event.target.value })} /><span className="absolute inset-y-0 right-4 flex items-center text-xs font-black text-gray-400">cm</span></div></label>}
                   <label className="space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">Blood Group</span><select className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-medium outline-none" value={form.bloodGroup} onChange={event => setForm({ ...form, bloodGroup: event.target.value })}><option value="">Select blood group</option><option value="A+">A+</option><option value="A-">A-</option><option value="B+">B+</option><option value="B-">B-</option><option value="AB+">AB+</option><option value="AB-">AB-</option><option value="O+">O+</option><option value="O-">O-</option></select></label>
@@ -247,7 +244,9 @@ interface CustomerCreateModalProps {
 export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen, onClose, initialValues, onCreated, editingCustomer, onUpdated }) => {
   const { user, isLoading: authLoading } = useAuth();
   const { capabilities, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities(Boolean(user));
+  const { data: companySettings } = useCompanySettings();
   const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
+  const heightUnit = companySettings?.heightUnit || 'cm';
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(isOpen && hasBeSmart);
   const createMutation = useCreateCustomer();
@@ -261,7 +260,7 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
       isOpen={isOpen}
       onClose={onClose}
       initialValues={editingCustomer
-        ? { name: editingCustomer.name, phone: editingCustomer.phone, address: editingCustomer.address, age: editingCustomer.age, gender: editingCustomer.gender, dateOfBirth: editingCustomer.dateOfBirth, weight: editingCustomer.weight, height: editingCustomer.height, bloodGroup: editingCustomer.bloodGroup, guardianName: editingCustomer.guardianName, emergencyContact: editingCustomer.emergencyContact, additionalNotes: editingCustomer.additionalNotes }
+        ? { name: editingCustomer.name, phone: editingCustomer.phone, address: editingCustomer.address, age: editingCustomer.age, gender: editingCustomer.gender, weight: editingCustomer.weight, height: editingCustomer.height, bloodGroup: editingCustomer.bloodGroup, guardianName: editingCustomer.guardianName, emergencyContact: editingCustomer.emergencyContact, additionalNotes: editingCustomer.additionalNotes }
         : initialValues}
       editing={editing}
       smartMode={smartMode}
@@ -274,7 +273,7 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
             updates: values.smartInput
               ? { smartInput: values.smartInput }
               : { name: values.name, phone: values.phone, address: isVaccineCenter ? '' : values.address, ...(isVaccineCenter ? {
-                age: values.age === '' ? null : Number(values.age), gender: values.gender || null, dateOfBirth: values.dateOfBirth || null,
+                age: values.age === '' ? null : Number(values.age), gender: values.gender || null,
                 weight: values.weight === '' ? null : Number(values.weight), height: heightUnit === 'feet-inches' ? (values.heightFeet === '' ? null : Number(values.heightFeet) * 12 + Number(values.heightInches || 0)) : (values.height === '' ? null : Number(values.height)),
                 bloodGroup: values.bloodGroup || null, guardianName: values.guardianName || null, emergencyContact: values.emergencyContact || null,
                 additionalNotes: values.additionalNotes || null,
@@ -288,7 +287,7 @@ export const CustomerCreateModal: React.FC<CustomerCreateModalProps> = ({ isOpen
           phone: values.phone,
           address: isVaccineCenter ? '' : values.address,
           ...(isVaccineCenter ? {
-            age: values.age === '' ? null : Number(values.age), gender: values.gender || null, dateOfBirth: values.dateOfBirth || null,
+            age: values.age === '' ? null : Number(values.age), gender: values.gender || null,
             weight: values.weight === '' ? null : Number(values.weight), height: heightUnit === 'feet-inches' ? (values.heightFeet === '' ? null : Number(values.heightFeet) * 12 + Number(values.heightInches || 0)) : (values.height === '' ? null : Number(values.height)),
             bloodGroup: values.bloodGroup || null, guardianName: values.guardianName || null, emergencyContact: values.emergencyContact || null,
             additionalNotes: values.additionalNotes || null,

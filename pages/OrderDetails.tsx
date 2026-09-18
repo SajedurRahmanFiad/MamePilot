@@ -1,12 +1,12 @@
 
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { db } from '../db';
-import { OrderStatus, Order, type ProcessOrderReturnExchangePayload, type ConfirmPartialDeliveryPayload, type ConfirmationStatus } from '../types';
+import { OrderStatus, Order, VaccineDosageRule, VaccineScheduleRule, type ProcessOrderReturnExchangePayload, type ConfirmPartialDeliveryPayload, type ConfirmationStatus } from '../types';
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
-import { theme, resolveThemeColorPalette } from '../theme';
+import { theme, mixThemeColorWithWhite, resolveThemeColorPalette } from '../theme';
 import { useAccounts, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults, useCourierTrackingEvents } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useConfirmPartialDelivery, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -34,6 +34,33 @@ import {
   parseHistoryTimestamp,
 } from '../utils';
 import { getOrderCompanyPage } from '../src/utils/companyPages';
+import { fetchProductById } from '../src/services/supabaseQueries';
+import { CalendarDays, ReceiptText, UserRound, VenusAndMars, Weight, Ruler, Droplets, MapPin, Phone } from 'lucide-react';
+import { InvoiceContactIcon } from '../components/InvoiceContactIcon';
+import { InvoiceLayout } from '../components';
+
+const formatDoseDate = (date: Date): string => {
+  const day = date.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+  return `${day}${suffix} ${date.toLocaleString('en-US', { month: 'long' })}, ${date.getFullYear()}`;
+};
+
+const addMonths = (date: Date, months: number): Date => {
+  const result = new Date(date);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(originalDay, lastDay));
+  return result;
+};
+
+const getMatchingDosageRule = (rules: VaccineDosageRule[], age: number): VaccineDosageRule | null => rules.find((rule) => {
+  if (rule.ageFrom === '' || rule.ageFrom === undefined) return false;
+  if (rule.operator === '<') return age < rule.ageFrom;
+  if (rule.operator === '>') return age > rule.ageFrom;
+  return rule.ageTo !== undefined && rule.ageTo !== '' && age >= rule.ageFrom && age <= rule.ageTo;
+}) || null;
 
 const OrderDetails: React.FC = () => {
   const { id } = useParams();
@@ -75,9 +102,29 @@ const OrderDetails: React.FC = () => {
     () => Array.from(new Set((order?.items || []).map((item) => String(item?.productId || '').trim()).filter(Boolean))),
     [order?.items]
   );
+  const productQueries = useQueries({
+    queries: orderItemProductIds.map((productId) => ({
+      queryKey: ['product', productId],
+      queryFn: () => fetchProductById(productId),
+      enabled: Boolean(productId),
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  const orderProducts = useMemo(
+    () => productQueries.flatMap((query) => query.data ? [query.data] : []),
+    [productQueries],
+  );
   const { data: productImages = {} } = useProductImagesByIds(orderItemProductIds);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
+  const weightUnit = companySettings?.weightUnit || 'kg';
+  const heightUnit = companySettings?.heightUnit || 'cm';
+  const weightLabel = weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg';
+  const formattedCustomerHeight = customer?.height == null
+    ? 'N/A'
+    : heightUnit === 'feet-inches'
+      ? `${Math.floor(customer.height / 12)} ft ${Math.round(customer.height % 12)} in`
+      : `${customer.height} cm`;
   const { data: systemDefaults } = useSystemDefaults();
   const themeColorHex = useMemo(() => {
     const tc = systemDefaults?.themeColor || db.settings.defaults?.themeColor || '#0f2f57';
@@ -254,18 +301,31 @@ const OrderDetails: React.FC = () => {
   const hasExchangedItems = (o?: Order | null) =>
     Boolean(o?.items?.some((item) => (item.exchangedQty ?? 0) > 0));
 
-  const showExchangeTimeline = [OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.EXCHANGE_CANCELLED].includes(order?.status as OrderStatus) || hasExchangedItems(order);
+  const canUseCourierAutomation = hasCapability('courier_automation');
+
+  const showExchangeTimeline = canUseCourierAutomation && ([OrderStatus.EXCHANGE_PROCESSING, OrderStatus.EXCHANGE_PICKED, OrderStatus.EXCHANGE_DELIVERED, OrderStatus.EXCHANGE_RETURNED, OrderStatus.EXCHANGE_CANCELLED].includes(order?.status as OrderStatus) || hasExchangedItems(order));
 
   const timelineItems = React.useMemo<OrderTimelineItem[]>(
     () => {
       const items: OrderTimelineItem[] = [
         { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
         { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
+      ];
+
+      if (!canUseCourierAutomation) {
+        items.push(
+          { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
+          { label: 'Cancelled', historyKey: 'cancelled', description: 'The order has been cancelled and will not be fulfilled.' },
+        );
+        return items;
+      }
+
+      items.push(
         { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
         { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
         { label: 'Partially Delivered', historyKey: 'completed', description: 'Some items were delivered; the rest need follow-up.' },
         { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
-      ];
+      );
       if (showExchangeTimeline) {
         items.push(
           { label: 'Exchange processing', historyKey: 'exchangeProcessing', description: 'Exchange initiated and processing.' },
@@ -281,11 +341,19 @@ const OrderDetails: React.FC = () => {
       );
       return items;
     },
-    [showExchangeTimeline]
+    [canUseCourierAutomation, showExchangeTimeline]
   );
 
   const getTimelineIndex = (order?: Order) => {
     if (!order) return 0;
+    if (!canUseCourierAutomation) {
+      if (order.status === OrderStatus.CANCELLED) return timelineItems.length - 1;
+      if ([OrderStatus.RETURNED, OrderStatus.PARTIALLY_DELIVERED, OrderStatus.PENDING_PARTIAL, OrderStatus.PENDING_DELIVERED, OrderStatus.COURIER_ASSIGNED, OrderStatus.PICKED, OrderStatus.COMPLETED].includes(order.status)) {
+        return timelineItems.findIndex((item) => item.label === 'Delivered');
+      }
+      if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
+      return timelineItems.findIndex((item) => item.label === 'Created');
+    }
     if (order.status === OrderStatus.CANCELLED) return timelineItems.length - 1;
     if (order.status === OrderStatus.RETURNED) return timelineItems.findIndex((item) => item.label === 'Returned');
     if (order.status === OrderStatus.EXCHANGE_CANCELLED) return timelineItems.findIndex((item) => item.label === 'Exchange cancelled');
@@ -674,6 +742,59 @@ const OrderDetails: React.FC = () => {
     () => getOrderCompanyPage(order ?? undefined, companySettings || db.settings.company),
     [companySettings, order],
   );
+  const vaccineDoseSchedule = useMemo(() => {
+    if (capabilitySettings?.businessMode !== 'vaccine_center' || customer?.age === null || customer?.age === undefined || !order?.orderDate) {
+      return [];
+    }
+
+    const startDate = new Date(`${order.orderDate}T00:00:00`);
+    if (Number.isNaN(startDate.getTime())) return [];
+    const patientAge = customer.age;
+
+    const doses = (order.items || []).flatMap((item) => {
+      const product = orderProducts.find((candidate) => candidate.id === item.productId);
+      const dosageSequence = product?.recommendedDoseSequence;
+      if (!dosageSequence) return [];
+
+      try {
+        const saved = JSON.parse(dosageSequence) as {
+          dosageRules?: VaccineDosageRule[];
+          scheduleRules?: VaccineScheduleRule[];
+        };
+        if (!Array.isArray(saved.dosageRules) || !Array.isArray(saved.scheduleRules)) return [];
+        const dosageRule = getMatchingDosageRule(saved.dosageRules, patientAge);
+        if (!dosageRule) return [];
+        const schedule = saved.scheduleRules.find((entry) => entry.dosageRuleId === dosageRule.id);
+        if (!schedule) return [];
+
+        const generated = schedule.intervals.slice(0, dosageRule.dosageCount).map((interval, index) => {
+          const dateValue = addMonths(startDate, Number(interval) || 0);
+          return {
+            productName: item.productName,
+            doseLabel: `Dose ${index + 1}`,
+            date: formatDoseDate(dateValue),
+            dateValue,
+          };
+        });
+
+        if (dosageRule.hasBoosterDose && schedule.boosterInterval !== undefined && schedule.boosterInterval !== '') {
+          const boosterDateValue = addMonths(startDate, Number(schedule.boosterInterval) || 0);
+          generated.push({
+            productName: item.productName,
+            doseLabel: 'Booster dose',
+            date: formatDoseDate(boosterDateValue),
+            dateValue: boosterDateValue,
+          });
+        }
+
+        return generated;
+      } catch {
+        return [];
+      }
+    });
+
+    return doses.sort((a, b) => a.dateValue.getTime() - b.dateValue.getTime());
+  }, [capabilitySettings?.businessMode, customer?.age, order, orderProducts]);
   const orderPhone = React.useMemo(
     () => String(customer?.phone || order?.customerPhone || '').trim(),
     [customer?.phone, order?.customerPhone],
@@ -731,7 +852,6 @@ const OrderDetails: React.FC = () => {
       ? (courierSettings?.fraudChecker?.fraudspyApiKey || courierSettings?.fraudChecker?.apiKey)
       : courierSettings?.fraudChecker?.apiKey)?.trim()
   );
-  const canUseCourierAutomation = hasCapability('courier_automation');
   const canUseSteadfast = hasSubCapability('steadfast_courier');
   const canUseCarryBee = hasSubCapability('carrybee_courier');
   const canUsePaperfly = hasSubCapability('paperfly_courier');
@@ -1895,152 +2015,200 @@ const OrderDetails: React.FC = () => {
       ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-        {/* On-Screen Invoice Format */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
-          <div className="p-3 sm:p-4 md:p-6 lg:p-10 space-y-3 sm:space-y-4 lg:space-y-5">
+        <InvoiceLayout
+          className="lg:col-span-2"
+          contentClassName="p-3 sm:p-4 md:p-6 lg:p-10 space-y-3 sm:space-y-4 lg:space-y-5"
+          brandBlock={(
             <div className="flex flex-row justify-between items-start gap-3 sm:gap-4 lg:gap-6">
-              <div className="flex-1 min-w-0">
-                {(orderBranding?.logo || db.settings.company.logo) && (
-                  <img 
-                    src={orderBranding?.logo || db.settings.company.logo} 
-                    className="details-invoice-logo rounded-lg object-contain mb-2 sm:mb-3 lg:mb-4"
-                    width={invoiceLogoWidth}
-                    height={invoiceLogoHeight}
-                    style={invoiceLogoStyle}
-                    alt="Company Logo"
-                  />
-                )}
-                <h1 className="text-sm sm:text-base lg:text-xl font-black uppercase tracking-tighter break-words" style={{ color: themeColorHex }}>{orderBranding?.name || db.settings.company.name}</h1>
-                <div className="mt-1 sm:mt-2 text-[9px] sm:text-[10px] lg:text-xs text-gray-400 font-medium space-y-0.5 sm:space-y-1">
-                  <p className="break-words">{orderBranding?.address || db.settings.company.address}</p>
-                  <p className="text-[8px] sm:text-[9px] break-words">{orderBranding?.phone || db.settings.company.phone} • {orderBranding?.email || db.settings.company.email}</p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-3 lg:gap-4">
+                  {(orderBranding?.logo || db.settings.company.logo) && (
+                    <img
+                      src={orderBranding?.logo || db.settings.company.logo}
+                      className="details-invoice-logo rounded-lg object-contain flex-shrink-0"
+                      width={invoiceLogoWidth}
+                      height={invoiceLogoHeight}
+                      style={invoiceLogoStyle}
+                      alt="Company Logo"
+                    />
+                  )}
+                  <div className="min-w-0 flex flex-col justify-center">
+                    <h1 className="text-sm sm:text-base lg:text-xl font-black tracking-tighter break-words" style={{ color: themeColorHex }}>{orderBranding?.name || db.settings.company.name}</h1>
+                    {(orderBranding?.tagline || '').trim() && <p className="mt-0 text-[9px] sm:text-[10px] lg:text-xs font-semibold text-gray-400 break-words">{orderBranding.tagline}</p>}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-col gap-1 text-[9px] sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 sm:text-[10px] lg:gap-x-5 lg:text-xs text-gray-500 font-medium">
+                  <p className="flex items-center gap-2 break-words"><InvoiceContactIcon type="phone" className="flex-shrink-0 text-gray-400" />{orderBranding?.phone || db.settings.company.phone}</p>
+                  <p className="flex items-center gap-2 break-words"><InvoiceContactIcon type="email" className="flex-shrink-0 text-gray-400" />{orderBranding?.email || db.settings.company.email}</p>
+                  <p className="flex items-center gap-2 break-words"><InvoiceContactIcon type="location" className="flex-shrink-0 text-gray-400" />{orderBranding?.address || db.settings.company.address}</p>
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                <h2 className="text-sm sm:text-2xl lg:text-3xl font-black text-gray-300 uppercase leading-none mb-1 sm:mb-2 break-words">{invoiceSettings?.title || db.settings.invoice.title}</h2>
-                <div className="space-y-0.5 sm:space-y-1 lg:space-y-1.5 text-[9px] sm:text-sm">
-                  <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Order No:&nbsp;&nbsp;</span> <span className="break-all">{order.orderNumber}</span></p>
-                  <p className="text-[9px] sm:text-xs lg:text-sm font-bold text-gray-900"><span className="text-gray-400 font-medium">Date:&nbsp;&nbsp;</span> {formatDate(order.orderDate)}</p>
+              <div className="ml-auto inline-flex max-w-full flex-col items-start text-left sm:ml-0 sm:min-w-[210px] sm:flex-shrink-0">
+                <div className="flex w-fit max-w-full flex-col gap-2 text-left sm:flex-row sm:gap-2">
+                  <div className="inline-flex w-fit max-w-full items-center gap-2 rounded-lg px-2 py-1.5 sm:px-2.5" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex) }}>
+                    <ReceiptText size={16} className="flex-shrink-0" style={{ color: themeColorHex }} />
+                    <div><p className="text-[8px] sm:text-[9px] lg:text-[10px] font-semibold text-gray-500">Order No.</p><p className="mt-0.5 text-[9px] sm:text-[10px] lg:text-xs font-black text-slate-900 break-all">{order.orderNumber}</p></div>
+                  </div>
+                  <div className="inline-flex w-fit max-w-full items-center gap-2 rounded-lg px-2 py-1.5 sm:px-2.5" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex) }}>
+                    <CalendarDays size={16} className="flex-shrink-0" style={{ color: themeColorHex }} />
+                    <div><p className="text-[8px] sm:text-[9px] lg:text-[10px] font-semibold text-gray-500">Date</p><p className="mt-0.5 text-[9px] sm:text-[10px] lg:text-xs font-black text-slate-900">{formatDate(order.orderDate)}</p></div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="border-t border-gray-100 py-2 sm:py-3 lg:py-4">
-              <p className="text-[8px] sm:text-[9px] lg:text-[10px] font-black text-gray-400 uppercase tracking-[0.15em] sm:tracking-[0.2em] mb-2 sm:mb-3 lg:mb-4">Billed To</p>
-              <h3 className="text-sm sm:text-base lg:text-lg font-black text-gray-900 break-words">{customer?.name}</h3>
-              <p className="text-[10px] sm:text-xs lg:text-sm text-gray-500 leading-relaxed break-words">{customer?.address}</p>
-              <p className="text-[10px] sm:text-xs lg:text-sm font-bold text-gray-900 mt-1 sm:mt-1.5 lg:mt-2 break-words">{customer?.phone}</p>
-            </div>
-
-            <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 lg:-mx-10">
-              <div className="px-3 sm:px-4 md:px-6 lg:px-10">
-                <table className="w-full text-left text-[10px] sm:text-xs lg:text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-gray-100">
-                      <th className="py-2 sm:py-3 lg:py-4 font-black text-gray-400 uppercase">Item Description</th>
-                      <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-gray-400 uppercase whitespace-nowrap px-1">Rate</th>
-                      <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-gray-400 uppercase whitespace-nowrap px-1">Qty</th>
-                      <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-gray-400 uppercase whitespace-nowrap px-1">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {order.items.map((item, idx) => {
-                      const fallbackItemImage =
-                        typeof (item as any)?.productImage === 'string'
-                          ? (item as any).productImage
-                          : typeof (item as any)?.image === 'string'
-                            ? (item as any).image
-                            : '';
-                      const imageSrc = fallbackItemImage || productImages[String(item.productId || '').trim()] || '';
-                      const returnedQty = item.returnedQty ?? 0;
-                      const exchangedQty = item.exchangedQty ?? 0;
-                      const activeQty = Math.max(0, item.quantity - returnedQty - exchangedQty);
-                      const effectiveAmount = item.rate * activeQty;
-                      const isFullyReturned = activeQty === 0;
-                      return (
-                        <tr key={idx} className={`group ${isFullyReturned ? 'opacity-50' : ''}`}>
-                          <td className="py-3 sm:py-4 lg:py-6">
-                            <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 min-w-0">
-                              {imageSrc ? (
-                                <img src={imageSrc} className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
-                              ) : (
-                                <div className={`w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 text-xs flex items-center justify-center flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`}>
-                                  {(item.productName || '?').slice(0, 1).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <span className={`font-bold text-[10px] sm:text-xs lg:text-base break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  {returnedQty > 0 && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">
-                                      Returned ×{returnedQty}
-                                    </span>
-                                  )}
-                                  {exchangedQty > 0 && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">
-                                      Exchanged ×{exchangedQty}
-                                    </span>
-                                  )}
+          )}
+          customerBlock={
+            capabilitySettings?.businessMode === 'vaccine_center' ? (
+              <div className="rounded-lg px-4 py-4" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.94) }}>
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500 sm:text-[11px]"><UserRound size={14} fill="currentColor" style={{ color: themeColorHex }} />Patient Details</div>
+                <div className="mt-3 grid grid-cols-[minmax(125px,1.2fr)_repeat(5,minmax(58px,1fr))] items-center">
+                  <div className="min-w-0 pr-3"><h3 className="text-[11px] sm:text-xs lg:text-sm font-black text-slate-900 break-words">{customer?.name}</h3><p className="mt-0.5 text-[9px] sm:text-[10px] font-medium text-gray-500">{customer?.phone}</p></div>
+                  {([
+                    ['Age', customer?.age ?? 'N/A', CalendarDays],
+                    ['Gender', customer?.gender || 'N/A', VenusAndMars],
+                    ['Weight', customer?.weight != null ? `${customer.weight} ${weightLabel}` : 'N/A', Weight],
+                    ['Height', formattedCustomerHeight, Ruler],
+                    ['Blood group', customer?.bloodGroup || 'N/A', Droplets],
+                  ] as Array<[string, string, React.ElementType]>).map(([label, value, FactIcon]) => <div key={String(label)} className="flex min-w-0 items-center gap-1.5 border-l border-gray-200 px-2"><span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.86), color: themeColorHex }}>{React.createElement(FactIcon, { size: 14 })}</span><div className="min-w-0"><p className="text-[8px] sm:text-[9px] font-medium text-gray-500 truncate">{String(label)}</p><p className="text-[10px] sm:text-xs font-black text-slate-900 truncate">{String(value)}</p></div></div>)}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg px-4 py-4" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.94) }}>
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500 sm:text-[11px]"><UserRound size={14} fill="currentColor" style={{ color: themeColorHex }} />Billed To</div>
+                <div className="mt-3 grid grid-cols-[minmax(125px,1.2fr)_minmax(120px,1.5fr)] items-center gap-3">
+                  <div className="min-w-0 pr-3"><h3 className="text-[11px] sm:text-xs lg:text-sm font-black text-slate-900 break-words">{customer?.name}</h3><p className="mt-0.5 text-[9px] sm:text-[10px] font-medium text-gray-500">{customer?.phone}</p></div>
+                  <div className="flex min-w-0 items-center gap-1.5 border-l border-gray-200 pl-3">
+                    <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.86), color: themeColorHex }}><MapPin size={14} /></span>
+                    <div className="min-w-0"><p className="text-[8px] sm:text-[9px] font-medium text-gray-500">Address</p><p className="text-[10px] sm:text-xs font-black text-slate-900 break-words whitespace-pre-line">{customer?.address || 'N/A'}</p></div>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+          tableBlock={
+            <>
+              <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 lg:-mx-10">
+                <div className="px-3 sm:px-4 md:px-6 lg:px-10">
+                  <table className="w-full border border-gray-200 border-collapse text-left text-[9px] sm:text-[10px] lg:text-xs overflow-hidden rounded-lg">
+                    <thead>
+                      <tr style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.15), color: '#ffffff' }}>
+                        <th className="hidden sm:table-cell py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3 text-center w-10">#</th>
+                        <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Item Description</th>
+                        <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
+                        <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
+                        <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {order.items.map((item, idx) => {
+                        const fallbackItemImage =
+                          typeof (item as any)?.productImage === 'string'
+                            ? (item as any).productImage
+                            : typeof (item as any)?.image === 'string'
+                              ? (item as any).image
+                              : '';
+                        const imageSrc = fallbackItemImage || productImages[String(item.productId || '').trim()] || '';
+                        const returnedQty = item.returnedQty ?? 0;
+                        const exchangedQty = item.exchangedQty ?? 0;
+                        const activeQty = Math.max(0, item.quantity - returnedQty - exchangedQty);
+                        const effectiveAmount = item.rate * activeQty;
+                        const isFullyReturned = activeQty === 0;
+                        return (
+                          <tr key={idx} className={`group align-middle ${isFullyReturned ? 'opacity-50' : ''}`}>
+                            <td className="hidden sm:table-cell py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-center font-bold text-gray-500">{idx + 1}</td>
+                            <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3">
+                              <div className="flex items-center gap-2 sm:gap-3 lg:gap-3 min-w-0">
+                                {imageSrc ? (
+                                  <img src={imageSrc} className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
+                                ) : (
+                                  <div className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full border border-gray-100 shadow-sm flex items-center justify-center flex-shrink-0 text-[9px] font-black ${isFullyReturned ? 'grayscale' : ''}`} style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.92), color: themeColorHex }}>
+                                    {(item.productName || '?').slice(0, 1).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <span className={`font-bold text-[9px] sm:text-[10px] lg:text-xs break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    {returnedQty > 0 && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">
+                                        Returned ×{returnedQty}
+                                      </span>
+                                    )}
+                                    {exchangedQty > 0 && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">
+                                        Exchanged ×{exchangedQty}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-center px-1 whitespace-nowrap">
-                            <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
-                            {activeQty !== item.quantity && (
-                              <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>
-                            )}
-                          </td>
-                          <td className="py-3 sm:py-4 lg:py-6 text-right px-1 whitespace-nowrap">
-                            <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="py-3 sm:py-4 lg:py-5 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
+                            <td className="py-3 sm:py-4 lg:py-5 text-center px-1 whitespace-nowrap">
+                              <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
+                              {activeQty !== item.quantity && (
+                                <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>
+                              )}
+                            </td>
+                            <td className="py-3 sm:py-4 lg:py-5 text-right px-2 sm:px-3 whitespace-nowrap">
+                              <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          }
+          totalsBlock={
+            <div className="flex flex-col items-end px-0">
+              <div className="w-full sm:w-full md:w-98 lg:max-w-xs overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100">
+                  <span className="text-[10px] sm:text-[11px] lg:text-xs font-bold uppercase tracking-wide text-gray-500">Subtotal</span>
+                  <span className="text-[10px] sm:text-[11px] lg:text-xs font-black text-gray-900">{formatCurrency(order.subtotal)}</span>
+                </div>
+                {capabilitySettings?.businessMode !== 'vaccine_center' && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100">
+                      <span className="text-[10px] sm:text-[11px] lg:text-xs font-bold uppercase tracking-wide text-gray-500">Discount</span>
+                      <span className="text-[10px] sm:text-[11px] lg:text-xs font-bold text-emerald-600">-{formatCurrency(order.discount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100">
+                      <span className="text-[10px] sm:text-[11px] lg:text-xs font-bold uppercase tracking-wide text-gray-500">Shipping</span>
+                      <span className="text-[10px] sm:text-[11px] lg:text-xs font-bold text-gray-900">{formatCurrency(order.shipping)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex items-center justify-between px-3 py-3 text-white" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.15), color: '#ffffff' }}>
+                  <span className="text-[10px] sm:text-[11px] lg:text-base font-black">Net Total</span>
+                  <span className="text-[10px] sm:text-[11px] lg:text-base font-black">
+                    {formatCurrency(order.total)}
+                  </span>
+                </div>
               </div>
             </div>
-
-            <div className="flex flex-col items-end pt-2 sm:pt-3 lg:pt-6 px-0">
-              <div className="w-full sm:w-full md:w-98 lg:max-w-xs space-y-2 sm:space-y-3 lg:space-y-4">
-                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Subtotal</span>
-                  <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.subtotal)}</span>
+          }
+          notesBlock={
+            <>
+              {order.notes && (
+                <div className="bg-gray-50 p-3 sm:p-4 rounded-[10px] border border-gray-100">
+                  <p className="text-[8px] sm:text-[9px] lg:text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1 sm:mb-2">Terms & Notes</p>
+                  <p className="text-[9px] sm:text-[10px] lg:text-xs text-gray-600 font-medium italic leading-relaxed">{order.notes}</p>
                 </div>
-                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Discount</span>
-                  <span className="font-bold text-emerald-600 flex-shrink-0">-{formatCurrency(order.discount)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm gap-2">
-                  <span className="text-gray-400 font-bold uppercase flex-shrink-0">Shipping</span>
-                  <span className="font-bold text-gray-900 flex-shrink-0">{formatCurrency(order.shipping)}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 sm:py-3 lg:py-4 border-t-2 border-[#0f2f57] gap-2">
-                  <span className="font-black text-gray-900 uppercase tracking-tighter text-xs sm:text-base lg:text-base flex-shrink-0">Net Total</span>
-                  <span className="font-black text-gray-900 text-xs sm:text-base lg:text-base flex-shrink-0">{formatCurrency(order.total)}</span>
-                </div>
-              </div>
-            </div>
-
-            {order.notes && (
-              <div className="bg-gray-50 p-3 sm:p-4 rounded-[10px] border border-gray-100">
-                <p className="text-[8px] sm:text-[9px] lg:text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1 sm:mb-2">Terms & Notes</p>
-                <p className="text-[9px] sm:text-[10px] lg:text-xs text-gray-600 font-medium italic leading-relaxed">{order.notes}</p>
-              </div>
-            )}
-
-            {invoiceSettings?.footer && (
+              )}
+            </>
+          }
+          footerBlock={
+            invoiceSettings?.footer ? (
               <div className="bg-gray-50 p-3 sm:p-4 rounded-[10px] border border-gray-100">
                 <p className="text-[9px] sm:text-[10px] lg:text-sm text-gray-500 font-medium leading-relaxed whitespace-pre-line">
                   {invoiceSettings.footer}
                 </p>
               </div>
-            )}
-
-          </div>
-        </div>
+            ) : null
+          }
+        />
 
         {/* Sidebar Payment Section */}
         <div className="space-y-6">
@@ -2367,7 +2535,7 @@ const OrderDetails: React.FC = () => {
                   )}
 
                   {/* Courier Info */}
-                  {sentToAnyCourier && (
+                  {canUseCourierAutomation && sentToAnyCourier && (
                     <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
                       <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">Courier Info</p>
                       <div className="space-y-1">
@@ -2549,44 +2717,46 @@ const OrderDetails: React.FC = () => {
         </div>
 
         {/* Courier Tracking Section */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
-          <button
-            type="button"
-            className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
-            onClick={() => toggleSection('tracking')}
-            aria-expanded={isSectionExpanded('tracking')}
-          >
-            <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Courier Tracking</h3>
-            <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('tracking') ? 'rotate-90' : ''}`}>
-              {ICONS.ChevronRight}
-            </div>
-          </button>
-          {isSectionExpanded('tracking') && (
-            <div className="p-5 space-y-4">
-              {courierTrackingEvents.length > 0 ? (
-                courierTrackingEvents.map((event) => (
-                  <div key={`${event.eventAt || ''}-${event.receivedAt}`} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
-                    <div className="flex-shrink-0">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                        {ICONS.Courier}
+        {canUseCourierAutomation && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-lg overflow-hidden">
+            <button
+              type="button"
+              className="w-full px-5 py-4 bg-gray-50 border-b flex justify-between items-center text-left"
+              onClick={() => toggleSection('tracking')}
+              aria-expanded={isSectionExpanded('tracking')}
+            >
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Courier Tracking</h3>
+              <div className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${isSectionExpanded('tracking') ? 'rotate-90' : ''}`}>
+                {ICONS.ChevronRight}
+              </div>
+            </button>
+            {isSectionExpanded('tracking') && (
+              <div className="p-5 space-y-4">
+                {courierTrackingEvents.length > 0 ? (
+                  courierTrackingEvents.map((event) => (
+                    <div key={`${event.eventAt || ''}-${event.receivedAt}`} className="relative flex items-center gap-3 border-b border-gray-100 pb-4 last:border-b-0 last:pb-0">
+                      <div className="flex-shrink-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                          {ICONS.Courier}
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                          {event.eventAt
+                            ? formatCourierWebhookTime(event.eventAt)
+                            : formatDateTime(event.receivedAt)}
+                        </p>
+                        <p className="text-xs font-medium leading-relaxed text-gray-700">{event.trackingMessage}</p>
                       </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                        {event.eventAt
-                          ? formatCourierWebhookTime(event.eventAt)
-                          : formatDateTime(event.receivedAt)}
-                      </p>
-                      <p className="text-xs font-medium leading-relaxed text-gray-700">{event.trackingMessage}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-gray-400 text-center py-4">No courier tracking updates yet</p>
-              )}
-            </div>
-          )}
-        </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 text-center py-4">No courier tracking updates yet</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <OrderCompletionModal

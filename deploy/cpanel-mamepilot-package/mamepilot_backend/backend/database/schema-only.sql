@@ -3902,6 +3902,20 @@ CALL sp_add_col('payroll_payments', 'is_partial', 'TINYINT(1) NOT NULL DEFAULT 0
 -- Migration: 2026-09-01_user_unit_amount.sql
 CALL sp_add_col('users', 'unit_amount', 'DECIMAL(12,2) NULL AFTER fixed_salary');
 
+-- Migration: 2026-09-18_company_tagline.sql
+-- Add a first-class tagline column for the global company branding record.
+CALL sp_add_col('company_settings', 'tagline', 'TEXT NULL');
+
+-- Migration: 2026-09-18_vaccine_dosage_text.sql
+CALL sp_modify_col('products', 'recommended_dose_sequence', 'TEXT NULL');
+
+-- Migration: 2026-09-18_vaccine_product_details.sql
+CALL sp_add_col('products', 'manufacturer', 'VARCHAR(255) NULL');
+CALL sp_add_col('products', 'batch_lot_number', 'VARCHAR(255) NULL');
+CALL sp_add_col('products', 'expiry_date', 'DATE NULL');
+CALL sp_add_col('products', 'recommended_dose_sequence', 'TEXT NULL');
+CALL sp_add_col('products', 'notes', 'TEXT NULL');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS

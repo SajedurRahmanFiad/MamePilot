@@ -1154,6 +1154,7 @@ abstract class BaseService
         return [
             'id' => $id,
             'name' => trim((string) ($page['name'] ?? $fallback['name'] ?? '')) ?: $fallbackName,
+            'tagline' => (string) ($page['tagline'] ?? $fallback['tagline'] ?? ''),
             'logo' => $this->normalizeUploadedFileValue($page['logo'] ?? $fallback['logo'] ?? null, 'logos', null) ?? '',
             'phone' => $page['phone'] ?? ($fallback['phone'] ?? '+880'),
             'email' => $page['email'] ?? ($fallback['email'] ?? 'info@company.com'),
@@ -1172,6 +1173,7 @@ abstract class BaseService
             [
                 'id' => $legacyRow['id'] ?? 'company-default-page',
                 'name' => $legacyRow['name'] ?? 'Mame Pilot',
+                'tagline' => $legacyRow['tagline'] ?? '',
                 'logo' => $legacyRow['logo'] ?? '/uploads/Avatar.png',
                 'phone' => $legacyRow['phone'] ?? '+880',
                 'email' => $legacyRow['email'] ?? 'info@company.com',

@@ -199,7 +199,7 @@ const SettingsPage: React.FC = () => {
     countedStatuses: PAYROLL_STATUS_OPTIONS,
   });
   const payrollSettings = walletSettings;
-  const [invoiceSettings, setInvoiceSettings] = useState({ title: 'Invoice', logoWidth: 120, logoHeight: 120, footer: '' });
+  const [invoiceSettings, setInvoiceSettings] = useState({ logoWidth: 120, logoHeight: 120, footer: '' });
   const [systemDefaults, setSystemDefaults] = useState<Settings['defaults']>({ 
     defaultAccountId: '', 
     defaultPaymentMethod: '', 
@@ -560,8 +560,17 @@ const SettingsPage: React.FC = () => {
     const normalizedCompany = normalizeCompanySettings(companySettings);
     const response = await batchUpdateMutation.mutateAsync({ company: normalizedCompany });
     if (response?.company) {
-      db.settings.company = response.company;
-      queryClient.setQueryData(['settings', 'company'], response.company);
+      const savedCompany = normalizeCompanySettings(response.company);
+      const responsePagesById = new Map(savedCompany.pages.map((page) => [page.id, page]));
+      const mergedCompany = normalizeCompanySettings({
+        ...savedCompany,
+        pages: normalizedCompany.pages.map((page) => ({
+          ...(responsePagesById.get(page.id) || page),
+          tagline: page.tagline,
+        })),
+      });
+      db.settings.company = mergedCompany;
+      queryClient.setQueryData(['settings', 'company'], mergedCompany);
     }
     saveDb();
   }, [companySettings, batchUpdateMutation, queryClient]);
@@ -768,6 +777,7 @@ const SettingsPage: React.FC = () => {
         {
           id: newPageId,
           name: `Page ${pages.length + 1}`,
+          tagline: '',
           logo: '',
           phone: '',
           email: '',
@@ -780,7 +790,7 @@ const SettingsPage: React.FC = () => {
     setExpandedCompanyPages((current) => ({ ...current, [newPageId]: true })); // Auto-expand first page for user to fill details
   };
 
-  const handleCompanyPageChange = (pageId: string, key: 'name' | 'logo' | 'phone' | 'email' | 'address', value: string) => {
+  const handleCompanyPageChange = (pageId: string, key: 'name' | 'tagline' | 'logo' | 'phone' | 'email' | 'address', value: string) => {
     updateCompanyPages((pages) =>
       pages.map((page) => (page.id === pageId ? normalizeCompanyPage({ ...page, [key]: value }) : page)),
     );
@@ -1339,6 +1349,17 @@ const SettingsPage: React.FC = () => {
                               </div>
                             </div>
 
+                            <div className="md:col-span-2 space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Tagline</label>
+                              <input
+                                type="text"
+                                value={page.tagline}
+                                onChange={(event) => handleCompanyPageChange(page.id, 'tagline', event.target.value)}
+                                placeholder="Care you can trust"
+                                className="w-full rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all focus:ring-2 focus:ring-[#3c5a82]"
+                              />
+                            </div>
+
                             <div className="space-y-2">
                               <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone</label>
                               <input
@@ -1417,16 +1438,7 @@ const SettingsPage: React.FC = () => {
 
               <section className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-800 border-b pb-4">Invoice Settings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-1 space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Invoice Title</label>
-                    <input 
-                      type="text" 
-                      value={invoiceSettings.title} 
-                      onChange={e => setInvoiceSettings({...invoiceSettings, title: e.target.value})}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl" 
-                    />
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Logo Width (px)</label>
                     <NumericInput 

@@ -51,5 +51,7 @@ undoAssert(str_contains($page, 'variant="primary"'), 'Undoer confirmation action
 undoAssert(str_contains($page, 'Current status'), 'Undoer does not distinguish the current status from a restore target.');
 undoAssert(str_contains($detailsPage, 'nextStatus: OrderStatus.EXCHANGE_DELIVERED'), 'Exchange completion does not preserve the Exchange delivered status.');
 undoAssert(str_contains($detailsPage, 'OrderStatus.COMPLETED || order.status === OrderStatus.EXCHANGE_DELIVERED'), 'Exchange delivered is not treated as a terminal order status.');
+undoAssert(str_contains($detailsPage, '!canUseCourierAutomation'), 'Courier-disabled orders do not use the simplified non-courier workflow.');
+undoAssert(str_contains($detailsPage, 'Courier Tracking</h3>') && str_contains($detailsPage, 'canUseCourierAutomation && ('), 'Courier tracking UI is still rendered without the capability gate.');
 
 echo "Order status undo journal, reversal, permissions, schema, and UI contract checks passed.\n";

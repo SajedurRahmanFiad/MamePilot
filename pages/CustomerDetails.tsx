@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Order, OrderStatus } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { StatCard } from '../components';
-import { useCustomer, useOrdersByCustomerId, useOrderSettings, useUsersMini } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useOrdersByCustomerId, useOrderSettings, useUsersMini } from '../src/hooks/useQueries';
 import { useCreateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -19,14 +19,24 @@ const CustomerDetails: React.FC = () => {
   const location = useLocation();
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const { user } = useAuth();
-  const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const { settings: capabilitySettings, hasCapability } = useCapabilities(Boolean(user));
   const isVaccineCenter = (capabilitySettings?.businessMode || 'general_retail') === 'vaccine_center';
+  const hasMarketing = hasCapability('marketing');
   
   // Query data - ALL HOOKS MUST BE AT TOP, CALLED UNCONDITIONALLY
   const { data: customer } = useCustomer(id || '');
   const { data: customerOrders = [] } = useOrdersByCustomerId(id || '');
   const { data: orderSettings } = useOrderSettings();
   const { data: users = [] } = useUsersMini();
+  const { data: companySettings } = useCompanySettings();
+  const weightUnit = companySettings?.weightUnit || 'kg';
+  const heightUnit = companySettings?.heightUnit || 'cm';
+  const weightLabel = weightUnit === 'pound' ? 'lb' : weightUnit === 'gram' ? 'g' : 'kg';
+  const formattedHeight = customer?.height == null
+    ? null
+    : heightUnit === 'feet-inches'
+      ? `${Math.floor(customer.height / 12)} ft ${Math.round(customer.height % 12)} in`
+      : `${customer.height} cm`;
   
   // Mutations
   const createMutation = useCreateOrder();
@@ -146,7 +156,7 @@ const CustomerDetails: React.FC = () => {
       </div>
 
       {/* KPI Cards - Analytical Metrics */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-6 sm:grid-cols-2 ${hasMarketing ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <StatCard 
           title="Average Order Value" 
           value={formatCurrency(averageOrderValue)} 
@@ -175,15 +185,17 @@ const CustomerDetails: React.FC = () => {
           iconBgColor="bg-purple-700" 
           subtotalAmount={`${completedOrdersCount} completed`}
         />
-        <div className="p-4 flex items-start gap-3 text-left bg-gray-50 rounded-xl shadow-lg border border-gray-100">
-          <div className="bg-gray-200 p-3 rounded-lg flex items-center justify-center">
-            <div className="text-gray-400">{ICONS.AlertCircle}</div>
+        {hasMarketing && (
+          <div className="p-4 flex items-start gap-3 text-left bg-gray-50 rounded-xl shadow-lg border border-gray-100">
+            <div className="bg-gray-200 p-3 rounded-lg flex items-center justify-center">
+              <div className="text-gray-400">{ICONS.AlertCircle}</div>
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Customer Acquisition Cost</p>
+              <h3 className="text-sm font-semibold mt-1 text-gray-600">Please setup ads first</h3>
+            </div>
           </div>
-          <div className="flex-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Customer Acquisition Cost</p>
-            <h3 className="text-sm font-semibold mt-1 text-gray-600">Please setup ads first</h3>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -208,8 +220,8 @@ const CustomerDetails: React.FC = () => {
               {isVaccineCenter && (
                 <div className="grid grid-cols-2 gap-4 border-t border-gray-50 pt-4">
                   {[
-                    ['Age', customer.age], ['Gender', customer.gender], ['Date of Birth', customer.dateOfBirth ? formatDate(customer.dateOfBirth) : null],
-                    ['Weight', customer.weight], ['Height', customer.height], ['Blood Group', customer.bloodGroup],
+                    ['Age', customer.age], ['Gender', customer.gender],
+                    ['Weight', customer.weight == null ? null : `${customer.weight} ${weightLabel}`], ['Height', formattedHeight], ['Blood Group', customer.bloodGroup],
                     ['Guardian/Parent', customer.guardianName], ['Emergency Contact', customer.emergencyContact],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="space-y-1">

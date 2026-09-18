@@ -919,7 +919,8 @@ export function useProduct(id: string | undefined): UseQueryResult<Product | nul
     queryKey: ['product', id],
     queryFn: () => fetchProductById(id || ''),
     enabled: !!id,
-    staleTime: 15 * 60 * 1000, // Keep single-product cache consistent with products master cache
+    staleTime: 15 * 60 * 1000,
+    refetchOnMount: 'always',
   });
 }
 
