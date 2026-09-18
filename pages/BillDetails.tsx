@@ -674,7 +674,7 @@ const BillDetails: React.FC = () => {
                 <div className="min-w-0 pr-3"><h3 className="text-[10px] sm:text-xs font-black text-slate-900 break-words">{vendor?.name}</h3><p className="mt-0.5 text-[9px] sm:text-[10px] font-medium text-gray-500">{vendor?.phone}</p></div>
                 <div className="flex min-w-0 items-start gap-1.5 border-l border-gray-200 pl-3">
                   <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.86), color: themeColorHex }}><MapPin size={14} /></span>
-                  <div className="invoice-address-content flex min-w-0 flex-col gap-0" style={{ rowGap: 0 }}><p className="m-0 text-[8px] sm:text-[9px] font-medium leading-tight text-gray-500" style={{ margin: 0, lineHeight: 1.1 }}>Address</p><p className="m-0 text-[10px] sm:text-xs font-black leading-tight text-slate-900 whitespace-pre-line" style={{ margin: 0, lineHeight: 1.1 }}>{String(vendor?.address || 'N/A').trim()}</p></div>
+                  <div className="invoice-address-content flex min-w-0 flex-col gap-0" style={{ rowGap: 0 }}><p className="m-0 text-[8px] sm:text-[9px] font-medium leading-tight text-gray-500" style={{ margin: 0, lineHeight: 1.1 }}>Address</p><p className="m-0 mt-0.5 text-[10px] sm:text-xs font-black leading-tight text-slate-900 whitespace-pre-line" style={{ margin: '0.125rem 0 0', lineHeight: 1.1 }}>{String(vendor?.address || 'N/A').trim()}</p></div>
                 </div>
               </div>
             </div>
