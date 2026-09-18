@@ -182,8 +182,8 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
             <MapPin size={14} />
           </span>
           <div className="min-w-0">
-            <p className="invoice-address-label text-[8px] font-medium text-gray-500 sm:text-[9px]">{customerAddressLabel}</p>
-            <p className="invoice-address-value text-[10px] font-black text-slate-900 whitespace-pre-line sm:text-xs">{customerAddress || customer?.address || 'N/A'}</p>
+            <p className="invoice-address-label m-0 text-[8px] font-medium leading-tight text-gray-500 sm:text-[9px]">{customerAddressLabel}</p>
+            <p className="invoice-address-value m-0 text-[10px] font-black leading-tight text-slate-900 whitespace-pre-line sm:text-xs">{customerAddress || customer?.address || 'N/A'}</p>
           </div>
         </div>
       </div>
