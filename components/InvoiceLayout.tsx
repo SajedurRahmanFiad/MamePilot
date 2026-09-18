@@ -183,7 +183,7 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
           </span>
           <div className="invoice-address-content flex min-w-0 flex-col gap-0" style={{ rowGap: 0 }}>
             <p className="invoice-address-label m-0 text-[8px] font-medium leading-tight text-gray-500 sm:text-[9px]" style={{ margin: 0, lineHeight: 1.1 }}>{customerAddressLabel}</p>
-            <p className="invoice-address-value m-0 text-[10px] font-black leading-tight text-slate-900 whitespace-pre-line sm:text-xs" style={{ margin: 0, lineHeight: 1.1 }}>{customerAddress || customer?.address || 'N/A'}</p>
+            <p className="invoice-address-value m-0 text-[10px] font-black leading-tight text-slate-900 whitespace-pre-line sm:text-xs" style={{ margin: 0, lineHeight: 1.1 }}>{String(customerAddress || customer?.address || 'N/A').trim()}</p>
           </div>
         </div>
       </div>
