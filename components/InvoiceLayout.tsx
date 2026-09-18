@@ -371,7 +371,7 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
             font-size: 0.72rem !important;
           }
           .invoice-customer-name {
-            font-size: 0.95rem !important;
+            font-size: 0.88rem !important;
           }
           .invoice-customer-sub {
             font-size: 0.72rem !important;
