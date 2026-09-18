@@ -177,13 +177,13 @@ export const InvoiceLayout: React.FC<InvoiceLayoutProps> = ({
           {customerSubtitle ?? (customer?.phone ? <p className="invoice-customer-sub mt-0.5 text-[9px] font-medium text-gray-500 sm:text-[10px]">{customer.phone}</p> : null)}
         </div>
 
-        <div className="flex min-w-0 items-center gap-1.5 border-l border-gray-200 pl-3">
+        <div className="flex min-w-0 items-start gap-1.5 border-l border-gray-200 pl-3">
           <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColorHex}1a`, color: themeColorHex }}>
             <MapPin size={14} />
           </span>
-          <div className="min-w-0">
-            <p className="invoice-address-label m-0 text-[8px] font-medium leading-tight text-gray-500 sm:text-[9px]">{customerAddressLabel}</p>
-            <p className="invoice-address-value m-0 text-[10px] font-black leading-tight text-slate-900 whitespace-pre-line sm:text-xs">{customerAddress || customer?.address || 'N/A'}</p>
+          <div className="invoice-address-content flex min-w-0 flex-col gap-0" style={{ rowGap: 0 }}>
+            <p className="invoice-address-label m-0 text-[8px] font-medium leading-tight text-gray-500 sm:text-[9px]" style={{ margin: 0, lineHeight: 1.1 }}>{customerAddressLabel}</p>
+            <p className="invoice-address-value m-0 text-[10px] font-black leading-tight text-slate-900 whitespace-pre-line sm:text-xs" style={{ margin: 0, lineHeight: 1.1 }}>{customerAddress || customer?.address || 'N/A'}</p>
           </div>
         </div>
       </div>
