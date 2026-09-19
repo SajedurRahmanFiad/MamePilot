@@ -121,7 +121,8 @@ try {
     wooCheck((string) $customer['name'] === 'Updated Name', 'Existing customer name was not replaced.');
     wooCheck(str_contains((string) $customer['address'], 'New Shipping Address'), 'Existing customer address was not replaced.');
     wooCheck((int) $customer['total_orders'] === 2, 'Customer order summary was not recalculated.');
-    wooCheck(abs((float) $customer['due_amount'] - 60.0) < 0.01, 'Customer due summary is incorrect.');
+    wooCheck(abs((float) $customer['due_amount'] - 180.0) < 0.01, 'Customer due summary is incorrect.');
+    wooCheck((string) $customer['phone'] === '01712345678', 'WooCommerce phone was not normalized to local Bangladesh format.');
 
     $orders = $database->fetchAll(
         'SELECT o.*, u.name AS creator_name FROM orders o JOIN users u ON u.id = o.created_by ORDER BY o.order_seq ASC'
@@ -135,8 +136,8 @@ try {
         wooCheck((string) $order['source_ad'] === 'WooCommerce', 'WooCommerce order source was not recorded.');
         wooCheck((string) $order['status'] === 'On Hold', 'Imported order did not enter the local On Hold workflow.');
     }
-    wooCheck(abs((float) $orders[0]['paid_amount'] - 120.0) < 0.01, 'Paid order amount was not retained.');
-    wooCheck(abs((float) $orders[1]['paid_amount']) < 0.01, 'Unpaid order was marked paid.');
+    wooCheck(abs((float) $orders[0]['paid_amount']) < 0.01, 'Imported order touched the payment amount.');
+    wooCheck(abs((float) $orders[1]['paid_amount']) < 0.01, 'Imported order touched the payment amount.');
     $placeholderProduct = $database->fetchOne(
         'SELECT p.stock FROM products p JOIN woocommerce_product_links l ON l.product_id = p.id WHERE l.store_id = :store_id LIMIT 1',
         [':store_id' => 'woo-store-1']

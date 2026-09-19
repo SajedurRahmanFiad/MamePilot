@@ -596,9 +596,6 @@ final class WooCommerceApi extends BaseService
             $wcStatus = trim((string) ($wcOrder['status'] ?? 'unknown'));
             $customerNote = trim(strip_tags((string) ($wcOrder['customer_note'] ?? '')));
             $notes = '';
-            $paidAt = trim((string) ($wcOrder['date_paid_gmt'] ?? $wcOrder['date_paid'] ?? ''));
-            $totalRefunded = max(0.0, (float) ($wcOrder['total_refunded'] ?? 0));
-            $paidAmount = $paidAt !== '' ? max(0.0, min($total, round($total - $totalRefunded, 2))) : 0.0;
             $historyTime = $createdTimestamp !== false ? gmdate('c', $createdTimestamp) : gmdate('c');
 
             $order = $this->withSystemUser($systemUser, fn(): array => $this->operations->createOrder([
@@ -611,7 +608,7 @@ final class WooCommerceApi extends BaseService
                 'discount' => $discount,
                 'shipping' => $shipping,
                 'total' => $total,
-                'paidAmount' => $paidAmount,
+                'paidAmount' => 0,
                 'notes' => $notes,
                 'sourceAd' => 'WooCommerce',
                 'history' => ['created' => 'Imported from WooCommerce automatically on ' . $historyTime . '.'],
@@ -694,10 +691,10 @@ final class WooCommerceApi extends BaseService
         $now = $this->database->nowUtc();
         if ($existing !== null) {
             $this->database->execute(
-                'UPDATE customers SET name = :name, address = :address, updated_at = :updated_at WHERE id = :id',
-                [':name' => $name, ':address' => $address, ':updated_at' => $now, ':id' => $existing['id']]
+                'UPDATE customers SET name = :name, phone = :phone, address = :address, updated_at = :updated_at WHERE id = :id',
+                [':name' => $name, ':phone' => $phoneKey, ':address' => $address, ':updated_at' => $now, ':id' => $existing['id']]
             );
-            $customer = ['id' => (string) $existing['id'], 'name' => $name, 'phone' => (string) $existing['phone'], 'address' => $address];
+            $customer = ['id' => (string) $existing['id'], 'name' => $name, 'phone' => $phoneKey, 'address' => $address];
             $this->customersByNormalizedPhone[$phoneKey] = $customer;
             return $customer;
         }
@@ -707,11 +704,11 @@ final class WooCommerceApi extends BaseService
             'INSERT INTO customers (id, name, phone, address, total_orders, due_amount, created_by, created_at, updated_at)
              VALUES (:id, :name, :phone, :address, 0, 0, :created_by, :created_at, :updated_at)',
             [
-                ':id' => $id, ':name' => $name, ':phone' => $phone, ':address' => $address,
+                ':id' => $id, ':name' => $name, ':phone' => $phoneKey, ':address' => $address,
                 ':created_by' => $systemUserId, ':created_at' => $now, ':updated_at' => $now,
             ]
         );
-        $customer = ['id' => $id, 'name' => $name, 'phone' => $phone, 'address' => $address];
+        $customer = ['id' => $id, 'name' => $name, 'phone' => $phoneKey, 'address' => $address];
         $this->customersByNormalizedPhone[$phoneKey] = $customer;
         return $customer;
     }
@@ -1491,16 +1488,15 @@ final class WooCommerceApi extends BaseService
     private function normalizePhone(string $phone): string
     {
         $digits = preg_replace('/[^0-9]/', '', $phone) ?? '';
-        if (strlen($digits) === 11 && $digits[0] === '0') {
-            return $digits;
+        if (str_starts_with($digits, '00880')) {
+            $digits = substr($digits, 5);
+        } elseif (str_starts_with($digits, '880')) {
+            $digits = substr($digits, 3);
         }
-        if (strlen($digits) === 10 && $digits[0] !== '0') {
-            return '0' . $digits;
+        if (strlen($digits) === 10 && str_starts_with($digits, '1')) {
+            $digits = '0' . $digits;
         }
-        if (strlen($digits) === 13 && str_starts_with($digits, '880')) {
-            return '0' . substr($digits, 3);
-        }
-        return $digits;
+        return preg_match('/^0\d{10}$/', $digits) === 1 ? $digits : '';
     }
 
     private function acquireCustomerLock(array $wcOrder): ?string
