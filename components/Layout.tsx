@@ -155,6 +155,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability, hasSubCapability, settings: capabilitySettings } = useCapabilities(Boolean(profile));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const footerCopyrightName = (capabilitySettings?.copyrightName ?? '').trim() || (branding.name || 'Mame Pilot');
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDockPinned, setIsDockPinned] = useState(false);
@@ -791,7 +792,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
           {children}
           {!isConversationPage && !isPosPage && <footer className={`mt-20 py-8 border-t ${theme.colors.border.primary} flex flex-col items-center gap-2`}>
             <p className={`text-sm font-medium text-center md:text-left ${theme.colors.text.secondary}`}>
-              © {new Date().getFullYear()} Md Sajedur Rahman Fiad
+              © {new Date().getFullYear()} {footerCopyrightName}
               <span className="mx-2">|</span>
               Version {import.meta.env.VITE_APP_VERSION || 'unknown'}
               <span className="mx-2">|</span>

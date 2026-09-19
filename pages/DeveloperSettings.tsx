@@ -4,14 +4,14 @@ import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings, useConnectFraudspySteadfast } from '../src/hooks/useMutations';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings, useConnectFraudspySteadfast, useUpdateCapabilitySettings } from '../src/hooks/useMutations';
 import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
 import { theme } from '../theme';
 import { compressImage, formatDateTime } from '../utils';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
-type TabId = 'license' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
+type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
 type MaintenanceContentForm = {
   imageUrl: string;
   caption: string;
@@ -98,6 +98,7 @@ const DeveloperSettings: React.FC = () => {
   const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
   const updateEmail = useUpdateEmailSettings();
   const updateVoiceSurveyIntegration = useUpdateVoiceSurveyIntegrationSettings();
+  const updateCapabilitySettings = useUpdateCapabilitySettings();
   const connectFraudspySteadfast = useConnectFraudspySteadfast();
 
   const [maintenanceModeEnabled, setMaintenanceModeEnabled] = useState(false);
@@ -111,9 +112,10 @@ const DeveloperSettings: React.FC = () => {
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
   const [businessGrowthForm, setBusinessGrowthForm] = useState<BusinessGrowthSettings>(emptyBusinessGrowthSettings);
   const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
+  const [copyrightForm, setCopyrightForm] = useState('');
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital'];
+  const tabIds: TabId[] = ['license', 'copyright', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -208,6 +210,12 @@ const DeveloperSettings: React.FC = () => {
       setVoiceSurveyIntegrationForm(voiceSurveyIntegrationData);
     }
   }, [voiceSurveyIntegrationData]);
+
+  useEffect(() => {
+    if (capabilitySettings) {
+      setCopyrightForm(capabilitySettings.copyrightName || '');
+    }
+  }, [capabilitySettings]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -410,8 +418,19 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveCopyrightSettings = async () => {
+    const toastId = toast.loading('Saving copyright settings...');
+    try {
+      await updateCapabilitySettings.mutateAsync({ copyrightName: copyrightForm.trim() });
+      toast.update(toastId, 'Copyright settings saved.', 'success');
+    } catch (error) {
+      toast.update(toastId, error instanceof Error ? error.message : 'Could not save the copyright settings. Please try again.', 'error');
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
+    { id: 'copyright', label: 'Copyright' },
     { id: 'maintenance', label: 'Maintenance Mode' },
     { id: 'payment-gateway', label: 'Payment Gateway' },
     { id: 'fraud-checker', label: 'Fraud Checker' },
@@ -432,6 +451,7 @@ const DeveloperSettings: React.FC = () => {
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div />
         {activeTab === 'license' && <Button onClick={syncNow} variant="primary">Sync Now</Button>}
+        {activeTab === 'copyright' && <Button onClick={saveCopyrightSettings} variant="primary">Save Copyright</Button>}
         {activeTab === 'payment-gateway' && <Button onClick={saveGateway} variant="primary">Save Gateway</Button>}
         {activeTab === 'fraud-checker' && <Button onClick={saveFraudSettings} variant="primary">Save Fraud Checker</Button>}
         {activeTab === 'agent' && <Button onClick={saveAgentSettings} variant="primary">Save Mame AI Settings</Button>}
@@ -485,6 +505,26 @@ const DeveloperSettings: React.FC = () => {
                 <p><span className="font-black text-gray-900">Last sync:</span> {capabilitySettings?.lastSyncedAt ? formatDateTime(capabilitySettings.lastSyncedAt) : 'Never'}</p>
                 {capabilitySettings?.lastSyncMessage && <p className="mt-1">{capabilitySettings.lastSyncMessage}</p>}
               </div>
+            </section>
+          )}
+
+          {activeTab === 'copyright' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">Copyright</h3>
+                <p className="mt-1 text-sm text-gray-500">Set the name that appears in the global footer as “© {new Date().getFullYear()} {copyrightForm || 'Your name'}”.</p>
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-400">Copyright Name</span>
+                <input
+                  type="text"
+                  value={copyrightForm}
+                  onChange={(event) => setCopyrightForm(event.target.value)}
+                  placeholder="MamePilot"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3"
+                />
+              </label>
             </section>
           )}
 

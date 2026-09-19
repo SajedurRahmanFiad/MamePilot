@@ -1607,6 +1607,7 @@ export interface CapabilitySettings {
   licenseKey?: string;
   licenseApiUrl?: string;
   licenseOwnerToken?: string;
+  copyrightName?: string;
 }
 
 export type BusinessMode = 'general_retail' | 'vaccine_center';

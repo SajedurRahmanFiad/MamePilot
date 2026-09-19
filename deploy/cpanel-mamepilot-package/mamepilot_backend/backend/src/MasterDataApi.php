@@ -2287,6 +2287,7 @@ final class MasterDataApi extends BaseService
             'licenseKey' => $isDeveloper ? (string) ($row['license_key'] ?? '') : '',
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
+            'copyrightName' => trim((string) ($row['copyright_name'] ?? '')),
             'businessMode' => $this->normalizeBusinessMode($row['business_mode'] ?? null),
             'webhookUrl' => $isDeveloper ? (string) ($row['webhook_url'] ?? '') : '',
         ];
@@ -2484,6 +2485,7 @@ final class MasterDataApi extends BaseService
             'license_key' => array_key_exists('licenseKey', $params) ? $this->nullableString($params['licenseKey']) : $this->nullableString($row['license_key'] ?? null),
             'license_api_url' => array_key_exists('licenseApiUrl', $params) ? $this->nullableString($params['licenseApiUrl']) : $this->nullableString($row['license_api_url'] ?? null),
             'license_owner_token' => array_key_exists('licenseOwnerToken', $params) ? $this->nullableString($params['licenseOwnerToken']) : $this->nullableString($row['license_owner_token'] ?? null),
+            'copyright_name' => array_key_exists('copyrightName', $params) ? $this->nullableString($params['copyrightName']) : $this->nullableString($row['copyright_name'] ?? null),
             'tier_key' => array_key_exists('tierKey', $params) ? $this->nullableString($params['tierKey']) : $this->nullableString($row['tier_key'] ?? null),
             'plan_name' => array_key_exists('planName', $params) ? $this->nullableString($params['planName']) : $this->nullableString($row['plan_name'] ?? null),
             'license_status' => array_key_exists('licenseStatus', $params) ? trim((string) $params['licenseStatus']) : (string) ($row['license_status'] ?? 'local'),
@@ -2502,7 +2504,7 @@ final class MasterDataApi extends BaseService
             'business_mode' => $this->normalizeBusinessMode($params['businessMode'] ?? $row['business_mode'] ?? null),
         ];
 
-        foreach (['client_name', 'license_owner_token', 'tier_key', 'override_enabled', 'show_inactive_subscription_features', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret', 'business_mode'] as $column) {
+        foreach (['client_name', 'license_owner_token', 'copyright_name', 'tier_key', 'override_enabled', 'show_inactive_subscription_features', 'maintenance_enabled', 'available_tiers', 'pricing_metadata', 'webhook_url', 'webhook_secret', 'business_mode'] as $column) {
             if (!$this->columnExists('app_capability_settings', $column)) {
                 unset($payload[$column]);
             }
@@ -2546,6 +2548,7 @@ final class MasterDataApi extends BaseService
 
         $definitions = [
             'tier_key' => 'VARCHAR(64) NULL',
+            'copyright_name' => 'VARCHAR(255) NULL',
             'show_inactive_subscription_features' => 'TINYINT(1) NOT NULL DEFAULT 1',
             'business_mode' => "VARCHAR(32) NOT NULL DEFAULT 'general_retail'",
         ];
