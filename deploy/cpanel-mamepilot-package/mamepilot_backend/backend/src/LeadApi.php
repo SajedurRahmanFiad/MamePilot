@@ -146,8 +146,12 @@ final class LeadApi extends BaseService
                         $lastException = $exception;
                         throw $exception;
                     }
-                    $decoded = json_decode($this->extractJson($result), true);
-                    if (!is_array($decoded)) throw new RuntimeException('Lead analysis did not return valid JSON.');
+                    $decoded = $this->decodeAnalysisJson($result);
+                    if ($decoded === null) {
+                        if ($attempt >= 2) throw new RuntimeException('Lead analysis did not return valid JSON.');
+                        $prompt .= "\n\nYour previous response was not valid JSON. Return only one valid JSON object, with double-quoted keys and strings, no Markdown and no explanation. Preserve the requested profile fields.\nInvalid response:\n" . mb_substr(trim($result), 0, 4000);
+                        continue;
+                    }
                     if (isset($decoded['toolCall']) && is_array($decoded['toolCall'])) {
                         if (++$toolCalls > 2) throw new RuntimeException('Lead analysis exceeded its database lookup limit.');
                         $toolKey = $this->jsonEncode($decoded['toolCall']) ?: $toolCalls;
@@ -442,9 +446,38 @@ final class LeadApi extends BaseService
 
     private function extractJson(string $text): string
     {
-        $text = trim(preg_replace('/^```(?:json)?|```$/mi', '', $text) ?? $text);
-        $start = strpos($text, '{'); $end = strrpos($text, '}');
-        return $start !== false && $end !== false && $end >= $start ? substr($text, $start, $end - $start + 1) : $text;
+        $text = trim(preg_replace('/```(?:json)?/i', '', $text) ?? $text);
+        $text = trim(str_replace('```', '', $text));
+        $start = strpos($text, '{');
+        if ($start === false) return $text;
+
+        $depth = 0;
+        $inString = false;
+        $escaped = false;
+        $length = strlen($text);
+        for ($index = $start; $index < $length; $index++) {
+            $character = $text[$index];
+            if ($inString) {
+                if ($escaped) { $escaped = false; continue; }
+                if ($character === '\\') { $escaped = true; continue; }
+                if ($character === '"') $inString = false;
+                continue;
+            }
+            if ($character === '"') { $inString = true; continue; }
+            if ($character === '{') $depth++;
+            if ($character === '}' && --$depth === 0) return substr($text, $start, $index - $start + 1);
+        }
+        return $text;
+    }
+
+    private function decodeAnalysisJson(string $result): ?array
+    {
+        $candidates = [trim($result), $this->extractJson($result)];
+        foreach (array_unique($candidates) as $candidate) {
+            $decoded = json_decode($candidate, true);
+            if (is_array($decoded)) return $decoded;
+        }
+        return null;
     }
 
     private function mapModel(array $row): array
