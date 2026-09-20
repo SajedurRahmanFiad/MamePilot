@@ -359,9 +359,10 @@ const Dashboard: React.FC = () => {
   };
 
   const getWidgetWidthStyle = (setting: { key: string; widthPercent?: number }): React.CSSProperties => {
-    if (!isDesktop) return {};
     const percent = setting.widthPercent ?? getDefaultWidgetWidthPercent(setting.key);
-    return { flex: `0 0 calc(${percent}% - 1.5rem)`, minWidth: 0 };
+    if (!isDesktop) return { flex: '0 0 100%', minWidth: 0 };
+    const gapAdjustment = percent >= 100 ? '0rem' : `${percent * 0.015}rem`;
+    return { flex: `0 0 calc(${percent}% - ${gapAdjustment})`, minWidth: 0 };
   };
 
   return (

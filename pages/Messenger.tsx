@@ -36,6 +36,7 @@ import {
   useMarkLeadSuggestionSent,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
@@ -161,6 +162,7 @@ const CardModal: React.FC<{ open: boolean; pending: boolean; onClose: () => void
 
 const MessengerPage: React.FC = () => {
   const toast = useToastNotifications();
+  const { hasCapability } = useCapabilities();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState<ContactFilter>('all');
@@ -190,7 +192,8 @@ const MessengerPage: React.FC = () => {
   const contactCount = contactsQuery.data?.count || 0;
   const contactPageCount = Math.max(1, Math.ceil(contactCount / CONTACT_PAGE_SIZE));
   const messagesQuery = useMessengerMessages(selectedId, Boolean(selectedId));
-  const leadIntelligence = useLeadIntelligence({ channel: 'messenger', contactId: selectedId || undefined }, infoOpen && Boolean(selectedId));
+  const leadIntelligenceEnabled = hasCapability('automatic_leads');
+  const leadIntelligence = useLeadIntelligence({ channel: 'messenger', contactId: selectedId || undefined }, leadIntelligenceEnabled && infoOpen && Boolean(selectedId));
   const messages = [...(messagesQuery.data?.data || []), ...pendingMessages.filter((message) => message.contactId === selectedId)];
   const selectedContact = messagesQuery.data?.contact || contacts.find((contact) => contact.id === selectedId) || null;
   const markRead = useMarkMessengerConversationRead();
@@ -293,11 +296,9 @@ const MessengerPage: React.FC = () => {
         </div>
       </aside>
 
-      {selectedContact && infoOpen && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} error={leadIntelligence.error instanceof Error ? leadIntelligence.error.message : null} onClose={() => setInfoOpen(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
-
       <main className={`${mobileChatOpen ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col bg-white`}>
         {!selectedContact ? <div className="flex flex-1 items-center justify-center bg-white p-6 text-center"><div><div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#0a7cff] to-[#8b5cf6] text-white shadow-xl"><Send size={42} /></div><h2 className="mt-6 text-2xl font-black">Messenger conversations</h2><p className="mt-2 text-sm text-gray-500">Choose a conversation to start replying.</p></div></div> : <>
-          <header className="flex h-[65px] shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-4"><button type="button" onClick={() => setMobileChatOpen(false)} className="rounded-full p-2 text-[#0866ff] hover:bg-blue-50 md:hidden"><ArrowLeft size={21} /></button><ContactAvatar contact={selectedContact} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-[15px] font-black">{selectedContact.name}</p><p className={`text-xs font-medium ${selectedContact.canReply ? 'text-gray-500' : 'text-amber-600'}`}>{selectedContact.canReply ? 'You can reply' : 'Waiting for a new message'}</p></div><button type="button" onClick={() => setInfoOpen((value) => !value)} className={`rounded-full p-2.5 ${infoOpen ? 'bg-blue-50 text-[#0866ff]' : 'text-[#0866ff] hover:bg-blue-50'}`}><Info size={21} /></button></header>
+          <header className="flex h-[65px] shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-4"><button type="button" onClick={() => setMobileChatOpen(false)} className="rounded-full p-2 text-[#0866ff] hover:bg-blue-50 md:hidden"><ArrowLeft size={21} /></button><ContactAvatar contact={selectedContact} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-[15px] font-black">{selectedContact.name}</p><p className={`text-xs font-medium ${selectedContact.canReply ? 'text-gray-500' : 'text-amber-600'}`}>{selectedContact.canReply ? 'You can reply' : 'Waiting for a new message'}</p></div>{leadIntelligenceEnabled && <button type="button" onClick={() => setInfoOpen((value) => !value)} className={`rounded-full p-2.5 ${infoOpen ? 'bg-blue-50 text-[#0866ff]' : 'text-[#0866ff] hover:bg-blue-50'}`}><Info size={21} /></button>}</header>
           {!selectedContact.canReply && <div className="border-b border-amber-100 bg-amber-50 px-4 py-2.5 text-center text-xs font-bold text-amber-800">You can reply after this customer sends a new message.</div>}
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
             {messagesQuery.isPending ? <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-[#0866ff]" /></div> : <div className="mx-auto max-w-3xl space-y-5">{groupedMessages.map((group) => <section key={group.label} className="space-y-2"><div className="py-2 text-center"><span className="text-xs font-bold text-gray-400">{group.label}</span></div>{group.messages.map((message) => <MessageBubble key={message.id} message={message} repliedMessage={message.replyToMid ? messageByMid.get(message.replyToMid) : undefined} onReply={() => setReplyingTo(message)} onReact={(reaction) => handleReaction(message, reaction)} />)}</section>)}<div ref={messagesEndRef} /></div>}
@@ -316,6 +317,8 @@ const MessengerPage: React.FC = () => {
           </footer>
         </>}
       </main>
+
+      {selectedContact && leadIntelligenceEnabled && infoOpen && <LeadIntelligencePanel lead={leadIntelligence.data} loading={leadIntelligence.isPending || leadIntelligence.isFetching} error={leadIntelligence.error instanceof Error ? leadIntelligence.error.message : null} onClose={() => setInfoOpen(false)} onRefresh={() => leadIntelligence.refetch()} onSendSuggestion={sendSuggestedReply} />}
 
       <ChoicesModal open={choicesOpen} pending={sendChoices.isPending} onClose={() => setChoicesOpen(false)} onSend={async (text, options) => { if (!selectedId) return; try { await sendChoices.mutateAsync({ contactId: selectedId, text, options: options.map((title) => ({ title })), replyToMid: replyingTo?.mid || undefined }); setChoicesOpen(false); setReplyingTo(null); } catch (error) { toast.error(friendlyError(error, 'Choices could not be sent. Please try again.')); } }} />
       <CardModal open={cardOpen} pending={sendCard.isPending} onClose={() => setCardOpen(false)} onSend={async (card) => { if (!selectedId) return; try { await sendCard.mutateAsync({ contactId: selectedId, ...card, replyToMid: replyingTo?.mid || undefined }); setCardOpen(false); setReplyingTo(null); } catch (error) { toast.error(friendlyError(error, 'Card could not be sent. Please try again.')); } }} />

@@ -211,7 +211,11 @@ final class MessengerApi extends BaseService
         );
         $settings = $this->settingsRow();
         return [
-            'data' => array_map(function (array $row): array {
+            'data' => array_map(function (array $row) use ($settings): array {
+                if (trim((string) ($row['profile_picture_url'] ?? '')) === '' || trim((string) ($row['name'] ?? '')) === '' || (string) $row['name'] === 'Messenger customer') {
+                    $profile = $this->findOrCreateContact((string) ($row['psid'] ?? ''), $settings);
+                    $row = array_merge($row, $profile);
+                }
                 $row['unread_count'] = $row['actual_unread_count'] ?? $row['unread_count'] ?? 0;
                 return $this->mapContact($row, $settings);
             }, $rows),
@@ -721,7 +725,7 @@ final class MessengerApi extends BaseService
     private function findOrCreateContact(string $psid, ?array $settings): array
     {
         $existing = $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE psid = :psid LIMIT 1', [':psid' => $psid]);
-        if ($existing !== null) return $existing;
+        if ($existing !== null && trim((string) ($existing['profile_picture_url'] ?? '')) !== '' && trim((string) ($existing['name'] ?? '')) !== '' && (string) $existing['name'] !== 'Messenger customer') return $existing;
         $profile = [];
         try {
             if ($this->isConfigured($settings)) $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,name,profile_pic,locale'], 5);
@@ -731,6 +735,20 @@ final class MessengerApi extends BaseService
         $first = trim((string) ($profile['first_name'] ?? ''));
         $last = trim((string) ($profile['last_name'] ?? ''));
         $name = trim((string) ($profile['name'] ?? trim($first . ' ' . $last))) ?: 'Messenger customer';
+        if ($existing !== null) {
+            $this->database->execute(
+                'UPDATE messenger_contacts SET name = :name, first_name = :first, last_name = :last, profile_picture_url = :picture, locale = :locale, updated_at = :updated WHERE id = :id',
+                [
+                    ':name' => $name !== 'Messenger customer' ? $name : ($existing['name'] ?? $name),
+                    ':first' => $first !== '' ? $first : ($existing['first_name'] ?? null),
+                    ':last' => $last !== '' ? $last : ($existing['last_name'] ?? null),
+                    ':picture' => !empty($profile['profile_pic']) ? $profile['profile_pic'] : ($existing['profile_picture_url'] ?? null),
+                    ':locale' => !empty($profile['locale']) ? $profile['locale'] : ($existing['locale'] ?? null),
+                    ':updated' => $this->database->nowUtc(), ':id' => $existing['id'],
+                ]
+            );
+            return $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE id = :id', [':id' => $existing['id']]) ?: $existing;
+        }
         $now = $this->database->nowUtc();
         $id = $this->uuid4();
         $this->database->execute(
