@@ -268,6 +268,7 @@ final class FeatureAccess
         'fetchMessengerProfile' => 'messenger',
         'updateMessengerProfile' => 'messenger',
         'fetchMessengerContacts' => 'messenger',
+        'refreshMessengerContactProfile' => 'messenger',
         'fetchMessengerMessages' => 'messenger',
         'markMessengerConversationRead' => 'messenger',
         'sendMessengerMessage' => 'messenger',

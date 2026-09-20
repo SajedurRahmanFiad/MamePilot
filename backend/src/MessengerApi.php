@@ -212,16 +212,25 @@ final class MessengerApi extends BaseService
         $settings = $this->settingsRow();
         return [
             'data' => array_map(function (array $row) use ($settings): array {
-                if (trim((string) ($row['profile_picture_url'] ?? '')) === '' || trim((string) ($row['name'] ?? '')) === '' || (string) $row['name'] === 'Messenger customer') {
-                    $profile = $this->findOrCreateContact((string) ($row['psid'] ?? ''), $settings);
-                    $row = array_merge($row, $profile);
-                }
                 $row['unread_count'] = $row['actual_unread_count'] ?? $row['unread_count'] ?? 0;
                 return $this->mapContact($row, $settings);
             }, $rows),
             'count' => (int) ($count['total'] ?? 0),
             'configured' => $this->isConfigured($settings),
         ];
+    }
+
+    public function refreshMessengerContactProfile(array $params): array
+    {
+        $this->currentUser();
+        $this->ensureTables();
+        $contactId = trim((string) ($params['contactId'] ?? ''));
+        if ($contactId === '') throw new RuntimeException('Choose a Messenger conversation.');
+        $contact = $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE id = :id LIMIT 1', [':id' => $contactId]);
+        if ($contact === null) throw new RuntimeException('Messenger conversation not found.');
+        $settings = $this->settingsRow();
+        $refreshed = $this->findOrCreateContact((string) $contact['psid'], $settings);
+        return $this->mapContact($refreshed, $settings);
     }
 
     public function fetchMessengerMessages(array $params): array

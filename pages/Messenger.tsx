@@ -25,6 +25,7 @@ import type { MessengerContact, MessengerMessage } from '../types';
 import LeadIntelligencePanel from '../components/LeadIntelligencePanel';
 import { useMessengerContacts, useMessengerMessages } from '../src/hooks/useQueries';
 import { useLeadIntelligence } from '../src/hooks/useQueries';
+import { refreshMessengerContactProfile } from '../src/services/supabaseQueries';
 import {
   useMarkMessengerConversationRead,
   useSendMessengerCard,
@@ -186,6 +187,7 @@ const MessengerPage: React.FC = () => {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const profileRefreshStartedRef = useRef(new Set<string>());
 
   const contactsQuery = useMessengerContacts({ search: debouncedSearch, filter, page: contactPage, pageSize: CONTACT_PAGE_SIZE }, true);
   const contacts = contactsQuery.data?.data || [];
@@ -211,6 +213,21 @@ const MessengerPage: React.FC = () => {
   useEffect(() => { if (!selectedId && contacts.length > 0) setSelectedId(contacts[0].id); }, [contacts, selectedId]);
   useEffect(() => { if (selectedId && selectedContact?.unreadCount && document.hasFocus()) markRead.mutate(selectedId); }, [selectedId, selectedContact?.unreadCount]);
   useEffect(() => { const clearOnFocus = () => { if (selectedId && selectedContact?.unreadCount) markRead.mutate(selectedId); }; window.addEventListener('focus', clearOnFocus); return () => window.removeEventListener('focus', clearOnFocus); }, [selectedId, selectedContact?.unreadCount]);
+  useEffect(() => {
+    let cancelled = false;
+    const incompleteContacts = contacts.filter((contact) => (!contact.profilePictureUrl || !contact.name || contact.name === 'Messenger customer') && !profileRefreshStartedRef.current.has(contact.id));
+    const refreshProfiles = async () => {
+      let refreshed = false;
+      for (const contact of incompleteContacts) {
+        if (cancelled) return;
+        profileRefreshStartedRef.current.add(contact.id);
+        try { await refreshMessengerContactProfile(contact.id); refreshed = true; } catch { /* Best-effort profile enrichment must not block Messenger. */ }
+      }
+      if (refreshed && !cancelled) await contactsQuery.refetch();
+    };
+    void refreshProfiles();
+    return () => { cancelled = true; };
+  }, [contacts]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, selectedId]);
   useEffect(() => () => { if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current); recorderStreamRef.current?.getTracks().forEach((track) => track.stop()); }, []);
 
