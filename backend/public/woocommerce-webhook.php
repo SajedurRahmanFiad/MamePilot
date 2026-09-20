@@ -27,19 +27,39 @@ try {
     $operations = new OperationsApi($database, $auth, $config);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations);
     $rawBody = (string) file_get_contents('php://input');
+    $responseSent = false;
     $result = $woocommerce->handleWebhook(
         trim((string) ($_GET['store'] ?? '')),
         $rawBody,
         isset($_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE']) ? (string) $_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE'] : null,
-        isset($_SERVER['HTTP_X_WC_WEBHOOK_TOPIC']) ? (string) $_SERVER['HTTP_X_WC_WEBHOOK_TOPIC'] : null
+        isset($_SERVER['HTTP_X_WC_WEBHOOK_TOPIC']) ? (string) $_SERVER['HTTP_X_WC_WEBHOOK_TOPIC'] : null,
+        static function (array $response) use (&$responseSent): void {
+            if (!function_exists('fastcgi_finish_request')) {
+                return;
+            }
+            http_response_code(200);
+            echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $responseSent = true;
+            fastcgi_finish_request();
+        }
     );
 
-    http_response_code(200);
-    echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (!$responseSent) {
+        http_response_code(200);
+        echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 } catch (ApiException $exception) {
+    if (!empty($responseSent)) {
+        error_log('WooCommerce order import failed after webhook acknowledgement: ' . $exception->getMessage());
+        exit;
+    }
     http_response_code($exception->httpStatus());
     echo json_encode(['error' => $exception->getMessage(), 'code' => $exception->errorCode()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
+    if (!empty($responseSent)) {
+        error_log('WooCommerce order import failed after webhook acknowledgement: ' . $exception->getMessage());
+        exit;
+    }
     http_response_code(500);
     echo json_encode(['error' => 'WooCommerce order import failed.'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }

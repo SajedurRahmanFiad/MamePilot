@@ -503,7 +503,17 @@ final class WooCommerceApi extends BaseService
         ];
     }
 
-    public function handleWebhook(string $storeId, string $rawBody, ?string $signature, ?string $topic = null): array
+    /**
+     * @param callable(array<string, mixed>): void|null $acknowledge Called after
+     * payload validation and before the potentially slow order import.
+     */
+    public function handleWebhook(
+        string $storeId,
+        string $rawBody,
+        ?string $signature,
+        ?string $topic = null,
+        ?callable $acknowledge = null
+    ): array
     {
         $this->assertSchema();
         $store = $this->requireStore($storeId);
@@ -527,6 +537,14 @@ final class WooCommerceApi extends BaseService
         $order = json_decode($rawBody, true);
         if (!is_array($order) || (int) ($order['id'] ?? 0) <= 0) {
             throw new ApiException('Invalid WooCommerce order payload.', 422, 'INVALID_WEBHOOK_PAYLOAD');
+        }
+
+        if ($acknowledge !== null) {
+            $acknowledge([
+                'success' => true,
+                'accepted' => true,
+                'message' => 'WooCommerce order webhook accepted.',
+            ]);
         }
 
         try {

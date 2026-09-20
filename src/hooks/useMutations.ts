@@ -3400,7 +3400,7 @@ export function useSyncWhatsAppBusinessAppData(): UseMutationResult<{ ok: boolea
 
 export function useAnalyzeLead(): UseMutationResult<Lead, Error, { leadId?: string; channel?: string; contactId?: string }, unknown> {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: analyzeLead, onSuccess: (lead) => { queryClient.setQueryData(['lead', lead.id], lead); queryClient.setQueryData(['lead-intelligence', lead.id], lead); queryClient.invalidateQueries({ queryKey: ['leads'] }); } });
+  return useMutation({ mutationFn: analyzeLead, onSuccess: (lead) => { queryClient.setQueryData(['lead', lead.id], lead); queryClient.setQueryData(['lead-intelligence', lead.id], lead); queryClient.invalidateQueries({ queryKey: ['lead-intelligence'] }); queryClient.invalidateQueries({ queryKey: ['leads'] }); } });
 }
 
 export function useMarkLeadSuggestionSent(): UseMutationResult<{ ok: boolean }, Error, { suggestionId: string; messageId?: string }, unknown> {

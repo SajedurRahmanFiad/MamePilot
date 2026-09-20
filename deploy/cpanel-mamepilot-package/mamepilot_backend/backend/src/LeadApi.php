@@ -212,7 +212,9 @@ final class LeadApi extends BaseService
         $probability = max(0, min(100, (float) ($decoded['orderProbability'] ?? $profile['sales']['orderProbability'] ?? $score)));
         $profile['sales']['orderProbability'] = $probability;
         $stage = trim((string) ($decoded['stage'] ?? $profile['sales']['stage'] ?? 'active')) ?: 'active';
-        $status = $probability >= 80 ? 'high_intent' : ($probability >= 50 ? 'qualified' : 'active');
+        $isConfirmed = ($profile['orderConfirmation']['status'] ?? '') === 'confirmed';
+        if ($isConfirmed) $stage = 'confirmed';
+        $status = $isConfirmed ? 'confirmed' : ($probability >= 80 ? 'high_intent' : ($probability >= 50 ? 'qualified' : 'active'));
         $this->database->execute('UPDATE lead_profiles SET status = :status, stage = :stage, score = :score, order_probability = :probability, profile_json = :profile, last_analyzed_message_id = :message, last_message_at = :at, updated_at = :updated WHERE id = :id', [':status' => $status, ':stage' => $stage, ':score' => $score, ':probability' => $probability, ':profile' => $this->jsonEncode($profile), ':message' => $messages[count($messages) - 1]['id'], ':at' => $messages[count($messages) - 1]['messageAt'], ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
         return $profile;
     }
@@ -324,6 +326,11 @@ final class LeadApi extends BaseService
     private function saveAnalysis(array $lead, string $runId, array $profile, string $messageId): void
     {
         $this->database->execute('DELETE FROM lead_suggestions WHERE lead_id = :lead AND status = \'available\'', [':lead' => $lead['id']]);
+        if (($profile['orderConfirmation']['status'] ?? '') === 'confirmed') {
+            $this->saveEvent((string) $lead['id'], 'analysis_updated', ['messageId' => $messageId, 'score' => $profile['sales']['orderProbability'] ?? 0]);
+            $this->saveEvent((string) $lead['id'], 'order_confirmation_detected', ['evidenceMessageIds' => $profile['orderConfirmation']['evidenceMessageIds'] ?? []]);
+            return;
+        }
         foreach ((array) ($profile['suggestions'] ?? []) as $suggestion) {
             if (!is_array($suggestion) || trim((string) ($suggestion['text'] ?? '')) === '') continue;
             $this->database->execute('INSERT INTO lead_suggestions (id, lead_id, analysis_run_id, suggestion_type, text, reason, confidence, status, created_at) VALUES (:id, :lead, :run, :type, :text, :reason, :confidence, \'available\', :created)', [':id' => $this->uuid4(), ':lead' => $lead['id'], ':run' => $runId, ':type' => trim((string) ($suggestion['type'] ?? 'next_step')), ':text' => trim((string) $suggestion['text']), ':reason' => $this->stringOrNull($suggestion['reason'] ?? null), ':confidence' => max(0, min(100, (float) ($suggestion['confidence'] ?? 0))), ':created' => $this->database->nowUtc()]);
@@ -341,6 +348,7 @@ final class LeadApi extends BaseService
         $name = trim((string) ($profile['identity']['name']['value'] ?? ''));
         $phone = trim((string) ($profile['identity']['phone']['value'] ?? ''));
         $address = trim((string) ($profile['identity']['address']['value'] ?? ''));
+        $customer = $this->ensureConfirmedCustomer($lead, $profile, $name, $phone, $address);
         $interest = is_array($profile['interest'][0] ?? null) ? $profile['interest'][0] : [];
         $productId = trim((string) ($interest['productId'] ?? ''));
         $quantity = max(0, (float) ($interest['quantity'] ?? 0));
@@ -350,15 +358,24 @@ final class LeadApi extends BaseService
         }
         $product = $this->database->fetchOne('SELECT id, name, sale_price, stock FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1', [':id' => $productId]);
         if ($product === null) { $this->saveEvent((string) $lead['id'], 'order_blocked_product_not_found', ['productId' => $productId]); return; }
-        $normalizedPhone = preg_replace('/\D+/', '', $phone) ?: $phone;
-        $customer = $this->database->fetchOne('SELECT * FROM customers WHERE deleted_at IS NULL AND REPLACE(REPLACE(phone, \'+\', \'\'), \'-\', \'\') LIKE :phone ORDER BY created_at ASC LIMIT 1', [':phone' => '%' . $normalizedPhone]);
-        if ($customer === null) $customer = $this->masterData->createCustomer(['name' => $name, 'phone' => $phone, 'address' => $address]);
+        if ($customer === null) return;
         $rate = (float) $product['sale_price']; $subtotal = $rate * $quantity;
         $order = $this->operations->createOrder(['id' => 'lead-order-' . $lead['id'], 'customerId' => $customer['id'], 'status' => 'On Hold', 'items' => [['productId' => $product['id'], 'productName' => $product['name'], 'rate' => $rate, 'quantity' => $quantity, 'amount' => $subtotal]], 'subtotal' => $subtotal, 'discount' => 0, 'shipping' => (float) ($profile['delivery']['shipping'] ?? 0), 'total' => $subtotal + (float) ($profile['delivery']['shipping'] ?? 0), 'paidAmount' => 0, 'notes' => 'Created from confirmed lead conversation.', 'sourceAd' => (string) ($profile['attribution']['adId'] ?? $profile['attribution']['adName'] ?? ''), 'history' => ['created' => $this->database->nowUtc()]]);
         $this->postCreateEffects->schedule($order);
         $profile['order'] = ['id' => $order['id'] ?? null, 'orderNumber' => $order['orderNumber'] ?? null, 'customerId' => $customer['id'], 'createdAt' => gmdate('c')];
-        $this->database->execute('UPDATE lead_profiles SET status = \'converted\', stage = \'converted\', profile_json = :profile, updated_at = :updated WHERE id = :id', [':profile' => $this->jsonEncode($profile), ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
+        $this->database->execute('UPDATE lead_profiles SET status = \'confirmed\', stage = \'confirmed\', profile_json = :profile, updated_at = :updated WHERE id = :id', [':profile' => $this->jsonEncode($profile), ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
         $this->saveEvent((string) $lead['id'], 'order_created', ['orderId' => $order['id'] ?? null, 'orderNumber' => $order['orderNumber'] ?? null, 'customerId' => $customer['id']]);
+    }
+
+    private function ensureConfirmedCustomer(array $lead, array &$profile, string $name, string $phone, string $address): ?array
+    {
+        if ($name === '' || $phone === '' || $address === '') return null;
+        $normalizedPhone = preg_replace('/\D+/', '', $phone) ?: $phone;
+        $customer = $this->database->fetchOne('SELECT * FROM customers WHERE deleted_at IS NULL AND REPLACE(REPLACE(phone, \'+\', \'\'), \'-\', \'\') LIKE :phone ORDER BY created_at ASC LIMIT 1', [':phone' => '%' . $normalizedPhone]);
+        if ($customer === null) $customer = $this->masterData->createCustomer(['name' => $name, 'phone' => $phone, 'address' => $address]);
+        $profile['customer'] = ['id' => $customer['id'] ?? null, 'name' => $name, 'phone' => $phone, 'address' => $address];
+        $this->database->execute('UPDATE lead_profiles SET profile_json = :profile, updated_at = :updated WHERE id = :id', [':profile' => $this->jsonEncode($profile), ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
+        return $customer;
     }
 
     private function runTool(array $call, array $lead): array
@@ -529,8 +546,9 @@ final class LeadApi extends BaseService
 
     private function leadResponse(array $lead): array
     {
-        $suggestions = $this->database->fetchAll("SELECT id, lead_id, suggestion_type, text, reason, confidence, status, created_at FROM lead_suggestions WHERE lead_id = :lead AND status = 'available' ORDER BY created_at DESC LIMIT 3", [':lead' => $lead['id']]);
-        $mapped = $this->mapLead($lead); $mapped['suggestions'] = array_map(fn(array $row): array => ['id' => $row['id'], 'leadId' => $row['lead_id'], 'suggestionType' => $row['suggestion_type'], 'text' => $row['text'], 'reason' => $row['reason'] ?? '', 'confidence' => (float) $row['confidence'], 'status' => $row['status'], 'createdAt' => $this->toIso($row['created_at'] ?? null)], $suggestions);
+        $mapped = $this->mapLead($lead);
+        $suggestions = $mapped['status'] === 'confirmed' ? [] : $this->database->fetchAll("SELECT id, lead_id, suggestion_type, text, reason, confidence, status, created_at FROM lead_suggestions WHERE lead_id = :lead AND status = 'available' ORDER BY created_at DESC LIMIT 3", [':lead' => $lead['id']]);
+        $mapped['suggestions'] = array_map(fn(array $row): array => ['id' => $row['id'], 'leadId' => $row['lead_id'], 'suggestionType' => $row['suggestion_type'], 'text' => $row['text'], 'reason' => $row['reason'] ?? '', 'confidence' => (float) $row['confidence'], 'status' => $row['status'], 'createdAt' => $this->toIso($row['created_at'] ?? null)], $suggestions);
         return $mapped;
     }
 
@@ -539,7 +557,8 @@ final class LeadApi extends BaseService
         $profile = $this->normalizeProfileShape($this->jsonDecodeAssoc($row['profile_json'] ?? []));
         $name = trim((string) ($row['messenger_name'] ?? $row['whatsapp_name'] ?? $row['whatsapp_profile'] ?? '')) ?: (string) ($profile['identity']['name']['value'] ?? 'Unknown lead');
         $phone = (string) ($row['whatsapp_phone'] ?? ($profile['identity']['phone']['value'] ?? ''));
-        return ['id' => (string) $row['id'], 'name' => $name, 'phone' => $phone, 'lastMessagePreview' => (string) ($row['messenger_preview'] ?? $row['whatsapp_preview'] ?? ''), 'sourceChannel' => (string) $row['source_channel'], 'messengerContactId' => $row['messenger_contact_id'] ?? null, 'whatsappContactId' => $row['whatsapp_contact_id'] ?? null, 'assignedModelId' => $row['assigned_model_id'] ?? null, 'status' => (string) $row['status'], 'stage' => (string) $row['stage'], 'score' => (float) $row['score'], 'orderProbability' => (float) $row['order_probability'], 'profile' => $profile, 'lastAnalyzedMessageId' => $row['last_analyzed_message_id'] ?? null, 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
+        $isConfirmed = ($profile['orderConfirmation']['status'] ?? '') === 'confirmed';
+        return ['id' => (string) $row['id'], 'name' => $name, 'phone' => $phone, 'lastMessagePreview' => (string) ($row['messenger_preview'] ?? $row['whatsapp_preview'] ?? ''), 'sourceChannel' => (string) $row['source_channel'], 'messengerContactId' => $row['messenger_contact_id'] ?? null, 'whatsappContactId' => $row['whatsapp_contact_id'] ?? null, 'assignedModelId' => $row['assigned_model_id'] ?? null, 'status' => $isConfirmed ? 'confirmed' : (string) $row['status'], 'stage' => $isConfirmed ? 'confirmed' : (string) $row['stage'], 'score' => (float) $row['score'], 'orderProbability' => (float) $row['order_probability'], 'profile' => $profile, 'lastAnalyzedMessageId' => $row['last_analyzed_message_id'] ?? null, 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
     }
 
     private function normalizeProfileShape(array $profile): array
@@ -560,7 +579,35 @@ final class LeadApi extends BaseService
                 return $interest;
             }, $profile['interest']);
         }
+        $profile['missingInformation'] = $this->normalizeMissingInformation($profile['missingInformation'] ?? [], $profile);
         return $profile;
+    }
+
+    private function normalizeMissingInformation($missingInformation, array $profile): array
+    {
+        $identity = is_array($profile['identity'] ?? null) ? $profile['identity'] : [];
+        $provided = [
+            'name' => trim((string) ($identity['name']['value'] ?? '')) !== '',
+            'phone' => trim((string) ($identity['phone']['value'] ?? '')) !== '',
+            'address' => trim((string) ($identity['address']['value'] ?? '')) !== '',
+        ];
+        $labels = [
+            'customer_name' => 'name', 'full_name' => 'name', 'name' => 'name',
+            'phone_number' => 'phone', 'mobile_number' => 'phone', 'phone' => 'phone',
+            'delivery_address' => 'address', 'shipping_address' => 'address', 'billing_address' => 'address', 'address' => 'address',
+        ];
+        $normalized = [];
+        foreach ((array) $missingInformation as $item) {
+            $raw = is_array($item)
+                ? ($item['field'] ?? $item['name'] ?? $item['key'] ?? $item['type'] ?? $item['label'] ?? '')
+                : $item;
+            $key = strtolower(trim((string) $raw));
+            $key = preg_replace('/[^a-z0-9_]+/', '_', $key) ?: '';
+            $canonical = $labels[$key] ?? trim((string) $raw);
+            if ($canonical === '' || (isset($provided[$canonical]) && $provided[$canonical])) continue;
+            if (!in_array($canonical, $normalized, true)) $normalized[] = $canonical;
+        }
+        return $normalized;
     }
 
     private function candidateModelRows(array $preferred): array

@@ -10,7 +10,7 @@ import { getPositivePageParam } from '../src/utils/navigation';
 import type { Lead } from '../types';
 
 const statusStyles: Record<string, string> = {
-  new: 'bg-blue-50 text-blue-700', active: 'bg-gray-100 text-gray-700', needs_reply: 'bg-amber-50 text-amber-700', qualified: 'bg-emerald-50 text-emerald-700', high_intent: 'bg-purple-50 text-purple-700', order_pending: 'bg-orange-50 text-orange-700', converted: 'bg-green-50 text-green-700', lost: 'bg-rose-50 text-rose-700', paused: 'bg-gray-100 text-gray-500',
+  new: 'bg-blue-50 text-blue-700', active: 'bg-gray-100 text-gray-700', needs_reply: 'bg-amber-50 text-amber-700', qualified: 'bg-emerald-50 text-emerald-700', high_intent: 'bg-purple-50 text-purple-700', order_pending: 'bg-orange-50 text-orange-700', confirmed: 'bg-green-50 text-green-700', converted: 'bg-green-50 text-green-700', lost: 'bg-rose-50 text-rose-700', paused: 'bg-gray-100 text-gray-500',
 };
 
 const label = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());

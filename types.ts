@@ -1738,7 +1738,7 @@ export interface LlmSettings {
   multimodalAssignment: string | null;
 }
 
-export type LeadStatus = 'new' | 'active' | 'needs_reply' | 'qualified' | 'high_intent' | 'order_pending' | 'converted' | 'lost' | 'paused';
+export type LeadStatus = 'new' | 'active' | 'needs_reply' | 'qualified' | 'high_intent' | 'order_pending' | 'confirmed' | 'converted' | 'lost' | 'paused';
 
 export interface LeadProfileField<T = string> {
   value: T;
