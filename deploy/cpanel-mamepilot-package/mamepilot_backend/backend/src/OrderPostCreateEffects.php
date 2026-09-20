@@ -11,7 +11,6 @@ final class OrderPostCreateEffects
     private ?Database $database;
     private bool $surveyWorkerScheduled = false;
     private bool $fraudWorkersScheduled = false;
-    private ?bool $fraudChecksEnabled = null;
     /** @var array<string, true> */
     private array $fraudCustomerIds = [];
 
@@ -50,23 +49,6 @@ final class OrderPostCreateEffects
         if ($customerId === '') {
             return;
         }
-        if ($this->fraudChecksEnabled === null) {
-            try {
-                $autoEnabled = false;
-                if ($this->database !== null) {
-                    $row = $this->database->fetchOne('SELECT automatic_fraud_check_on_order_creation FROM system_defaults LIMIT 1');
-                    $autoEnabled = (bool) ($row['automatic_fraud_check_on_order_creation'] ?? false);
-                }
-                $this->fraudChecksEnabled = $autoEnabled;
-            } catch (\Throwable $exception) {
-                $this->fraudChecksEnabled = false;
-                error_log('Could not read fraud-check capability settings: ' . $exception->getMessage());
-            }
-        }
-        if (!$this->fraudChecksEnabled) {
-            return;
-        }
-
         $this->fraudCustomerIds[$customerId] = true;
         if ($this->fraudWorkersScheduled) {
             return;

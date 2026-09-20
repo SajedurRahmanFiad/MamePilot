@@ -108,7 +108,7 @@ const PosOrderDetails: React.FC = () => {
     const isFullyReturned = activeQty === 0;
 
     return {
-      id: item.id ?? idx,
+      id: idx,
       name: item.productName,
       rate: formatCurrency(item.rate),
       quantity: activeQty,

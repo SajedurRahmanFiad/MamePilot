@@ -1207,7 +1207,7 @@ export function useLead(leadId: string | null | undefined, enabled: boolean = tr
 
 export function useLeadIntelligence(params: { leadId?: string; channel?: string; contactId?: string }, enabled: boolean = true): UseQueryResult<Lead, Error> {
   const key = params.leadId || `${params.channel || ''}:${params.contactId || ''}`;
-  return useQuery({ queryKey: ['lead-intelligence', key], queryFn: () => fetchLeadIntelligence(params), enabled: enabled && Boolean(params.leadId || (params.channel && params.contactId)), staleTime: 1_000, refetchInterval: enabled ? 4_000 : false });
+  return useQuery({ queryKey: ['lead-intelligence', key], queryFn: () => fetchLeadIntelligence(params), enabled: enabled && Boolean(params.leadId || (params.channel && params.contactId)), staleTime: 5_000, refetchOnWindowFocus: true });
 }
 
 export function useBeSmartSettings(enabled: boolean = true): UseQueryResult<BeSmartSettings, Error> {

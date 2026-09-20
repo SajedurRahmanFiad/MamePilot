@@ -12,7 +12,10 @@ final class LeadApi extends BaseService
     public function __construct(Database $database, Auth $auth, Config $config, private MasterDataApi $masterData, private OperationsApi $operations)
     {
         parent::__construct($database, $auth, $config);
+        $this->postCreateEffects = new OrderPostCreateEffects(new FeatureAccess($database, $auth), new AutoCallApi($database, $auth, $config), $database);
     }
+
+    private OrderPostCreateEffects $postCreateEffects;
 
     public function fetchLeadsPage(array $params = []): array
     {
@@ -52,9 +55,10 @@ final class LeadApi extends BaseService
         $this->ensureTables();
         $lead = $this->resolveLead($params);
         if ($lead === null) throw new RuntimeException('Conversation lead could not be resolved.');
-        $latest = $this->latestMessageId($lead);
+        $messages = $this->conversationMessages($lead);
+        $latest = $this->latestMessageId($messages);
         if (empty($params['agentReadOnly']) && $latest !== '' && (string) ($lead['last_analyzed_message_id'] ?? '') !== $latest && $this->activeModelRow($lead) !== null) {
-            try { $lead = $this->runAnalysis($lead, false); $this->maybeCreateConfirmedOrder($lead); } catch (\Throwable $exception) {
+            try { $lead = $this->runAnalysis($lead, $messages); $this->maybeCreateConfirmedOrder($lead); } catch (\Throwable $exception) {
                 $this->saveEvent((string) $lead['id'], 'analysis_failed', ['message' => $exception->getMessage()]);
             }
         }
@@ -67,7 +71,7 @@ final class LeadApi extends BaseService
         $this->ensureTables();
         $lead = $this->resolveLead($params);
         if ($lead === null) throw new RuntimeException('Conversation lead could not be resolved.');
-        $lead = $this->runAnalysis($lead, true);
+        $lead = $this->runAnalysis($lead, $this->conversationMessages($lead));
         if (empty($params['suppressOrderCreation'])) $this->maybeCreateConfirmedOrder($lead);
         return $this->leadResponse($this->leadRow((string) $lead['id']) ?: $lead);
     }
@@ -105,21 +109,24 @@ final class LeadApi extends BaseService
         return $this->resolveLead(['channel' => $channel, 'contactId' => $contactId]);
     }
 
-    private function runAnalysis(array $lead, bool $allowOrder): array
+    private function runAnalysis(array $lead, array $messages): array
     {
         $preferredModel = $this->activeModelRow($lead);
         if ($preferredModel === null) return $lead;
-        $messages = $this->conversationMessages($lead);
         if ($messages === []) return $lead;
         $candidateModels = $this->candidateModelRows($preferredModel);
         $lastException = null;
+        $messageId = (string) $messages[count($messages) - 1]['id'];
+
+        if ($this->analysisAlreadyRunning($lead, $messageId)) return $lead;
 
         foreach ($candidateModels as $model) {
+            if ($this->modelRateLimitCooldownActive($model)) continue;
             $runId = $this->uuid4();
-            $this->database->execute('INSERT INTO lead_analysis_runs (id, lead_id, trigger_message_id, model_id, status, created_at) VALUES (:id, :lead, :message, :model, \'running\', :created)', [':id' => $runId, ':lead' => $lead['id'], ':message' => $messages[count($messages) - 1]['id'], ':model' => $model['id'], ':created' => $this->database->nowUtc()]);
+            $this->database->execute('INSERT INTO lead_analysis_runs (id, lead_id, trigger_message_id, model_id, status, created_at) VALUES (:id, :lead, :message, :model, \'running\', :created)', [':id' => $runId, ':lead' => $lead['id'], ':message' => $messageId, ':model' => $model['id'], ':created' => $this->database->nowUtc()]);
             try {
                 $system = $this->analysisSystemPrompt($model);
-                $history = array_map(static fn(array $message): array => ['role' => $message['direction'] === 'outbound' ? 'assistant' : 'user', 'content' => $message['text']], array_slice($messages, -30));
+                $history = array_map(static fn(array $message): array => ['role' => $message['direction'] === 'outbound' ? 'assistant' : 'user', 'content' => $message['text']], array_slice($messages, -16));
                 $media = [];
                 foreach (array_slice($messages, -4) as $message) {
                     if ($message['mediaUrl'] === '') continue;
@@ -129,29 +136,27 @@ final class LeadApi extends BaseService
                     $media[] = $this->prepareMediaInput($message);
                 }
                 $prompt = $this->analysisUserPrompt($lead, $messages);
+                $toolCalls = 0;
+                $toolCache = [];
                 $result = '';
                 for ($attempt = 0; $attempt < 3; $attempt++) {
                     try {
-                        $result = (new LlmClient($this->database, $this->config))->generateMultimodal($this->mapModel($model), $system, $prompt, $history, $media, ['temperature' => (float) $model['temperature'], 'maxTokens' => (int) $model['max_tokens']]);
+                        $result = (new LlmClient($this->database, $this->config))->generateMultimodal($this->mapModel($model), $system, $prompt, $history, $media, ['temperature' => (float) $model['temperature'], 'maxTokens' => min(1400, (int) $model['max_tokens'])]);
                     } catch (\Throwable $exception) {
                         $lastException = $exception;
-                        if ($this->isRateLimitedFailure($exception) && $attempt < 2) {
-                            continue;
-                        }
-                        if ($this->isRateLimitedFailure($exception) && $this->hasNextModelCandidate($candidateModels, $model)) {
-                            break 2;
-                        }
                         throw $exception;
                     }
                     $decoded = json_decode($this->extractJson($result), true);
                     if (!is_array($decoded)) throw new RuntimeException('Lead analysis did not return valid JSON.');
                     if (isset($decoded['toolCall']) && is_array($decoded['toolCall'])) {
-                        $toolResult = $this->runTool($decoded['toolCall'], $lead);
+                        if (++$toolCalls > 2) throw new RuntimeException('Lead analysis exceeded its database lookup limit.');
+                        $toolKey = $this->jsonEncode($decoded['toolCall']) ?: $toolCalls;
+                        $toolResult = $toolCache[$toolKey] ??= $this->runTool($decoded['toolCall'], $lead);
                         $prompt .= "\n\nTOOL RESULT (use this data; do not invent IDs):\n" . ($this->jsonEncode($toolResult) ?? '{}') . "\nReturn the final profile JSON now.";
                         continue;
                     }
                     $profile = $this->normalizeAnalysis($decoded, $lead, $messages);
-                    $this->saveAnalysis($lead, $runId, $profile, $messages[count($messages) - 1]['id']);
+                    $this->saveAnalysis($lead, $runId, $profile, $messageId);
                     $this->database->execute("UPDATE lead_analysis_runs SET status = 'completed', result_json = :result, completed_at = :completed WHERE id = :id", [':result' => $this->jsonEncode($profile), ':completed' => $this->database->nowUtc(), ':id' => $runId]);
                     return $this->leadRow((string) $lead['id']) ?: $lead;
                 }
@@ -168,6 +173,26 @@ final class LeadApi extends BaseService
         throw $lastException ?? new RuntimeException('The analysis model did not return a final profile.');
     }
 
+    private function analysisAlreadyRunning(array $lead, string $messageId): bool
+    {
+        $row = $this->database->fetchOne(
+            "SELECT id FROM lead_analysis_runs WHERE lead_id = :lead AND trigger_message_id = :message AND status = 'running' AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE) LIMIT 1",
+            [':lead' => $lead['id'], ':message' => $messageId]
+        );
+        return $row !== null;
+    }
+
+    private function modelRateLimitCooldownActive(array $model): bool
+    {
+        $modelId = trim((string) ($model['id'] ?? ''));
+        if ($modelId === '') return false;
+        $row = $this->database->fetchOne(
+            "SELECT id FROM lead_analysis_runs WHERE model_id = :model AND status = 'failed' AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND) AND (error_message LIKE '%429%' OR error_message LIKE '%rate limit%' OR error_message LIKE '%quota%' OR error_message LIKE '%too many requests%') LIMIT 1",
+            [':model' => $modelId]
+        );
+        return $row !== null;
+    }
+
     private function normalizeAnalysis(array $decoded, array $lead, array $messages): array
     {
         $previousProfile = $this->jsonDecodeAssoc($lead['profile_json'] ?? []);
@@ -179,6 +204,7 @@ final class LeadApi extends BaseService
         $profile['recommendation'] = is_array($profile['recommendation'] ?? null) ? $profile['recommendation'] : [];
         $profile['orderConfirmation'] = is_array($profile['orderConfirmation'] ?? null) ? $profile['orderConfirmation'] : [];
         $profile['analysis'] = ['notices' => array_values(array_filter(array_map('strval', (array) ($decoded['notices'] ?? $profile['analysis']['notices'] ?? [])))), 'updatedAt' => gmdate('c')];
+        $this->applyEvidenceCorrections($profile, $decoded, $messages);
         $score = max(0, min(100, (float) ($decoded['score'] ?? $profile['sales']['orderProbability'] ?? 0)));
         $probability = max(0, min(100, (float) ($decoded['orderProbability'] ?? $profile['sales']['orderProbability'] ?? $score)));
         $profile['sales']['orderProbability'] = $probability;
@@ -186,6 +212,110 @@ final class LeadApi extends BaseService
         $status = $probability >= 80 ? 'high_intent' : ($probability >= 50 ? 'qualified' : 'active');
         $this->database->execute('UPDATE lead_profiles SET status = :status, stage = :stage, score = :score, order_probability = :probability, profile_json = :profile, last_analyzed_message_id = :message, last_message_at = :at, updated_at = :updated WHERE id = :id', [':status' => $status, ':stage' => $stage, ':score' => $score, ':probability' => $probability, ':profile' => $this->jsonEncode($profile), ':message' => $messages[count($messages) - 1]['id'], ':at' => $messages[count($messages) - 1]['messageAt'], ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
         return $profile;
+    }
+
+    private function applyEvidenceCorrections(array &$profile, array $decoded, array $messages): void
+    {
+        $this->applyExplicitOrderConfirmation($profile, $messages);
+        $this->applyAddressEvidence($profile, $decoded, $messages);
+        $this->resolveVerifiedProduct($profile);
+    }
+
+    private function applyExplicitOrderConfirmation(array &$profile, array $messages): void
+    {
+        $evidenceMessageIds = [];
+        foreach ($messages as $message) {
+            $text = trim((string) ($message['text'] ?? ''));
+            if ($text === '' || $this->isOrderConfirmationNegative($text)) continue;
+            if ($this->isExplicitOrderConfirmation($text)) $evidenceMessageIds[] = (string) ($message['id'] ?? '');
+        }
+        $evidenceMessageIds = array_values(array_filter(array_unique($evidenceMessageIds)));
+        if ($evidenceMessageIds === []) return;
+
+        $profile['orderConfirmation'] = array_merge((array) ($profile['orderConfirmation'] ?? []), [
+            'status' => 'confirmed',
+            'confidence' => 100,
+            'evidenceMessageIds' => $evidenceMessageIds,
+        ]);
+    }
+
+    private function isExplicitOrderConfirmation(string $text): bool
+    {
+        return preg_match('/(?:\b(?:order|booking|purchase)\b.{0,80}\b(?:is\s+)?(?:now\s+)?(?:confirmed|approved|placed successfully)\b|\b(?:confirmed|approved)\b.{0,80}\b(?:order|booking|purchase)\b|\b(?:i|we|customer)\s+(?:hereby\s+)?confirm(?:ed)?\s+(?:the\s+)?(?:order|it)\b)/iu', $text) === 1;
+    }
+
+    private function isOrderConfirmationNegative(string $text): bool
+    {
+        return preg_match('/\b(?:order|booking|purchase|it)\b.{0,50}\b(?:not|never|cannot|can\'t|isn\'t|is not|hasn\'t|has not)\s+(?:been\s+)?(?:confirmed|approved|placed)\b/iu', $text) === 1;
+    }
+
+    private function applyAddressEvidence(array &$profile, array $decoded, array $messages): void
+    {
+        $identity = is_array($profile['identity'] ?? null) ? $profile['identity'] : [];
+        $existingAddress = trim((string) ($identity['address']['value'] ?? ''));
+        if ($existingAddress !== '') return;
+
+        $address = '';
+        $sourceMessageIds = [];
+        $decodedProfile = is_array($decoded['profile'] ?? null) ? $decoded['profile'] : $decoded;
+        foreach ([
+            $decodedProfile['delivery']['address'] ?? null,
+            $decodedProfile['shipping']['address'] ?? null,
+            $decodedProfile['address'] ?? null,
+        ] as $candidate) {
+            $candidateValue = is_array($candidate) ? ($candidate['value'] ?? '') : $candidate;
+            if (trim((string) $candidateValue) !== '') { $address = trim((string) $candidateValue); break; }
+        }
+
+        if ($address === '') {
+            $decodedProfileAnalysis = is_array($decoded['profile'] ?? null) && is_array($decoded['profile']['analysis'] ?? null)
+                ? $decoded['profile']['analysis']
+                : [];
+            $notices = array_merge((array) ($decoded['notices'] ?? []), (array) ($decodedProfileAnalysis['notices'] ?? []));
+            foreach ($notices as $notice) {
+                if (preg_match('/\b(?:delivery|shipping|billing)\s+address\s*(?:is|:|-)?\s*(.+)$/iu', trim((string) $notice), $matches) === 1) {
+                    $address = trim($matches[1]);
+                    break;
+                }
+            }
+        }
+
+        if ($address === '') {
+            foreach ($messages as $message) {
+                $text = trim((string) ($message['text'] ?? ''));
+                if (preg_match('/\b(?:delivery|shipping|billing)?\s*address\s*(?:is|:|-)+\s*(.+)$/iu', $text, $matches) === 1 || preg_match('/\bdeliver(?:y)?\s+(?:the\s+order|it)\s+to\s+(.+)$/iu', $text, $matches) === 1) {
+                    $address = trim($matches[1]);
+                    $sourceMessageIds[] = (string) ($message['id'] ?? '');
+                    break;
+                }
+            }
+        }
+
+        if ($address === '') return;
+        $identity['address'] = ['value' => $address, 'confidence' => 95, 'sourceMessageIds' => array_values(array_filter(array_unique($sourceMessageIds)))];
+        $profile['identity'] = $identity;
+    }
+
+    private function resolveVerifiedProduct(array &$profile): void
+    {
+        $interest = is_array($profile['interest'][0] ?? null) ? $profile['interest'][0] : [];
+        $productName = trim((string) ($interest['productName'] ?? $interest['value'] ?? ''));
+        $productId = trim((string) ($interest['productId'] ?? ''));
+        if ($productName === '' && $productId === '') return;
+
+        $product = null;
+        if ($productId !== '') {
+            $product = $this->database->fetchOne('SELECT id, name FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1', [':id' => $productId]);
+        }
+        if ($product === null && $productName !== '') {
+            $product = $this->database->fetchOne('SELECT id, name FROM products WHERE name = :name AND deleted_at IS NULL LIMIT 1', [':name' => $productName]);
+        }
+        if ($product === null) return;
+
+        $interest['productId'] = (string) $product['id'];
+        $interest['productName'] = (string) $product['name'];
+        if (!is_array($profile['interest'] ?? null)) $profile['interest'] = [];
+        $profile['interest'][0] = $interest;
     }
 
     private function saveAnalysis(array $lead, string $runId, array $profile, string $messageId): void
@@ -222,6 +352,7 @@ final class LeadApi extends BaseService
         if ($customer === null) $customer = $this->masterData->createCustomer(['name' => $name, 'phone' => $phone, 'address' => $address]);
         $rate = (float) $product['sale_price']; $subtotal = $rate * $quantity;
         $order = $this->operations->createOrder(['id' => 'lead-order-' . $lead['id'], 'customerId' => $customer['id'], 'status' => 'On Hold', 'items' => [['productId' => $product['id'], 'productName' => $product['name'], 'rate' => $rate, 'quantity' => $quantity, 'amount' => $subtotal]], 'subtotal' => $subtotal, 'discount' => 0, 'shipping' => (float) ($profile['delivery']['shipping'] ?? 0), 'total' => $subtotal + (float) ($profile['delivery']['shipping'] ?? 0), 'paidAmount' => 0, 'notes' => 'Created from confirmed lead conversation.', 'sourceAd' => (string) ($profile['attribution']['adId'] ?? $profile['attribution']['adName'] ?? ''), 'history' => ['created' => $this->database->nowUtc()]]);
+        $this->postCreateEffects->schedule($order);
         $profile['order'] = ['id' => $order['id'] ?? null, 'orderNumber' => $order['orderNumber'] ?? null, 'customerId' => $customer['id'], 'createdAt' => gmdate('c')];
         $this->database->execute('UPDATE lead_profiles SET status = \'converted\', stage = \'converted\', profile_json = :profile, updated_at = :updated WHERE id = :id', [':profile' => $this->jsonEncode($profile), ':updated' => $this->database->nowUtc(), ':id' => $lead['id']]);
         $this->saveEvent((string) $lead['id'], 'order_created', ['orderId' => $order['id'] ?? null, 'orderNumber' => $order['orderNumber'] ?? null, 'customerId' => $customer['id']]);
@@ -231,7 +362,7 @@ final class LeadApi extends BaseService
     {
         $name = trim((string) ($call['name'] ?? ''));
         $arguments = is_array($call['arguments'] ?? null) ? $call['arguments'] : [];
-        if ($name === 'search_products') return ['tool' => $name, 'results' => $this->searchProducts((string) ($arguments['query'] ?? ''), (int) ($arguments['limit'] ?? 8))];
+        if ($name === 'search_products') return ['tool' => $name, 'productNames' => $this->searchProducts((string) ($arguments['query'] ?? ''), (int) ($arguments['limit'] ?? 50))];
         if ($name === 'find_customer') return ['tool' => $name, 'results' => $this->findCustomers((string) ($arguments['phone'] ?? ''), (string) ($arguments['name'] ?? ''))];
         if ($name === 'find_ads') return ['tool' => $name, 'results' => $this->searchAds((string) ($arguments['query'] ?? ''), (int) ($arguments['limit'] ?? 8))];
         if ($name === 'get_lead_context') return ['tool' => $name, 'result' => $this->jsonDecodeAssoc($lead['profile_json'] ?? [])];
@@ -240,12 +371,12 @@ final class LeadApi extends BaseService
 
     private function searchProducts(string $query, int $limit): array
     {
-        $query = trim($query); $limit = max(1, min(12, $limit)); if ($query === '') return [];
+        $query = trim($query); $limit = max(1, min(100, $limit)); if ($query === '') return [];
         $terms = array_values(array_filter(preg_split('/\s+/u', $query) ?: []));
         $where = ['deleted_at IS NULL']; $bindings = [];
         foreach ($terms as $index => $term) { $key = ':product_term_' . $index; $where[] = 'name LIKE ' . $key; $bindings[$key] = '%' . $term . '%'; }
-        $rows = $this->database->fetchAll('SELECT id, name, category, sale_price, stock, image FROM products WHERE ' . implode(' AND ', $where) . ' ORDER BY created_at DESC LIMIT ' . $limit, $bindings);
-        return array_map(static fn(array $row): array => ['id' => $row['id'], 'name' => $row['name'], 'category' => $row['category'], 'salePrice' => (float) $row['sale_price'], 'stock' => (float) $row['stock'], 'image' => $row['image'] ?? ''], $rows);
+        $rows = $this->database->fetchAll('SELECT DISTINCT name FROM products WHERE ' . implode(' AND ', $where) . ' ORDER BY name ASC LIMIT ' . $limit, $bindings);
+        return array_values(array_filter(array_map(static fn(array $row): string => trim((string) ($row['name'] ?? '')), $rows)));
     }
 
     private function findCustomers(string $phone, string $name): array
@@ -266,13 +397,13 @@ final class LeadApi extends BaseService
 
     private function analysisSystemPrompt(array $model): string
     {
-        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, customer order counts, or order confirmations. Only state a customer's order history when it comes from a verified exact customer match, preferably an exact phone match returned by find_customer; never infer identity from a similar name alone. When product/customer/ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence. An order is confirmed only by an explicit customer confirmation.";
+        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, customer order counts, or order confirmations. Only state a customer's order history when it comes from a verified exact customer match, preferably an exact phone match returned by find_customer; never infer identity from a similar name alone. When product data is needed, use search_products and inspect its compact productNames list; set interest[0].productName to the exact matching catalog name. Do not invent a product ID; the server will verify it. When customer or ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Treat every inbound and outbound message as evidence for order confirmation. If either direction explicitly says the order is confirmed, the order has been confirmed, the order is placed/approved, or the customer explicitly confirms the order, set orderConfirmation.status to confirmed and include the exact evidence message IDs. Do not mark it confirmed for questions, requests to confirm, assumptions, or phrases such as not confirmed/cannot confirm. If a notice says the customer provided a delivery address, also copy that exact address into identity.address.value with sourceMessageIds. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence.";
     }
 
     private function analysisUserPrompt(array $lead, array $messages): string
     {
-        $compact = ['leadId' => $lead['id'], 'currentProfile' => $this->jsonDecodeAssoc($lead['profile_json'] ?? []), 'attributionSignals' => array_values(array_filter(array_map(static fn(array $message): array => is_array($message['rawPayload'] ?? null) ? ($message['rawPayload']['message']['referral'] ?? $message['rawPayload']['referral'] ?? []) : [], $messages))), 'messages' => array_map(static fn(array $message): array => ['id' => $message['id'], 'direction' => $message['direction'], 'type' => $message['type'], 'text' => $message['text'], 'messageAt' => $message['messageAt']], array_slice($messages, -30))];
-        return 'Analyze this lead and update the profile. Ask a database tool for products or customers only when necessary. Do not repeat the catalog in the prompt.\n' . ($this->jsonEncode($compact) ?? '{}');
+        $compact = ['leadId' => $lead['id'], 'latestMessageId' => $messages[count($messages) - 1]['id'], 'currentProfile' => $this->jsonDecodeAssoc($lead['profile_json'] ?? []), 'attributionSignals' => array_values(array_filter(array_map(static fn(array $message): array => is_array($message['rawPayload'] ?? null) ? ($message['rawPayload']['message']['referral'] ?? $message['rawPayload']['referral'] ?? []) : [], $messages)))];
+        return 'Analyze this lead and update the profile using the conversation history. Ask a database tool only when necessary. Return the compact final profile JSON.\n' . ($this->jsonEncode($compact) ?? '{}');
     }
 
     private function prepareMediaInput(array $message): array
@@ -343,9 +474,9 @@ final class LeadApi extends BaseService
         return array_map(fn(array $row): array => ['id' => (string) $row['id'], 'direction' => (string) $row['direction'], 'type' => (string) $row['message_type'], 'text' => trim((string) ($row['message_text'] ?? '')), 'mediaUrl' => (string) ($row['attachment_url'] ?? $row['media_url'] ?? ''), 'mimeType' => (string) ($row['media_mime_type'] ?? ''), 'rawPayload' => $this->jsonDecodeAssoc($row['payload_json'] ?? []), 'messageAt' => (string) $row['message_at']], $rows);
     }
 
-    private function latestMessageId(array $lead): string
+    private function latestMessageId(array $messages): string
     {
-        $messages = $this->conversationMessages($lead); return $messages === [] ? '' : (string) $messages[count($messages) - 1]['id'];
+        return $messages === [] ? '' : (string) $messages[count($messages) - 1]['id'];
     }
 
     private function resolveLead(array $params): ?array
@@ -417,7 +548,7 @@ final class LeadApi extends BaseService
             $filtered[] = $row;
         }
         if ($id !== '' && !empty($preferred['id'])) array_unshift($filtered, $preferred);
-        return $filtered === [] ? [$preferred] : $filtered;
+        return $filtered === [] ? [$preferred] : array_slice($filtered, 0, 2);
     }
 
     private function hasNextModelCandidate(array $models, array $current): bool
@@ -436,7 +567,7 @@ final class LeadApi extends BaseService
     private function isRateLimitedFailure(\Throwable $exception): bool
     {
         $message = strtolower($exception->getMessage());
-        return str_contains($message, 'http 429') || str_contains($message, 'http 4') || str_contains($message, '429') || str_contains($message, 'http 429:') || str_contains($message, 'rate limit') || str_contains($message, 'quota') || str_contains($message, 'HTTP 429');
+        return str_contains($message, '429') || str_contains($message, 'rate limit') || str_contains($message, 'quota') || str_contains($message, 'too many requests');
     }
 
     private function saveEvent(string $leadId, string $type, array $payload): void { $this->database->execute('INSERT INTO lead_events (lead_id, event_type, payload_json, created_at) VALUES (:lead, :type, :payload, :created)', [':lead' => $leadId, ':type' => $type, ':payload' => $this->jsonEncode($payload), ':created' => $this->database->nowUtc()]); }

@@ -96,7 +96,7 @@ const OrderDetails: React.FC = () => {
   const order = useMemo(() => (
     storedOrder && liveSurvey ? { ...storedOrder, ...liveSurvey } : storedOrder
   ), [storedOrder, liveSurvey]);
-  const { data: customer } = useCustomer(order ? order.customerId : undefined);
+  const { data: customer, refetch: refetchCustomer } = useCustomer(order ? order.customerId : undefined);
   const { data: createdByUser } = useUser(order?.createdBy);
   const orderItemProductIds = useMemo(
     () => Array.from(new Set((order?.items || []).map((item) => String(item?.productId || '').trim()).filter(Boolean))),
@@ -214,27 +214,19 @@ const OrderDetails: React.FC = () => {
     ?? (storedFraudResult ? (customer?.fraudCheckPercentage ?? storedFraudResult.summary.successRatio) : null);
 
   React.useEffect(() => {
-    if (!isBusinessGrowthEnabled || !order?.customerId) return;
+    if (!order?.customerId) return;
     const orderCreatedAt = order.createdAt ? new Date(order.createdAt).getTime() : 0;
     const checkedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
     if (checkedAt >= orderCreatedAt && checkedAt > 0) return;
 
     let attempts = 0;
-    let frontendTriggered = false;
     const timer = window.setInterval(() => {
       attempts += 1;
-      queryClient.invalidateQueries({ queryKey: ['customer', order.customerId] });
-
-      // Fallback: if backend hasn't started the fraud check after ~9 seconds, trigger from frontend
-      if (attempts >= 3 && !frontendTriggered && !customer?.fraudCheckedAt && currentCustomerPhone && !courierHistoryMutation.isPending) {
-        frontendTriggered = true;
-        courierHistoryMutation.mutate({ phone: currentCustomerPhone, customerId: order.customerId });
-      }
-
-      if (attempts >= 10) window.clearInterval(timer);
-    }, 3000);
+      void refetchCustomer();
+      if (attempts >= 30) window.clearInterval(timer);
+    }, 2000);
     return () => window.clearInterval(timer);
-  }, [isBusinessGrowthEnabled, order?.customerId, order?.createdAt, customer?.fraudCheckedAt, queryClient, currentCustomerPhone, courierHistoryMutation]);
+  }, [order?.customerId, order?.createdAt, customer?.fraudCheckedAt, refetchCustomer]);
 
   // Auto-trigger partial delivery confirmation tab in the completion modal
   React.useEffect(() => {
@@ -2007,7 +1999,7 @@ const OrderDetails: React.FC = () => {
         </div>
       )}
 
-      {isBusinessGrowthEnabled && customerTrust ? (
+      {hasCapability('fraud_checker') && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
           <p className="text-sm font-black">{customerTrust.label}{activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>
           <p className="text-sm font-bold">{customerTrust.message}</p>
