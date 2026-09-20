@@ -121,7 +121,6 @@ final class LeadApi extends BaseService
         if ($this->analysisAlreadyRunning($lead, $messageId)) return $lead;
 
         foreach ($candidateModels as $model) {
-            if ($this->modelRateLimitCooldownActive($model)) continue;
             $runId = $this->uuid4();
             $this->database->execute('INSERT INTO lead_analysis_runs (id, lead_id, trigger_message_id, model_id, status, created_at) VALUES (:id, :lead, :message, :model, \'running\', :created)', [':id' => $runId, ':lead' => $lead['id'], ':message' => $messageId, ':model' => $model['id'], ':created' => $this->database->nowUtc()]);
             try {
@@ -566,22 +565,7 @@ final class LeadApi extends BaseService
 
     private function candidateModelRows(array $preferred): array
     {
-        $rows = [];
-        $id = (string) ($preferred['id'] ?? '');
-        if ($this->tableExists('multimodal_llm_configurations')) {
-            $rows = $this->database->fetchAll('SELECT * FROM multimodal_llm_configurations WHERE enabled = 1 ORDER BY updated_at DESC, created_at DESC');
-        }
-        if ($rows === []) {
-            return [$preferred];
-        }
-        $filtered = [];
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            if ($id !== '' && (string) ($row['id'] ?? '') === $id) continue;
-            $filtered[] = $row;
-        }
-        if ($id !== '' && !empty($preferred['id'])) array_unshift($filtered, $preferred);
-        return $filtered === [] ? [$preferred] : array_slice($filtered, 0, 2);
+        return [$preferred];
     }
 
     private function hasNextModelCandidate(array $models, array $current): bool
