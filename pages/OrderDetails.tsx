@@ -315,6 +315,7 @@ const OrderDetails: React.FC = () => {
       items.push(
         { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
         { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
+        { label: 'Delivery pending', historyKey: 'pendingDelivered', description: 'The courier has reported delivery; confirmation is required.' },
         { label: 'Partially Delivered', historyKey: 'completed', description: 'Some items were delivered; the rest need follow-up.' },
         { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
       );
@@ -1937,11 +1938,6 @@ const OrderDetails: React.FC = () => {
                     {(order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openPartialDeliveryCompletion(); setIsActionOpen(false); }}>
                         {ICONS.Check} Confirm Partial Delivery
-                      </button>
-                    )}
-                    {order.status === OrderStatus.PENDING_DELIVERED && order.deliveryActionRequired && (
-                      <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2 font-bold text-amber-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
-                        {ICONS.Check} Confirm Delivery
                       </button>
                     )}
                     {canAssignExchangeCourier && (
