@@ -201,12 +201,14 @@ final class MessengerApi extends BaseService
         $count = $this->database->fetchOne('SELECT COUNT(*) AS total FROM messenger_contacts ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
         $rows = $this->database->fetchAll(
-                        "SELECT messenger_contacts.*,
-                                        (SELECT COUNT(*) FROM messenger_messages
-                                         WHERE messenger_messages.contact_id = messenger_contacts.id
-                                             AND messenger_messages.direction = 'inbound'
-                                               AND messenger_messages.status <> 'read') AS actual_unread_count
-                         FROM messenger_contacts " . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+                        "SELECT messenger_contacts.*, COALESCE(unread_counts.actual_unread_count, 0) AS actual_unread_count
+                         FROM messenger_contacts
+                         LEFT JOIN (
+                             SELECT contact_id, COUNT(*) AS actual_unread_count
+                             FROM messenger_messages
+                             WHERE direction = 'inbound' AND status <> 'read'
+                             GROUP BY contact_id
+                         ) AS unread_counts ON unread_counts.contact_id = messenger_contacts.id " . $whereSql . ' ORDER BY last_message_at DESC, updated_at DESC, id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
             $bindings
         );
         $settings = $this->settingsRow();
