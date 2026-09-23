@@ -853,6 +853,8 @@ const OrderDetails: React.FC = () => {
   const orderCreatedAt = order?.createdAt ? new Date(order.createdAt).getTime() : 0;
   const fraudCheckedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
   const isAutomaticFraudCheckPending = Boolean(
+    systemDefaults?.automaticFraudCheckOnOrderCreation
+    &&
     canUseFraudChecker
     && isFraudCheckerConfigured
     && isValidFraudPhone

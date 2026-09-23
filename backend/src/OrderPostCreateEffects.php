@@ -71,7 +71,7 @@ final class OrderPostCreateEffects
 
         $php = PHP_BINARY ?: 'php';
         if (DIRECTORY_SEPARATOR === '\\') {
-            $command = 'cmd /c start "" /B ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > NUL 2>&1';
+            $command = 'start "" /B ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > NUL 2>&1';
         } else {
             $command = 'nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > /dev/null 2>&1 &';
         }
