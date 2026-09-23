@@ -46,7 +46,7 @@ final class OrderPostCreateEffects
         }
 
         $customerId = trim((string) ($order['customerId'] ?? ''));
-        if ($customerId === '') {
+        if ($customerId === '' || !$this->isAutomaticFraudCheckEnabled()) {
             return;
         }
         $this->fraudCustomerIds[$customerId] = true;
@@ -83,6 +83,23 @@ final class OrderPostCreateEffects
             }
         } elseif (function_exists('shell_exec')) {
             @shell_exec($command);
+        }
+    }
+
+    private function isAutomaticFraudCheckEnabled(): bool
+    {
+        if ($this->database === null) {
+            return false;
+        }
+
+        try {
+            $defaults = $this->database->fetchOne(
+                'SELECT automatic_fraud_check_on_order_creation FROM system_defaults LIMIT 1'
+            );
+            return (bool) ($defaults['automatic_fraud_check_on_order_creation'] ?? false);
+        } catch (\Throwable $exception) {
+            error_log('Could not read automatic fraud check setting: ' . $exception->getMessage());
+            return false;
         }
     }
 }

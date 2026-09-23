@@ -215,7 +215,6 @@ const OrderDetails: React.FC = () => {
 
   React.useEffect(() => {
     if (!order?.customerId) return;
-    const orderCreatedAt = order.createdAt ? new Date(order.createdAt).getTime() : 0;
     const checkedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
     if (checkedAt >= orderCreatedAt && checkedAt > 0) return;
 
@@ -851,6 +850,15 @@ const OrderDetails: React.FC = () => {
   const canUsePathao = hasSubCapability('pathao_courier');
   const isValidFraudPhone = /^0\d{10}$/.test(normalizedOrderPhone);
   const canRunFraudChecker = canUseFraudChecker && isFraudCheckerConfigured && isValidFraudPhone;
+  const orderCreatedAt = order?.createdAt ? new Date(order.createdAt).getTime() : 0;
+  const fraudCheckedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
+  const isAutomaticFraudCheckPending = Boolean(
+    canUseFraudChecker
+    && isFraudCheckerConfigured
+    && isValidFraudPhone
+    && orderCreatedAt > 0
+    && fraudCheckedAt < orderCreatedAt
+  );
   const canMoveCurrentOrderToProcessing = order ? canAccessRecord(
     order.createdBy,
     'orders.moveOnHoldToProcessingOwn',
@@ -1768,6 +1776,9 @@ const OrderDetails: React.FC = () => {
     || canAssignExchangeCourier;
 
   const customerTrust = (() => {
+    if (isAutomaticFraudCheckPending) {
+      return { label: 'Trust scan in motion', message: 'Checking if the customer is fraud...', className: 'bg-sky-100 text-sky-700 border-sky-200' };
+    }
     if (fraudPercentage === null) return null;
 
     const totalParcels = activeFraudResult?.summary?.totalParcel ?? 0;
@@ -1997,7 +2008,7 @@ const OrderDetails: React.FC = () => {
 
       {hasCapability('fraud_checker') && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
-          <p className="text-sm font-black">{customerTrust.label}{activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>
+          <p className="text-sm font-black">{customerTrust.label}{!isAutomaticFraudCheckPending && activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>
           <p className="text-sm font-bold">{customerTrust.message}</p>
         </div>
       ) : null}
