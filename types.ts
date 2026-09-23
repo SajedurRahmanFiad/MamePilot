@@ -684,7 +684,7 @@ export interface VoiceSurveyIntegrationSettings {
 export interface CourierSettings {
   automaticallyDeductShippingCosts: boolean;
   automaticallyMarkPaidAfterDelivery: boolean;
-  steadfast: { baseUrl: string; apiKey: string; secretKey: string; invoice: string; defaultAccountId: string; defaultExpenseCategoryId: string; defaultIncomeCategoryId: string; defaultPaymentMethod: string };
+  steadfast: { baseUrl: string; apiKey: string; secretKey: string; webhookAuthToken: string; invoice: string; defaultAccountId: string; defaultExpenseCategoryId: string; defaultIncomeCategoryId: string; defaultPaymentMethod: string };
   carryBee: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; storeId: string; webhookSignature: string; webhookHeader: string; webhookIntegrationHeader: string; webhookIntegrationValue: string; defaultAccountId: string; defaultExpenseCategoryId: string; defaultIncomeCategoryId: string; defaultPaymentMethod: string };
   paperfly: {
     baseUrl: string;

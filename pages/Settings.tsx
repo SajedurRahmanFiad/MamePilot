@@ -177,7 +177,7 @@ const SettingsPage: React.FC = () => {
   const [courierSettings, setCourierSettings] = useState<CourierSettings>({
     automaticallyDeductShippingCosts: false,
     automaticallyMarkPaidAfterDelivery: false,
-    steadfast: { baseUrl: '', apiKey: '', secretKey: '', invoice: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
+    steadfast: { baseUrl: '', apiKey: '', secretKey: '', webhookAuthToken: '', invoice: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     carryBee: { baseUrl: '', clientId: '', clientSecret: '', clientContext: '', storeId: '', webhookSignature: '', webhookHeader: 'X-Carrybee-Webhook-Signature', webhookIntegrationHeader: 'X-CB-Webhook-Integration-Header', webhookIntegrationValue: '40489fe0-9386-4fc9-8e92-2b2fcb9d451c', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     paperfly: { baseUrl: '', username: '', password: '', paperflyKey: '', defaultShopName: '', maxWeightKg: 0.3, webhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
     pathao: { baseUrl: '', clientId: '', clientSecret: '', username: '', password: '', storeId: '', defaultQuantity: 1, defaultWeight: 1.0, defaultDeliveryType: 48, defaultItemType: 2, accessToken: '', refreshToken: '', tokenExpiresAt: '', webhookHeader: 'X-MamePilot-Webhook-Secret', webhookSecret: '', merchantWebhookSecret: '', defaultAccountId: '', defaultExpenseCategoryId: '', defaultIncomeCategoryId: '', defaultPaymentMethod: '' },
@@ -2555,7 +2555,7 @@ const SettingsPage: React.FC = () => {
                   <span className="">Steadfast</span> Secrets
                 </h3>
                 <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                  Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('steadfast')}</code>. Steadfast webhooks are verified with the API key (Bearer or API-key header). A lightweight server check confirms open consignments if a webhook is missed.
+                  Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('steadfast')}</code>. Configure the same auth token in Steadfast and here. Requests must include the bearer token and an HMAC-SHA256 signature of the raw body. A lightweight server check confirms open consignments if a webhook is missed.
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -2597,6 +2597,16 @@ const SettingsPage: React.FC = () => {
                         value={courierSettings.steadfast.secretKey}
                         onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, secretKey: e.target.value}})}
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Webhook Auth Token</label>
+                      <input
+                        type="password"
+                        value={courierSettings.steadfast.webhookAuthToken}
+                        onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, webhookAuthToken: e.target.value}})}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
+                        placeholder="Token used by Steadfast for Authorization and HMAC"
                       />
                     </div>
                   </div>

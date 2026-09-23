@@ -2409,7 +2409,13 @@ final class CourierApi extends BaseService
         }
 
         $settings = $this->database->fetchOne('SELECT * FROM courier_settings LIMIT 1') ?? [];
-        if (!$trustedReplay) $this->verifyWebhookRequest($provider, $headers, $settings);
+        $idempotencyKey = $provider === 'steadfast'
+            ? trim($this->webhookHeader($headers, 'Idempotency-Key'))
+            : '';
+        if (strlen($idempotencyKey) > 255) {
+            throw new RuntimeException('Invalid courier webhook idempotency key.');
+        }
+        if (!$trustedReplay) $this->verifyWebhookRequest($provider, $rawBody, $headers, $settings);
 
         try {
             $payload = json_decode($rawBody, true, 64, JSON_THROW_ON_ERROR);
@@ -2421,12 +2427,15 @@ final class CourierApi extends BaseService
         }
 
         $details = $this->webhookDetails($provider, $payload);
-        $eventKey = hash('sha256', $provider . '|' . $rawBody);
+        $eventKey = $idempotencyKey !== ''
+            ? hash('sha256', $provider . '|idempotency|' . $idempotencyKey)
+            : hash('sha256', $provider . '|' . $rawBody);
         $now = $this->database->nowUtc();
 
         return $this->database->transaction(function () use (
             $provider,
             $rawBody,
+            $idempotencyKey,
             $details,
             $eventKey,
             $now
@@ -2437,16 +2446,17 @@ final class CourierApi extends BaseService
                 $candidateId = $this->uuid4();
                 $this->database->execute(
                     "INSERT INTO courier_webhook_events (
-                        id, provider, event_key, event_name, merchant_reference, consignment_id,
+                        id, provider, event_key, idempotency_key, event_name, merchant_reference, consignment_id,
                         event_at, payload, processing_status, received_at
                      ) VALUES (
-                        :id, :provider, :event_key, :event_name, :merchant_reference, :consignment_id,
+                        :id, :provider, :event_key, :idempotency_key, :event_name, :merchant_reference, :consignment_id,
                         :event_at, :payload, 'received', :received_at
                      ) ON DUPLICATE KEY UPDATE event_key = VALUES(event_key)",
                     [
                         ':id' => $candidateId,
                         ':provider' => $provider,
                         ':event_key' => $eventKey,
+                        ':idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
                         ':event_name' => $details['eventName'],
                         ':merchant_reference' => $details['merchantReference'] !== '' ? $details['merchantReference'] : null,
                         ':consignment_id' => $details['consignmentId'] !== '' ? $details['consignmentId'] : null,
@@ -2581,7 +2591,7 @@ final class CourierApi extends BaseService
     }
 
     /** @param array<string, string> $headers @param array<string, mixed> $settings */
-    private function verifyWebhookRequest(string $provider, array $headers, array $settings): void
+    private function verifyWebhookRequest(string $provider, string $rawBody, array $headers, array $settings): void
     {
         $authorization = $this->webhookHeader($headers, 'Authorization');
         if ($provider === 'carrybee') {
@@ -2591,26 +2601,19 @@ final class CourierApi extends BaseService
             $signatureHeader = trim((string) ($settings['carrybee_webhook_header'] ?? '')) ?: 'X-Carrybee-Webhook-Signature';
             $provided = $this->webhookHeader($headers, $signatureHeader);
         } elseif ($provider === 'steadfast') {
-            $apiKey = trim((string) ($settings['steadfast_api_key'] ?? ''));
-            $secretKey = trim((string) ($settings['steadfast_secret_key'] ?? ''));
-            if ($apiKey === '' && $secretKey === '') {
-                return;
+            $authToken = trim((string) ($settings['steadfast_webhook_auth_token'] ?? ''));
+            $providedToken = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
+            $providedSignature = strtolower(trim($this->webhookHeader($headers, 'X-Signature')));
+            $expectedSignature = $authToken === '' ? '' : hash_hmac('sha256', $rawBody, $authToken);
+            if (
+                $authToken === ''
+                || $providedToken === ''
+                || !hash_equals($authToken, trim($providedToken))
+                || $providedSignature === ''
+                || !hash_equals($expectedSignature, $providedSignature)
+            ) {
+                throw new RuntimeException('Invalid courier webhook signature.');
             }
-            $expected = '';
-            $provided = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
-            if ($provided !== '') {
-                if ($apiKey !== '' && hash_equals($apiKey, trim($provided))) return;
-                if ($secretKey !== '' && hash_equals($secretKey, trim($provided))) return;
-            }
-            // Steadfast installations/proxies do not all preserve the
-            // Authorization header. Compare API-key aliases to the API key and
-            // Secret-Key to the separately configured secret.
-            foreach (['Api-Key', 'X-Api-Key', 'X-Steadfast-Api-Key'] as $headerName) {
-                $candidate = $this->webhookHeader($headers, $headerName);
-                if ($apiKey !== '' && $candidate !== '' && hash_equals($apiKey, trim($candidate))) return;
-            }
-            $candidateSecret = $this->webhookHeader($headers, 'Secret-Key');
-            if ($secretKey !== '' && $candidateSecret !== '' && hash_equals($secretKey, trim($candidateSecret))) return;
         } elseif ($provider === 'paperfly') {
             $expected = trim((string) ($settings['paperfly_webhook_secret'] ?? ''));
             $provided = '';

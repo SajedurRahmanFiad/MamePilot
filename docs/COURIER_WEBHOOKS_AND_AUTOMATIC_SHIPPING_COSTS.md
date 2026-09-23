@@ -15,7 +15,7 @@ Open **Settings > Courier**. Each available courier shows its exact webhook URL.
 | CarryBee | `?provider=carrybee` | Copy CarryBee's webhook signature into **Webhook signature**. |
 | Paperfly | `?provider=paperfly` | Use the same secret token in Paperfly and **Webhook secret token**. |
 | Pathao | `?provider=pathao` | Use the same custom header name and value in Pathao and MamePilot. |
-| Steadfast | `?provider=steadfast` | Steadfast sends the existing API key as a Bearer token; no second secret is needed. |
+| Steadfast | `?provider=steadfast` | Store the Steadfast auth token in **Webhook Auth Token**. Steadfast must send it as `Authorization: Bearer ...` and sign the raw body in `X-Signature` with HMAC-SHA256. |
 
 The URL must be public, use HTTPS, and accept a `POST` request. A successful notification receives HTTP 200. Requests with a missing or incorrect verification value are rejected.
 

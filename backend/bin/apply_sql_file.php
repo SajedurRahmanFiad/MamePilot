@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Config;
 use App\Database;
+use App\SchemaManager;
 
 if ($argc < 2) {
     fwrite(STDERR, "Usage: php apply_sql_file.php path/to/file.sql\n");
@@ -20,28 +21,11 @@ if (!is_file($path)) {
 
 $config = Config::load(dirname(__DIR__, 2));
 $db = new Database($config);
-$pdo = $db->connect();
-
-$sql = file_get_contents($path);
-if ($sql === false) {
-    fwrite(STDERR, "Failed to read SQL file: {$path}\n");
-    exit(2);
+try {
+    (new SchemaManager($config, $db))->runSqlFile($path, false);
+    echo "Applied {$path}\n";
+    exit(0);
+} catch (Throwable $e) {
+    fwrite(STDERR, "Failed to apply SQL file: " . $e->getMessage() . "\n");
+    exit(1);
 }
-
-$statements = preg_split('/;\s*(?:\r?\n|$)/', $sql) ?: [];
-$executed = 0;
-
-foreach ($statements as $statement) {
-    $trim = trim($statement);
-    if ($trim === '') continue;
-    try {
-        $pdo->exec($trim);
-        $executed++;
-    } catch (Throwable $e) {
-        fwrite(STDERR, "Failed to execute statement: " . $e->getMessage() . "\nStatement: " . substr($trim, 0, 200) . "\n");
-        exit(1);
-    }
-}
-
-echo "Executed {$executed} statements from {$path}\n";
-exit(0);

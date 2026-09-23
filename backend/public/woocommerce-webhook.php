@@ -34,13 +34,21 @@ try {
         isset($_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE']) ? (string) $_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE'] : null,
         isset($_SERVER['HTTP_X_WC_WEBHOOK_TOPIC']) ? (string) $_SERVER['HTTP_X_WC_WEBHOOK_TOPIC'] : null,
         static function (array $response) use (&$responseSent): void {
-            if (!function_exists('fastcgi_finish_request')) {
-                return;
-            }
+            ignore_user_abort(true);
             http_response_code(200);
+            header('Content-Length: ' . strlen(json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
+            header('Connection: close');
             echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (function_exists('ob_get_level')) {
+                while (ob_get_level() > 0) {
+                    ob_end_flush();
+                }
+            }
+            flush();
             $responseSent = true;
-            fastcgi_finish_request();
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
         }
     );
 
