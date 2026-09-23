@@ -27,6 +27,14 @@ try {
     $operations = new OperationsApi($database, $auth, $config);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations);
     $rawBody = (string) file_get_contents('php://input');
+    if (
+        preg_match('/^webhook_id=\d+$/', trim($rawBody)) === 1
+        && !isset($_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE'])
+    ) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'message' => 'WooCommerce webhook verification received.']);
+        exit;
+    }
     $responseSent = false;
     $result = $woocommerce->handleWebhook(
         trim((string) ($_GET['store'] ?? '')),
