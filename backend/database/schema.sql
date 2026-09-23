@@ -294,6 +294,7 @@ CREATE TABLE IF NOT EXISTS courier_settings (
   steadfast_base_url VARCHAR(255) NULL,
   steadfast_api_key VARCHAR(500) NULL,
   steadfast_secret_key VARCHAR(500) NULL,
+  steadfast_webhook_auth_token VARCHAR(500) NULL,
   steadfast_invoice VARCHAR(100) NULL,
   carrybee_enabled TINYINT(1) NOT NULL DEFAULT 0,
   carrybee_base_url VARCHAR(255) NULL,

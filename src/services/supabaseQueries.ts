@@ -442,7 +442,7 @@ export async function fetchCourierSettings(): Promise<CourierSettings> { return 
 export async function updateCourierSettings(updates: {
   automaticallyDeductShippingCosts?: boolean;
   automaticallyMarkPaidAfterDelivery?: boolean;
-  steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string; invoice?: string };
+  steadfast?: { baseUrl?: string; apiKey?: string; secretKey?: string; webhookAuthToken?: string; invoice?: string };
   carryBee?: { baseUrl?: string; clientId?: string; clientSecret?: string; clientContext?: string; storeId?: string; webhookSignature?: string; webhookHeader?: string; webhookIntegrationHeader?: string; webhookIntegrationValue?: string };
   paperfly?: { baseUrl?: string; username?: string; password?: string; paperflyKey?: string; defaultShopName?: string; maxWeightKg?: number; webhookSecret?: string };
   pathao?: { baseUrl?: string; clientId?: string; clientSecret?: string; username?: string; password?: string; storeId?: string; defaultQuantity?: number; defaultWeight?: number; defaultDeliveryType?: number; defaultItemType?: number; accessToken?: string; refreshToken?: string; tokenExpiresAt?: string; webhookHeader?: string; webhookSecret?: string };

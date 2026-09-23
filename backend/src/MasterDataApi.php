@@ -4580,6 +4580,7 @@ final class MasterDataApi extends BaseService
             'automatically_deduct_shipping_costs' => 'TINYINT(1) NOT NULL DEFAULT 0',
             'automatically_record_sales_income' => 'TINYINT(1) NOT NULL DEFAULT 0',
             'automatically_mark_paid_after_delivery' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'steadfast_webhook_auth_token' => 'VARCHAR(500) NULL',
             'carrybee_webhook_signature' => 'VARCHAR(500) NULL',
             'carrybee_webhook_header' => 'VARCHAR(128) NULL',
             'carrybee_webhook_integration_header' => 'VARCHAR(128) NULL',
