@@ -2031,7 +2031,11 @@ const OrderDetails: React.FC = () => {
       {hasCapability('fraud_checker') && customerTrust ? (
         <div className={`flex flex-col gap-1 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${customerTrust.className}`}>
           <p className="text-sm font-black">{customerTrust.label}{!isAutomaticFraudCheckPending && activeFraudResult?.summary?.totalParcel ? ` · ${Math.round(fraudPercentage ?? 0)}% delivered` : ''}</p>
-          <p className="text-sm font-bold">{customerTrust.message}</p>
+          <p className="text-sm font-bold">
+            {isAutomaticFraudCheckPending || !activeFraudResult?.summary
+              ? customerTrust.message
+              : `Total ${activeFraudResult.summary.totalParcel} · Delivered ${activeFraudResult.summary.successParcel} · Cancelled ${activeFraudResult.summary.cancelledParcel}`}
+          </p>
         </div>
       ) : null}
 
