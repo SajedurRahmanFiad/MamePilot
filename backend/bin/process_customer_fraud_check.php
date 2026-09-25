@@ -8,6 +8,7 @@ use App\Auth;
 use App\Config;
 use App\CourierApi;
 use App\Database;
+use App\OperationsApi;
 
 $customerId = trim((string) ($argv[1] ?? ''));
 if ($customerId === '') {
@@ -18,7 +19,8 @@ if ($customerId === '') {
 $config = Config::load(dirname(__DIR__, 2));
 $database = new Database($config);
 $auth = new Auth($config, $database);
-$courier = new CourierApi($database, $auth, $config);
+$operations = new OperationsApi($database, $auth, $config);
+$courier = new CourierApi($database, $auth, $config, $operations);
 
 try {
     $result = $courier->processCustomerFraudCheck(['customerId' => $customerId]);

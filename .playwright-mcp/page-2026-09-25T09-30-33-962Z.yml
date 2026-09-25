@@ -1,0 +1,222 @@
+- generic [ref=e1]:
+  - generic [ref=e23]:
+    - complementary [ref=e24]:
+      - generic [ref=e25]:
+        - button [ref=e28] [cursor=pointer]:
+          - img "Sebate Sera" [ref=e29]
+        - navigation [ref=e30]:
+          - link [ref=e32] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=e42] [cursor=pointer]
+          - button [ref=e51] [cursor=pointer]
+          - button [ref=e60] [cursor=pointer]
+          - button [ref=e70] [cursor=pointer]
+          - button [ref=e78] [cursor=pointer]
+          - button [ref=e85] [cursor=pointer]
+          - button [ref=e95] [cursor=pointer]
+          - link [ref=e102] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=e109] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=e116] [cursor=pointer]
+        - generic [ref=e122]:
+          - link [ref=e125] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=e132] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=e140] [cursor=pointer]
+    - generic [ref=e145]:
+      - banner [ref=e146]:
+        - heading "New Order" [level=1] [ref=e675]
+        - generic [ref=e151]:
+          - link "Point of Sale" [ref=e152] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=e157] [cursor=pointer]
+          - button "Notifications" [ref=e162] [cursor=pointer]
+          - button [ref=e167] [cursor=pointer]:
+            - generic [ref=e168]:
+              - paragraph [ref=e169]: Fiad
+              - paragraph [ref=e170]: Developer
+            - img "Profile" [ref=e171]
+      - main [ref=e172]:
+        - generic [ref=e676]:
+          - generic [ref=e677]:
+            - heading "New Order" [level=2] [ref=e678]
+            - button "Cancel" [ref=e679] [cursor=pointer]
+          - generic [ref=e680]:
+            - generic [ref=e681]:
+              - generic [ref=e682]:
+                - generic [ref=e683]: Select Customer
+                - generic [ref=e684]:
+                  - button "Select Customer..." [ref=e685] [cursor=pointer]
+                  - generic [ref=e743]:
+                    - textbox "Search name or phone..." [active] [ref=e745]
+                    - generic [ref=e746]:
+                      - generic [ref=e747]:
+                        - button [ref=e748] [cursor=pointer]:
+                          - paragraph [ref=e749]: Rasel Khan
+                          - paragraph [ref=e750]: "01737773939"
+                        - button "Edit customer" [ref=e751] [cursor=pointer]
+                      - generic [ref=e755]:
+                        - button [ref=e756] [cursor=pointer]:
+                          - paragraph [ref=e757]: Imran
+                          - paragraph [ref=e758]: "01609234361"
+                        - button "Edit customer" [ref=e759] [cursor=pointer]
+                      - generic [ref=e763]:
+                        - button [ref=e764] [cursor=pointer]:
+                          - paragraph [ref=e765]: Sunny
+                          - paragraph [ref=e766]: "01626681758"
+                        - button "Edit customer" [ref=e767] [cursor=pointer]
+                      - generic [ref=e771]:
+                        - button [ref=e772] [cursor=pointer]:
+                          - paragraph [ref=e773]: এস কে সোহেল
+                          - paragraph [ref=e774]: "01710909433"
+                        - button "Edit customer" [ref=e775] [cursor=pointer]
+                      - generic [ref=e779]:
+                        - button [ref=e780] [cursor=pointer]:
+                          - paragraph [ref=e781]: Md. Arif Hossain
+                          - paragraph [ref=e782]: "01849831388"
+                        - button "Edit customer" [ref=e783] [cursor=pointer]
+                      - generic [ref=e787]:
+                        - button [ref=e788] [cursor=pointer]:
+                          - paragraph [ref=e789]: মোঃতৈয়ূব
+                          - paragraph [ref=e790]: "01770500559"
+                        - button "Edit customer" [ref=e791] [cursor=pointer]
+                      - generic [ref=e795]:
+                        - button [ref=e796] [cursor=pointer]:
+                          - paragraph [ref=e797]: মোঃ বিল্লাল হোসেন
+                          - paragraph [ref=e798]: "01607357569"
+                        - button "Edit customer" [ref=e799] [cursor=pointer]
+                      - generic [ref=e803]:
+                        - button [ref=e804] [cursor=pointer]:
+                          - paragraph [ref=e805]: Mohammad Towhidur Rahman Khan
+                          - paragraph [ref=e806]: "01717307254"
+                        - button "Edit customer" [ref=e807] [cursor=pointer]
+                      - generic [ref=e811]:
+                        - button [ref=e812] [cursor=pointer]:
+                          - paragraph [ref=e813]: Belal
+                          - paragraph [ref=e814]: "01726357574"
+                        - button "Edit customer" [ref=e815] [cursor=pointer]
+                      - generic [ref=e819]:
+                        - button [ref=e820] [cursor=pointer]:
+                          - paragraph [ref=e821]: Md kobirul
+                          - paragraph [ref=e822]: "01994856086"
+                        - button "Edit customer" [ref=e823] [cursor=pointer]
+                      - generic [ref=e827]:
+                        - button [ref=e828] [cursor=pointer]:
+                          - paragraph [ref=e829]: মোঃ সেরিকুল ইসলাম
+                          - paragraph [ref=e830]: "01706885818"
+                        - button "Edit customer" [ref=e831] [cursor=pointer]
+                      - generic [ref=e835]:
+                        - button [ref=e836] [cursor=pointer]:
+                          - paragraph [ref=e837]: Jamalprodhan
+                          - paragraph [ref=e838]: "01711101294"
+                        - button "Edit customer" [ref=e839] [cursor=pointer]
+                      - generic [ref=e843]:
+                        - button [ref=e844] [cursor=pointer]:
+                          - paragraph [ref=e845]: Asma Tarannum
+                          - paragraph [ref=e846]: "01315708333"
+                        - button "Edit customer" [ref=e847] [cursor=pointer]
+                      - generic [ref=e851]:
+                        - button [ref=e852] [cursor=pointer]:
+                          - paragraph [ref=e853]: জাকারুল
+                          - paragraph [ref=e854]: "01754995108"
+                        - button "Edit customer" [ref=e855] [cursor=pointer]
+                      - generic [ref=e859]:
+                        - button [ref=e860] [cursor=pointer]:
+                          - paragraph [ref=e861]: Israt Jahan
+                          - paragraph [ref=e862]: "01763898066"
+                        - button "Edit customer" [ref=e863] [cursor=pointer]
+                      - generic [ref=e867]:
+                        - button [ref=e868] [cursor=pointer]:
+                          - paragraph [ref=e869]: Moniruzzaman
+                          - paragraph [ref=e870]: "01781839360"
+                        - button "Edit customer" [ref=e871] [cursor=pointer]
+                      - generic [ref=e875]:
+                        - button [ref=e876] [cursor=pointer]:
+                          - paragraph [ref=e877]: Kamal Uddin
+                          - paragraph [ref=e878]: "01820515429"
+                        - button "Edit customer" [ref=e879] [cursor=pointer]
+                      - generic [ref=e883]:
+                        - button [ref=e884] [cursor=pointer]:
+                          - paragraph [ref=e885]: Samsuddha
+                          - paragraph [ref=e886]: "01611152214"
+                        - button "Edit customer" [ref=e887] [cursor=pointer]
+                      - generic [ref=e891]:
+                        - button [ref=e892] [cursor=pointer]:
+                          - paragraph [ref=e893]: Samim
+                          - paragraph [ref=e894]: "01922877357"
+                        - button "Edit customer" [ref=e895] [cursor=pointer]
+                      - generic [ref=e899]:
+                        - button [ref=e900] [cursor=pointer]:
+                          - paragraph [ref=e901]: ইয়াছিন
+                          - paragraph [ref=e902]: "01402042252"
+                        - button "Edit customer" [ref=e903] [cursor=pointer]
+                    - button "+ Add New Customer" [ref=e907] [cursor=pointer]
+              - generic [ref=e690]:
+                - text: Order Date
+                - textbox [ref=e691] [cursor=pointer]: 2026-09-25
+              - generic [ref=e692]:
+                - text: Order Number
+                - textbox "Generating..." [ref=e693]: ORD-356
+            - generic [ref=e695]:
+              - text: Source Ad
+              - button "Not from an ad No ad attribution" [ref=e697] [cursor=pointer]:
+                - generic [ref=e698]:
+                  - generic [ref=e699]: Not from an ad
+                  - paragraph [ref=e700]: No ad attribution
+            - table [ref=e705]:
+              - rowgroup [ref=e706]:
+                - row [ref=e707]:
+                  - columnheader "Product Item" [ref=e708]
+                  - columnheader "Rate" [ref=e709]
+                  - columnheader "Qty" [ref=e710]
+                  - columnheader "Amount" [ref=e711]
+                  - columnheader [ref=e712]
+              - rowgroup
+            - button "Add an item" [ref=e714] [cursor=pointer]
+            - generic [ref=e716]:
+              - generic [ref=e717]:
+                - text: Order Notes / Terms
+                - textbox "Internal notes or special instructions for this order..." [ref=e718]
+              - generic [ref=e719]:
+                - generic [ref=e720]:
+                  - generic [ref=e721]: Subtotal
+                  - generic [ref=e722]: ৳ 0
+                - generic [ref=e723]:
+                  - generic [ref=e724]: Discount
+                  - generic [ref=e725]:
+                    - generic [ref=e726]: ৳
+                    - textbox [ref=e728]: "0"
+                - generic [ref=e729]:
+                  - generic [ref=e730]: Shipping
+                  - generic [ref=e731]:
+                    - generic [ref=e732]: ৳
+                    - textbox [ref=e734]: "0"
+                - generic [ref=e735]:
+                  - generic [ref=e736]: Total
+                  - generic [ref=e737]:
+                    - generic [ref=e738]: ৳
+                    - textbox "Order total" [ref=e740]
+                - button "Create Order" [ref=e741] [cursor=pointer]
+        - generic [ref=e465]:
+          - paragraph [ref=e466]: © 2026 Sebate Sera|Version 0.3.51|All rights reserved.
+          - paragraph [ref=e467]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=e468] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=e469]:
+        - generic [ref=e470]: Chat with Mame
+        - button "Open chat" [ref=e471] [cursor=pointer]:
+          - img "Mame AI" [ref=e472]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=e473]:
+    - generic [ref=e474]:
+      - heading [level=3] [ref=e476]: Notifications
+      - button [ref=e477] [cursor=pointer]
+    - tablist [ref=e481]:
+      - tab [selected] [ref=e482] [cursor=pointer]: all
+      - tab [ref=e483] [cursor=pointer]: unread
+      - tab [ref=e484] [cursor=pointer]: read
+    - generic [ref=e485]: No notifications yet.
+  - generic [aria-hidden] [ref=e487]: "0"
