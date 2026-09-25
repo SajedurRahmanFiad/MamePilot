@@ -76,7 +76,7 @@ final class OrderPostCreateEffects
             return;
         }
 
-        $php = PHP_BINARY ?: 'php';
+        $php = $this->phpBinary();
         if (DIRECTORY_SEPARATOR === '\\') {
             $command = 'start "" /B ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($customerId) . ' > NUL 2>&1';
         } else {
@@ -106,6 +106,32 @@ final class OrderPostCreateEffects
             $courier->processCustomerFraudCheck(['customerId' => $customerId]);
         } catch (\Throwable $exception) {
             error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
+        }
+    }
+
+    private function phpBinary(): string
+    {
+        $configured = trim((string) ($this->database !== null ? $this->configValue('UPDATE_PHP_BINARY') : ''));
+        if ($configured !== '') return $configured;
+
+        $binary = trim((string) PHP_BINARY);
+        if ($binary !== '' && !preg_match('/php-(?:cgi|fpm)$/i', basename($binary))) return $binary;
+        if ($binary !== '') {
+            $sibling = dirname($binary) . DIRECTORY_SEPARATOR . (DIRECTORY_SEPARATOR === '\\' ? 'php.exe' : 'php');
+            if (is_file($sibling)) return $sibling;
+        }
+        foreach (['/usr/local/bin/php', '/usr/bin/php'] as $candidate) {
+            if (is_file($candidate) && is_executable($candidate)) return $candidate;
+        }
+        return 'php';
+    }
+
+    private function configValue(string $key): ?string
+    {
+        try {
+            return Config::load(dirname(__DIR__, 2))->get($key);
+        } catch (\Throwable $exception) {
+            return null;
         }
     }
 

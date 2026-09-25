@@ -1,0 +1,163 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e4]:
+    - complementary [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - button [ref=f5e9] [cursor=pointer]:
+          - img "Sebate Sera" [ref=f5e10]
+        - navigation [ref=f5e11]:
+          - link [ref=f5e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f5e23] [cursor=pointer]
+          - button [ref=f5e32] [cursor=pointer]
+          - button [ref=f5e41] [cursor=pointer]
+          - button [ref=f5e51] [cursor=pointer]
+          - button [ref=f5e59] [cursor=pointer]
+          - button [ref=f5e66] [cursor=pointer]
+          - button [ref=f5e76] [cursor=pointer]
+          - link [ref=f5e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f5e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f5e97] [cursor=pointer]
+        - generic [ref=f5e103]:
+          - link [ref=f5e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f5e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f5e121] [cursor=pointer]
+    - generic [ref=f5e126]:
+      - banner [ref=f5e127]:
+        - heading "Orders" [level=1] [ref=f5e131]
+        - generic [ref=f5e132]:
+          - link "Point of Sale" [ref=f5e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f5e138] [cursor=pointer]
+          - button "Notifications" [ref=f5e143] [cursor=pointer]
+          - button [ref=f5e148] [cursor=pointer]:
+            - generic [ref=f5e149]:
+              - paragraph [ref=f5e150]: Fiad
+              - paragraph [ref=f5e151]: Developer
+            - img "Profile" [ref=f5e152]
+      - main [ref=f5e153]:
+        - generic [ref=f5e154]:
+          - generic [ref=f5e155]:
+            - generic [ref=f5e156]:
+              - button [ref=f5e157] [cursor=pointer]
+              - heading "ORD-356" [level=2] [ref=f5e160]
+              - generic [ref=f5e161]: On Hold
+            - generic [ref=f5e162]:
+              - button "Print" [ref=f5e163] [cursor=pointer]
+              - button "Actions" [ref=f5e169] [cursor=pointer]
+          - generic [ref=f5e175]:
+            - paragraph [ref=f5e176]: Trust scan in motion
+            - paragraph [ref=f5e177]: Checking if the customer is fraud...
+          - generic [ref=f5e178]:
+            - generic [ref=f5e180]:
+              - generic [ref=f5e181]:
+                - generic [ref=f5e182]:
+                  - generic [ref=f5e183]:
+                    - img "Company Logo" [ref=f5e184]
+                    - generic [ref=f5e185]:
+                      - heading "Sebate Sera" [level=1] [ref=f5e186]
+                      - paragraph [ref=f5e187]: আপনার স্বাস্থ্য, আমাদের প্রতিশ্রুতি🍯
+                  - generic [ref=f5e188]:
+                    - paragraph [ref=f5e189]: "01795317984"
+                    - paragraph [ref=f5e192]: sebateseraofficially@gmail.com
+                    - paragraph [ref=f5e195]: Dhaka, Bangladesh
+                - generic [ref=f5e199]:
+                  - generic [ref=f5e203]:
+                    - paragraph [ref=f5e204]: Order No.
+                    - paragraph [ref=f5e205]: ORD-356
+                  - generic [ref=f5e209]:
+                    - paragraph [ref=f5e210]: Date
+                    - paragraph [ref=f5e211]: 25 Sept 2026
+              - generic [ref=f5e212]:
+                - generic [ref=f5e213]: Billed To
+                - generic [ref=f5e217]:
+                  - generic [ref=f5e218]:
+                    - heading "Rasel Khan" [level=3] [ref=f5e219]
+                    - paragraph [ref=f5e220]: "01737773939"
+                  - generic [ref=f5e226]:
+                    - paragraph [ref=f5e227]: Address
+                    - paragraph [ref=f5e228]: Rasel khan, Kalihati sadar, Tangail.
+              - table [ref=f5e231]:
+                - rowgroup [ref=f5e232]:
+                  - row [ref=f5e233]:
+                    - columnheader "#" [ref=f5e234]
+                    - columnheader "Item Description" [ref=f5e235]
+                    - columnheader "Rate" [ref=f5e236]
+                    - columnheader "Qty" [ref=f5e237]
+                    - columnheader "Total" [ref=f5e238]
+                - rowgroup [ref=f5e239]:
+                  - row [ref=f5e240]:
+                    - cell "1" [ref=f5e241]
+                    - cell [ref=f5e242]:
+                      - generic [ref=f5e243]:
+                        - img "দাউদ কিওর লোশন" [ref=f5e244]
+                        - generic [ref=f5e245]: দাউদ কিওর লোশন
+                    - cell "৳ 650" [ref=f5e246]
+                    - cell "1" [ref=f5e247]
+                    - cell "৳ 650" [ref=f5e248]
+              - generic [ref=f5e250]:
+                - generic [ref=f5e251]:
+                  - generic [ref=f5e252]: Subtotal
+                  - generic [ref=f5e253]: ৳ 650
+                - generic [ref=f5e254]:
+                  - generic [ref=f5e255]: Discount
+                  - generic [ref=f5e256]: "-৳ 0"
+                - generic [ref=f5e257]:
+                  - generic [ref=f5e258]: Shipping
+                  - generic [ref=f5e259]: ৳ 0
+                - generic [ref=f5e260]:
+                  - generic [ref=f5e261]: Net Total
+                  - generic [ref=f5e262]: ৳ 650
+            - generic [ref=f5e263]:
+              - button [ref=f5e265] [cursor=pointer]:
+                - heading "Payment Unpaid" [level=3] [ref=f5e267]:
+                  - text: Payment
+                  - generic [ref=f5e268]: Unpaid
+              - generic [ref=f5e276]:
+                - button [expanded] [ref=f5e277] [cursor=pointer]:
+                  - heading "Order Progress (0%)" [level=3] [ref=f5e278]
+                - generic [ref=f5e286]:
+                  - generic [ref=f5e288]:
+                    - generic [ref=f5e289]: Progress
+                    - generic [ref=f5e290]: 0%
+                  - generic [ref=f5e292]:
+                    - generic [ref=f5e293]: Created
+                    - generic [ref=f5e298]: Process
+                    - generic [ref=f5e303]: Assign courier
+                    - generic [ref=f5e308]: Pick up
+                    - generic [ref=f5e313]: Delivery pending
+                    - generic [ref=f5e318]: Partially Delivered
+                    - generic [ref=f5e323]: Deliver
+                    - generic [ref=f5e328]: Return
+                    - generic [ref=f5e333]: Cancel
+                  - button "Start processing" [ref=f5e339] [cursor=pointer]
+              - button [ref=f5e341] [cursor=pointer]:
+                - heading "Metadata" [level=3] [ref=f5e342]
+          - generic [ref=f5e346]:
+            - button [ref=f5e348] [cursor=pointer]:
+              - heading "Activity Timeline" [level=3] [ref=f5e349]
+            - button [ref=f5e354] [cursor=pointer]:
+              - heading "Courier Tracking" [level=3] [ref=f5e355]
+        - generic [ref=f5e359]:
+          - paragraph [ref=f5e360]: © 2026 Sebate Sera|Version 0.3.52|All rights reserved.
+          - paragraph [ref=f5e361]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f5e362] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f5e363]:
+        - generic [ref=f5e364]: Chat with Mame
+        - button "Open chat" [ref=f5e365] [cursor=pointer]:
+          - img "Mame AI" [ref=f5e366]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f5e367]:
+    - generic [ref=f5e368]:
+      - heading [level=3] [ref=f5e370]: Notifications
+      - button [ref=f5e371] [cursor=pointer]
+    - tablist [ref=f5e375]:
+      - tab [selected] [ref=f5e376] [cursor=pointer]: all
+      - tab [ref=f5e377] [cursor=pointer]: unread
+      - tab [ref=f5e378] [cursor=pointer]: read
+    - generic [ref=f5e379]: No notifications yet.

@@ -1,0 +1,204 @@
+- generic [ref=f5e1]:
+  - generic [ref=f5e4]:
+    - complementary [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - button [ref=f5e9] [cursor=pointer]:
+          - img "Sebate Sera" [ref=f5e10]
+        - navigation [ref=f5e11]:
+          - link [ref=f5e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f5e23] [cursor=pointer]
+          - button [ref=f5e32] [cursor=pointer]
+          - button [ref=f5e41] [cursor=pointer]
+          - button [ref=f5e51] [cursor=pointer]
+          - button [ref=f5e59] [cursor=pointer]
+          - button [ref=f5e66] [cursor=pointer]
+          - button [ref=f5e76] [cursor=pointer]
+          - link [ref=f5e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f5e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f5e97] [cursor=pointer]
+        - generic [ref=f5e103]:
+          - link [ref=f5e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f5e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f5e121] [cursor=pointer]
+    - generic [ref=f5e126]:
+      - banner [ref=f5e127]:
+        - heading "New Order" [level=1] [ref=f5e382]
+        - generic [ref=f5e132]:
+          - link "Point of Sale" [ref=f5e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f5e138] [cursor=pointer]
+          - button "Notifications" [ref=f5e143] [cursor=pointer]
+          - button [ref=f5e148] [cursor=pointer]:
+            - generic [ref=f5e149]:
+              - paragraph [ref=f5e150]: Fiad
+              - paragraph [ref=f5e151]: Developer
+            - img "Profile" [ref=f5e152]
+      - main [ref=f5e153]:
+        - generic [ref=f5e383]:
+          - generic [ref=f5e384]:
+            - heading "New Order" [level=2] [ref=f5e385]
+            - button "Cancel" [ref=f5e386] [cursor=pointer]
+          - generic [ref=f5e387]:
+            - generic [ref=f5e388]:
+              - generic [ref=f5e389]:
+                - generic [ref=f5e390]: Select Customer
+                - button "Rasel Khan 01737773939 Rasel khan, Kalihati sadar, Tangail." [ref=f5e615] [cursor=pointer]:
+                  - generic [ref=f5e616]:
+                    - generic [ref=f5e617]: Rasel Khan
+                    - paragraph [ref=f5e618]: "01737773939"
+                    - paragraph [ref=f5e619]: Rasel khan, Kalihati sadar, Tangail.
+              - generic [ref=f5e397]:
+                - text: Order Date
+                - textbox [ref=f5e398] [cursor=pointer]: 2026-09-25
+              - generic [ref=f5e399]:
+                - text: Order Number
+                - textbox "Generating..." [ref=f5e400]: ORD-357
+            - generic [ref=f5e402]:
+              - text: Source Ad
+              - button "Not from an ad No ad attribution" [ref=f5e404] [cursor=pointer]:
+                - generic [ref=f5e405]:
+                  - generic [ref=f5e406]: Not from an ad
+                  - paragraph [ref=f5e407]: No ad attribution
+            - table [ref=f5e412]:
+              - rowgroup [ref=f5e413]:
+                - row [ref=f5e414]:
+                  - columnheader "Product Item" [ref=f5e415]
+                  - columnheader "Rate" [ref=f5e416]
+                  - columnheader "Qty" [ref=f5e417]
+                  - columnheader "Amount" [ref=f5e418]
+                  - columnheader [ref=f5e419]
+              - rowgroup
+            - generic [ref=f5e420]:
+              - button "Add an item" [ref=f5e421] [cursor=pointer]
+              - generic [ref=f5e620]:
+                - textbox "Search catalog..." [active] [ref=f5e622]
+                - generic [ref=f5e623]:
+                  - button [ref=f5e624] [cursor=pointer]:
+                    - generic [ref=f5e626]:
+                      - paragraph [ref=f5e627]: খাঁটি গাওয়া ঘি (১-কেজি)
+                      - paragraph [ref=f5e628]: ৳ 1,450
+                      - paragraph [ref=f5e629]: "Stock: 1"
+                  - button [ref=f5e630] [cursor=pointer]:
+                    - generic [ref=f5e632]:
+                      - paragraph [ref=f5e633]: খাঁটি গাওয়া ঘি (৫০০-গ্রাম)
+                      - paragraph [ref=f5e634]: ৳ 750
+                      - paragraph [ref=f5e635]: "Stock: 0"
+                  - button [ref=f5e636] [cursor=pointer]:
+                    - generic [ref=f5e638]:
+                      - paragraph [ref=f5e639]: গ্রীন লাইফ
+                      - paragraph [ref=f5e640]: ৳ 950
+                      - paragraph [ref=f5e641]: "Stock: 0"
+                  - button [ref=f5e642] [cursor=pointer]:
+                    - generic [ref=f5e644]:
+                      - paragraph [ref=f5e645]: তিব্বে এলার্জি
+                      - paragraph [ref=f5e646]: ৳ 750
+                      - paragraph [ref=f5e647]: "Stock: 1"
+                  - button [ref=f5e648] [cursor=pointer]:
+                    - generic [ref=f5e650]:
+                      - paragraph [ref=f5e651]: তেঁতুল আচার (১-কেজি)
+                      - paragraph [ref=f5e652]: ৳ 950
+                      - paragraph [ref=f5e653]: "Stock: 0"
+                  - button [ref=f5e654] [cursor=pointer]:
+                    - generic [ref=f5e656]:
+                      - paragraph [ref=f5e657]: তেঁতুল আচার (৫০০-গ্রাম)
+                      - paragraph [ref=f5e658]: ৳ 490
+                      - paragraph [ref=f5e659]: "Stock: 0"
+                  - button [ref=f5e660] [cursor=pointer]:
+                    - generic [ref=f5e662]:
+                      - paragraph [ref=f5e663]: দাউদ কিওর লোশন
+                      - paragraph [ref=f5e664]: ৳ 650
+                      - paragraph [ref=f5e665]: "Stock: 302"
+                  - button [ref=f5e666] [cursor=pointer]:
+                    - generic [ref=f5e668]:
+                      - paragraph [ref=f5e669]: দাউদ কিওর লোশন + তিব্বে এলার্জি (কম্বো)
+                      - paragraph [ref=f5e670]: ৳ 1,250
+                      - paragraph [ref=f5e671]: "Stock: 12"
+                  - button [ref=f5e672] [cursor=pointer]:
+                    - generic [ref=f5e674]:
+                      - paragraph [ref=f5e675]: নারিকেল চিড়া (১-কেজি)
+                      - paragraph [ref=f5e676]: ৳ 1,300
+                      - paragraph [ref=f5e677]: "Stock: 0"
+                  - button [ref=f5e678] [cursor=pointer]:
+                    - generic [ref=f5e680]:
+                      - paragraph [ref=f5e681]: নারিকেল চিড়া (৫০০-গ্রাম)
+                      - paragraph [ref=f5e682]: ৳ 650
+                      - paragraph [ref=f5e683]: "Stock: 0"
+                  - button [ref=f5e684] [cursor=pointer]:
+                    - generic [ref=f5e686]:
+                      - paragraph [ref=f5e687]: প্রিমিয়াম মায়ের হাতের নারিকেল নাড়ু (৫০০-গ্রাম)
+                      - paragraph [ref=f5e688]: ৳ 550
+                      - paragraph [ref=f5e689]: "Stock: 0"
+                  - button [ref=f5e690] [cursor=pointer]:
+                    - generic [ref=f5e692]:
+                      - paragraph [ref=f5e693]: ব্যথানাশ কেয়ার
+                      - paragraph [ref=f5e694]: ৳ 850
+                      - paragraph [ref=f5e695]: "Stock: 2"
+                  - button [ref=f5e696] [cursor=pointer]:
+                    - generic [ref=f5e698]:
+                      - paragraph [ref=f5e699]: মনেক্কা (১-কেজি)
+                      - paragraph [ref=f5e700]: ৳ 600
+                      - paragraph [ref=f5e701]: "Stock: 0"
+                  - button [ref=f5e702] [cursor=pointer]:
+                    - generic [ref=f5e704]:
+                      - paragraph [ref=f5e705]: মনেক্কা (৫০০-গ্রাম)
+                      - paragraph [ref=f5e706]: ৳ 300
+                      - paragraph [ref=f5e707]: "Stock: 0"
+                  - button [ref=f5e708] [cursor=pointer]:
+                    - generic [ref=f5e710]:
+                      - paragraph [ref=f5e711]: হালালি এলার্জি রিমুভ সাবান
+                      - paragraph [ref=f5e712]: ৳ 599
+                      - paragraph [ref=f5e713]: "Stock: 2"
+                  - button [ref=f5e714] [cursor=pointer]:
+                    - generic [ref=f5e716]:
+                      - paragraph [ref=f5e717]: হালালি এলার্জি রিমুভ সাবান ও দাউদ কিওর লোশন
+                      - paragraph [ref=f5e718]: ৳ 1,249
+                      - paragraph [ref=f5e719]: "Stock: 1200"
+            - generic [ref=f5e423]:
+              - generic [ref=f5e424]:
+                - text: Order Notes / Terms
+                - textbox "Internal notes or special instructions for this order..." [ref=f5e425]
+              - generic [ref=f5e426]:
+                - generic [ref=f5e427]:
+                  - generic [ref=f5e428]: Subtotal
+                  - generic [ref=f5e429]: ৳ 0
+                - generic [ref=f5e430]:
+                  - generic [ref=f5e431]: Discount
+                  - generic [ref=f5e432]:
+                    - generic [ref=f5e433]: ৳
+                    - textbox [ref=f5e435]: "0"
+                - generic [ref=f5e436]:
+                  - generic [ref=f5e437]: Shipping
+                  - generic [ref=f5e438]:
+                    - generic [ref=f5e439]: ৳
+                    - textbox [ref=f5e441]: "0"
+                - generic [ref=f5e442]:
+                  - generic [ref=f5e443]: Total
+                  - generic [ref=f5e444]:
+                    - generic [ref=f5e445]: ৳
+                    - textbox "Order total" [ref=f5e447]
+                - button "Create Order" [ref=f5e448] [cursor=pointer]
+        - generic [ref=f5e359]:
+          - paragraph [ref=f5e360]: © 2026 Sebate Sera|Version 0.3.52|All rights reserved.
+          - paragraph [ref=f5e361]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f5e362] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f5e363]:
+        - generic [ref=f5e364]: Chat with Mame
+        - button "Open chat" [ref=f5e365] [cursor=pointer]:
+          - img "Mame AI" [ref=f5e366]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f5e367]:
+    - generic [ref=f5e368]:
+      - heading [level=3] [ref=f5e370]: Notifications
+      - button [ref=f5e371] [cursor=pointer]
+    - tablist [ref=f5e375]:
+      - tab [selected] [ref=f5e376] [cursor=pointer]: all
+      - tab [ref=f5e377] [cursor=pointer]: unread
+      - tab [ref=f5e378] [cursor=pointer]: read
+    - generic [ref=f5e379]: No notifications yet.
