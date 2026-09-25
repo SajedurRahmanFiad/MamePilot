@@ -11,9 +11,6 @@ final class OrderPostCreateEffects
     private ?SmsApi $sms;
     private ?Database $database;
     private bool $surveyWorkerScheduled = false;
-    private bool $fraudWorkersScheduled = false;
-    /** @var array<int, string> */
-    private array $fraudCustomerIds = [];
 
     public function __construct(FeatureAccess $featureAccess, AutoCallApi $autoCall, ?Database $database = null, ?SmsApi $sms = null)
     {
@@ -55,22 +52,7 @@ final class OrderPostCreateEffects
         if ($customerId === '' || !$this->isAutomaticFraudCheckEnabled()) {
             return;
         }
-        $this->fraudCustomerIds[] = $customerId;
-        if ($this->fraudWorkersScheduled) {
-            return;
-        }
-
-        $this->fraudWorkersScheduled = true;
-        register_shutdown_function(function (): void {
-            foreach ($this->fraudCustomerIds as $customerId) {
-                if (function_exists('fastcgi_finish_request')) {
-                    @fastcgi_finish_request();
-                    $this->runFraudCheck($customerId);
-                } else {
-                    $this->launchFraudCheck($customerId);
-                }
-            }
-        });
+        $this->runFraudCheck($customerId);
     }
 
     private function runFraudCheck(string $customerId): void
