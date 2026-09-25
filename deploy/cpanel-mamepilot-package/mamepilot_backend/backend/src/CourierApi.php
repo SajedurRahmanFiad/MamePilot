@@ -349,7 +349,15 @@ final class CourierApi extends BaseService
             throw new RuntimeException('Background fraud checks are available only from CLI.');
         }
 
-        $customerId = trim((string) ($params['customerId'] ?? ''));
+        return $this->processFraudCheckForCustomer((string) ($params['customerId'] ?? ''));
+    }
+
+    /**
+     * Runs the post-order fraud check without requiring a web session.
+     */
+    public function processFraudCheckForCustomer(string $customerId): array
+    {
+        $customerId = trim($customerId);
         if ($customerId === '') {
             throw new RuntimeException('Customer ID is required.');
         }

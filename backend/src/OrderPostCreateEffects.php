@@ -81,16 +81,7 @@ final class OrderPostCreateEffects
             $auth = new Auth($config, $database);
             $operations = new OperationsApi($database, $auth, $config);
             $courier = new CourierApi($database, $auth, $config, $operations);
-            $customer = $database->fetchOne(
-                'SELECT phone FROM customers WHERE id = :id AND deleted_at IS NULL LIMIT 1',
-                [':id' => $customerId]
-            );
-            if ($customer === null) {
-                throw new \RuntimeException('Customer not found.');
-            }
-            $courier->processCustomerFraudCheck([
-                'customerId' => $customerId,
-            ]);
+            $courier->processFraudCheckForCustomer($customerId);
         } catch (\Throwable $exception) {
             error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
         }
