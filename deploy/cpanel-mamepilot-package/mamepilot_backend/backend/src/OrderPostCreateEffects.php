@@ -63,9 +63,38 @@ final class OrderPostCreateEffects
         $this->fraudWorkersScheduled = true;
         register_shutdown_function(function (): void {
             foreach ($this->fraudCustomerIds as $customerId) {
-                $this->launchFraudCheck($customerId);
+                if (function_exists('fastcgi_finish_request')) {
+                    @fastcgi_finish_request();
+                    $this->runFraudCheck($customerId);
+                } else {
+                    $this->launchFraudCheck($customerId);
+                }
             }
         });
+    }
+
+    private function runFraudCheck(string $customerId): void
+    {
+        try {
+            $config = Config::load(dirname(__DIR__, 2));
+            $database = new Database($config);
+            $auth = new Auth($config, $database);
+            $operations = new OperationsApi($database, $auth, $config);
+            $courier = new CourierApi($database, $auth, $config, $operations);
+            $customer = $database->fetchOne(
+                'SELECT phone FROM customers WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                [':id' => $customerId]
+            );
+            if ($customer === null) {
+                throw new \RuntimeException('Customer not found.');
+            }
+            $courier->checkFraudCourierHistory([
+                'customerId' => $customerId,
+                'phone' => (string) ($customer['phone'] ?? ''),
+            ]);
+        } catch (\Throwable $exception) {
+            error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
+        }
     }
 
     private function launchFraudCheck(string $customerId): void
@@ -97,16 +126,7 @@ final class OrderPostCreateEffects
         // Some hosts disable both process APIs. The shutdown callback is already
         // running here, so this fallback still happens after order persistence.
         error_log('Could not spawn automatic fraud check worker; running it inline for customer ' . $customerId);
-        try {
-            $config = Config::load(dirname(__DIR__, 2));
-            $database = new Database($config);
-            $auth = new Auth($config, $database);
-            $operations = new OperationsApi($database, $auth, $config);
-            $courier = new CourierApi($database, $auth, $config, $operations);
-            $courier->processCustomerFraudCheck(['customerId' => $customerId]);
-        } catch (\Throwable $exception) {
-            error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
-        }
+        $this->runFraudCheck($customerId);
     }
 
     private function phpBinary(): string

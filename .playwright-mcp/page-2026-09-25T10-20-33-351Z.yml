@@ -1,0 +1,12 @@
+- generic [active] [ref=f8e1]:
+  - generic [ref=f8e2]: Loading page...
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f8e4]:
+    - generic [ref=f8e5]:
+      - heading [level=3] [ref=f8e7]: Notifications
+      - button [ref=f8e8] [cursor=pointer]
+    - tablist [ref=f8e12]:
+      - tab [selected] [ref=f8e13] [cursor=pointer]: all
+      - tab [ref=f8e14] [cursor=pointer]: unread
+      - tab [ref=f8e15] [cursor=pointer]: read
+    - generic [ref=f8e16]: No notifications yet.
