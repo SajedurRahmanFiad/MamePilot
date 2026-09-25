@@ -1,0 +1,219 @@
+- generic [ref=f6e1]:
+  - generic [ref=f6e877]:
+    - complementary [ref=f6e878]:
+      - generic [ref=f6e879]:
+        - button [ref=f6e882] [cursor=pointer]:
+          - img "Sebate Sera" [ref=f6e883]
+        - navigation [ref=f6e884]:
+          - link [ref=f6e886] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f6e896] [cursor=pointer]
+          - button [ref=f6e905] [cursor=pointer]
+          - button [ref=f6e914] [cursor=pointer]
+          - button [ref=f6e924] [cursor=pointer]
+          - button [ref=f6e932] [cursor=pointer]
+          - button [ref=f6e939] [cursor=pointer]
+          - button [ref=f6e949] [cursor=pointer]
+          - link [ref=f6e956] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f6e963] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f6e970] [cursor=pointer]
+        - generic [ref=f6e976]:
+          - link [ref=f6e979] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f6e986] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f6e994] [cursor=pointer]
+    - generic [ref=f6e999]:
+      - banner [ref=f6e1000]:
+        - heading "Dashboard" [level=1] [ref=f6e1004]
+        - generic [ref=f6e1005]:
+          - link "Point of Sale" [ref=f6e1006] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f6e1011] [cursor=pointer]
+          - button "Notifications" [ref=f6e1016] [cursor=pointer]
+          - generic [ref=f6e1020]:
+            - button [active] [ref=f6e1021] [cursor=pointer]:
+              - generic [ref=f6e1022]:
+                - paragraph [ref=f6e1023]: Fiad
+                - paragraph [ref=f6e1024]: Developer
+              - img "Profile" [ref=f6e1025]
+            - generic [ref=f6e1349]:
+              - button "Profile" [ref=f6e1350] [cursor=pointer]
+              - button "Logout" [ref=f6e1356] [cursor=pointer]
+      - main [ref=f6e1026]:
+        - generic [ref=f6e1027]:
+          - generic [ref=f6e1030]:
+            - button "All Time" [ref=f6e1031] [cursor=pointer]
+            - button "Today" [ref=f6e1032] [cursor=pointer]
+            - button "This Week" [ref=f6e1033] [cursor=pointer]
+            - button "This Month" [ref=f6e1034] [cursor=pointer]
+            - button "This Year" [ref=f6e1035] [cursor=pointer]
+            - button "Custom" [ref=f6e1036] [cursor=pointer]
+          - generic [ref=f6e1037]:
+            - generic [ref=f6e1045]:
+              - paragraph [ref=f6e1046]: Total Sales
+              - heading "৳ 1.3K" [level=3] [ref=f6e1047]
+            - generic [ref=f6e1056]:
+              - paragraph [ref=f6e1057]: Total Purchases
+              - heading "৳ 0" [level=3] [ref=f6e1058]
+            - generic [ref=f6e1067]:
+              - paragraph [ref=f6e1068]: Other Expenses
+              - heading "৳ 0" [level=3] [ref=f6e1069]
+            - generic [ref=f6e1077]:
+              - paragraph [ref=f6e1078]: Total Profit
+              - heading "৳ 1.3K" [level=3] [ref=f6e1079]
+            - generic [ref=f6e1090]:
+              - paragraph [ref=f6e1091]: Total Orders
+              - heading "354 (৳261.5K)" [level=3] [ref=f6e1092]:
+                - generic [ref=f6e1093]: "354"
+                - generic [ref=f6e1094]: (৳261.5K)
+            - button [ref=f6e1096] [cursor=pointer]:
+              - generic [ref=f6e1103]:
+                - paragraph [ref=f6e1104]: On Hold Orders
+                - heading "347 (৳256.9K)" [level=3] [ref=f6e1105]:
+                  - generic [ref=f6e1106]: "347"
+                  - generic [ref=f6e1107]: (৳256.9K)
+            - button [ref=f6e1109] [cursor=pointer]:
+              - generic [ref=f6e1116]:
+                - paragraph [ref=f6e1117]: Processing Orders
+                - heading "1 (৳650)" [level=3] [ref=f6e1118]:
+                  - generic [ref=f6e1119]: "1"
+                  - generic [ref=f6e1120]: (৳650)
+            - button [ref=f6e1122] [cursor=pointer]:
+              - generic [ref=f6e1130]:
+                - paragraph [ref=f6e1131]: Picked Orders
+                - heading "0 (৳0)" [level=3] [ref=f6e1132]:
+                  - generic [ref=f6e1133]: "0"
+                  - generic [ref=f6e1134]: (৳0)
+            - button [ref=f6e1136] [cursor=pointer]:
+              - generic [ref=f6e1141]:
+                - paragraph [ref=f6e1142]: Delivered Orders
+                - heading "3 (৳1.9K)" [level=3] [ref=f6e1143]:
+                  - generic [ref=f6e1144]: "3"
+                  - generic [ref=f6e1145]: (৳1.9K)
+            - button [ref=f6e1147] [cursor=pointer]:
+              - generic [ref=f6e1153]:
+                - paragraph [ref=f6e1154]: Returned Orders
+                - heading "0 (৳0)" [level=3] [ref=f6e1155]:
+                  - generic [ref=f6e1156]: "0"
+                  - generic [ref=f6e1157]: (৳0)
+          - generic [ref=f6e1159]:
+            - generic [ref=f6e1161]:
+              - generic [ref=f6e1162]:
+                - heading "Cash Flow" [level=3] [ref=f6e1163]
+                - generic [ref=f6e1164]:
+                  - generic [ref=f6e1165]: Income
+                  - generic [ref=f6e1167]: Expense
+                  - generic [ref=f6e1169]: Profit
+              - application [ref=f6e1174]:
+                - generic [ref=f6e1196]:
+                  - generic [ref=f6e1197]:
+                    - generic [ref=f6e1198]: Jan
+                    - generic [ref=f6e1200]: Feb
+                    - generic [ref=f6e1202]: Mar
+                    - generic [ref=f6e1204]: Apr
+                    - generic [ref=f6e1206]: May
+                    - generic [ref=f6e1208]: Jun
+                    - generic [ref=f6e1210]: Jul
+                    - generic [ref=f6e1212]: Aug
+                    - generic [ref=f6e1214]: Sep
+                    - generic [ref=f6e1216]: Oct
+                    - generic [ref=f6e1218]: Nov
+                    - generic [ref=f6e1220]: Dec
+                  - generic [ref=f6e1222]:
+                    - generic [ref=f6e1223]: "0"
+                    - generic [ref=f6e1225]: "350"
+                    - generic [ref=f6e1227]: "700"
+                    - generic [ref=f6e1229]: 1,050
+                    - generic [ref=f6e1231]: 1,400
+            - generic [ref=f6e1234]:
+              - generic [ref=f6e1235]:
+                - heading "Top 5 Sold Products" [level=3] [ref=f6e1236]
+                - generic [ref=f6e1237]: By Qty
+              - generic [ref=f6e1239]:
+                - generic [ref=f6e1240]:
+                  - img "দাউদ কিওর লোশন" [ref=f6e1241]
+                  - generic [ref=f6e1242]: দাউদ কিওর লোশন
+                - generic [ref=f6e1243]: "3"
+            - generic [ref=f6e1245]:
+              - generic [ref=f6e1246]:
+                - heading "Top 5 Customers" [level=3] [ref=f6e1247]
+                - generic [ref=f6e1248]: By Sales
+              - generic [ref=f6e1249]:
+                - generic [ref=f6e1250]:
+                  - generic [ref=f6e1251]:
+                    - img "Md:Abu-naser" [ref=f6e1252]
+                    - generic [ref=f6e1253]:
+                      - generic [ref=f6e1254]: Md:Abu-naser
+                      - generic [ref=f6e1255]: 1 orders
+                  - generic [ref=f6e1256]: ৳ 650
+                - generic [ref=f6e1257]:
+                  - generic [ref=f6e1258]:
+                    - img "Raihan" [ref=f6e1259]
+                    - generic [ref=f6e1260]:
+                      - generic [ref=f6e1261]: Raihan
+                      - generic [ref=f6e1262]: 1 orders
+                  - generic [ref=f6e1263]: ৳ 650
+                - generic [ref=f6e1264]:
+                  - generic [ref=f6e1265]:
+                    - img "Shahjahan" [ref=f6e1266]
+                    - generic [ref=f6e1267]:
+                      - generic [ref=f6e1268]: Shahjahan
+                      - generic [ref=f6e1269]: 1 orders
+                  - generic [ref=f6e1270]: ৳ 650
+            - generic [ref=f6e1272]:
+              - heading "Profit & Loss Summary" [level=3] [ref=f6e1273]
+              - generic [ref=f6e1274]:
+                - generic [ref=f6e1275]:
+                  - generic [ref=f6e1276]: Total Incomes
+                  - generic [ref=f6e1277]: ৳ 1,300
+                - generic [ref=f6e1278]:
+                  - generic [ref=f6e1279]: Total Expenses
+                  - generic [ref=f6e1280]: ৳ 0
+                - generic [ref=f6e1281]:
+                  - generic [ref=f6e1282]: Net Profit
+                  - generic [ref=f6e1283]: ৳ 1,300
+            - generic [ref=f6e1285]:
+              - heading "Expenses by Category" [level=3] [ref=f6e1286]
+              - generic [ref=f6e1289]:
+                - list [ref=f6e1291]:
+                  - listitem [ref=f6e1292]:
+                    - img "No Data legend icon" [ref=f6e1293]
+                    - text: No Data
+                - application [ref=f6e1295]
+            - generic [ref=f6e1297]:
+              - generic [ref=f6e1298]:
+                - generic [ref=f6e1299]:
+                  - heading "Action Required" [level=3] [ref=f6e1300]
+                  - paragraph [ref=f6e1301]: Orders awaiting partial delivery or delivery confirmation.
+                - button "View all" [ref=f6e1302] [cursor=pointer]
+              - generic [ref=f6e1304]:
+                - generic [ref=f6e1305]:
+                  - generic [ref=f6e1306]: "#ORD-272"
+                  - text: Rabiul
+                - generic [ref=f6e1307]:
+                  - generic [ref=f6e1308]: ৳ 0
+                  - button "Complete order" [ref=f6e1309] [cursor=pointer]
+        - generic [ref=f6e1312]:
+          - paragraph [ref=f6e1313]: © 2026 Sebate Sera|Version 0.3.53|All rights reserved.
+          - paragraph [ref=f6e1314]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f6e1315] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f6e1316]:
+        - generic [ref=f6e1317]: Chat with Mame
+        - button "Open chat" [ref=f6e1318] [cursor=pointer]:
+          - img "Mame AI" [ref=f6e1319]
+  - generic [aria-hidden] [ref=f6e1320]: "0"
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f6e1321]:
+    - generic [ref=f6e1322]:
+      - heading [level=3] [ref=f6e1324]: Notifications
+      - button [ref=f6e1325] [cursor=pointer]
+    - tablist [ref=f6e1329]:
+      - tab [selected] [ref=f6e1330] [cursor=pointer]: all
+      - tab [ref=f6e1331] [cursor=pointer]: unread
+      - tab [ref=f6e1332] [cursor=pointer]: read
+    - generic [ref=f6e1333]: No notifications yet.

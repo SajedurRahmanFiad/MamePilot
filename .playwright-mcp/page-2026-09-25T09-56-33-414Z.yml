@@ -1,0 +1,18 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e1934]:
+    - generic [ref=f6e1935]:
+      - img "Sebate Sera" [ref=f6e1936]
+      - generic [ref=f6e1937]:
+        - heading "Sebate Sera" [level=1] [ref=f6e1938]
+        - paragraph [ref=f6e1939]: Sign in to continue
+    - generic [ref=f6e1940]:
+      - generic [ref=f6e1941]:
+        - generic [ref=f6e1942]: Phone
+        - textbox "017XXXXXXXX" [ref=f6e1943]
+      - generic [ref=f6e1944]:
+        - generic [ref=f6e1945]: Password
+        - generic [ref=f6e1946]:
+          - textbox [ref=f6e1947]
+          - button [ref=f6e1948] [cursor=pointer]
+      - button "Sign In" [ref=f6e1952] [cursor=pointer]
+  - generic [aria-hidden] [ref=f6e1320]: "0"

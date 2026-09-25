@@ -432,8 +432,17 @@ final class CourierApi extends BaseService
     private function getAppOrigin(): string
     {
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
-        return $scheme . '://' . $host;
+        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+        if ($host !== '') {
+            return $scheme . '://' . $host;
+        }
+
+        $configuredOrigin = trim((string) (Config::load(dirname(__DIR__, 2))->get('APP_FRONTEND_URL', '') ?? ''));
+        if ($configuredOrigin !== '') {
+            return rtrim($configuredOrigin, '/');
+        }
+
+        return 'http://localhost';
     }
 
     private function performFraudCheck(string $phone): array
