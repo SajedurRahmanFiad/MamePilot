@@ -126,6 +126,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.Bell,
         visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('auto_calling'),
       },
+      {
+        key: 'sms',
+        label: 'SMS',
+        to: '/sms',
+        icon: ICONS.Bell,
+        visible: ({ can, hasCapability }) => can('orders.view') && hasCapability('sms'),
+      },
     ],
   },
   {

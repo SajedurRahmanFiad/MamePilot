@@ -3,15 +3,15 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, LoadingOverlay } from '../components';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
-import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings } from '../src/hooks/useQueries';
-import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings, useConnectFraudspySteadfast, useUpdateCapabilitySettings } from '../src/hooks/useMutations';
-import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings } from '../types';
+import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings, useSmsSettings } from '../src/hooks/useQueries';
+import { useSetMaintenanceStatus, useSyncLicenseCapabilities, useUpdateCourierSettings, useUpdatePaymentGatewaySettings, useUpdateAgentSettings, useUpdateBusinessGrowthSettings, useUpdateEmailSettings, useUpdateVoiceSurveyIntegrationSettings, useConnectFraudspySteadfast, useUpdateCapabilitySettings, useUpdateSmsSettings } from '../src/hooks/useMutations';
+import { hasAdminAccess, type DeploymentScope, type PaymentGatewaySettings, type AgentSettings, type BusinessGrowthSettings, type VoiceSurveyIntegrationSettings, type SmsSettings } from '../types';
 import { theme } from '../theme';
 import { compressImage, formatDateTime } from '../utils';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
-type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital';
+type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital' | 'sms-service';
 type MaintenanceContentForm = {
   imageUrl: string;
   caption: string;
@@ -76,6 +76,7 @@ const emptyVoiceSurveyIntegration: VoiceSurveyIntegrationSettings = {
   takaPerPulse: 0.55,
   rechargeNotificationEnabled: true,
 };
+const emptySmsSettings: SmsSettings = { apiKey: '', autoEnabled: false, sendTiming: 'after_order', callStatuses: [], templates: {} };
 
 const DeveloperSettings: React.FC = () => {
   const { user } = useAuth();
@@ -90,6 +91,7 @@ const DeveloperSettings: React.FC = () => {
   const { data: businessGrowthSettings, isPending: loadingBusinessGrowth } = useBusinessGrowthSettings(user?.role === 'Developer');
   const { data: emailSettingsData, isPending: loadingEmailSettings } = useEmailSettings(user?.role === 'Developer');
   const { data: voiceSurveyIntegrationData, isPending: loadingVoiceSurveyIntegration } = useVoiceSurveyIntegrationSettings(user?.role === 'Developer');
+  const { data: smsSettingsData, isPending: loadingSmsSettings } = useSmsSettings(user?.role === 'Developer');
   const syncCapabilities = useSyncLicenseCapabilities();
   const updateCourierSettings = useUpdateCourierSettings();
   const updateGateway = useUpdatePaymentGatewaySettings();
@@ -98,6 +100,7 @@ const DeveloperSettings: React.FC = () => {
   const updateBusinessGrowth = useUpdateBusinessGrowthSettings();
   const updateEmail = useUpdateEmailSettings();
   const updateVoiceSurveyIntegration = useUpdateVoiceSurveyIntegrationSettings();
+  const updateSms = useUpdateSmsSettings();
   const updateCapabilitySettings = useUpdateCapabilitySettings();
   const connectFraudspySteadfast = useConnectFraudspySteadfast();
 
@@ -112,10 +115,11 @@ const DeveloperSettings: React.FC = () => {
   const [agentForm, setAgentForm] = useState<AgentSettings>(emptyAgentSettings);
   const [businessGrowthForm, setBusinessGrowthForm] = useState<BusinessGrowthSettings>(emptyBusinessGrowthSettings);
   const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
+  const [smsForm, setSmsForm] = useState<SmsSettings>(emptySmsSettings);
   const [copyrightForm, setCopyrightForm] = useState('');
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'copyright', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital'];
+  const tabIds: TabId[] = ['license', 'copyright', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital', 'sms-service'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -210,6 +214,8 @@ const DeveloperSettings: React.FC = () => {
       setVoiceSurveyIntegrationForm(voiceSurveyIntegrationData);
     }
   }, [voiceSurveyIntegrationData]);
+
+  useEffect(() => { if (smsSettingsData) setSmsForm(smsSettingsData); }, [smsSettingsData]);
 
   useEffect(() => {
     if (capabilitySettings) {
@@ -418,6 +424,12 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const saveSms = async () => {
+    const toastId = toast.loading('Saving SMS service settings...');
+    try { const settings = await updateSms.mutateAsync(smsForm); setSmsForm(settings); toast.update(toastId, 'SMS service settings saved.', 'success'); }
+    catch (error) { toast.update(toastId, error instanceof Error ? error.message : 'Could not save SMS service settings.', 'error'); }
+  };
+
   const saveCopyrightSettings = async () => {
     const toastId = toast.loading('Saving copyright settings...');
     try {
@@ -439,12 +451,13 @@ const DeveloperSettings: React.FC = () => {
     { id: 'business_growth', label: 'Business Growth' },
     { id: 'email', label: 'Email Config' },
     { id: 'awajdigital', label: 'AwajDigital' },
+    { id: 'sms-service', label: 'SMS Service' },
   ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <LoadingOverlay
-        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || loadingBusinessGrowth || loadingEmailSettings || loadingVoiceSurveyIntegration || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending || updateBusinessGrowth.isPending || updateEmail.isPending || updateVoiceSurveyIntegration.isPending}
+        isLoading={loadingCapabilities || loadingCourierSettings || loadingGateway || loadingMaintenance || loadingAgent || loadingBusinessGrowth || loadingEmailSettings || loadingVoiceSurveyIntegration || loadingSmsSettings || updateGateway.isPending || updateCourierSettings.isPending || syncCapabilities.isPending || updateAgent.isPending || updateBusinessGrowth.isPending || updateEmail.isPending || updateVoiceSurveyIntegration.isPending || updateSms.isPending}
         message="Loading developer settings..."
       />
 
@@ -458,6 +471,7 @@ const DeveloperSettings: React.FC = () => {
         {activeTab === 'business_growth' && <Button onClick={saveBusinessGrowthSettings} variant="primary">Save Business Growth Settings</Button>}
         {activeTab === 'email' && <Button onClick={saveEmailSettings} variant="primary">Save Email Settings</Button>}
         {activeTab === 'awajdigital' && <Button onClick={saveVoiceSurveyIntegration} variant="primary">Save AwajDigital</Button>}
+        {activeTab === 'sms-service' && <Button onClick={saveSms} variant="primary">Save SMS Service</Button>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
@@ -1148,6 +1162,14 @@ const DeveloperSettings: React.FC = () => {
                 <h4 className="font-black text-amber-950">cPanel cron setup required</h4>
                 <p className="mt-1 text-sm text-amber-800">The automatic calling worker still requires a cPanel Cron Job on each deployment. Set it to run every minute and execute the packaged <code>backend/bin/process_survey_queue.php</code> with the deployment PHP binary. This is developer setup guidance only; the general Voice Survey tab and Auto Calling page intentionally show only an attention notice when it is not running.</p>
               </div>
+            </section>
+          )}
+
+          {activeTab === 'sms-service' && (
+            <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
+              <div><h3 className="text-xl font-black text-gray-900">SMS Service</h3><p className="mt-1 text-sm text-gray-500">Configure the sms.bd API used by the SMS page and automatic SMS confirmation.</p></div>
+              <label className="block space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">sms.bd API key</span><input type="password" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={smsForm.apiKey} onChange={(event) => setSmsForm({ ...smsForm, apiKey: event.target.value })} placeholder="Enter your API key from sms.bd" /></label>
+              <p className="text-sm text-gray-500">Balance is read from https://api.sms.net.bd and credentials are stored only on this deployment.</p>
             </section>
           )}
 

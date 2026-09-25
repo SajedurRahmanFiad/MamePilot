@@ -92,6 +92,7 @@ const Customers = lazyPage(() => import('./pages/Customers'));
 const Leads = lazyPage(() => import('./pages/Leads'));
 const LeadDetails = lazyPage(() => import('./pages/LeadDetails'));
 const AutoCalling = lazyPage(() => import('./pages/AutoCalling'));
+const Sms = lazyPage(() => import('./pages/Sms'));
 const CustomerForm = lazyPage(() => import('./pages/CustomerForm'));
 const CustomerDetails = lazyPage(() => import('./pages/CustomerDetails'));
 const Vendors = lazyPage(() => import('./pages/Vendors'));
@@ -393,6 +394,9 @@ preloaders.add(DeveloperNotes.preload);
       } />
       <Route path="/auto-calling" element={
         isAuthenticated ? (hasCapability('auto_calling') ? <Layout><AutoCalling /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/sms" element={
+        isAuthenticated ? (hasCapability('sms') ? <Layout><Sms /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
       <Route path="/banking/transfer" element={
         isAuthenticated ? (can('transfers.create') && can('accounts.view') && hasSubCapability('transfer') && hasSubCapability('accounts') ? <Navigate to="/banking/accounts?transfer=open" replace /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />

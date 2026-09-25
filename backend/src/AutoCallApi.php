@@ -828,6 +828,11 @@ final class AutoCallApi extends BaseService
                             ? 'Customer requested follow-up.'
                             : ($surveyCallStatus === 'not_answered' ? 'Customer did not pick up.' : 'Customer answered without pressing a key.')));
                 $this->logSurveyEvent($orderId, 'result_received', $surveyId, $surveyCallStatus, $response !== null ? (string) $response : null, $details);
+                try {
+                    (new SmsApi($this->database, $this->auth, $this->config))->sendAfterCallIfEligible($orderId, $confirmationStatus, $surveyCallStatus);
+                } catch (\Throwable $exception) {
+                    error_log('Could not process after-call SMS for order ' . $orderId . ': ' . $exception->getMessage());
+                }
             }
 
             // Only the first delivery for the active survey may schedule a retry.

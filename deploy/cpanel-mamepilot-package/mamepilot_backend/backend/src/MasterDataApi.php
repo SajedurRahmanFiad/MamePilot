@@ -3839,6 +3839,12 @@ final class MasterDataApi extends BaseService
                     ]
                 );
             }
+            if ($payment === null && $this->tableExists('sms_recharges')) {
+                $payment = $this->database->fetchOne(
+                    'SELECT gateway_payment_id FROM sms_recharges WHERE local_reference = :reference OR gateway_payment_id = :gateway_reference LIMIT 1',
+                    [':reference' => $reference, ':gateway_reference' => $reference]
+                );
+            }
             $eventId = trim((string) ($payment['gateway_payment_id'] ?? ''));
         }
         if ($eventId === '') {
@@ -3957,6 +3963,9 @@ final class MasterDataApi extends BaseService
                     $rechargeBindings
                 );
             }
+            $smsRecharge = $this->tableExists('sms_recharges')
+                ? $this->database->fetchOne("SELECT * FROM sms_recharges WHERE {$rechargeConditions} LIMIT 1 FOR UPDATE", $rechargeBindings)
+                : null;
             $subscription = $this->tableExists('service_subscription_payments')
                 ? $this->database->fetchOne(
                     "SELECT * FROM service_subscription_payments WHERE {$subscriptionConditions} LIMIT 1 FOR UPDATE",
@@ -3967,7 +3976,11 @@ final class MasterDataApi extends BaseService
             $kind = $declaredType === 'auto_calling_recharge' || str_starts_with($trustedReference, 'RCH-')
                 ? 'recharge'
                 : 'subscription';
+            if ($declaredType === 'sms_recharge' || str_starts_with($trustedReference, 'SMS-')) {
+                $kind = 'sms_recharge';
+            }
             $payment = $kind === 'recharge' ? $recharge : $subscription;
+            if ($kind === 'sms_recharge') $payment = $smsRecharge;
             if ($payment === null) {
                 $kind = $recharge !== null ? 'recharge' : 'subscription';
                 $payment = $recharge ?? $subscription;
@@ -4011,6 +4024,12 @@ final class MasterDataApi extends BaseService
                         ]
                     );
                 }
+            } elseif ($kind === 'sms_recharge') {
+                $this->touchUpdate('sms_recharges', (string) $payment['id'], [
+                    'gateway_payment_id' => $eventId,
+                    'status' => $nextStatus,
+                    'updated_at' => $this->database->nowUtc(),
+                ]);
             } else {
                 $this->touchUpdate('service_subscription_payments', (string) $payment['id'], [
                     'gateway_payment_id' => $eventId,

@@ -63,6 +63,7 @@ import type {
   VoiceSurveySettings,
   VoiceSurveyWorkerHealth,
   VoiceSurveyIntegrationSettings,
+  SmsSettings,
   OrderSurveySnapshot,
   OrderReportData,
   OrderReportDateMode,
@@ -537,6 +538,14 @@ export async function fetchVoiceSurveySettings(): Promise<VoiceSurveySettings> {
 export async function updateVoiceSurveySettings(updates: Partial<VoiceSurveySettings>): Promise<VoiceSurveySettings> { return call<VoiceSurveySettings>('updateVoiceSurveySettings', updates); }
 export async function fetchVoiceSurveyIntegrationSettings(): Promise<VoiceSurveyIntegrationSettings> { return call<VoiceSurveyIntegrationSettings>('fetchVoiceSurveyIntegrationSettings'); }
 export async function updateVoiceSurveyIntegrationSettings(updates: Partial<VoiceSurveyIntegrationSettings>): Promise<VoiceSurveyIntegrationSettings> { return call<VoiceSurveyIntegrationSettings>('updateVoiceSurveyIntegrationSettings', updates); }
+export async function fetchSmsSettings(): Promise<SmsSettings> { return call<SmsSettings>('fetchSmsSettings'); }
+export async function updateSmsSettings(updates: Partial<SmsSettings>): Promise<SmsSettings> { return call<SmsSettings>('updateSmsSettings', updates); }
+export async function fetchSmsBalance(): Promise<{ success: boolean; balance: number; message?: string }> { return call<any>('fetchSmsBalance'); }
+export async function fetchSmsSummary(): Promise<{ totalSms: number; pendingSms: number; lastSms?: string; lastRecharge?: string }> { return call<any>('fetchSmsSummary'); }
+export async function fetchSmsHistory(): Promise<any[]> { return call<any[]>('fetchSmsHistory'); }
+export async function fetchSmsRechargeHistory(): Promise<any[]> { return call<any[]>('fetchSmsRechargeHistory'); }
+export async function sendSms(customerIds: string[], message: string): Promise<any> { return call<any>('sendSms', { customerIds, message }); }
+export async function initiateSmsRechargeCheckout(amount: number): Promise<any> { return call<any>('initiateSmsRechargeCheckout', { amount }); }
 export async function triggerSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('triggerSurveyCall', { orderId }); }
 export async function retrySurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('retrySurveyCall', { orderId }); }
 export async function cancelSurveyCall(orderId: string): Promise<{ success: boolean; message: string }> { return call<any>('cancelSurveyCall', { orderId }); }

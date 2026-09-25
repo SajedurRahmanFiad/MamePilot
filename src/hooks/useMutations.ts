@@ -77,6 +77,9 @@ import {
   updateDashboardSettings,
   updateVoiceSurveySettings,
   updateVoiceSurveyIntegrationSettings,
+  updateSmsSettings,
+  sendSms,
+  initiateSmsRechargeCheckout,
   triggerSurveyCall,
   retrySurveyCall,
   cancelSurveyCall,
@@ -3428,6 +3431,10 @@ export function useUpdateVoiceSurveyIntegrationSettings(): UseMutationResult<Voi
     },
   });
 }
+
+export function useUpdateSmsSettings() { const queryClient = useQueryClient(); return useMutation({ mutationFn: updateSmsSettings, onSuccess: (settings) => { queryClient.setQueryData(['settings', 'sms'], settings); queryClient.invalidateQueries({ queryKey: ['settings', 'sms'] }); } }); }
+export function useSendSms() { const queryClient = useQueryClient(); return useMutation({ mutationFn: ({ customerIds, message }: { customerIds: string[]; message: string }) => sendSms(customerIds, message), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sms'] }); } }); }
+export function useInitiateSmsRechargeCheckout() { return useMutation({ mutationFn: initiateSmsRechargeCheckout }); }
 
 export function useConnectFraudspySteadfast(): UseMutationResult<{ ok: boolean; message: string; credential?: any }, Error, void, unknown> {
   return useMutation({

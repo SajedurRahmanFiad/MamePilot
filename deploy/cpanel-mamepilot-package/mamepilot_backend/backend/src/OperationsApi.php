@@ -2571,6 +2571,28 @@ final class OperationsApi extends BaseService
             ], $events);
         }
 
+        $order['smsHistory'] = [];
+        if ($this->tableExists('sms_history')) {
+            $smsRows = $this->database->fetchAll(
+                'SELECT id, recipients, message, status, response, created_at
+                 FROM sms_history
+                 WHERE JSON_CONTAINS(customer_ids, JSON_QUOTE(:customer_id))
+                 ORDER BY created_at ASC, id ASC',
+                [':customer_id' => (string) $row['customer_id']]
+            );
+            $order['smsHistory'] = array_map(function (array $sms): array {
+                $decodedResponse = json_decode((string) ($sms['response'] ?? ''), true);
+                return [
+                    'id' => (string) ($sms['id'] ?? ''),
+                    'recipients' => (string) ($sms['recipients'] ?? ''),
+                    'message' => (string) ($sms['message'] ?? ''),
+                    'status' => (string) ($sms['status'] ?? ''),
+                    'response' => is_array($decodedResponse) ? $decodedResponse : null,
+                    'createdAt' => $this->toIso($sms['created_at'] ?? null) ?? '',
+                ];
+            }, $smsRows);
+        }
+
         $order['additionalExpenses'] = [];
         $additionalExpenseRows = $this->database->fetchAll(
             "SELECT COALESCE(NULLIF(c.name, ''), NULLIF(t.category, ''), 'Uncategorized') AS category_name,

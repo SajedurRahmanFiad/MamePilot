@@ -218,11 +218,8 @@ const OrderDetails: React.FC = () => {
     const checkedAt = customer?.fraudCheckedAt ? new Date(customer.fraudCheckedAt).getTime() : 0;
     if (checkedAt >= orderCreatedAt && checkedAt > 0) return;
 
-    let attempts = 0;
     const timer = window.setInterval(() => {
-      attempts += 1;
       void refetchCustomer();
-      if (attempts >= 30) window.clearInterval(timer);
     }, 2000);
     return () => window.clearInterval(timer);
   }, [order?.customerId, order?.createdAt, customer?.fraudCheckedAt, refetchCustomer]);
@@ -720,6 +717,23 @@ const OrderDetails: React.FC = () => {
       });
 
     if (surveyGroup) entries.push({ ...surveyGroup, fallbackOrder: 50 });
+    (order.smsHistory || []).forEach((sms, index) => {
+      const parsedAt = sms.createdAt ? new Date(sms.createdAt) : null;
+      const validDate = parsedAt && !Number.isNaN(parsedAt.getTime()) ? parsedAt : null;
+      const isSuccess = ['success', 'completed', 'sent'].includes(String(sms.status).toLowerCase());
+      const responseMessage = typeof sms.response?.msg === 'string' ? sms.response.msg : '';
+      const failureReason = responseMessage || 'The SMS provider did not return a reason.';
+      entries.push({
+        key: `sms-${sms.id || index}`,
+        label: isSuccess ? 'SMS sent' : 'SMS failed',
+        icon: isSuccess ? ICONS.Check : ICONS.Close,
+        text: isSuccess
+          ? `SMS sent successfully to ${sms.recipients || 'the customer'}${validDate ? ` · ${formatDateTime(validDate)}` : ''}`
+          : `SMS failed: ${failureReason}${validDate ? ` · ${formatDateTime(validDate)}` : ''}`,
+        parsedAt: validDate,
+        fallbackOrder: 51 + index,
+      });
+    });
     entries.sort((a, b) => {
       if (a.parsedAt && b.parsedAt) return a.parsedAt.getTime() - b.parsedAt.getTime();
       if (a.parsedAt) return -1;
@@ -3020,7 +3034,7 @@ const OrderDetails: React.FC = () => {
           onClose={() => setShowFraudCheckModal(false)}
           phone={orderPhone}
           customerName={customer?.name || order.customerName || ''}
-          result={storedFraudResult}
+          result={activeFraudResult}
           checkedAt={customer?.fraudCheckedAt}
         />
       )}

@@ -20,6 +20,7 @@ final class BusinessActionDispatcher
     private MetaAdsApi $metaAds;
     private BusinessGrowthApi $businessGrowth;
     private AutoCallApi $autoCall;
+    private SmsApi $sms;
     private WhatsAppApi $whatsapp;
     private MessengerApi $messenger;
     private LeadApi $leads;
@@ -41,10 +42,11 @@ final class BusinessActionDispatcher
         $this->metaAds = new MetaAdsApi($database, $auth, $config);
         $this->businessGrowth = new BusinessGrowthApi($database, $auth, $config);
         $this->autoCall = new AutoCallApi($database, $auth, $config);
+        $this->sms = new SmsApi($database, $auth, $config);
         $this->whatsapp = new WhatsAppApi($database, $auth, $config);
         $this->messenger = new MessengerApi($database, $auth, $config);
         $this->leads = new LeadApi($database, $auth, $config, $this->master, $this->operations);
-        $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall, $database);
+        $this->postCreateEffects = new OrderPostCreateEffects($featureAccess, $this->autoCall, $database, $this->sms);
         $this->woocommerce = new WooCommerceApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
         $this->shopify = new ShopifyApi($database, $auth, $config, $this->operations, $this->postCreateEffects);
         $this->recurringTransactions = new RecurringTransactionApi($database, $auth, $config);
@@ -65,6 +67,7 @@ final class BusinessActionDispatcher
             'metaAds' => $this->metaAds,
             'businessGrowth' => $this->businessGrowth,
             'autoCall' => $this->autoCall,
+            'sms' => $this->sms,
             'whatsapp' => $this->whatsapp,
             'messenger' => $this->messenger,
             'leads' => $this->leads,

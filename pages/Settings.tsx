@@ -5,12 +5,12 @@ import { db, saveDb } from '../db';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, DashboardSettingsPanel, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
-import { OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings } from '../types';
+import { OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings, type SmsSettings } from '../types';
 import {
   useCategories, usePaymentMethods, useUnits,
   useCompanySettings, useOrderSettings, useInvoiceSettings,
   useSystemDefaults, useCourierSettings, useAccounts, useProducts, useWalletSettings, usePermissionsSettings, useDashboardSettings, useMetaAdsConnectionStatus, useMetaAdsSettings, useMetaAdsSyncStatus,
-  useVoiceSurveySettings, useBeSmartSettings
+  useVoiceSurveySettings, useBeSmartSettings, useSmsSettings
 } from '../src/hooks/useQueries';
 import {
   useCreateCategory, useDeleteCategory,
@@ -23,7 +23,7 @@ import {
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
-  useUpdateVoiceSurveySettings, useUpdateBeSmartSettings
+  useUpdateVoiceSurveySettings, useUpdateBeSmartSettings, useUpdateSmsSettings
 } from '../src/hooks/useMutations';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -92,6 +92,7 @@ const SettingsPage: React.FC = () => {
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
   const { data: voiceSurveySettingsData, isPending: voiceSurveyLoading } = useVoiceSurveySettings(activeTab === 'voice-survey');
+  const { data: smsSettingsData, isPending: smsLoading, isFetching: smsSettingsFetching } = useSmsSettings(activeTab === 'sms');
   const { data: beSmartSettingsData, isPending: beSmartLoading } = useBeSmartSettings(Boolean(capabilities.be_smart));
   const syncMetaAdsMutation = useSyncMetaAds();
   const META_COOLDOWN_KEY = 'metaAdsCooldownEndAt';
@@ -128,6 +129,7 @@ const SettingsPage: React.FC = () => {
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
+  const updateSmsSettingsMutation = useUpdateSmsSettings();
   const updateBeSmartSettingsMutation = useUpdateBeSmartSettings();
   const toast = useToastNotifications();
 
@@ -250,6 +252,37 @@ const SettingsPage: React.FC = () => {
     noKeyRetryCount: 2,
     triggerStatuses: ['On Hold'],
   });
+  const [smsSettings, setSmsSettings] = useState<SmsSettings>({ apiKey: '', autoEnabled: false, sendTiming: 'after_order', callStatuses: [], templates: {} });
+  const [smsOutcomeDropdownOpen, setSmsOutcomeDropdownOpen] = useState(false);
+  const smsHydratedRef = useRef(false);
+  const smsDirtyRef = useRef(false);
+  const smsJustSavedRef = useRef(false);
+  const smsTemplateRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const activeSmsTemplateKey = useRef('default');
+
+  const updateSmsForm = useCallback((updater: React.SetStateAction<SmsSettings>) => {
+    smsHydratedRef.current = true;
+    smsDirtyRef.current = true;
+    setSmsSettings(updater);
+  }, []);
+
+  const insertSmsVariable = (variable: string) => {
+    const templateKey = activeSmsTemplateKey.current;
+    const textarea = smsTemplateRefs.current[templateKey];
+    const token = `{{${variable}}}`;
+    const currentValue = smsSettings.templates[templateKey] || '';
+    const start = textarea?.selectionStart ?? currentValue.length;
+    const end = textarea?.selectionEnd ?? start;
+    const nextValue = `${currentValue.slice(0, start)}${token}${currentValue.slice(end)}`;
+    updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, [templateKey]: nextValue } }));
+    requestAnimationFrame(() => {
+      const nextTextarea = smsTemplateRefs.current[templateKey];
+      if (!nextTextarea) return;
+      nextTextarea.focus();
+      const nextCursor = start + token.length;
+      nextTextarea.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
   const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '', isFraction: false });
@@ -450,6 +483,18 @@ const SettingsPage: React.FC = () => {
       });
     }
   }, [voiceSurveySettingsData]);
+  useEffect(() => {
+    if (!smsSettingsData) return;
+    if (smsSettingsFetching) return;
+    if (smsJustSavedRef.current) {
+      smsJustSavedRef.current = false;
+      return;
+    }
+    if (!smsDirtyRef.current) {
+      smsHydratedRef.current = true;
+      setSmsSettings(smsSettingsData);
+    }
+  }, [smsSettingsData, smsSettingsFetching]);
 
   React.useEffect(() => {
     if (beSmartJustSavedRef.current) { beSmartJustSavedRef.current = false; return; }
@@ -750,6 +795,24 @@ const SettingsPage: React.FC = () => {
     triggerVoiceSurveySave();
   }, [voiceSurveySettings, triggerVoiceSurveySave]);
 
+  const saveSms = useCallback(async () => {
+    smsJustSavedRef.current = true;
+    try {
+      const savedSettings = await updateSmsSettingsMutation.mutateAsync(smsSettings);
+      smsDirtyRef.current = false;
+      smsHydratedRef.current = true;
+      queryClient.setQueryData(['settings', 'sms'], savedSettings);
+    } catch (error) {
+      smsJustSavedRef.current = false;
+      throw error;
+    }
+  }, [smsSettings, updateSmsSettingsMutation, queryClient]);
+  const { isSaving: smsSaving, trigger: triggerSmsSave } = useAutoSave({ save: saveSms });
+  useEffect(() => {
+    if (!smsHydratedRef.current || !smsDirtyRef.current) return;
+    triggerSmsSave();
+  }, [smsSettings, triggerSmsSave]);
+
   const isTabSaving = activeTab === 'company' ? companySaving
     : activeTab === 'order' ? orderSaving
     : activeTab === 'defaults' ? defaultsSaving
@@ -760,6 +823,7 @@ const SettingsPage: React.FC = () => {
     : activeTab === 'be-smart' ? beSmartSaving
     : activeTab === 'meta-ads' ? metaAdsSaving
     : activeTab === 'voice-survey' ? voiceSurveySaving
+    : activeTab === 'sms' ? smsSaving
     : false;
 
   const updateCompanyPages = (updater: (pages: CompanyPage[]) => CompanyPage[]) => {
@@ -1170,6 +1234,7 @@ const SettingsPage: React.FC = () => {
     canEditPaymentMethods ? { id: 'units', label: 'Units', icon: ICONS.Products } : null,
     hasCapability('courier_automation') && canEditCourierSettings ? { id: 'courier', label: 'Courier', icon: ICONS.Courier } : null,
     hasCapability('auto_calling') && hasAdminAccess(user?.role) ? { id: 'voice-survey', label: 'Voice Survey', icon: ICONS.Bell } : null,
+    hasCapability('sms') && hasAdminAccess(user?.role) ? { id: 'sms', label: 'SMS', icon: ICONS.Bell } : null,
     hasAdminAccess(user?.role) ? { id: 'data-management', label: 'Import & Export', icon: ICONS.Download } : null,
   ].filter(Boolean) as { id: string; label: string; icon: React.ReactNode }[];
   const availableTabIds = tabs.map((tab) => tab.id).join('|');
@@ -2350,6 +2415,26 @@ const SettingsPage: React.FC = () => {
 
               </section>
             </div>
+          )}
+
+          {activeTab === 'sms' && (
+            <section className="space-y-5">
+              <div className="rounded-xl border border-gray-100 bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <div><h3 className="text-lg font-black text-gray-900">Automatic SMS Confirmation</h3><p className="text-sm text-gray-500">Send a message after new orders or after the automatic call result.</p></div>
+                  <button type="button" onClick={() => updateSmsForm((settings) => ({ ...settings, autoEnabled: !settings.autoEnabled }))} className={`relative inline-flex h-7 w-12 items-center rounded-full ${smsSettings.autoEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ${smsSettings.autoEnabled ? 'translate-x-6' : 'translate-x-1'}`} /></button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
+                <label className="block space-y-2 text-sm font-semibold text-gray-700"><span>Send Message</span><select value={smsSettings.sendTiming} onChange={(event) => updateSmsForm((settings) => ({ ...settings, sendTiming: event.target.value as SmsSettings['sendTiming'] }))} className="w-full rounded-xl border border-gray-200 px-3 py-2"><option value="after_order">Right after order creation</option>{hasCapability('auto_calling') && <option value="after_call">After auto calling is completed</option>}</select></label>
+                {smsSettings.sendTiming === 'after_order' && <><div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div><label className="block space-y-2 text-sm font-semibold text-gray-700"><span>SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current.default = element; }} onFocus={() => { activeSmsTemplateKey.current = 'default'; }} className="min-h-32 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder="SMS Template" value={smsSettings.templates.default || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, default: event.target.value } }))} /></label></>}
+                {smsSettings.sendTiming === 'after_call' && <div className="space-y-5">
+                  <div className="relative"><span className="mb-2 block text-sm font-semibold text-gray-700">Call Outcomes</span><button type="button" onClick={() => setSmsOutcomeDropdownOpen((open) => !open)} className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-sm"><span>{smsSettings.callStatuses.length ? `${smsSettings.callStatuses.length} outcome${smsSettings.callStatuses.length === 1 ? '' : 's'} selected` : 'Select call outcomes'}</span><span className="text-gray-400">{smsOutcomeDropdownOpen ? '▲' : '▼'}</span></button>{smsOutcomeDropdownOpen && <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-xl">{[['confirmed', 'Customer Confirmed'], ['cancelled', 'Customer Cancelled'], ['unreachable', 'Did Not Pick Up / Unreachable']].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-gray-50"><input type="checkbox" checked={smsSettings.callStatuses.includes(value)} onChange={() => updateSmsForm((settings) => ({ ...settings, callStatuses: settings.callStatuses.includes(value) ? settings.callStatuses.filter((status) => status !== value) : [...settings.callStatuses, value] }))} /><span>{label}</span></label>)}</div>}</div>
+                  <div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div>
+                  {smsSettings.callStatuses.map((status) => { const caption = status === 'confirmed' ? 'Customer Confirmed' : status === 'cancelled' ? 'Customer Cancelled' : 'Did Not Pick Up / Unreachable'; return <label className="block space-y-2 text-sm font-semibold text-gray-700" key={status}><span>{caption} SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current[status] = element; }} onFocus={() => { activeSmsTemplateKey.current = status; }} className="min-h-20 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder={`${caption} SMS Template`} value={smsSettings.templates[status] || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, [status]: event.target.value } }))} /></label>; })}
+                </div>}
+              </div>
+            </section>
           )}
 
           {activeTab === 'permissions' && (

@@ -681,6 +681,14 @@ export interface VoiceSurveyIntegrationSettings {
   rechargeNotificationEnabled: boolean;
 }
 
+export interface SmsSettings {
+  apiKey: string;
+  autoEnabled: boolean;
+  sendTiming: 'after_order' | 'after_call';
+  callStatuses: string[];
+  templates: Record<string, string>;
+}
+
 export interface CourierSettings {
   automaticallyDeductShippingCosts: boolean;
   automaticallyMarkPaidAfterDelivery: boolean;
@@ -893,6 +901,7 @@ export interface Order {
   surveyLastRetryReason?: string | null;
   surveyLastRetryAt?: string | null;
   surveyEvents?: VoiceSurveyEvent[];
+  smsHistory?: SmsHistoryEntry[];
   history: {
     created: string;
     courier?: string;
@@ -968,6 +977,15 @@ export interface Order {
     amount: number;
   }>;
   courierAutomaticExpenseRecorded?: boolean;
+}
+
+export interface SmsHistoryEntry {
+  id: string;
+  recipients: string;
+  message: string;
+  status: string;
+  response?: Record<string, unknown> | null;
+  createdAt: string;
 }
 
 export type OrderUpdate = Partial<Order> & {
@@ -1552,6 +1570,7 @@ export type AppCapabilityKey =
   | 'whatsapp'
   | 'messenger'
   | 'auto_calling'
+  | 'sms'
   | 'woocommerce'
   | 'shopify'
   | 'recurring_transactions';

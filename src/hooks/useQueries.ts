@@ -109,6 +109,11 @@ import {
   fetchBusinessRecommendations,
   fetchVoiceSurveySettings,
   fetchVoiceSurveyIntegrationSettings,
+  fetchSmsSettings,
+  fetchSmsBalance,
+  fetchSmsSummary,
+  fetchSmsHistory,
+  fetchSmsRechargeHistory,
   fetchOrderSurveyStatus,
   fetchSurveyBalance,
   fetchSurveyHistory,
@@ -1631,6 +1636,12 @@ export function useVoiceSurveyIntegrationSettings(enabled: boolean = true): UseQ
     enabled,
   });
 }
+
+export function useSmsSettings(enabled: boolean = true) { return useQuery({ queryKey: ['settings', 'sms'], queryFn: fetchSmsSettings, staleTime: 0, refetchOnMount: 'always', enabled }); }
+export function useSmsBalance(enabled: boolean = true) { return useQuery({ queryKey: ['sms', 'balance'], queryFn: fetchSmsBalance, staleTime: 30 * 1000, enabled }); }
+export function useSmsSummary(enabled: boolean = true) { return useQuery({ queryKey: ['sms', 'summary'], queryFn: fetchSmsSummary, staleTime: 30 * 1000, enabled }); }
+export function useSmsHistory(enabled: boolean = true) { return useQuery({ queryKey: ['sms', 'history'], queryFn: fetchSmsHistory, staleTime: 30 * 1000, enabled }); }
+export function useSmsRechargeHistory(enabled: boolean = true) { return useQuery({ queryKey: ['sms', 'recharges'], queryFn: fetchSmsRechargeHistory, staleTime: 30 * 1000, enabled }); }
 
 export function useOrderSurveyStatus(orderId: string | undefined, enabled: boolean = true): UseQueryResult<OrderSurveySnapshot, Error> {
   const { isOnline } = useNetwork();

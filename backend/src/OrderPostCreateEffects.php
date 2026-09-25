@@ -8,17 +8,19 @@ final class OrderPostCreateEffects
 {
     private FeatureAccess $featureAccess;
     private AutoCallApi $autoCall;
+    private ?SmsApi $sms;
     private ?Database $database;
     private bool $surveyWorkerScheduled = false;
     private bool $fraudWorkersScheduled = false;
-    /** @var array<string, true> */
+    /** @var array<int, string> */
     private array $fraudCustomerIds = [];
 
-    public function __construct(FeatureAccess $featureAccess, AutoCallApi $autoCall, ?Database $database = null)
+    public function __construct(FeatureAccess $featureAccess, AutoCallApi $autoCall, ?Database $database = null, ?SmsApi $sms = null)
     {
         $this->featureAccess = $featureAccess;
         $this->autoCall = $autoCall;
         $this->database = $database;
+        $this->sms = $sms;
     }
 
     /** @param array<string, mixed> $order */
@@ -45,11 +47,15 @@ final class OrderPostCreateEffects
             error_log('Could not queue automatic calling for order ' . $orderId . ': ' . $exception->getMessage());
         }
 
+        if ($orderId !== '' && $this->sms !== null) {
+            try { $this->sms->queueOrderIfEligible($orderId); } catch (\Throwable $exception) { error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage()); }
+        }
+
         $customerId = trim((string) ($order['customerId'] ?? ''));
         if ($customerId === '' || !$this->isAutomaticFraudCheckEnabled()) {
             return;
         }
-        $this->fraudCustomerIds[$customerId] = true;
+        $this->fraudCustomerIds[] = $customerId;
         if ($this->fraudWorkersScheduled) {
             return;
         }
@@ -66,6 +72,7 @@ final class OrderPostCreateEffects
     {
         $script = dirname(__DIR__) . '/bin/process_customer_fraud_check.php';
         if (!is_file($script)) {
+            error_log('Could not trigger automatic fraud check: worker script not found at ' . $script);
             return;
         }
 
@@ -80,9 +87,25 @@ final class OrderPostCreateEffects
             $process = @popen($command, 'r');
             if (is_resource($process)) {
                 @pclose($process);
+                return;
             }
         } elseif (function_exists('shell_exec')) {
             @shell_exec($command);
+            return;
+        }
+
+        // Some hosts disable both process APIs. The shutdown callback is already
+        // running here, so this fallback still happens after order persistence.
+        error_log('Could not spawn automatic fraud check worker; running it inline for customer ' . $customerId);
+        try {
+            $config = Config::load(dirname(__DIR__, 2));
+            $database = new Database($config);
+            $auth = new Auth($config, $database);
+            $operations = new OperationsApi($database, $auth, $config);
+            $courier = new CourierApi($database, $auth, $config, $operations);
+            $courier->processCustomerFraudCheck(['customerId' => $customerId]);
+        } catch (\Throwable $exception) {
+            error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
         }
     }
 
