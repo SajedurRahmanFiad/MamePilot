@@ -220,9 +220,15 @@ const OrderDetails: React.FC = () => {
 
     const timer = window.setInterval(() => {
       void refetchCustomer();
+      if (!courierHistoryMutation.data && !courierHistoryMutation.isPending && /^0\d{10}$/.test(currentCustomerPhone)) {
+        courierHistoryMutation.mutate({
+          phone: currentCustomerPhone,
+          customerId: order.customerId,
+        });
+      }
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [order?.customerId, order?.createdAt, customer?.fraudCheckedAt, refetchCustomer]);
+  }, [order?.customerId, order?.createdAt, customer?.fraudCheckedAt, currentCustomerPhone, courierHistoryMutation.data, courierHistoryMutation.isPending, refetchCustomer]);
 
   // Auto-trigger partial delivery confirmation tab in the completion modal
   React.useEffect(() => {
