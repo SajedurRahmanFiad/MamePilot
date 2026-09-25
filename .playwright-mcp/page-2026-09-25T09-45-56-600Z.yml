@@ -1,0 +1,116 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e4]:
+    - complementary [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - button [ref=f5e9] [cursor=pointer]:
+          - img "Sebate Sera" [ref=f5e10]
+        - navigation [ref=f5e11]:
+          - link [ref=f5e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f5e23] [cursor=pointer]
+          - button [ref=f5e32] [cursor=pointer]
+          - button [ref=f5e41] [cursor=pointer]
+          - button [ref=f5e51] [cursor=pointer]
+          - button [ref=f5e59] [cursor=pointer]
+          - button [ref=f5e66] [cursor=pointer]
+          - button [ref=f5e76] [cursor=pointer]
+          - link [ref=f5e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f5e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f5e97] [cursor=pointer]
+        - generic [ref=f5e103]:
+          - link [ref=f5e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f5e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f5e121] [cursor=pointer]
+    - generic [ref=f5e126]:
+      - banner [ref=f5e127]:
+        - heading "New Order" [level=1] [ref=f5e1007]
+        - generic [ref=f5e132]:
+          - link "Point of Sale" [ref=f5e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f5e138] [cursor=pointer]
+          - button "Notifications" [ref=f5e143] [cursor=pointer]
+          - button [ref=f5e148] [cursor=pointer]:
+            - generic [ref=f5e149]:
+              - paragraph [ref=f5e150]: Fiad
+              - paragraph [ref=f5e151]: Developer
+            - img "Profile" [ref=f5e152]
+      - main [ref=f5e153]:
+        - generic [ref=f5e1008]:
+          - generic [ref=f5e1009]:
+            - heading "New Order" [level=2] [ref=f5e1010]
+            - button "Cancel" [ref=f5e1011] [cursor=pointer]
+          - generic [ref=f5e1012]:
+            - generic [ref=f5e1013]:
+              - generic [ref=f5e1014]:
+                - generic [ref=f5e1015]: Select Customer
+                - button "Select Customer..." [ref=f5e1017] [cursor=pointer]
+              - generic [ref=f5e1022]:
+                - text: Order Date
+                - textbox [ref=f5e1023] [cursor=pointer]: 2026-09-25
+              - generic [ref=f5e1024]:
+                - text: Order Number
+                - textbox "Generating..." [ref=f5e1025]
+            - generic [ref=f5e1027]:
+              - text: Source Ad
+              - button "Not from an ad No ad attribution" [ref=f5e1029] [cursor=pointer]:
+                - generic [ref=f5e1030]:
+                  - generic [ref=f5e1031]: Not from an ad
+                  - paragraph [ref=f5e1032]: No ad attribution
+            - table [ref=f5e1037]:
+              - rowgroup [ref=f5e1038]:
+                - row [ref=f5e1039]:
+                  - columnheader "Product Item" [ref=f5e1040]
+                  - columnheader "Rate" [ref=f5e1041]
+                  - columnheader "Qty" [ref=f5e1042]
+                  - columnheader "Amount" [ref=f5e1043]
+                  - columnheader [ref=f5e1044]
+              - rowgroup
+            - button "Add an item" [ref=f5e1046] [cursor=pointer]
+            - generic [ref=f5e1048]:
+              - generic [ref=f5e1049]:
+                - text: Order Notes / Terms
+                - textbox "Internal notes or special instructions for this order..." [ref=f5e1050]
+              - generic [ref=f5e1051]:
+                - generic [ref=f5e1052]:
+                  - generic [ref=f5e1053]: Subtotal
+                  - generic [ref=f5e1054]: ৳ 0
+                - generic [ref=f5e1055]:
+                  - generic [ref=f5e1056]: Discount
+                  - generic [ref=f5e1057]:
+                    - generic [ref=f5e1058]: ৳
+                    - textbox [ref=f5e1060]: "0"
+                - generic [ref=f5e1061]:
+                  - generic [ref=f5e1062]: Shipping
+                  - generic [ref=f5e1063]:
+                    - generic [ref=f5e1064]: ৳
+                    - textbox [ref=f5e1066]: "0"
+                - generic [ref=f5e1067]:
+                  - generic [ref=f5e1068]: Total
+                  - generic [ref=f5e1069]:
+                    - generic [ref=f5e1070]: ৳
+                    - textbox "Order total" [ref=f5e1072]
+                - button "Create Order" [ref=f5e1073] [cursor=pointer]
+        - generic [ref=f5e359]:
+          - paragraph [ref=f5e360]: © 2026 Sebate Sera|Version 0.3.52|All rights reserved.
+          - paragraph [ref=f5e361]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f5e362] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f5e363]:
+        - generic [ref=f5e364]: Chat with Mame
+        - button "Open chat" [ref=f5e365] [cursor=pointer]:
+          - img "Mame AI" [ref=f5e366]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f5e367]:
+    - generic [ref=f5e368]:
+      - heading [level=3] [ref=f5e370]: Notifications
+      - button [ref=f5e371] [cursor=pointer]
+    - tablist [ref=f5e375]:
+      - tab [selected] [ref=f5e376] [cursor=pointer]: all
+      - tab [ref=f5e377] [cursor=pointer]: unread
+      - tab [ref=f5e378] [cursor=pointer]: read
+    - generic [ref=f5e379]: No notifications yet.

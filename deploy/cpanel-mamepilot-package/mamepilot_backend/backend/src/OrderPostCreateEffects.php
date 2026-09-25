@@ -62,7 +62,7 @@ final class OrderPostCreateEffects
 
         $this->fraudWorkersScheduled = true;
         register_shutdown_function(function (): void {
-            foreach (array_keys($this->fraudCustomerIds) as $customerId) {
+            foreach ($this->fraudCustomerIds as $customerId) {
                 $this->launchFraudCheck($customerId);
             }
         });

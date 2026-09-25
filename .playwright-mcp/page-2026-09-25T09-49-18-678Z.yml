@@ -1,0 +1,167 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e2]:
+    - generic [ref=f6e3]:
+      - complementary [ref=f6e4]:
+        - generic [ref=f6e5]:
+          - button [ref=f6e8] [cursor=pointer]:
+            - img "Sebate Sera" [ref=f6e9]
+          - navigation [ref=f6e10]:
+            - link [ref=f6e12] [cursor=pointer]:
+              - /url: "#/dashboard"
+            - button [ref=f6e22] [cursor=pointer]
+            - button [ref=f6e31] [cursor=pointer]
+            - button [ref=f6e40] [cursor=pointer]
+            - button [ref=f6e50] [cursor=pointer]
+            - button [ref=f6e58] [cursor=pointer]
+            - button [ref=f6e65] [cursor=pointer]
+            - button [ref=f6e75] [cursor=pointer]
+            - link [ref=f6e82] [cursor=pointer]:
+              - /url: "#/grow-your-business"
+            - link [ref=f6e89] [cursor=pointer]:
+              - /url: "#/reports"
+            - button [ref=f6e96] [cursor=pointer]
+          - generic [ref=f6e102]:
+            - link [ref=f6e105] [cursor=pointer]:
+              - /url: "#/subscriptions"
+            - link [ref=f6e112] [cursor=pointer]:
+              - /url: "#/settings"
+            - button [ref=f6e120] [cursor=pointer]
+      - generic [ref=f6e125]:
+        - banner [ref=f6e126]:
+          - heading "Orders" [level=1] [ref=f6e528]
+          - generic [ref=f6e131]:
+            - link "Point of Sale" [ref=f6e132] [cursor=pointer]:
+              - /url: "#/pos"
+            - button "Quick actions" [ref=f6e137] [cursor=pointer]
+            - button "Notifications" [ref=f6e142] [cursor=pointer]
+            - button [ref=f6e147] [cursor=pointer]:
+              - generic [ref=f6e148]:
+                - paragraph [ref=f6e149]: Fiad
+                - paragraph [ref=f6e150]: Developer
+              - img "Profile" [ref=f6e151]
+        - main [ref=f6e152]:
+          - generic [ref=f6e529]:
+            - generic [ref=f6e530]:
+              - generic [ref=f6e531]:
+                - button [ref=f6e532] [cursor=pointer]
+                - heading "ORD-358" [level=2] [ref=f6e535]
+                - generic [ref=f6e536]: On Hold
+              - generic [ref=f6e537]:
+                - button "Print" [ref=f6e538] [cursor=pointer]
+                - button "Actions" [ref=f6e544] [cursor=pointer]
+            - generic [ref=f6e550]:
+              - paragraph [ref=f6e551]: Trust scan in motion
+              - paragraph [ref=f6e552]: Checking if the customer is fraud...
+            - generic [ref=f6e553]:
+              - generic [ref=f6e555]:
+                - generic [ref=f6e556]:
+                  - generic [ref=f6e557]:
+                    - generic [ref=f6e558]:
+                      - img "Company Logo" [ref=f6e559]
+                      - generic [ref=f6e560]:
+                        - heading "Sebate Sera" [level=1] [ref=f6e561]
+                        - paragraph [ref=f6e562]: আপনার স্বাস্থ্য, আমাদের প্রতিশ্রুতি🍯
+                    - generic [ref=f6e563]:
+                      - paragraph [ref=f6e564]: "01795317984"
+                      - paragraph [ref=f6e567]: sebateseraofficially@gmail.com
+                      - paragraph [ref=f6e570]: Dhaka, Bangladesh
+                  - generic [ref=f6e574]:
+                    - generic [ref=f6e578]:
+                      - paragraph [ref=f6e579]: Order No.
+                      - paragraph [ref=f6e580]: ORD-358
+                    - generic [ref=f6e584]:
+                      - paragraph [ref=f6e585]: Date
+                      - paragraph [ref=f6e586]: 25 Sept 2026
+                - generic [ref=f6e587]:
+                  - generic [ref=f6e588]: Billed To
+                  - generic [ref=f6e592]:
+                    - generic [ref=f6e593]:
+                      - heading "Imran" [level=3] [ref=f6e594]
+                      - paragraph [ref=f6e595]: "01609234361"
+                    - generic [ref=f6e601]:
+                      - paragraph [ref=f6e602]: Address
+                      - paragraph [ref=f6e603]: Club,depz,ashulia,dhaka
+                - table [ref=f6e606]:
+                  - rowgroup [ref=f6e607]:
+                    - row [ref=f6e608]:
+                      - columnheader "#" [ref=f6e609]
+                      - columnheader "Item Description" [ref=f6e610]
+                      - columnheader "Rate" [ref=f6e611]
+                      - columnheader "Qty" [ref=f6e612]
+                      - columnheader "Total" [ref=f6e613]
+                  - rowgroup [ref=f6e614]:
+                    - row [ref=f6e615]:
+                      - cell "1" [ref=f6e616]
+                      - cell [ref=f6e617]:
+                        - generic [ref=f6e618]:
+                          - img "খাঁটি গাওয়া ঘি (১-কেজি)" [ref=f6e619]
+                          - generic [ref=f6e620]: খাঁটি গাওয়া ঘি (১-কেজি)
+                      - cell "৳ 1,450" [ref=f6e621]
+                      - cell "1" [ref=f6e622]
+                      - cell "৳ 1,450" [ref=f6e623]
+                - generic [ref=f6e625]:
+                  - generic [ref=f6e626]:
+                    - generic [ref=f6e627]: Subtotal
+                    - generic [ref=f6e628]: ৳ 1,450
+                  - generic [ref=f6e629]:
+                    - generic [ref=f6e630]: Discount
+                    - generic [ref=f6e631]: "-৳ 0"
+                  - generic [ref=f6e632]:
+                    - generic [ref=f6e633]: Shipping
+                    - generic [ref=f6e634]: ৳ 0
+                  - generic [ref=f6e635]:
+                    - generic [ref=f6e636]: Net Total
+                    - generic [ref=f6e637]: ৳ 1,450
+              - generic [ref=f6e638]:
+                - button [ref=f6e640] [cursor=pointer]:
+                  - heading "Payment Unpaid" [level=3] [ref=f6e642]:
+                    - text: Payment
+                    - generic [ref=f6e643]: Unpaid
+                - generic [ref=f6e651]:
+                  - button [expanded] [ref=f6e652] [cursor=pointer]:
+                    - heading "Order Progress (0%)" [level=3] [ref=f6e653]
+                  - generic [ref=f6e661]:
+                    - generic [ref=f6e663]:
+                      - generic [ref=f6e664]: Progress
+                      - generic [ref=f6e665]: 0%
+                    - generic [ref=f6e667]:
+                      - generic [ref=f6e668]: Created
+                      - generic [ref=f6e673]: Process
+                      - generic [ref=f6e678]: Assign courier
+                      - generic [ref=f6e683]: Pick up
+                      - generic [ref=f6e688]: Delivery pending
+                      - generic [ref=f6e693]: Partially Delivered
+                      - generic [ref=f6e698]: Deliver
+                      - generic [ref=f6e703]: Return
+                      - generic [ref=f6e708]: Cancel
+                    - button "Start processing" [ref=f6e714] [cursor=pointer]
+                - button [ref=f6e716] [cursor=pointer]:
+                  - heading "Metadata" [level=3] [ref=f6e717]
+            - generic [ref=f6e721]:
+              - button [ref=f6e723] [cursor=pointer]:
+                - heading "Activity Timeline" [level=3] [ref=f6e724]
+              - button [ref=f6e729] [cursor=pointer]:
+                - heading "Courier Tracking" [level=3] [ref=f6e730]
+          - generic [ref=f6e220]:
+            - paragraph [ref=f6e221]: © 2026 Sebate Sera|Version 0.3.53|All rights reserved.
+            - paragraph [ref=f6e222]:
+              - text: developed by
+              - link "Md Sajedur Rahman Fiad" [ref=f6e223] [cursor=pointer]:
+                - /url: https://sajedurrahmanfiad.me
+        - generic [ref=f6e224]:
+          - generic [ref=f6e225]: Chat with Mame
+          - button "Open chat" [ref=f6e226] [cursor=pointer]:
+            - img "Mame AI" [ref=f6e227]
+    - generic [ref=f6e735]:
+      - generic [ref=f6e739]: Order created successfully
+      - button [ref=f6e740] [cursor=pointer]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f6e228]:
+    - generic [ref=f6e229]:
+      - heading [level=3] [ref=f6e231]: Notifications
+      - button [ref=f6e232] [cursor=pointer]
+    - tablist [ref=f6e236]:
+      - tab [selected] [ref=f6e237] [cursor=pointer]: all
+      - tab [ref=f6e238] [cursor=pointer]: unread
+      - tab [ref=f6e239] [cursor=pointer]: read
+    - generic [ref=f6e240]: No notifications yet.

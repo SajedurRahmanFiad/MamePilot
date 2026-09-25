@@ -1,0 +1,128 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e3]:
+    - complementary [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - button [ref=f6e8] [cursor=pointer]:
+          - img "Sebate Sera" [ref=f6e9]
+        - navigation [ref=f6e10]:
+          - link [ref=f6e12] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f6e22] [cursor=pointer]
+          - button [ref=f6e31] [cursor=pointer]
+          - button [ref=f6e40] [cursor=pointer]
+          - button [ref=f6e50] [cursor=pointer]
+          - button [ref=f6e58] [cursor=pointer]
+          - button [ref=f6e65] [cursor=pointer]
+          - button [ref=f6e75] [cursor=pointer]
+          - link [ref=f6e82] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f6e89] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f6e96] [cursor=pointer]
+        - generic [ref=f6e102]:
+          - link [ref=f6e105] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f6e112] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f6e120] [cursor=pointer]
+    - generic [ref=f6e125]:
+      - banner [ref=f6e126]:
+        - heading "New Order" [level=1] [ref=f6e130]
+        - generic [ref=f6e131]:
+          - link "Point of Sale" [ref=f6e132] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f6e137] [cursor=pointer]
+          - button "Notifications" [ref=f6e142] [cursor=pointer]
+          - button [ref=f6e147] [cursor=pointer]:
+            - generic [ref=f6e148]:
+              - paragraph [ref=f6e149]: Fiad
+              - paragraph [ref=f6e150]: Developer
+            - img "Profile" [ref=f6e151]
+      - main [ref=f6e152]:
+        - generic [ref=f6e153]:
+          - generic [ref=f6e154]:
+            - heading "New Order" [level=2] [ref=f6e155]
+            - button "Cancel" [ref=f6e156] [cursor=pointer]
+          - generic [ref=f6e157]:
+            - generic [ref=f6e158]:
+              - generic [ref=f6e159]:
+                - generic [ref=f6e160]: Select Customer
+                - button "Imran 01609234361 Club,depz,ashulia,dhaka" [ref=f6e407] [cursor=pointer]:
+                  - generic [ref=f6e408]:
+                    - generic [ref=f6e409]: Imran
+                    - paragraph [ref=f6e410]: "01609234361"
+                    - paragraph [ref=f6e411]: Club,depz,ashulia,dhaka
+              - generic [ref=f6e167]:
+                - text: Order Date
+                - textbox [ref=f6e168] [cursor=pointer]: 2026-09-25
+              - generic [ref=f6e169]:
+                - text: Order Number
+                - textbox "Generating..." [ref=f6e170]: ORD-358
+            - generic [ref=f6e172]:
+              - text: Source Ad
+              - button "Not from an ad No ad attribution" [ref=f6e174] [cursor=pointer]:
+                - generic [ref=f6e175]:
+                  - generic [ref=f6e176]: Not from an ad
+                  - paragraph [ref=f6e177]: No ad attribution
+            - table [ref=f6e182]:
+              - rowgroup [ref=f6e183]:
+                - row [ref=f6e184]:
+                  - columnheader "Product Item" [ref=f6e185]
+                  - columnheader "Rate" [ref=f6e186]
+                  - columnheader "Qty" [ref=f6e187]
+                  - columnheader "Amount" [ref=f6e188]
+                  - columnheader [ref=f6e189]
+              - rowgroup [ref=f6e512]:
+                - row [ref=f6e513]:
+                  - cell "খাঁটি গাওয়া ঘি (১-কেজি)" [ref=f6e514]
+                  - cell "৳ 1,450" [ref=f6e518]
+                  - cell [ref=f6e519]:
+                    - textbox [ref=f6e521]: "1"
+                  - cell "৳ 1,450" [ref=f6e522]
+                  - cell [ref=f6e523]:
+                    - button [ref=f6e524] [cursor=pointer]
+            - button "Add an item" [ref=f6e191] [cursor=pointer]
+            - generic [ref=f6e193]:
+              - generic [ref=f6e194]:
+                - text: Order Notes / Terms
+                - textbox "Internal notes or special instructions for this order..." [ref=f6e195]
+              - generic [ref=f6e196]:
+                - generic [ref=f6e197]:
+                  - generic [ref=f6e198]: Subtotal
+                  - generic [ref=f6e199]: ৳ 1,450
+                - generic [ref=f6e200]:
+                  - generic [ref=f6e201]: Discount
+                  - generic [ref=f6e202]:
+                    - generic [ref=f6e203]: ৳
+                    - textbox [ref=f6e205]: "0"
+                - generic [ref=f6e206]:
+                  - generic [ref=f6e207]: Shipping
+                  - generic [ref=f6e208]:
+                    - generic [ref=f6e209]: ৳
+                    - textbox [ref=f6e211]: "0"
+                - generic [ref=f6e212]:
+                  - generic [ref=f6e213]: Total
+                  - generic [ref=f6e214]:
+                    - generic [ref=f6e215]: ৳
+                    - textbox "Order total" [ref=f6e217]: "1450"
+                - button "Create Order" [ref=f6e218] [cursor=pointer]
+        - generic [ref=f6e220]:
+          - paragraph [ref=f6e221]: © 2026 Sebate Sera|Version 0.3.53|All rights reserved.
+          - paragraph [ref=f6e222]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f6e223] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f6e224]:
+        - generic [ref=f6e225]: Chat with Mame
+        - button "Open chat" [ref=f6e226] [cursor=pointer]:
+          - img "Mame AI" [ref=f6e227]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f6e228]:
+    - generic [ref=f6e229]:
+      - heading [level=3] [ref=f6e231]: Notifications
+      - button [ref=f6e232] [cursor=pointer]
+    - tablist [ref=f6e236]:
+      - tab [selected] [ref=f6e237] [cursor=pointer]: all
+      - tab [ref=f6e238] [cursor=pointer]: unread
+      - tab [ref=f6e239] [cursor=pointer]: read
+    - generic [ref=f6e240]: No notifications yet.
