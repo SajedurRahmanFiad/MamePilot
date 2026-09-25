@@ -88,9 +88,8 @@ final class OrderPostCreateEffects
             if ($customer === null) {
                 throw new \RuntimeException('Customer not found.');
             }
-            $courier->checkFraudCourierHistory([
+            $courier->processCustomerFraudCheck([
                 'customerId' => $customerId,
-                'phone' => (string) ($customer['phone'] ?? ''),
             ]);
         } catch (\Throwable $exception) {
             error_log('Automatic fraud check failed for customer ' . $customerId . ': ' . $exception->getMessage());
