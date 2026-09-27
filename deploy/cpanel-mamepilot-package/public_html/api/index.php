@@ -21,6 +21,7 @@ use App\OperationsApi;
 use App\OrderPostCreateEffects;
 use App\RecurringTransactionApi;
 use App\RecurringTransactionScheduler;
+use App\SmsApi;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
 use App\ShopifyApi;
@@ -82,6 +83,7 @@ try {
     $messenger = new MessengerApi($database, $auth, $config);
     $businessGrowth = new BusinessGrowthApi($database, $auth, $config);
     $autoCall = new AutoCallApi($database, $auth, $config);
+    $sms = new SmsApi($database, $auth, $config);
     $postCreateEffects = new OrderPostCreateEffects($featureAccess, $autoCall);
     $woocommerce = new WooCommerceApi($database, $auth, $config, $operations, $postCreateEffects);
     $shopify = new ShopifyApi($database, $auth, $config, $operations, $postCreateEffects);
@@ -144,7 +146,7 @@ try {
         exit;
     }
 
-    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $whatsapp, $messenger, $woocommerce, $shopify, $recurringTransactions, $lead];
+    $services = [$master, $operations, $courier, $dataManagement, $metaAds, $businessGrowth, $autoCall, $sms, $whatsapp, $messenger, $woocommerce, $shopify, $recurringTransactions, $lead];
     foreach ($services as $service) {
         if (!method_exists($service, $action)) {
             continue;
