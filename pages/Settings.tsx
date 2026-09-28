@@ -44,6 +44,7 @@ import { useAutoSave } from '../src/hooks/useAutoSave';
 import { getBusinessTerminology } from '../src/utils/businessMode';
 
 type SystemDefaultField = keyof Settings['defaults'];
+const SMS_TEMPLATE_VARIABLES = ['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'];
 
 const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -90,7 +91,8 @@ const SettingsPage: React.FC = () => {
   const { data: metaAdsStatus, isPending: metaAdsLoading, refetch: refetchMetaAdsConnectionStatus } = useMetaAdsConnectionStatus(activeTab === 'meta-ads');
   const { data: metaAdsSettingsData, isPending: metaAdsSettingsLoading } = useMetaAdsSettings(activeTab === 'meta-ads');
   const { data: metaAdsSyncStatus, refetch: refetchMetaAdsSyncStatus } = useMetaAdsSyncStatus(activeTab === 'meta-ads');
-  const { data: voiceSurveySettingsData, isPending: voiceSurveyLoading } = useVoiceSurveySettings(activeTab === 'voice-survey');
+  const shouldLoadVoiceSurveySettings = activeTab === 'voice-survey' || (activeTab === 'sms' && hasCapability('auto_calling'));
+  const { data: voiceSurveySettingsData, isPending: voiceSurveyLoading } = useVoiceSurveySettings(shouldLoadVoiceSurveySettings);
   const { data: smsSettingsData, isPending: smsLoading, isFetching: smsSettingsFetching } = useSmsSettings(activeTab === 'sms');
   const { data: beSmartSettingsData, isPending: beSmartLoading } = useBeSmartSettings(Boolean(capabilities.be_smart));
   const syncMetaAdsMutation = useSyncMetaAds();
@@ -247,14 +249,18 @@ const SettingsPage: React.FC = () => {
     noKeyRetryMinutes: 10,
     noKeyRetryCount: 2,
     triggerStatuses: ['On Hold'],
+    responseDictionary: {},
   });
-  const [smsSettings, setSmsSettings] = useState<SmsSettings>({ apiKey: '', autoEnabled: false, sendTiming: 'after_order', callStatuses: [], templates: {} });
-  const [smsOutcomeDropdownOpen, setSmsOutcomeDropdownOpen] = useState(false);
+  const [smsSettings, setSmsSettings] = useState<SmsSettings>({
+    apiKey: '',
+    autoEnabled: false,
+    rules: [{ id: 'sms-rule-default', sendTiming: 'after_order', callStatuses: [], templates: { default: '' } }],
+  });
   const smsHydratedRef = useRef(false);
   const smsDirtyRef = useRef(false);
   const smsJustSavedRef = useRef(false);
   const smsTemplateRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
-  const activeSmsTemplateKey = useRef('default');
+  const activeSmsTemplateTarget = useRef({ ruleId: 'sms-rule-default', templateKey: 'default' });
 
   const updateSmsForm = useCallback((updater: React.SetStateAction<SmsSettings>) => {
     smsHydratedRef.current = true;
@@ -262,23 +268,48 @@ const SettingsPage: React.FC = () => {
     setSmsSettings(updater);
   }, []);
 
+  const updateSmsRule = (ruleId: string, updater: (rule: NonNullable<SmsSettings['rules']>[number]) => NonNullable<SmsSettings['rules']>[number]) => {
+    updateSmsForm((settings) => ({
+      ...settings,
+      rules: (settings.rules || []).map((rule) => rule.id === ruleId ? updater(rule) : rule),
+    }));
+  };
+
   const insertSmsVariable = (variable: string) => {
-    const templateKey = activeSmsTemplateKey.current;
-    const textarea = smsTemplateRefs.current[templateKey];
+    const { ruleId, templateKey } = activeSmsTemplateTarget.current;
+    const refKey = `${ruleId}:${templateKey}`;
+    const textarea = smsTemplateRefs.current[refKey];
     const token = `{{${variable}}}`;
-    const currentValue = smsSettings.templates[templateKey] || '';
+    const currentValue = smsSettings.rules?.find((rule) => rule.id === ruleId)?.templates[templateKey] || '';
     const start = textarea?.selectionStart ?? currentValue.length;
     const end = textarea?.selectionEnd ?? start;
     const nextValue = `${currentValue.slice(0, start)}${token}${currentValue.slice(end)}`;
-    updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, [templateKey]: nextValue } }));
+    updateSmsRule(ruleId, (rule) => ({ ...rule, templates: { ...rule.templates, [templateKey]: nextValue } }));
     requestAnimationFrame(() => {
-      const nextTextarea = smsTemplateRefs.current[templateKey];
+      const nextTextarea = smsTemplateRefs.current[refKey];
       if (!nextTextarea) return;
       nextTextarea.focus();
       const nextCursor = start + token.length;
       nextTextarea.setSelectionRange(nextCursor, nextCursor);
     });
   };
+  const addSmsRule = () => {
+    const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `sms-rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    updateSmsForm((settings) => ({
+      ...settings,
+      rules: [...(settings.rules || []), { id, sendTiming: 'after_order', callStatuses: [], templates: { default: '' } }],
+    }));
+  };
+
+  const removeSmsRule = (ruleId: string) => {
+    updateSmsForm((settings) => ({
+      ...settings,
+      rules: (settings.rules || []).filter((rule) => rule.id !== ruleId),
+    }));
+  };
+
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'Income' as string, color: '#10B981', parentId: '' });
   const [paymentForm, setPaymentForm] = useState({ name: '', description: '' });
   const [unitForm, setUnitForm] = useState({ name: '', shortName: '', description: '', isFraction: false });
@@ -313,7 +344,7 @@ const SettingsPage: React.FC = () => {
   const voiceSurveyJustSavedRef = useRef(false);
   const expandedCompanyPagesInitRef = useRef(false);
 
-  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || (activeTab === 'voice-survey' && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
+  const loading = companyLoading || orderLoading || invoiceLoading || defaultsLoading || courierLoading || walletLoading || permissionsLoading || ((activeTab === 'dashboard' || activeTab === 'permissions') && dashboardSettingsLoading) || loadingCategories || loadingPaymentMethods || loadingUnits || (activeTab === 'sms' && smsLoading) || (activeTab === 'meta-ads' && (metaAdsLoading || metaAdsSettingsLoading)) || ((activeTab === 'voice-survey' || (activeTab === 'sms' && hasCapability('auto_calling'))) && voiceSurveyLoading) || (activeTab === 'be-smart' && beSmartLoading);
 
   // Initialize forms when data loads from React Query.
   // If we just saved, consume justSavedRef and skip — the local state is already correct.
@@ -466,6 +497,7 @@ const SettingsPage: React.FC = () => {
         missedCallRetryCount: voiceSurveySettingsData.missedCallRetryCount ?? 3,
         noKeyRetryMinutes: voiceSurveySettingsData.noKeyRetryMinutes ?? 10,
         noKeyRetryCount: voiceSurveySettingsData.noKeyRetryCount ?? 2,
+        responseDictionary: voiceSurveySettingsData.responseDictionary ?? {},
         triggerStatuses: [voiceSurveySettingsData.triggerStatuses?.[0] === 'Created'
           ? 'On Hold'
           : (voiceSurveySettingsData.triggerStatuses?.[0] || 'On Hold')],
@@ -474,14 +506,21 @@ const SettingsPage: React.FC = () => {
   }, [voiceSurveySettingsData]);
   useEffect(() => {
     if (!smsSettingsData) return;
-    if (smsSettingsFetching) return;
     if (smsJustSavedRef.current) {
       smsJustSavedRef.current = false;
       return;
     }
     if (!smsDirtyRef.current) {
       smsHydratedRef.current = true;
-      setSmsSettings(smsSettingsData);
+      setSmsSettings({
+        ...smsSettingsData,
+        rules: smsSettingsData.rules ?? [{
+          id: 'sms-rule-legacy',
+          sendTiming: smsSettingsData.sendTiming || 'after_order',
+          callStatuses: smsSettingsData.callStatuses || [],
+          templates: smsSettingsData.templates || { default: '' },
+        }],
+      });
     }
   }, [smsSettingsData, smsSettingsFetching]);
 
@@ -2407,18 +2446,101 @@ const SettingsPage: React.FC = () => {
             <section className="space-y-5">
               <div className="rounded-xl border border-gray-100 bg-white p-5">
                 <div className="flex items-center justify-between">
-                  <div><h3 className="text-lg font-black text-gray-900">Automatic SMS Confirmation</h3><p className="text-sm text-gray-500">Send a message after order creation, courier assignment, or the automatic call result.</p></div>
+                  <div><h3 className="text-lg font-black text-gray-900">Automatic SMS Logic</h3><p className="text-sm text-gray-500">Enable any number of independent message rules.</p></div>
                   <button type="button" onClick={() => updateSmsForm((settings) => ({ ...settings, autoEnabled: !settings.autoEnabled }))} className={`relative inline-flex h-7 w-12 items-center rounded-full ${smsSettings.autoEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ${smsSettings.autoEnabled ? 'translate-x-6' : 'translate-x-1'}`} /></button>
                 </div>
               </div>
-              <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
-                <label className="block space-y-2 text-sm font-semibold text-gray-700"><span>Send Message</span><select value={smsSettings.sendTiming} onChange={(event) => updateSmsForm((settings) => ({ ...settings, sendTiming: event.target.value as SmsSettings['sendTiming'] }))} className="w-full rounded-xl border border-gray-200 px-3 py-2"><option value="after_order">Right after order creation</option><option value="after_courier_assigned">Right after assigning courier</option>{hasCapability('auto_calling') && <option value="after_call">After auto calling is completed</option>}</select></label>
-                {smsSettings.sendTiming !== 'after_call' && <><div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div><label className="block space-y-2 text-sm font-semibold text-gray-700"><span>SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current.default = element; }} onFocus={() => { activeSmsTemplateKey.current = 'default'; }} className="min-h-32 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder="SMS Template" value={smsSettings.templates.default || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, default: event.target.value } }))} /></label></>}
-                {smsSettings.sendTiming === 'after_call' && <div className="space-y-5">
-                  <div className="relative"><span className="mb-2 block text-sm font-semibold text-gray-700">Call Outcomes</span><button type="button" onClick={() => setSmsOutcomeDropdownOpen((open) => !open)} className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-sm"><span>{smsSettings.callStatuses.length ? `${smsSettings.callStatuses.length} outcome${smsSettings.callStatuses.length === 1 ? '' : 's'} selected` : 'Select call outcomes'}</span><span className="text-gray-400">{smsOutcomeDropdownOpen ? '▲' : '▼'}</span></button>{smsOutcomeDropdownOpen && <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-xl">{[['confirmed', 'Customer Confirmed'], ['cancelled', 'Customer Cancelled'], ['unreachable', 'Did Not Pick Up / Unreachable']].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-gray-50"><input type="checkbox" checked={smsSettings.callStatuses.includes(value)} onChange={() => updateSmsForm((settings) => ({ ...settings, callStatuses: settings.callStatuses.includes(value) ? settings.callStatuses.filter((status) => status !== value) : [...settings.callStatuses, value] }))} /><span>{label}</span></label>)}</div>}</div>
-                  <div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div>
-                  {smsSettings.callStatuses.map((status) => { const caption = status === 'confirmed' ? 'Customer Confirmed' : status === 'cancelled' ? 'Customer Cancelled' : 'Did Not Pick Up / Unreachable'; return <label className="block space-y-2 text-sm font-semibold text-gray-700" key={status}><span>{caption} SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current[status] = element; }} onFocus={() => { activeSmsTemplateKey.current = status; }} className="min-h-20 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder={`${caption} SMS Template`} value={smsSettings.templates[status] || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, [status]: event.target.value } }))} /></label>; })}
-                </div>}
+              <div className="space-y-4">
+                {(smsSettings.rules || []).map((rule, ruleIndex) => {
+                  const availableOutcomes = Object.entries(voiceSurveySettingsData?.responseDictionary || {});
+                  const templateKey = rule.sendTiming === 'after_call' ? rule.callStatuses[0] || '' : 'default';
+                  const templateRefKey = `${rule.id}:${templateKey}`;
+                  return (
+                    <section key={rule.id} className="space-y-5 rounded-xl border border-gray-100 bg-white p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-black text-gray-900">Logic {ruleIndex + 1}</h4>
+                        <button type="button" onClick={() => removeSmsRule(rule.id)} className="rounded-lg p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600" title="Remove logic" aria-label={`Remove logic ${ruleIndex + 1}`}>{ICONS.Delete}</button>
+                      </div>
+                      <label className="block space-y-2 text-sm font-semibold text-gray-700">
+                        <span>Send Message</span>
+                        <select
+                          value={rule.sendTiming}
+                          onChange={(event) => updateSmsRule(rule.id, (current) => ({ ...current, sendTiming: event.target.value as SmsSettings['sendTiming'] & string }))}
+                          className="w-full rounded-xl border border-gray-200 px-3 py-2"
+                        >
+                          <option value="after_order">Right after order creation</option>
+                          <option value="after_courier_assigned">Right after assigning courier</option>
+                          {(hasCapability('auto_calling') || rule.sendTiming === 'after_call') && <option value="after_call">After auto calling is completed</option>}
+                        </select>
+                      </label>
+                      {rule.sendTiming === 'after_call' && (
+                        <div className="space-y-3">
+                          <span className="block text-sm font-semibold text-gray-700">Call outcomes</span>
+                          {availableOutcomes.length === 0 ? (
+                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Add outcomes in Auto Calling settings to use this rule.</p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {availableOutcomes.map(([outcomeKey, translation]) => (
+                                <label key={outcomeKey} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-100 px-3 py-2 text-sm hover:bg-gray-50">
+                                  <input
+                                    type="checkbox"
+                                    checked={rule.callStatuses.includes(outcomeKey)}
+                                    onChange={() => updateSmsRule(rule.id, (current) => ({
+                                      ...current,
+                                      callStatuses: current.callStatuses.includes(outcomeKey)
+                                        ? current.callStatuses.filter((status) => status !== outcomeKey)
+                                        : [...current.callStatuses, outcomeKey],
+                                    }))}
+                                  />
+                                  <span className="min-w-0"><span className="block truncate font-semibold text-gray-800">{translation}</span><span className="text-xs text-gray-400">{outcomeKey}</span></span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          {SMS_TEMPLATE_VARIABLES.map((variable) => (
+                            <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>
+                          ))}
+                        </div>
+                        {rule.sendTiming === 'after_call' ? (
+                          rule.callStatuses.map((outcomeKey) => {
+                            const caption = availableOutcomes.find(([key]) => key === outcomeKey)?.[1] || outcomeKey;
+                            const refKey = `${rule.id}:${outcomeKey}`;
+                            return (
+                              <label className="block space-y-2 text-sm font-semibold text-gray-700" key={outcomeKey}>
+                                <span>{caption} SMS Template</span>
+                                <textarea
+                                  ref={(element) => { smsTemplateRefs.current[refKey] = element; }}
+                                  onFocus={() => { activeSmsTemplateTarget.current = { ruleId: rule.id, templateKey: outcomeKey }; }}
+                                  className="min-h-24 w-full rounded-xl border border-gray-200 px-4 py-3"
+                                  placeholder={`${caption} SMS Template`}
+                                  value={rule.templates[outcomeKey] || ''}
+                                  onChange={(event) => updateSmsRule(rule.id, (current) => ({ ...current, templates: { ...current.templates, [outcomeKey]: event.target.value } }))}
+                                />
+                              </label>
+                            );
+                          })
+                        ) : (
+                          <label className="block space-y-2 text-sm font-semibold text-gray-700">
+                            <span>SMS Template</span>
+                            <textarea
+                              ref={(element) => { smsTemplateRefs.current[templateRefKey] = element; }}
+                              onFocus={() => { activeSmsTemplateTarget.current = { ruleId: rule.id, templateKey: 'default' }; }}
+                              className="min-h-24 w-full rounded-xl border border-gray-200 px-4 py-3"
+                              placeholder="SMS Template"
+                              value={rule.templates.default || ''}
+                              onChange={(event) => updateSmsRule(rule.id, (current) => ({ ...current, templates: { ...current.templates, default: event.target.value } }))}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })}
+                <Button type="button" variant="outline" onClick={addSmsRule} icon={ICONS.Plus}>Add Logic</Button>
               </div>
             </section>
           )}

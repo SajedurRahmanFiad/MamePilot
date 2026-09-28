@@ -22,13 +22,31 @@ final class SmsApi extends BaseService
     {
         $this->requireAdmin();
         $row = $this->settingsRow();
+        $availableOutcomes = $this->responseDictionaryOutcomeKeys();
+        if (array_key_exists('rules', $params)) {
+            $rules = $this->normalizeSmsRuleList($params['rules'], $availableOutcomes);
+        } elseif (array_key_exists('sendTiming', $params) || array_key_exists('callStatuses', $params) || array_key_exists('templates', $params)) {
+            $legacyRow = $row ?? [];
+            if (array_key_exists('sendTiming', $params)) $legacyRow['send_timing'] = $params['sendTiming'];
+            if (array_key_exists('callStatuses', $params)) $legacyRow['call_statuses'] = $this->jsonEncode((array) $params['callStatuses']);
+            if (array_key_exists('templates', $params)) $legacyRow['templates'] = $this->jsonEncode((array) $params['templates']);
+            $rules = $this->normalizeStoredSmsRules($legacyRow, $availableOutcomes);
+        } else {
+            $rules = $this->normalizeStoredSmsRules($row, $availableOutcomes);
+        }
+        $firstRule = $rules[0] ?? ['sendTiming' => 'after_order', 'callStatuses' => []];
+        $callStatuses = [];
+        foreach ($rules as $rule) {
+            if ($rule['sendTiming'] === 'after_call') {
+                $callStatuses = array_merge($callStatuses, $rule['callStatuses']);
+            }
+        }
         $data = [
             'api_key' => trim((string) ($params['apiKey'] ?? $row['api_key'] ?? '')) ?: null,
             'auto_enabled' => (int) (bool) ($params['autoEnabled'] ?? $row['auto_enabled'] ?? false),
-            'send_timing' => in_array(($params['sendTiming'] ?? $row['send_timing'] ?? 'after_order'), ['after_order', 'after_call', 'after_courier_assigned'], true)
-                ? (string) ($params['sendTiming'] ?? $row['send_timing'] ?? 'after_order') : 'after_order',
-            'call_statuses' => $this->jsonEncode(array_values(array_intersect((array) ($params['callStatuses'] ?? json_decode((string) ($row['call_statuses'] ?? '[]'), true)), ['confirmed', 'cancelled', 'unreachable']))),
-            'templates' => $this->jsonEncode((array) ($params['templates'] ?? json_decode((string) ($row['templates'] ?? '{}'), true))),
+            'send_timing' => $firstRule['sendTiming'],
+            'call_statuses' => $this->jsonEncode(array_values(array_unique($callStatuses))),
+            'templates' => $this->jsonEncode(['rules' => $rules]),
         ];
         if ($row === null) {
             $now = $this->database->nowUtc();
@@ -67,6 +85,12 @@ final class SmsApi extends BaseService
         $this->requireAdmin();
         $message = trim((string) ($params['message'] ?? ''));
         $customerIds = array_values(array_filter(array_map('strval', (array) ($params['customerIds'] ?? []))));
+        return $this->sendSmsToCustomers($customerIds, $message);
+    }
+
+    /** @param array<int, string> $customerIds */
+    private function sendSmsToCustomers(array $customerIds, string $message): array
+    {
         if ($message === '' || $customerIds === []) throw new RuntimeException('Customers and message are required.');
         $customers = $this->database->fetchAll('SELECT id, name, phone FROM customers WHERE id IN (' . implode(',', array_fill(0, count($customerIds), '?')) . ') AND deleted_at IS NULL', $customerIds);
         $numbers = array_values(array_filter(array_map(fn(array $customer) => $this->normalizePhone((string) ($customer['phone'] ?? '')), $customers)));
@@ -84,32 +108,29 @@ final class SmsApi extends BaseService
     {
         if ($orderId === '' || !$this->tableExists('sms_settings')) return false;
         $settings = $this->settingsRow();
-        if ($settings === null || empty($settings['auto_enabled']) || ($settings['send_timing'] ?? 'after_order') !== $sendTiming) return false;
-        $template = (array) (json_decode((string) ($settings['templates'] ?? '{}'), true) ?: []);
-        $message = trim((string) ($template['default'] ?? ''));
-        if ($message === '') return false;
-        $order = $this->database->fetchOne('SELECT o.id, o.order_number, o.total_amount, c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = :id AND o.deleted_at IS NULL', [':id' => $orderId]);
-        if (!is_array($order) || trim((string) ($order['customer_id'] ?? '')) === '') return false;
-        $values = ['Customer Name' => $order['customer_name'] ?? '', 'Customer Phone' => $order['customer_phone'] ?? '', 'Customer Address' => $order['customer_address'] ?? '', 'Total Price' => $order['total_amount'] ?? '', 'Order Number' => $order['order_number'] ?? ''];
-        foreach ($values as $key => $value) $message = str_replace('{{' . $key . '}}', (string) $value, $message);
-        try { $this->sendSms(['customerIds' => [(string) $order['customer_id']], 'message' => $message]); return true; } catch (\Throwable $exception) { error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage()); return false; }
+        if ($settings === null || empty($settings['auto_enabled'])) return false;
+        $sent = false;
+        foreach ($this->normalizeStoredSmsRules($settings, $this->responseDictionaryOutcomeKeys()) as $rule) {
+            if ($rule['sendTiming'] !== $sendTiming) continue;
+            $message = trim((string) ($rule['templates']['default'] ?? ''));
+            if ($message !== '') $sent = $this->sendAutomaticOrderMessage($orderId, $message) || $sent;
+        }
+        return $sent;
     }
 
-    public function sendAfterCallIfEligible(string $orderId, string $confirmationStatus, string $callStatus): bool
+    public function sendAfterCallIfEligible(string $orderId, string $outcomeKey): bool
     {
         if ($orderId === '' || !$this->tableExists('sms_settings')) return false;
         $settings = $this->settingsRow();
-        if ($settings === null || empty($settings['auto_enabled']) || ($settings['send_timing'] ?? '') !== 'after_call') return false;
-        $outcome = $confirmationStatus === 'confirmed' ? 'confirmed' : ($confirmationStatus === 'cancelled' ? 'cancelled' : 'unreachable');
-        $statuses = json_decode((string) ($settings['call_statuses'] ?? '[]'), true) ?: [];
-        if (!in_array($outcome, $statuses, true)) return false;
-        $templates = json_decode((string) ($settings['templates'] ?? '{}'), true) ?: [];
-        $message = trim((string) ($templates[$outcome] ?? ''));
-        if ($message === '') return false;
-        $order = $this->database->fetchOne('SELECT o.order_number, o.total_amount, c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address FROM orders o LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = :id AND o.deleted_at IS NULL', [':id' => $orderId]);
-        if (!is_array($order) || trim((string) ($order['customer_id'] ?? '')) === '') return false;
-        foreach (['Customer Name' => $order['customer_name'] ?? '', 'Customer Phone' => $order['customer_phone'] ?? '', 'Customer Address' => $order['customer_address'] ?? '', 'Total Price' => $order['total_amount'] ?? '', 'Order Number' => $order['order_number'] ?? ''] as $key => $value) $message = str_replace('{{' . $key . '}}', (string) $value, $message);
-        try { $this->sendSms(['customerIds' => [(string) $order['customer_id']], 'message' => $message]); return true; } catch (\Throwable $exception) { error_log('Could not send after-call SMS for order ' . $orderId . ': ' . $exception->getMessage()); return false; }
+        if ($settings === null || empty($settings['auto_enabled'])) return false;
+        if (!in_array($outcomeKey, $this->responseDictionaryOutcomeKeys(), true)) return false;
+        $sent = false;
+        foreach ($this->normalizeStoredSmsRules($settings, $this->responseDictionaryOutcomeKeys()) as $rule) {
+            if ($rule['sendTiming'] !== 'after_call' || !in_array($outcomeKey, $rule['callStatuses'], true)) continue;
+            $message = trim((string) ($rule['templates'][$outcomeKey] ?? ''));
+            if ($message !== '') $sent = $this->sendAutomaticOrderMessage($orderId, $message) || $sent;
+        }
+        return $sent;
     }
 
     public function fetchSmsHistory(array $params = []): array
@@ -149,9 +170,139 @@ final class SmsApi extends BaseService
         return ['checkoutUrl' => $checkout, 'localReference' => $reference];
     }
 
+    private function sendAutomaticOrderMessage(string $orderId, string $message): bool
+    {
+        $order = $this->database->fetchOne(
+            'SELECT o.id, o.order_number, o.total_amount, c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE o.id = :id AND o.deleted_at IS NULL',
+            [':id' => $orderId]
+        );
+        if (!is_array($order) || trim((string) ($order['customer_id'] ?? '')) === '') return false;
+        foreach ([
+            'Customer Name' => $order['customer_name'] ?? '',
+            'Customer Phone' => $order['customer_phone'] ?? '',
+            'Customer Address' => $order['customer_address'] ?? '',
+            'Total Price' => $order['total_amount'] ?? '',
+            'Order Number' => $order['order_number'] ?? '',
+        ] as $key => $value) {
+            $message = str_replace('{{' . $key . '}}', (string) $value, $message);
+        }
+        try {
+            $this->sendSmsToCustomers([(string) $order['customer_id']], $message);
+            return true;
+        } catch (\Throwable $exception) {
+            error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage());
+            return false;
+        }
+    }
+
+    /** @return array<string, string> */
+    private function responseDictionary(): array
+    {
+        if (!$this->tableExists('voice_survey_settings')) return [];
+        $row = $this->database->fetchOne('SELECT response_dictionary FROM voice_survey_settings LIMIT 1');
+        $dictionary = json_decode((string) ($row['response_dictionary'] ?? '{}'), true);
+        if (!is_array($dictionary)) return [];
+        $normalized = [];
+        foreach ($dictionary as $key => $translation) {
+            $key = trim((string) $key);
+            $translation = trim((string) $translation);
+            if ($translation === '' || (!preg_match('/^[0-9*#]$/', $key) && !in_array($key, ['not_answered', 'answered_no_key'], true))) continue;
+            $normalized[$key] = $translation;
+        }
+        return $normalized;
+    }
+
+    /** @return array<int, string> */
+    private function responseDictionaryOutcomeKeys(): array
+    {
+        return array_values(array_map('strval', array_keys($this->responseDictionary())));
+    }
+
+    /** @param array<int, string> $availableOutcomes
+     *  @return array<int, array{id: string, sendTiming: string, callStatuses: array<int, string>, templates: array<string, string>}> */
+    private function normalizeSmsRuleList(mixed $value, array $availableOutcomes): array
+    {
+        if (!is_array($value)) return [];
+        $availableOutcomes = array_values(array_map('strval', $availableOutcomes));
+        $normalized = [];
+        $seenIds = [];
+        foreach (array_slice(array_values($value), 0, 100) as $index => $candidate) {
+            if (!is_array($candidate)) continue;
+            $sendTiming = (string) ($candidate['sendTiming'] ?? 'after_order');
+            if (!in_array($sendTiming, ['after_order', 'after_courier_assigned', 'after_call'], true)) $sendTiming = 'after_order';
+            $id = trim((string) ($candidate['id'] ?? ''));
+            if ($id === '' || isset($seenIds[$id])) $id = 'sms-rule-' . substr(hash('sha256', $index . ':' . serialize($candidate)), 0, 24);
+            $seenIds[$id] = true;
+            $candidateTemplates = is_array($candidate['templates'] ?? null) ? $candidate['templates'] : [];
+            if ($sendTiming === 'after_call') {
+                $statuses = array_values(array_unique(array_filter(
+                    array_map('strval', (array) ($candidate['callStatuses'] ?? [])),
+                    static fn(string $status): bool => in_array($status, $availableOutcomes, true)
+                )));
+                $templates = [];
+                foreach ($statuses as $status) $templates[$status] = (string) ($candidateTemplates[$status] ?? '');
+            } else {
+                $statuses = [];
+                $templates = ['default' => (string) ($candidateTemplates['default'] ?? '')];
+            }
+            $normalized[] = ['id' => $id, 'sendTiming' => $sendTiming, 'callStatuses' => $statuses, 'templates' => $templates];
+        }
+        return $normalized;
+    }
+
+    /** @param array<string, mixed>|null $row
+     *  @param array<int, string> $availableOutcomes
+     *  @return array<int, array{id: string, sendTiming: string, callStatuses: array<int, string>, templates: array<string, string>}> */
+    private function normalizeStoredSmsRules(?array $row, array $availableOutcomes): array
+    {
+        $availableOutcomes = array_values(array_map('strval', $availableOutcomes));
+        $storedTemplates = json_decode((string) ($row['templates'] ?? '{}'), true);
+        if (is_array($storedTemplates) && array_key_exists('rules', $storedTemplates) && is_array($storedTemplates['rules'])) {
+            return $this->normalizeSmsRuleList($storedTemplates['rules'], $availableOutcomes);
+        }
+
+        $sendTiming = (string) ($row['send_timing'] ?? 'after_order');
+        if (!in_array($sendTiming, ['after_order', 'after_courier_assigned', 'after_call'], true)) $sendTiming = 'after_order';
+        $legacyTemplates = is_array($storedTemplates) ? $storedTemplates : [];
+        $legacyStatuses = json_decode((string) ($row['call_statuses'] ?? '[]'), true);
+        $statuses = [];
+        $templates = ['default' => (string) ($legacyTemplates['default'] ?? '')];
+        if ($sendTiming === 'after_call') {
+            $legacyOutcomeKeys = ['confirmed' => '1', 'cancelled' => '2', 'unreachable' => 'not_answered'];
+            foreach (is_array($legacyStatuses) ? $legacyStatuses : [] as $legacyStatus) {
+                $legacyStatus = (string) $legacyStatus;
+                $outcomeKey = $legacyOutcomeKeys[$legacyStatus] ?? $legacyStatus;
+                if (!in_array($outcomeKey, $availableOutcomes, true)) continue;
+                $statuses[] = $outcomeKey;
+                $templates[$outcomeKey] = (string) ($legacyTemplates[$legacyStatus] ?? $legacyTemplates[$outcomeKey] ?? '');
+            }
+        }
+        return $this->normalizeSmsRuleList([[
+            'id' => 'sms-rule-legacy',
+            'sendTiming' => $sendTiming,
+            'callStatuses' => $statuses,
+            'templates' => $templates,
+        ]], $availableOutcomes);
+    }
+
     private function apiKey(): string { return trim((string) (($this->settingsRow() ?: [])['api_key'] ?? '')); }
     private function settingsRow(): ?array { $this->ensureTables(); return $this->database->fetchOne('SELECT * FROM sms_settings LIMIT 1'); }
-    private function settingsPayload(?array $row): array { return ['apiKey' => (string) ($row['api_key'] ?? ''), 'autoEnabled' => (bool) ($row['auto_enabled'] ?? false), 'sendTiming' => (string) ($row['send_timing'] ?? 'after_order'), 'callStatuses' => json_decode((string) ($row['call_statuses'] ?? '[]'), true) ?: [], 'templates' => json_decode((string) ($row['templates'] ?? '{}'), true) ?: []]; }
+    private function settingsPayload(?array $row): array
+    {
+        $availableOutcomes = $this->responseDictionaryOutcomeKeys();
+        $rules = $this->normalizeStoredSmsRules($row, $availableOutcomes);
+        $firstRule = $rules[0] ?? ['sendTiming' => 'after_order', 'callStatuses' => [], 'templates' => ['default' => '']];
+        return [
+            'apiKey' => (string) ($row['api_key'] ?? ''),
+            'autoEnabled' => (bool) ($row['auto_enabled'] ?? false),
+            'rules' => $rules,
+            'sendTiming' => $firstRule['sendTiming'],
+            'callStatuses' => $firstRule['callStatuses'],
+            'templates' => $firstRule['templates'],
+        ];
+    }
     private function normalizePhone(string $phone): string { $phone = preg_replace('/\D+/', '', $phone) ?? ''; return str_starts_with($phone, '880') ? '0' . substr($phone, 3) : $phone; }
     private function ensureTables(): void { $this->database->execute("CREATE TABLE IF NOT EXISTS sms_settings (id VARCHAR(64) NOT NULL, api_key TEXT NULL, auto_enabled TINYINT(1) NOT NULL DEFAULT 0, send_timing VARCHAR(32) NOT NULL DEFAULT 'after_order', call_statuses TEXT NULL, templates LONGTEXT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, PRIMARY KEY (id))"); $this->database->execute("CREATE TABLE IF NOT EXISTS sms_history (id VARCHAR(64) NOT NULL, customer_ids LONGTEXT NULL, recipients TEXT NULL, message TEXT NOT NULL, status VARCHAR(32) NOT NULL, response LONGTEXT NULL, created_at DATETIME NOT NULL, PRIMARY KEY (id))"); $this->database->execute("CREATE TABLE IF NOT EXISTS sms_recharges (id VARCHAR(64) NOT NULL, local_reference VARCHAR(64) NULL, gateway_payment_id VARCHAR(255) NULL, amount DECIMAL(12,2) NOT NULL DEFAULT 0, status VARCHAR(32) NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, PRIMARY KEY (id))"); }
     private function absoluteUrl(string $path, array $query): string { $host = (string) ($_SERVER['HTTP_HOST'] ?? ''); $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; return $scheme . '://' . $host . $path . '?' . http_build_query($query); }

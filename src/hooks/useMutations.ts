@@ -2746,8 +2746,8 @@ export function useUpdateVoiceSurveySettings(): UseMutationResult<VoiceSurveySet
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateVoiceSurveySettings,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', 'voice-survey'] });
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['settings', 'voice-survey'], settings);
     },
   });
 }

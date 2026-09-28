@@ -564,6 +564,8 @@ export type SurveyHistoryEntry = {
   status: string;
   callStatus: string;
   confirmationStatus: string;
+  response?: string | null;
+  responseTranslation?: string | null;
   createdAt: string;
   durationSeconds: number;
   cost: number;

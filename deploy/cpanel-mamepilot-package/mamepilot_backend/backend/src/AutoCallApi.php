@@ -24,6 +24,10 @@ final class AutoCallApi extends BaseService
             json_decode((string) ($row['trigger_statuses'] ?? '[]'), true)
         );
 
+        $responseDictionary = $this->normalizeResponseDictionary(
+            json_decode((string) ($row['response_dictionary'] ?? '{}'), true)
+        );
+
         return [
             'enabled' => (bool) ($row['enabled'] ?? false),
             'delayMinutes' => (int) ($row['delay_minutes'] ?? 5),
@@ -32,6 +36,7 @@ final class AutoCallApi extends BaseService
             'noKeyRetryMinutes' => (int) ($row['no_key_retry_minutes'] ?? 10),
             'noKeyRetryCount' => (int) ($row['no_key_retry_count'] ?? 2),
             'triggerStatuses' => $triggerStatuses,
+            'responseDictionary' => $responseDictionary,
             'workerHealth' => $this->buildWorkerHealth($row ?? []),
         ];
     }
@@ -44,6 +49,9 @@ final class AutoCallApi extends BaseService
         $triggerStatuses = array_key_exists('triggerStatuses', $params)
             ? $this->normalizeTriggerStatuses($params['triggerStatuses'])
             : $this->normalizeTriggerStatuses(json_decode((string) ($existing['trigger_statuses'] ?? '[]'), true));
+        $responseDictionary = array_key_exists('responseDictionary', $params)
+            ? $this->normalizeResponseDictionary($params['responseDictionary'])
+            : $this->normalizeResponseDictionary(json_decode((string) ($existing['response_dictionary'] ?? '{}'), true));
 
         $data = [
             'enabled' => isset($params['enabled']) ? (int) (bool) $params['enabled'] : (int) ($existing['enabled'] ?? 0),
@@ -58,6 +66,7 @@ final class AutoCallApi extends BaseService
             'no_key_retry_minutes' => (int) ($params['noKeyRetryMinutes'] ?? $existing['no_key_retry_minutes'] ?? 10),
             'no_key_retry_count' => (int) ($params['noKeyRetryCount'] ?? $existing['no_key_retry_count'] ?? 2),
             'trigger_statuses' => $this->jsonEncode($triggerStatuses),
+            'response_dictionary' => $this->jsonEncode($responseDictionary),
         ];
 
         if ($existing === null) {
@@ -65,7 +74,7 @@ final class AutoCallApi extends BaseService
             $now = $this->database->nowUtc();
             $insertParams = $this->insertBindings($data);
             $this->database->execute(
-                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, created_at, updated_at) VALUES (:id, :enabled, :delay_minutes, :api_token, :sender, :template_name, :webhook_secret, :max_survey_time_seconds, :missed_call_retry_minutes, :missed_call_retry_count, :no_key_retry_minutes, :no_key_retry_count, :trigger_statuses, :created_at, :updated_at)',
+                'INSERT INTO voice_survey_settings (id, enabled, delay_minutes, api_token, sender, template_name, webhook_secret, max_survey_time_seconds, missed_call_retry_minutes, missed_call_retry_count, no_key_retry_minutes, no_key_retry_count, trigger_statuses, response_dictionary, created_at, updated_at) VALUES (:id, :enabled, :delay_minutes, :api_token, :sender, :template_name, :webhook_secret, :max_survey_time_seconds, :missed_call_retry_minutes, :missed_call_retry_count, :no_key_retry_minutes, :no_key_retry_count, :trigger_statuses, :response_dictionary, :created_at, :updated_at)',
                 array_merge($insertParams, [':id' => $id, ':created_at' => $now, ':updated_at' => $now])
             );
         } else {
@@ -159,7 +168,7 @@ final class AutoCallApi extends BaseService
         }
 
         $queued = $this->database->execute(
-            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, confirmation_status = NULL, updated_at = :now WHERE id = :id AND deleted_at IS NULL AND (survey_status IS NULL OR survey_status = '')",
+            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, survey_response_translation = NULL, confirmation_status = NULL, updated_at = :now WHERE id = :id AND deleted_at IS NULL AND (survey_status IS NULL OR survey_status = '')",
             [':now' => $this->database->nowUtc(), ':id' => $orderId]
         );
         if ($queued === 1) {
@@ -192,7 +201,7 @@ final class AutoCallApi extends BaseService
         }
 
         $this->database->execute(
-            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, confirmation_status = NULL, updated_at = :updated_at WHERE id = :id",
+            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_retry_count = 0, survey_call_status = NULL, survey_response = NULL, survey_response_translation = NULL, confirmation_status = NULL, updated_at = :updated_at WHERE id = :id",
             [':updated_at' => $this->database->nowUtc(), ':id' => $orderId]
         );
         $this->logSurveyEvent($orderId, 'queued', null, 'pending', null, 'Survey queued manually.');
@@ -221,7 +230,7 @@ final class AutoCallApi extends BaseService
         $this->assertSurveyEnabled($settings);
 
         $this->database->execute(
-            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_id = NULL, updated_at = :updated_at WHERE id = :id AND survey_status IN ('completed', 'failed', 'initiated', 'triggered')",
+            "UPDATE orders SET survey_status = 'pending', survey_next_retry_at = NULL, survey_id = NULL, survey_response = NULL, survey_response_translation = NULL, survey_call_status = NULL, confirmation_status = NULL, updated_at = :updated_at WHERE id = :id AND survey_status IN ('completed', 'failed', 'initiated', 'triggered')",
             [':updated_at' => $this->database->nowUtc(), ':id' => $orderId]
         );
 
@@ -290,6 +299,7 @@ final class AutoCallApi extends BaseService
             'surveyId' => $order['survey_id'] ?? null,
             'surveyStatus' => $order['survey_status'] ?? null,
             'surveyResponse' => $order['survey_response'] ?? null,
+            'surveyResponseTranslation' => $order['survey_response_translation'] ?? null,
             'surveyCallStatus' => $order['survey_call_status'] ?? null,
             'confirmationStatus' => $order['confirmation_status'] ?? null,
             'surveyRetryCount' => (int) ($order['survey_retry_count'] ?? 0),
@@ -369,7 +379,8 @@ final class AutoCallApi extends BaseService
 
         $rows = $this->database->fetchAll(
             "SELECT o.id AS order_id, o.order_number, o.survey_id, o.survey_status, o.survey_call_status,
-                    o.confirmation_status, o.survey_triggered_at, o.survey_duration_seconds, o.survey_cost,
+                    o.confirmation_status, o.survey_response, o.survey_response_translation,
+                    o.survey_triggered_at, o.survey_duration_seconds, o.survey_cost,
                     o.created_at, c.name AS customer_name
              FROM orders o
              LEFT JOIN customers c ON c.id = o.customer_id
@@ -388,6 +399,8 @@ final class AutoCallApi extends BaseService
                 'status' => strtolower(trim((string) ($row['survey_status'] ?? ''))),
                 'callStatus' => strtolower(trim((string) ($row['survey_call_status'] ?? ''))),
                 'confirmationStatus' => strtolower(trim((string) ($row['confirmation_status'] ?? ''))),
+                'response' => $this->nullableString($row['survey_response'] ?? null),
+                'responseTranslation' => $this->nullableString($row['survey_response_translation'] ?? null),
                 'createdAt' => $this->toIso($row['survey_triggered_at'] ?? $row['created_at'] ?? null),
                 'durationSeconds' => (int) ($row['survey_duration_seconds'] ?? 0),
                 'cost' => (float) ($row['survey_cost'] ?? 0),
@@ -755,6 +768,9 @@ final class AutoCallApi extends BaseService
         if ($settings === null) {
             return ['success' => false, 'error' => 'Voice survey settings are missing.'];
         }
+        $responseDictionary = $this->normalizeResponseDictionary(
+            json_decode((string) ($settings['response_dictionary'] ?? '{}'), true)
+        );
 
         if ($orderId === '' && $surveyId !== '') {
             $matchedOrder = $this->database->fetchOne(
@@ -773,14 +789,17 @@ final class AutoCallApi extends BaseService
             }
             $status = strtolower(trim((string) ($result['status'] ?? '')));
             $response = $result['response'] ?? (($result['responses'][0] ?? null));
+            $responseKey = trim((string) ($response ?? ''));
             $duration = max(0, (int) ($result['duration'] ?? 0));
             $cost = $this->calculateSurveyCost($duration, $settings);
 
             $confirmationStatus = 'waiting';
             $surveyCallStatus = $status;
+            $outcomeKey = '';
 
             if ($status === 'answered' && $response !== null && trim((string) $response) !== '') {
-                switch ((string) $response) {
+                $outcomeKey = $responseKey;
+                switch ($responseKey) {
                     case '1':
                         $confirmationStatus = 'confirmed';
                         break;
@@ -791,13 +810,18 @@ final class AutoCallApi extends BaseService
                         $confirmationStatus = 'on_hold';
                         break;
                 }
-            } elseif ($status !== 'answered') {
+            } elseif ($status === 'answered') {
+                $outcomeKey = 'answered_no_key';
+            } else {
                 $surveyCallStatus = 'not_answered';
+                $outcomeKey = 'not_answered';
             }
+            $responseTranslation = $outcomeKey !== '' ? ($responseDictionary[$outcomeKey] ?? null) : null;
 
             $surveyMatchSql = $surveyId !== '' ? ' AND survey_id = :survey_id' : '';
             $bindings = [
                 ':response' => $this->nullableString($response !== null ? (string) $response : null),
+                ':response_translation' => $this->nullableString($responseTranslation),
                 ':call_status' => $surveyCallStatus,
                 ':confirmation' => $confirmationStatus,
                 ':duration' => $duration,
@@ -810,7 +834,7 @@ final class AutoCallApi extends BaseService
             }
             $updated = $this->database->transaction(function () use ($bindings, $surveyMatchSql, $cost): int {
                 $changed = $this->database->execute(
-                    "UPDATE orders SET survey_status = 'completed', survey_response = :response, survey_call_status = :call_status, confirmation_status = :confirmation, survey_duration_seconds = :duration, survey_cost = :cost, updated_at = :updated_at WHERE id = :id AND survey_status IN ('initiated', 'triggered'){$surveyMatchSql}",
+                    "UPDATE orders SET survey_status = 'completed', survey_response = :response, survey_response_translation = :response_translation, survey_call_status = :call_status, confirmation_status = :confirmation, survey_duration_seconds = :duration, survey_cost = :cost, updated_at = :updated_at WHERE id = :id AND survey_status IN ('initiated', 'triggered'){$surveyMatchSql}",
                     $bindings
                 );
                 if ($changed === 1) {
@@ -829,7 +853,7 @@ final class AutoCallApi extends BaseService
                             : ($surveyCallStatus === 'not_answered' ? 'Customer did not pick up.' : 'Customer answered without pressing a key.')));
                 $this->logSurveyEvent($orderId, 'result_received', $surveyId, $surveyCallStatus, $response !== null ? (string) $response : null, $details);
                 try {
-                    (new SmsApi($this->database, $this->auth, $this->config))->sendAfterCallIfEligible($orderId, $confirmationStatus, $surveyCallStatus);
+                    (new SmsApi($this->database, $this->auth, $this->config))->sendAfterCallIfEligible($orderId, $outcomeKey);
                 } catch (\Throwable $exception) {
                     error_log('Could not process after-call SMS for order ' . $orderId . ': ' . $exception->getMessage());
                 }
@@ -1331,6 +1355,26 @@ final class AutoCallApi extends BaseService
         }
 
         return ['On Hold'];
+    }
+
+    /** @return array<string, string> */
+    private function normalizeResponseDictionary(mixed $dictionary): array
+    {
+        if (!is_array($dictionary)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($dictionary as $key => $translation) {
+            $keypress = trim((string) $key);
+            $meaning = trim((string) $translation);
+            if ((preg_match('/^[0-9*#]$/', $keypress) !== 1 && !in_array($keypress, ['not_answered', 'answered_no_key'], true)) || $meaning === '') {
+                continue;
+            }
+            $normalized[$keypress] = mb_substr($meaning, 0, 255);
+        }
+
+        return $normalized;
     }
 
     private function fetchOrderRow(string $id): ?array

@@ -3945,6 +3945,11 @@ CREATE TABLE IF NOT EXISTS sms_recharges (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Migration: 2026-09-28_auto_call_response_dictionary.sql
+CALL sp_add_col('voice_survey_settings', 'response_dictionary', 'TEXT NULL');
+
+CALL sp_add_col('orders', 'survey_response_translation', 'VARCHAR(255) NULL');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS

@@ -1584,6 +1584,11 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                         <span className="whitespace-nowrap font-black text-gray-900">#{order.orderNumber}</span>
                         <ConfirmationStatusDot status={order.confirmationStatus} size="sm" />
                       </div>
+                      {order.surveyResponse ? (
+                        <p className="mt-1 text-[10px] font-semibold text-gray-600">
+                          {order.surveyResponseTranslation || `Customer pressed key ${order.surveyResponse}`}
+                        </p>
+                      ) : null}
                       <p className="text-[10px] text-gray-400 font-bold mt-1 tracking-tight">{formatDate(getOrderActivityDate(order))}</p>
                     </td>
                     <td className="px-6 py-5">

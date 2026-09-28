@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ICONS } from '../constants';
 import { ArrowLeft, RotateCcw, ChevronLeft, ChevronDown } from 'lucide-react';
@@ -162,6 +162,9 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const [isDockHovered, setIsDockHovered] = useState(false);
   const [focusedGroupKey, setFocusedGroupKey] = useState<string | null>(null);
   const [isPlusOpen, setIsPlusOpen] = useState(false);
+  const [quickActionsPosition, setQuickActionsPosition] = useState<{ left: number; top: number } | null>(null);
+  const quickActionsButtonRef = useRef<HTMLButtonElement>(null);
+  const quickActionsMenuRef = useRef<HTMLDivElement>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isCustomerCreateOpen, setIsCustomerCreateOpen] = useState(false);
   const [isVendorCreateOpen, setIsVendorCreateOpen] = useState(false);
@@ -170,6 +173,40 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
     setIsDockPinned(false);
     setFocusedGroupKey(null);
   }, []);
+  useLayoutEffect(() => {
+    if (!isPlusOpen) return;
+
+    const updatePosition = () => {
+      const button = quickActionsButtonRef.current;
+      const menu = quickActionsMenuRef.current;
+      if (!button || !menu) return;
+
+      const buttonRect = button.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(buttonRect.right - menuRect.width, 8),
+        window.innerWidth - menuRect.width - 8,
+      );
+      const belowTop = buttonRect.bottom + 12;
+      const aboveTop = buttonRect.top - menuRect.height - 12;
+      const maxTop = Math.max(8, window.innerHeight - menuRect.height - 8);
+      const top = belowTop + menuRect.height <= window.innerHeight - 8
+        ? belowTop
+        : aboveTop >= 8
+          ? aboveTop
+          : Math.min(belowTop, maxTop);
+
+      setQuickActionsPosition({ left, top });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isPlusOpen]);
   const toggleDock = () => {
     if (isDockPinned) {
       closeSidebar();
@@ -698,6 +735,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
             )}
             <div className="relative">
               <button
+                ref={quickActionsButtonRef}
                 onClick={() => {
                   if (isReadOnly) {
                     showReadOnlyWarning();
@@ -717,7 +755,15 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
               {isPlusOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsPlusOpen(false)}></div>
-                  <div className={`absolute right-0 mt-3 w-56 ${theme.colors.bg.primary} border ${theme.colors.border.primary} rounded-2xl shadow-2xl z-50 py-2 animate-in fade-in zoom-in slide-in-from-top-2 duration-200 origin-top-right`}>
+                  <div
+                    ref={quickActionsMenuRef}
+                    className={`fixed w-56 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto ${theme.colors.bg.primary} border ${theme.colors.border.primary} rounded-2xl shadow-2xl z-50 py-2 animate-in fade-in zoom-in duration-200 origin-top-right`}
+                    style={{
+                      left: quickActionsPosition?.left ?? 0,
+                      top: quickActionsPosition?.top ?? 0,
+                      visibility: quickActionsPosition ? 'visible' : 'hidden',
+                    }}
+                  >
                     <div className={`px-4 py-2 text-[10px] font-bold ${theme.colors.text.tertiary} uppercase tracking-widest border-b ${theme.colors.border.primary} mb-1`}>Quick Actions</div>
                       {quickActions.map((item) => item.to ? (
                         <Link key={item.label} to={item.to} onClick={() => setIsPlusOpen(false)} className={`flex items-center gap-3 px-4 py-3 text-sm font-bold ${theme.colors.text.primary} hover:${theme.colors.primary[50]} hover:${theme.colors.primary.text} ${theme.transitions.normal}`}>

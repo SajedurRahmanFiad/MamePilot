@@ -1467,6 +1467,7 @@ abstract class BaseService
             'surveyId' => $this->nullableString($row['survey_id'] ?? $row['surveyId'] ?? null),
             'surveyStatus' => $this->nullableString($row['survey_status'] ?? $row['surveyStatus'] ?? null),
             'surveyResponse' => $this->nullableString($row['survey_response'] ?? $row['surveyResponse'] ?? null),
+            'surveyResponseTranslation' => $this->nullableString($row['survey_response_translation'] ?? $row['surveyResponseTranslation'] ?? null),
             'surveyCallStatus' => $this->nullableString($row['survey_call_status'] ?? $row['surveyCallStatus'] ?? null),
             'confirmationStatus' => $this->nullableString($row['confirmation_status'] ?? $row['confirmationStatus'] ?? null),
             'surveyRetryCount' => (int) ($row['survey_retry_count'] ?? $row['surveyRetryCount'] ?? 0),

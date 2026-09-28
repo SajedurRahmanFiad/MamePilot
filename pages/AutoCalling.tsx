@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { BookOpen, Plus, Trash2 } from 'lucide-react';
 import { ICONS, formatCurrency } from '../constants';
 import { Button, Modal, NumericInput } from '../components';
 import FilterBar, { type FilterRange } from '../components/FilterBar';
-import { useRechargeHistory, useSurveyBalance, useSurveyHistory, useSurveySummary } from '../src/hooks/useQueries';
-import { useInitiateRechargeCheckout } from '../src/hooks/useMutations';
+import { useRechargeHistory, useSurveyBalance, useSurveyHistory, useSurveySummary, useVoiceSurveySettings } from '../src/hooks/useQueries';
+import { useInitiateRechargeCheckout, useUpdateVoiceSurveySettings } from '../src/hooks/useMutations';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
 import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -33,6 +34,17 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 type TableTab = 'history' | 'recharge_history';
+type DictionaryEntry = { keypress: string; translation: string };
+const RESPONSE_DICTIONARY_KEYS = [
+  ...Array.from({ length: 10 }, (_, index) => String(index)),
+  '*', '#', 'not_answered', 'answered_no_key',
+];
+
+const getDictionaryKeyLabel = (key: string): string => {
+  if (key === 'not_answered') return 'Call not picked up';
+  if (key === 'answered_no_key') return 'Answered without a key';
+  return `Key ${key}`;
+};
 
 const toLocalDateValue = (date: Date) => (
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -44,9 +56,12 @@ const formatStatus = (value: string) => {
   return normalized.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
-const getCallOutcome = (status: string, callStatus: string, confirmationStatus: string) => {
+const getCallOutcome = (status: string, callStatus: string, confirmationStatus: string, responseTranslation?: string | null, response?: string | null) => {
   if (callStatus.startsWith('api_error')) return 'Could not start';
   if (callStatus === 'api_success' && ['initiated', 'triggered'].includes(status)) return 'Awaiting result';
+  if (responseTranslation) return responseTranslation;
+  if (response) return `Customer pressed key ${response}`;
+  if (confirmationStatus && confirmationStatus !== 'waiting') return formatStatus(confirmationStatus);
   if (callStatus) return formatStatus(callStatus);
   if (confirmationStatus) return formatStatus(confirmationStatus);
   return status === 'pending' ? 'Waiting to start' : '—';
@@ -62,12 +77,22 @@ const AutoCalling: React.FC = () => {
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const [tableTab, setTableTab] = useState<TableTab>('history');
   const [page, setPage] = useState(1);
+  const [showDictionaryModal, setShowDictionaryModal] = useState(false);
+  const [dictionaryEntries, setDictionaryEntries] = useState<DictionaryEntry[]>([]);
 
   // Recharge modal state
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState<number>(0);
   const [processingPayment, setProcessingPayment] = useState(false);
   const rechargeMutation = useInitiateRechargeCheckout();
+  const dictionarySettings = useVoiceSurveySettings(showDictionaryModal);
+  const updateVoiceSurveySettings = useUpdateVoiceSurveySettings();
+
+  useEffect(() => {
+    if (!showDictionaryModal || !dictionarySettings.data) return;
+    const entries = Object.entries(dictionarySettings.data.responseDictionary || {}).map(([keypress, translation]) => ({ keypress, translation }));
+    setDictionaryEntries(entries.length > 0 ? entries : [{ keypress: '', translation: '' }]);
+  }, [showDictionaryModal, dictionarySettings.data]);
 
   // Compute date params from FilterBar
   const dateParams = useMemo(() => {
@@ -216,6 +241,32 @@ const AutoCalling: React.FC = () => {
     }
   };
 
+  const handleSaveDictionary = async () => {
+    const dictionary: Record<string, string> = {};
+    for (const entry of dictionaryEntries) {
+      const keypress = entry.keypress.trim();
+      const translation = entry.translation.trim();
+      if (!keypress && !translation) continue;
+      if (!RESPONSE_DICTIONARY_KEYS.includes(keypress) || !translation) {
+        toast.warning('Each entry needs a unique keypad key or call outcome and a meaning.');
+        return;
+      }
+      if (dictionary[keypress]) {
+        toast.warning(`Key ${keypress} appears more than once.`);
+        return;
+      }
+      dictionary[keypress] = translation;
+    }
+
+    try {
+      await updateVoiceSurveySettings.mutateAsync({ responseDictionary: dictionary });
+      toast.success('Call outcome dictionary saved.');
+      setShowDictionaryModal(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save the keypress dictionary.');
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Filter Bar + Action Buttons */}
@@ -229,6 +280,9 @@ const AutoCalling: React.FC = () => {
           compact
         />
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowDictionaryModal(true)} icon={<BookOpen size={16} />}>
+            Dictionary
+          </Button>
           <Button variant="outline" size="sm" onClick={handleRefresh} icon={ICONS.Dashboard}>
             Refresh
           </Button>
@@ -410,7 +464,7 @@ const AutoCalling: React.FC = () => {
                             {formatStatus(entry.status)}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-sm font-medium text-gray-600">{getCallOutcome(entry.status, entry.callStatus, entry.confirmationStatus)}</td>
+                        <td className="px-5 py-4 text-sm font-medium text-gray-600">{getCallOutcome(entry.status, entry.callStatus, entry.confirmationStatus, entry.responseTranslation, entry.response)}</td>
                         <td className="px-5 py-4 text-sm font-semibold tabular-nums text-gray-700">৳{(entry.cost ?? 0).toFixed(2)}</td>
                         <td className="px-5 py-4 text-sm text-gray-500 font-medium">{formatDateTime(entry.createdAt)}</td>
                       </tr>
@@ -467,6 +521,86 @@ const AutoCalling: React.FC = () => {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={showDictionaryModal}
+        onClose={() => setShowDictionaryModal(false)}
+        title="Call Outcome Dictionary"
+        size="lg"
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => setShowDictionaryModal(false)}>Cancel</Button>
+            <Button
+              onClick={handleSaveDictionary}
+              loading={updateVoiceSurveySettings.isPending}
+              disabled={dictionarySettings.isLoading || dictionarySettings.isError}
+            >
+              Save dictionary
+            </Button>
+          </>
+        )}
+      >
+        {dictionarySettings.isLoading ? (
+          <p className="text-sm text-gray-500">Loading dictionary...</p>
+        ) : dictionarySettings.isError ? (
+          <p className="text-sm font-medium text-red-600">
+            {dictionarySettings.error instanceof Error ? dictionarySettings.error.message : 'Dictionary could not be loaded.'}
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-[minmax(5rem,0.7fr)_minmax(0,2fr)_2.5rem] gap-3 px-1 text-xs font-bold text-gray-500">
+              <span>Key / outcome</span>
+              <span>Translation</span>
+              <span />
+            </div>
+            {dictionaryEntries.map((entry, index) => (
+              <div key={index} className="grid grid-cols-[minmax(5rem,0.7fr)_minmax(0,2fr)_2.5rem] items-center gap-3">
+                <select
+                  aria-label={`Key press ${index + 1}`}
+                  value={entry.keypress}
+                  onChange={(event) => setDictionaryEntries((current) => current.map((item, itemIndex) => itemIndex === index
+                    ? { ...item, keypress: event.target.value }
+                    : item))}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-[#0f2f57]"
+                >
+                  <option value="">Select outcome</option>
+                  {RESPONSE_DICTIONARY_KEYS.filter((key) => key === entry.keypress || !dictionaryEntries.some((other, otherIndex) => otherIndex !== index && other.keypress === key)).map((key) => (
+                    <option key={key} value={key}>{getDictionaryKeyLabel(key)}</option>
+                  ))}
+                </select>
+                <input
+                  aria-label={`Translation for key ${entry.keypress || index + 1}`}
+                  type="text"
+                  maxLength={255}
+                  value={entry.translation}
+                  onChange={(event) => setDictionaryEntries((current) => current.map((item, itemIndex) => itemIndex === index
+                    ? { ...item, translation: event.target.value }
+                    : item))}
+                  placeholder="Confirmed or call outcome description"
+                  className="w-full min-w-0 rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#0f2f57]"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove key ${entry.keypress || index + 1}`}
+                  title="Remove key"
+                  onClick={() => setDictionaryEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Plus size={16} />}
+              onClick={() => setDictionaryEntries((current) => [...current, { keypress: '', translation: '' }])}
+            >
+              Add outcome
+            </Button>
+          </div>
+        )}
+      </Modal>
 
       {/* Recharge Modal */}
       {showRechargeModal && (

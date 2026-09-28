@@ -586,6 +586,7 @@ export interface VoiceSurveySettings {
   noKeyRetryMinutes: number;
   noKeyRetryCount: number;
   triggerStatuses: string[];
+  responseDictionary: Record<string, string>;
   workerHealth?: VoiceSurveyWorkerHealth;
 }
 
@@ -681,12 +682,22 @@ export interface VoiceSurveyIntegrationSettings {
   rechargeNotificationEnabled: boolean;
 }
 
+export type SmsSendTiming = 'after_order' | 'after_call' | 'after_courier_assigned';
+
+export interface SmsLogicRule {
+  id: string;
+  sendTiming: SmsSendTiming;
+  callStatuses: string[];
+  templates: Record<string, string>;
+}
+
 export interface SmsSettings {
   apiKey: string;
   autoEnabled: boolean;
-  sendTiming: 'after_order' | 'after_call' | 'after_courier_assigned';
-  callStatuses: string[];
-  templates: Record<string, string>;
+  rules?: SmsLogicRule[];
+  sendTiming?: SmsSendTiming;
+  callStatuses?: string[];
+  templates?: Record<string, string>;
 }
 
 export interface CourierSettings {
@@ -893,6 +904,7 @@ export interface Order {
   surveyId?: string | null;
   surveyStatus?: SurveyStatus | null;
   surveyResponse?: string | null;
+  surveyResponseTranslation?: string | null;
   surveyCallStatus?: string | null;
   confirmationStatus?: ConfirmationStatus | null;
   surveyRetryCount?: number;
@@ -2094,6 +2106,7 @@ export interface OrderSurveySnapshot {
   surveyId?: string | null;
   surveyStatus?: SurveyStatus | null;
   surveyResponse?: string | null;
+  surveyResponseTranslation?: string | null;
   surveyCallStatus?: string | null;
   confirmationStatus?: ConfirmationStatus | null;
   surveyRetryCount: number;

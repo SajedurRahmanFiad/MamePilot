@@ -2164,7 +2164,9 @@ final class OperationsApi extends BaseService
                 exchangeReturnedAt,
                 exchangeCancelledAt,
                 (SELECT partial_delivery_action_required FROM orders WHERE id = orders_with_customer_creator.id) AS partialDeliveryActionRequired,
-                (SELECT courier_return_action_required FROM orders WHERE id = orders_with_customer_creator.id) AS courierReturnActionRequired";
+                (SELECT courier_return_action_required FROM orders WHERE id = orders_with_customer_creator.id) AS courierReturnActionRequired,
+                (SELECT survey_response FROM orders WHERE id = orders_with_customer_creator.id) AS surveyResponse,
+                (SELECT survey_response_translation FROM orders WHERE id = orders_with_customer_creator.id) AS surveyResponseTranslation";
 
         $rows = $this->database->fetchAll(
             "SELECT {$selectColumns}

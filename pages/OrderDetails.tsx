@@ -1856,13 +1856,13 @@ const OrderDetails: React.FC = () => {
     const response = latestSurveyEvent?.response || order.surveyResponse;
     const callStatus = latestSurveyEvent?.callStatus || order.surveyCallStatus;
     if (response === '1' || order.confirmationStatus === 'confirmed') {
-      return { loading: false, className: 'bg-emerald-500', text: 'Customer pressed 1 and confirmed the order.' };
+      return { loading: false, className: 'bg-emerald-500', text: order.surveyResponseTranslation || `Customer pressed key ${response || '1'} and confirmed the order.` };
     }
     if (response === '2' || order.confirmationStatus === 'cancelled') {
-      return { loading: false, className: 'bg-red-500', text: 'Customer pressed 2 and cancelled the order.' };
+      return { loading: false, className: 'bg-red-500', text: order.surveyResponseTranslation || `Customer pressed key ${response || '2'} and cancelled the order.` };
     }
     if ((response && !['1', '2'].includes(response)) || order.confirmationStatus === 'on_hold') {
-      return { loading: false, className: 'bg-amber-400', text: `Customer pressed ${response || '3'} and requested follow-up.` };
+      return { loading: false, className: 'bg-amber-400', text: order.surveyResponseTranslation || `Customer pressed key ${response || '3'} and requested follow-up.` };
     }
     if (callStatus === 'not_answered' || latestSurveyEvent?.eventType === 'retry_scheduled' || order.confirmationStatus === 'waiting') {
       return { loading: false, className: 'bg-black', text: callStatus === 'not_answered' ? 'Customer did not pick up.' : 'Customer answered without selecting an option.' };
@@ -2431,19 +2431,19 @@ const OrderDetails: React.FC = () => {
                   {order.confirmationStatus === 'confirmed' && (
                     <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
                       <p className="text-sm font-bold text-emerald-800">Confirmed by customer</p>
-                      <p className="mt-1 text-xs text-emerald-700">The customer pressed 1. This order is ready to process.</p>
+                      <p className="mt-1 text-xs text-emerald-700">{order.surveyResponseTranslation || `Customer pressed key ${order.surveyResponse || '1'}`}. This order is ready to process.</p>
                     </div>
                   )}
                   {order.confirmationStatus === 'cancelled' && (
                     <div className="rounded-xl bg-red-50 border border-red-100 p-4">
                       <p className="text-sm font-bold text-red-800">Cancelled by customer</p>
-                      <p className="mt-1 text-xs text-red-700">The customer pressed 2. Do not dispatch this parcel.</p>
+                      <p className="mt-1 text-xs text-red-700">{order.surveyResponseTranslation || `Customer pressed key ${order.surveyResponse || '2'}`}. Do not dispatch this parcel.</p>
                     </div>
                   )}
                   {order.confirmationStatus === 'on_hold' && (
                     <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
                       <p className="text-sm font-bold text-amber-800">Follow-up required</p>
-                      <p className="mt-1 text-xs text-amber-700">The customer pressed {order.surveyResponse || '3'}. Contact them before dispatch.</p>
+                      <p className="mt-1 text-xs text-amber-700">{order.surveyResponseTranslation || `Customer pressed key ${order.surveyResponse || '3'}`}. Contact them before dispatch.</p>
                     </div>
                   )}
                   {(!order.confirmationStatus || order.confirmationStatus === 'waiting') && (
