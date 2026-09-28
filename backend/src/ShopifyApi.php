@@ -450,6 +450,7 @@ GRAPHQL, ['first' => 50, 'after' => $cursor]);
         if ($link !== null) {
             if ((int) ($link['auto_created'] ?? 0) === 1) {
                 $this->database->execute('UPDATE products SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock, category = :category, image = :image, updated_at = :updated_at WHERE id = :id', [':name' => $name, ':sku' => $matchKey, ':sale_price' => $price, ':stock' => $stock, ':category' => $category, ':image' => $image !== '' ? $image : null, ':updated_at' => $this->database->nowUtc(), ':id' => $link['product_id']]);
+                $this->syncLowStockNotification((string) $link['product_id']);
                 return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
             }
             return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
@@ -459,6 +460,7 @@ GRAPHQL, ['first' => 50, 'after' => $cursor]);
         $id = $this->uuid4(); $now = $this->database->nowUtc();
         $systemUser = $this->ensureSystemUser();
         $this->database->execute('INSERT INTO products (id, name, slug, sku, image, category, sale_price, purchase_price, stock, created_by, created_at, updated_at) VALUES (:id, :name, :slug, :sku, :image, :category, :sale_price, 0, :stock, :created_by, :created_at, :updated_at)', [':id' => $id, ':name' => $name, ':slug' => $this->uniqueSlug($this->slugify(($handle !== '' ? $handle : 'shopify-product') . '-' . $matchKey)), ':sku' => $matchKey, ':image' => $image !== '' ? $image : null, ':category' => $category, ':sale_price' => $price, ':stock' => $stock, ':created_by' => (string) $systemUser['id'], ':created_at' => $now, ':updated_at' => $now]);
+        $this->syncLowStockNotification($id);
         $this->linkProduct((string) $store['id'], $remoteProductId ?: '0', $remoteVariantId ?: '0', $matchKey, $id, true);
         return ['created' => 1, 'matched' => 0, 'updated' => 0, 'skipped' => 0];
     }

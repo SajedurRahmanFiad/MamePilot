@@ -569,6 +569,7 @@ final class OperationsApi extends BaseService
                     ':id' => (string) $update['id'],
                 ]
             );
+            $this->syncLowStockNotification((string) $update['id']);
         }
     }
 
@@ -4161,15 +4162,6 @@ final class OperationsApi extends BaseService
                  ORDER BY stock ASC, name ASC",
                 [':low_stock' => $lowStockThreshold]
             );
-            if ($this->tableExists('batches')) {
-                $lowStockRows = array_merge($lowStockRows, $this->database->fetchAll(
-                    "SELECT id, name, image, population AS stock, 'batch' AS item_type
-                     FROM batches
-                     WHERE deleted_at IS NULL AND population <= :low_stock_batch
-                     ORDER BY population ASC, name ASC",
-                    [':low_stock_batch' => $lowStockThreshold]
-                ));
-            }
             usort($lowStockRows, static function (array $left, array $right): int {
                 $stockOrder = (int) $left['stock'] <=> (int) $right['stock'];
                 if ($stockOrder !== 0) return $stockOrder;
@@ -6666,7 +6658,8 @@ final class OperationsApi extends BaseService
             : null;
         unset($updates['courierAutomaticExpense']);
 
-        return $this->database->transaction(function () use ($actor, $id, $updates, $automaticCourierExpense): ?array {
+        $sendCourierAssignedSms = false;
+        $result = $this->database->transaction(function () use ($actor, $id, $updates, $automaticCourierExpense, &$sendCourierAssignedSms): ?array {
             $existingRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
                 [':id' => $id]
@@ -7065,8 +7058,17 @@ final class OperationsApi extends BaseService
 
             $this->invalidateProfitLossCache();
 
+            $sendCourierAssignedSms = $nextStatus === 'Courier assigned' && $previousStatus !== $nextStatus;
             return $this->mapOrder($row);
         });
+        if ($sendCourierAssignedSms) {
+            try {
+                (new SmsApi($this->database, $this->auth, $this->config))->queueOrderIfEligible($id, 'after_courier_assigned');
+            } catch (\Throwable $exception) {
+                error_log('Could not send courier-assigned SMS for order ' . $id . ': ' . $exception->getMessage());
+            }
+        }
+        return $result;
     }
 
     public function completePickedOrder(array $params): array

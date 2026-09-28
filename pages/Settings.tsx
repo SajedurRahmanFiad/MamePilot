@@ -19,7 +19,6 @@ import {
   useBatchUpdateSettings,
   useUpdatePermissionsSettings,
   useUpdateDashboardSettings,
-  useUpdateSystemDefaults,
   useBeginMetaAdsOAuth,
   useSyncMetaAds,
   useUpdateMetaAdsSettings,
@@ -125,7 +124,6 @@ const SettingsPage: React.FC = () => {
   const batchUpdateMutation = useBatchUpdateSettings();
   const updatePermissionsSettingsMutation = useUpdatePermissionsSettings();
   const updateDashboardSettingsMutation = useUpdateDashboardSettings();
-  const updateSystemDefaultsMutation = useUpdateSystemDefaults();
   const beginMetaAdsOAuthMutation = useBeginMetaAdsOAuth();
   const updateMetaAdsSettingsMutation = useUpdateMetaAdsSettings();
   const updateVoiceSurveySettingsMutation = useUpdateVoiceSurveySettings();
@@ -213,6 +211,7 @@ const SettingsPage: React.FC = () => {
     themeColor: '#0f2f57',
     productSelectionMode: 'simple',
     calculateCogsFromPurchasePrice: false,
+    lowStockThreshold: 10,
   });
   const [cogsBackfillStatus, setCogsBackfillStatus] = useState<OrderCogsBackfillStatus | null>(null);
   const [cogsBackfillRunning, setCogsBackfillRunning] = useState(false);
@@ -226,9 +225,6 @@ const SettingsPage: React.FC = () => {
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings>(() => normalizeDashboardSettings());
   const dashboardDirtyRef = useRef(false);
   const [dashboardDirty, setDashboardDirty] = useState(false);
-  const [lowStockThreshold, setLowStockThreshold] = useState<number>(10);
-  const lowStockThresholdDirtyRef = useRef(false);
-  const [lowStockThresholdDirty, setLowStockThresholdDirty] = useState(false);
   const [metaAdsSettings, setMetaAdsSettings] = useState<MetaAdsSettings>({
     appId: '',
     appSecret: '',
@@ -438,13 +434,6 @@ const SettingsPage: React.FC = () => {
       setDashboardSettings(cloneDashboardSettings(dashboardSettingsData));
     }
   }, [dashboardSettingsData]);
-
-  React.useEffect(() => {
-    const threshold = Number(systemDefaultsData?.lowStockThreshold);
-    if (Number.isFinite(threshold) && threshold > 0 && !lowStockThresholdDirtyRef.current) {
-      setLowStockThreshold(threshold);
-    }
-  }, [systemDefaultsData?.lowStockThreshold]);
 
   React.useEffect(() => {
     if (metaAdsJustSavedRef.current) { metaAdsJustSavedRef.current = false; return; }
@@ -712,23 +701,16 @@ const SettingsPage: React.FC = () => {
       setDashboardDirty(false);
       setDashboardSettings(persisted);
       queryClient.setQueryData(['settings', 'dashboards'], persisted);
-      if (lowStockThresholdDirtyRef.current) {
-        const savedDefaults = await updateSystemDefaultsMutation.mutateAsync({ lowStockThreshold });
-        lowStockThresholdDirtyRef.current = false;
-        setLowStockThresholdDirty(false);
-        const defaultsData = savedDefaults?.data ?? savedDefaults;
-        if (defaultsData) queryClient.setQueryData(['settings', 'defaults'], defaultsData);
-      }
     } finally {
       dashboardSavingRef.current = false;
     }
-  }, [dashboardSettings, lowStockThreshold, updateDashboardSettingsMutation, updateSystemDefaultsMutation, queryClient]);
+  }, [dashboardSettings, updateDashboardSettingsMutation, queryClient]);
   const { isSaving: dashboardSaving, trigger: triggerDashboardSave } = useAutoSave({ save: saveDashboard });
   useEffect(() => {
     if (dashboardFirstTriggerRef.current) { dashboardFirstTriggerRef.current = false; return; }
-    if (!dashboardDirty && !lowStockThresholdDirty) return;
+    if (!dashboardDirty) return;
     triggerDashboardSave();
-  }, [dashboardSettings, lowStockThreshold, dashboardDirty, lowStockThresholdDirty, triggerDashboardSave]);
+  }, [dashboardSettings, dashboardDirty, triggerDashboardSave]);
 
   // Auto-save: Permissions
   const savePermissions = useCallback(async () => {
@@ -964,12 +946,6 @@ const SettingsPage: React.FC = () => {
         }),
       };
     });
-  }, []);
-
-  const handleLowStockThresholdChange = useCallback((next: number) => {
-    lowStockThresholdDirtyRef.current = true;
-    setLowStockThresholdDirty(true);
-    setLowStockThreshold(next);
   }, []);
 
   const handleAddCategory = async () => {
@@ -1634,6 +1610,16 @@ const SettingsPage: React.FC = () => {
                     className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
                     allowDecimals={false}
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Low Stock Threshold</label>
+                  <NumericInput
+                    value={systemDefaults.lowStockThreshold ?? 10}
+                    onChange={value => setSystemDefaultField('lowStockThreshold', Math.min(99999, Math.max(1, Math.floor(value || 1))))}
+                    className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                    allowDecimals={false}
+                  />
+                  <p className="text-xs font-medium text-gray-400">Products at or below this quantity trigger an admin alert.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Expense Category</label>
@@ -2421,13 +2407,13 @@ const SettingsPage: React.FC = () => {
             <section className="space-y-5">
               <div className="rounded-xl border border-gray-100 bg-white p-5">
                 <div className="flex items-center justify-between">
-                  <div><h3 className="text-lg font-black text-gray-900">Automatic SMS Confirmation</h3><p className="text-sm text-gray-500">Send a message after new orders or after the automatic call result.</p></div>
+                  <div><h3 className="text-lg font-black text-gray-900">Automatic SMS Confirmation</h3><p className="text-sm text-gray-500">Send a message after order creation, courier assignment, or the automatic call result.</p></div>
                   <button type="button" onClick={() => updateSmsForm((settings) => ({ ...settings, autoEnabled: !settings.autoEnabled }))} className={`relative inline-flex h-7 w-12 items-center rounded-full ${smsSettings.autoEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}><span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ${smsSettings.autoEnabled ? 'translate-x-6' : 'translate-x-1'}`} /></button>
                 </div>
               </div>
               <div className="rounded-xl border border-gray-100 bg-white p-5 space-y-5">
-                <label className="block space-y-2 text-sm font-semibold text-gray-700"><span>Send Message</span><select value={smsSettings.sendTiming} onChange={(event) => updateSmsForm((settings) => ({ ...settings, sendTiming: event.target.value as SmsSettings['sendTiming'] }))} className="w-full rounded-xl border border-gray-200 px-3 py-2"><option value="after_order">Right after order creation</option>{hasCapability('auto_calling') && <option value="after_call">After auto calling is completed</option>}</select></label>
-                {smsSettings.sendTiming === 'after_order' && <><div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div><label className="block space-y-2 text-sm font-semibold text-gray-700"><span>SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current.default = element; }} onFocus={() => { activeSmsTemplateKey.current = 'default'; }} className="min-h-32 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder="SMS Template" value={smsSettings.templates.default || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, default: event.target.value } }))} /></label></>}
+                <label className="block space-y-2 text-sm font-semibold text-gray-700"><span>Send Message</span><select value={smsSettings.sendTiming} onChange={(event) => updateSmsForm((settings) => ({ ...settings, sendTiming: event.target.value as SmsSettings['sendTiming'] }))} className="w-full rounded-xl border border-gray-200 px-3 py-2"><option value="after_order">Right after order creation</option><option value="after_courier_assigned">Right after assigning courier</option>{hasCapability('auto_calling') && <option value="after_call">After auto calling is completed</option>}</select></label>
+                {smsSettings.sendTiming !== 'after_call' && <><div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div><label className="block space-y-2 text-sm font-semibold text-gray-700"><span>SMS Template</span><textarea ref={(element) => { smsTemplateRefs.current.default = element; }} onFocus={() => { activeSmsTemplateKey.current = 'default'; }} className="min-h-32 w-full rounded-xl border border-gray-200 px-4 py-3" placeholder="SMS Template" value={smsSettings.templates.default || ''} onChange={(event) => updateSmsForm((settings) => ({ ...settings, templates: { ...settings.templates, default: event.target.value } }))} /></label></>}
                 {smsSettings.sendTiming === 'after_call' && <div className="space-y-5">
                   <div className="relative"><span className="mb-2 block text-sm font-semibold text-gray-700">Call Outcomes</span><button type="button" onClick={() => setSmsOutcomeDropdownOpen((open) => !open)} className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-sm"><span>{smsSettings.callStatuses.length ? `${smsSettings.callStatuses.length} outcome${smsSettings.callStatuses.length === 1 ? '' : 's'} selected` : 'Select call outcomes'}</span><span className="text-gray-400">{smsOutcomeDropdownOpen ? '▲' : '▼'}</span></button>{smsOutcomeDropdownOpen && <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white p-2 shadow-xl">{[['confirmed', 'Customer Confirmed'], ['cancelled', 'Customer Cancelled'], ['unreachable', 'Did Not Pick Up / Unreachable']].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-gray-50"><input type="checkbox" checked={smsSettings.callStatuses.includes(value)} onChange={() => updateSmsForm((settings) => ({ ...settings, callStatuses: settings.callStatuses.includes(value) ? settings.callStatuses.filter((status) => status !== value) : [...settings.callStatuses, value] }))} /><span>{label}</span></label>)}</div>}</div>
                   <div className="flex flex-wrap gap-2">{['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'].map((variable) => <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>)}</div>
@@ -2450,9 +2436,7 @@ const SettingsPage: React.FC = () => {
             <DashboardSettingsPanel
               value={dashboardSettings}
               onChange={handleDashboardChange}
-              hasUnsavedChanges={dashboardDirty || lowStockThresholdDirty}
-              lowStockThreshold={lowStockThreshold}
-              onLowStockThresholdChange={handleLowStockThresholdChange}
+              hasUnsavedChanges={dashboardDirty}
             />
           )}
 

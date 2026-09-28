@@ -641,6 +641,9 @@ final class DataManagementApi extends BaseService
                     $row = $this->normalizeImportedCompanySettings($row);
                 }
                 $tableCounts = $row === [] ? ['created' => 0, 'skipped' => 1] : $this->mergeSettingsSingleton($table, $row);
+                if ($table === 'system_defaults' && array_key_exists('low_stock_threshold', $row)) {
+                    $this->syncAllLowStockNotifications();
+                }
                 if ($table === 'company_settings' && $tableCounts['created'] > 0) {
                     $this->purgeImportedBrandingCache();
                 }
@@ -2035,6 +2038,7 @@ final class DataManagementApi extends BaseService
             }
             $data['updated_at'] = $this->database->nowUtc();
             $this->touchUpdate('products', (string) $existing['id'], $data);
+            $this->syncLowStockNotification((string) $existing['id']);
             return 'updated';
         }
 
@@ -2044,6 +2048,7 @@ final class DataManagementApi extends BaseService
         $data['created_at'] = $this->database->nowUtc();
         $data['updated_at'] = $this->database->nowUtc();
         $this->insertRow('products', $data);
+        $this->syncLowStockNotification((string) $data['id']);
         return 'created';
     }
 

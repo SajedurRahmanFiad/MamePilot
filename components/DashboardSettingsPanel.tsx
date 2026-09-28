@@ -16,8 +16,6 @@ interface DashboardSettingsPanelProps {
   value: DashboardSettings;
   onChange: (next: DashboardSettings) => void;
   hasUnsavedChanges?: boolean;
-  lowStockThreshold?: number;
-  onLowStockThresholdChange?: (value: number) => void;
 }
 
 interface OrderedChecklistProps {
@@ -125,16 +123,13 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
   );
 };
 
-const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false, lowStockThreshold = 10, onLowStockThresholdChange }) => {
+const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, onChange, hasUnsavedChanges = false }) => {
   const { settings: capabilitySettings } = useCapabilities();
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const dashboardWidgetDefinitions = useMemo(
     () => DASHBOARD_WIDGET_DEFINITIONS.map((definition) => {
       if (definition.key === 'admin.topSoldProducts') {
         return { ...definition, label: `Top 5 Sold ${terminology.items}`, description: `Best-selling ${terminology.itemsLower} by quantity.` };
-      }
-      if (definition.key === 'admin.lowStockProducts') {
-        return { ...definition, label: `Low Stock ${terminology.items}`, description: `${terminology.items} and batches at or below the low-stock threshold.` };
       }
       return definition;
     }),
@@ -273,18 +268,6 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
                     <span className="text-[11px] font-medium leading-4 text-gray-400">
                       {ORDER_KPI_TIME_BASIS_OPTIONS.find((option) => option.value === selectedDashboard.orderKpiTimeBasis)?.description}
                     </span>
-                  </label>
-                  <label className="flex min-w-[120px] flex-col gap-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Low stock threshold</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={99999}
-                      value={lowStockThreshold}
-                      onChange={(event) => onLowStockThresholdChange?.(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:border-[#3c5a82]"
-                    />
-                    <span className="text-[11px] font-medium leading-4 text-gray-400">Items at or below this stock amount count as low.</span>
                   </label>
                 </div>
               }

@@ -80,6 +80,7 @@ abstract class BaseService
         'admin.cashFlow',
         'admin.topSoldProducts',
         'admin.topSoldBatches',
+        'admin.lowStockProducts',
         'admin.topCustomers',
         'admin.profitLoss',
         'admin.expensesByCategory',
@@ -1865,6 +1866,94 @@ abstract class BaseService
             $this->columnExistsCache[$cacheKey] = true;
         }
         return $present;
+    }
+
+    protected function syncLowStockNotification(string $productId): void
+    {
+        if (!$this->tableExists('notifications') || !$this->columnExists('notifications', 'system_key')) {
+            return;
+        }
+
+        $productId = trim($productId);
+        if ($productId === '') return;
+
+        $product = $this->database->fetchOne(
+            'SELECT id, name, stock, deleted_at FROM products WHERE id = :id LIMIT 1',
+            [':id' => $productId]
+        );
+        $threshold = 10;
+        if ($this->tableExists('system_defaults') && $this->columnExists('system_defaults', 'low_stock_threshold')) {
+            $defaults = $this->database->fetchOne('SELECT low_stock_threshold FROM system_defaults LIMIT 1');
+            $threshold = max(1, (int) ($defaults['low_stock_threshold'] ?? 10));
+        }
+
+        $notificationKey = 'low-stock-' . substr(hash('sha256', $productId), 0, 32);
+        $existing = $this->database->fetchOne(
+            'SELECT id, is_active FROM notifications WHERE system_key = :system_key LIMIT 1',
+            [':system_key' => $notificationKey]
+        );
+        $stock = (int) ($product['stock'] ?? 0);
+        if ($product === null || !empty($product['deleted_at']) || $stock > $threshold) {
+            if ($existing !== null && (int) ($existing['is_active'] ?? 0) === 1) {
+                $this->database->execute(
+                    'UPDATE notifications SET is_active = 0, updated_at = :updated_at WHERE system_key = :system_key',
+                    [':updated_at' => $this->database->nowUtc(), ':system_key' => $notificationKey]
+                );
+            }
+            return;
+        }
+
+        if ($existing !== null && (int) ($existing['is_active'] ?? 0) === 0 && $this->tableExists('notification_receipts')) {
+            $this->database->execute(
+                'DELETE FROM notification_receipts WHERE notification_id = :notification_id',
+                [':notification_id' => $existing['id']]
+            );
+        }
+
+        $name = trim((string) ($product['name'] ?? '')) ?: 'Unnamed product';
+        $subject = 'Low stock alert: ' . $name;
+        $content = sprintf(
+            '<p><strong>%s</strong> has reached the low-stock threshold.</p><p>Current quantity: <strong>%d</strong> (threshold: %d).</p>',
+            htmlspecialchars($name, ENT_QUOTES, 'UTF-8'),
+            $stock,
+            $threshold
+        );
+        $now = $this->database->nowUtc();
+        $this->database->execute(
+            'INSERT INTO notifications (
+                id, system_key, subject, content_html, target_roles, starts_at, ends_at,
+                action_config, metadata, created_by, is_active, is_system_generated, created_at, updated_at
+             ) VALUES (
+                :id, :system_key, :subject, :content_html, :target_roles, NULL, NULL,
+                NULL, :metadata, NULL, 1, 1, :created_at, :updated_at
+             )
+             ON DUPLICATE KEY UPDATE
+                subject = VALUES(subject),
+                content_html = VALUES(content_html),
+                target_roles = VALUES(target_roles),
+                metadata = VALUES(metadata),
+                is_active = 1,
+                is_system_generated = 1,
+                updated_at = VALUES(updated_at)',
+            [
+                ':id' => $notificationKey,
+                ':system_key' => $notificationKey,
+                ':subject' => $subject,
+                ':content_html' => $content,
+                ':target_roles' => $this->jsonEncode(['Admin', 'Developer']),
+                ':metadata' => $this->jsonEncode(['kind' => 'low_stock', 'productId' => $productId, 'stock' => $stock, 'threshold' => $threshold]),
+                ':created_at' => $now,
+                ':updated_at' => $now,
+            ]
+        );
+    }
+
+    protected function syncAllLowStockNotifications(): void
+    {
+        if (!$this->tableExists('products')) return;
+        foreach ($this->database->fetchAll('SELECT id FROM products') as $product) {
+            $this->syncLowStockNotification((string) ($product['id'] ?? ''));
+        }
     }
 
     /** Filter out columns that do not exist in the given table. */

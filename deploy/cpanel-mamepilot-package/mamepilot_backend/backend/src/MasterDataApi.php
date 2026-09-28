@@ -1449,6 +1449,7 @@ final class MasterDataApi extends BaseService
                 ':updated_at' => $this->database->nowUtc(),
             ]
         );
+        $this->syncLowStockNotification($id);
 
         return $this->fetchProductById(['id' => $id]) ?? throw new RuntimeException('Failed to create product.');
     }
@@ -1516,6 +1517,9 @@ final class MasterDataApi extends BaseService
         }
 
         $this->touchUpdate('products', $id, $payload);
+        if (array_key_exists('stock', $updates) || array_key_exists('name', $updates)) {
+            $this->syncLowStockNotification($id);
+        }
         return $this->fetchProductById(['id' => $id]) ?? throw new RuntimeException('Product not found.');
     }
 
@@ -1527,6 +1531,7 @@ final class MasterDataApi extends BaseService
             throw new RuntimeException('This product is used by inventory-bearing orders or bills and cannot be deleted. Keep it for history and create a replacement product if needed.');
         }
         $this->softDelete('products', $id);
+        $this->syncLowStockNotification($id);
         return ['success' => true];
     }
 
@@ -2150,15 +2155,18 @@ final class MasterDataApi extends BaseService
         $row = $this->database->fetchOne('SELECT id FROM system_defaults LIMIT 1');
         if ($row !== null) {
             $this->touchUpdate('system_defaults', (string) $row['id'], $payload);
+            if (array_key_exists('lowStockThreshold', $params)) $this->syncAllLowStockNotifications();
             return $this->fetchSystemDefaults();
         }
 
-        return $this->saveSingleton(
+        $saved = $this->saveSingleton(
             'system_defaults',
             'system-default',
             $payload,
             fn(): array => $this->fetchSystemDefaults()
         );
+        if (array_key_exists('lowStockThreshold', $params)) $this->syncAllLowStockNotifications();
+        return $saved;
     }
 
     private function normalizeCapabilities($value): array

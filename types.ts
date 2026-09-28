@@ -684,7 +684,7 @@ export interface VoiceSurveyIntegrationSettings {
 export interface SmsSettings {
   apiKey: string;
   autoEnabled: boolean;
-  sendTiming: 'after_order' | 'after_call';
+  sendTiming: 'after_order' | 'after_call' | 'after_courier_assigned';
   callStatuses: string[];
   templates: Record<string, string>;
 }
@@ -1525,6 +1525,7 @@ export interface Settings {
     productSelectionMode: string;
     calculateCogsFromPurchasePrice: boolean;
     automaticFraudCheckOnOrderCreation?: boolean;
+    lowStockThreshold: number;
   };
   categories: {
     id: string;

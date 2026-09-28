@@ -25,7 +25,7 @@ final class SmsApi extends BaseService
         $data = [
             'api_key' => trim((string) ($params['apiKey'] ?? $row['api_key'] ?? '')) ?: null,
             'auto_enabled' => (int) (bool) ($params['autoEnabled'] ?? $row['auto_enabled'] ?? false),
-            'send_timing' => in_array(($params['sendTiming'] ?? $row['send_timing'] ?? 'after_order'), ['after_order', 'after_call'], true)
+            'send_timing' => in_array(($params['sendTiming'] ?? $row['send_timing'] ?? 'after_order'), ['after_order', 'after_call', 'after_courier_assigned'], true)
                 ? (string) ($params['sendTiming'] ?? $row['send_timing'] ?? 'after_order') : 'after_order',
             'call_statuses' => $this->jsonEncode(array_values(array_intersect((array) ($params['callStatuses'] ?? json_decode((string) ($row['call_statuses'] ?? '[]'), true)), ['confirmed', 'cancelled', 'unreachable']))),
             'templates' => $this->jsonEncode((array) ($params['templates'] ?? json_decode((string) ($row['templates'] ?? '{}'), true))),
@@ -80,11 +80,11 @@ final class SmsApi extends BaseService
         return ['success' => true, 'message' => (string) ($body['msg'] ?? 'SMS sent successfully.'), 'recipients' => count($numbers)];
     }
 
-    public function queueOrderIfEligible(string $orderId): bool
+    public function queueOrderIfEligible(string $orderId, string $sendTiming = 'after_order'): bool
     {
         if ($orderId === '' || !$this->tableExists('sms_settings')) return false;
         $settings = $this->settingsRow();
-        if ($settings === null || empty($settings['auto_enabled']) || ($settings['send_timing'] ?? 'after_order') !== 'after_order') return false;
+        if ($settings === null || empty($settings['auto_enabled']) || ($settings['send_timing'] ?? 'after_order') !== $sendTiming) return false;
         $template = (array) (json_decode((string) ($settings['templates'] ?? '{}'), true) ?: []);
         $message = trim((string) ($template['default'] ?? ''));
         if ($message === '') return false;

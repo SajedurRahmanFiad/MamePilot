@@ -172,7 +172,7 @@ const createProductPackageBatches = (records: Array<Record<string, string>>) => 
 const DataManagementSettingsPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
-  const { capabilities, isDeveloper } = useCapabilities();
+  const { capabilities, isDeveloper, settings: capabilitySettings } = useCapabilities();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsFileInputRef = useRef<HTMLInputElement>(null);
   const [datasets, setDatasets] = useState<DataManagementDataset[]>([]);
@@ -223,11 +223,17 @@ const DataManagementSettingsPanel: React.FC = () => {
     () => datasets.filter((dataset) => !dataset.capability || isDeveloper || Boolean(capabilities[dataset.capability])),
     [capabilities, datasets, isDeveloper],
   );
+  const brandExportFilename = (filename: string) => {
+    const customCopyright = capabilities.whitelabel ? capabilitySettings?.copyrightName?.trim() : '';
+    const brand = safePackageName(customCopyright || '', 'mamepilot');
+    return filename.replace(/^mamepilot(?=-)/i, brand);
+  };
 
   const handleExport = async (dataset: DataManagementDataset, filters: DataExportFilters): Promise<boolean> => {
     setExportingKey(dataset.key);
     try {
       const response = await exportDataRecords(dataset.key, filters);
+      const filename = brandExportFilename(response.filename);
       const headers = response.fields.map((field) => field.label);
       const exportedRows = response.rows.map((row) => ({ ...row }));
 
@@ -239,11 +245,12 @@ const DataManagementSettingsPanel: React.FC = () => {
           customDates: { from: '', to: '' },
           dependencyFor: dataset.key,
         });
+        const accountsFilename = brandExportFilename(accountsResponse.filename);
         const primaryRows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
         const accountRows = accountsResponse.rows.map((row) => accountsResponse.fields.map((field) => row[field.key]));
         const archive: Record<string, Uint8Array> = {
-          [response.filename]: strToU8(buildCsv(headers, primaryRows)),
-          [accountsResponse.filename]: strToU8(buildCsv(
+          [filename]: strToU8(buildCsv(headers, primaryRows)),
+          [accountsFilename]: strToU8(buildCsv(
             accountsResponse.fields.map((field) => field.label),
             accountRows,
           )),
@@ -255,7 +262,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         const zipBytes = zipSync(archive, { level: 6 });
         downloadBlob(
           new Blob([zipBytes as BlobPart], { type: 'application/zip' }),
-          response.filename.replace(/\.csv$/i, '.zip'),
+          filename.replace(/\.csv$/i, '.zip'),
         );
         toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} and ${accountsResponse.rows.length} accounts exported.`);
         return true;
@@ -293,12 +300,12 @@ const DataManagementSettingsPanel: React.FC = () => {
         }
 
         const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
-        archive[response.filename] = strToU8(buildCsv(headers, rows));
+        archive[filename] = strToU8(buildCsv(headers, rows));
         archive['README.txt'] = strToU8(
           'MamePilot Product Package\n\nImport this ZIP from Settings > Import and Export Data > Products. '
           + 'The product CSV and packaged images will be restored automatically.\n'
         );
-        const packageFilename = response.filename.replace(/\.csv$/i, '.zip');
+        const packageFilename = filename.replace(/\.csv$/i, '.zip');
         const zipBytes = zipSync(archive, { level: 6 });
         downloadBlob(new Blob([zipBytes as BlobPart], { type: 'application/zip' }), packageFilename);
         const missingNote = unavailableImages > 0 ? ` ${unavailableImages} unavailable image(s) were left as URLs.` : '';
@@ -307,7 +314,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       }
 
       const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
-      downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), response.filename);
+      downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), filename);
       toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} exported.`);
       return true;
     } catch (error) {
@@ -346,7 +353,7 @@ const DataManagementSettingsPanel: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `mamepilot-${dataset.key}-template.csv`;
+    link.download = brandExportFilename(`mamepilot-${dataset.key}-template.csv`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -411,9 +418,10 @@ const DataManagementSettingsPanel: React.FC = () => {
       if (settingsSession.mode === 'export') {
         const response = await exportSettingsPackage(settingsSession.selectedTabs);
         const portable = await makeSettingsPackagePortable(response);
+        portable.filename = brandExportFilename(portable.filename);
         downloadBlob(
           new Blob([JSON.stringify(portable, null, 2)], { type: 'application/json;charset=utf-8' }),
-          response.filename,
+          portable.filename,
         );
         toast.success(`${settingsSession.selectedTabs.length} Settings tabs exported.`);
       } else if (settingsSession.settingsPackage) {
@@ -475,7 +483,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       const dependencies: ImportSession['dependencies'] = [];
       if (isZipPackage) {
         packageFiles = unzipSync(new Uint8Array(await file.arrayBuffer()));
-        const datasetPattern = new RegExp(`(^|/)mamepilot-${dataset.key}-[^/]*\\.csv$`, 'i');
+        const datasetPattern = new RegExp(`(^|/)[^/]+-${dataset.key}-[^/]*\\.csv$`, 'i');
         const csvNames = Object.keys(packageFiles).filter((name) => datasetPattern.test(name));
         if (csvNames.length !== 1) {
           throw new Error(`The package must contain exactly one MamePilot ${dataset.label.toLocaleLowerCase()} CSV file.`);
@@ -486,7 +494,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         if (isFinancialPackage) {
           const accountsDataset = datasets.find((candidate) => candidate.key === 'accounts');
           if (!accountsDataset) throw new Error('The Accounts import option is unavailable. Refresh the page and try again.');
-          const accountNames = Object.keys(packageFiles).filter((name) => /(^|\/)mamepilot-accounts-[^/]*\.csv$/i.test(name));
+          const accountNames = Object.keys(packageFiles).filter((name) => /(^|\/)[^/]+-accounts-[^/]*\.csv$/i.test(name));
           if (accountNames.length !== 1) {
             throw new Error('The financial package must contain exactly one MamePilot accounts CSV file.');
           }

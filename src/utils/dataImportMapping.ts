@@ -32,8 +32,9 @@ export function isMamePilotDataExport(
 ): boolean {
   const exactHeaders = dataset.fields.map((field) => normalizeCsvHeader(field.label));
   const uploadedHeaders = headers.map(normalizeCsvHeader);
+  const brandedExportName = new RegExp(`^[a-z0-9_-]+-${dataset.key}-`, 'i').test(fileName.split(/[\\/]/).pop() || fileName);
   return (
-    fileName.toLocaleLowerCase().startsWith(`mamepilot-${dataset.key}-`)
+    brandedExportName
     && exactHeaders.length === uploadedHeaders.length
     && exactHeaders.every((header, index) => header === uploadedHeaders[index])
   );

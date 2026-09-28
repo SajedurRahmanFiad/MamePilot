@@ -895,6 +895,7 @@ final class WooCommerceApi extends BaseService
                     [':quantity' => $orderedQuantity, ':updated_at' => $this->database->nowUtc(), ':id' => $link['id']]
                 );
                 $link['stock'] = (int) ($link['stock'] ?? 0) + $orderedQuantity;
+                $this->syncLowStockNotification((string) $link['id']);
             }
             return $link;
         }
@@ -966,6 +967,7 @@ final class WooCommerceApi extends BaseService
                 ]
             );
             $product = ['id' => $productId, 'name' => $name, 'stock' => $orderedQuantity];
+            $this->syncLowStockNotification($productId);
         }
 
         $this->database->execute(
@@ -1083,6 +1085,7 @@ final class WooCommerceApi extends BaseService
                         ':id' => $link['product_id'],
                     ]
                 );
+                $this->syncLowStockNotification((string) $link['product_id']);
                 return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
             }
             return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
@@ -1111,6 +1114,7 @@ final class WooCommerceApi extends BaseService
                 ':stock' => $stock, ':created_by' => $systemUserId, ':created_at' => $now, ':updated_at' => $now,
             ]
         );
+        $this->syncLowStockNotification($id);
         $this->linkWcProduct((string) $store['id'], $wcProductId, $wcVariationId, $matchKey, $id, true);
         return ['created' => 1, 'matched' => 0, 'updated' => 0, 'skipped' => 0];
     }
