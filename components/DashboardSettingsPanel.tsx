@@ -5,6 +5,7 @@ import {
   DASHBOARD_WIDGET_DEFINITIONS,
   ORDER_KPI_TIME_BASIS_OPTIONS,
   cloneDashboardSettings,
+  getDefaultWidgetWidthPercent,
   normalizeDashboardConfiguration,
 } from '../src/dashboardConfig';
 import { ICONS } from '../constants';
@@ -98,14 +99,14 @@ const OrderedChecklist: React.FC<OrderedChecklistProps> = ({ title, description,
                     min={10}
                     max={100}
                     step={5}
-                    value={widthDrafts[item.key] ?? String(item.widthPercent ?? 50)}
+                    value={widthDrafts[item.key] ?? String(item.widthPercent ?? getDefaultWidgetWidthPercent(item.key))}
                     onChange={(e) => setWidthDrafts((prev) => ({ ...prev, [item.key]: e.target.value }))}
                     onBlur={(e) => {
                       const raw = e.target.value;
                       const num = parseInt(raw, 10);
                       const val = isNaN(num) ? 50 : Math.min(100, Math.max(10, num));
                       setWidthDrafts((prev) => { const next = { ...prev }; delete next[item.key]; return next; });
-                      if (val !== (item.widthPercent ?? 50)) {
+                      if (val !== (item.widthPercent ?? getDefaultWidgetWidthPercent(item.key))) {
                         onChange(items.map((candidate) => candidate.key === item.key ? { ...candidate, widthPercent: val } : { ...candidate }));
                       }
                     }}
