@@ -327,7 +327,7 @@ function ensureLicensePricingSchema(PDO $pdo): void
 
 function normalizeBusinessMode($value): string
 {
-    return in_array((string) $value, ['general_retail', 'vaccine_center'], true)
+    return in_array((string) $value, ['general_retail', 'vaccine_center', 'sofa_cover'], true)
         ? (string) $value
         : 'general_retail';
 }

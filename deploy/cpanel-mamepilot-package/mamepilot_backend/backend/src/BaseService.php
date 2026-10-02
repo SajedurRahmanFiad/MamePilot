@@ -13,7 +13,7 @@ abstract class BaseService
         'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned',
         'Exchange cancelled', 'Returned', 'Cancelled',
     ];
-    protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed'];
+    protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed', 'Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
     protected const BILL_STOCK_STATUSES = ['Received', 'Paid'];
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';
@@ -1418,14 +1418,19 @@ abstract class BaseService
     {
         $pageSnapshot = $this->jsonDecodeAssoc($row['page_snapshot'] ?? $row['pageSnapshot'] ?? []);
         $history = $this->jsonDecodeAssoc($row['history'] ?? []);
+        $status = $this->canonicalOrderStatus((string) ($row['status'] ?? ''), $history);
+        $orderNumber = (string) ($row['order_number'] ?? $row['orderNumber'] ?? '');
+        if (str_starts_with($status, 'Repair ') && !str_starts_with($orderNumber, 'R-')) {
+            $orderNumber = 'R-' . $orderNumber;
+        }
 
         return [
             'id' => (string) $row['id'],
-            'orderNumber' => (string) ($row['order_number'] ?? $row['orderNumber'] ?? ''),
+            'orderNumber' => $orderNumber,
             'orderDate' => (string) ($row['order_date'] ?? $row['orderDate'] ?? ''),
             'customerId' => (string) ($row['customer_id'] ?? $row['customerId'] ?? ''),
             'createdBy' => (string) ($row['created_by'] ?? $row['createdBy'] ?? ''),
-            'status' => $this->canonicalOrderStatus((string) ($row['status'] ?? ''), $history),
+            'status' => $status,
             'items' => $this->jsonDecodeList($row['items'] ?? []),
             'subtotal' => (float) ($row['subtotal'] ?? 0),
             'discount' => (float) ($row['discount'] ?? 0),
@@ -1433,6 +1438,11 @@ abstract class BaseService
             'vatAmount' => (float) ($row['vat_amount'] ?? $row['vatAmount'] ?? 0),
             'isPos' => (bool) ($row['is_pos'] ?? $row['isPos'] ?? false),
             'shipping' => (float) ($row['shipping'] ?? 0),
+            'collageUrls' => array_values(array_filter(array_map('strval', $this->jsonDecodeList($row['collage_urls'] ?? $row['collageUrls'] ?? [])))),
+            'deliveryPersonId' => $this->nullableString($row['delivery_person_id'] ?? $row['deliveryPersonId'] ?? null),
+            'deliveryPersonName' => $this->nullableString($row['delivery_person_name'] ?? $row['deliveryPersonName'] ?? null),
+            'deliveryPersonShippingCost' => (float) ($row['delivery_person_shipping_cost'] ?? $row['deliveryPersonShippingCost'] ?? 0),
+            'deliveryPersonShippingExpenseRecorded' => (bool) ($row['delivery_person_shipping_expense_recorded'] ?? $row['deliveryPersonShippingExpenseRecorded'] ?? false),
             'total' => (float) ($row['total'] ?? $row['amount'] ?? 0),
             'notes' => $this->nullableString($row['notes'] ?? null),
             'pageId' => $this->nullableString($row['page_id'] ?? $row['pageId'] ?? null),
@@ -1490,6 +1500,11 @@ abstract class BaseService
             'exchangeDeliveredAt' => $this->toIso($row['exchange_delivered_at'] ?? $row['exchangeDeliveredAt'] ?? null),
             'exchangeReturnedAt' => $this->toIso($row['exchange_returned_at'] ?? $row['exchangeReturnedAt'] ?? null),
             'exchangeCancelledAt' => $this->toIso($row['exchange_cancelled_at'] ?? $row['exchangeCancelledAt'] ?? null),
+            'repairProcessingAt' => $this->toIso($row['repair_processing_at'] ?? $row['repairProcessingAt'] ?? null),
+            'repairPickedAt' => $this->toIso($row['repair_picked_at'] ?? $row['repairPickedAt'] ?? null),
+            'repairDeliveredAt' => $this->toIso($row['repair_delivered_at'] ?? $row['repairDeliveredAt'] ?? null),
+            'repairReturnedAt' => $this->toIso($row['repair_returned_at'] ?? $row['repairReturnedAt'] ?? null),
+            'repairCancelledAt' => $this->toIso($row['repair_cancelled_at'] ?? $row['repairCancelledAt'] ?? null),
         ];
     }
 

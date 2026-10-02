@@ -187,6 +187,12 @@ export enum OrderStatus {
   EXCHANGE_DELIVERED = 'Exchange delivered',
   EXCHANGE_RETURNED = 'Exchange returned',
   EXCHANGE_CANCELLED = 'Exchange cancelled',
+  REPAIR_PROCESSING = 'Repair processing',
+  REPAIR_COURIER_ASSIGNED = 'Repair Courier Assigned',
+  REPAIR_PICKED = 'Repair picked',
+  REPAIR_DELIVERED = 'Repair delivered',
+  REPAIR_CANCELLED = 'Repair canceled',
+  REPAIR_RETURNED = 'Repair returned',
   RETURNED = 'Returned',
   CANCELLED = 'Cancelled'
 }
@@ -231,6 +237,22 @@ export interface User {
   createdAt?: string;
   deletedAt?: string;
   deletedBy?: string;
+}
+
+export interface DeliveryPerson {
+  id: string;
+  name: string;
+  phone: string;
+  image?: string | null;
+  email?: string | null;
+  address?: string | null;
+  birthday?: string | null;
+  nidPassportCopy?: string | null;
+  gender?: string | null;
+  bloodGroup?: string | null;
+  nationality?: string | null;
+  cv?: string | null;
+  createdAt?: string;
 }
 
 export interface Customer {
@@ -882,6 +904,11 @@ export interface Order {
   vatAmount?: number;
   isPos?: boolean;
   shipping: number;
+  collageUrls?: string[];
+  deliveryPersonId?: string | null;
+  deliveryPersonName?: string | null;
+  deliveryPersonShippingCost?: number;
+  deliveryPersonShippingExpenseRecorded?: boolean;
   total: number;
   notes?: string;
   sourceAd?: string;
@@ -935,6 +962,12 @@ export interface Order {
     exchangeDelivered?: string; // history entry for exchange delivered
     exchangeReturned?: string; // history entry for exchange returned
     exchangeCancelled?: string; // history entry for exchange cancelled
+    repairProcessing?: string;
+    repairCourier?: string;
+    repairPicked?: string;
+    repairDelivered?: string;
+    repairReturned?: string;
+    repairCancelled?: string;
     courierReturn?: string; // Steadfast return notice awaiting review
   };
   /** Server-authored UTC instants for lifecycle changes; legacy orders fall back to history text. */
@@ -949,7 +982,12 @@ export interface Order {
     | 'exchangePicked'
     | 'exchangeDelivered'
     | 'exchangeReturned'
-    | 'exchangeCancelled',
+    | 'exchangeCancelled'
+    | 'repairProcessing'
+    | 'repairPicked'
+    | 'repairDelivered'
+    | 'repairReturned'
+    | 'repairCancelled',
     string
   >>;
   paidAmount: number;
@@ -976,6 +1014,11 @@ export interface Order {
   exchangeDeliveredAt?: string;
   exchangeReturnedAt?: string;
   exchangeCancelledAt?: string;
+  repairProcessingAt?: string;
+  repairPickedAt?: string;
+  repairDeliveredAt?: string;
+  repairReturnedAt?: string;
+  repairCancelledAt?: string;
   // Relational fields: populated from joined customer and user data
   // Present when fetching paginated orders via orders_with_customer_creator view
   customerName?: string;
@@ -1642,7 +1685,7 @@ export interface CapabilitySettings {
   copyrightName?: string;
 }
 
-export type BusinessMode = 'general_retail' | 'vaccine_center';
+export type BusinessMode = 'general_retail' | 'vaccine_center' | 'sofa_cover';
 
 export interface PaymentGatewaySettings {
   piprapayBaseUrl: string;

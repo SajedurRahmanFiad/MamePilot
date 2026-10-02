@@ -635,6 +635,175 @@ final class MasterDataApi extends BaseService
         return ['success' => true];
     }
 
+    public function fetchDeliveryPersonsPage(array $params): array
+    {
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $pageSize = max(1, min(200, (int) ($params['pageSize'] ?? self::DEFAULT_PAGE_SIZE)));
+        $offset = ($page - 1) * $pageSize;
+        $search = trim((string) ($params['search'] ?? ''));
+        $where = 'WHERE deleted_at IS NULL';
+        $bindings = [];
+        if ($search !== '') {
+            $where .= " AND CONVERT(CONCAT_WS(' ', id, name, phone, email, address, birthday, gender, blood_group, nationality) USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE :search ESCAPE '='";
+            $bindings[':search'] = '%' . str_replace(['=', '%', '_'], ['==', '=%', '=_'], $search) . '%';
+        }
+
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['name'] ?? '')), 'delivery_name');
+        $this->appendEncodedTextFilter($where, $bindings, 'name', trim((string) ($params['nameNot'] ?? '')), 'delivery_name_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phone'] ?? '')), 'delivery_phone');
+        $this->appendEncodedTextFilter($where, $bindings, 'phone', trim((string) ($params['phoneNot'] ?? '')), 'delivery_phone_not', true);
+        $this->appendEncodedTextFilter($where, $bindings, 'nationality', trim((string) ($params['nationality'] ?? '')), 'delivery_nationality');
+        $this->appendEncodedTextFilter($where, $bindings, 'nationality', trim((string) ($params['nationalityNot'] ?? '')), 'delivery_nationality_not', true);
+        foreach ([['gender', 'gender'], ['bloodGroup', 'blood_group']] as [$key, $column]) {
+            $value = trim((string) ($params[$key] ?? ''));
+            if ($value !== '') {
+                $where .= " AND COALESCE({$column}, '') = :delivery_{$key}";
+                $bindings[":delivery_{$key}"] = $value === '__not_specified__' ? '' : $value;
+            }
+            $notValue = trim((string) ($params[$key . 'Not'] ?? ''));
+            if ($notValue !== '') {
+                $where .= " AND COALESCE({$column}, '') <> :delivery_{$key}_not";
+                $bindings[":delivery_{$key}_not"] = $notValue === '__not_specified__' ? '' : $notValue;
+            }
+        }
+        $joined = is_array($params['joined'] ?? null) ? $params['joined'] : [];
+        $joinedValue = trim((string) ($joined['value'] ?? ''));
+        $joinedOperator = ['on' => '=', 'before' => '<', 'after' => '>'][(string) ($joined['operator'] ?? '')] ?? null;
+        if ($joinedOperator !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $joinedValue)) {
+            if ($joinedOperator === '=') {
+                $where .= ' AND created_at >= :delivery_joined_start AND created_at < :delivery_joined_end';
+                $bindings[':delivery_joined_end'] = gmdate('Y-m-d H:i:s', strtotime($joinedValue . ' 00:00:00 UTC +1 day'));
+            } else {
+                $where .= " AND created_at {$joinedOperator} :delivery_joined_start";
+            }
+            $bindings[':delivery_joined_start'] = $joinedValue . ' 00:00:00';
+        }
+
+        $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM delivery_persons {$where}", $bindings);
+        $rows = $this->database->fetchAll(
+            "SELECT id, name, phone, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, created_at FROM delivery_persons {$where} ORDER BY created_at DESC, id DESC LIMIT {$pageSize} OFFSET {$offset}",
+            $bindings
+        );
+        return [
+            'data' => array_map(fn(array $row): array => $this->mapDeliveryPerson($row), $rows),
+            'count' => (int) ($countRow['count'] ?? 0),
+        ];
+    }
+
+    public function fetchDeliveryPersonFilterOptions(array $params = []): array
+    {
+        $result = [];
+        foreach (['names' => 'name', 'phones' => 'phone', 'genders' => 'gender', 'nationalities' => 'nationality', 'bloodGroups' => 'blood_group'] as $key => $column) {
+            $rows = $this->database->fetchAll("SELECT DISTINCT {$column} AS value FROM delivery_persons WHERE deleted_at IS NULL AND TRIM(COALESCE({$column}, '')) <> '' ORDER BY {$column} ASC LIMIT 500");
+            $result[$key] = array_values(array_filter(array_map(static fn(array $row): string => trim((string) ($row['value'] ?? '')), $rows)));
+        }
+        return $result;
+    }
+
+    public function fetchDeliveryPersonById(array $params): ?array
+    {
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') return null;
+        $row = $this->database->fetchOne(
+            'SELECT id, name, phone, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, created_at FROM delivery_persons WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+            [':id' => $id]
+        );
+        return $row ? $this->mapDeliveryPerson($row) : null;
+    }
+
+    public function createDeliveryPerson(array $params): array
+    {
+        $this->requireAdmin();
+        $name = trim((string) ($params['name'] ?? ''));
+        $phone = trim((string) ($params['phone'] ?? ''));
+        if ($name === '' || $phone === '') {
+            throw new RuntimeException('Name and phone are required for a delivery person.');
+        }
+        $id = $this->stringId($params['id'] ?? null);
+        $this->database->execute(
+            'INSERT INTO delivery_persons (id, name, phone, image, email, address, birthday, nid_passport_copy, gender, blood_group, nationality, cv, created_at, updated_at)
+             VALUES (:id, :name, :phone, :image, :email, :address, :birthday, :nid_passport_copy, :gender, :blood_group, :nationality, :cv, :created_at, :updated_at)',
+            [
+                ':id' => $id,
+                ':name' => $name,
+                ':phone' => $phone,
+                ':image' => $this->normalizeUploadedWebpValue($params['image'] ?? null, 'profile-pictures', isset($params['imageName']) ? trim((string) $params['imageName']) : null),
+                ':email' => $this->nullableString($params['email'] ?? null),
+                ':address' => $this->nullableString($params['address'] ?? null),
+                ':birthday' => $this->nullableString($this->normalizeDateOnly((string) ($params['birthday'] ?? ''))),
+                ':nid_passport_copy' => $this->normalizeUploadedFileValue($params['nidPassportCopy'] ?? null, 'documents', null),
+                ':gender' => $this->nullableString($params['gender'] ?? null),
+                ':blood_group' => $this->nullableString($params['bloodGroup'] ?? null),
+                ':nationality' => $this->nullableString($params['nationality'] ?? null),
+                ':cv' => $this->normalizeUploadedFileValue($params['cv'] ?? null, 'documents', null),
+                ':created_at' => $this->database->nowUtc(),
+                ':updated_at' => $this->database->nowUtc(),
+            ]
+        );
+        return $this->fetchDeliveryPersonById(['id' => $id]) ?? throw new RuntimeException('Failed to create delivery person.');
+    }
+
+    public function updateDeliveryPerson(array $params): array
+    {
+        $this->requireAdmin();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '' || $this->fetchDeliveryPersonById(['id' => $id]) === null) {
+            throw new RuntimeException('Delivery person not found.');
+        }
+        $updates = is_array($params['updates'] ?? null) ? $params['updates'] : [];
+        $payload = [];
+        foreach (['name', 'phone'] as $field) {
+            if (array_key_exists($field, $updates)) {
+                $value = trim((string) $updates[$field]);
+                if ($value === '') throw new RuntimeException(ucfirst($field) . ' is required.');
+                $payload[$field] = $value;
+            }
+        }
+        if (array_key_exists('address', $updates)) {
+            $payload['address'] = $this->nullableString($updates['address']);
+        }
+        if (array_key_exists('email', $updates)) $payload['email'] = $this->nullableString($updates['email']);
+        if (array_key_exists('birthday', $updates)) $payload['birthday'] = $this->nullableString($this->normalizeDateOnly((string) $updates['birthday']));
+        if (array_key_exists('nidPassportCopy', $updates)) $payload['nid_passport_copy'] = $this->normalizeUploadedFileValue($updates['nidPassportCopy'] ?? null, 'documents', null);
+        if (array_key_exists('gender', $updates)) $payload['gender'] = $this->nullableString($updates['gender']);
+        if (array_key_exists('bloodGroup', $updates)) $payload['blood_group'] = $this->nullableString($updates['bloodGroup']);
+        if (array_key_exists('nationality', $updates)) $payload['nationality'] = $this->nullableString($updates['nationality']);
+        if (array_key_exists('cv', $updates)) $payload['cv'] = $this->normalizeUploadedFileValue($updates['cv'] ?? null, 'documents', null);
+        if (array_key_exists('image', $updates)) {
+            $payload['image'] = $this->normalizeUploadedWebpValue($updates['image'] ?? null, 'profile-pictures', isset($updates['imageName']) ? trim((string) $updates['imageName']) : null);
+        }
+        if ($payload !== []) $this->touchUpdate('delivery_persons', $id, $payload);
+        return $this->fetchDeliveryPersonById(['id' => $id]) ?? throw new RuntimeException('Delivery person not found.');
+    }
+
+    public function deleteDeliveryPerson(array $params): array
+    {
+        $this->requireAdmin();
+        $id = trim((string) ($params['id'] ?? ''));
+        if ($id === '') throw new RuntimeException('Delivery person id is required.');
+        $this->softDelete('delivery_persons', $id);
+        return ['success' => true];
+    }
+
+    private function mapDeliveryPerson(array $row): array
+    {
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'name' => (string) ($row['name'] ?? ''),
+            'phone' => (string) ($row['phone'] ?? ''),
+            'image' => $this->ensurePublicUploadedFileValue((string) ($row['image'] ?? '/uploads/Empty_avatar.png')),
+            'email' => $this->nullableString($row['email'] ?? null),
+            'address' => $this->nullableString($row['address'] ?? null),
+            'birthday' => $this->nullableString($row['birthday'] ?? null),
+            'nidPassportCopy' => $this->nullableString($row['nid_passport_copy'] ?? null),
+            'gender' => $this->nullableString($row['gender'] ?? null),
+            'bloodGroup' => $this->nullableString($row['blood_group'] ?? null),
+            'nationality' => $this->nullableString($row['nationality'] ?? null),
+            'cv' => $this->nullableString($row['cv'] ?? null),
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+        ];
+    }
+
     public function fetchCustomers(array $params = []): array
     {
         $rows = $this->database->fetchAll(
@@ -2227,6 +2396,10 @@ final class MasterDataApi extends BaseService
         $isDeveloper = trim((string) ($user['role'] ?? '')) === 'Developer';
         $row = $this->capabilityRow();
         $capabilities = $this->normalizeCapabilities($row['capabilities'] ?? null);
+        $businessMode = $this->normalizeBusinessMode($row['business_mode'] ?? null);
+        if ($businessMode === 'sofa_cover') {
+            $capabilities['courier_automation'] = false;
+        }
         $capabilities['subCapabilities'] = $this->normalizeSubCapabilities($capabilities['subCapabilities'] ?? [], $capabilities);
         $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
 
@@ -2296,14 +2469,14 @@ final class MasterDataApi extends BaseService
             'licenseApiUrl' => $isDeveloper ? (string) ($row['license_api_url'] ?? '') : '',
             'licenseOwnerToken' => $isDeveloper ? (string) ($row['license_owner_token'] ?? '') : '',
             'copyrightName' => trim((string) ($row['copyright_name'] ?? '')),
-            'businessMode' => $this->normalizeBusinessMode($row['business_mode'] ?? null),
+            'businessMode' => $businessMode,
             'webhookUrl' => $isDeveloper ? (string) ($row['webhook_url'] ?? '') : '',
         ];
     }
 
     private function normalizeBusinessMode($value): string
     {
-        return in_array((string) $value, ['general_retail', 'vaccine_center'], true)
+        return in_array((string) $value, ['general_retail', 'vaccine_center', 'sofa_cover'], true)
             ? (string) $value
             : 'general_retail';
     }
@@ -3084,14 +3257,19 @@ final class MasterDataApi extends BaseService
             $pricingMetadata = $existingPricingMetadata;
         }
 
-        $resolvedCapabilities = $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'] ?? []);
         $existingCapabilities = $this->normalizeCapabilities($existingRow['capabilities'] ?? []);
+        $hasRemoteCapabilities = array_key_exists('capabilities', $payload)
+            || array_key_exists('enabled_capabilities', $payload)
+            || array_key_exists('sub_capabilities', $payload)
+            || array_key_exists('subCapabilities', $payload);
+        $resolvedCapabilities = array_key_exists('capabilities', $payload) || array_key_exists('enabled_capabilities', $payload)
+            ? $this->capabilityMapFromRemote($payload['capabilities'] ?? $payload['enabled_capabilities'])
+            : $existingCapabilities;
         $remoteSubCapabilities = $payload['sub_capabilities'] ?? $payload['subCapabilities'] ?? ($existingCapabilities['subCapabilities'] ?? []);
         $resolvedCapabilities['subCapabilities'] = $this->normalizeSubCapabilities($remoteSubCapabilities, $resolvedCapabilities);
 
-        $this->updateCapabilitySettings([
+        $settingsUpdate = [
             '__skipDeveloperCheck' => true,
-            'capabilities' => $resolvedCapabilities,
             'clientName' => $payload['client_name'] ?? $payload['clientName'] ?? $existingRow['client_name'] ?? null,
             'licenseKey' => $licenseKey,
             'licenseApiUrl' => $apiUrl,
@@ -3099,14 +3277,27 @@ final class MasterDataApi extends BaseService
             'businessMode' => $this->normalizeBusinessMode($payload['business_mode'] ?? $payload['businessMode'] ?? $existingRow['business_mode'] ?? null),
             'tierKey' => $payload['tier_key'] ?? $payload['tierKey'] ?? $existingRow['tier_key'] ?? null,
             'planName' => $payload['plan_name'] ?? $payload['planName'] ?? $existingRow['plan_name'] ?? null,
-            'licenseStatus' => $payload['status'] ?? 'active',
-            'renewalDate' => $payload['renewal_date'] ?? $payload['renewalDate'] ?? null,
-            'overrideEnabled' => !empty($payload['override_enabled'] ?? $payload['overrideEnabled'] ?? false),
-            'availableTiers' => $payload['available_tiers'] ?? $payload['availableTiers'] ?? [],
             'pricingMetadata' => $pricingMetadata,
             'lastSyncStatus' => 'success',
             'lastSyncMessage' => $message,
-        ]);
+        ];
+        if (array_key_exists('status', $payload)) {
+            $settingsUpdate['licenseStatus'] = $payload['status'];
+        }
+        if (array_key_exists('renewal_date', $payload) || array_key_exists('renewalDate', $payload)) {
+            $settingsUpdate['renewalDate'] = $payload['renewal_date'] ?? $payload['renewalDate'];
+        }
+        if (array_key_exists('override_enabled', $payload) || array_key_exists('overrideEnabled', $payload)) {
+            $settingsUpdate['overrideEnabled'] = !empty($payload['override_enabled'] ?? $payload['overrideEnabled']);
+        }
+        if ($hasRemoteCapabilities) {
+            $settingsUpdate['capabilities'] = $resolvedCapabilities;
+        }
+        if (array_key_exists('available_tiers', $payload) || array_key_exists('availableTiers', $payload)) {
+            $settingsUpdate['availableTiers'] = $payload['available_tiers'] ?? $payload['availableTiers'];
+        }
+
+        $this->updateCapabilitySettings($settingsUpdate);
 
         $row = $this->capabilityRow();
         if ($row !== null) {

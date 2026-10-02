@@ -64,6 +64,7 @@ const Orders = lazyPage(() => import('./pages/Orders'));
 const Pos = lazyPage(() => import('./pages/Pos'));
 const OrderForm = lazyPage(() => import('./pages/OrderForm'));
 const OrderDetails = lazyPage(() => import('./pages/OrderDetails'));
+const PrintCollage = lazyPage(() => import('./pages/PrintCollage'));
 const Bills = lazyPage(() => import('./pages/Bills'));
 const BillForm = lazyPage(() => import('./pages/BillForm'));
 const BillDetails = lazyPage(() => import('./pages/BillDetails'));
@@ -78,6 +79,7 @@ const Batches = lazyPage(() => import('./pages/Batches'));
 const BatchForm = lazyPage(() => import('./pages/BatchForm'));
 const BatchEventHistory = lazyPage(() => import('./pages/BatchEventHistory'));
 const Users = lazyPage(() => import('./pages/Users'));
+const DeliveryPersons = lazyPage(() => import('./pages/DeliveryPersons'));
 const UserForm = lazyPage(() => import('./pages/UserForm'));
 const UserDetails = lazyPage(() => import('./pages/UserDetails'));
 const SettingsPage = lazyPage(() => import('./pages/Settings'));
@@ -137,7 +139,7 @@ const AppRouter: React.FC<{ user: any; profile: any }> = ({ user, profile }) => 
   const isAdmin = hasAdminAccess(activeUser?.role);
   const location = useLocation();
   const { can, canAny, canViewAdminDashboard, canViewEmployeeDashboard, canViewSettings, canViewSubscriptions, canViewMarketing } = useRolePermissions();
-  const { hasCapability, hasSubCapability, isDeveloper } = useCapabilities(isAuthenticated);
+  const { hasCapability, hasSubCapability, isDeveloper, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities(isAuthenticated);
   const writeFreezeEnabled = WRITE_FREEZE_ENABLED;
   const { isReadOnly } = useSubscriptionReadOnly();
   const writeDisabled = writeFreezeEnabled || isReadOnly;
@@ -351,6 +353,12 @@ preloaders.add(DeveloperNotes.preload);
       <Route path="/orders/:id" element={
         isAuthenticated ? (can('orders.view') ? <Layout><OrderDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
+      <Route path="/print-collage/:id" element={
+        isAuthenticated ? (capabilitiesLoading ? <RouteFallback /> : can('orders.view') && capabilitySettings?.businessMode === 'sofa_cover' ? <PrintCollage /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/orders/:id/print-collage" element={
+        isAuthenticated ? (capabilitiesLoading ? <RouteFallback /> : can('orders.view') && capabilitySettings?.businessMode === 'sofa_cover' ? <PrintCollage /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
       <Route path="/print-order/:id" element={
         isAuthenticated ? (can('orders.view') ? <PrintOrder /> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
@@ -479,6 +487,15 @@ preloaders.add(DeveloperNotes.preload);
       } />
       <Route path="/users/:id" element={
         isAuthenticated ? (can('users.view') && hasSubCapability('hr_management') ? <Layout><UserDetails /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/delivery-persons" element={
+        isAuthenticated ? (capabilitiesLoading ? <RouteFallback /> : capabilitySettings?.businessMode === 'sofa_cover' && can('users.view') ? <Layout><DeliveryPersons /></Layout> : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/delivery-persons/new" element={
+        isAuthenticated ? (capabilitiesLoading ? <RouteFallback /> : capabilitySettings?.businessMode === 'sofa_cover' && can('users.create') ? (writeDisabled ? <Navigate to="/delivery-persons" replace /> : <Layout><UserForm mode="delivery-person" /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
+      } />
+      <Route path="/delivery-persons/edit/:id" element={
+        isAuthenticated ? (capabilitiesLoading ? <RouteFallback /> : capabilitySettings?.businessMode === 'sofa_cover' && can('users.edit') ? (writeDisabled ? <Navigate to="/delivery-persons" replace /> : <Layout><UserForm mode="delivery-person" /></Layout>) : <Navigate to={defaultProtectedRoute} replace />) : <Navigate to="/login" replace />
       } />
 
       <Route path="/reports" element={

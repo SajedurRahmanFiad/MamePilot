@@ -155,6 +155,8 @@ final class FeatureAccess
         'fetchUsersPage' => 'hr_management',
         'fetchUsersMini' => 'hr_management',
         'fetchUserFilterOptions' => 'hr_management',
+        'fetchDeliveryPersonsPage' => 'hr_management',
+        'fetchDeliveryPersonFilterOptions' => 'hr_management',
         'fetchUserById' => 'hr_management',
         'fetchUserByPhone' => 'hr_management',
         'createUser' => 'hr_management',
@@ -471,7 +473,7 @@ final class FeatureAccess
             return self::DEFAULT_CAPABILITIES;
         }
 
-        $row = $this->database->fetchOne('SELECT capabilities FROM app_capability_settings LIMIT 1');
+        $row = $this->database->fetchOne('SELECT * FROM app_capability_settings LIMIT 1');
         $decoded = [];
         if ($row !== null && trim((string) ($row['capabilities'] ?? '')) !== '') {
             $candidate = json_decode((string) $row['capabilities'], true);
@@ -495,6 +497,13 @@ final class FeatureAccess
             }
             if ($subCapabilities !== []) {
                 $capabilities['subCapabilities'] = $subCapabilities;
+            }
+        }
+
+        if ((string) ($row['business_mode'] ?? '') === 'sofa_cover') {
+            $capabilities['courier_automation'] = false;
+            foreach (['steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier'] as $key) {
+                $capabilities['subCapabilities'][$key] = false;
             }
         }
 

@@ -60,6 +60,7 @@ const DeveloperSubscriptions: React.FC = () => {
   const [renewalDate, setRenewalDate] = useState('');
   const [selectedTierKey, setSelectedTierKey] = useState('');
   const [businessMode, setBusinessMode] = useState<BusinessMode>('general_retail');
+  const [businessModeDirty, setBusinessModeDirty] = useState(false);
   const [overrideCapabilities, setOverrideCapabilities] = useState<AppCapabilityMap>(() => normalizeCapabilities(null));
   const [overrideSubCapabilities, setOverrideSubCapabilities] = useState<SubCapabilityMap>({});
   const [expandedCapabilities, setExpandedCapabilities] = useState<Record<string, boolean>>({});
@@ -90,7 +91,7 @@ const DeveloperSubscriptions: React.FC = () => {
     setLicenseApiUrl(capabilitySettings.licenseApiUrl || '');
     setOwnerToken(capabilitySettings.licenseOwnerToken || '');
     setClientName(capabilitySettings.clientName || '');
-    setBusinessMode(capabilitySettings.businessMode || 'general_retail');
+    if (!businessModeDirty) setBusinessMode(capabilitySettings.businessMode || 'general_retail');
     const caps = normalizeCapabilities(capabilitySettings.capabilities);
     setOverrideCapabilities(caps);
     // Extract sub-capabilities from the capabilities response if present
@@ -102,7 +103,7 @@ const DeveloperSubscriptions: React.FC = () => {
     if (capabilitySettings.renewalDate) {
       setRenewalDate(capabilitySettings.renewalDate.slice(0, 10));
     }
-  }, [capabilitySettings]);
+  }, [capabilitySettings, businessModeDirty]);
 
   useEffect(() => {
     const persistedTierKey = capabilitySettings?.tierKey?.trim() || '';
@@ -163,7 +164,7 @@ const DeveloperSubscriptions: React.FC = () => {
     }
     const toastId = toast.loading(capabilitySettings?.licenseKey ? 'Updating subscription access...' : 'Creating subscription access...');
     try {
-      await saveLicenseMutation.mutateAsync({
+      const savedLicense = await saveLicenseMutation.mutateAsync({
         licenseApiUrl,
         licenseOwnerToken: ownerToken,
         licenseKey: capabilitySettings?.licenseKey || undefined,
@@ -174,6 +175,9 @@ const DeveloperSubscriptions: React.FC = () => {
         businessMode,
         pricingMetadata: buildPriceOverride(monthlyPriceOverride, yearlyPriceOverride),
       });
+      if (savedLicense.businessMode !== businessMode) {
+        throw new Error('The central license API did not persist the selected business mode. Deploy the updated central API and try again.');
+      }
       toast.update(toastId, 'Subscription access saved.', 'success');
     } catch (error) {
       toast.update(toastId, error instanceof Error ? error.message : 'Could not save subscription access. Please try again.', 'error');
@@ -293,10 +297,11 @@ const DeveloperSubscriptions: React.FC = () => {
               {([
                 ['general_retail', 'General Retail', 'Use Products and Customers terminology.'],
                 ['vaccine_center', 'Vaccine center', 'Use Vaccines and Patients terminology with clinical fields.'],
+                ['sofa_cover', 'Sofa Cover', 'Manage sofa cover orders, delivery persons, and repairs.'],
               ] as const).map(([value, label, description]) => (
                 <label key={value} className={`cursor-pointer rounded-xl border p-4 transition-colors ${businessMode === value ? 'border-[#0f2f57] bg-[#f8fbff]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
                   <span className="flex items-start gap-3">
-                    <input type="radio" name="business-mode" value={value} checked={businessMode === value} onChange={() => setBusinessMode(value)} className="mt-1 h-4 w-4 text-[#0f2f57] focus:ring-[#0f2f57]" />
+                    <input type="radio" name="business-mode" value={value} checked={businessMode === value} onChange={() => { setBusinessMode(value); setBusinessModeDirty(true); }} className="mt-1 h-4 w-4 text-[#0f2f57] focus:ring-[#0f2f57]" />
                     <span>
                       <span className="block text-sm font-black text-gray-900">{label}</span>
                       <span className="mt-1 block text-xs font-medium text-gray-500">{description}</span>

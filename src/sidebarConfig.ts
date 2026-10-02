@@ -211,6 +211,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         visible: ({ can, hasSubCapability }) => can('users.view') && hasSubCapability('hr_management'),
       },
       {
+        key: 'delivery-persons',
+        label: 'Delivery Persons',
+        to: '/delivery-persons',
+        icon: ICONS.Courier,
+        visible: ({ can, businessMode }) => businessMode === 'sofa_cover' && can('users.view'),
+      },
+      {
         key: 'payroll',
         label: 'Payroll',
         to: '/payroll',

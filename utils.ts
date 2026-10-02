@@ -383,6 +383,12 @@ export const getOrderStatusHistoryField = (status: OrderStatus): string | null =
     [OrderStatus.EXCHANGE_DELIVERED]: 'exchangeDelivered',
     [OrderStatus.EXCHANGE_RETURNED]: 'exchangeReturned',
     [OrderStatus.EXCHANGE_CANCELLED]: 'exchangeCancelled',
+    [OrderStatus.REPAIR_PROCESSING]: 'repairProcessing',
+    [OrderStatus.REPAIR_COURIER_ASSIGNED]: 'repairCourier',
+    [OrderStatus.REPAIR_PICKED]: 'repairPicked',
+    [OrderStatus.REPAIR_DELIVERED]: 'repairDelivered',
+    [OrderStatus.REPAIR_RETURNED]: 'repairReturned',
+    [OrderStatus.REPAIR_CANCELLED]: 'repairCancelled',
     [OrderStatus.RETURNED]: 'returned',
     [OrderStatus.CANCELLED]: 'cancelled',
   };

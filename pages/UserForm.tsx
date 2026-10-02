@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { User, UserRole, hasAdminAccess } from '../types';
+import { DeliveryPerson, User, UserRole, hasAdminAccess } from '../types';
 import { Button, NumericInput } from '../components';
 import { theme } from '../theme';
 import { compressImage } from '../utils';
-import { usePermissionsSettings, useUser } from '../src/hooks/useQueries';
-import { useCreateUser, useUpdateUser, useDeleteUser } from '../src/hooks/useMutations';
+import { useDeliveryPerson, usePermissionsSettings, useUser } from '../src/hooks/useQueries';
+import { useCreateDeliveryPerson, useCreateUser, useDeleteDeliveryPerson, useDeleteUser, useUpdateDeliveryPerson, useUpdateUser } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getErrorMessage } from '../src/services/supabaseQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -17,7 +17,7 @@ import { useRolePermissions } from '../src/hooks/useRolePermissions';
 const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
 const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
-const UserForm: React.FC = () => {
+const StandardUserForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = Boolean(id);
@@ -539,6 +539,104 @@ const UserForm: React.FC = () => {
       )}
     </div>
   );
+};
+
+type DeliveryPersonFormProps = {
+  id?: string;
+};
+
+const DeliveryPersonForm: React.FC<DeliveryPersonFormProps> = ({ id }) => {
+  const navigate = useNavigate();
+  const isEdit = Boolean(id);
+  const { data: existingPerson, isPending, error } = useDeliveryPerson(id);
+  const createMutation = useCreateDeliveryPerson();
+  const updateMutation = useUpdateDeliveryPerson();
+  const deleteMutation = useDeleteDeliveryPerson();
+  const toast = useToastNotifications();
+  const { can } = useRolePermissions();
+  const canCreate = can('users.create');
+  const canEdit = can('users.edit');
+  const canDelete = can('users.delete');
+  const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [imageName, setImageName] = useState('');
+  const [form, setForm] = useState<Partial<DeliveryPerson>>({ name: '', phone: '', image: '', email: '', address: '', birthday: '', nidPassportCopy: '', gender: '', bloodGroup: '', nationality: '', cv: '' });
+
+  React.useEffect(() => {
+    if (!existingPerson) return;
+    setForm({ ...existingPerson, email: existingPerson.email || '', address: existingPerson.address || '', birthday: existingPerson.birthday || '', nidPassportCopy: existingPerson.nidPassportCopy || '', gender: existingPerson.gender || '', bloodGroup: existingPerson.bloodGroup || '', nationality: existingPerson.nationality || '', cv: existingPerson.cv || '' });
+  }, [existingPerson]);
+
+  const setValue = <K extends keyof DeliveryPerson>(key: K, value: DeliveryPerson[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file.'); return; }
+    setImageName(file.name);
+    try { setValue('image', await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.82, force: true })); }
+    catch { const reader = new FileReader(); reader.onload = () => setValue('image', String(reader.result || '')); reader.readAsDataURL(file); }
+  };
+  const handleDocumentUpload = (field: 'nidPassportCopy' | 'cv') => (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setValue(field, String(reader.result || ''));
+    reader.readAsDataURL(file);
+  };
+  const handleSave = async () => {
+    if (!form.name?.trim() || !form.phone?.trim()) { toast.error('Name and phone are required.'); return; }
+    if (isEdit && !canEdit) { toast.error('You do not have permission to edit delivery persons.'); return; }
+    if (!isEdit && !canCreate) { toast.error('You do not have permission to create delivery persons.'); return; }
+    setSaving(true);
+    const payload = { ...form, name: form.name.trim(), phone: form.phone.trim(), imageName: imageName || undefined };
+    try {
+      if (isEdit && id) await updateMutation.mutateAsync({ id, updates: payload });
+      else await createMutation.mutateAsync(payload);
+      toast.success(isEdit ? 'Delivery person updated successfully.' : 'Delivery person added successfully.');
+      navigate('/delivery-persons');
+    } catch (saveError) { toast.error(saveError instanceof Error ? saveError.message : 'Could not save the delivery person.'); }
+    finally { setSaving(false); }
+  };
+  const handleDelete = async () => {
+    if (!id || !canDelete) return;
+    setSaving(true);
+    try { await deleteMutation.mutateAsync(id); toast.success('Delivery person archived.'); navigate('/delivery-persons'); }
+    catch (deleteError) { toast.error(deleteError instanceof Error ? deleteError.message : 'Could not archive the delivery person.'); }
+    finally { setSaving(false); setShowDeleteConfirm(false); }
+  };
+  const inputClass = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus:ring-2 focus:ring-[#3c5a82]';
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 pb-20">
+      <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900 md:text-2xl">{isEdit ? 'Edit Delivery Person' : 'Add Delivery Person'}</h2><button onClick={() => navigate('/delivery-persons')} className="rounded-xl border bg-white px-4 py-2 font-bold text-gray-500 hover:bg-gray-50">Cancel</button></div>
+      {isEdit && isPending && <div className="rounded-lg border border-gray-100 bg-white p-8 text-center text-gray-500">Loading delivery person details...</div>}
+      {error && <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-red-700">{error.message || 'Delivery person not found.'}</div>}
+      {(!isEdit || !isPending) && (
+        <div className="space-y-6 rounded-lg border border-gray-100 bg-white p-8 shadow-sm">
+          <div className="flex items-center gap-6 rounded-lg bg-gray-50 p-6"><div className="h-20 w-20 overflow-hidden rounded-full border bg-white"><img src={form.image || '/uploads/Empty_avatar.png'} className="h-full w-full object-cover" alt="" /></div><div><p className="mb-2 text-xs font-bold uppercase text-gray-400">Profile Photo</p><input type="file" id="delivery-person-pfp" accept="image/*" className="hidden" onChange={handleImageUpload} /><label htmlFor="delivery-person-pfp" className={`cursor-pointer rounded-lg px-4 py-2 text-xs font-bold text-white ${theme.colors.primary[600]} hover:${theme.colors.primary[700]}`}>Upload Picture</label></div></div>
+          <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Full Name</span><input className={inputClass} value={form.name || ''} onChange={(event) => setValue('name', event.target.value)} /></label>
+          <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Phone Number</span><input className={inputClass} value={form.phone || ''} onChange={(event) => setValue('phone', event.target.value)} /></label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Email</span><input type="email" className={inputClass} value={form.email || ''} onChange={(event) => setValue('email', event.target.value)} /></label>
+            <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Birthday</span><input type="date" className={inputClass} value={form.birthday || ''} onChange={(event) => setValue('birthday', event.target.value)} /></label>
+            <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Nationality</span><input className={inputClass} value={form.nationality || ''} onChange={(event) => setValue('nationality', event.target.value)} /></label>
+            <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Gender</span><select className={inputClass} value={form.gender || ''} onChange={(event) => setValue('gender', event.target.value)}><option value="">Select Gender</option>{GENDER_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>
+            <label className="flex flex-col items-start gap-1 md:col-span-2"><span className="block text-xs font-bold uppercase tracking-widest text-gray-400">Blood Group</span><select className={`${inputClass} md:max-w-xs`} value={form.bloodGroup || ''} onChange={(event) => setValue('bloodGroup', event.target.value)}><option value="">Select Blood Group</option>{BLOOD_GROUP_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>
+          </div>
+          <label className="block space-y-1"><span className="text-xs font-bold uppercase tracking-widest text-gray-400">Address</span><textarea className={`${inputClass} min-h-[100px]`} value={form.address || ''} onChange={(event) => setValue('address', event.target.value)} /></label>
+          <div className="grid gap-4 md:grid-cols-2">{([['nidPassportCopy', 'NID / Passport Copy'], ['cv', 'CV']] as const).map(([field, label]) => <div key={field} className="space-y-2 rounded-lg border bg-gray-50 p-4"><p className="text-xs font-bold uppercase tracking-widest text-gray-400">{label}</p><input type="file" id={`delivery-${field}`} className="hidden" onChange={handleDocumentUpload(field)} /><label htmlFor={`delivery-${field}`} className={`inline-block cursor-pointer rounded-lg px-4 py-2 text-xs font-bold text-white ${theme.colors.primary[600]} hover:${theme.colors.primary[700]}`}>Upload {field === 'cv' ? 'CV' : 'Document'}</label>{form[field] && <p className="text-xs font-medium text-emerald-600">Document attached</p>}</div>)}</div>
+          <div className="space-y-3"><Button onClick={() => void handleSave()} loading={saving} className="w-full">{saving ? 'Saving...' : 'Save Details'}</Button>{isEdit && canDelete && <button onClick={() => setShowDeleteConfirm(true)} disabled={saving} className="w-full rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-bold text-red-600">Archive Delivery Person</button>}</div>
+        </div>
+      )}
+      {showDeleteConfirm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-sm space-y-5 rounded-xl bg-white p-6"><h3 className="text-lg font-bold text-gray-900">Archive Delivery Person?</h3><p className="text-sm text-gray-600">Archive {form.name}? You can restore it later.</p><div className="flex gap-3"><Button variant="secondary" onClick={() => setShowDeleteConfirm(false)} className="flex-1">Cancel</Button><Button variant="danger" onClick={() => void handleDelete()} loading={saving} className="flex-1">Archive</Button></div></div></div>}
+    </div>
+  );
+};
+
+type UserFormProps = { mode?: 'delivery-person' };
+const UserForm: React.FC<UserFormProps> = ({ mode }) => {
+  const { id } = useParams();
+  return mode === 'delivery-person' ? <DeliveryPersonForm id={id} /> : <StandardUserForm />;
 };
 
 export default UserForm;

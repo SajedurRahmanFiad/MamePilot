@@ -32,6 +32,9 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  createDeliveryPerson,
+  updateDeliveryPerson,
+  deleteDeliveryPerson,
   createVendor,
   updateVendor,
   deleteVendor,
@@ -132,6 +135,7 @@ import type {
   Account,
   Transaction,
   User,
+  DeliveryPerson,
   Vendor,
   Product,
   CompanySettings,
@@ -1739,6 +1743,30 @@ export function useDeleteUser(): UseMutationResult<void, Error, string, unknown>
   });
 }
 
+export function useCreateDeliveryPerson(): UseMutationResult<DeliveryPerson, Error, Partial<DeliveryPerson> & { imageName?: string }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: createDeliveryPerson, onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ['deliveryPersons'] });
+    queryClient.setQueryData(['deliveryPerson', data.id], data);
+  }});
+}
+
+export function useUpdateDeliveryPerson(): UseMutationResult<DeliveryPerson, Error, { id: string; updates: Partial<DeliveryPerson> & { imageName?: string } }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: ({ id, updates }) => updateDeliveryPerson(id, updates), onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ['deliveryPersons'] });
+    queryClient.setQueryData(['deliveryPerson', data.id], data);
+  }});
+}
+
+export function useDeleteDeliveryPerson(): UseMutationResult<void, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: deleteDeliveryPerson, onSuccess: (_data, id) => {
+    queryClient.invalidateQueries({ queryKey: ['deliveryPersons'] });
+    queryClient.removeQueries({ queryKey: ['deliveryPerson', id] });
+  }});
+}
+
 // ========== VENDORS ==========
 
 export function useCreateVendor(): UseMutationResult<Vendor, Error, Partial<Vendor>, unknown> {
@@ -2593,7 +2621,7 @@ export function useSyncLicenseCapabilities(): UseMutationResult<CapabilitySettin
 export function useCreateOrUpdateCentralLicense(): UseMutationResult<
   CapabilitySettings,
   Error,
-  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; businessMode?: 'general_retail' | 'vaccine_center'; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
+  { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; businessMode?: 'general_retail' | 'vaccine_center' | 'sofa_cover'; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } },
   unknown
 > {
   const queryClient = useQueryClient();

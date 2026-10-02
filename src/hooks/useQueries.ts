@@ -103,6 +103,8 @@ import {
   fetchTransactionFilterOptions,
   fetchBillFilterOptions,
   fetchVendorFilterOptions,
+  fetchDeliveryPersonFilterOptions,
+  fetchDeliveryPersonsPage,
   fetchBusinessGrowthSettings,
   fetchLlmSettings,
   fetchBeSmartSettings,
@@ -157,6 +159,7 @@ import type {
   Account,
   Transaction,
   User,
+  DeliveryPerson,
   Vendor,
   Product,
   CompanySettings,
@@ -741,6 +744,38 @@ export function useUsersPage(
     placeholderData: (previousData) => previousData,
     staleTime: 5 * 60 * 1000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useDeliveryPersonFilterOptions(): UseQueryResult<{ names: string[]; phones: string[]; genders: string[]; nationalities: string[]; bloodGroups: string[] }, Error> {
+  return useQuery({
+    queryKey: ['deliveryPersons', 'filter-options'],
+    queryFn: fetchDeliveryPersonFilterOptions,
+    staleTime: 15 * 60 * 1000,
+  });
+}
+
+export function useDeliveryPersonsPage(
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  filters?: Parameters<typeof fetchDeliveryPersonsPage>[2],
+  options?: { enabled?: boolean },
+): UseQueryResult<{ data: DeliveryPerson[]; count: number }, Error> {
+  return useQuery({
+    queryKey: ['deliveryPersons', page, pageSize, filters],
+    queryFn: ({ signal }) => fetchDeliveryPersonsPage(page, pageSize, filters, { signal }),
+    placeholderData: (previous) => previous,
+    staleTime: 5 * 60 * 1000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useDeliveryPerson(id: string | undefined): UseQueryResult<DeliveryPerson | null, Error> {
+  return useQuery({
+    queryKey: ['deliveryPerson', id],
+    queryFn: () => fetchDeliveryPersonsPage(1, 1, { search: id }).then((result) => result.data.find((person) => person.id === id) || null),
+    enabled: Boolean(id),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

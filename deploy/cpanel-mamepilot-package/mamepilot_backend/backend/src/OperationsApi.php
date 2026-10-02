@@ -8,6 +8,13 @@ use RuntimeException;
 
 final class OperationsApi extends BaseService
 {
+    private function isSofaCoverBusinessMode(): bool
+    {
+        if (!$this->tableExists('app_capability_settings')) return false;
+        $row = $this->database->fetchOne('SELECT business_mode FROM app_capability_settings LIMIT 1');
+        return trim((string) ($row['business_mode'] ?? '')) === 'sofa_cover';
+    }
+
     private function pageSize(array $params): int
     {
         return max(1, min(200, (int) ($params['pageSize'] ?? self::DEFAULT_PAGE_SIZE)));
@@ -991,6 +998,9 @@ final class OperationsApi extends BaseService
             'exchange_pathao_consignment_id', 'exchange_courier_history',
             'processed_at', 'courier_assigned_at', 'picked_at', 'completed_at', 'returned_at', 'cancelled_at',
             'partial_delivered_at', 'exchange_processing_at', 'exchange_picked_at', 'exchange_delivered_at', 'exchange_returned_at', 'exchange_cancelled_at',
+            'delivery_person_id', 'delivery_person_name', 'delivery_person_shipping_cost',
+            'delivery_person_shipping_expense_recorded', 'delivery_person_shipping_expense_transaction_id', 'collage_urls',
+            'repair_processing_at', 'repair_picked_at', 'repair_delivered_at', 'repair_cancelled_at', 'repair_returned_at',
         ];
         $snapshot = [];
         foreach ($columns as $column) {
@@ -1313,6 +1323,36 @@ final class OperationsApi extends BaseService
         $completedChanged = $this->historyValue($nextHistory, 'completed') !== $this->historyValue($existingHistory, 'completed');
         $returnedChanged = $this->historyValue($nextHistory, 'returned') !== $this->historyValue($existingHistory, 'returned');
         $paymentChanged = $this->historyValue($nextHistory, 'payment') !== $this->historyValue($existingHistory, 'payment');
+        $repairStatuses = ['Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
+        $repairTransitions = [
+            'Repair processing' => ['Repair Courier Assigned', 'Repair canceled'],
+            'Repair Courier Assigned' => ['Repair picked', 'Repair canceled'],
+            'Repair picked' => ['Repair delivered', 'Repair canceled'],
+        ];
+        if (in_array($previousStatus, $repairStatuses, true) || in_array($nextStatus, $repairStatuses, true)) {
+            $this->assertUserCanManageOrderRecord(
+                $user,
+                $existingRow,
+                'orders.processReturnExchangeOwn',
+                'orders.processReturnExchangeAny',
+                'You do not have permission to process repairs on this order.'
+            );
+            if ($nextStatus === 'Repair processing' && !in_array($previousStatus, ['Picked', 'Completed'], true)) {
+                throw new RuntimeException('Repairs can only be started on picked or delivered orders.');
+            }
+            if ($previousStatus === 'Repair delivered' && $nextStatus !== $previousStatus) {
+                throw new RuntimeException('A delivered repair is final and cannot be changed.');
+            }
+            $isLegacyRepairCourierPickup = $previousStatus === 'Repair processing'
+                && $nextStatus === 'Repair picked'
+                && trim((string) ($existingHistory['repairCourier'] ?? '')) !== '';
+            if (isset($repairTransitions[$previousStatus]) && !in_array($nextStatus, $repairTransitions[$previousStatus], true) && !$isLegacyRepairCourierPickup) {
+                throw new RuntimeException('Invalid repair status transition.');
+            }
+            if (in_array($previousStatus, ['Repair canceled', 'Repair returned'], true)) {
+                throw new RuntimeException('A canceled or returned repair cannot be changed.');
+            }
+        }
 
         if ($nextStatus !== $previousStatus && $nextStatus === 'Cancelled') {
             $this->assertUserCanManageOrderRecord($user, $existingRow, 'orders.cancelOwn', 'orders.cancelAny', 'You do not have permission to cancel this order.');
@@ -1432,8 +1472,8 @@ final class OperationsApi extends BaseService
 
         if (
             array_key_exists('history', $updates)
-            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
-            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment']))
+            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
         ) {
             $businessChanged = true;
         }
@@ -5909,6 +5949,13 @@ final class OperationsApi extends BaseService
             $items = is_array($params['items'] ?? null) ? $params['items'] : [];
             $this->validateDocumentAmounts($params, $items, 'Order');
             $items = $this->canonicalizeOrderItemProductSnapshots($items, 'Order');
+            $collageUrls = array_values(array_filter(array_map(
+                fn($url): ?string => is_string($url) ? $this->normalizeUploadedFileValue($url, 'order-collages') : null,
+                is_array($params['collageUrls'] ?? null) ? $params['collageUrls'] : []
+            )));
+            if ($this->isSofaCoverBusinessMode() && $collageUrls === []) {
+                throw new RuntimeException('Upload at least one order collage before creating a Sofa Cover order.');
+            }
             $pageSelection = $this->resolveOrderPageSelection($params);
             $stockUpdates = $this->applyOrderStockTransition('', $status, [], $items);
             $now = $this->database->nowUtc();
@@ -5926,13 +5973,13 @@ final class OperationsApi extends BaseService
             $this->database->execute(
                 'INSERT INTO orders (
                     id, order_number, order_seq, order_date, customer_id, page_id, created_by, status, items,
-                    subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot,
+                    subtotal, discount, shipping, total, paid_amount, notes, history, page_snapshot, collage_urls,
                     carrybee_consignment_id, steadfast_consignment_id, steadfast_invoice, steadfast_tracking_link, paperfly_tracking_number, pathao_consignment_id, source_ad,
                     processed_at, courier_assigned_at, picked_at, completed_at, returned_at, cancelled_at,
                     created_at, updated_at
                 ) VALUES (
                     :id, :order_number, :order_seq, :order_date, :customer_id, :page_id, :created_by, :status, :items,
-                    :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot,
+                    :subtotal, :discount, :shipping, :total, :paid_amount, :notes, :history, :page_snapshot, :collage_urls,
                     :carrybee_consignment_id, :steadfast_consignment_id, :steadfast_invoice, :steadfast_tracking_link, :paperfly_tracking_number, :pathao_consignment_id, :source_ad,
                     :processed_at, :courier_assigned_at, :picked_at, :completed_at, :returned_at, :cancelled_at,
                     :created_at, :updated_at
@@ -5955,6 +6002,7 @@ final class OperationsApi extends BaseService
                     ':notes' => $this->nullableString($params['notes'] ?? null),
                     ':history' => $this->jsonEncode($params['history'] ?? []),
                     ':page_snapshot' => $this->jsonEncode($pageSelection['pageSnapshot']),
+                    ':collage_urls' => $this->jsonEncode($collageUrls),
                     ':carrybee_consignment_id' => $this->nullableString($params['carrybeeConsignmentId'] ?? $params['carrybee_consignment_id'] ?? null),
                     ':steadfast_consignment_id' => $this->nullableString($params['steadfastConsignmentId'] ?? $params['steadfast_consignment_id'] ?? null),
                     ':steadfast_invoice' => $this->nullableString($params['steadfastInvoice'] ?? $params['steadfast_invoice'] ?? null),
@@ -6686,6 +6734,12 @@ final class OperationsApi extends BaseService
             $nextStatus = array_key_exists('status', $updates)
                 ? $this->canonicalOrderStatus((string) $updates['status'], $nextHistory)
                 : $previousStatus;
+            $collageUrlsForValidation = array_key_exists('collageUrls', $updates)
+                ? (is_array($updates['collageUrls']) ? $updates['collageUrls'] : [])
+                : $this->jsonDecodeList($existingRow['collage_urls'] ?? []);
+            if ($this->isSofaCoverBusinessMode() && $nextStatus === 'Processing' && $collageUrlsForValidation === []) {
+                throw new RuntimeException('Upload at least one order collage before starting processing.');
+            }
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
             if (array_key_exists('items', $updates)) {
                 $nextItems = $this->canonicalizeOrderItemProductSnapshots($nextItems, 'Order');
@@ -6753,6 +6807,30 @@ final class OperationsApi extends BaseService
             if (array_key_exists('history', $updates)) {
                 $payload['history'] = $this->jsonEncode($updates['history']);
             }
+            if (array_key_exists('collageUrls', $updates)) {
+                $collageUrls = is_array($updates['collageUrls']) ? $updates['collageUrls'] : [];
+                $payload['collage_urls'] = $this->jsonEncode(array_values(array_filter(array_map(
+                    fn($url): ?string => is_string($url) ? $this->normalizeUploadedFileValue($url, 'order-collages') : null,
+                    $collageUrls
+                ))));
+            }
+            if (array_key_exists('deliveryPersonId', $updates)) {
+                $deliveryPersonId = trim((string) ($updates['deliveryPersonId'] ?? ''));
+                $deliveryPerson = $deliveryPersonId === '' ? null : $this->database->fetchOne(
+                    'SELECT id, name FROM delivery_persons WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                    [':id' => $deliveryPersonId]
+                );
+                if ($deliveryPersonId !== '' && $deliveryPerson === null) {
+                    throw new RuntimeException('Select an active delivery person.');
+                }
+                $payload['delivery_person_id'] = $deliveryPersonId !== '' ? $deliveryPersonId : null;
+                $payload['delivery_person_name'] = $deliveryPerson ? (string) $deliveryPerson['name'] : null;
+            }
+            if (array_key_exists('deliveryPersonShippingCost', $updates)) {
+                $deliveryShippingCost = round((float) $updates['deliveryPersonShippingCost'], 2);
+                if ($deliveryShippingCost < 0) throw new RuntimeException('Shipping cost cannot be negative.');
+                $payload['delivery_person_shipping_cost'] = $this->formatMoney($deliveryShippingCost);
+            }
 
             if ($nextStatus !== $previousStatus) {
                 $statusTimestampColumnMap = [
@@ -6770,6 +6848,11 @@ final class OperationsApi extends BaseService
                     'Exchange delivered' => 'exchange_delivered_at',
                     'Exchange returned' => 'exchange_returned_at',
                     'Exchange cancelled' => 'exchange_cancelled_at',
+                    'Repair processing' => 'repair_processing_at',
+                    'Repair picked' => 'repair_picked_at',
+                    'Repair delivered' => 'repair_delivered_at',
+                    'Repair canceled' => 'repair_cancelled_at',
+                    'Repair returned' => 'repair_returned_at',
                 ];
                 $statusCol = $statusTimestampColumnMap[$nextStatus] ?? null;
                 if ($statusCol) {
@@ -6941,6 +7024,105 @@ final class OperationsApi extends BaseService
             }
             if (array_key_exists('partial_delivered_at', $updates)) {
                 $payload['partial_delivered_at'] = $this->nullableString($updates['partial_delivered_at'] ?? null);
+            }
+
+            $deliveryPersonId = trim((string) ($payload['delivery_person_id'] ?? $existingRow['delivery_person_id'] ?? ''));
+            $deliveryPersonShippingCost = (float) ($payload['delivery_person_shipping_cost'] ?? $existingRow['delivery_person_shipping_cost'] ?? 0);
+            if (
+                $nextStatus === 'Picked'
+                && $previousStatus !== 'Picked'
+                && $deliveryPersonId !== ''
+                && empty($existingRow['delivery_person_shipping_expense_recorded'])
+            ) {
+                $payload['delivery_person_shipping_expense_recorded'] = 1;
+                if ($deliveryPersonShippingCost > 0) {
+                    $systemDefaults = $this->database->fetchOne(
+                        'SELECT default_payment_method FROM system_defaults LIMIT 1'
+                    ) ?? [];
+                    $accountId = trim((string) ($updates['deliveryShippingExpenseAccountId'] ?? ''));
+                    if ($accountId === '' || $this->database->fetchOne(
+                        'SELECT id FROM accounts WHERE id = :id LIMIT 1',
+                        [':id' => $accountId]
+                    ) === null) {
+                        throw new RuntimeException('Select a valid account before marking this order as picked.');
+                    }
+                    $expenseCategoryId = trim((string) ($updates['deliveryShippingExpenseCategoryId'] ?? ''));
+                    $expenseCategory = $expenseCategoryId === '' ? null : $this->database->fetchOne(
+                        "SELECT id FROM categories WHERE id = :id AND type = 'Expense' LIMIT 1",
+                        [':id' => $expenseCategoryId]
+                    );
+                    if ($expenseCategory === null) {
+                        throw new RuntimeException('Select a valid expense category before marking this order as picked.');
+                    }
+                    $deliveryPersonName = (string) ($payload['delivery_person_name'] ?? $existingRow['delivery_person_name'] ?? 'Delivery person');
+                    $shippingExpenseTransactionId = 'delivery-person-expense-' . substr(hash('sha256', $id), 0, 40);
+                    $this->createTransactionRecord([
+                        'id' => $shippingExpenseTransactionId,
+                        'date' => $this->database->nowUtc(),
+                        'type' => 'Expense',
+                        'category' => $expenseCategoryId,
+                        'accountId' => $accountId,
+                        'amount' => $deliveryPersonShippingCost,
+                        'description' => "Delivery shipping cost for Order #{$orderNumber} ({$deliveryPersonName})",
+                        'referenceId' => $id,
+                        'contactId' => $previousCustomerId,
+                        'paymentMethod' => trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash',
+                        'history' => [],
+                    ], (string) $actor['id'], $actor);
+                    $payload['delivery_person_shipping_expense_transaction_id'] = $shippingExpenseTransactionId;
+                    $nextHistory['expense'] = $this->appendHistoryText(
+                        (string) ($nextHistory['expense'] ?? ''),
+                        sprintf('Delivery shipping cost recorded on pickup: %s.', $this->formatMoney($deliveryPersonShippingCost))
+                    );
+                    $payload['history'] = $this->jsonEncode($nextHistory);
+                }
+            }
+
+            if (
+                $nextStatus === 'Repair picked'
+                && ($previousStatus === 'Repair Courier Assigned' || ($previousStatus === 'Repair processing' && trim((string) ($previousHistory['repairCourier'] ?? '')) !== ''))
+                && $deliveryPersonId !== ''
+                && $deliveryPersonShippingCost > 0
+            ) {
+                $systemDefaults = $this->database->fetchOne(
+                    'SELECT default_payment_method FROM system_defaults LIMIT 1'
+                ) ?? [];
+                $accountId = trim((string) ($updates['deliveryShippingExpenseAccountId'] ?? ''));
+                if ($accountId === '' || $this->database->fetchOne(
+                    'SELECT id FROM accounts WHERE id = :id LIMIT 1',
+                    [':id' => $accountId]
+                ) === null) {
+                    throw new RuntimeException('Select a valid account before marking this repair as picked.');
+                }
+                $expenseCategoryId = trim((string) ($updates['deliveryShippingExpenseCategoryId'] ?? ''));
+                $expenseCategory = $expenseCategoryId === '' ? null : $this->database->fetchOne(
+                    "SELECT id FROM categories WHERE id = :id AND type = 'Expense' LIMIT 1",
+                    [':id' => $expenseCategoryId]
+                );
+                if ($expenseCategory === null) {
+                    throw new RuntimeException('Select a valid expense category before marking this repair as picked.');
+                }
+                $deliveryPersonName = (string) ($payload['delivery_person_name'] ?? $existingRow['delivery_person_name'] ?? 'Delivery person');
+                $repairCourierHistory = (string) ($nextHistory['repairCourier'] ?? '');
+                $repairShippingExpenseTransactionId = 'repair-delivery-person-expense-' . substr(hash('sha256', $id . "\0" . $repairCourierHistory), 0, 32);
+                $this->createTransactionRecord([
+                    'id' => $repairShippingExpenseTransactionId,
+                    'date' => $this->database->nowUtc(),
+                    'type' => 'Expense',
+                    'category' => $expenseCategoryId,
+                    'accountId' => $accountId,
+                    'amount' => $deliveryPersonShippingCost,
+                    'description' => "Repair shipping cost for Order #{$orderNumber} ({$deliveryPersonName})",
+                    'referenceId' => $id,
+                    'contactId' => $previousCustomerId,
+                    'paymentMethod' => trim((string) ($systemDefaults['default_payment_method'] ?? '')) ?: 'Cash',
+                    'history' => [],
+                ], (string) $actor['id'], $actor);
+                $nextHistory['expense'] = $this->appendHistoryText(
+                    (string) ($nextHistory['expense'] ?? ''),
+                    sprintf('Repair shipping cost recorded on pickup: %s.', $this->formatMoney($deliveryPersonShippingCost))
+                );
+                $payload['history'] = $this->jsonEncode($nextHistory);
             }
 
             $affectsCustomerSummary =

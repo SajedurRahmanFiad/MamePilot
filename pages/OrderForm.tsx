@@ -72,6 +72,13 @@ function applyDynamicPricing(
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
+const readImageAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+  reader.readAsDataURL(file);
+});
+
 const formatDoseDate = (date: Date): string => {
   const day = date.getDate();
   const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
@@ -151,6 +158,7 @@ const OrderForm: React.FC = () => {
   const { capabilities, settings: capabilitySettings } = useCapabilities(Boolean(user));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
+  const isSofaCover = capabilitySettings?.businessMode === 'sofa_cover';
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
   const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
@@ -217,6 +225,8 @@ const OrderForm: React.FC = () => {
   const [discount, setDiscount] = useState('0');
   const [shipping, setShipping] = useState('0');
   const [notes, setNotes] = useState('');
+  const [collageUploads, setCollageUploads] = useState<Array<{ dataUrl: string; name: string }>>([]);
+  const [savedCollageUrls, setSavedCollageUrls] = useState<string[]>([]);
   
   
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
@@ -418,6 +428,7 @@ const OrderForm: React.FC = () => {
       setDiscount(String(existingOrderData.discount ?? 0));
       setShipping(String(existingOrderData.shipping ?? 0));
       setNotes(existingOrderData.notes || '');
+      setSavedCollageUrls(existingOrderData.collageUrls || []);
       initializedRef.current = true;
     } else if (!isEdit && !orderNumberRequestedRef.current) {
       // For new orders, fetch the next order number from the server
@@ -738,6 +749,18 @@ const OrderForm: React.FC = () => {
     navigate(`/customers/${customerId}`, { state: buildHistoryBackState(location) });
   };
 
+  const addCollageFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const images = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (images.length !== files.length) toast.error('Only image files can be uploaded as collages.');
+    try {
+      const uploads = await Promise.all(images.map(async (file) => ({ dataUrl: await readImageAsDataUrl(file), name: file.name })));
+      setCollageUploads((current) => [...current, ...uploads]);
+    } catch (uploadError) {
+      toast.error(uploadError instanceof Error ? uploadError.message : 'Could not read the selected collage.');
+    }
+  };
+
   const handleSave = async () => {
     // When smart customer selection is enabled, resolve the smart input to a customer first
     let resolvedCustomerId = customerId;
@@ -795,6 +818,10 @@ const OrderForm: React.FC = () => {
       toast.error('Shipping charge cannot be negative.');
       return;
     }
+    if (isSofaCover && savedCollageUrls.length + collageUploads.length === 0) {
+      toast.error('Upload at least one order collage.');
+      return;
+    }
 
     // Check for duplicate orders (only if creating new order, not editing)
     if (!isEdit) {
@@ -822,6 +849,7 @@ const OrderForm: React.FC = () => {
           subtotal,
           discount: parsedDiscount,
           shipping: parsedShipping,
+          collageUrls: [...savedCollageUrls, ...collageUploads.map((upload) => upload.dataUrl)],
           total,
           dateStr,
           timeStr,
@@ -867,6 +895,7 @@ const OrderForm: React.FC = () => {
         subtotal,
         discount: parsedDiscount,
         shipping: parsedShipping,
+        collageUrls: [...savedCollageUrls, ...collageUploads.map((upload) => upload.dataUrl)],
         total,
         notes,
         paidAmount: isEdit && existingOrderData ? existingOrderData.paidAmount : 0,
@@ -934,6 +963,7 @@ const OrderForm: React.FC = () => {
         subtotal: pendingOrderData.subtotal,
         discount: pendingOrderData.discount,
         shipping: pendingOrderData.shipping,
+        collageUrls: pendingOrderData.collageUrls,
         total: pendingOrderData.total,
         notes,
         paidAmount: 0,
@@ -1432,6 +1462,32 @@ const OrderForm: React.FC = () => {
           >
             {ICONS.Plus} Add an item
           </button>
+
+          {isSofaCover && (
+            <section className="mt-3 space-y-3" aria-label="Required order collage">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-widest text-gray-800">Order Collage <span className="text-red-500">*</span></h3>
+              </div>
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                {savedCollageUrls.map((url, index) => (
+                  <div key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                    <img src={url} alt={`Saved collage ${index + 1}`} className="h-full w-full object-cover" />
+                    <button type="button" onClick={() => setSavedCollageUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove saved collage ${index + 1}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
+                  </div>
+                ))}
+                {collageUploads.map((upload, index) => (
+                  <div key={`${upload.name}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                    <img src={upload.dataUrl} alt={upload.name} className="h-full w-full object-cover" />
+                    <button type="button" onClick={() => setCollageUploads((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${upload.name}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
+                  </div>
+                ))}
+                <label className="flex aspect-square cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white text-gray-500 transition hover:border-blue-400 hover:bg-blue-50" aria-label="Add collage images">
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { void addCollageFiles(event.target.files); event.target.value = ''; }} />
+                  <span className="flex h-11 w-11 items-center justify-center rounded-md border border-gray-300"><span className="text-3xl font-light leading-none">+</span></span>
+                </label>
+              </div>
+            </section>
+          )}
 
           {showProductSearch && (
             <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 animate-in slide-in-from-top-2 duration-200">

@@ -54,6 +54,7 @@ const Products: React.FC = () => {
   const [syncedSearchParams, setSyncedSearchParams] = useState<string | null>(null);
   const shouldHydrateFromUrl = syncedSearchParams !== currentSearchParams;
   const [page, setPage] = useState<number>(urlPage);
+  const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const { data: users = [] } = useUsersMini();
   const { data: units = [] } = useUnits();
 
@@ -373,11 +374,24 @@ const Products: React.FC = () => {
             label: 'Name',
             render: (_, product) => (
               <div className="flex items-center gap-4">
-                <img
-                  src={withImageCacheVersion(productImages[product.id] || '/uploads/Empty_product.png', productImagesUpdatedAt)}
-                  alt={product.name}
-                  className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm"
-                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPreviewImage({
+                      src: withImageCacheVersion(productImages[product.id] || '/uploads/Empty_product.png', productImagesUpdatedAt),
+                      alt: product.name,
+                    });
+                  }}
+                  className="shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label={`View image of ${product.name}`}
+                >
+                  <img
+                    src={withImageCacheVersion(productImages[product.id] || '/uploads/Empty_product.png', productImagesUpdatedAt)}
+                    alt=""
+                    className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm"
+                  />
+                </button>
                 <div>
                   <p className="font-bold text-gray-900">{product.name}</p>
                   {product.sku && <p className="mt-0.5 text-xs font-semibold text-gray-400" title={safeDecodeURIComponent(product.sku)}>SKU: {safeDecodeURIComponent(product.sku).length > 20 ? safeDecodeURIComponent(product.sku).slice(0, 20) + '...' : safeDecodeURIComponent(product.sku)}</p>}
@@ -469,6 +483,30 @@ const Products: React.FC = () => {
         emptyMessage={`No ${productPlural.toLowerCase()} found`}
       />
       <Pagination page={effectivePage} totalPages={totalPages} onPageChange={(p) => setPage(p)} disabled={isFetching} />
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={previewImage.alt}
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-3xl leading-none text-white hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            aria-label="Close image preview"
+            onClick={() => setPreviewImage(null)}
+          >
+            ×
+          </button>
+          <img
+            src={previewImage.src}
+            alt={previewImage.alt}
+            className="max-h-[90dvh] max-w-full rounded-md object-contain sm:max-h-[92dvh]"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 };

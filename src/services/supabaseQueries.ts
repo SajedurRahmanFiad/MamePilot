@@ -8,6 +8,7 @@ import type {
   NotificationListPageResponse,
   NotificationDetailResponse,
   Customer,
+  DeliveryPerson,
   CustomerSalesReportData,
   Order,
   OrderUpdate,
@@ -290,6 +291,20 @@ export async function createUser(user: Omit<User, 'id'> & { password?: string })
 export async function updateUser(id: string, updates: Partial<User>) { return call<User>('updateUser', { id, updates }); }
 export async function deleteUser(id: string) { await remove('deleteUser', id); }
 
+export async function fetchDeliveryPersonsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, filters?: { search?: string; name?: string; nameNot?: string; phone?: string; phoneNot?: string; joined?: { operator: string; value: string }; gender?: string; genderNot?: string; nationality?: string; nationalityNot?: string; bloodGroup?: string; bloodGroupNot?: string }, options?: ApiActionOptions) {
+  return call<{ data: DeliveryPerson[]; count: number }>('fetchDeliveryPersonsPage', { page, pageSize, ...(filters || {}) }, options);
+}
+export async function fetchDeliveryPersonFilterOptions() {
+  return call<{ names: string[]; phones: string[]; genders: string[]; nationalities: string[]; bloodGroups: string[] }>('fetchDeliveryPersonFilterOptions');
+}
+export async function createDeliveryPerson(person: Partial<DeliveryPerson> & { imageName?: string }) {
+  return call<DeliveryPerson>('createDeliveryPerson', person);
+}
+export async function updateDeliveryPerson(id: string, updates: Partial<DeliveryPerson> & { imageName?: string }) {
+  return call<DeliveryPerson>('updateDeliveryPerson', { id, updates });
+}
+export async function deleteDeliveryPerson(id: string) { await remove('deleteDeliveryPerson', id); }
+
 export async function fetchVendorsPage(page: number = 1, pageSize: number = DEFAULT_PAGE_SIZE, search?: string, filters?: { name?: string; nameNot?: string; phone?: string; phoneNot?: string; address?: string; addressNot?: string; purchases?: { operator: string; value: string }; payable?: { operator: string; value: string } }, options?: ApiActionOptions) {
   return call<{ data: Vendor[]; count: number }>('fetchVendorsPage', { page, pageSize, search, ...(filters || {}) }, options);
 }
@@ -407,7 +422,7 @@ export async function fetchMaintenanceStatus(): Promise<MaintenanceStatus> { ret
 export async function setMaintenanceStatus(payload: MaintenanceUpdatePayload): Promise<MaintenanceStatus> { return call<MaintenanceStatus>('setMaintenanceStatus', payload); }
 export async function syncLicenseCapabilities(payload?: { licenseKey?: string; licenseApiUrl?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('syncLicenseCapabilities', payload || {}, { timeoutMs: 30000 }); }
 export async function fetchCentralLicenseTiers(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string }): Promise<{ tiers: LicenseTier[] }> { return call<{ tiers: LicenseTier[] }>('fetchCentralLicenseTiers', payload || {}, { timeoutMs: 30000 }); }
-export async function createOrUpdateCentralLicense(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; businessMode?: 'general_retail' | 'vaccine_center'; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('createOrUpdateCentralLicense', payload, { timeoutMs: 30000 }); }
+export async function createOrUpdateCentralLicense(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; tierKey: string; clientName?: string; domain?: string; status?: string; renewalDate?: string | null; businessMode?: 'general_retail' | 'vaccine_center' | 'sofa_cover'; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('createOrUpdateCentralLicense', payload, { timeoutMs: 30000 }); }
 export async function updateCentralLicenseOverride(payload: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string; capabilities: AppCapabilityMap; subCapabilities: SubCapabilityMap; pricingMetadata?: { monthly?: number; yearly?: number; [key: string]: number | undefined } }): Promise<CapabilitySettings> { return call<CapabilitySettings>('updateCentralLicenseOverride', payload, { timeoutMs: 30000 }); }
 export async function resetCentralLicenseOverride(payload?: { licenseApiUrl?: string; licenseOwnerToken?: string; licenseKey?: string }): Promise<CapabilitySettings> { return call<CapabilitySettings>('resetCentralLicenseOverride', payload || {}, { timeoutMs: 30000 }); }
 export async function registerWebhookWithCentral(payload?: { webhookUrl?: string }): Promise<{ success: boolean; message: string; webhookUrl?: string }> { return call<{ success: boolean; message: string; webhookUrl?: string }>('registerWebhookWithCentral', payload || {}, { timeoutMs: 30000 }); }

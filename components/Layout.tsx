@@ -324,6 +324,9 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
     if (pathname.startsWith('/users')) {
       return { title: 'Application Users', subtitle: 'Manage app users, roles, and permissions.' };
     }
+    if (pathname.startsWith('/delivery-persons')) {
+      return { title: 'Delivery Persons', subtitle: 'Manage delivery profiles and order assignments.' };
+    }
     if (pathname.startsWith('/reports')) {
       return { title: 'Financial Reports', subtitle: 'Explore performance insights and business metrics.' };
     }

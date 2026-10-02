@@ -34,6 +34,24 @@ $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $auth->issueToken($developer);
 $pdo->beginTransaction();
 try {
     $current = $master->fetchCapabilitySettings();
+    $syncMethod = new ReflectionMethod($master, 'storeResolvedLicensePayload');
+    $syncMethod->invoke($master, [
+        'license_key' => $current['licenseKey'],
+    ], $current['licenseApiUrl'], $current['licenseOwnerToken'], 'Compatibility sync test.');
+    $afterPartialSync = $master->fetchCapabilitySettings();
+    subCapabilityAssert(
+        ($afterPartialSync['capabilities'] ?? null) === ($current['capabilities'] ?? null),
+        'A central license response that omits capabilities cleared local capabilities.'
+    );
+    subCapabilityAssert(
+        ($afterPartialSync['availableTiers'] ?? null) === ($current['availableTiers'] ?? null),
+        'A central license response that omits tiers cleared locally cached tiers.'
+    );
+    subCapabilityAssert(
+        ($afterPartialSync['overrideEnabled'] ?? null) === ($current['overrideEnabled'] ?? null),
+        'A central license response that omits override_enabled disabled the local override.'
+    );
+
     $capabilities = $current['capabilities'];
     $capabilities['human_resources'] = true;
     $capabilities['banking'] = true;
