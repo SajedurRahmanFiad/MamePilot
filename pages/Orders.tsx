@@ -1657,9 +1657,9 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                     </td>
 
                     {/* Mobile Actions Dropdown */}
-                    <td className="px-6 py-5 sm:hidden relative z-[999]" onClick={e => e.stopPropagation()}>
+                    <td className="px-6 py-5 sm:hidden relative z-10" onClick={e => e.stopPropagation()}>
                       {hasRowActions && (
-                        <div className="relative z-[999]">
+                        <div className="relative z-10">
                           <button 
                             onClick={(e) => {
                               const target = e.currentTarget as HTMLElement;

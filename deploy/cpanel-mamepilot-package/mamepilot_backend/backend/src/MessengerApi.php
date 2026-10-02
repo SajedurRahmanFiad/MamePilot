@@ -739,7 +739,7 @@ final class MessengerApi extends BaseService
         if ($existing !== null && trim((string) ($existing['profile_picture_url'] ?? '')) !== '' && trim((string) ($existing['name'] ?? '')) !== '' && (string) $existing['name'] !== 'Messenger customer') return $existing;
         $profile = [];
         try {
-            if ($this->isConfigured($settings)) $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,name,profile_pic,locale'], 5);
+            if ($this->isConfigured($settings)) $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,profile_pic,locale'], 5);
         } catch (\Throwable $exception) {
             $profile = [];
         }

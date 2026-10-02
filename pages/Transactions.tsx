@@ -846,9 +846,9 @@ const Transactions: React.FC = () => {
                         </span>
                       </td>
 
-                      <td className="px-6 py-5 sm:hidden relative z-[999]" onClick={(event) => event.stopPropagation()}>
+                      <td className="px-6 py-5 sm:hidden relative z-10" onClick={(event) => event.stopPropagation()}>
                         {showActions && (
-                          <div className="relative z-[999]">
+                          <div className="relative z-10">
                             <button
                               onClick={(event) => {
                                 const target = event.currentTarget as HTMLElement;
