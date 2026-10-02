@@ -13,6 +13,7 @@ function smsLogicAssert(bool $condition, string $message): void
 }
 
 $smsReflection = new ReflectionClass(SmsApi::class);
+smsLogicAssert($smsReflection->hasMethod('httpJson'), 'SMS API calls must have a defined HTTP transport.');
 $sms = $smsReflection->newInstanceWithoutConstructor();
 $normalizeRules = $smsReflection->getMethod('normalizeSmsRuleList');
 $normalizeRules->setAccessible(true);

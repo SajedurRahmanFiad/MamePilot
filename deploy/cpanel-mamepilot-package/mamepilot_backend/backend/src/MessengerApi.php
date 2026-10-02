@@ -742,7 +742,7 @@ final class MessengerApi extends BaseService
             if ($throwOnProfileError) throw new RuntimeException('Messenger Page ID and Page access token are not configured.');
         } else {
             try {
-                $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,profile_pic,locale'], 5);
+                $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,profile_pic'], 5);
             } catch (\Throwable $exception) {
                 if ($throwOnProfileError) throw new RuntimeException('Messenger profile lookup failed: ' . $exception->getMessage(), 0, $exception);
                 $profile = [];

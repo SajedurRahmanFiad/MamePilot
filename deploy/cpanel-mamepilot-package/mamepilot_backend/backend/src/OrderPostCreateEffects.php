@@ -21,10 +21,11 @@ final class OrderPostCreateEffects
     }
 
     /** @param array<string, mixed> $order */
-    public function schedule(array $order): void
+    public function schedule(array $order): array
     {
         $orderId = trim((string) ($order['id'] ?? ''));
         $orderStatus = trim((string) ($order['status'] ?? ''));
+        $smsOutcome = ['status' => 'skipped', 'reason' => 'sms_service_unavailable', 'message' => 'Order was created, but automatic SMS is unavailable.'];
         try {
             if (
                 $orderId !== ''
@@ -45,14 +46,19 @@ final class OrderPostCreateEffects
         }
 
         if ($orderId !== '' && $this->sms !== null) {
-            try { $this->sms->queueOrderIfEligible($orderId); } catch (\Throwable $exception) { error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage()); }
+            try {
+                $smsOutcome = $this->sms->sendOrderIfEligible($orderId);
+            } catch (\Throwable $exception) {
+                error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage());
+                $smsOutcome = ['status' => 'failed', 'reason' => 'unexpected_error', 'message' => 'Order was created, but the confirmation SMS could not be processed.'];
+            }
         }
 
         $customerId = trim((string) ($order['customerId'] ?? ''));
-        if ($customerId === '' || !$this->isAutomaticFraudCheckEnabled()) {
-            return;
+        if ($customerId !== '' && $this->isAutomaticFraudCheckEnabled()) {
+            $this->runFraudCheck($customerId);
         }
-        $this->runFraudCheck($customerId);
+        return $smsOutcome;
     }
 
     private function runFraudCheck(string $customerId): void

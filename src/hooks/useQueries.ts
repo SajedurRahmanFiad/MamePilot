@@ -1237,7 +1237,7 @@ export function useLlmSettings(enabled: boolean = true): UseQueryResult<LlmSetti
   });
 }
 
-export function useLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}, enabled: boolean = true): UseQueryResult<{ data: Lead[]; count: number }, Error> {
+export function useLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; statusOperator?: string; channel?: string; channelOperator?: string; name?: string; nameOperator?: string; phone?: string; phoneOperator?: string; orderChance?: string; orderChanceOperator?: string } = {}, enabled: boolean = true): UseQueryResult<{ data: Lead[]; count: number }, Error> {
   return useQuery({ queryKey: ['leads', params], queryFn: ({ signal }) => fetchLeadsPage(params, { signal }), staleTime: 2_000, refetchInterval: enabled ? 5_000 : false, enabled });
 }
 

@@ -129,6 +129,7 @@ import { DEFAULT_PAGE_SIZE } from '../services/supabaseQueries';
 import type {
   Customer,
   Order,
+  OrderCreationResult,
   OrderUpdate,
   OrderUndoResult,
   Bill,
@@ -206,6 +207,7 @@ function broadcastNotificationsUpdated(): void {
   notificationsBroadcastChannel.postMessage({ type: 'updated', timestamp });
 }
 import { generateTempId, registerRealId, isTempId } from '../utils/optimisticIdMap';
+import { useToastNotifications } from '../contexts/ToastContext';
 
 // Helper: parse react-query page keys which follow the pattern ['resource', page, pageSize, filters?]
 function parsePageKey(k: any[]): { page: number; pageSize: number; filters: any } {
@@ -587,8 +589,9 @@ export function useDeleteCustomer(): UseMutationResult<void, Error, string, unkn
 
 // ========== ORDERS ==========
 
-export function useCreateOrder(): UseMutationResult<Order, Error, Omit<Order, 'id'>, unknown> {
+export function useCreateOrder(): UseMutationResult<OrderCreationResult, Error, Omit<Order, 'id'>, unknown> {
   const queryClient = useQueryClient();
+  const toast = useToastNotifications();
   return useMutation({
     mutationFn: (order) => createOrder(order),
     onMutate: async (newOrder) => {
@@ -626,13 +629,33 @@ export function useCreateOrder(): UseMutationResult<Order, Error, Omit<Order, 'i
       }
     },
     onSuccess: async (data, variables, context) => {
+      const { smsNotification, ...order } = data;
+      if (smsNotification) {
+        if (import.meta.env.DEV) {
+          console.debug('[sms:auto-order]', {
+            orderNumber: order.orderNumber,
+            status: smsNotification.status,
+            reason: smsNotification.reason,
+            recipients: smsNotification.recipients,
+            providerError: smsNotification.providerError,
+          });
+        }
+        if (smsNotification.status === 'sent') {
+          toast.success(`Confirmation SMS request submitted for order ${order.orderNumber}.`);
+        } else if (smsNotification.status === 'skipped') {
+          toast.warning(smsNotification.message);
+        } else {
+          toast.error(`Order was created, but its confirmation SMS failed: ${smsNotification.message}`);
+        }
+      }
+
       // Register the mapping of temp ID → real ID
       if (context?.tempId) {
-        registerRealId(context.tempId, data.id);
+        registerRealId(context.tempId, order.id);
       }
 
       // Cache the newly created order for immediate access in details view
-      queryClient.setQueryData(['order', data.id], data);
+      queryClient.setQueryData(['order', order.id], order);
 
       // Patch cached BROWSING pages (no search term in key)
       const browsingPages = queryClient.getQueriesData({ queryKey: ['orders'] });
@@ -643,10 +666,10 @@ export function useCreateOrder(): UseMutationResult<Order, Error, Omit<Order, 'i
           // Only modify first page entries
           if (pageNum !== 1) return;
           if (value && (value as any).data && Array.isArray((value as any).data)) {
-            const matchesFilters = matchesFiltersForResource('orders', data, filters);
+            const matchesFilters = matchesFiltersForResource('orders', order, filters);
 
             if (matchesFilters) {
-              queryClient.setQueryData(key as any, { ...(value as any), data: [data, ...((value as any).data)].slice(0, sz || DEFAULT_PAGE_SIZE), count: (value as any).count ? (value as any).count + 1 : 1 });
+              queryClient.setQueryData(key as any, { ...(value as any), data: [order, ...((value as any).data)].slice(0, sz || DEFAULT_PAGE_SIZE), count: (value as any).count ? (value as any).count + 1 : 1 });
             }
           }
         } catch (e) {
@@ -666,7 +689,7 @@ export function useCreateOrder(): UseMutationResult<Order, Error, Omit<Order, 'i
         const currentSettings = queryClient.getQueryData<{ prefix: string; nextNumber: number }>(['settings', 'order']);
         if (currentSettings) {
           // Extract numeric part from created order number and use next value
-          const match = (data.orderNumber || '').match(/(\d+)$/);
+          const match = (order.orderNumber || '').match(/(\d+)$/);
           if (match) {
             const createdNum = parseInt(match[1], 10);
             const nextNum = Math.max(createdNum + 1, currentSettings.nextNumber);

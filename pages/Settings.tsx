@@ -2080,7 +2080,7 @@ const SettingsPage: React.FC = () => {
                     <label className="space-y-2 text-sm font-semibold text-gray-700">
                       <span>App Secret</span>
                       <input
-                        type="password"
+                        type="text"
                         value={metaAdsSettings.appSecret}
                         onChange={(event) => setMetaAdsSettings((current) => ({ ...current, appSecret: event.target.value }))}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none ring-0 focus:border-[#0f2f57]"
@@ -2793,7 +2793,7 @@ const SettingsPage: React.FC = () => {
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Webhook Auth Token</label>
                       <input
-                        type="password"
+                        type="text"
                         value={courierSettings.steadfast.webhookAuthToken}
                         onChange={e => setCourierSettings({...courierSettings, steadfast: {...courierSettings.steadfast, webhookAuthToken: e.target.value}})}
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl"
@@ -2871,7 +2871,7 @@ const SettingsPage: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="font-bold uppercase tracking-widest">Webhook signature header value</label>
-                      <input type="password" value={courierSettings.carryBee.webhookSignature} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookSignature: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Webhook secret from CarryBee dashboard" />
+                      <input type="text" value={courierSettings.carryBee.webhookSignature} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookSignature: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Webhook secret from CarryBee dashboard" />
                     </div>
                     <div className="space-y-2">
                       <label className="font-bold uppercase tracking-widest">Webhook integration header name</label>
@@ -2879,7 +2879,7 @@ const SettingsPage: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="font-bold uppercase tracking-widest">Webhook integration header value</label>
-                      <input type="password" value={courierSettings.carryBee.webhookIntegrationValue} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookIntegrationValue: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="40489fe0-9386-4fc9-8e92-2b2fcb9d451c" />
+                      <input type="text" value={courierSettings.carryBee.webhookIntegrationValue} onChange={e => setCourierSettings({ ...courierSettings, carryBee: { ...courierSettings.carryBee, webhookIntegrationValue: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="40489fe0-9386-4fc9-8e92-2b2fcb9d451c" />
                       <p className="text-[10px] text-amber-600">This value is returned in the integration header during webhook setup verification.</p>
                     </div>
                   </div>
@@ -3006,7 +3006,7 @@ const SettingsPage: React.FC = () => {
                   <p>Webhook URL: <code className="break-all font-semibold">{courierWebhookEndpoint('paperfly')}</code>. Paperfly sends the secret token in a verification header.</p>
                   <div className="space-y-2">
                     <label className="font-bold uppercase tracking-widest">Webhook secret token</label>
-                    <input type="password" value={courierSettings.paperfly.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, paperfly: { ...courierSettings.paperfly, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="The secret key configured in Paperfly" />
+                    <input type="text" value={courierSettings.paperfly.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, paperfly: { ...courierSettings.paperfly, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="The secret key configured in Paperfly" />
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -3145,12 +3145,12 @@ const SettingsPage: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="font-bold uppercase tracking-widest">Webhook header value</label>
-                      <input type="password" value={courierSettings.pathao.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Shared secret value" />
+                      <input type="text" value={courierSettings.pathao.webhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, webhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Shared secret value" />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <label className="font-bold uppercase tracking-widest">Merchant webhook integration secret</label>
-                    <input type="password" value={courierSettings.pathao.merchantWebhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, merchantWebhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Integration handshake secret from Pathao dashboard" />
+                    <input type="text" value={courierSettings.pathao.merchantWebhookSecret} onChange={e => setCourierSettings({ ...courierSettings, pathao: { ...courierSettings.pathao, merchantWebhookSecret: e.target.value } })} className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3" placeholder="Integration handshake secret from Pathao dashboard" />
                     <p className="text-[10px] text-amber-600">This value is returned in the X-Pathao-Merchant-Webhook-Integration-Secret header during webhook integration setup.</p>
                   </div>
                 </div>

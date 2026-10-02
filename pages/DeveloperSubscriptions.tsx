@@ -281,7 +281,7 @@ const DeveloperSubscriptions: React.FC = () => {
           </label>
           <label className="space-y-2">
             <span className="text-xs font-black uppercase tracking-widest text-gray-400">Owner Token</span>
-            <input type="password" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={ownerToken} onChange={(e) => setOwnerToken(e.target.value)} placeholder="Central owner token" />
+            <input type="text" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={ownerToken} onChange={(e) => setOwnerToken(e.target.value)} placeholder="Central owner token" />
           </label>
           <label className="space-y-2">
             <span className="text-xs font-black uppercase tracking-widest text-gray-400">Client Name</span>

@@ -143,7 +143,7 @@ const MessengerSettingsPanel: React.FC = () => {
           </label>
           <label className="space-y-2 text-sm font-bold text-gray-700">
             <span>Page access token</span>
-            <input type="password" value={settings.pageAccessToken} onChange={(event) => setField('pageAccessToken', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" placeholder="Permanent Page access token" />
+            <input type="text" value={settings.pageAccessToken} onChange={(event) => setField('pageAccessToken', event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" placeholder="Permanent Page access token" />
           </label>
         </div>
 
@@ -151,8 +151,8 @@ const MessengerSettingsPanel: React.FC = () => {
           <summary className="cursor-pointer text-sm font-black text-gray-800">Advanced connection details</summary>
           <p className="mt-2 text-sm text-gray-500">Meta uses these details to deliver new Page messages securely.</p>
           <div className="mt-5 grid gap-5 lg:grid-cols-2">
-            <label className="space-y-2 text-sm font-bold text-gray-700"><span>Security code (Verify token in Meta)</span><input type="password" value={settings.verifyToken} onChange={(event) => setField('verifyToken', event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" /></label>
-            <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta App Secret</span><input type="password" value={settings.appSecret} onChange={(event) => setField('appSecret', event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" /></label>
+            <label className="space-y-2 text-sm font-bold text-gray-700"><span>Security code (Verify token in Meta)</span><input type="text" value={settings.verifyToken} onChange={(event) => setField('verifyToken', event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" /></label>
+            <label className="space-y-2 text-sm font-bold text-gray-700"><span>Meta App Secret</span><input type="text" value={settings.appSecret} onChange={(event) => setField('appSecret', event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" /></label>
             <label className="space-y-2 text-sm font-bold text-gray-700"><span>Connection version</span><input value={settings.graphVersion} onChange={(event) => setField('graphVersion', event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-medium outline-none focus:border-[#0866ff]" /></label>
           </div>
         </details>

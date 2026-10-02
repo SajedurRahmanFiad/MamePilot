@@ -12,7 +12,7 @@ final class LeadApi extends BaseService
     public function __construct(Database $database, Auth $auth, Config $config, private MasterDataApi $masterData, private OperationsApi $operations)
     {
         parent::__construct($database, $auth, $config);
-        $this->postCreateEffects = new OrderPostCreateEffects(new FeatureAccess($database, $auth), new AutoCallApi($database, $auth, $config), $database);
+        $this->postCreateEffects = new OrderPostCreateEffects(new FeatureAccess($database, $auth), new AutoCallApi($database, $auth, $config), $database, new SmsApi($database, $auth, $config));
     }
 
     private OrderPostCreateEffects $postCreateEffects;
@@ -26,16 +26,54 @@ final class LeadApi extends BaseService
         $pageSize = min(100, max(10, (int) ($params['pageSize'] ?? 25)));
         $search = trim((string) ($params['search'] ?? ''));
         $status = trim((string) ($params['status'] ?? ''));
+        $statusOperator = trim((string) ($params['statusOperator'] ?? '='));
         $channel = trim((string) ($params['channel'] ?? ''));
+        $channelOperator = trim((string) ($params['channelOperator'] ?? '='));
+        $name = trim((string) ($params['name'] ?? ''));
+        $nameOperator = trim((string) ($params['nameOperator'] ?? 'contains'));
+        $phone = trim((string) ($params['phone'] ?? ''));
+        $phoneOperator = trim((string) ($params['phoneOperator'] ?? 'contains'));
+        $orderChance = trim((string) ($params['orderChance'] ?? ''));
+        $orderChanceOperator = trim((string) ($params['orderChanceOperator'] ?? '='));
         $where = ['l.archived_at IS NULL'];
         $bindings = [];
-        if ($status !== '') { $where[] = 'l.status = :status'; $bindings[':status'] = $status; }
-        if ($channel !== '') { $where[] = 'l.source_channel = :channel'; $bindings[':channel'] = $channel; }
+        if ($status !== '') {
+            $where[] = 'l.status ' . ($statusOperator === '≠' ? '<>' : '=') . ' :status';
+            $bindings[':status'] = $status;
+        }
+        if ($channel !== '') {
+            $where[] = 'l.source_channel ' . ($channelOperator === '≠' ? '<>' : '=') . ' :channel';
+            $bindings[':channel'] = $channel;
+        }
+        if ($name !== '') {
+            $nameExpression = "COALESCE(mc.name, wc.name, wc.profile_name, JSON_UNQUOTE(JSON_EXTRACT(l.profile_json, '$.identity.name.value')), '')";
+            $nameSqlOperator = match ($nameOperator) {
+                '=' => '=', '≠' => '<>', 'does not contain' => 'NOT LIKE', default => 'LIKE',
+            };
+            $where[] = $nameExpression . ' ' . $nameSqlOperator . ' :name';
+            $bindings[':name'] = in_array($nameOperator, ['contains', 'does not contain'], true) ? '%' . $name . '%' : $name;
+        }
+        if ($phone !== '') {
+            $phoneExpression = "COALESCE(wc.phone_number, JSON_UNQUOTE(JSON_EXTRACT(l.profile_json, '$.identity.phone.value')), '')";
+            $phoneSqlOperator = match ($phoneOperator) {
+                '=' => '=', '≠' => '<>', 'does not contain' => 'NOT LIKE', default => 'LIKE',
+            };
+            $where[] = $phoneExpression . ' ' . $phoneSqlOperator . ' :phone';
+            $bindings[':phone'] = in_array($phoneOperator, ['contains', 'does not contain'], true) ? '%' . $phone . '%' : $phone;
+        }
+        if ($orderChance !== '') {
+            if (!is_numeric($orderChance)) throw new RuntimeException('Order chance must be a number.');
+            $orderChanceSqlOperator = match ($orderChanceOperator) {
+                '≠' => '<>', '<' => '<', '>' => '>', default => '=',
+            };
+            $where[] = 'l.order_probability ' . $orderChanceSqlOperator . ' :order_chance';
+            $bindings[':order_chance'] = (float) $orderChance;
+        }
         if ($search !== '') { $where[] = '(COALESCE(mc.name, wc.name, wc.profile_name, \'\') LIKE :search OR COALESCE(wc.phone_number, \'\') LIKE :search OR JSON_UNQUOTE(JSON_EXTRACT(l.profile_json, \'$.identity.phone.value\')) LIKE :search)'; $bindings[':search'] = '%' . $search . '%'; }
         $whereSql = implode(' AND ', $where);
         $count = $this->database->fetchOne('SELECT COUNT(*) AS total FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql, $bindings);
         $offset = ($page - 1) * $pageSize;
-        $rows = $this->database->fetchAll('SELECT l.*, mc.name AS messenger_name, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, mc.last_message_preview AS messenger_preview, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql . ' ORDER BY l.updated_at DESC, l.id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset, $bindings);
+        $rows = $this->database->fetchAll('SELECT l.*, mc.name AS messenger_name, mc.profile_picture_url AS messenger_profile_picture_url, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, mc.last_message_preview AS messenger_preview, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE ' . $whereSql . ' ORDER BY l.updated_at DESC, l.id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset, $bindings);
         return ['data' => array_map(fn(array $row): array => $this->mapLead($row), $rows), 'count' => (int) ($count['total'] ?? 0)];
     }
 
@@ -417,7 +455,7 @@ final class LeadApi extends BaseService
 
     private function analysisSystemPrompt(array $model): string
     {
-        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, customer order counts, or order confirmations. Only state a customer's order history when it comes from a verified exact customer match, preferably an exact phone match returned by find_customer; never infer identity from a similar name alone. When product data is needed, use search_products and inspect its compact productNames list; set interest[0].productName to the exact matching catalog name. Do not invent a product ID; the server will verify it. When customer or ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Treat every inbound and outbound message as evidence for order confirmation. If either direction explicitly says the order is confirmed, the order has been confirmed, the order is placed/approved, or the customer explicitly confirms the order, set orderConfirmation.status to confirmed and include the exact evidence message IDs. Do not mark it confirmed for questions, requests to confirm, assumptions, or phrases such as not confirmed/cannot confirm. If a notice says the customer provided a delivery address, also copy that exact address into identity.address.value with sourceMessageIds. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence.";
+        return trim((string) ($model['system_prompt'] ?? '')) . "\n\nYou are MamePilot's internal lead analyst. Return JSON only. Never invent customer facts, ad IDs, product IDs, prices, customer order counts, or order confirmations. Only state a customer's order history when it comes from a verified exact customer match, preferably an exact phone match returned by find_customer; never infer identity from a similar name alone. Never infer gender from a name, photo, language, or writing style; set identity.gender only when the customer explicitly states their gender in the conversation, otherwise leave it unset. When product data is needed, use search_products and inspect its compact productNames list; set interest[0].productName to the exact matching catalog name. Do not invent a product ID; the server will verify it. When customer or ad data is needed, stop and return exactly {\"toolCall\":{\"name\":\"search_products\"|\"find_customer\"|\"find_ads\"|\"get_lead_context\",\"arguments\":{...}}}. Use only returned database results. Treat every inbound and outbound message as evidence for order confirmation. If either direction explicitly says the order is confirmed, the order has been confirmed, the order is placed/approved, or the customer explicitly confirms the order, set orderConfirmation.status to confirmed and include the exact evidence message IDs. Do not mark it confirmed for questions, requests to confirm, assumptions, or phrases such as not confirmed/cannot confirm. If a notice says the customer provided a delivery address, also copy that exact address into identity.address.value with sourceMessageIds. Mark uncertain values with confidence and sourceMessageIds. Produce profile, score (0-100), orderProbability (0-100), stage, notices, and up to three suggestions with type, text, reason, confidence.";
     }
 
     private function analysisUserPrompt(array $lead, array $messages): string
@@ -541,7 +579,7 @@ final class LeadApi extends BaseService
     private function leadRow(string $id): ?array
     {
         if ($id === '') return null;
-        return $this->database->fetchOne('SELECT l.*, mc.name AS messenger_name, mc.last_message_preview AS messenger_preview, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE l.id = :id LIMIT 1', [':id' => $id]);
+        return $this->database->fetchOne('SELECT l.*, mc.name AS messenger_name, mc.profile_picture_url AS messenger_profile_picture_url, mc.last_message_preview AS messenger_preview, wc.name AS whatsapp_name, wc.profile_name AS whatsapp_profile, wc.phone_number AS whatsapp_phone, wc.last_message_preview AS whatsapp_preview FROM lead_profiles l LEFT JOIN messenger_contacts mc ON mc.id = l.messenger_contact_id LEFT JOIN whatsapp_contacts wc ON wc.id = l.whatsapp_contact_id WHERE l.id = :id LIMIT 1', [':id' => $id]);
     }
 
     private function leadResponse(array $lead): array
@@ -558,7 +596,7 @@ final class LeadApi extends BaseService
         $name = trim((string) ($row['messenger_name'] ?? $row['whatsapp_name'] ?? $row['whatsapp_profile'] ?? '')) ?: (string) ($profile['identity']['name']['value'] ?? 'Unknown lead');
         $phone = (string) ($row['whatsapp_phone'] ?? ($profile['identity']['phone']['value'] ?? ''));
         $isConfirmed = ($profile['orderConfirmation']['status'] ?? '') === 'confirmed';
-        return ['id' => (string) $row['id'], 'name' => $name, 'phone' => $phone, 'lastMessagePreview' => (string) ($row['messenger_preview'] ?? $row['whatsapp_preview'] ?? ''), 'sourceChannel' => (string) $row['source_channel'], 'messengerContactId' => $row['messenger_contact_id'] ?? null, 'whatsappContactId' => $row['whatsapp_contact_id'] ?? null, 'assignedModelId' => $row['assigned_model_id'] ?? null, 'status' => $isConfirmed ? 'confirmed' : (string) $row['status'], 'stage' => $isConfirmed ? 'confirmed' : (string) $row['stage'], 'score' => (float) $row['score'], 'orderProbability' => (float) $row['order_probability'], 'profile' => $profile, 'lastAnalyzedMessageId' => $row['last_analyzed_message_id'] ?? null, 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
+        return ['id' => (string) $row['id'], 'name' => $name, 'phone' => $phone, 'profilePictureUrl' => (string) ($row['messenger_profile_picture_url'] ?? ''), 'lastMessagePreview' => (string) ($row['messenger_preview'] ?? $row['whatsapp_preview'] ?? ''), 'sourceChannel' => (string) $row['source_channel'], 'messengerContactId' => $row['messenger_contact_id'] ?? null, 'whatsappContactId' => $row['whatsapp_contact_id'] ?? null, 'assignedModelId' => $row['assigned_model_id'] ?? null, 'status' => $isConfirmed ? 'confirmed' : (string) $row['status'], 'stage' => $isConfirmed ? 'confirmed' : (string) $row['stage'], 'score' => (float) $row['score'], 'orderProbability' => (float) $row['order_probability'], 'profile' => $profile, 'lastAnalyzedMessageId' => $row['last_analyzed_message_id'] ?? null, 'lastMessageAt' => $this->toIso($row['last_message_at'] ?? null), 'createdAt' => $this->toIso($row['created_at'] ?? null), 'updatedAt' => $this->toIso($row['updated_at'] ?? null)];
     }
 
     private function normalizeProfileShape(array $profile): array

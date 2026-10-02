@@ -258,7 +258,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                   <Input label="Website name" value={store.storeName} onChange={(event) => updateDraft(store.id, 'storeName', event.target.value)} placeholder="Main online shop" />
                   <Input label="WooCommerce website URL" value={store.storeUrl} onChange={(event) => updateDraft(store.id, 'storeUrl', event.target.value)} placeholder="https://shop.example.com" />
                   <Input label="Consumer key" value={store.consumerKey} onChange={(event) => updateDraft(store.id, 'consumerKey', event.target.value)} placeholder="ck_..." autoComplete="off" />
-                  <Input label="Consumer secret" type="password" value={store.consumerSecret} onChange={(event) => updateDraft(store.id, 'consumerSecret', event.target.value)} placeholder="cs_..." autoComplete="new-password" />
+                  <Input label="Consumer secret" type="text" value={store.consumerSecret} onChange={(event) => updateDraft(store.id, 'consumerSecret', event.target.value)} placeholder="cs_..." autoComplete="new-password" />
                   <div className="w-full">
                     <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-500">Invoice company</label>
                     <select
@@ -272,7 +272,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                   </div>
                   <Input
                     label="Order connection security key"
-                    type="password"
+                    type="text"
                     value={store.webhookSecret}
                     onChange={(event) => updateDraft(store.id, 'webhookSecret', event.target.value)}
                     placeholder="Generated automatically when empty"

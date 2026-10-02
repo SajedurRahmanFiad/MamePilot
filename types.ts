@@ -1043,6 +1043,16 @@ export interface SmsHistoryEntry {
   createdAt: string;
 }
 
+export interface AutomaticSmsOutcome {
+  status: 'sent' | 'skipped' | 'failed';
+  reason: string;
+  message: string;
+  recipients?: number;
+  providerError?: number;
+}
+
+export type OrderCreationResult = Order & { smsNotification?: AutomaticSmsOutcome };
+
 export type OrderUpdate = Partial<Order> & {
   paymentAmount?: number;
   paymentAccountId?: string;
@@ -1829,6 +1839,7 @@ export interface LeadProfileJson {
     phone?: LeadProfileField;
     address?: LeadProfileField;
     email?: LeadProfileField;
+    gender?: LeadProfileField;
   };
   attribution?: Record<string, any>;
   interest?: Array<{ productId?: string; productName?: string; quantity?: number; confidence?: number }>;
@@ -1854,6 +1865,7 @@ export interface Lead {
   whatsappContactId?: string | null;
   name?: string | null;
   phone?: string | null;
+  profilePictureUrl?: string | null;
   assignedModelId?: string | null;
   status: LeadStatus | string;
   stage: string;

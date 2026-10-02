@@ -106,16 +106,48 @@ final class SmsApi extends BaseService
 
     public function queueOrderIfEligible(string $orderId, string $sendTiming = 'after_order'): bool
     {
-        if ($orderId === '' || !$this->tableExists('sms_settings')) return false;
+        return $this->sendOrderIfEligible($orderId, $sendTiming)['status'] === 'sent';
+    }
+
+    /** @return array{status: string, reason: string, message: string, recipients?: int, providerError?: int} */
+    public function sendOrderIfEligible(string $orderId, string $sendTiming = 'after_order'): array
+    {
+        if ($orderId === '') return ['status' => 'skipped', 'reason' => 'missing_order_id', 'message' => 'Order was created, but its confirmation SMS could not be matched to the order.'];
+        if (!$this->tableExists('sms_settings')) return ['status' => 'skipped', 'reason' => 'settings_missing', 'message' => 'Order was created, but SMS settings are not configured.'];
         $settings = $this->settingsRow();
-        if ($settings === null || empty($settings['auto_enabled'])) return false;
-        $sent = false;
-        foreach ($this->normalizeStoredSmsRules($settings, $this->responseDictionaryOutcomeKeys()) as $rule) {
-            if ($rule['sendTiming'] !== $sendTiming) continue;
-            $message = trim((string) ($rule['templates']['default'] ?? ''));
-            if ($message !== '') $sent = $this->sendAutomaticOrderMessage($orderId, $message) || $sent;
+        if ($settings === null) return ['status' => 'skipped', 'reason' => 'settings_missing', 'message' => 'Order was created, but SMS settings are not configured.'];
+        if (empty($settings['auto_enabled'])) return ['status' => 'skipped', 'reason' => 'automatic_sms_disabled', 'message' => 'Order was created, but automatic SMS is turned off in SMS settings.'];
+        if (trim((string) ($settings['api_key'] ?? '')) === '') return ['status' => 'skipped', 'reason' => 'api_key_missing', 'message' => 'Order was created, but the SMS API key is missing from SMS settings.'];
+
+        $matchingRules = array_values(array_filter(
+            $this->normalizeStoredSmsRules($settings, $this->responseDictionaryOutcomeKeys()),
+            static fn(array $rule): bool => $rule['sendTiming'] === $sendTiming
+        ));
+        if ($matchingRules === []) {
+            return ['status' => 'skipped', 'reason' => 'no_matching_rule', 'message' => 'Order was created, but no SMS rule is configured to send after order creation.'];
         }
-        return $sent;
+
+        $messages = array_values(array_filter(array_map(
+            static fn(array $rule): string => trim((string) ($rule['templates']['default'] ?? '')),
+            $matchingRules
+        ), static fn(string $message): bool => $message !== ''));
+        if ($messages === []) return ['status' => 'skipped', 'reason' => 'empty_template', 'message' => 'Order was created, but the after-order SMS template is empty.'];
+
+        $recipients = 0;
+        $firstFailure = null;
+        foreach ($messages as $message) {
+            $result = $this->sendAutomaticOrderMessageResult($orderId, $message);
+            if ($result['status'] === 'sent') {
+                $recipients += (int) ($result['recipients'] ?? 0);
+            } elseif ($result['status'] === 'failed' && $firstFailure === null) {
+                $firstFailure = $result;
+            } elseif ($result['status'] === 'skipped') {
+                return $result;
+            }
+        }
+
+        if ($firstFailure !== null) return $firstFailure;
+        return ['status' => 'sent', 'reason' => 'provider_accepted', 'message' => 'The SMS provider accepted the confirmation message.', 'recipients' => $recipients];
     }
 
     public function sendAfterCallIfEligible(string $orderId, string $outcomeKey): bool
@@ -172,28 +204,43 @@ final class SmsApi extends BaseService
 
     private function sendAutomaticOrderMessage(string $orderId, string $message): bool
     {
-        $order = $this->database->fetchOne(
-            'SELECT o.id, o.order_number, o.total_amount, c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address
-             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE o.id = :id AND o.deleted_at IS NULL',
-            [':id' => $orderId]
-        );
-        if (!is_array($order) || trim((string) ($order['customer_id'] ?? '')) === '') return false;
+        return $this->sendAutomaticOrderMessageResult($orderId, $message)['status'] === 'sent';
+    }
+
+    /** @return array{status: string, reason: string, message: string, recipients?: int, providerError?: int} */
+    private function sendAutomaticOrderMessageResult(string $orderId, string $message): array
+    {
+        try {
+            $order = $this->database->fetchOne(
+                'SELECT o.id, o.order_number, o.total AS total_amount, o.page_snapshot, c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address
+                 FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+                 WHERE o.id = :id AND o.deleted_at IS NULL',
+                [':id' => $orderId]
+            );
+        } catch (\Throwable $exception) {
+            error_log('Could not load order details for automatic SMS for order ' . $orderId . ': ' . $exception->getMessage());
+            return ['status' => 'failed', 'reason' => 'order_lookup_failed', 'message' => 'The order was created, but its SMS details could not be loaded.'];
+        }
+        if (!is_array($order)) return ['status' => 'skipped', 'reason' => 'order_not_found', 'message' => 'Order was created, but it could not be found for the confirmation SMS.'];
+        if (trim((string) ($order['customer_id'] ?? '')) === '') return ['status' => 'skipped', 'reason' => 'customer_missing', 'message' => 'Order was created, but no customer is linked for the confirmation SMS.'];
+        if ($this->normalizePhone((string) ($order['customer_phone'] ?? '')) === '') return ['status' => 'skipped', 'reason' => 'phone_missing', 'message' => 'Order was created, but the customer has no valid phone number for SMS.'];
+        $pageSnapshot = json_decode((string) ($order['page_snapshot'] ?? '{}'), true);
         foreach ([
             'Customer Name' => $order['customer_name'] ?? '',
             'Customer Phone' => $order['customer_phone'] ?? '',
             'Customer Address' => $order['customer_address'] ?? '',
             'Total Price' => $order['total_amount'] ?? '',
             'Order Number' => $order['order_number'] ?? '',
+            'Company Name' => is_array($pageSnapshot) ? ($pageSnapshot['name'] ?? '') : '',
         ] as $key => $value) {
             $message = str_replace('{{' . $key . '}}', (string) $value, $message);
         }
         try {
-            $this->sendSmsToCustomers([(string) $order['customer_id']], $message);
-            return true;
+            $result = $this->sendSmsToCustomers([(string) $order['customer_id']], $message);
+            return ['status' => 'sent', 'reason' => 'provider_accepted', 'message' => $result['message'], 'recipients' => (int) $result['recipients']];
         } catch (\Throwable $exception) {
             error_log('Could not send automatic SMS for order ' . $orderId . ': ' . $exception->getMessage());
-            return false;
+            return ['status' => 'failed', 'reason' => 'provider_rejected', 'message' => $exception->getMessage()];
         }
     }
 
@@ -289,6 +336,48 @@ final class SmsApi extends BaseService
 
     private function apiKey(): string { return trim((string) (($this->settingsRow() ?: [])['api_key'] ?? '')); }
     private function settingsRow(): ?array { $this->ensureTables(); return $this->database->fetchOne('SELECT * FROM sms_settings LIMIT 1'); }
+    /** @return array{status: int, body: string, json: array<string, mixed>, headers: array<string, string>} */
+    private function httpJson(string $method, string $url, array $headers, ?array $formBody = null): array
+    {
+        if (!function_exists('curl_init')) throw new RuntimeException('The PHP cURL extension is required for SMS API requests.');
+        $handle = curl_init($url);
+        if ($handle === false) throw new RuntimeException('Could not initialize the SMS API request.');
+
+        $headerList = ['Accept: application/json'];
+        foreach ($headers as $name => $value) $headerList[] = $name . ': ' . $value;
+        if ($formBody !== null) $headerList[] = 'Content-Type: application/x-www-form-urlencoded';
+
+        curl_setopt_array($handle, [
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headerList,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+        if ($formBody !== null) curl_setopt($handle, CURLOPT_POSTFIELDS, http_build_query($formBody, '', '&', PHP_QUERY_RFC3986));
+
+        $responseHeaders = [];
+        curl_setopt($handle, CURLOPT_HEADERFUNCTION, static function ($curl, string $line) use (&$responseHeaders): int {
+            $length = strlen($line);
+            $parts = explode(':', $line, 2);
+            if (count($parts) === 2) $responseHeaders[trim($parts[0])] = trim($parts[1]);
+            return $length;
+        });
+
+        $responseBody = curl_exec($handle);
+        $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+        $error = curl_error($handle);
+        curl_close($handle);
+        if ($responseBody === false) throw new RuntimeException('SMS API request failed: ' . $error);
+
+        $json = json_decode($responseBody, true);
+        return ['status' => $status, 'body' => $responseBody, 'json' => is_array($json) ? $json : [], 'headers' => $responseHeaders];
+    }
+
     private function settingsPayload(?array $row): array
     {
         $availableOutcomes = $this->responseDictionaryOutcomeKeys();

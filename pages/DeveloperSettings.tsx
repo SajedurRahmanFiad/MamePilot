@@ -509,7 +509,7 @@ const DeveloperSettings: React.FC = () => {
                 </label>
                 <label className="space-y-2">
                   <span className="text-xs font-black uppercase tracking-widest text-gray-400">Owner Token</span>
-                  <input type="password" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={licenseForm.licenseOwnerToken} onChange={(e) => setLicenseForm({ ...licenseForm, licenseOwnerToken: e.target.value })} placeholder="Central owner token for tier changes" />
+                  <input type="text" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={licenseForm.licenseOwnerToken} onChange={(e) => setLicenseForm({ ...licenseForm, licenseOwnerToken: e.target.value })} placeholder="Central owner token for tier changes" />
                 </label>
               </div>
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-600">
@@ -743,7 +743,7 @@ const DeveloperSettings: React.FC = () => {
                   <label key={field} className="space-y-2">
                     <span className="text-xs font-black uppercase tracking-widest text-gray-400">{label}</span>
                     <input
-                      type={field.includes('Key') || field.includes('Secret') ? 'password' : 'text'}
+                      type="text"
                       className="w-full rounded-xl border border-gray-200 px-4 py-3"
                       value={String(gatewayForm[field as keyof PaymentGatewaySettings] || '')}
                       onChange={(e) => setGatewayForm({ ...gatewayForm, [field]: e.target.value })}
@@ -837,7 +837,7 @@ const DeveloperSettings: React.FC = () => {
                 <label className="space-y-2">
                   <span className="text-xs font-black uppercase tracking-widest text-gray-400">BDCourier API Key</span>
                   <input
-                    type="password"
+                    type="text"
                     className="w-full rounded-xl border border-gray-200 px-4 py-3"
                     value={fraudSettings.apiKey}
                     onChange={(e) => setFraudSettings((prev) => ({ ...prev, apiKey: e.target.value }))}
@@ -848,7 +848,7 @@ const DeveloperSettings: React.FC = () => {
                 <label className="space-y-2">
                   <span className="text-xs font-black uppercase tracking-widest text-gray-400">FraudSpy API Key</span>
                   <input
-                    type="password"
+                    type="text"
                     className="w-full rounded-xl border border-gray-200 px-4 py-3"
                     value={fraudSettings.fraudspyApiKey}
                     onChange={(e) => setFraudSettings((prev) => ({ ...prev, fraudspyApiKey: e.target.value }))}
@@ -1047,7 +1047,7 @@ const DeveloperSettings: React.FC = () => {
                 <label className="space-y-2 md:col-span-2">
                   <span className="text-xs font-black uppercase tracking-widest text-gray-400">API Token (Bearer)</span>
                   <input
-                    type="password"
+                    type="text"
                     className="w-full rounded-xl border border-gray-200 px-4 py-3"
                     value={voiceSurveyIntegrationForm.apiToken}
                     onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, apiToken: event.target.value })}
@@ -1126,7 +1126,7 @@ const DeveloperSettings: React.FC = () => {
                   <span className="text-xs font-black uppercase tracking-widest text-blue-700">Webhook Secret</span>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <input
-                      type="password"
+                      type="text"
                       className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white px-4 py-3"
                       value={voiceSurveyIntegrationForm.webhookSecret}
                       onChange={(event) => setVoiceSurveyIntegrationForm({ ...voiceSurveyIntegrationForm, webhookSecret: event.target.value, webhookUrl: '' })}
@@ -1168,7 +1168,7 @@ const DeveloperSettings: React.FC = () => {
           {activeTab === 'sms-service' && (
             <section className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm space-y-6">
               <div><h3 className="text-xl font-black text-gray-900">SMS Service</h3><p className="mt-1 text-sm text-gray-500">Configure the sms.bd API used by the SMS page and automatic SMS confirmation.</p></div>
-              <label className="block space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">sms.bd API key</span><input type="password" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={smsForm.apiKey} onChange={(event) => setSmsForm({ ...smsForm, apiKey: event.target.value })} placeholder="Enter your API key from sms.bd" /></label>
+              <label className="block space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">sms.bd API key</span><input type="text" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={smsForm.apiKey} onChange={(event) => setSmsForm({ ...smsForm, apiKey: event.target.value })} placeholder="Enter your API key from sms.bd" /></label>
               <p className="text-sm text-gray-500">Balance is read from https://api.sms.net.bd and credentials are stored only on this deployment.</p>
             </section>
           )}
@@ -1229,7 +1229,7 @@ const DeveloperSettings: React.FC = () => {
                   <label className="block space-y-2">
                     <span className="text-sm font-semibold text-gray-700">SMTP Password / App Password</span>
                     <input
-                      type="password"
+                      type="text"
                       value={emailForm.smtpPassword}
                       onChange={(e) => setEmailForm({ ...emailForm, smtpPassword: e.target.value })}
                       placeholder="16-character app password"

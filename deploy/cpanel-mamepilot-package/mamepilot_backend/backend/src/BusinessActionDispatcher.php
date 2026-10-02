@@ -146,7 +146,7 @@ final class BusinessActionDispatcher
                 return $this->finalizeCourierSubmission($action, $agentCourierOrderId, $result, $payload);
             }
             if ($action === 'createOrder' && is_array($result)) {
-                $this->postCreateEffects->schedule($result);
+                $result['smsNotification'] = $this->postCreateEffects->schedule($result);
             }
             return $result;
         }

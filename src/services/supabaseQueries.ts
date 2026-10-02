@@ -11,6 +11,7 @@ import type {
   DeliveryPerson,
   CustomerSalesReportData,
   Order,
+  OrderCreationResult,
   OrderUpdate,
   OrderUndoPlan,
   OrderUndoResult,
@@ -186,7 +187,7 @@ export async function fetchEmployeeOrderCounts(createdByIds: string[], filters?:
   return call<Array<{ userId: string; orderCount: number }>>('fetchEmployeeOrderCounts', { createdByIds, filters });
 }
 export async function getNextOrderNumber(): Promise<string> { return call<string>('getNextOrderNumber'); }
-export async function createOrder(order: Omit<Order, 'id'>) { return call<Order>('createOrder', order); }
+export async function createOrder(order: Omit<Order, 'id'>) { return call<OrderCreationResult>('createOrder', order); }
 export async function updateOrder(id: string, updates: OrderUpdate) { return call<Order | null>('updateOrder', { id, updates }); }
 export async function deleteOrder(id: string) { await remove('deleteOrder', id); }
 export async function completePickedOrder(payload: CompletePickedOrderPayload) { return call<Order>('completePickedOrder', payload); }
@@ -438,7 +439,7 @@ export async function fetchLlmSettings(): Promise<LlmSettings> { return call<Llm
 export async function updateLlmSettings(settings: LlmSettings): Promise<LlmSettings> { return call<LlmSettings>('updateLlmSettings', settings); }
 export async function discoverLlmModels(configuration: LlmConfiguration): Promise<{ models: string[] }> { return call<{ models: string[] }>('discoverLlmModels', { configuration }, { timeoutMs: 30000 }); }
 
-export async function fetchLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; channel?: string } = {}, options?: ApiActionOptions): Promise<{ data: Lead[]; count: number }> { return call<{ data: Lead[]; count: number }>('fetchLeadsPage', params, options); }
+export async function fetchLeadsPage(params: { page?: number; pageSize?: number; search?: string; status?: string; statusOperator?: string; channel?: string; channelOperator?: string; name?: string; nameOperator?: string; phone?: string; phoneOperator?: string; orderChance?: string; orderChanceOperator?: string } = {}, options?: ApiActionOptions): Promise<{ data: Lead[]; count: number }> { return call<{ data: Lead[]; count: number }>('fetchLeadsPage', params, options); }
 export async function fetchLeadById(leadId: string): Promise<Lead> { return call<Lead>('fetchLeadById', { leadId }); }
 export async function fetchLeadIntelligence(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('fetchLeadIntelligence', params, { timeoutMs: 90000 }); }
 export async function analyzeLead(params: { leadId?: string; channel?: string; contactId?: string }): Promise<Lead> { return call<Lead>('analyzeLead', params, { timeoutMs: 90000 }); }
