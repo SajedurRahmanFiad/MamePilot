@@ -231,7 +231,7 @@ final class MessengerApi extends BaseService
         $contact = $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE id = :id LIMIT 1', [':id' => $contactId]);
         if ($contact === null) throw new RuntimeException('Messenger conversation not found.');
         $settings = $this->settingsRow();
-        $refreshed = $this->findOrCreateContact((string) $contact['psid'], $settings);
+        $refreshed = $this->findOrCreateContact((string) $contact['psid'], $settings, true);
         return $this->mapContact($refreshed, $settings);
     }
 
@@ -733,15 +733,20 @@ final class MessengerApi extends BaseService
         return $contact;
     }
 
-    private function findOrCreateContact(string $psid, ?array $settings): array
+    private function findOrCreateContact(string $psid, ?array $settings, bool $throwOnProfileError = false): array
     {
         $existing = $this->database->fetchOne('SELECT * FROM messenger_contacts WHERE psid = :psid LIMIT 1', [':psid' => $psid]);
         if ($existing !== null && trim((string) ($existing['profile_picture_url'] ?? '')) !== '' && trim((string) ($existing['name'] ?? '')) !== '' && (string) $existing['name'] !== 'Messenger customer') return $existing;
         $profile = [];
-        try {
-            if ($this->isConfigured($settings)) $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,profile_pic,locale'], 5);
-        } catch (\Throwable $exception) {
-            $profile = [];
+        if (!$this->isConfigured($settings)) {
+            if ($throwOnProfileError) throw new RuntimeException('Messenger Page ID and Page access token are not configured.');
+        } else {
+            try {
+                $profile = $this->graphRequest('GET', '/' . rawurlencode($psid), null, $settings, ['fields' => 'first_name,last_name,profile_pic,locale'], 5);
+            } catch (\Throwable $exception) {
+                if ($throwOnProfileError) throw new RuntimeException('Messenger profile lookup failed: ' . $exception->getMessage(), 0, $exception);
+                $profile = [];
+            }
         }
         $first = trim((string) ($profile['first_name'] ?? ''));
         $last = trim((string) ($profile['last_name'] ?? ''));

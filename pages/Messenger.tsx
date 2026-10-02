@@ -221,7 +221,17 @@ const MessengerPage: React.FC = () => {
       for (const contact of incompleteContacts) {
         if (cancelled) return;
         profileRefreshStartedRef.current.add(contact.id);
-        try { await refreshMessengerContactProfile(contact.id); refreshed = true; } catch { /* Best-effort profile enrichment must not block Messenger. */ }
+        try {
+          const refreshedContact = await refreshMessengerContactProfile(contact.id);
+          console.info('[Messenger] Contact profile lookup completed', {
+            contactId: contact.id,
+            name: refreshedContact.name,
+            hasProfilePicture: Boolean(refreshedContact.profilePictureUrl),
+          });
+          refreshed = true;
+        } catch (error) {
+          console.warn('[Messenger] Contact profile lookup failed', { contactId: contact.id, error });
+        }
       }
       if (refreshed && !cancelled) await contactsQuery.refetch();
     };
