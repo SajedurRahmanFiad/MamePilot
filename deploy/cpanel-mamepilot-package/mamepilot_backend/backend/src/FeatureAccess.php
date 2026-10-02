@@ -197,6 +197,7 @@ final class FeatureAccess
         'checkFraudCourierHistory' => 'fraud_checker',
         'connectFraudspySteadfast' => 'fraud_checker',
         'submitCarryBeeOrder' => 'carrybee_courier',
+        'fetchCarryBeeAddressDetails' => 'carrybee_courier',
         'submitPaperflyOrder' => 'paperfly_courier',
         'submitSteadfastOrder' => 'steadfast_courier',
         'fetchSteadfastStatusByTrackingCode' => 'steadfast_courier',

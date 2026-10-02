@@ -662,6 +662,47 @@ final class CourierApi extends BaseService
         return $this->carryBeeCollectionResponse($response, 'cities');
     }
 
+    public function fetchCarryBeeAddressDetails(array $params): array
+    {
+        $baseUrl = $this->trimBaseUrl($params);
+        $query = trim((string) ($params['query'] ?? ''));
+        $queryLength = function_exists('mb_strlen')
+            ? mb_strlen($query, 'UTF-8')
+            : (preg_match_all('/./us', $query) ?: strlen($query));
+        if (
+            $baseUrl === '' ||
+            trim((string) ($params['clientId'] ?? '')) === '' ||
+            trim((string) ($params['clientSecret'] ?? '')) === '' ||
+            trim((string) ($params['clientContext'] ?? '')) === ''
+        ) {
+            return ['error' => 'Missing CarryBee settings'];
+        }
+        if ($queryLength < 10) {
+            return ['error' => 'Address query must be at least 10 characters'];
+        }
+
+        $response = $this->request(
+            'POST',
+            $baseUrl . '/api/v2/address-details',
+            $this->carryBeeHeaders($params),
+            ['query' => $query]
+        );
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            return ['error' => 'CarryBee address lookup failed with HTTP ' . $response['status']];
+        }
+
+        $payload = is_array($response['json']) ? $response['json'] : [];
+        $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+        if (!empty($payload['error'])) {
+            return ['error' => (string) ($payload['message'] ?? 'CarryBee address lookup failed')];
+        }
+
+        return [
+            'cityId' => isset($data['city_id']) ? (string) $data['city_id'] : null,
+            'zoneId' => isset($data['zone_id']) ? (string) $data['zone_id'] : null,
+        ];
+    }
+
     public function fetchCarryBeeZones(array $params): array
     {
         $cityId = trim((string) ($params['cityId'] ?? ''));

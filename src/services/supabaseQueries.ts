@@ -631,6 +631,7 @@ export async function deleteEmployeeWalletPayout(id: string): Promise<{ success:
 }
 
 export async function fetchCarryBeeStores(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeStores', params); }
+export async function fetchCarryBeeAddressDetails(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; query: string; }): Promise<{ cityId?: string | number | null; zoneId?: string | number | null; error?: string }> { return call('fetchCarryBeeAddressDetails', params); }
 export async function fetchCarryBeeCities(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeCities', params); }
 export async function fetchCarryBeeZones(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeZones', params); }
 export async function fetchCarryBeeAreas(params: { baseUrl: string; clientId: string; clientSecret: string; clientContext: string; cityId: string; zoneId: string; }) { return call<Array<{ id: string; name: string }>>('fetchCarryBeeAreas', params); }

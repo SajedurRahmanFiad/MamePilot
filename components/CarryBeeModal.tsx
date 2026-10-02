@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button, NumericInput } from './index';
-import { fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder, submitCarryBeeExchangeOrder } from '../src/services/supabaseQueries';
+import { fetchCarryBeeAddressDetails, fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder, submitCarryBeeExchangeOrder } from '../src/services/supabaseQueries';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
@@ -45,6 +45,62 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
   const [loadingAreas, setLoadingAreas] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const updateOrder = useUpdateOrder();
+  const shortAddressWarningShown = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      shortAddressWarningShown.current = false;
+      return;
+    }
+
+    setSelectedCity('');
+    setSelectedZone('');
+    setSelectedArea('');
+  }, [isOpen, customer?.address]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const query = customer?.address?.trim() || '';
+    if (Array.from(query).length < 10) {
+      if (!shortAddressWarningShown.current) {
+        toast.warning('CarryBee address lookup requires an address of at least 10 characters. Select the city and zone manually.');
+        shortAddressWarningShown.current = true;
+      }
+      return;
+    }
+
+    shortAddressWarningShown.current = false;
+    if (!courierSettings?.carryBee?.baseUrl || !courierSettings?.carryBee?.clientId ||
+        !courierSettings?.carryBee?.clientSecret || !courierSettings?.carryBee?.clientContext) {
+      return;
+    }
+
+    let cancelled = false;
+    fetchCarryBeeAddressDetails({
+      baseUrl: courierSettings.carryBee.baseUrl,
+      clientId: courierSettings.carryBee.clientId,
+      clientSecret: courierSettings.carryBee.clientSecret,
+      clientContext: courierSettings.carryBee.clientContext,
+      query,
+    }).then(({ cityId, zoneId, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.error('Failed to look up CarryBee address:', error);
+        return;
+      }
+      if (cityId && zoneId) {
+        setSelectedCity(String(cityId));
+        setSelectedZone(String(zoneId));
+      }
+    }).catch((err) => {
+      if (!cancelled) console.error('Failed to look up CarryBee address:', err);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, customer?.address, courierSettings, toast]);
 
   // Fetch cities on mount
   useEffect(() => {

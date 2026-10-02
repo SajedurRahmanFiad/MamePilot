@@ -165,7 +165,7 @@ final class BusinessActionDispatcher
     private function isCourierRead(string $action): bool
     {
         return in_array($action, [
-            'fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeZones',
+            'fetchCarryBeeStores', 'fetchCarryBeeCities', 'fetchCarryBeeAddressDetails', 'fetchCarryBeeZones',
             'fetchCarryBeeAreas', 'fetchCarryBeeOrderDetails',
             'fetchSteadfastStatusByTrackingCode', 'fetchSteadfastStatusByConsignmentId', 'fetchPaperflyOrderTracking',
             'fetchPathaoCities', 'fetchPathaoZones', 'fetchPathaoAreas', 'fetchPathaoOrderInfo',
