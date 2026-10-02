@@ -44,6 +44,8 @@ export { default as CarryBeeModal } from './CarryBeeModal';
 
 export { default as PaperflyModal } from './PaperflyModal';
 export { default as PathaoModal } from './PathaoModal';
+
+export { default as SearchableLocationSelect } from './SearchableLocationSelect';
 export { default as PermissionsSettingsPanel } from './PermissionsSettingsPanel';
 export { default as InfoTooltip } from './InfoTooltip';
 export { default as TransferModal } from './TransferModal';

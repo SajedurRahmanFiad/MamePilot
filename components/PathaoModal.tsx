@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
+import SearchableLocationSelect from './SearchableLocationSelect';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -339,69 +340,51 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
             <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-700">City <span className="text-red-500">*</span></label>
-                <select
+                <SearchableLocationSelect
                   value={selectedCity}
-                  onChange={(event) => {
+                  onChange={(value) => {
                     setError(null);
-                    setSelectedCity(event.target.value);
+                    setSelectedCity(value);
                     setSelectedZone('');
                     setSelectedArea('');
                   }}
+                  options={cities}
+                  placeholder={loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select a city'}
+                  emptyOptionLabel="Select a city"
+                  searchPlaceholder="Search cities..."
                   disabled={loadingCities || cities.length === 0 || submitting}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">
-                    {loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select a city'}
-                  </option>
-                  {cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
-                </select>
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-700">Zone <span className="text-red-500">*</span></label>
-                <select
+                <SearchableLocationSelect
                   value={selectedZone}
-                  onChange={(event) => {
+                  onChange={(value) => {
                     setError(null);
-                    setSelectedZone(event.target.value);
+                    setSelectedZone(value);
                     setSelectedArea('');
                   }}
+                  options={zones}
+                  placeholder={loadingZones ? 'Loading zones...' : !selectedCity ? 'Select a city first' : zones.length === 0 ? 'No zones available' : 'Select a zone'}
+                  emptyOptionLabel="Select a zone"
+                  searchPlaceholder="Search zones..."
                   disabled={!selectedCity || loadingZones || zones.length === 0 || submitting}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">
-                    {loadingZones
-                      ? 'Loading zones...'
-                      : !selectedCity
-                        ? 'Select a city first'
-                        : zones.length === 0
-                          ? 'No zones available'
-                          : 'Select a zone'}
-                  </option>
-                  {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
-                </select>
+                />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-semibold text-gray-700">Area <span className="font-medium text-gray-400">(optional)</span></label>
-                <select
+                <SearchableLocationSelect
                   value={selectedArea}
-                  onChange={(event) => {
+                  onChange={(value) => {
                     setError(null);
-                    setSelectedArea(event.target.value);
+                    setSelectedArea(value);
                   }}
+                  options={areas}
+                  placeholder={loadingAreas ? 'Loading areas...' : !selectedZone ? 'Select a zone first' : areas.length === 0 ? 'No areas available' : 'No specific area'}
+                  emptyOptionLabel="No specific area"
+                  searchPlaceholder="Search areas..."
                   disabled={!selectedZone || loadingAreas || areas.length === 0 || submitting}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">
-                    {loadingAreas
-                      ? 'Loading areas...'
-                      : !selectedZone
-                        ? 'Select a zone first'
-                        : areas.length === 0
-                          ? 'No areas available'
-                          : 'No specific area'}
-                  </option>
-                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-                </select>
+                />
               </div>
             </div>
             {courierSettings?.pathao && (

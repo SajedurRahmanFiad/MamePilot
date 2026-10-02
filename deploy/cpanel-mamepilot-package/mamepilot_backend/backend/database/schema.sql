@@ -772,32 +772,31 @@ CREATE TABLE IF NOT EXISTS payroll_settings (
   PRIMARY KEY (id),
   UNIQUE KEY uq_payroll_settings_singleton (singleton)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS orders (
-  CREATE TABLE IF NOT EXISTS delivery_persons (
-    id VARCHAR(64) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    phone VARCHAR(64) NOT NULL,
-    image LONGTEXT NULL,
-    email VARCHAR(255) NULL,
-    address TEXT NULL,
-    birthday DATE NULL,
-    nid_passport_copy LONGTEXT NULL,
-    gender VARCHAR(32) NULL,
-    blood_group VARCHAR(16) NULL,
-    nationality VARCHAR(128) NULL,
-    cv LONGTEXT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at DATETIME NULL,
-    deleted_by VARCHAR(64) NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_delivery_persons_phone (phone),
-    KEY idx_delivery_persons_name (name),
-    KEY idx_delivery_persons_deleted_at (deleted_at),
-    CONSTRAINT fk_delivery_persons_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS delivery_persons (
+  id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  phone VARCHAR(64) NOT NULL,
+  image LONGTEXT NULL,
+  email VARCHAR(255) NULL,
+  address TEXT NULL,
+  birthday DATE NULL,
+  nid_passport_copy LONGTEXT NULL,
+  gender VARCHAR(32) NULL,
+  blood_group VARCHAR(16) NULL,
+  nationality VARCHAR(128) NULL,
+  cv LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  deleted_by VARCHAR(64) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_delivery_persons_phone (phone),
+  KEY idx_delivery_persons_name (name),
+  KEY idx_delivery_persons_deleted_at (deleted_at),
+  CONSTRAINT fk_delivery_persons_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-  CREATE TABLE IF NOT EXISTS orders (
+CREATE TABLE IF NOT EXISTS orders (
   id VARCHAR(64) NOT NULL,
   order_number VARCHAR(100) NOT NULL,
   order_seq BIGINT NULL,

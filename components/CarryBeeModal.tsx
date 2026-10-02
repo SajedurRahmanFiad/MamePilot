@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button, NumericInput } from './index';
+import SearchableLocationSelect from './SearchableLocationSelect';
 import { fetchCarryBeeAddressDetails, fetchCarryBeeCities, fetchCarryBeeZones, fetchCarryBeeAreas, submitCarryBeeOrder, submitCarryBeeExchangeOrder } from '../src/services/supabaseQueries';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
@@ -244,19 +245,19 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
               <label className="text-sm font-semibold text-gray-700">
                 City <span className="text-red-500">*</span>
               </label>
-              <select
+              <SearchableLocationSelect
                 value={selectedCity}
-                onChange={(e) => setSelectedCity(e.target.value)}
-                disabled={loadingCities || cities.length === 0}
-                className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select a city'}
-                </option>
-                {cities.map(city => (
-                  <option key={city.id} value={city.id}>{city.name}</option>
-                ))}
-              </select>
+                onChange={(value) => {
+                  setSelectedCity(value);
+                  setSelectedZone('');
+                  setSelectedArea('');
+                }}
+                options={cities}
+                placeholder={loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select a city'}
+                emptyOptionLabel="Select a city"
+                searchPlaceholder="Search cities..."
+                disabled={loadingCities || cities.length === 0 || submitting}
+              />
             </div>
 
             {/* Zone Dropdown */}
@@ -264,37 +265,32 @@ export const CarryBeeModal: React.FC<CarryBeeModalProps> = ({ isOpen, onClose, o
               <label className="text-sm font-semibold text-gray-700">
                 Zone <span className="text-red-500">*</span>
               </label>
-              <select
+              <SearchableLocationSelect
                 value={selectedZone}
-                onChange={(e) => setSelectedZone(e.target.value)}
-                disabled={!selectedCity || loadingZones || zones.length === 0}
-                className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {!selectedCity ? 'Select a city first' : loadingZones ? 'Loading zones...' : zones.length === 0 ? 'No zones available' : 'Select a zone'}
-                </option>
-                {zones.map(zone => (
-                  <option key={zone.id} value={zone.id}>{zone.name}</option>
-                ))}
-              </select>
+                onChange={(value) => {
+                  setSelectedZone(value);
+                  setSelectedArea('');
+                }}
+                options={zones}
+                placeholder={!selectedCity ? 'Select a city first' : loadingZones ? 'Loading zones...' : zones.length === 0 ? 'No zones available' : 'Select a zone'}
+                emptyOptionLabel="Select a zone"
+                searchPlaceholder="Search zones..."
+                disabled={!selectedCity || loadingZones || zones.length === 0 || submitting}
+              />
             </div>
 
             {/* Area Dropdown */}
             <div className="space-y-2">
               <label className="text-sm font-semibold text-gray-700">Area</label>
-              <select
+              <SearchableLocationSelect
                 value={selectedArea}
-                onChange={(e) => setSelectedArea(e.target.value)}
-                disabled={!selectedZone || loadingAreas}
-                className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {!selectedZone ? 'Select a zone first' : loadingAreas ? 'Loading areas...' : areas.length === 0 ? 'No areas available' : 'Select an area (optional)'}
-                </option>
-                {areas.map(area => (
-                  <option key={area.id} value={area.id}>{area.name}</option>
-                ))}
-              </select>
+                onChange={setSelectedArea}
+                options={areas}
+                placeholder={!selectedZone ? 'Select a zone first' : loadingAreas ? 'Loading areas...' : areas.length === 0 ? 'No areas available' : 'Select an area (optional)'}
+                emptyOptionLabel="No specific area"
+                searchPlaceholder="Search areas..."
+                disabled={!selectedZone || loadingAreas || submitting}
+              />
             </div>
           </div>
           <div className="flex gap-3 px-6 py-4 border-t border-gray-100 shrink-0">
