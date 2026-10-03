@@ -10,7 +10,6 @@ import {
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import type { MessengerProfileSettings, MessengerSettings } from '../types';
-import ChatPushToggle from './ChatPushToggle';
 
 const EMPTY_SETTINGS: MessengerSettings = {
   pageAccessToken: '',
@@ -123,8 +122,6 @@ const MessengerSettingsPanel: React.FC = () => {
           </div>
           <Button type="button" onClick={handleSave} loading={saveSettings.isPending}>Save Messenger</Button>
         </div>
-
-        <ChatPushToggle channel="messenger" />
 
         {settings.configured && (
           <div className="flex flex-col gap-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-5 sm:flex-row sm:items-center">

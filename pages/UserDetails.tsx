@@ -11,6 +11,7 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { getPreservedRouteState } from '../src/utils/navigation';
 import { formatDate, openAttachmentPreview } from '../utils';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import ChatPushToggle from '../components/ChatPushToggle';
 
 const formatDateValue = (value?: string | null) => {
   return formatDate(value) || 'Not provided';
@@ -219,6 +220,15 @@ const UserDetails: React.FC = () => {
                   label="Fixed Salary"
                   value={user.compensationType === 'fixed' || user.compensationType === 'hybrid' ? (user.fixedSalary != null ? formatCurrency(user.fixedSalary) : 'Not provided') : 'Not applicable'}
                 />
+              </div>
+            </SectionCard>
+          )}
+
+          {String(currentUser.id) === String(user.id) && (
+            <SectionCard title="Push notifications" subtitle="Device-level browser alerts for inbound Messenger and WhatsApp messages. These are tied to your account and this device.">
+              <div className="space-y-4">
+                <ChatPushToggle channel="messenger" />
+                <ChatPushToggle channel="whatsapp" />
               </div>
             </SectionCard>
           )}

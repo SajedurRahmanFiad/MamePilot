@@ -7,7 +7,6 @@ import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { buildWhatsAppBusinessAppOnboardingOptions, DEFAULT_WHATSAPP_GRAPH_VERSION } from '../src/utils/whatsappEmbeddedSignup';
 import { isDeveloperRole, type WhatsAppSettings } from '../types';
-import ChatPushToggle from './ChatPushToggle';
 
 type FacebookSdk = {
   init: (options: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string }) => void;
@@ -415,8 +414,6 @@ const WhatsAppSettingsPanel: React.FC = () => {
           {coexistenceConnected && <Button type="button" variant="outline" onClick={sync} loading={syncMutation.isPending} disabled={Boolean(settings.contactsSyncRequested && settings.historySyncRequested)} icon={<RefreshCw size={17} />}>Sync Business app data</Button>}
         </div>
       </div>
-
-      <ChatPushToggle channel="whatsapp" />
 
       {error && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">WhatsApp settings could not be loaded. Please refresh the page.</div>}
 
