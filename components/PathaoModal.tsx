@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
-import SearchableLocationSelect from './SearchableLocationSelect';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -10,9 +9,6 @@ import {
   submitPathaoOrder,
   generatePathaoToken,
   refreshPathaoToken,
-  fetchPathaoCities,
-  fetchPathaoZones,
-  fetchPathaoAreas,
   updateCourierSettings,
 } from '../src/services/supabaseQueries';
 import { useUpdateOrder } from '../src/hooks/useMutations';
@@ -28,8 +24,6 @@ interface PathaoModalProps {
   isExchangeConsignment?: boolean;
 }
 
-type PathaoLocationOption = { id: string; name: string };
-
 function formatHistoryMoment(): string {
   const { date, time } = formatDateTimeParts(new Date());
   return `${date}, at ${time}`;
@@ -39,8 +33,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
   const queryClient = useQueryClient();
   const {
     data: courierSettings,
-    error: courierSettingsError,
-    isLoading: loadingCourierSettings,
     refetch: refetchCourierSettings,
   } = useCourierSettings();
   const toast = useToastNotifications();
@@ -49,16 +41,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const updateOrder = useUpdateOrder();
-  const [cities, setCities] = useState<PathaoLocationOption[]>([]);
-  const [zones, setZones] = useState<PathaoLocationOption[]>([]);
-  const [areas, setAreas] = useState<PathaoLocationOption[]>([]);
-  const [selectedCity, setSelectedCity] = useState('');
-  const [selectedZone, setSelectedZone] = useState('');
-  const [selectedArea, setSelectedArea] = useState('');
-  const [loadingCities, setLoadingCities] = useState(false);
-  const [loadingZones, setLoadingZones] = useState(false);
-  const [loadingAreas, setLoadingAreas] = useState(false);
-
   const ensureValidToken = useCallback(async (): Promise<string | null> => {
     if (!courierSettings?.pathao) return null;
 
@@ -122,76 +104,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
     return null;
   }, [courierSettings?.pathao, refetchCourierSettings]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    if (!courierSettings?.pathao) {
-      setCities([]);
-      setLoadingCities(loadingCourierSettings);
-      setError(loadingCourierSettings ? null : courierSettingsError?.message || 'No Pathao credentials configured');
-      return;
-    }
-    let cancelled = false;
-    setSelectedCity('');
-    setSelectedZone('');
-    setSelectedArea('');
-    setCities([]);
-    setZones([]);
-    setAreas([]);
-    setError(null);
-    setLoadingCities(true);
-
-    void (async () => {
-      try {
-        const token = await ensureValidToken();
-        if (!token || cancelled) return;
-        const pathaoSettings = courierSettings?.pathao;
-        const items = await fetchPathaoCities({
-          baseUrl: pathaoSettings?.baseUrl,
-          accessToken: token,
-        });
-        if (!cancelled) setCities(items);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao cities');
-      } finally {
-        if (!cancelled) setLoadingCities(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [isOpen, courierSettings?.pathao, courierSettingsError, ensureValidToken, loadingCourierSettings]);
-
-  useEffect(() => {
-    if (!isOpen || !selectedCity) {
-      setZones([]);
-      setLoadingZones(false);
-      return;
-    }
-    let cancelled = false;
-    setError(null);
-    setLoadingZones(true);
-    void fetchPathaoZones({ cityId: selectedCity, baseUrl: courierSettings?.pathao?.baseUrl, accessToken: courierSettings?.pathao?.accessToken })
-      .then((items) => { if (!cancelled) setZones(items); })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao zones'); })
-      .finally(() => { if (!cancelled) setLoadingZones(false); });
-    return () => { cancelled = true; };
-  }, [isOpen, selectedCity]);
-
-  useEffect(() => {
-    if (!isOpen || !selectedZone) {
-      setAreas([]);
-      setLoadingAreas(false);
-      return;
-    }
-    let cancelled = false;
-    setError(null);
-    setLoadingAreas(true);
-    void fetchPathaoAreas({ zoneId: selectedZone, baseUrl: courierSettings?.pathao?.baseUrl, accessToken: courierSettings?.pathao?.accessToken })
-      .then((items) => { if (!cancelled) setAreas(items); })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load Pathao areas'); })
-      .finally(() => { if (!cancelled) setLoadingAreas(false); });
-    return () => { cancelled = true; };
-  }, [isOpen, selectedZone]);
-
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
@@ -207,11 +119,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
       setError('No Pathao credentials configured');
       return;
     }
-    if (!selectedCity || !selectedZone) {
-      setError('Select a Pathao city and zone before creating the delivery order');
-      return;
-    }
-
     const { baseUrl, storeId, defaultDeliveryType, defaultItemType, defaultQuantity, defaultWeight } = courierSettings.pathao;
 
     if (!baseUrl || !storeId) {
@@ -239,9 +146,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         recipientName: customer.name,
         recipientPhone: customer.phone,
         recipientAddress: customer.address,
-        recipientCity: selectedCity,
-        recipientZone: selectedZone,
-        recipientArea: selectedArea || undefined,
         deliveryType: defaultDeliveryType || 48,
         itemType: defaultItemType || 2,
         itemQuantity: defaultQuantity || 1,
@@ -337,56 +241,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               <label className="block text-sm font-semibold text-gray-700 mb-1">COD Amount</label>
               <p className="text-lg font-bold text-gray-900">৳ {order?.total?.toFixed(2) || '0.00'}</p>
             </div>
-            <div className="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">City <span className="text-red-500">*</span></label>
-                <SearchableLocationSelect
-                  value={selectedCity}
-                  onChange={(value) => {
-                    setError(null);
-                    setSelectedCity(value);
-                    setSelectedZone('');
-                    setSelectedArea('');
-                  }}
-                  options={cities}
-                  placeholder={loadingCities ? 'Loading cities...' : cities.length === 0 ? 'No cities available' : 'Select a city'}
-                  emptyOptionLabel="Select a city"
-                  searchPlaceholder="Search cities..."
-                  disabled={loadingCities || cities.length === 0 || submitting}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Zone <span className="text-red-500">*</span></label>
-                <SearchableLocationSelect
-                  value={selectedZone}
-                  onChange={(value) => {
-                    setError(null);
-                    setSelectedZone(value);
-                    setSelectedArea('');
-                  }}
-                  options={zones}
-                  placeholder={loadingZones ? 'Loading zones...' : !selectedCity ? 'Select a city first' : zones.length === 0 ? 'No zones available' : 'Select a zone'}
-                  emptyOptionLabel="Select a zone"
-                  searchPlaceholder="Search zones..."
-                  disabled={!selectedCity || loadingZones || zones.length === 0 || submitting}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-semibold text-gray-700">Area <span className="font-medium text-gray-400">(optional)</span></label>
-                <SearchableLocationSelect
-                  value={selectedArea}
-                  onChange={(value) => {
-                    setError(null);
-                    setSelectedArea(value);
-                  }}
-                  options={areas}
-                  placeholder={loadingAreas ? 'Loading areas...' : !selectedZone ? 'Select a zone first' : areas.length === 0 ? 'No areas available' : 'No specific area'}
-                  emptyOptionLabel="No specific area"
-                  searchPlaceholder="Search areas..."
-                  disabled={!selectedZone || loadingAreas || areas.length === 0 || submitting}
-                />
-              </div>
-            </div>
             {courierSettings?.pathao && (
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
                 <div>
@@ -414,7 +268,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               variant="primary"
               className="flex-1"
               loading={submitting}
-              disabled={submitting || !order || !customer || !selectedCity || !selectedZone}
+              disabled={submitting || !order || !customer}
             >
               {submitting ? 'Adding...' : 'Add'}
             </Button>

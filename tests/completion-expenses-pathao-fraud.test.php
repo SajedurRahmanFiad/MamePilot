@@ -188,9 +188,9 @@ try {
     completionAssert(str_contains($courierApi, '/aladdin/api/v1/city-list'), 'Pathao city endpoint is missing.');
     completionAssert(str_contains($courierApi, "rawurlencode(\$cityId) . '/zone-list'"), 'Pathao zone endpoint is missing.');
     completionAssert(str_contains($courierApi, "rawurlencode(\$zoneId) . '/area-list'"), 'Pathao area endpoint is missing.');
-    completionAssert(str_contains($courierApi, "'recipient_city'"), 'Pathao booking payload is missing recipient_city.');
-    completionAssert(str_contains($courierApi, "'recipient_zone'"), 'Pathao booking payload is missing recipient_zone.');
-    completionAssert(str_contains($courierApi, "'recipient_area'"), 'Pathao booking payload is missing recipient_area.');
+    completionAssert(str_contains($courierApi, "if (\$recipientCity !== '')"), 'Pathao city should be optional.');
+    completionAssert(str_contains($courierApi, "if (\$recipientZone !== '')"), 'Pathao zone should be optional.');
+    completionAssert(str_contains($courierApi, "if (\$recipientArea !== '')"), 'Pathao area should be optional.');
 
     echo "Manual and courier-finalized completion expenses, fraud schema, and Pathao location contracts passed.\n";
 } finally {

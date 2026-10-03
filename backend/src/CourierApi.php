@@ -2152,8 +2152,8 @@ final class CourierApi extends BaseService
         $recipientZone = trim((string) ($params['recipientZone'] ?? ''));
         $recipientArea = trim((string) ($params['recipientArea'] ?? ''));
 
-        if ($recipientName === '' || $recipientPhone === '' || $recipientAddress === '' || $recipientCity === '' || $recipientZone === '') {
-            return ['error' => 'Missing required order fields: recipient name, phone, address, city, or zone'];
+        if ($recipientName === '' || $recipientPhone === '' || $recipientAddress === '') {
+            return ['error' => 'Missing required order fields: recipient name, phone, or address'];
         }
 
         $payload = [
@@ -2161,8 +2161,6 @@ final class CourierApi extends BaseService
             'recipient_name' => $recipientName,
             'recipient_phone' => $recipientPhone,
             'recipient_address' => $recipientAddress,
-            'recipient_city' => (int) $recipientCity,
-            'recipient_zone' => (int) $recipientZone,
             'delivery_type' => (int) ($params['deliveryType'] ?? 48),
             'item_type' => (int) ($params['itemType'] ?? 2),
             'item_quantity' => (int) ($params['itemQuantity'] ?? 1),
@@ -2172,6 +2170,12 @@ final class CourierApi extends BaseService
         $merchantOrderId = trim((string) ($params['merchantOrderId'] ?? ''));
         if ($merchantOrderId !== '') {
             $payload['merchant_order_id'] = $merchantOrderId;
+        }
+        if ($recipientCity !== '') {
+            $payload['recipient_city'] = (int) $recipientCity;
+        }
+        if ($recipientZone !== '') {
+            $payload['recipient_zone'] = (int) $recipientZone;
         }
         if ($recipientArea !== '') {
             $payload['recipient_area'] = (int) $recipientArea;

@@ -120,7 +120,7 @@ Accept: application/json
 
 ## 3. Location Lookup and Order Creation
 
-The Add to Pathao modal loads its location dropdowns from Pathao. Each request uses the configured base URL and the current Bearer access token.
+Location lookup endpoints are available for callers that need them. The Add to Pathao modal does not request city, zone, or area selections because these fields are optional when creating an order.
 
 ### 3.1 City List
 
@@ -128,7 +128,7 @@ The Add to Pathao modal loads its location dropdowns from Pathao. Each request u
 GET {baseUrl}/aladdin/api/v1/city-list
 ```
 
-The response items use `city_id` and `city_name`. A city must be selected before zones can be loaded.
+The response items use `city_id` and `city_name`.
 
 ### 3.2 Zone List
 
@@ -136,7 +136,7 @@ The response items use `city_id` and `city_name`. A city must be selected before
 GET {baseUrl}/aladdin/api/v1/cities/{city_id}/zone-list
 ```
 
-The response items use `zone_id` and `zone_name`. A zone must be selected before areas can be loaded.
+The response items use `zone_id` and `zone_name`.
 
 ### 3.3 Area List
 
@@ -146,7 +146,7 @@ GET {baseUrl}/aladdin/api/v1/zones/{zone_id}/area-list
 
 The response items use `area_id` and `area_name`.
 
-> Pathao's current order contract requires City and Zone. Area is optional. The modal follows that provider contract so the create-order request is not rejected with HTTP 422.
+The response items use `area_id` and `area_name`. This lookup is optional.
 
 ### 3.4 Order Creation Endpoint
 
@@ -172,9 +172,6 @@ Authorization: Bearer {accessToken}
   "recipient_name": "John Doe",
   "recipient_phone": "01712345678",
   "recipient_address": "House 12, Road 5, Dhanmondi, Dhaka",
-  "recipient_city": 1,
-  "recipient_zone": 1,
-  "recipient_area": 1,
   "delivery_type": 48,
   "item_type": 2,
   "special_instruction": "Call before delivery",
@@ -192,8 +189,8 @@ Authorization: Bearer {accessToken}
 | `recipient_name` | string | **Yes** | Customer's full name |
 | `recipient_phone` | string | **Yes** | Customer's phone number |
 | `recipient_address` | string | **Yes** | Full delivery address |
-| `recipient_city` | int | **Yes** | Selected Pathao city ID |
-| `recipient_zone` | int | **Yes** | Selected Pathao zone ID within the city |
+| `recipient_city` | int | No | Pathao city ID, if supplied |
+| `recipient_zone` | int | No | Pathao zone ID, if supplied |
 | `recipient_area` | int | No | Selected Pathao area ID within the zone |
 | `delivery_type` | int | **Yes** | Delivery speed (see enum values below) |
 | `item_type` | int | **Yes** | Item category (see enum values below) |
@@ -210,9 +207,9 @@ Authorization: Bearer {accessToken}
 | `recipient_name` | Order's `processedInfo.name` |
 | `recipient_phone` | Order's `processedInfo.phone` |
 | `recipient_address` | Order's `processedInfo.address` |
-| `recipient_city` | Required City selection in the Add to Pathao modal |
-| `recipient_zone` | Required Zone selection loaded for the selected City |
-| `recipient_area` | Optional Area selection loaded for the selected Zone; omitted when blank |
+| `recipient_city` | Optional caller-provided Pathao city ID; omitted by the Add to Pathao modal |
+| `recipient_zone` | Optional caller-provided Pathao zone ID; omitted by the Add to Pathao modal |
+| `recipient_area` | Optional caller-provided Pathao area ID; omitted by the Add to Pathao modal |
 | `delivery_type` | Request body `deliveryType` override, or setting `pathaoDefaultDeliveryType` (default `48`) |
 | `item_type` | Request body `itemType` override, or setting `pathaoDefaultItemType` (default `2`) |
 | `special_instruction` | Order's `processedInfo.additionalPhone` (if present), otherwise falls back to the `selectedNote` parameter passed by the caller |
@@ -291,12 +288,13 @@ The raw response body is returned along with the HTTP status code. Common patter
 │                                                         │
 │  Required body fields:                                  │
 │    store_id, recipient_name, recipient_phone,           │
-│    recipient_address, recipient_city, recipient_zone,   │
-│    delivery_type, item_type, item_quantity,             │
+│    recipient_address, delivery_type, item_type,         │
+│    item_quantity,                                       │
 │    item_weight, amount_to_collect                       │
 │                                                         │
 │  Optional body field:                                   │
-│    recipient_area, special_instruction                  │
+│    recipient_city, recipient_zone, recipient_area,     │
+│    special_instruction                                  │
 │                                                         │
 │  Response → data.consignment_id (tracking number)       │
 │                                                         │
@@ -333,8 +331,8 @@ Before calling the Pathao location endpoints:
 
 Before calling the Pathao order creation endpoint:
 - `pathaoBaseUrl`, `pathaoAccessToken`, `pathaoStoreId` must all be non-empty in settings.
-- `recipient_name`, `recipient_phone`, `recipient_address`, `recipient_city`, and `recipient_zone` must all be non-empty in the payload.
-- `recipient_area` is omitted from the provider payload when no area is selected.
+- `recipient_name`, `recipient_phone`, and `recipient_address` must all be non-empty in the payload.
+- `recipient_city`, `recipient_zone`, and `recipient_area` are included only when provided.
 - If any required recipient field is missing, the request is rejected before hitting the Pathao API.
 
 ### COD Amount

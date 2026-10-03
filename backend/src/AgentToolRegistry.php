@@ -887,9 +887,9 @@ final class AgentToolRegistry
             'orderId' => ['type' => 'string', 'minLength' => 1], 'specialInstruction' => ['type' => 'string'],
             'deliveryType' => ['type' => 'integer', 'minimum' => 1], 'itemType' => ['type' => 'integer', 'minimum' => 1],
             'itemQuantity' => ['type' => 'integer', 'minimum' => 1], 'itemWeight' => ['type' => 'number', 'exclusiveMinimum' => 0],
-            'recipientCity' => ['type' => 'string', 'minLength' => 1], 'recipientZone' => ['type' => 'string', 'minLength' => 1],
+            'recipientCity' => ['type' => 'string'], 'recipientZone' => ['type' => 'string'],
             'recipientArea' => ['type' => 'string'],
-        ], ['orderId', 'recipientCity', 'recipientZone']);
+        ], ['orderId']);
         if ($action === 'submitCarryBeeOrder') return $strictObject([
             'orderId' => ['type' => 'string', 'minLength' => 1], 'cityId' => ['type' => 'string', 'minLength' => 1],
             'zoneId' => ['type' => 'string', 'minLength' => 1], 'areaId' => ['type' => 'string'], 'deliveryType' => ['type' => 'integer'],
