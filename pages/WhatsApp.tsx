@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -33,6 +33,8 @@ import {
   useMarkLeadSuggestionSent,
 } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { getBusinessTerminology } from '../src/utils/businessMode';
 import { formatDate } from '../utils';
 
 type ContactFilter = 'all' | 'unread';
@@ -242,8 +244,11 @@ const TemplateModal: React.FC<{
 };
 
 const WhatsApp: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToastNotifications();
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const { settings: capabilitySettings } = useCapabilities();
+  const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(() => searchParams.get('contactId'));
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState<ContactFilter>('all');
@@ -262,6 +267,8 @@ const WhatsApp: React.FC = () => {
   const previousContactId = useRef<string | null>(null);
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { const contactId = searchParams.get('contactId'); if (contactId) setSelectedContactId(contactId); }, [searchParams]);
+  useEffect(() => { if (selectedContactId && searchParams.get('contactId') !== selectedContactId) setSearchParams({ contactId: selectedContactId }, { replace: true }); }, [selectedContactId, searchParams, setSearchParams]);
   useEffect(() => { setContactPage(1); }, [debouncedSearch, filter]);
 
   const contactsQuery = useWhatsAppContacts({ search: debouncedSearch, filter, page: contactPage, pageSize: CONTACT_PAGE_SIZE }, true);

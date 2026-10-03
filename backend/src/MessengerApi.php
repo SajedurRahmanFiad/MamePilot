@@ -53,6 +53,23 @@ final class MessengerApi extends BaseService
         return $this->settingsResponse($this->settingsRow());
     }
 
+    public function fetchMessengerPushSettings(array $params = []): array
+    {
+        $user = $this->currentUser();
+        return (new ChatPushService($this->database, $this->config))->settingsForDevice(
+            (string) $user['id'], 'messenger', trim((string) ($params['endpoint'] ?? ''))
+        );
+    }
+
+    public function updateMessengerPushPreference(array $params): array
+    {
+        $user = $this->currentUser();
+        $subscription = is_array($params['subscription'] ?? null) ? $params['subscription'] : [];
+        return (new ChatPushService($this->database, $this->config))->updateDevicePreference(
+            (string) $user['id'], 'messenger', $subscription, !empty($params['enabled'])
+        );
+    }
+
     public function testMessengerConnection(array $params = []): array
     {
         $this->requireAdmin();
@@ -527,6 +544,11 @@ final class MessengerApi extends BaseService
                 'payload_json' => $this->jsonEncode($event), 'message_at' => $at,
             ]);
             $this->touchConversation($contact, $text ?: $this->attachmentPreview($type), $type, $at, $direction === 'inbound');
+            if ($direction === 'inbound') {
+                (new ChatPushService($this->database, $this->config))->notifyInboundMessage(
+                    'messenger', $mid, (string) $contact['id'], (string) ($contact['name'] ?? ''), $text ?: $this->attachmentPreview($type)
+                );
+            }
             return true;
         }
 

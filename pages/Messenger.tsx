@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -162,13 +162,14 @@ const CardModal: React.FC<{ open: boolean; pending: boolean; onClose: () => void
 };
 
 const MessengerPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToastNotifications();
   const { hasCapability } = useCapabilities();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filter, setFilter] = useState<ContactFilter>('all');
   const [contactPage, setContactPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get('contactId'));
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -209,6 +210,8 @@ const MessengerPage: React.FC = () => {
   const busy = sendText.isPending || sendMedia.isPending || sendChoices.isPending || sendCard.isPending;
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { const contactId = searchParams.get('contactId'); if (contactId) setSelectedId(contactId); }, [searchParams]);
+  useEffect(() => { if (selectedId && searchParams.get('contactId') !== selectedId) setSearchParams({ contactId: selectedId }, { replace: true }); }, [selectedId, searchParams, setSearchParams]);
   useEffect(() => { setContactPage(1); }, [debouncedSearch, filter]);
   useEffect(() => { if (!selectedId && contacts.length > 0) setSelectedId(contacts[0].id); }, [contacts, selectedId]);
   useEffect(() => { if (selectedId && selectedContact?.unreadCount && document.hasFocus()) markRead.mutate(selectedId); }, [selectedId, selectedContact?.unreadCount]);

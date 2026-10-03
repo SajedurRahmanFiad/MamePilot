@@ -487,6 +487,8 @@ export async function fetchMetaAdById(id: string): Promise<any | null> { return 
 
 export async function fetchWhatsAppSettings(): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('fetchWhatsAppSettings'); }
 export async function updateWhatsAppSettings(updates: Partial<WhatsAppSettings>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppSettings', updates); }
+export async function fetchWhatsAppPushSettings(endpoint = ''): Promise<{ supported: boolean; vapidPublicKey: string; enabled: boolean }> { return call('fetchWhatsAppPushSettings', { endpoint }); }
+export async function updateWhatsAppPushPreference(subscription: PushSubscriptionJSON, enabled: boolean): Promise<{ supported: boolean; vapidPublicKey: string; enabled: boolean }> { return call('updateWhatsAppPushPreference', { subscription, enabled }); }
 export async function updateWhatsAppEmbeddedSignupConfiguration(updates: Pick<WhatsAppSettings, 'embeddedSignupAppId' | 'embeddedSignupConfigId' | 'appSecret' | 'webhookUrl' | 'verifyToken' | 'graphVersion'>): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('updateWhatsAppEmbeddedSignupConfiguration', updates); }
 export async function connectWhatsAppEmbeddedSignup(payload: { code: string; wabaId: string; phoneNumberId?: string }): Promise<WhatsAppSettings> { return call<WhatsAppSettings>('connectWhatsAppEmbeddedSignup', payload, { timeoutMs: 120000 }); }
 export async function syncWhatsAppBusinessAppData(type: 'all' | 'contacts' | 'history' = 'all'): Promise<{ ok: boolean; results: Record<string, unknown>; warnings?: string[]; settings: WhatsAppSettings }> { return call<any>('syncWhatsAppBusinessAppData', { type }, { timeoutMs: 120000 }); }
@@ -502,6 +504,8 @@ export async function fetchWhatsAppTemplates(): Promise<{ data: Array<{ id: stri
 export async function sendWhatsAppTemplate(payload: { contactId: string; templateName: string; languageCode: string; components?: any[] }): Promise<WhatsAppMessage> { return call<WhatsAppMessage>('sendWhatsAppTemplate', payload, { timeoutMs: 60000 }); }
 export async function fetchMessengerSettings(): Promise<MessengerSettings> { return call<MessengerSettings>('fetchMessengerSettings'); }
 export async function updateMessengerSettings(updates: Partial<MessengerSettings>): Promise<MessengerSettings> { return call<MessengerSettings>('updateMessengerSettings', updates); }
+export async function fetchMessengerPushSettings(endpoint = ''): Promise<{ supported: boolean; vapidPublicKey: string; enabled: boolean }> { return call('fetchMessengerPushSettings', { endpoint }); }
+export async function updateMessengerPushPreference(subscription: PushSubscriptionJSON, enabled: boolean): Promise<{ supported: boolean; vapidPublicKey: string; enabled: boolean }> { return call('updateMessengerPushPreference', { subscription, enabled }); }
 export async function testMessengerConnection(): Promise<{ ok: boolean; pageId: string; pageName: string; pageUsername: string; pagePictureUrl: string; subscribed: boolean; subscribedFields: string[]; warning?: string | null }> { return call<any>('testMessengerConnection', {}, { timeoutMs: 60000 }); }
 export async function subscribeMessengerPage(): Promise<{ ok: boolean; subscribed: boolean; subscribedFields: string[] }> { return call<any>('subscribeMessengerPage', {}, { timeoutMs: 60000 }); }
 export async function fetchMessengerProfile(): Promise<MessengerProfileSettings> { return call<MessengerProfileSettings>('fetchMessengerProfile'); }

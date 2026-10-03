@@ -55,6 +55,23 @@ final class WhatsAppApi extends BaseService
         return $this->settingsResponse($this->settingsRow());
     }
 
+    public function fetchWhatsAppPushSettings(array $params = []): array
+    {
+        $user = $this->currentUser();
+        return (new ChatPushService($this->database, $this->config))->settingsForDevice(
+            (string) $user['id'], 'whatsapp', trim((string) ($params['endpoint'] ?? ''))
+        );
+    }
+
+    public function updateWhatsAppPushPreference(array $params): array
+    {
+        $user = $this->currentUser();
+        $subscription = is_array($params['subscription'] ?? null) ? $params['subscription'] : [];
+        return (new ChatPushService($this->database, $this->config))->updateDevicePreference(
+            (string) $user['id'], 'whatsapp', $subscription, !empty($params['enabled'])
+        );
+    }
+
     /**
      * Saves the developer-owned Meta application configuration used to launch
      * Embedded Signup. Secrets are accepted write-only and a blank secret
@@ -1164,6 +1181,11 @@ final class WhatsAppApi extends BaseService
         );
         if ($isLiveInbound && $direction === 'inbound') {
             $this->database->execute('UPDATE whatsapp_contacts SET unread_count = unread_count + 1, updated_at = :updated WHERE id = :id', [':updated' => $now, ':id' => $contact['id']]);
+            (new ChatPushService($this->database, $this->config))->notifyInboundMessage(
+                'whatsapp', $messageId, (string) $contact['id'],
+                (string) ($profileName ?: ($contact['name'] ?? $contact['profile_name'] ?? $contact['phone_number'] ?? '')),
+                (string) ($text ?: $caption ?: ('New ' . $type . ' message'))
+            );
         }
         $lastMessageAt = trim((string) ($contact['last_message_at'] ?? ''));
         if ($lastMessageAt === '' || $lastMessageAt <= $messageAt) {
