@@ -30,6 +30,7 @@ function assertUniqueSqlBindings(string $source, string $needle): void
 
 $root = dirname(__DIR__);
 $autoCallSource = (string) file_get_contents($root . '/backend/src/AutoCallApi.php');
+$operationsSource = (string) file_get_contents($root . '/backend/src/OperationsApi.php');
 $workerSource = (string) file_get_contents($root . '/backend/bin/process_survey_queue.php');
 $migrationSource = (string) file_get_contents($root . '/migrations/2026-07-23_auto_calling_worker_health.sql');
 $schedulerSource = (string) file_get_contents($root . '/backend/src/AutoCallScheduler.php');
@@ -84,6 +85,11 @@ assertAutoCall(
         && str_contains($updateManagerSource, "'automaticCallingSchedule'")
         && str_contains($setupSource, 'new AutoCallScheduler'),
     'Automatic calling schedule repair must ship through setup, updates, and the next eligible order.'
+);
+assertAutoCall(
+    str_contains($operationsSource, 'queueOrderIfEligible($id, (string) ($result[\'status\'] ?? \'\'))')
+        && str_contains($operationsSource, '$queueAutomaticCall = $nextStatus !== $previousStatus;'),
+    'Orders entering a configured trigger status after creation must be queued for automatic calling.'
 );
 
 $mergedCrontab = AutoCallScheduler::mergeCrontab(

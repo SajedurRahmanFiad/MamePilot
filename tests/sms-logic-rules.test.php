@@ -59,4 +59,11 @@ $dictionary = $normalizeDictionary->invoke($autoCall, [
 
 smsLogicAssert($dictionary === ['1' => 'Confirmed', 'not_answered' => 'Did not pick up'], 'Auto Calling must return only configured keypad or call-result outcomes.');
 
+$operationsSource = (string) file_get_contents(dirname(__DIR__) . '/backend/src/OperationsApi.php');
+smsLogicAssert(
+    str_contains($operationsSource, "'after_courier_assigned'")
+        && str_contains($operationsSource, "['carrybee_consignment_id', 'steadfast_consignment_id', 'paperfly_tracking_number', 'pathao_consignment_id']"),
+    'Courier-timed SMS must run both on the status transition and when a provider booking reference is first saved.'
+);
+
 echo "SMS logic rule and dictionary contracts passed.\n";

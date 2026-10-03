@@ -6709,7 +6709,8 @@ final class OperationsApi extends BaseService
         unset($updates['courierAutomaticExpense']);
 
         $sendCourierAssignedSms = false;
-        $result = $this->database->transaction(function () use ($actor, $id, $updates, $automaticCourierExpense, &$sendCourierAssignedSms): ?array {
+        $queueAutomaticCall = false;
+        $result = $this->database->transaction(function () use ($actor, $id, $updates, $automaticCourierExpense, &$sendCourierAssignedSms, &$queueAutomaticCall): ?array {
             $existingRow = $this->database->fetchOne(
                 'SELECT * FROM orders WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
                 [':id' => $id]
@@ -7242,12 +7243,36 @@ final class OperationsApi extends BaseService
 
             $this->invalidateProfitLossCache();
 
-            $sendCourierAssignedSms = $nextStatus === 'Courier assigned' && $previousStatus !== $nextStatus;
+            $courierBookingAdded = false;
+            foreach (['carrybee_consignment_id', 'steadfast_consignment_id', 'paperfly_tracking_number', 'pathao_consignment_id'] as $courierColumn) {
+                $newCourierReference = trim((string) ($payload[$courierColumn] ?? ''));
+                $oldCourierReference = trim((string) ($existingRow[$courierColumn] ?? ''));
+                if ($newCourierReference !== '' && $newCourierReference !== $oldCourierReference) {
+                    $courierBookingAdded = true;
+                    break;
+                }
+            }
+            $sendCourierAssignedSms = ($nextStatus === 'Courier assigned' && $previousStatus !== $nextStatus)
+                || $courierBookingAdded;
+            $queueAutomaticCall = $nextStatus !== $previousStatus;
             return $this->mapOrder($row);
         });
+        if ($queueAutomaticCall && $result !== null) {
+            try {
+                $autoCall = new AutoCallApi($this->database, $this->auth, $this->config);
+                if ($autoCall->queueOrderIfEligible($id, (string) ($result['status'] ?? ''))) {
+                    $autoCall->triggerSurveyBackgroundProcess();
+                }
+            } catch (\Throwable $exception) {
+                error_log('Could not queue automatic calling after order status change for order ' . $id . ': ' . $exception->getMessage());
+            }
+        }
         if ($sendCourierAssignedSms) {
             try {
-                (new SmsApi($this->database, $this->auth, $this->config))->queueOrderIfEligible($id, 'after_courier_assigned');
+                $smsOutcome = (new SmsApi($this->database, $this->auth, $this->config))->sendOrderIfEligible($id, 'after_courier_assigned');
+                if ($smsOutcome['status'] !== 'sent' && $smsOutcome['reason'] !== 'no_matching_rule') {
+                    error_log('Courier-assigned SMS skipped for order ' . $id . ': ' . $smsOutcome['reason']);
+                }
             } catch (\Throwable $exception) {
                 error_log('Could not send courier-assigned SMS for order ' . $id . ': ' . $exception->getMessage());
             }
