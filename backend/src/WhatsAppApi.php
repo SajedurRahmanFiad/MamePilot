@@ -27,9 +27,9 @@ final class WhatsAppApi extends BaseService
 
     public function fetchWhatsAppSettings(array $params = []): array
     {
-        $this->requireAdmin();
+        $user = $this->requireAdmin();
         $this->ensureTables();
-        return $this->settingsResponse($this->settingsRow());
+        return $this->settingsResponse($this->settingsRow(), trim((string) ($user['role'] ?? '')) === 'Developer');
     }
 
     public function updateWhatsAppSettings(array $params): array
@@ -52,7 +52,7 @@ final class WhatsAppApi extends BaseService
         ];
 
         $this->upsertSettings($updates);
-        return $this->settingsResponse($this->settingsRow());
+        return $this->settingsResponse($this->settingsRow(), true);
     }
 
     public function fetchWhatsAppPushSettings(array $params = []): array
@@ -73,9 +73,9 @@ final class WhatsAppApi extends BaseService
     }
 
     /**
-     * Saves the developer-owned Meta application configuration used to launch
-     * Embedded Signup. Secrets are accepted write-only and a blank secret
-     * preserves the value already stored on the server.
+    * Saves the developer-owned Meta application configuration used to launch
+    * Embedded Signup. Blank secrets preserve the server value; saved secrets
+    * are returned only to Developer settings requests.
      */
     public function updateWhatsAppEmbeddedSignupConfiguration(array $params): array
     {
@@ -130,7 +130,7 @@ final class WhatsAppApi extends BaseService
         if ($submittedVerifyToken !== '') $updates['verify_token'] = $submittedVerifyToken;
         $this->upsertSettings($updates);
 
-        return $this->settingsResponse($this->settingsRow());
+        return $this->settingsResponse($this->settingsRow(), true);
     }
 
     /**
@@ -766,7 +766,7 @@ final class WhatsAppApi extends BaseService
     }
 
     /** @return array<string, mixed> */
-    private function settingsResponse(?array $row): array
+    private function settingsResponse(?array $row, bool $includeSecrets = false): array
     {
         $row = $row ?? [];
         $appId = trim((string) ($row['embedded_signup_app_id'] ?? ''));
@@ -786,12 +786,12 @@ final class WhatsAppApi extends BaseService
             && !empty($row['is_on_biz_app'])
             && strtoupper(trim((string) ($row['platform_type'] ?? ''))) === 'CLOUD_API';
         return [
-            // Never return provider secrets or business tokens to the browser.
+            // Business access tokens remain server-only; provider secrets are Developer-only.
             'accessToken' => '',
             'phoneNumberId' => (string) ($row['phone_number_id'] ?? ''),
             'businessAccountId' => (string) ($row['business_account_id'] ?? ''),
-            'verifyToken' => '',
-            'appSecret' => '',
+            'verifyToken' => $includeSecrets ? $verifyToken : '',
+            'appSecret' => $includeSecrets ? $appSecret : '',
             'hasAccessToken' => trim((string) ($row['access_token'] ?? '')) !== '',
             'hasAppSecret' => $appSecret !== '',
             'hasVerifyToken' => $verifyToken !== '',

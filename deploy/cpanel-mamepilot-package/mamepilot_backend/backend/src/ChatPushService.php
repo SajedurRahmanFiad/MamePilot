@@ -93,9 +93,11 @@ final class ChatPushService
                 ],
             ], ['TTL' => 60, 'urgency' => 'high']);
 
-            $title = trim($customerName) !== '' ? trim($customerName) : ($channel === 'messenger' ? 'Messenger message' : 'WhatsApp message');
+            $platformName = $channel === 'messenger' ? 'Messenger' : 'WhatsApp';
+            $customerLabel = trim($customerName) !== '' ? trim($customerName) : 'New contact';
+            $title = $platformName . ': ' . $customerLabel;
             $body = preg_replace('/\s+/u', ' ', trim($preview)) ?? trim($preview);
-            if ($body === '') $body = 'New ' . ($channel === 'messenger' ? 'Messenger' : 'WhatsApp') . ' message';
+            if ($body === '') $body = 'New ' . $platformName . ' message';
             $body = mb_substr($body, 0, 120);
             $payload = json_encode([
                 'title' => mb_substr($title, 0, 120),
