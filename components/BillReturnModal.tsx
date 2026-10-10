@@ -4,6 +4,8 @@ import { formatCurrency, ICONS } from '../constants';
 import { Bill, ProcessBillReturnPayload } from '../types';
 import { useAccounts, usePaymentMethods, useCategories, useSystemDefaults } from '../src/hooks/useQueries';
 import { calculateReturnAdjustment } from '../utils';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 interface BillReturnModalProps {
   isOpen: boolean;
@@ -34,6 +36,8 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: categories = [] } = useCategories('Income');
   const { data: systemDefaults } = useSystemDefaults();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
 
   const [itemSelections, setItemSelections] = useState<ItemSelection[]>([]);
   const [refundAmount, setRefundAmount] = useState(0);
@@ -179,7 +183,7 @@ const BillReturnModal: React.FC<BillReturnModalProps> = ({
 
         {/* Item Selection */}
         <div className="space-y-3 mb-6">
-          <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Select items to return</p>
+          <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items to return')}</p>
           {bill.items.map((item, idx) => {
             const sel = itemSelections[idx];
             if (!sel) return null;

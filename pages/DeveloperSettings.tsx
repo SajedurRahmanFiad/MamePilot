@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Copy, KeyRound, Trash2 } from 'lucide-react';
 import { Button, LoadingOverlay } from '../components';
+import { apiRest } from '../src/services/apiClient';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilitySettings, useCourierSettings, useDeployments, useMaintenanceStatus, usePaymentGatewaySettings, useAgentSettings, useBusinessGrowthSettings, useEmailSettings, useVoiceSurveyIntegrationSettings, useSmsSettings } from '../src/hooks/useQueries';
@@ -11,7 +13,29 @@ import { compressImage, formatDateTime } from '../utils';
 import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
-type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital' | 'sms-service';
+type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital' | 'sms-service' | 'api';
+type ApiKeyScope = 'orders.read' | 'customers.read' | 'transactions.read' | 'bills.read' | 'vendors.read' | 'accounts.read' | 'accounts.read_balance';
+type ApiKeyRecord = {
+  id: string;
+  label: string;
+  key_prefix: string;
+  scopes: ApiKeyScope[];
+  created_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+};
+type ApiKeyCreateResponse = ApiKeyRecord & { api_key: string };
+
+const API_KEY_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
+  { scope: 'orders.read', label: 'Orders' },
+  { scope: 'customers.read', label: 'Customers' },
+  { scope: 'transactions.read', label: 'Transactions' },
+  { scope: 'bills.read', label: 'Bills' },
+  { scope: 'vendors.read', label: 'Vendors' },
+  { scope: 'accounts.read', label: 'Accounts' },
+  { scope: 'accounts.read_balance', label: 'Account balances' },
+];
 type MaintenanceContentForm = {
   imageUrl: string;
   caption: string;
@@ -117,9 +141,17 @@ const DeveloperSettings: React.FC = () => {
   const [voiceSurveyIntegrationForm, setVoiceSurveyIntegrationForm] = useState<VoiceSurveyIntegrationSettings>(emptyVoiceSurveyIntegration);
   const [smsForm, setSmsForm] = useState<SmsSettings>(emptySmsSettings);
   const [copyrightForm, setCopyrightForm] = useState('');
+  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(false);
+  const [apiKeyLabel, setApiKeyLabel] = useState('');
+  const [apiKeyExpiresAt, setApiKeyExpiresAt] = useState('');
+  const [apiKeyScopes, setApiKeyScopes] = useState<ApiKeyScope[]>(['orders.read']);
+  const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
+  const [creatingApiKey, setCreatingApiKey] = useState(false);
+  const [revokingApiKeyId, setRevokingApiKeyId] = useState<string | null>(null);
 
   const urlTab = searchParams.get('tab');
-  const tabIds: TabId[] = ['license', 'copyright', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital', 'sms-service'];
+  const tabIds: TabId[] = ['license', 'copyright', 'maintenance', 'payment-gateway', 'fraud-checker', 'llms', 'agent', 'business_growth', 'email', 'awajdigital', 'sms-service', 'api'];
   const [activeTab, setActiveTab] = useState<TabId>(tabIds.includes(urlTab as TabId) ? (urlTab as TabId) : 'license');
   const [licenseForm, setLicenseForm] = useState({ licenseKey: '', licenseApiUrl: '', licenseOwnerToken: '' });
   const [gatewayForm, setGatewayForm] = useState<PaymentGatewaySettings>(emptyGateway);
@@ -216,6 +248,23 @@ const DeveloperSettings: React.FC = () => {
   }, [voiceSurveyIntegrationData]);
 
   useEffect(() => { if (smsSettingsData) setSmsForm(smsSettingsData); }, [smsSettingsData]);
+
+  useEffect(() => {
+    if (activeTab !== 'api' || user?.role !== 'Developer') return;
+    let isCurrent = true;
+    setApiKeysLoading(true);
+    apiRest<{ data: ApiKeyRecord[] }>('keys')
+      .then((response) => {
+        if (isCurrent) setApiKeys(response.data || []);
+      })
+      .catch((error) => {
+        if (isCurrent) toast.error(error instanceof Error ? error.message : 'Could not load API keys.');
+      })
+      .finally(() => {
+        if (isCurrent) setApiKeysLoading(false);
+      });
+    return () => { isCurrent = false; };
+  }, [activeTab, user?.role, toast]);
 
   useEffect(() => {
     if (capabilitySettings) {
@@ -440,6 +489,77 @@ const DeveloperSettings: React.FC = () => {
     }
   };
 
+  const toggleApiKeyScope = (scope: ApiKeyScope) => {
+    setApiKeyScopes((current) => {
+      if (scope === 'accounts.read_balance' && !current.includes('accounts.read')) return current;
+      if (current.includes(scope)) {
+        const remaining = current.filter((value) => value !== scope);
+        return scope === 'accounts.read' ? remaining.filter((value) => value !== 'accounts.read_balance') : remaining;
+      }
+      return [...current, scope];
+    });
+  };
+
+  const generateApiKey = async () => {
+    const label = apiKeyLabel.trim();
+    if (!label) {
+      toast.error('Enter a label for this API key.');
+      return;
+    }
+    if (apiKeyScopes.length === 0) {
+      toast.error('Select at least one API scope.');
+      return;
+    }
+    const expiresAt = toIsoDateTime(apiKeyExpiresAt);
+    if (apiKeyExpiresAt && !expiresAt) {
+      toast.error('Choose a valid expiration date.');
+      return;
+    }
+
+    setCreatingApiKey(true);
+    setCreatedApiKey(null);
+    try {
+      const created = await apiRest<ApiKeyCreateResponse>('keys', {
+        method: 'POST',
+        body: { label, scopes: apiKeyScopes, expires_at: expiresAt },
+      });
+      const { api_key: secret, ...metadata } = created;
+      setCreatedApiKey(secret);
+      setApiKeys((current) => [metadata, ...current.filter((key) => key.id !== metadata.id)]);
+      setApiKeyLabel('');
+      setApiKeyExpiresAt('');
+      toast.success('API key created. Copy it now; it will not be shown again.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not generate an API key.');
+    } finally {
+      setCreatingApiKey(false);
+    }
+  };
+
+  const copyApiKey = async () => {
+    if (!createdApiKey) return;
+    try {
+      await navigator.clipboard.writeText(createdApiKey);
+      toast.success('API key copied.');
+    } catch {
+      toast.error('Clipboard access failed. Select the key and copy it manually.');
+    }
+  };
+
+  const revokeApiKey = async (key: ApiKeyRecord) => {
+    if (key.revoked_at || !window.confirm(`Revoke the API key "${key.label}"?`)) return;
+    setRevokingApiKeyId(key.id);
+    try {
+      await apiRest(`keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' });
+      setApiKeys((current) => current.map((item) => item.id === key.id ? { ...item, revoked_at: new Date().toISOString() } : item));
+      toast.success('API key revoked.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not revoke the API key.');
+    } finally {
+      setRevokingApiKeyId(null);
+    }
+  };
+
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'license', label: 'License Sync' },
     { id: 'copyright', label: 'Copyright' },
@@ -452,6 +572,7 @@ const DeveloperSettings: React.FC = () => {
     { id: 'email', label: 'Email Config' },
     { id: 'awajdigital', label: 'AwajDigital' },
     { id: 'sms-service', label: 'SMS Service' },
+    { id: 'api', label: 'API' },
   ];
 
   return (
@@ -1171,6 +1292,156 @@ const DeveloperSettings: React.FC = () => {
               <label className="block space-y-2"><span className="text-xs font-black uppercase tracking-widest text-gray-400">sms.bd API key</span><input type="text" className="w-full rounded-xl border border-gray-200 px-4 py-3" value={smsForm.apiKey} onChange={(event) => setSmsForm({ ...smsForm, apiKey: event.target.value })} placeholder="Enter your API key from sms.bd" /></label>
               <p className="text-sm text-gray-500">Balance is read from https://api.sms.net.bd and credentials are stored only on this deployment.</p>
             </section>
+          )}
+
+          {activeTab === 'api' && (
+            <div className="space-y-6">
+              <section className="space-y-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm md:p-8">
+                <div>
+                  <h3 className="text-xl font-black text-gray-900">API access</h3>
+                  <p className="mt-1 text-sm text-gray-500">Create a scoped key for external read-only integrations.</p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block space-y-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-gray-400">Key label</span>
+                    <input
+                      type="text"
+                      maxLength={100}
+                      autoComplete="off"
+                      value={apiKeyLabel}
+                      onChange={(event) => setApiKeyLabel(event.target.value)}
+                      placeholder="Customer automation"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-gray-400">Expires at (optional)</span>
+                    <input
+                      type="datetime-local"
+                      value={apiKeyExpiresAt}
+                      onChange={(event) => setApiKeyExpiresAt(event.target.value)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#0f2f57]"
+                    />
+                  </label>
+                </div>
+
+                <fieldset className="space-y-3">
+                  <legend className="text-xs font-black uppercase tracking-widest text-gray-400">Read scopes</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {API_KEY_SCOPE_OPTIONS.map(({ scope, label }) => {
+                      const selected = apiKeyScopes.includes(scope);
+                      const balanceNeedsAccountRead = scope === 'accounts.read_balance' && !apiKeyScopes.includes('accounts.read');
+                      return (
+                        <label
+                          key={scope}
+                          className={`flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                            balanceNeedsAccountRead ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400' : 'cursor-pointer border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={balanceNeedsAccountRead}
+                            onChange={() => toggleApiKeyScope(scope)}
+                            className="h-4 w-4 accent-[#0f2f57]"
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-semibold">{label}</span>
+                            <span className="block break-all text-xs text-gray-400">{scope}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                <Button
+                  type="button"
+                  variant="primary"
+                  icon={<KeyRound className="h-4 w-4" />}
+                  loading={creatingApiKey}
+                  disabled={!apiKeyLabel.trim() || apiKeyScopes.length === 0}
+                  onClick={generateApiKey}
+                >
+                  Generate API key
+                </Button>
+              </section>
+
+              {createdApiKey && (
+                <section className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-6" role="status" aria-live="polite">
+                  <div>
+                    <h3 className="font-black text-emerald-950">New API key</h3>
+                    <p className="mt-1 text-sm text-emerald-800">Copy this key now. It will not be shown again after you leave this page.</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <input
+                      type="text"
+                      readOnly
+                      value={createdApiKey}
+                      aria-label="New API key secret"
+                      className="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 font-mono text-sm text-gray-900"
+                    />
+                    <Button type="button" variant="outline" icon={<Copy className="h-4 w-4" />} onClick={copyApiKey}>
+                      Copy key
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setCreatedApiKey(null)}>
+                      Hide key
+                    </Button>
+                  </div>
+                </section>
+              )}
+
+              <section className="space-y-4 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm md:p-8">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900">Integration keys</h3>
+                    <p className="mt-1 text-sm text-gray-500">Secrets are never displayed in this list.</p>
+                  </div>
+                  {apiKeysLoading && <span className="text-sm text-gray-400">Loading keys...</span>}
+                </div>
+
+                {!apiKeysLoading && apiKeys.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">No API keys have been created.</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {apiKeys.map((key) => (
+                      <div key={key.id} className="flex flex-col gap-4 py-4 first:pt-0 last:pb-0 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-bold text-gray-900">{key.label}</h4>
+                            {key.revoked_at && <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-500">Revoked</span>}
+                            {!key.revoked_at && key.expires_at && new Date(key.expires_at).getTime() <= Date.now() && <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Expired</span>}
+                          </div>
+                          <p className="break-all font-mono text-xs text-gray-500">{key.key_prefix}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {key.scopes.map((scope) => (
+                              <span key={scope} className="rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-600">{scope}</span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            Created {formatDateTime(key.created_at)} · Expires {key.expires_at ? formatDateTime(key.expires_at) : 'never'} · Last used {key.last_used_at ? formatDateTime(key.last_used_at) : 'never'}
+                          </p>
+                        </div>
+                        {!key.revoked_at && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            icon={<Trash2 className="h-4 w-4" />}
+                            loading={revokingApiKeyId === key.id}
+                            disabled={revokingApiKeyId !== null && revokingApiKeyId !== key.id}
+                            onClick={() => revokeApiKey(key)}
+                          >
+                            Revoke
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           )}
 
           {activeTab === 'email' && (

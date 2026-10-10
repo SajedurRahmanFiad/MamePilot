@@ -104,13 +104,13 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
           paperflyKey,
           merchantOrderReference: order.orderNumber,
           storeName: storeName.trim(),
-          productBrief: productBrief || 'Exchange product',
+          productBrief: productBrief || `Exchange ${terminology.itemLower}`,
           packagePrice: String(order.total || 0),
           maxWeightKg: String(maxWeightKg),
           customerName: customer.name || '',
           customerAddress: normalizedCustomerAddress,
           customerPhone: normalizedCustomerPhone,
-          exchangeDescription: 'Exchange product',
+          exchangeDescription: `Exchange ${terminology.itemLower}`,
           exchangePrice: String(order.total || 0),
           exchangeWeightKg: String(maxWeightKg),
         });
@@ -210,7 +210,7 @@ export const PaperflyModal: React.FC<PaperflyModalProps> = ({ isOpen, onClose, o
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Product Brief</label>
+              <label className="block text-sm font-semibold text-gray-700">{terminology.item} Brief</label>
               <input
                 type="text"
                 value={productBrief}

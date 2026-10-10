@@ -19,7 +19,7 @@ import ServiceAnnouncementBar from './ServiceAnnouncementBar';
 import MameChat from './MameChat';
 import { useAppBranding } from '../src/contexts/BrandingProvider';
 import { CustomerCreateModal, VendorCreateModal } from './ContactCreateModal';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 type SidebarConfigItemWithActive = SidebarConfigItem & {
   active: boolean;
@@ -155,6 +155,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
   const { can, canViewAdminDashboard, canViewEmployeeDashboard } = useRolePermissions();
   const { hasCapability, hasSubCapability, settings: capabilitySettings } = useCapabilities(Boolean(profile));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const footerCopyrightName = (capabilitySettings?.copyrightName ?? '').trim() || (branding.name || 'Mame Pilot');
   const { isReadOnly, showReadOnlyWarning } = useSubscriptionReadOnly();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -388,7 +389,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
       return { title: 'Auto Calling', subtitle: 'Manage automatic voice surveys, broadcasts, and balance.' };
     }
     if (pathname.startsWith('/grow-your-business')) {
-      return { title: 'Grow Your Business', subtitle: 'AI-powered recommendations to optimize your product portfolio and boost sales.' };
+      return { title: 'Grow Your Business', subtitle: translateInventoryText('AI-powered recommendations to optimize your product portfolio and boost sales.') };
     }
     if (pathname.startsWith('/whatsapp')) {
       return { title: 'WhatsApp', subtitle: `Chat with ${terminology.customersLower} on WhatsApp.` };
@@ -407,7 +408,7 @@ const Layout: React.FC<{ children: React.ReactNode; hideSidebar?: boolean }> = (
     }
 
     return { title: 'Overview', subtitle: 'Manage your business workspace.' };
-  }, [location.pathname]);
+  }, [location.pathname, capabilitySettings?.businessMode]);
 
   // Safety check: if user is somehow null (shouldn't happen with route guards), show loading
   if (!user) {

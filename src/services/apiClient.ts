@@ -157,3 +157,66 @@ export async function apiAction<T>(action: string, payload?: unknown, options?: 
 
   return parsed as T;
 }
+
+export type ApiRestOptions = {
+  method?: 'GET' | 'POST' | 'DELETE';
+  body?: unknown;
+  signal?: AbortSignal;
+};
+
+function apiRestUrl(path: string): string {
+  const basePath = API_BASE_URL.split('?')[0].replace(/\/+$/, '');
+  const versionedBase = /\/index\.php$/i.test(basePath)
+    ? basePath.replace(/\/index\.php$/i, '/v1')
+    : `${basePath}/v1`;
+  return `${versionedBase}/${path.replace(/^\/+/, '')}`;
+}
+
+export async function apiRest<T>(path: string, options: ApiRestOptions = {}): Promise<T> {
+  const token = getAuthToken();
+  const method = options.method || 'GET';
+  const url = apiRestUrl(path);
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method,
+      cache: 'no-store',
+      headers: {
+        ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw error;
+    if (error instanceof TypeError) {
+      throw new ApiError('Could not connect. Check your internet connection and try again.', { code: 'NETWORK' });
+    }
+    throw error;
+  }
+
+  const rawText = await response.text();
+  let parsed: any = null;
+  if (rawText) {
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = { error: rawText };
+    }
+  }
+
+  if (!response.ok) {
+    const rawMessage = parsed?.error || `Request failed with status ${response.status}`;
+    const fallback = response.status >= 500 ? GENERIC_ACTION_ERROR : 'We could not complete this request. Please try again.';
+    const error = new ApiError(userFacingErrorMessage(rawMessage, fallback), {
+      status: response.status,
+      code: parsed?.code || 'HTTP_ERROR',
+    });
+    (error as any).raw = parsed;
+    throw error;
+  }
+
+  return parsed as T;
+}

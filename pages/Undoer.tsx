@@ -24,7 +24,9 @@ import { useOrderSettings } from '../src/hooks/useQueries';
 import { useRevertOrderStatus } from '../src/hooks/useMutations';
 import { fetchOrderByNumber, fetchOrderUndoPlan } from '../src/services/supabaseQueries';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import type { OrderUndoPlan, OrderUndoRestorePoint } from '../types';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
+import type { BusinessMode, OrderUndoPlan, OrderUndoRestorePoint } from '../types';
 import { formatDate } from '../utils';
 
 const sourceLabels: Record<string, string> = {
@@ -55,6 +57,8 @@ const fieldLabels: Record<string, string> = {
 };
 
 const Undoer: React.FC = () => {
+  const { settings: capabilitySettings } = useCapabilities();
+  const businessMode = capabilitySettings?.businessMode;
   const { data: orderSettings } = useOrderSettings();
   const { canExecuteUndo } = useRolePermissions();
   const revertMutation = useRevertOrderStatus();
@@ -241,7 +245,7 @@ const Undoer: React.FC = () => {
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">Step 2</p>
                 <h2 className="mt-1 text-lg font-black text-gray-900">Review the exact impact</h2>
               </div>
-              {selected ? <ImpactPreview point={selected} currentStatus={plan.order.status} /> : <div className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm font-semibold text-slate-500">Select a restore point to see everything that will change.</div>}
+              {selected ? <ImpactPreview point={selected} currentStatus={plan.order.status} businessMode={businessMode} /> : <div className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm font-semibold text-slate-500">Select a restore point to see everything that will change.</div>}
               <Button
                 type="button"
                 variant="primary"
@@ -270,6 +274,7 @@ const Undoer: React.FC = () => {
         <ConfirmationModal
           plan={plan}
           point={selected}
+          businessMode={businessMode}
           acknowledged={acknowledged}
           setAcknowledged={setAcknowledged}
           pending={revertMutation.isPending}
@@ -301,7 +306,7 @@ const OrderSummary: React.FC<{ plan: OrderUndoPlan }> = ({ plan }) => {
 
 const SummaryValue: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => <div><p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">{icon}{label}</p><p className="mt-1 truncate text-sm font-bold text-slate-800">{value}</p></div>;
 
-const ImpactPreview: React.FC<{ point: OrderUndoRestorePoint; currentStatus: string }> = ({ point, currentStatus }) => {
+const ImpactPreview: React.FC<{ point: OrderUndoRestorePoint; currentStatus: string; businessMode?: BusinessMode }> = ({ point, currentStatus, businessMode }) => {
   const impact = point.impact;
   return <div className="space-y-3">
     <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-4"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${getStatusColor(currentStatus)}`}>{currentStatus}</span><ArrowRight size={16} className="text-slate-400" /><span className={`rounded-full px-2.5 py-1 text-xs font-black ${getStatusColor(point.targetStatus)}`}>{point.targetStatus}</span></div>
@@ -316,18 +321,18 @@ const ImpactPreview: React.FC<{ point: OrderUndoRestorePoint; currentStatus: str
     </ImpactGroup>
     <ImpactGroup icon={<WalletCards size={18} />} title="Wallet ledger reconciled" tone="blue"><p className="text-xs leading-5 text-slate-600">Wallet rows remain as audit history. A compensating credit or reversal is appended only if the restored status changes the employee’s payable balance.</p></ImpactGroup>
     {impact.externalEffects.length > 0 && <ImpactGroup icon={<AlertTriangle size={18} />} title="Courier follow-up required" tone="amber"><div className="space-y-2">{impact.externalEffects.map((effect) => <p key={`${effect.provider}-${effect.message}`} className="text-xs leading-5 text-gray-700">{effect.message}</p>)}</div></ImpactGroup>}
-    <ImpactGroup icon={<Package size={18} />} title={`${impact.restoredFields.length} order field${impact.restoredFields.length === 1 ? '' : 's'} restored`} tone="slate"><div className="flex flex-wrap gap-1.5">{impact.restoredFields.map((field) => <span key={field} className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200">{fieldLabels[field] || field.replaceAll('_', ' ')}</span>)}</div></ImpactGroup>
+    <ImpactGroup icon={<Package size={18} />} title={`${impact.restoredFields.length} order field${impact.restoredFields.length === 1 ? '' : 's'} restored`} tone="slate"><div className="flex flex-wrap gap-1.5">{impact.restoredFields.map((field) => <span key={field} className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-600 ring-1 ring-slate-200">{translateBusinessInventoryTerms(fieldLabels[field] || field.replaceAll('_', ' '), businessMode)}</span>)}</div></ImpactGroup>
   </div>;
 };
 
 const tones = { red: 'bg-red-50 text-red-700', amber: 'bg-amber-50 text-amber-700', blue: 'bg-sky-50 text-sky-700', slate: 'bg-slate-50 text-slate-700' };
 const ImpactGroup: React.FC<{ icon: React.ReactNode; title: string; tone: keyof typeof tones; children: React.ReactNode }> = ({ icon, title, tone, children }) => <div className={`rounded-xl p-4 ${tones[tone]}`}><div className="mb-2 flex items-center gap-2 text-sm font-black">{icon}{title}</div><div className="text-slate-700">{children}</div></div>;
 
-const ConfirmationModal: React.FC<{ plan: OrderUndoPlan; point: OrderUndoRestorePoint; acknowledged: boolean; setAcknowledged: (value: boolean) => void; pending: boolean; onClose: () => void; onConfirm: () => void }> = ({ plan, point, acknowledged, setAcknowledged, pending, onClose, onConfirm }) => <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+const ConfirmationModal: React.FC<{ plan: OrderUndoPlan; point: OrderUndoRestorePoint; businessMode?: BusinessMode; acknowledged: boolean; setAcknowledged: (value: boolean) => void; pending: boolean; onClose: () => void; onConfirm: () => void }> = ({ plan, point, businessMode, acknowledged, setAcknowledged, pending, onClose, onConfirm }) => <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
   <button aria-label="Close confirmation" className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
   <div role="dialog" aria-modal="true" aria-labelledby="undo-confirm-title" className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
     <div className="border-b border-[var(--primary-soft,#ebf4ff)] bg-[var(--primary-soft,#ebf4ff)] p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--primary-medium,#3c5a82)]">Final confirmation</p><h2 id="undo-confirm-title" className="mt-1 text-xl font-black text-gray-900">Restore {plan.order.orderNumber}?</h2></div><button type="button" onClick={onClose} disabled={pending} className="rounded-lg p-2 text-gray-400 hover:bg-white hover:text-gray-700"><X size={19} /></button></div><div className="mt-4 flex items-center gap-2 text-sm font-bold"><span className={`rounded-full px-2.5 py-1 ${getStatusColor(plan.order.status)}`}>{plan.order.status}</span><ArrowRight size={15} className="text-[var(--primary-medium,#3c5a82)]" /><span className={`rounded-full px-2.5 py-1 ${getStatusColor(point.targetStatus)}`}>{point.targetStatus}</span></div></div>
-    <div className="space-y-4 p-6"><div className="grid grid-cols-3 gap-2 text-center"><ConfirmMetric value={point.impact.transactionCount} label="Transactions recycled" /><ConfirmMetric value={point.impact.stockAdjustments.length} label="Products adjusted" /><ConfirmMetric value={point.impact.restoredFields.length} label="Fields restored" /></div>{point.impact.externalEffects.length > 0 && <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800"><AlertTriangle className="mt-0.5 shrink-0" size={16} /> Courier-side consignments cannot be retracted automatically. Complete the provider follow-up shown in the impact review.</div>}<label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--primary-color,#0f2f57)]" /><span className="text-sm font-semibold leading-5 text-gray-700">I reviewed this exact action bundle and understand that it will change balances, stock, wallet state, and order history.</span></label><div className="flex gap-3"><Button type="button" variant="secondary" size="lg" onClick={onClose} disabled={pending} className="flex-1">Cancel</Button><Button type="button" variant="primary" size="lg" onClick={onConfirm} disabled={!acknowledged || pending} loading={pending} icon={<RotateCcw size={17} />} className="flex-1 disabled:opacity-40">{pending ? 'Restoring…' : 'Confirm undo'}</Button></div></div>
+    <div className="space-y-4 p-6"><div className="grid grid-cols-3 gap-2 text-center"><ConfirmMetric value={point.impact.transactionCount} label="Transactions recycled" /><ConfirmMetric value={point.impact.stockAdjustments.length} label={translateBusinessInventoryTerms('Products adjusted', businessMode)} /><ConfirmMetric value={point.impact.restoredFields.length} label="Fields restored" /></div>{point.impact.externalEffects.length > 0 && <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800"><AlertTriangle className="mt-0.5 shrink-0" size={16} /> Courier-side consignments cannot be retracted automatically. Complete the provider follow-up shown in the impact review.</div>}<label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--primary-color,#0f2f57)]" /><span className="text-sm font-semibold leading-5 text-gray-700">I reviewed this exact action bundle and understand that it will change balances, stock, wallet state, and order history.</span></label><div className="flex gap-3"><Button type="button" variant="secondary" size="lg" onClick={onClose} disabled={pending} className="flex-1">Cancel</Button><Button type="button" variant="primary" size="lg" onClick={onConfirm} disabled={!acknowledged || pending} loading={pending} icon={<RotateCcw size={17} />} className="flex-1 disabled:opacity-40">{pending ? 'Restoring…' : 'Confirm undo'}</Button></div></div>
   </div>
 </div>;
 

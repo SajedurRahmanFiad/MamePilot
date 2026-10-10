@@ -7,6 +7,7 @@ import FilterBar, { type FilterRange } from './FilterBar';
 import { Modal } from './Modal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import {
   exportDataRecords,
   exportSettingsPackage,
@@ -173,6 +174,7 @@ const DataManagementSettingsPanel: React.FC = () => {
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
   const { capabilities, isDeveloper, settings: capabilitySettings } = useCapabilities();
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsFileInputRef = useRef<HTMLInputElement>(null);
   const [datasets, setDatasets] = useState<DataManagementDataset[]>([]);
@@ -302,20 +304,20 @@ const DataManagementSettingsPanel: React.FC = () => {
         const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
         archive[filename] = strToU8(buildCsv(headers, rows));
         archive['README.txt'] = strToU8(
-          'MamePilot Product Package\n\nImport this ZIP from Settings > Import and Export Data > Products. '
-          + 'The product CSV and packaged images will be restored automatically.\n'
+          translateInventoryText('MamePilot Product Package\n\nImport this ZIP from Settings > Import and Export Data > Products. ')
+          + translateInventoryText('The product CSV and packaged images will be restored automatically.\n')
         );
         const packageFilename = filename.replace(/\.csv$/i, '.zip');
         const zipBytes = zipSync(archive, { level: 6 });
         downloadBlob(new Blob([zipBytes as BlobPart], { type: 'application/zip' }), packageFilename);
         const missingNote = unavailableImages > 0 ? ` ${unavailableImages} unavailable image(s) were left as URLs.` : '';
-        toast.success(`${response.rows.length} products and ${packagedImages} image(s) exported.${missingNote}`);
+        toast.success(translateInventoryText(`${response.rows.length} products and ${packagedImages} image(s) exported.${missingNote}`));
         return true;
       }
 
       const rows = exportedRows.map((row) => response.fields.map((field) => row[field.key]));
       downloadBlob(new Blob([buildCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), filename);
-      toast.success(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} exported.`);
+      toast.success(translateInventoryText(`${response.rows.length} ${dataset.label.toLocaleLowerCase()} exported.`));
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not export ${dataset.label.toLocaleLowerCase()}.`);
@@ -467,7 +469,7 @@ const DataManagementSettingsPanel: React.FC = () => {
       return;
     }
     if (isZipPackage && !supportsPackage) {
-      toast.error('ZIP packages are supported for Products, Orders, Bills, and Transactions.');
+      toast.error(translateInventoryText('ZIP packages are supported for Products, Orders, Bills, and Transactions.'));
       return;
     }
     const maxFileSize = isZipPackage ? MAX_PRODUCT_PACKAGE_SIZE : MAX_CSV_SIZE;
@@ -522,16 +524,16 @@ const DataManagementSettingsPanel: React.FC = () => {
       const mapping = createAutomaticDataMapping(dataset, parsed.headers);
       if (isProductPackage && packageFiles) {
         const imageColumn = mapping.image;
-        if (imageColumn === undefined) throw new Error('The product package CSV is missing its Image URL column.');
+        if (imageColumn === undefined) throw new Error(translateInventoryText('The product package CSV is missing its Image URL column.'));
         const packageEntries = new Map(
           Object.entries(packageFiles).map(([name, bytes]) => [name.replace(/\\/g, '/').replace(/^\.\//, ''), bytes])
         );
         for (const row of parsed.rows) {
           const imagePath = String(row[Number(imageColumn)] ?? '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
           if (!imagePath || !imagePath.toLocaleLowerCase().startsWith('images/')) continue;
-          if (imagePath.split('/').includes('..')) throw new Error('The product package contains an unsafe image path.');
+          if (imagePath.split('/').includes('..')) throw new Error(translateInventoryText('The product package contains an unsafe image path.'));
           const imageBytes = packageEntries.get(imagePath);
-          if (!imageBytes) throw new Error(`The product package is missing ${imagePath}.`);
+          if (!imageBytes) throw new Error(translateInventoryText(`The product package is missing ${imagePath}.`));
           if (imageBytes.length === 0 || imageBytes.length > MAX_PACKAGED_IMAGE_SIZE) {
             throw new Error(`${imagePath} is empty or larger than 8 MB.`);
           }
@@ -688,7 +690,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             <h3 className="text-xl font-bold text-gray-800">Import and Export Data</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
               Download a complete CSV for a data type, or upload a CSV and map its columns before anything is saved.
-              Imports append new records and skip or update existing matches depending on the data type. Products are matched by slug and updated; other types are skipped. No database IDs are needed.
+              {translateInventoryText('Imports append new records and skip or update existing matches depending on the data type. Products are matched by slug and updated; other types are skipped. No database IDs are needed.')}
             </p>
           </div>
         </div>
@@ -731,8 +733,8 @@ const DataManagementSettingsPanel: React.FC = () => {
                 <FileSpreadsheet size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="font-black text-gray-900">{dataset.label}</h4>
-                <p className="mt-1 text-xs font-medium leading-5 text-gray-500">{dataset.description}</p>
+                <h4 className="font-black text-gray-900">{translateInventoryText(dataset.label)}</h4>
+                <p className="mt-1 text-xs font-medium leading-5 text-gray-500">{translateInventoryText(dataset.description)}</p>
               </div>
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
@@ -777,7 +779,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         onClose={() => {
           if (!exportingKey) setExportSession(null);
         }}
-        title={exportSession ? `Export ${exportSession.dataset.label}` : 'Export data'}
+        title={exportSession ? `Export ${translateInventoryText(exportSession.dataset.label)}` : 'Export data'}
         size="xl"
         footer={exportSession ? (
           <>
@@ -808,7 +810,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             )}
             {FINANCIAL_DATASET_KEYS.has(exportSession.dataset.key) && (
               <p className="text-xs font-medium leading-5 text-gray-500">
-                The selected range limits {exportSession.dataset.label.toLocaleLowerCase()} rows. The dependency Accounts CSV remains complete so older accounts referenced by the selected records can still be restored safely.
+                {translateInventoryText(`The selected range limits ${exportSession.dataset.label.toLocaleLowerCase()} rows. The dependency Accounts CSV remains complete so older accounts referenced by the selected records can still be restored safely.`)}
               </p>
             )}
           </div>
@@ -906,7 +908,7 @@ const DataManagementSettingsPanel: React.FC = () => {
         onClose={() => {
           if (!isImporting) setSession(null);
         }}
-        title={session ? `Map columns for ${session.dataset.label}` : 'Map CSV columns'}
+        title={session ? `Map columns for ${translateInventoryText(session.dataset.label)}` : 'Map CSV columns'}
         size="xl"
         contentClassName="max-h-[68vh]"
         footer={session ? (
@@ -939,7 +941,7 @@ const DataManagementSettingsPanel: React.FC = () => {
             {session.dependencies.length > 0 && (
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-5 text-blue-800">
                 This package includes {session.dependencies.reduce((sum, dependency) => sum + dependency.records.length, 0)} account records.
-                They will be imported automatically before {session.dataset.label.toLocaleLowerCase()}; existing accounts will remain unchanged.
+                {translateInventoryText(`They will be imported automatically before ${session.dataset.label.toLocaleLowerCase()}; existing accounts will remain unchanged.`)}
               </div>
             )}
 

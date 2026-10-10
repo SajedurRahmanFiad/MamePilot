@@ -1,11 +1,11 @@
 {
   "name": "mamepilot",
   "private": true,
-  "version": "0.3.89",
+  "version": "0.3.90",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "backend:serve": "php -S 127.0.0.1:8001 -t backend/public",
+    "backend:serve": "php -S 127.0.0.1:8001 -t backend/public backend/public/index.php",
     "backend:setup": "php backend/bin/setup.php",
     "backend:migrate": "php backend/bin/migrate.php",
     "backend:update:check": "php backend/bin/update.php --check",

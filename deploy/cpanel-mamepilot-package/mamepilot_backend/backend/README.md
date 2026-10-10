@@ -45,3 +45,9 @@ For local MariaDB, the defaults already match:
 - database `bdhatbela_management`
 - user `root`
 - password empty
+
+## External Data API
+
+The read-only integration API exposes paginated orders, customers, transactions, bills, vendors, and accounts at `/api/v1`. Integration keys are scoped, revocable, and require `APP_API_KEY_PEPPER` to be configured in the backend environment.
+
+See [docs/EXTERNAL_DATA_API.md](../docs/EXTERNAL_DATA_API.md) for the full filter catalog, authentication setup, pagination and incremental-sync behavior. The machine-readable contract is [docs/external-data-api.openapi.yaml](../docs/external-data-api.openapi.yaml).

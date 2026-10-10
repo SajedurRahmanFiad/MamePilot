@@ -14,6 +14,7 @@ import {
 } from '../src/utils/capabilities';
 import type { SubCapabilityKey } from '../types';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import { useQueryClient } from '@tanstack/react-query';
 import { verifyPipraPayPayment } from '../src/services/supabaseQueries';
 import { clearPipraPayReturnParams, readPipraPayReturnParams, readPipraPayReturnStatus } from '../src/utils/piprapay';
@@ -204,7 +205,10 @@ const AdminSubscriptions: React.FC = () => {
     const subKeys = getSubCapabilities(key as any);
     const hasChildren = subKeys.length > 0 && active;
     const isExpanded = expandedFeatures.has(key);
-    const description = CAPABILITY_DESCRIPTIONS[key as keyof typeof CAPABILITY_DESCRIPTIONS];
+    const description = translateBusinessInventoryTerms(
+      CAPABILITY_DESCRIPTIONS[key as keyof typeof CAPABILITY_DESCRIPTIONS],
+      capabilitySettings?.businessMode,
+    );
     return (
       <div
         key={key}

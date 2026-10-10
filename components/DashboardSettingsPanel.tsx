@@ -132,6 +132,9 @@ const DashboardSettingsPanel: React.FC<DashboardSettingsPanelProps> = ({ value, 
       if (definition.key === 'admin.topSoldProducts') {
         return { ...definition, label: `Top 5 Sold ${terminology.items}`, description: `Best-selling ${terminology.itemsLower} by quantity.` };
       }
+      if (definition.key === 'admin.lowStockProducts') {
+        return { ...definition, description: `The five ${terminology.itemsLower} with the lowest stock at or below the configured threshold.` };
+      }
       return definition;
     }),
     [terminology.items, terminology.itemsLower],

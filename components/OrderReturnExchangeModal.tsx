@@ -7,7 +7,7 @@ import { useAccounts, usePaymentMethods, useSystemDefaults } from '../src/hooks/
 import { fetchProductsSearch } from '../src/services/supabaseQueries';
 import { calculateReturnAdjustment } from '../utils';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 interface OrderReturnExchangeModalProps {
   isOpen: boolean;
@@ -36,6 +36,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
   const { data: systemDefaults } = useSystemDefaults();
   const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
 
   const [activeTab, setActiveTab] = useState<TabKey>('partialReturn');
   const [itemSelections, setItemSelections] = useState<ReturnExchangeItemSelection[]>([]);
@@ -407,7 +408,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
         {/* Partial Return Tab */}
         {activeTab === 'partialReturn' && (
           <div className="space-y-3">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Select items to return</p>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items to return')}</p>
             {itemSelections.map((sel, idx) => {
               const isSelected = sel.action === 'return' && sel.returnQty > 0;
               return (
@@ -459,7 +460,7 @@ const OrderReturnExchangeModal: React.FC<OrderReturnExchangeModalProps> = ({
         {/* Exchange Tab */}
         {activeTab === 'exchange' && (
           <div className="space-y-4">
-            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Select items to exchange</p>
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items to exchange')}</p>
             {itemSelections.map((sel, idx) => {
               const isSelected = sel.action === 'exchange' && sel.returnQty > 0;
               return (

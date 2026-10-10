@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { ICONS } from '../constants';
 import { Button } from './Button';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import type { DashboardConfiguration, PermissionKey, PermissionsSettings, RolePermissionMap } from '../types';
 import {
   PERMISSION_DEFINITIONS,
@@ -29,6 +31,8 @@ const checkboxClassName =
 const DISPLAYED_PERMISSION_KEYS = STORED_PERMISSION_KEYS.filter((key) => key !== 'dashboard.viewAdmin' && key !== 'dashboard.viewEmployee');
 
 const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange, dashboards, hasUnsavedChanges = false }) => {
+  const { settings: capabilitySettings } = useCapabilities();
+  const businessMode = capabilitySettings?.businessMode;
   const roles = useMemo(() => getPermissionRoles(value), [value]);
   const groupedDefinitions = useMemo(() => {
     return SECTION_ORDER.map((section) => ({
@@ -69,11 +73,11 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
         items: group.items.filter((definition) => {
           if (definition.key === 'allPrivileges') return false;
           if (!query) return true;
-          return `${group.section} ${definition.label} ${definition.description}`.toLowerCase().includes(query);
+          return `${group.section} ${translateBusinessInventoryTerms(definition.label, businessMode)} ${translateBusinessInventoryTerms(definition.description, businessMode)}`.toLowerCase().includes(query);
         }),
       }))
       .filter((group) => group.items.length > 0);
-  }, [groupedDefinitions, permissionSearch]);
+  }, [businessMode, groupedDefinitions, permissionSearch]);
   const enabledPermissionCount = selectedRole
     ? DISPLAYED_PERMISSION_KEYS.filter((key) => selectedRole.permissions[key]).length
     : 0;
@@ -443,8 +447,8 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                                   onChange={() => togglePermission(selectedRole.roleName, permissionKey)}
                                 />
                                 <span className="min-w-0">
-                                  <span className="block text-sm font-bold text-gray-900">{definition.label}</span>
-                                  <span className="mt-1 block text-xs font-medium leading-5 text-gray-500">{definition.description}</span>
+                                  <span className="block text-sm font-bold text-gray-900">{translateBusinessInventoryTerms(definition.label, businessMode)}</span>
+                                  <span className="mt-1 block text-xs font-medium leading-5 text-gray-500">{translateBusinessInventoryTerms(definition.description, businessMode)}</span>
                                 </span>
                               </label>
                             );
@@ -534,8 +538,8 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                                     onChange={() => toggleDraftPermission(permissionKey)}
                                   />
                                   <span>
-                                    <span className="block text-sm font-bold text-gray-900">{definition.label}</span>
-                                    <span className="mt-1 block text-xs font-medium text-gray-500">{definition.description}</span>
+                                    <span className="block text-sm font-bold text-gray-900">{translateBusinessInventoryTerms(definition.label, businessMode)}</span>
+                                    <span className="mt-1 block text-xs font-medium text-gray-500">{translateBusinessInventoryTerms(definition.description, businessMode)}</span>
                                   </span>
                                 </label>
                               );

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Input } from './index';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import {
   checkShopifyWebhookHealth,
   deleteShopifyStore,
@@ -41,6 +43,8 @@ const blankStore = (companyPageId: string): StoreDraft => ({
 });
 
 const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ companyPages }) => {
+  const { settings: capabilitySettings } = useCapabilities();
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const toast = useToastNotifications();
   const queryClient = useQueryClient();
   const storesQuery = useQuery({
@@ -121,14 +125,14 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
       repair: 'Repairing Shopify webhooks...',
     };
     setBusyAction(`${action}:${store.id}`);
-    const loadingId = toast.loading(labels[action]);
+    const loadingId = toast.loading(translateInventoryText(labels[action]));
     try {
       const result = await operation();
       await reload();
       if (action === 'webhook' || action === 'repair') checkHealth(store.id);
-      toast.update(loadingId, result.message || 'Shopify action completed.', 'success');
+      toast.update(loadingId, translateInventoryText(result.message || 'Shopify action completed.'), 'success');
     } catch (error) {
-      toast.update(loadingId, error instanceof Error ? error.message : 'Shopify action failed.', 'error');
+      toast.update(loadingId, translateInventoryText(error instanceof Error ? error.message : 'Shopify action failed.'), 'error');
     } finally {
       setBusyAction('');
     }
@@ -171,7 +175,7 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
       <section className="flex flex-col gap-4 border-b border-gray-100 pb-5 md:flex-row md:items-start md:justify-between">
         <div>
           <h3 className="text-xl font-bold text-gray-800">Shopify Sync</h3>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">Import products and orders, then keep new customers and orders flowing automatically through verified Shopify webhooks.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{translateInventoryText('Import products and orders, then keep new customers and orders flowing automatically through verified Shopify webhooks.')}</p>
         </div>
         <Button type="button" onClick={addStore} disabled={companyPages.length === 0}>Add Shopify Store</Button>
       </section>
@@ -183,9 +187,9 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
           <li>Grant <strong>read_products</strong>, <strong>read_orders</strong>, and <strong>read_customers</strong>. Grant <strong>read_all_orders</strong> if older history is required.</li>
           <li>Install the app, then copy both the <strong>Admin API access token</strong> and the app&apos;s <strong>API secret key</strong>.</li>
           <li>Enter the <code>my-store.myshopify.com</code> hostname and select the matching invoice company.</li>
-          <li>Save and test the connection, import all products, import all orders, then turn on automatic sync.</li>
+          <li>{translateInventoryText('Save and test the connection, import all products, import all orders, then turn on automatic sync.')}</li>
         </ol>
-        <p className="mt-3 text-xs font-semibold text-emerald-800">Every variant becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) — using the variant image, price, and stock. Products match by exact SKU, or by the product handle when the SKU is missing. Customers match by normalized phone. Orders use customer phone plus the sorted SKU-and-quantity bundle as their duplicate key.</p>
+        <p className="mt-3 text-xs font-semibold text-emerald-800">{translateInventoryText('Every variant becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) — using the variant image, price, and stock. Products match by exact SKU, or by the product handle when the SKU is missing. Customers match by normalized phone. Orders use customer phone plus the sorted SKU-and-quantity bundle as their duplicate key.')}</p>
       </section>
 
       {companyPages.length === 0 && <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Add a company page first. Every Shopify store must map to a company for invoice branding.</div>}
@@ -193,7 +197,7 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
       {drafts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 px-6 py-12 text-center">
           <p className="font-black text-gray-800">No Shopify store connected</p>
-          <p className="mt-2 text-sm text-gray-500">Add your first store to import products and orders.</p>
+          <p className="mt-2 text-sm text-gray-500">{translateInventoryText('Add your first store to import products and orders.')}</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -237,9 +241,9 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-gray-500">
                       <span>Automatic sync: {store.webhookSubscriptions?.length === 3 ? 'connected' : 'not fully connected'}</span>
-                      <span>Products: {store.productsSynced}</span>
+                      <span>{translateInventoryText(`Products: ${store.productsSynced}`)}</span>
                       <span>Orders: {store.ordersSynced}</span>
-                      <span>Last product import: {store.lastProductsSyncedAt ? formatDateTime(store.lastProductsSyncedAt) : 'never'}</span>
+                      <span>{translateInventoryText(`Last product import: ${store.lastProductsSyncedAt ? formatDateTime(store.lastProductsSyncedAt) : 'never'}`)}</span>
                       <span>Last order import: {store.lastOrdersSyncedAt ? formatDateTime(store.lastOrdersSyncedAt) : 'never'}</span>
                     </div>
                     {store.webhookId && health && <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${health.healthy ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}><span className={`inline-block h-2 w-2 rounded-full ${health.healthy ? 'bg-emerald-500' : 'bg-red-500'}`} />{health.message}</div>}
@@ -250,7 +254,7 @@ const ShopifySettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ compa
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button type="button" onClick={() => saveStore(store)} loading={busyAction === `save:${store.id}`} disabled={anyBusy || companyPages.length === 0}>Save Store</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'test', () => testShopifyStore(store.id))} loading={busyAction === `test:${store.id}`} disabled={anyBusy || store.isNew}>Test Connection</Button>
-                  <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'products', () => syncShopifyProducts(store.id))} loading={busyAction === `products:${store.id}`} disabled={anyBusy || store.isNew || !store.enabled}>Import All Products</Button>
+                  <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'products', () => syncShopifyProducts(store.id))} loading={busyAction === `products:${store.id}`} disabled={anyBusy || store.isNew || !store.enabled}>{translateInventoryText('Import All Products')}</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'orders', () => syncShopifyOrders(store.id))} loading={busyAction === `orders:${store.id}`} disabled={anyBusy || store.isNew || !store.enabled}>Import All Orders</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'webhook', async () => { await registerShopifyWebhook(store.id); return { message: 'Automatic customer and order sync turned on.' }; })} loading={busyAction === `webhook:${store.id}`} disabled={anyBusy || store.isNew || !store.enabled}>Turn On Automatic Sync</Button>
                   {store.webhookId && health && !health.healthy && <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'repair', () => repairShopifyWebhook(store.id))} loading={busyAction === `repair:${store.id}`} disabled={anyBusy}>Repair Webhooks</Button>}

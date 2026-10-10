@@ -41,7 +41,7 @@ import ShopifySettingsPanel from '../components/ShopifySettingsPanel';
 import DataManagementSettingsPanel from '../components/DataManagementSettingsPanel';
 import { writeSystemDefaultsCache } from '../src/utils/startupCache';
 import { useAutoSave } from '../src/hooks/useAutoSave';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 type SystemDefaultField = keyof Settings['defaults'];
 const SMS_TEMPLATE_VARIABLES = ['Customer Name', 'Customer Phone', 'Customer Address', 'Product Name', 'Product Quantity', 'Total Price', 'Order Number', 'Company Name'];
@@ -1632,7 +1632,7 @@ const SettingsPage: React.FC = () => {
                       <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-bold text-gray-800">Repair historical delivered orders</p>
-                          <p className="mt-1 text-xs text-gray-600">{cogsBackfillStatus.missingOrders.toLocaleString()} delivered order(s) do not have a purchase-price COGS record yet. Current product purchase prices will be used.</p>
+                          <p className="mt-1 text-xs text-gray-600">{translateBusinessInventoryTerms(`${cogsBackfillStatus.missingOrders.toLocaleString()} delivered order(s) do not have a purchase-price COGS record yet. Current product purchase prices will be used.`, capabilitySettings?.businessMode)}</p>
                         </div>
                         <Button onClick={runCogsBackfill} disabled={cogsBackfillRunning}>
                           {cogsBackfillRunning ? 'Generating...' : 'Generate Past COGS'}
@@ -1658,7 +1658,7 @@ const SettingsPage: React.FC = () => {
                     className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
                     allowDecimals={false}
                   />
-                  <p className="text-xs font-medium text-gray-400">Products at or below this quantity trigger an admin alert.</p>
+                  <p className="text-xs font-medium text-gray-400">{translateBusinessInventoryTerms('Products at or below this quantity trigger an admin alert.', capabilitySettings?.businessMode)}</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Default Expense Category</label>
@@ -2502,7 +2502,7 @@ const SettingsPage: React.FC = () => {
                       <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
                           {SMS_TEMPLATE_VARIABLES.map((variable) => (
-                            <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{variable}</button>
+                            <button type="button" className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700" key={variable} onMouseDown={(event) => event.preventDefault()} onClick={() => insertSmsVariable(variable)}>{translateBusinessInventoryTerms(variable, capabilitySettings?.businessMode)}</button>
                           ))}
                         </div>
                         {rule.sendTiming === 'after_call' ? (

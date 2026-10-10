@@ -10,7 +10,8 @@ import { useAuth } from '../../src/contexts/AuthProvider';
 import { useToastNotifications } from '../../src/contexts/ToastContext';
 import { useCapabilities } from '../../src/hooks/useCapabilities';
 import { useCompanySettings, useUserActivityPerformanceLog, useUserActivityPerformanceReportPage, useUsersMini } from '../../src/hooks/useQueries';
-import { UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
+import { BusinessMode, UserActivityPerformanceLogEntry, UserActivityPerformanceSummary, hasAdminAccess } from '../../types';
+import { translateBusinessInventoryTerms } from '../../src/utils/businessMode';
 import { formatDate, formatDateTime as formatDisplayDateTime } from '../../utils';
 import Pagination from '../../src/components/Pagination';
 
@@ -89,9 +90,10 @@ const buildUserReportPdfHtml = (params: {
   companyLogo: string;
   generatedAt: string;
   selectedPeriod: string;
+  businessMode?: BusinessMode;
   themeColors: { primary: string; medium: string; dark: string; soft: string };
 }) => {
-  const { report, companyName, companyLogo, generatedAt, selectedPeriod, themeColors } = params;
+  const { report, companyName, companyLogo, generatedAt, selectedPeriod, businessMode, themeColors } = params;
   const roleTone = hasAdminAccess(report.user.role) ? 'role-admin' : 'role-employee';
   const userImageSrc = toAbsoluteAssetUrl(report.user.image || EMPTY_AVATAR_PATH);
   const emptyAvatarSrc = toAbsoluteAssetUrl(EMPTY_AVATAR_PATH);
@@ -128,7 +130,7 @@ const buildUserReportPdfHtml = (params: {
   const salaryRowsLeft: Array<[string, string | number]> = [
     ['Active days', formatCount(report.metrics.activeDays)],
     ['Unique customers served', formatCount(report.metrics.uniqueCustomers)],
-    ['Items handled in orders', formatCount(report.metrics.orderQuantity)],
+    [translateBusinessInventoryTerms('Items handled in orders', businessMode), formatCount(report.metrics.orderQuantity)],
     ['Average order value', formatCurrency(report.metrics.averageOrderValue)],
     ['Completion rate', `${Math.round(report.metrics.completionRate)}%`],
     ['Collection rate', `${Math.round(report.metrics.collectionRate)}%`],
@@ -831,7 +833,8 @@ const UserActivityPerformanceReport: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToastNotifications();
-  const { hasCapability } = useCapabilities();
+  const { hasCapability, settings: capabilitySettings } = useCapabilities();
+  const businessMode = capabilitySettings?.businessMode;
   const { data: companySettings } = useCompanySettings();
   const { data: allUsers = [] } = useUsersMini();
   const hasSales = hasCapability('sales');
@@ -973,6 +976,7 @@ const UserActivityPerformanceReport: React.FC = () => {
         companyLogo,
         generatedAt,
         selectedPeriod,
+        businessMode,
         themeColors: getCurrentThemeColors(),
       });
 
@@ -1150,7 +1154,7 @@ const UserActivityPerformanceReport: React.FC = () => {
                           <div>
                             <StatRow label="Active days" value={formatCount(report.metrics.activeDays)} accent />
                             {hasSales && <StatRow label="Unique customers served" value={formatCount(report.metrics.uniqueCustomers)} />}
-                            {hasSales && <StatRow label="Items handled in orders" value={formatCount(report.metrics.orderQuantity)} />}
+                            {hasSales && <StatRow label={translateBusinessInventoryTerms('Items handled in orders', businessMode)} value={formatCount(report.metrics.orderQuantity)} />}
                             {hasSales && <StatRow label="Average order value" value={formatCurrency(report.metrics.averageOrderValue)} />}
                             {hasSales && <StatRow label="Completion rate" value={`${Math.round(report.metrics.completionRate)}%`} />}
                             {hasSales && <StatRow label="Collection rate" value={`${Math.round(report.metrics.collectionRate)}%`} />}

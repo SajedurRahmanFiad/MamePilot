@@ -4,6 +4,8 @@ import { NumericInput } from './Input';
 import { formatCurrency } from '../constants';
 import { Order, ConfirmPartialDeliveryPayload } from '../types';
 import { useAccounts, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 interface PartialDeliveryFormProps {
   order: Order | null;
@@ -32,6 +34,8 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
   const { data: accounts = [] } = useAccounts();
   const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: systemDefaults } = useSystemDefaults();
+  const { settings: capabilitySettings } = useCapabilities(isActive);
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
 
   const [itemSelections, setItemSelections] = useState<ItemSelection[]>([]);
   const [accountId, setAccountId] = useState('');
@@ -130,7 +134,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
   return (
     <div className="space-y-6">
       <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        Select which items were returned. COGS, shipping, and COD will be calculated for delivered items only.
+        {translateInventoryText('Select which items were returned. COGS, shipping, and COD will be calculated for delivered items only.')}
       </p>
 
       {/* Deferred amounts summary */}
@@ -151,7 +155,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
 
       {/* Item selection */}
       <div className="space-y-3">
-        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Select items to mark as returned</p>
+        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items to mark as returned')}</p>
         {itemSelections.map((sel, idx) => {
           const isSelected = sel.returnQty > 0;
           return (
@@ -202,7 +206,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
       {/* Financial summary */}
       <div className="bg-gray-50 rounded-xl p-4 space-y-2">
         <div className="flex justify-between text-sm">
-          <span className="font-bold text-gray-600">Delivered item value</span>
+          <span className="font-bold text-gray-600">{translateInventoryText('Delivered item value')}</span>
           <span className="font-black text-emerald-600">{formatCurrency(deliveredValue)}</span>
         </div>
         <div className="flex justify-between text-sm">

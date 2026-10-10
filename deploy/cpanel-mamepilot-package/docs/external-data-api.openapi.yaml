@@ -1,0 +1,578 @@
+openapi: 3.1.0
+info:
+  title: MamePilot External Data API
+  version: 1.0.0
+  description: Read-only, scoped integration API for orders, customers, transactions, bills, vendors, and accounts.
+servers:
+  - url: https://YOUR-DOMAIN/api/v1
+    description: Production API
+security:
+  - BearerToken: []
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List filtered orders
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortOrders'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/OrderStatus'}
+        - {$ref: '#/components/parameters/OrderStatusNot'}
+        - {$ref: '#/components/parameters/DeliveryStatus'}
+        - {$ref: '#/components/parameters/OrderPaymentStatus'}
+        - {$ref: '#/components/parameters/CustomerId'}
+        - {$ref: '#/components/parameters/CustomerIds'}
+        - {$ref: '#/components/parameters/CustomerPhone'}
+        - {$ref: '#/components/parameters/OrderNumber'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/SourceAd'}
+        - {$ref: '#/components/parameters/Courier'}
+        - {$ref: '#/components/parameters/IsPos'}
+        - {$ref: '#/components/parameters/PageId'}
+        - {$ref: '#/components/parameters/MinAmount'}
+        - {$ref: '#/components/parameters/MaxAmount'}
+        - {$ref: '#/components/parameters/MinPaid'}
+        - {$ref: '#/components/parameters/MaxPaid'}
+        - {$ref: '#/components/parameters/MinDue'}
+        - {$ref: '#/components/parameters/MaxDue'}
+        - {$ref: '#/components/parameters/OrderDateFrom'}
+        - {$ref: '#/components/parameters/OrderDateTo'}
+        - {$ref: '#/components/parameters/OrderStatusEvent'}
+        - {$ref: '#/components/parameters/StatusChangedFrom'}
+        - {$ref: '#/components/parameters/StatusChangedTo'}
+        - {$ref: '#/components/parameters/ProductId'}
+        - {$ref: '#/components/parameters/ProductIds'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Get one order
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /customers:
+    get:
+      operationId: listCustomers
+      summary: List filtered customers
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortCustomers'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/Name'}
+        - {$ref: '#/components/parameters/Phone'}
+        - {$ref: '#/components/parameters/Address'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/TotalOrdersMin'}
+        - {$ref: '#/components/parameters/TotalOrdersMax'}
+        - {$ref: '#/components/parameters/DueMin'}
+        - {$ref: '#/components/parameters/DueMax'}
+        - {$ref: '#/components/parameters/IncludeWalkin'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /customers/{id}:
+    get:
+      operationId: getCustomer
+      summary: Get one customer
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /transactions:
+    get:
+      operationId: listTransactions
+      summary: List filtered transactions
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortTransactions'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/TransactionType'}
+        - {$ref: '#/components/parameters/TransactionTypeIn'}
+        - {$ref: '#/components/parameters/TransactionTypeNot'}
+        - {$ref: '#/components/parameters/Category'}
+        - {$ref: '#/components/parameters/CategoryIds'}
+        - {$ref: '#/components/parameters/AccountId'}
+        - {$ref: '#/components/parameters/AccountIds'}
+        - {$ref: '#/components/parameters/ToAccountId'}
+        - {$ref: '#/components/parameters/ContactId'}
+        - {$ref: '#/components/parameters/ContactType'}
+        - {$ref: '#/components/parameters/PaymentMethod'}
+        - {$ref: '#/components/parameters/ReferenceId'}
+        - {$ref: '#/components/parameters/ApprovalStatus'}
+        - {$ref: '#/components/parameters/AccountEffectApplied'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/RecurringTransactionId'}
+        - {$ref: '#/components/parameters/MinAmount'}
+        - {$ref: '#/components/parameters/MaxAmount'}
+        - {$ref: '#/components/parameters/TransactionDateFrom'}
+        - {$ref: '#/components/parameters/TransactionDateTo'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      summary: Get one transaction
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /bills:
+    get:
+      operationId: listBills
+      summary: List filtered bills
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortBills'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/BillStatus'}
+        - {$ref: '#/components/parameters/BillStatusNot'}
+        - {$ref: '#/components/parameters/NormalizedBillStatus'}
+        - {$ref: '#/components/parameters/BillPaymentStatus'}
+        - {$ref: '#/components/parameters/VendorId'}
+        - {$ref: '#/components/parameters/VendorIds'}
+        - {$ref: '#/components/parameters/VendorName'}
+        - {$ref: '#/components/parameters/VendorPhone'}
+        - {$ref: '#/components/parameters/BillNumber'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/MinAmount'}
+        - {$ref: '#/components/parameters/MaxAmount'}
+        - {$ref: '#/components/parameters/MinPaid'}
+        - {$ref: '#/components/parameters/MaxPaid'}
+        - {$ref: '#/components/parameters/MinDue'}
+        - {$ref: '#/components/parameters/MaxDue'}
+        - {$ref: '#/components/parameters/BillDateFrom'}
+        - {$ref: '#/components/parameters/BillDateTo'}
+        - {$ref: '#/components/parameters/BillStatusEvent'}
+        - {$ref: '#/components/parameters/StatusChangedFrom'}
+        - {$ref: '#/components/parameters/StatusChangedTo'}
+        - {$ref: '#/components/parameters/ProductId'}
+        - {$ref: '#/components/parameters/ProductIds'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /bills/{id}:
+    get:
+      operationId: getBill
+      summary: Get one bill
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /vendors:
+    get:
+      operationId: listVendors
+      summary: List filtered vendors
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortVendors'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/Name'}
+        - {$ref: '#/components/parameters/Phone'}
+        - {$ref: '#/components/parameters/Address'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/TotalPurchasesMin'}
+        - {$ref: '#/components/parameters/TotalPurchasesMax'}
+        - {$ref: '#/components/parameters/PayableMin'}
+        - {$ref: '#/components/parameters/PayableMax'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /vendors/{id}:
+    get:
+      operationId: getVendor
+      summary: Get one vendor
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts:
+    get:
+      operationId: listAccounts
+      summary: List filtered accounts
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/SortAccounts'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/AccountType'}
+        - {$ref: '#/components/parameters/MinOpeningBalance'}
+        - {$ref: '#/components/parameters/MaxOpeningBalance'}
+        - {$ref: '#/components/parameters/MinCurrentBalance'}
+        - {$ref: '#/components/parameters/MaxCurrentBalance'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /accounts/{id}:
+    get:
+      operationId: getAccount
+      summary: Get one account
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /keys:
+    get:
+      operationId: listIntegrationKeys
+      summary: List API key metadata
+      description: Requires an administrator/developer MamePilot session bearer token, not an integration key.
+      security:
+        - BearerToken: []
+      responses:
+        '200': {$ref: '#/components/responses/KeyList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createIntegrationKey
+      summary: Create an API key
+      description: Requires an administrator/developer MamePilot session bearer token. The generated secret is returned only in this response.
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, scopes]
+              properties:
+                label: {type: string, minLength: 1, maxLength: 100}
+                scopes:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum: [orders.read, customers.read, transactions.read, bills.read, vendors.read, accounts.read, accounts.read_balance]
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+      responses:
+        '201': {$ref: '#/components/responses/KeyCreated'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+  /keys/{id}:
+    delete:
+      operationId: revokeIntegrationKey
+      summary: Revoke an API key
+      description: Requires an administrator/developer MamePilot session bearer token.
+      security:
+        - BearerToken: []
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200':
+          description: Key revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  revoked: {type: boolean, const: true}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  securitySchemes:
+    BearerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Integration key for data routes; existing MamePilot admin/developer session JWT for /keys routes.
+  parameters:
+    Page: {name: page, in: query, description: 1-based; requested row offset is capped at 1000000., schema: {type: integer, minimum: 1, default: 1}}
+    PageSize: {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
+    Ids: {name: ids, in: query, description: Comma-separated IDs, maximum 100 values., schema: {type: string}}
+    Search: {name: search, in: query, description: Case-insensitive contains match on resource-documented fields; max 255 characters., schema: {type: string, maxLength: 255}}
+    CreatedFrom: {name: created_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    CreatedTo: {name: created_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    UpdatedFrom: {name: updated_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    UpdatedTo: {name: updated_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    UpdatedSince: {name: updated_since, in: query, description: Inclusive incremental-sync lower bound., schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    IncludeDeleted: {name: include_deleted, in: query, schema: {type: boolean, default: false}}
+    SortDirection: {name: sort_direction, in: query, schema: {type: string, enum: [asc, desc], default: desc}}
+    SortOrders: {name: sort_by, in: query, schema: {type: string, enum: [created_at, order_date, order_number, total, paid_amount, status], default: created_at}}
+    SortCustomers: {name: sort_by, in: query, schema: {type: string, enum: [created_at, name, total_orders, due_amount], default: created_at}}
+    SortTransactions: {name: sort_by, in: query, schema: {type: string, enum: [created_at, date, amount, type], default: created_at}}
+    SortBills: {name: sort_by, in: query, schema: {type: string, enum: [created_at, bill_date, bill_number, total, paid_amount, status], default: created_at}}
+    SortVendors: {name: sort_by, in: query, schema: {type: string, enum: [created_at, name, total_purchases, due_amount], default: created_at}}
+    SortAccounts: {name: sort_by, in: query, schema: {type: string, enum: [created_at, name, type, current_balance], default: created_at}}
+    RecordId: {name: id, in: path, required: true, schema: {type: string}}
+    OrderStatus: {name: status, in: query, description: Comma-separated canonical statuses; Created is accepted as an alias for On Hold., schema: {type: string}}
+    OrderStatusNot: {name: status_not, in: query, schema: {type: string}}
+    DeliveryStatus: {name: delivery_status, in: query, schema: {type: string, enum: [delivered, partially_delivered, not_delivered, returned, cancelled]}}
+    OrderPaymentStatus: {name: payment_status, in: query, schema: {type: string, enum: [unpaid, partially_paid, paid, overpaid, refunded]}}
+    CustomerId: {name: customer_id, in: query, schema: {type: string}}
+    CustomerIds: {name: customer_ids, in: query, schema: {type: string}}
+    CustomerPhone: {name: customer_phone, in: query, schema: {type: string, maxLength: 255}}
+    OrderNumber: {name: order_number, in: query, schema: {type: string, maxLength: 255}}
+    CreatedById: {name: created_by_id, in: query, schema: {type: string}}
+    CreatedByIds: {name: created_by_ids, in: query, schema: {type: string}}
+    SourceAd: {name: source_ad, in: query, schema: {type: string}}
+    Courier: {name: courier, in: query, schema: {type: string}}
+    IsPos: {name: is_pos, in: query, schema: {type: boolean}}
+    PageId: {name: page_id, in: query, schema: {type: string}}
+    MinAmount: {name: min_amount, in: query, schema: {type: number, minimum: 0}}
+    MaxAmount: {name: max_amount, in: query, schema: {type: number, minimum: 0}}
+    MinPaid: {name: min_paid, in: query, schema: {type: number, minimum: 0}}
+    MaxPaid: {name: max_paid, in: query, schema: {type: number, minimum: 0}}
+    MinDue: {name: min_due, in: query, schema: {type: number, minimum: 0}}
+    MaxDue: {name: max_due, in: query, schema: {type: number, minimum: 0}}
+    OrderDateFrom: {name: order_date_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    OrderDateTo: {name: order_date_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    OrderStatusEvent: {name: status_event, in: query, description: Select one lifecycle event; provide at least one status_changed bound., schema: {type: string, enum: [processing, courier, picked, delivered, returned, cancelled, partially_delivered, exchange_processing, exchange_picked, exchange_delivered, exchange_returned, exchange_cancelled, repair_processing, repair_picked, repair_delivered, repair_returned, repair_cancelled]}}
+    StatusChangedFrom: {name: status_changed_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    StatusChangedTo: {name: status_changed_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    ProductId: {name: product_id, in: query, schema: {type: string}}
+    ProductIds: {name: product_ids, in: query, schema: {type: string}}
+    Name: {name: name, in: query, schema: {type: string, maxLength: 255}}
+    Phone: {name: phone, in: query, schema: {type: string, maxLength: 255}}
+    Address: {name: address, in: query, schema: {type: string, maxLength: 255}}
+    TotalOrdersMin: {name: total_orders_min, in: query, schema: {type: number, minimum: 0}}
+    TotalOrdersMax: {name: total_orders_max, in: query, schema: {type: number, minimum: 0}}
+    DueMin: {name: due_min, in: query, schema: {type: number, minimum: 0}}
+    DueMax: {name: due_max, in: query, schema: {type: number, minimum: 0}}
+    IncludeWalkin: {name: include_walkin, in: query, schema: {type: boolean, default: false}}
+    TransactionType: {name: type, in: query, schema: {type: string, enum: [Income, Expense, Transfer]}}
+    TransactionTypeIn: {name: type_in, in: query, schema: {type: string}}
+    TransactionTypeNot: {name: type_not, in: query, schema: {type: string}}
+    Category: {name: category, in: query, schema: {type: string}}
+    CategoryIds: {name: category_ids, in: query, schema: {type: string}}
+    AccountId: {name: account_id, in: query, schema: {type: string}}
+    AccountIds: {name: account_ids, in: query, schema: {type: string}}
+    ToAccountId: {name: to_account_id, in: query, schema: {type: string}}
+    ContactId: {name: contact_id, in: query, schema: {type: string}}
+    ContactType: {name: contact_type, in: query, schema: {type: string, enum: [Customer, Vendor]}}
+    PaymentMethod: {name: payment_method, in: query, schema: {type: string}}
+    ReferenceId: {name: reference_id, in: query, schema: {type: string}}
+    ApprovalStatus: {name: approval_status, in: query, schema: {type: string, enum: [approved, pending, declined]}}
+    AccountEffectApplied: {name: account_effect_applied, in: query, schema: {type: boolean}}
+    RecurringTransactionId: {name: recurring_transaction_id, in: query, schema: {type: string}}
+    TransactionDateFrom: {name: transaction_date_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    TransactionDateTo: {name: transaction_date_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    BillStatus: {name: status, in: query, schema: {type: string}}
+    BillStatusNot: {name: status_not, in: query, schema: {type: string}}
+    NormalizedBillStatus: {name: bill_status, in: query, schema: {type: string, enum: [on_hold, processing, received, returned, cancelled]}}
+    BillPaymentStatus: {name: payment_status, in: query, schema: {type: string, enum: [unpaid, partially_paid, paid, overpaid, refunded]}}
+    VendorId: {name: vendor_id, in: query, schema: {type: string}}
+    VendorIds: {name: vendor_ids, in: query, schema: {type: string}}
+    VendorName: {name: vendor_name, in: query, schema: {type: string}}
+    VendorPhone: {name: vendor_phone, in: query, schema: {type: string}}
+    BillNumber: {name: bill_number, in: query, schema: {type: string}}
+    BillDateFrom: {name: bill_date_from, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    BillDateTo: {name: bill_date_to, in: query, schema: {oneOf: [{type: string, format: date}, {type: string, format: date-time}]}}
+    BillStatusEvent: {name: status_event, in: query, schema: {type: string, enum: [processing, received, paid, returned, cancelled]}}
+    TotalPurchasesMin: {name: total_purchases_min, in: query, schema: {type: number, minimum: 0}}
+    TotalPurchasesMax: {name: total_purchases_max, in: query, schema: {type: number, minimum: 0}}
+    PayableMin: {name: payable_min, in: query, schema: {type: number, minimum: 0}}
+    PayableMax: {name: payable_max, in: query, schema: {type: number, minimum: 0}}
+    AccountType: {name: type, in: query, schema: {type: string, enum: [Bank, Cash]}}
+    MinOpeningBalance: {name: min_opening_balance, in: query, schema: {type: number, minimum: 0}}
+    MaxOpeningBalance: {name: max_opening_balance, in: query, schema: {type: number, minimum: 0}}
+    MinCurrentBalance: {name: min_current_balance, in: query, schema: {type: number, minimum: 0}}
+    MaxCurrentBalance: {name: max_current_balance, in: query, schema: {type: number, minimum: 0}}
+  responses:
+    Collection:
+      description: Paginated resource data.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data, pagination]
+            properties:
+              data: {type: array, items: {$ref: '#/components/schemas/ExternalRecord'}}
+              pagination: {$ref: '#/components/schemas/Pagination'}
+    SingleRecord:
+      description: One resource record.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: {$ref: '#/components/schemas/ExternalRecord'}
+    KeyList:
+      description: API key metadata. Secrets and hashes are never returned.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: {type: array, items: {$ref: '#/components/schemas/ApiKeyMetadata'}}
+    KeyCreated:
+      description: New key. api_key is shown only in this response.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - {$ref: '#/components/schemas/ApiKeyMetadata'}
+              - type: object
+                required: [api_key]
+                properties:
+                  api_key: {type: string, writeOnly: true}
+    Unauthorized:
+      description: Missing, invalid, expired, or inactive credential.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Forbidden:
+      description: Missing resource scope, MamePilot permission, or capability.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    NotFound:
+      description: Resource or record not found.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    InvalidFilter:
+      description: Invalid or unsupported filter, range, enum, or request body.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    RateLimited:
+      description: More than 120 requests per minute for this key.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+  schemas:
+    ExternalRecord:
+      type: object
+      description: Resource-specific projected fields are documented in EXTERNAL_DATA_API.md; sensitive fields are omitted by design.
+      required: [id]
+      properties:
+        id: {type: string}
+        createdAt: {type: [string, 'null'], format: date-time}
+        updatedAt: {type: [string, 'null'], format: date-time}
+        deletedAt: {type: [string, 'null'], format: date-time}
+      additionalProperties: true
+    Pagination:
+      type: object
+      required: [page, page_size, total, has_more]
+      properties:
+        page: {type: integer}
+        page_size: {type: integer, maximum: 200}
+        total: {type: integer}
+        has_more: {type: boolean}
+    ApiKeyMetadata:
+      type: object
+      properties:
+        id: {type: string}
+        label: {type: string}
+        key_prefix: {type: string}
+        scopes: {type: array, items: {type: string}}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, 'null'], format: date-time}
+        revoked_at: {type: [string, 'null'], format: date-time}
+        last_used_at: {type: [string, 'null'], format: date-time}
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        code: {type: string}
+        requestId: {type: string}

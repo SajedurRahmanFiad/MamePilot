@@ -90,6 +90,14 @@ if (Test-Path $shopifyGuide) {
   if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
   Copy-Item -LiteralPath $shopifyGuide -Destination (Join-Path $docsDir 'SHOPIFY_INTEGRATION.md') -Force
 }
+$externalApiGuide = Join-Path $repoRoot 'docs\EXTERNAL_DATA_API.md'
+$externalApiOpenApi = Join-Path $repoRoot 'docs\external-data-api.openapi.yaml'
+if ((Test-Path $externalApiGuide) -and (Test-Path $externalApiOpenApi)) {
+  $docsDir = Join-Path $packageRoot 'docs'
+  if (-not (Test-Path $docsDir)) { New-Item -ItemType Directory -Path $docsDir -Force | Out-Null }
+  Copy-Item -LiteralPath $externalApiGuide -Destination (Join-Path $docsDir 'EXTERNAL_DATA_API.md') -Force
+  Copy-Item -LiteralPath $externalApiOpenApi -Destination (Join-Path $docsDir 'external-data-api.openapi.yaml') -Force
+}
 $whatsappCoexistenceGuide = Join-Path $repoRoot 'docs\whatsapp-business-app-coexistence.md'
 if (Test-Path $whatsappCoexistenceGuide) {
   $docsDir = Join-Path $packageRoot 'docs'

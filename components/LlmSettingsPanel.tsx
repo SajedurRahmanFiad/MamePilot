@@ -5,6 +5,8 @@ import { useLlmSettings } from '../src/hooks/useQueries';
 import { useUpdateLlmSettings } from '../src/hooks/useMutations';
 import { discoverLlmModels } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
 const PROVIDERS: Array<{ id: LlmProvider; label: string; baseUrl: string; note: string }> = [
   { id: 'google', label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com', note: 'Uses an AI Studio or Google Cloud API key with the Gemini generateContent API.' },
@@ -68,6 +70,7 @@ const newMultimodalConfiguration = (): MultimodalLlmConfiguration => ({
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-800 outline-none transition focus:border-[#3c5a82] focus:bg-white focus:ring-2 focus:ring-[#3c5a82]/10';
 
 const LlmSettingsPanel: React.FC = () => {
+  const { settings: capabilitySettings } = useCapabilities();
   const toast = useToastNotifications();
   const { data, isPending } = useLlmSettings(true);
   const updateSettings = useUpdateLlmSettings();
@@ -323,7 +326,7 @@ const LlmSettingsPanel: React.FC = () => {
         <div className="flex flex-col gap-3 border-b border-gray-100 pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <h3 className="text-xl font-black text-gray-900">Multimodal lead analysis profiles</h3>
-            <p className="mt-1 max-w-3xl text-sm font-medium text-gray-500">Store separate vision/audio-capable API profiles for realtime lead analysis. The lead analyst uses database tools to search products and customer data only when needed.</p>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-gray-500">{translateBusinessInventoryTerms('Store separate vision/audio-capable API profiles for realtime lead analysis. The lead analyst uses database tools to search products and customer data only when needed.', capabilitySettings?.businessMode)}</p>
           </div>
           <Button onClick={() => setForm((current) => ({ ...current, multimodalConfigurations: [...current.multimodalConfigurations, newMultimodalConfiguration()] }))} variant="secondary">Add Multimodal API</Button>
         </div>

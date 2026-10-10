@@ -16,7 +16,7 @@ import { handlePrintOrder } from '../src/utils/printUtils';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import {
   buildLocalDateTime,
   formatActivityStatusTimestamp,
@@ -73,6 +73,7 @@ const OrderDetails: React.FC = () => {
   const { can, canAccessRecord, isAdminAccessUser } = useRolePermissions();
   const { settings: capabilitySettings, hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const isSofaCover = capabilitySettings?.businessMode === 'sofa_cover';
   const createCompletionForm = (activeOrder?: Order | null): OrderCompletionFormState => ({
     outcome: 'Delivered',
@@ -318,7 +319,7 @@ const OrderDetails: React.FC = () => {
     () => {
       const items: OrderTimelineItem[] = [
         { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
-        { label: 'Processing', historyKey: 'processing', description: 'Items are being prepared and packed for shipping.' },
+        { label: 'Processing', historyKey: 'processing', description: translateInventoryText('Items are being prepared and packed for shipping.') },
       ];
 
       if (!canUseCourierAutomation) {
@@ -333,14 +334,14 @@ const OrderDetails: React.FC = () => {
         { label: 'Courier assigned', historyKey: 'courier', description: 'A courier has been assigned to this order.' },
         { label: 'Picked up', historyKey: 'picked', description: 'The courier has picked up the order.' },
         { label: 'Delivery pending', historyKey: 'pendingDelivered', description: 'The courier has reported delivery; confirmation is required.' },
-        { label: 'Partially Delivered', historyKey: 'completed', description: 'Some items were delivered; the rest need follow-up.' },
+        { label: 'Partially Delivered', historyKey: 'completed', description: translateInventoryText('Some items were delivered; the rest need follow-up.') },
         { label: 'Delivered', historyKey: 'completed', description: 'The order has been delivered to the customer.' },
       );
       if (showExchangeTimeline) {
         items.push(
           { label: 'Exchange processing', historyKey: 'exchangeProcessing', description: 'Exchange initiated and processing.' },
-          { label: 'Exchange picked', historyKey: 'exchangePicked', description: 'Exchange items picked up by courier.' },
-          { label: 'Exchange delivered', historyKey: 'exchangeDelivered', description: 'Exchange items delivered to the customer.' },
+          { label: 'Exchange picked', historyKey: 'exchangePicked', description: translateInventoryText('Exchange items picked up by courier.') },
+          { label: 'Exchange delivered', historyKey: 'exchangeDelivered', description: translateInventoryText('Exchange items delivered to the customer.') },
           { label: 'Exchange returned', historyKey: 'exchangeReturned', description: 'The exchange order has been returned.' },
           { label: 'Exchange cancelled', historyKey: 'exchangeCancelled', description: 'The exchange has been cancelled.' },
         );
@@ -348,9 +349,9 @@ const OrderDetails: React.FC = () => {
       if (showRepairTimeline) {
         items.push(
           { label: 'Repair processing', historyKey: 'repairProcessing', description: 'The order has entered the repair workflow.' },
-          { label: 'Repair Courier Assigned', historyKey: 'repairCourier', description: 'A delivery person has been assigned to pick up the item for repair.' },
-          { label: 'Repair picked', historyKey: 'repairPicked', description: 'The item has been picked up for repair.' },
-          { label: 'Repair delivered', historyKey: 'repairDelivered', description: 'The repaired item has been delivered.' },
+          { label: 'Repair Courier Assigned', historyKey: 'repairCourier', description: translateInventoryText('A delivery person has been assigned to pick up the item for repair.') },
+          { label: 'Repair picked', historyKey: 'repairPicked', description: translateInventoryText('The item has been picked up for repair.') },
+          { label: 'Repair delivered', historyKey: 'repairDelivered', description: translateInventoryText('The repaired item has been delivered.') },
           { label: 'Repair returned', historyKey: 'repairReturned', description: 'The repair order has been returned.' },
           { label: 'Repair canceled', historyKey: 'repairCancelled', description: 'The repair workflow has been canceled.' },
         );
@@ -361,7 +362,7 @@ const OrderDetails: React.FC = () => {
       );
       return items;
     },
-    [canUseCourierAutomation, showExchangeTimeline, showRepairTimeline]
+    [canUseCourierAutomation, capabilitySettings?.businessMode, showExchangeTimeline, showRepairTimeline]
   );
 
   const getTimelineIndex = (order?: Order) => {
@@ -1042,7 +1043,7 @@ const OrderDetails: React.FC = () => {
         label: 'Mark repair picked',
         nextStatus: OrderStatus.REPAIR_PICKED,
         historyKey: 'repairPicked',
-        description: 'Mark that the item has been picked up for repair.',
+        description: translateInventoryText('Mark that the item has been picked up for repair.'),
         enabled: canFinalizeOrders,
       };
     }
@@ -1052,7 +1053,7 @@ const OrderDetails: React.FC = () => {
         label: 'Mark repair delivered',
         nextStatus: OrderStatus.REPAIR_DELIVERED,
         historyKey: 'repairDelivered',
-        description: 'Mark that the repaired item has been delivered.',
+        description: translateInventoryText('Mark that the repaired item has been delivered.'),
         enabled: canFinalizeOrders,
       };
     }
@@ -1063,7 +1064,7 @@ const OrderDetails: React.FC = () => {
           label: 'Mark exchange picked',
           nextStatus: OrderStatus.EXCHANGE_PICKED,
           historyKey: 'exchangePicked',
-          description: 'Mark that the exchange items have been picked up by the courier.',
+          description: translateInventoryText('Mark that the exchange items have been picked up by the courier.'),
           enabled: canFinalizeOrders,
         };
       }
@@ -1072,7 +1073,7 @@ const OrderDetails: React.FC = () => {
         label: 'Assign courier for exchange',
         nextStatus: order.status,
         historyKey: 'exchangeCourier',
-        description: 'Assign a courier to ship the replacement items to the customer.',
+        description: translateInventoryText('Assign a courier to ship the replacement items to the customer.'),
         enabled: canAssignExchangeCourier,
       };
     }
@@ -1082,7 +1083,7 @@ const OrderDetails: React.FC = () => {
         action: 'complete' as const,
         label: 'Complete order',
         nextStatus: OrderStatus.COMPLETED,
-        description: 'Confirm which items were delivered and finalize the order.',
+        description: translateInventoryText('Confirm which items were delivered and finalize the order.'),
         enabled: canFinalizeOrders,
       };
     }
@@ -1173,7 +1174,7 @@ const OrderDetails: React.FC = () => {
       description: 'Complete the order by marking it delivered or returned.',
       enabled: canFinalizeOrders,
     };
-  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier]);
+  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier, capabilitySettings?.businessMode]);
 
   // Calculate payment status
   const settlementTotal = order?.status === OrderStatus.CANCELLED ? 0 : (order?.total ?? 0);
@@ -1398,7 +1399,7 @@ const OrderDetails: React.FC = () => {
   const handleConfirmStatusTransition = async () => {
     if (!pendingStatusTransition) return;
     if (requiresDeliveryShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId)) {
-      toast.error('Select an account and expense category before marking this item as picked.');
+      toast.error(translateInventoryText('Select an account and expense category before marking this item as picked.'));
       return;
     }
     setShowStatusTransitionModal(false);
@@ -2352,7 +2353,7 @@ const OrderDetails: React.FC = () => {
                     <thead>
                       <tr style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.15), color: '#ffffff' }}>
                         <th className="hidden sm:table-cell py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3 text-center w-10">#</th>
-                        <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Item Description</th>
+                        <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">{isSofaCover ? 'Fabric Description' : 'Item Description'}</th>
                         <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
                         <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
                         <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Total</th>
@@ -3278,7 +3279,7 @@ const OrderDetails: React.FC = () => {
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{isRepairCourierAssignment ? 'Assign Repair Delivery Person' : isSofaCover ? 'Assign Delivery Person' : 'Manual Courier Assignment'}</h2>
-                <p className="text-sm text-gray-500">{isSofaCover ? `${isRepairCourierAssignment ? 'Choose who will pick up the item for repair' : 'Choose the delivery person'} and enter the shipping cost.` : 'Add a note and assign the order to a courier manually.'}</p>
+                <p className="text-sm text-gray-500">{isSofaCover ? translateInventoryText(`${isRepairCourierAssignment ? 'Choose who will pick up the item for repair' : 'Choose the delivery person'} and enter the shipping cost.`) : 'Add a note and assign the order to a courier manually.'}</p>
               </div>
               <button onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); }} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
             </div>

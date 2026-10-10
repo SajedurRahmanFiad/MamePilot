@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Input } from './index';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import {
   checkWooCommerceWebhookHealth,
   deleteWooCommerceStore,
@@ -41,6 +43,8 @@ const blankStore = (companyPageId: string): StoreDraft => ({
 });
 
 const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ companyPages }) => {
+  const { settings: capabilitySettings } = useCapabilities();
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const toast = useToastNotifications();
   const queryClient = useQueryClient();
   const storesQuery = useQuery({
@@ -120,14 +124,14 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
     operation: () => Promise<{ message?: string }>,
   ) => {
     if (draft.isNew) {
-      toast.warning('Save this website before testing automatic order delivery, importing products, or syncing orders.');
+      toast.warning(translateInventoryText('Save this website before testing automatic order delivery, importing products, or syncing orders.'));
       return;
     }
     setBusyAction(actionName + ':' + draft.id);
     const labels = {
       test: 'Testing WooCommerce connection...',
       webhook: 'Turning on automatic order delivery...',
-      products: 'Importing all WooCommerce products...',
+      products: translateInventoryText('Importing all WooCommerce products...'),
       sync: 'Syncing WooCommerce orders...',
       repair: 'Repairing webhook connection...',
     };
@@ -139,9 +143,9 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
       if (actionName === 'repair' || actionName === 'webhook') {
         checkHealth(draft.id);
       }
-      toast.update(loadingId, result.message || 'WooCommerce action completed.', 'success');
+      toast.update(loadingId, translateInventoryText(result.message || 'WooCommerce action completed.'), 'success');
     } catch (error) {
-      toast.update(loadingId, error instanceof Error ? error.message : 'WooCommerce action failed.', 'error');
+      toast.update(loadingId, translateInventoryText(error instanceof Error ? error.message : 'WooCommerce action failed.'), 'error');
     } finally {
       setBusyAction('');
     }
@@ -197,7 +201,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
         <div>
           <h3 className="text-xl font-bold text-gray-800">WooCommerce Sync</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
-            Connect multiple WooCommerce websites. Import your catalog — every variation becomes its own product — then
+            {translateInventoryText('Connect multiple WooCommerce websites. Import your catalog — every variation becomes its own product — then')}
             receive new orders automatically through a secure connection assigned to the selected company so invoices
             use the correct branding.
           </p>
@@ -211,7 +215,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
           <li>In WordPress, open WooCommerce → Settings → Advanced → REST API and choose Add key.</li>
           <li>Give the key Read/Write permission. Copy its consumer key and consumer secret into the website below.</li>
           <li>Set Public delivery base URL to your live MamePilot API folder, for example https://app.example.com/api. For local testing, use an HTTPS tunnel; WooCommerce cannot deliver to localhost.</li>
-          <li>Save the website, use Test Connection, then click Import All Products to bring your catalog into the app. Every variation becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) with the variation image, SKU, price, and stock.</li>
+          <li>{translateInventoryText('Save the website, use Test Connection, then click Import All Products to bring your catalog into the app. Every variation becomes its own product — a T-shirt in red and blue imports as T-shirt (Red) and T-shirt (Blue) with the variation image, SKU, price, and stock.')}</li>
           <li>Click Turn On Automatic Orders. MamePilot creates and maintains the secure order connection for you.</li>
           <li>Use Sync Existing Orders once if you also want older WooCommerce orders. Repeated syncs are safe and do not create duplicates.</li>
         </ol>
@@ -301,9 +305,9 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                     </div>
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-semibold text-gray-500">
                       <span>Automatic orders: {store.webhookId ? 'connected' : 'not connected'}</span>
-                      <span>Products: {store.productsSynced}</span>
+                      <span>{translateInventoryText(`Products: ${store.productsSynced}`)}</span>
                       <span>Orders: {store.ordersSynced}</span>
-                      <span>Last product import: {store.lastProductsSyncedAt ? formatDateTime(store.lastProductsSyncedAt) : 'never'}</span>
+                      <span>{translateInventoryText(`Last product import: ${store.lastProductsSyncedAt ? formatDateTime(store.lastProductsSyncedAt) : 'never'}`)}</span>
                       <span>Last sync: {store.lastSyncedAt ? formatDateTime(store.lastSyncedAt) : 'never'}</span>
                     </div>
                     {store.webhookId && store.webhookId > 0 && webhookHealth[store.id] && (
@@ -321,7 +325,7 @@ const WooCommerceSettingsPanel: React.FC<{ companyPages: CompanyPage[] }> = ({ c
                 <div className="mt-5 flex flex-wrap gap-2">
                   <Button type="button" onClick={() => saveStore(store)} loading={busyAction === 'save:' + store.id} disabled={anyBusy || companyPages.length === 0}>Save Website</Button>
                   <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'test', () => testWooCommerceStore(store.id))} loading={busyAction === 'test:' + store.id} disabled={anyBusy || store.isNew}>Test Connection</Button>
-                  <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'products', () => syncWooCommerceProducts(store.id))} loading={busyAction === 'products:' + store.id} disabled={anyBusy || store.isNew || !store.enabled}>Import All Products</Button>
+                  <Button type="button" variant="secondary" onClick={() => runStoreAction(store, 'products', () => syncWooCommerceProducts(store.id))} loading={busyAction === 'products:' + store.id} disabled={anyBusy || store.isNew || !store.enabled}>{translateInventoryText('Import All Products')}</Button>
                   <Button
                     type="button"
                     variant="secondary"

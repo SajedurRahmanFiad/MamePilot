@@ -1597,37 +1597,14 @@ CALL sp_create_idx('transactions', 'idx_transactions_active_type_created_id', '`
 CALL sp_create_idx('transactions', 'idx_transactions_active_approval_created_id', '`deleted_at`, `approval_status`, `created_at`, `id`');
 CALL sp_create_idx('transactions', 'idx_transactions_active_creator_created_id', '`deleted_at`, `created_by`, `created_at`, `id`');
 
-CALL sp_create_idx('lead_profiles', 'idx_leads_active_updated_id', '`archived_at`, `updated_at`, `id`');
-CALL sp_create_idx('lead_profiles', 'idx_leads_active_status_updated_id', '`archived_at`, `status`, `updated_at`, `id`');
-CALL sp_create_idx('lead_profiles', 'idx_leads_active_channel_updated_id', '`archived_at`, `source_channel`, `updated_at`, `id`');
-
 CALL sp_create_idx('notifications', 'idx_notifications_active_updated_id', '`is_active`, `updated_at`, `id`');
 
 CALL sp_create_idx('notification_receipts', 'idx_notification_receipts_user_updated', '`user_id`, `updated_at`, `notification_id`');
-
-CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
-CALL sp_create_idx('whatsapp_contacts', 'idx_whatsapp_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
-
-CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
-CALL sp_create_idx('whatsapp_messages', 'idx_whatsapp_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
-
-CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_last_message_id', '`last_message_at`, `updated_at`, `id`');
-CALL sp_create_idx('messenger_contacts', 'idx_messenger_contacts_unread_last_message_id', '`unread_count`, `last_message_at`, `id`');
-
-CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_time_id', '`contact_id`, `message_at`, `id`');
-CALL sp_create_idx('messenger_messages', 'idx_messenger_messages_contact_updated_id', '`contact_id`, `updated_at`, `id`');
-
-CALL sp_create_idx('meta_ads', 'idx_meta_ads_status_updated_id', '`effective_status`, `updated_time`, `id`');
-CALL sp_create_idx('meta_ads', 'idx_meta_ads_account_updated_id', '`ad_account_id`, `updated_time`, `id`');
-CALL sp_create_idx('meta_ads', 'idx_meta_ads_business_updated_id', '`business_id`, `updated_time`, `id`');
-CALL sp_create_idx('meta_ads', 'idx_meta_ads_campaign_updated_id', '`campaign_id`, `updated_time`, `id`');
 
 CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_created_id', '`employee_id`, `created_at`, `id`');
 CALL sp_create_idx('wallet_entries', 'idx_wallet_entries_employee_type_order', '`employee_id`, `entry_type`, `source_order_id`, `created_at`, `id`');
 
 CALL sp_create_idx('payroll_payments', 'idx_payroll_payments_type_employee_paid_id', '`compensation_type`, `employee_id`, `paid_at`, `id`');
-
-CALL sp_create_idx('recurring_transactions', 'idx_recurring_active_next_run_id', '`is_active`, `next_run_at`, `id`');
 
 CALL sp_create_idx('orders', 'idx_orders_pl_report', '`deleted_at`, `status`, `order_date`, `paid_amount`, `page_id`');
 
@@ -3838,6 +3815,17 @@ CALL sp_add_col('messenger_settings', 'last_webhook_at', 'DATETIME NULL');
 CALL sp_add_col('messenger_settings', 'last_webhook_status', 'VARCHAR(500) NULL');
 
 -- Migration: 2026-08-20_pos_draft_payload.sql
+CREATE TABLE IF NOT EXISTS `pos_drafts` (
+  `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
+  `items` JSON NOT NULL,
+  `note` TEXT NULL,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pos_drafts_user` (`user_id`),
+  CONSTRAINT `fk_pos_drafts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CALL sp_add_col('pos_drafts', 'data', 'JSON NULL AFTER `note`');
 
 -- Migration: 2026-08-20_pos_module.sql
@@ -4079,6 +4067,42 @@ CALL sp_create_idx('orders', 'idx_orders_repair_delivered_at', '`repair_delivere
 CALL sp_create_idx('orders', 'idx_orders_repair_cancelled_at', '`repair_cancelled_at`');
 
 CALL sp_create_idx('orders', 'idx_orders_repair_returned_at', '`repair_returned_at`');
+
+-- Migration: 2026-10-11_external_api_keys.sql
+CREATE TABLE IF NOT EXISTS external_api_keys (
+  id VARCHAR(64) NOT NULL,
+  label VARCHAR(100) NOT NULL,
+  key_prefix VARCHAR(32) NOT NULL,
+  key_hash CHAR(64) NOT NULL,
+  created_by VARCHAR(64) NULL,
+  scopes JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NULL,
+  revoked_at DATETIME NULL,
+  last_used_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_external_api_keys_prefix (key_prefix),
+  KEY idx_external_api_keys_creator (created_by, revoked_at),
+  KEY idx_external_api_keys_expiry (expires_at, revoked_at),
+  CONSTRAINT fk_external_api_keys_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration: 2026-10-11_external_api_rate_limits.sql
+CALL sp_add_col('external_api_keys', 'rate_window_started_at', 'DATETIME NULL');
+CALL sp_add_col('external_api_keys', 'rate_count', 'INT UNSIGNED NOT NULL DEFAULT 0');
+
+CREATE TABLE IF NOT EXISTS external_api_request_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  key_id VARCHAR(64) NULL,
+  resource VARCHAR(32) NOT NULL,
+  request_method VARCHAR(10) NOT NULL,
+  response_status SMALLINT UNSIGNED NOT NULL,
+  occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_external_api_request_logs_key_time (key_id, occurred_at),
+  KEY idx_external_api_request_logs_time_status (occurred_at, response_status),
+  CONSTRAINT fk_external_api_request_logs_key FOREIGN KEY (key_id) REFERENCES external_api_keys (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

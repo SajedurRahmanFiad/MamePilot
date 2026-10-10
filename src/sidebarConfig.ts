@@ -371,11 +371,12 @@ const filterSidebarItems = (
 
 export const buildSidebarItems = (context: SidebarPermissionContext) => {
   const items = filterSidebarItems(rawSidebarConfig, context);
-  if (context.businessMode !== 'vaccine_center') return items;
+  if (context.businessMode !== 'vaccine_center' && context.businessMode !== 'sofa_cover') return items;
+  const vaccineCenter = context.businessMode === 'vaccine_center';
 
   const rename = (item: SidebarConfigItem): SidebarConfigItem => ({
     ...item,
-    label: item.key === 'products' ? 'Vaccines' : item.key === 'customers' ? 'Patients' : item.label,
+    label: item.key === 'products' ? vaccineCenter ? 'Vaccines' : 'Fabrics' : item.key === 'customers' && vaccineCenter ? 'Patients' : item.label,
     children: item.children?.map(rename),
   });
   return items.map(rename);

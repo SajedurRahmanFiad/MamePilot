@@ -8,6 +8,7 @@ import { theme, mixThemeColorWithWhite, resolveThemeColorPalette } from '../them
 import { useAccounts, useBill, useCompanySettings, useInvoiceSettings, useProductImagesByIds, useUser, useVendor, useSystemDefaults, usePaymentMethods, useCategories } from '../src/hooks/useQueries';
 import { useUpdateBill, useProcessBillReturn } from '../src/hooks/useMutations';
 import { useCapabilities } from '../src/hooks/useCapabilities';
+import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { LoadingOverlay, CommonPaymentModal, BillReturnModal, NumericInput } from '../components';
 import { getPreservedRouteState } from '../src/utils/navigation';
@@ -36,6 +37,7 @@ const BillDetails: React.FC = () => {
   // Query data
   const { data: bill, isPending: billLoading, error: billError } = useBill(id || '');
   const { settings: capabilitySettings } = useCapabilities(Boolean(user));
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
   const { data: vendor } = useVendor(bill?.vendorId);
   const { data: createdByUser } = useUser(bill?.createdBy);
@@ -145,11 +147,11 @@ const BillDetails: React.FC = () => {
       { label: 'Created', historyKey: 'created', description: 'Bill created and waiting to be processed.' },
       { label: 'Processing', historyKey: 'processing', description: 'Bill is currently under processing.' },
       { label: 'Received', historyKey: 'received', description: 'Bill has been marked as received.' },
-      { label: 'Exchanged', historyKey: 'received', description: 'Bill has been received with exchanged items.' },
+      { label: 'Exchanged', historyKey: 'received', description: translateInventoryText('Bill has been received with exchanged items.') },
       { label: 'Returned', historyKey: null, description: 'Bill has been returned.' },
       { label: 'Cancelled', historyKey: 'cancelled', description: 'Bill has been cancelled.' },
     ],
-    []
+    [capabilitySettings?.businessMode]
   );
 
   const hasExchangedItems = (b?: Bill | null) =>
@@ -686,7 +688,7 @@ const BillDetails: React.FC = () => {
                   <thead>
                     <tr style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.15), color: '#ffffff' }}>
                       <th className="hidden sm:table-cell py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3 text-center w-10">#</th>
-                      <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Item Description</th>
+                      <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">{capabilitySettings?.businessMode === 'sofa_cover' ? 'Fabric Description' : 'Item Description'}</th>
                       <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
                       <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
                       <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Total</th>

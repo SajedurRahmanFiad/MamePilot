@@ -330,7 +330,7 @@ const BillForm: React.FC = () => {
     let resolvedVendorId = vendorId;
     if (smartVendorSelection && billSmartInput.trim()) {
       if (items.length === 0 || !billNumber || billNumber === 'Generating...' || billNumber === 'ERROR') {
-        setError(!items.length ? 'Please add at least one product.' : 'Bill number is still being generated. Please wait a moment.');
+        setError(!items.length ? `Please add at least one ${terminology.itemLower}.` : 'Bill number is still being generated. Please wait a moment.');
         return;
       }
       setSaving(true);
@@ -357,7 +357,7 @@ const BillForm: React.FC = () => {
     }
 
     if (!resolvedVendorId || items.length === 0) {
-      setError(smartVendorSelection ? 'Please enter vendor details and add at least one product.' : 'Please select a vendor and add at least one product.');
+      setError(smartVendorSelection ? `Please enter vendor details and add at least one ${terminology.itemLower}.` : `Please select a vendor and add at least one ${terminology.itemLower}.`);
       return;
     }
 
@@ -636,7 +636,7 @@ const BillForm: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{terminology.item} Item</th>
+                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{capabilitySettings?.businessMode === 'sofa_cover' ? terminology.item : `${terminology.item} Item`}</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Cost Rate</th>
                 <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
                 <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
@@ -733,7 +733,7 @@ const BillForm: React.FC = () => {
                               onClick={addSelectedItems}
                               className={`w-full py-2.5 ${theme.colors.primary[600]} text-white font-bold text-sm rounded-xl hover:${theme.colors.primary[700]} transition-all flex items-center justify-center gap-2`}
                             >
-                              {ICONS.Check} Add {selectedProductIds.size} item{selectedProductIds.size > 1 ? 's' : ''}
+                              {ICONS.Check} Add {selectedProductIds.size} {selectedProductIds.size === 1 ? terminology.itemLower : terminology.itemsLower}
                             </button>
                           </div>
                         )}

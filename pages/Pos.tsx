@@ -31,7 +31,7 @@ import { CustomerCreateModal } from '../components/ContactCreateModal';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import { handlePrintOrder } from '../src/utils/printUtils';
 import { sanitizePhoneInput } from '../utils';
 import {
@@ -84,6 +84,7 @@ export default function Pos() {
   const { can } = useRolePermissions();
   const { settings: capabilitySettings } = useCapabilities();
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
   const permission = can('orders.create');
 
   // ---- Customer selection (identical logic & visuals to the order form) ----
@@ -417,7 +418,7 @@ export default function Pos() {
 
   const openCheckout = () => {
     if (cart.length === 0) {
-      toast.error('Add at least one item to the sale.');
+      toast.error(translateInventoryText('Add at least one item to the sale.'));
       return;
     }
     setCheckoutOpen(true);
@@ -474,7 +475,7 @@ export default function Pos() {
       return;
     }
     if (cart.length === 0) {
-      toast.error('Add at least one item to the sale.');
+      toast.error(translateInventoryText('Add at least one item to the sale.'));
       return;
     }
     setSubmitting(true);
@@ -532,15 +533,15 @@ export default function Pos() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search products..."
+                placeholder={`Search ${terminology.itemsLower}...`}
                 className={`${theme.inputs.base} pl-9`}
               />
             </div>
-            <span className="text-xs text-gray-400 whitespace-nowrap">{filteredProducts.length} products</span>
+            <span className="text-xs text-gray-400 whitespace-nowrap">{filteredProducts.length} {terminology.itemsLower}</span>
           </div>
 
           <div className="min-h-0 lg:overflow-y-auto pr-1">
-            {productsQuery.isError && <p className="text-sm text-red-500">Could not load products. Refresh and try again.</p>}
+            {productsQuery.isError && <p className="text-sm text-red-500">{translateInventoryText('Could not load products. Refresh and try again.')}</p>}
             {productsQuery.isLoading ? (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
                 {Array.from({ length: 10 }).map((_, i) => (
@@ -628,7 +629,7 @@ export default function Pos() {
                 {filteredProducts.length === 0 && (
                   <div className="col-span-full text-sm text-gray-400 text-center py-10">
                     <PackageOpen size={28} className="mx-auto mb-2 text-gray-300" />
-                    No products match your search.
+                    {translateInventoryText('No products match your search.')}
                   </div>
                 )}
               </div>
@@ -781,7 +782,7 @@ export default function Pos() {
             {cart.length === 0 ? (
               <div className="text-center py-10 text-sm text-gray-400">
                 <ShoppingCart size={26} className="mx-auto mb-2 text-gray-300" />
-                Tap products to add them to the sale.
+                {translateInventoryText('Tap products to add them to the sale.')}
               </div>
             ) : (
               cart.map((line) => {
@@ -828,7 +829,7 @@ export default function Pos() {
                       </button>
                     </div>
                     <div className="w-14 text-right text-xs font-bold text-gray-900">{formatCurrency(lineTot)}</div>
-                    <IconButton variant="neutral" icon={<X size={13} />} title="Remove item" onClick={() => removeLine(line.key)} />
+                    <IconButton variant="neutral" icon={<X size={13} />} title={translateInventoryText('Remove item')} onClick={() => removeLine(line.key)} />
                   </div>
                 );
               })
@@ -921,7 +922,7 @@ export default function Pos() {
             </Button>
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-gray-400 flex-shrink-0">
-            <span>{itemCount} item(s)</span>
+            <span>{itemCount} {itemCount === 1 ? terminology.itemLower : terminology.itemsLower}</span>
             {customer && <span className="truncate max-w-[60%]">{customerDisplay?.name}</span>}
           </div>
         </Card>

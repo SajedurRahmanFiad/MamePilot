@@ -6,6 +6,7 @@ import { triggerPrintDialog } from '../src/utils/printUtils';
 import { useBill, useVendor, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useSystemDefaults } from '../src/hooks/useQueries';
 import { resolveThemeColorPalette } from '../theme';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import { formatDate } from '../utils';
 import { ReceiptText } from 'lucide-react';
 import { InvoiceLayout } from '../components';
@@ -17,6 +18,7 @@ interface BillInvoiceContentProps {
   companySettings: any;
   invoiceSettings: any;
   themeColorHex: string;
+  itemDescriptionLabel: string;
 }
 
 const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
@@ -26,6 +28,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
   companySettings,
   invoiceSettings,
   themeColorHex,
+  itemDescriptionLabel,
 }) => {
   const billItems = bill?.items || [];
 
@@ -66,6 +69,7 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
       className="print:min-h-fit"
       contentClassName="p-6 lg:p-10 print:p-6 min-h-screen print:min-h-fit space-y-3 sm:space-y-4 lg:space-y-5"
       themeColorHex={themeColorHex}
+      itemDescriptionLabel={itemDescriptionLabel}
       company={{
         name: companySettings?.name || db.settings.company.name,
         tagline: companySettings?.tagline || db.settings.company.tagline,
@@ -97,6 +101,8 @@ const BillInvoiceContent: React.FC<BillInvoiceContentProps> = ({
 const PrintBill: React.FC = () => {
   const { id } = useParams();
   const { canPrintBills } = useRolePermissions();
+  const { settings: capabilitySettings } = useCapabilities(Boolean(id));
+  const itemDescriptionLabel = capabilitySettings?.businessMode === 'sofa_cover' ? 'Fabric Description' : 'Item Description';
   const { data: bill, isPending: billLoading } = useBill(id || '');
   const { data: vendor, isPending: vendorLoading } = useVendor(bill ? bill.vendorId : undefined);
   const billItemProductIds = useMemo(
@@ -143,6 +149,7 @@ const PrintBill: React.FC = () => {
           companySettings={companySettings}
           invoiceSettings={invoiceSettings}
           themeColorHex={themeColorHex}
+          itemDescriptionLabel={itemDescriptionLabel}
         />
 
         <div style={{ pageBreakBefore: 'always' }}>
@@ -153,6 +160,7 @@ const PrintBill: React.FC = () => {
             companySettings={companySettings}
             invoiceSettings={invoiceSettings}
             themeColorHex={themeColorHex}
+            itemDescriptionLabel={itemDescriptionLabel}
           />
         </div>
       </div>

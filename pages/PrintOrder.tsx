@@ -21,6 +21,7 @@ interface InvoiceContentProps {
   invoiceSettings: any;
   themeColorHex: string;
   isVaccineCenter: boolean;
+  itemDescriptionLabel: string;
 }
 
 const InvoiceContent: React.FC<InvoiceContentProps> = ({
@@ -31,6 +32,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
   invoiceSettings,
   themeColorHex,
   isVaccineCenter,
+  itemDescriptionLabel,
 }) => {
   const orderItems = order?.items || [];
   const weightUnit = 'kg';
@@ -99,6 +101,7 @@ const InvoiceContent: React.FC<InvoiceContentProps> = ({
       className="print:min-h-fit"
       contentClassName="p-6 lg:p-10 print:p-6 min-h-screen print:min-h-fit space-y-3 sm:space-y-4 lg:space-y-5"
       themeColorHex={themeColorHex}
+      itemDescriptionLabel={itemDescriptionLabel}
       company={{
         name: branding?.name || db.settings.company.name,
         tagline: branding?.tagline || db.settings.company.tagline,
@@ -143,6 +146,7 @@ const PrintOrder: React.FC = () => {
   const { data: invoiceSettings } = useInvoiceSettings();
   const { data: systemDefaults } = useSystemDefaults();
   const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
+  const itemDescriptionLabel = capabilitySettings?.businessMode === 'sofa_cover' ? 'Fabric Description' : 'Item Description';
   const printTriggeredRef = useRef(false);
   const orderBranding = useMemo(
     () => getOrderCompanyPage(order, companySettings || db.settings.company),
@@ -184,6 +188,7 @@ const PrintOrder: React.FC = () => {
           invoiceSettings={invoiceSettings}
           themeColorHex={themeColorHex}
           isVaccineCenter={isVaccineCenter}
+          itemDescriptionLabel={itemDescriptionLabel}
         />
 
         <div style={{ pageBreakBefore: 'always' }}>
@@ -195,6 +200,7 @@ const PrintOrder: React.FC = () => {
             invoiceSettings={invoiceSettings}
             themeColorHex={themeColorHex}
             isVaccineCenter={isVaccineCenter}
+            itemDescriptionLabel={itemDescriptionLabel}
           />
         </div>
       </div>

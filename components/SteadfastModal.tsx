@@ -227,7 +227,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
                 </svg>
               </div>
               <p className="text-center text-gray-600">
-                Steadfast does not support exchange consignments. Please use <strong>CarryBee</strong> or <strong>Paperfly</strong> to ship exchange items.
+                Steadfast does not support exchange consignments. Please use <strong>CarryBee</strong> or <strong>Paperfly</strong> to ship exchange {terminology.itemsLower}.
               </p>
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-gray-100">

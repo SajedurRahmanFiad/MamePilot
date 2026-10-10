@@ -21,6 +21,7 @@ const PosOrderDetails: React.FC = () => {
   const { can } = useRolePermissions();
   const { hasCapability, settings: capabilitySettings } = useCapabilities(Boolean(id));
   const isVaccineCenter = capabilitySettings?.businessMode === 'vaccine_center';
+  const itemDescriptionLabel = capabilitySettings?.businessMode === 'sofa_cover' ? 'Fabric Description' : 'Item Description';
 
   const { data: order, isPending: orderLoading, error: orderError } = useOrder(id || '');
   const { data: customer } = useCustomer(order ? order.customerId : undefined);
@@ -211,6 +212,7 @@ const PosOrderDetails: React.FC = () => {
           className="lg:col-span-2"
           contentClassName="p-4 sm:p-6 md:p-8 lg:p-10 space-y-4 sm:space-y-5"
           themeColorHex={themeColorHex}
+          itemDescriptionLabel={itemDescriptionLabel}
           company={{
             name: companySettings?.name || db.settings.company.name,
             tagline: companySettings?.tagline || db.settings.company.tagline,

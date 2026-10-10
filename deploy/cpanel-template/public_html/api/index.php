@@ -10,6 +10,7 @@ use App\Config;
 use App\CourierApi;
 use App\DataManagementApi;
 use App\Database;
+use App\ExternalDataApi;
 use App\FeatureAccess;
 use App\GitUpdateDispatcher;
 use App\Http;
@@ -51,7 +52,8 @@ if (Http::method() === 'OPTIONS') {
 try {
     $body = Http::jsonBody();
     $action = trim((string) ($_GET['action'] ?? $body['action'] ?? ''));
-    if ($action === '') {
+    $externalApiRequest = ExternalDataApi::matchesPath(Http::path());
+    if ($action === '' && !$externalApiRequest) {
         Http::error(400, 'Missing action.');
         exit;
     }
@@ -68,6 +70,21 @@ try {
     $config = Config::load($appRoot);
     $database = new Database($config);
     $auth = new Auth($config, $database);
+    if ($externalApiRequest) {
+        $response = (new ExternalDataApi($database, $auth, $config))->handleRequest(
+            Http::method(),
+            Http::path(),
+            $_GET,
+            $body
+        );
+        if ($response === null) {
+            Http::error(404, 'Unknown external API route.');
+            exit;
+        }
+        Http::respond($response['status'], $response['body']);
+        exit;
+    }
+
     $recurringScheduler = new RecurringTransactionScheduler($database, $auth, $config);
     register_shutdown_function(static function () use ($recurringScheduler): void {
         $recurringScheduler->triggerIfNeeded();
