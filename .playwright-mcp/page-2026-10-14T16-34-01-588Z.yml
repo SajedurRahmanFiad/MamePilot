@@ -1,0 +1,143 @@
+- generic [active] [ref=f9e1]:
+  - generic [ref=f9e4]:
+    - complementary [ref=f9e5]:
+      - generic [ref=f9e6]:
+        - button [ref=f9e9] [cursor=pointer]:
+          - img "BD Hatbela" [ref=f9e10]
+        - navigation [ref=f9e11]:
+          - link [ref=f9e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f9e23] [cursor=pointer]
+          - button [ref=f9e32] [cursor=pointer]
+          - button [ref=f9e41] [cursor=pointer]
+          - button [ref=f9e51] [cursor=pointer]
+          - button [ref=f9e59] [cursor=pointer]
+          - button [ref=f9e66] [cursor=pointer]
+          - button [ref=f9e76] [cursor=pointer]
+          - link [ref=f9e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f9e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f9e97] [cursor=pointer]
+        - generic [ref=f9e103]:
+          - link [ref=f9e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f9e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f9e121] [cursor=pointer]
+    - generic [ref=f9e126]:
+      - banner [ref=f9e127]:
+        - heading "Financial Reports" [level=1] [ref=f9e131]
+        - generic [ref=f9e132]:
+          - link "Point of Sale" [ref=f9e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f9e138] [cursor=pointer]
+          - button "9+" [ref=f9e143] [cursor=pointer]
+          - button [ref=f9e149] [cursor=pointer]:
+            - generic [ref=f9e150]:
+              - paragraph [ref=f9e151]: Fiad
+              - paragraph [ref=f9e152]: Developer
+            - img "Profile" [ref=f9e153]
+      - main [ref=f9e154]:
+        - generic [ref=f9e272]:
+          - generic [ref=f9e273]:
+            - generic [ref=f9e274]:
+              - button [ref=f9e275] [cursor=pointer]
+              - heading "Companywise Performance" [level=2] [ref=f9e278]
+            - button "Print Report" [ref=f9e279] [cursor=pointer]
+          - generic [ref=f9e284]:
+            - generic [ref=f9e285]:
+              - generic [ref=f9e286]: Company
+              - button "All Companies" [ref=f9e287] [cursor=pointer]
+            - generic [ref=f9e291]:
+              - generic [ref=f9e292]: Period
+              - generic [ref=f9e293]:
+                - generic [ref=f9e294] [cursor=pointer]:
+                  - radio "This Year" [checked] [ref=f9e295]
+                  - text: This Year
+                - generic [ref=f9e296] [cursor=pointer]:
+                  - radio "This Month" [ref=f9e297]
+                  - text: This Month
+                - generic [ref=f9e298] [cursor=pointer]:
+                  - radio "Custom Range" [ref=f9e299]
+                  - text: Custom Range
+          - generic [ref=f9e300]:
+            - generic [ref=f9e302]:
+              - generic [ref=f9e303]:
+                - img "BD Hatbela logo" [ref=f9e304]
+                - heading "BD Hatbela" [level=3] [ref=f9e305]
+              - generic [aria-hidden] [ref=f9e306]: +
+              - generic [ref=f9e307]:
+                - img "Sundori dot com logo" [ref=f9e308]
+                - heading "Sundori dot com" [level=3] [ref=f9e309]
+              - generic [aria-hidden] [ref=f9e310]: +
+              - generic [ref=f9e311]:
+                - img "Charu mart bd logo" [ref=f9e312]
+                - heading "Charu mart bd" [level=3] [ref=f9e313]
+              - generic [aria-hidden] [ref=f9e314]: +
+              - generic [ref=f9e315]:
+                - img "Nebu mart bd logo" [ref=f9e316]
+                - heading "Nebu mart bd" [level=3] [ref=f9e317]
+              - generic [aria-hidden] [ref=f9e318]: +
+              - generic [ref=f9e319]:
+                - img "Crafted zone logo" [ref=f9e320]
+                - heading "Crafted zone" [level=3] [ref=f9e321]
+              - generic [aria-hidden] [ref=f9e322]: +
+              - generic [ref=f9e323]:
+                - img "Baby hat logo" [ref=f9e324]
+                - heading "Baby hat" [level=3] [ref=f9e325]
+              - generic [aria-hidden] [ref=f9e326]: +
+              - generic [ref=f9e327]:
+                - img "Merii MART logo" [ref=f9e328]
+                - heading "Merii MART" [level=3] [ref=f9e329]
+              - generic [aria-hidden] [ref=f9e330]: +
+              - generic [ref=f9e331]:
+                - img "Light Comfort logo" [ref=f9e332]
+                - heading "Light Comfort" [level=3] [ref=f9e333]
+            - generic [ref=f9e334]:
+              - generic [ref=f9e335]:
+                - generic [ref=f9e336]:
+                  - paragraph [ref=f9e337]: "0"
+                  - paragraph [ref=f9e338]: Delivered Orders
+                - generic [ref=f9e339]:
+                  - paragraph [ref=f9e340]: "0"
+                  - paragraph [ref=f9e341]: Exchange Delivered
+                - generic [ref=f9e342]:
+                  - paragraph [ref=f9e343]: "0"
+                  - paragraph [ref=f9e344]: Products Sold
+              - heading "Income" [level=4] [ref=f9e345]
+              - generic [ref=f9e346]:
+                - generic [ref=f9e347]: Income from Delivered & Exchange Delivered Orders
+                - generic [ref=f9e348]: ৳ 0
+              - generic [ref=f9e349]:
+                - heading "Expenses" [level=4] [ref=f9e350]
+                - generic [ref=f9e351]:
+                  - generic [ref=f9e352]: Shipping Cost (Courier Charges)
+                  - generic [ref=f9e353]: ৳ 0
+                - generic [ref=f9e354]:
+                  - generic [ref=f9e355]: Cost of Goods Sold (COGS)
+                  - generic [ref=f9e356]: ৳ 0
+              - generic [ref=f9e358]:
+                - generic [ref=f9e359]: Profit / Loss
+                - generic [ref=f9e360]: ৳ 0
+            - generic [ref=f9e361]: This report is generated automatically by BD Hatbela + Sundori dot com + Charu mart bd + Nebu mart bd + Crafted zone + Baby hat + Merii MART + Light Comfort Financial Management System.
+        - generic [ref=f9e250]:
+          - paragraph [ref=f9e251]: © 2026 BD Hatbela|Version 0.3.92|All rights reserved.
+          - paragraph [ref=f9e252]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f9e253] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f9e254]:
+        - generic [ref=f9e255]: Chat with Mame
+        - button "Open chat" [ref=f9e256] [cursor=pointer]:
+          - img "Mame AI" [ref=f9e257]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f9e258]:
+    - generic [ref=f9e259]:
+      - heading [level=3] [ref=f9e261]: Notifications
+      - button [ref=f9e262] [cursor=pointer]
+    - tablist [ref=f9e266]:
+      - tab [selected] [ref=f9e267] [cursor=pointer]: all
+      - tab [ref=f9e268] [cursor=pointer]: unread
+      - tab [ref=f9e269] [cursor=pointer]: read
+    - generic [ref=f9e270]: No notifications yet.

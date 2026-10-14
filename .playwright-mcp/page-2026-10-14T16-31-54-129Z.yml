@@ -1,0 +1,81 @@
+- generic [active] [ref=f9e1]:
+  - generic [ref=f9e4]:
+    - complementary [ref=f9e5]:
+      - generic [ref=f9e6]:
+        - button [ref=f9e9] [cursor=pointer]:
+          - img "BD Hatbela" [ref=f9e10]
+        - navigation [ref=f9e11]:
+          - link [ref=f9e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f9e23] [cursor=pointer]
+          - button [ref=f9e32] [cursor=pointer]
+          - button [ref=f9e41] [cursor=pointer]
+          - button [ref=f9e51] [cursor=pointer]
+          - button [ref=f9e59] [cursor=pointer]
+          - button [ref=f9e66] [cursor=pointer]
+          - button [ref=f9e76] [cursor=pointer]
+          - link [ref=f9e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f9e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f9e97] [cursor=pointer]
+        - generic [ref=f9e103]:
+          - link [ref=f9e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f9e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f9e121] [cursor=pointer]
+    - generic [ref=f9e126]:
+      - banner [ref=f9e127]:
+        - heading "Financial Reports" [level=1] [ref=f9e131]
+        - generic [ref=f9e132]:
+          - link "Point of Sale" [ref=f9e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f9e138] [cursor=pointer]
+          - button "9+" [ref=f9e143] [cursor=pointer]
+          - button [ref=f9e149] [cursor=pointer]:
+            - generic [ref=f9e150]:
+              - paragraph [ref=f9e151]: Fiad
+              - paragraph [ref=f9e152]: Developer
+            - img "Profile" [ref=f9e153]
+      - main [ref=f9e154]:
+        - table [ref=f9e194]:
+          - rowgroup [ref=f9e195]:
+            - row [ref=f9e196]:
+              - cell [ref=f9e197]
+              - cell [ref=f9e201]
+            - row [ref=f9e205]:
+              - cell [ref=f9e206]
+              - cell [ref=f9e210]
+            - row [ref=f9e214]:
+              - cell [ref=f9e215]
+              - cell [ref=f9e219]
+            - row [ref=f9e223]:
+              - cell [ref=f9e224]
+              - cell [ref=f9e228]
+            - row [ref=f9e232]:
+              - cell [ref=f9e233]
+              - cell [ref=f9e237]
+            - row [ref=f9e241]:
+              - cell [ref=f9e242]
+              - cell [ref=f9e246]
+        - generic [ref=f9e250]:
+          - paragraph [ref=f9e251]: © 2026 BD Hatbela|Version 0.3.92|All rights reserved.
+          - paragraph [ref=f9e252]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f9e253] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f9e254]:
+        - generic [ref=f9e255]: Chat with Mame
+        - button "Open chat" [ref=f9e256] [cursor=pointer]:
+          - img "Mame AI" [ref=f9e257]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f9e258]:
+    - generic [ref=f9e259]:
+      - heading [level=3] [ref=f9e261]: Notifications
+      - button [ref=f9e262] [cursor=pointer]
+    - tablist [ref=f9e266]:
+      - tab [selected] [ref=f9e267] [cursor=pointer]: all
+      - tab [ref=f9e268] [cursor=pointer]: unread
+      - tab [ref=f9e269] [cursor=pointer]: read
+    - generic [ref=f9e270]: No notifications yet.

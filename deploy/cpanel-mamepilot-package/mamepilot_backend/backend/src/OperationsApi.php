@@ -5108,63 +5108,12 @@ final class OperationsApi extends BaseService
         $filters = $this->buildDashboardDateFilters($normalizedParams);
         $hasCompanyFilter = !empty($companyPageIds);
 
-        $exchangeDeliveredItemCondition = "(
-            COALESCE(o.items, '') LIKE '%\"isExchangeReplacement\":true%'
-            OR COALESCE(o.items, '') REGEXP '\"exchangedQty\"[[:space:]]*:[[:space:]]*(0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*([.][0-9]+)?)'
-        )";
-
-        // --- Delivered orders count (separate query, unique bindings) ---
-        $deliveredBindings = [];
-        $deliveredCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_d', $companyPageIds, $deliveredBindings);
-        $deliveredDateCond = '';
-        if (!empty($filters['fromDate'])) {
-            $deliveredDateCond .= ' AND o.order_date >= :cw_d_from';
-            $deliveredBindings[':cw_d_from'] = $filters['fromDate'];
-        }
-        if (!empty($filters['toDate'])) {
-            $deliveredDateCond .= ' AND o.order_date <= :cw_d_to';
-            $deliveredBindings[':cw_d_to'] = $filters['toDate'];
-        }
-        $deliveredOrders = (int) ($this->database->fetchOne(
-            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND o.status = \'Completed\' AND NOT ' . $exchangeDeliveredItemCondition . $deliveredDateCond . $deliveredCompanyWhere,
-            $deliveredBindings
-        )['cnt'] ?? 0);
-
-        // --- Exchange delivered orders count (separate query, unique bindings) ---
-        $exchangeBindings = [];
-        $exchangeCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_x', $companyPageIds, $exchangeBindings);
-        $exchangeDateCond = '';
-        if (!empty($filters['fromDate'])) {
-            $exchangeDateCond .= ' AND o.order_date >= :cw_x_from';
-            $exchangeBindings[':cw_x_from'] = $filters['fromDate'];
-        }
-        if (!empty($filters['toDate'])) {
-            $exchangeDateCond .= ' AND o.order_date <= :cw_x_to';
-            $exchangeBindings[':cw_x_to'] = $filters['toDate'];
-        }
-        $exchangeDeliveredOrders = (int) ($this->database->fetchOne(
-            'SELECT COUNT(*) AS cnt FROM orders o WHERE o.deleted_at IS NULL AND (o.status = \'Exchange delivered\' OR (o.status = \'Completed\' AND ' . $exchangeDeliveredItemCondition . '))' . $exchangeDateCond . $exchangeCompanyWhere,
-            $exchangeBindings
-        )['cnt'] ?? 0);
-
-        // --- Income from delivered + exchange delivered orders ---
-        $incomeBindings = [];
-        $incomeCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_i', $companyPageIds, $incomeBindings);
-        $incomeDateCond = '';
-        if (!empty($filters['fromDate'])) {
-            $incomeDateCond .= ' AND o.order_date >= :cw_i_from';
-            $incomeBindings[':cw_i_from'] = $filters['fromDate'];
-        }
-        if (!empty($filters['toDate'])) {
-            $incomeDateCond .= ' AND o.order_date <= :cw_i_to';
-            $incomeBindings[':cw_i_to'] = $filters['toDate'];
-        }
-        $income = (float) ($this->database->fetchOne(
-            'SELECT COALESCE(SUM(CASE WHEN COALESCE(o.paid_amount, 0) > 0 THEN o.paid_amount ELSE 0 END), 0) AS total
-             FROM orders o
-             WHERE o.deleted_at IS NULL AND o.status IN (\'Completed\', \'Exchange delivered\')' . $incomeDateCond . $incomeCompanyWhere,
-            $incomeBindings
-        )['total'] ?? 0);
+        $orderMetrics = $this->computeCompanywiseDeliveredOrderMetrics($filters, $companyPageIds);
+        $deliveredOrders = (int) $orderMetrics['deliveredOrders'];
+        $exchangeDeliveredOrders = (int) $orderMetrics['exchangeDeliveredOrders'];
+        $productsSold = (float) $orderMetrics['productsSold'];
+        $income = (float) $orderMetrics['income'];
+        $cogs = (float) $orderMetrics['cogs'];
 
         // --- Income from other (non-delivered, non-exchange-delivered) orders ---
         $nonDelBindings = [];
@@ -5184,9 +5133,6 @@ final class OperationsApi extends BaseService
              WHERE o.deleted_at IS NULL AND o.status NOT IN (\'Completed\', \'Exchange delivered\')' . $nonDelDateCond . $nonDelCompanyWhere,
             $nonDelBindings
         )['total'] ?? 0);
-
-        // --- Products sold (separate query, unique bindings) ---
-        $productsSold = $this->computeCompanywiseProductsSold($filters, $companyPageIds);
 
         // --- Shipping costs for all orders created in the selected period ---
         $shippingCategory = $this->database->fetchOne(
@@ -5228,8 +5174,6 @@ final class OperationsApi extends BaseService
             $shippingBindings
         )['total'] ?? 0);
 
-        $cogs = $this->computeCompanywiseCogs($filters, $companyPageIds);
-
         $profit = $income - $shippingCost - $cogs;
 
         return [
@@ -5244,98 +5188,95 @@ final class OperationsApi extends BaseService
         ];
     }
 
-    private function computeCompanywiseProductsSold(array $filters, array $companyPageIds): float
-    {
-        try {
-            $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
-            $bindings = [];
-            $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_ps', $companyPageIds, $bindings);
-            if (!empty($filters['fromDate'])) {
-                $orderConditions[] = 'o.order_date >= :cw_ps_from';
-                $bindings[':cw_ps_from'] = $filters['fromDate'];
-            }
-            if (!empty($filters['toDate'])) {
-                $orderConditions[] = 'o.order_date <= :cw_ps_to';
-                $bindings[':cw_ps_to'] = $filters['toDate'];
-            }
-            $quantitySql = $this->orderItemJsonValue('o', 'cw_ps_item_seq', 'quantity');
-            $result = $this->database->fetchOne(
-                'SELECT COALESCE(SUM(CAST(COALESCE(NULLIF(' . $quantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS productsSold
-                 FROM orders o
-                 INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'cw_ps_item_seq') . '
-                 WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
-                $bindings
-            ) ?? [];
-            return (float) ($result['productsSold'] ?? 0);
-        } catch (\Throwable) {
-            $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
-            $bindings = [];
-            $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_ps_fallback', $companyPageIds, $bindings);
-            if (!empty($filters['fromDate'])) {
-                $orderConditions[] = 'o.order_date >= :cw_ps_fallback_from';
-                $bindings[':cw_ps_fallback_from'] = $filters['fromDate'];
-            }
-            if (!empty($filters['toDate'])) {
-                $orderConditions[] = 'o.order_date <= :cw_ps_fallback_to';
-                $bindings[':cw_ps_fallback_to'] = $filters['toDate'];
-            }
-            $rows = $this->database->fetchAll(
-                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
-                $bindings
-            );
-            $productsSold = 0.0;
-            foreach ($rows as $row) {
-                foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
-                    if (is_array($item)) {
-                        $productsSold += (float) ($item['quantity'] ?? 0);
-                    }
-                }
-            }
-            return $productsSold;
-        }
-    }
-
-    private function computeCompanywiseCogs(array $filters, array $companyPageIds): float
+    private function computeCompanywiseDeliveredOrderMetrics(array $filters, array $companyPageIds): array
     {
         $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
         $bindings = [];
-        $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_cogs', $companyPageIds, $bindings);
+        $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_metrics', $companyPageIds, $bindings);
         if (!empty($filters['fromDate'])) {
-            $orderConditions[] = 'o.order_date >= :cw_cogs_from';
-            $bindings[':cw_cogs_from'] = $filters['fromDate'];
+            $orderConditions[] = 'o.order_date >= :cw_metrics_from';
+            $bindings[':cw_metrics_from'] = $filters['fromDate'];
         }
         if (!empty($filters['toDate'])) {
-            $orderConditions[] = 'o.order_date <= :cw_cogs_to';
-            $bindings[':cw_cogs_to'] = $filters['toDate'];
+            $orderConditions[] = 'o.order_date <= :cw_metrics_to';
+            $bindings[':cw_metrics_to'] = $filters['toDate'];
         }
 
-        $rows = $this->database->fetchAll(
-            'SELECT o.status, o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
-            $bindings
-        );
+        $metrics = [
+            'deliveredOrders' => 0,
+            'exchangeDeliveredOrders' => 0,
+            'productsSold' => 0.0,
+            'income' => 0.0,
+            'cogs' => 0.0,
+        ];
         $cogsItems = [];
         $productIds = [];
-        foreach ($rows as $row) {
-            $status = trim((string) ($row['status'] ?? ''));
-            foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-                if (!empty($item['isExchangeReplacement']) && $status !== 'Exchange delivered') {
-                    continue;
-                }
-                $quantity = max(0.0, (float) ($item['quantity'] ?? 0));
-                if (empty($item['isExchangeReplacement'])) {
-                    $quantity = max(0.0, $quantity - (float) ($item['returnedQty'] ?? 0) - (float) ($item['exchangedQty'] ?? 0));
-                }
-                $productId = trim((string) ($item['productId'] ?? ''));
-                if ($quantity <= 0 || $productId === '') {
-                    continue;
-                }
-                $productIds[$productId] = true;
-                $cogsItems[] = [$productId, $quantity];
+        $lastOrderId = '';
+        do {
+            $batchConditions = $orderConditions;
+            $batchBindings = $bindings;
+            if ($lastOrderId !== '') {
+                $batchConditions[] = 'o.id > :cw_metrics_after_id';
+                $batchBindings[':cw_metrics_after_id'] = $lastOrderId;
             }
-        }
+            $rows = $this->database->fetchAll(
+                'SELECT o.id, o.status, o.items, o.paid_amount
+                 FROM orders o
+                 WHERE ' . implode(' AND ', $batchConditions) . $companyWhere . '
+                 ORDER BY o.id ASC
+                 LIMIT 500',
+                $batchBindings
+            );
+            foreach ($rows as $row) {
+                $status = trim((string) ($row['status'] ?? ''));
+                $items = $this->jsonDecodeList($row['items'] ?? null);
+                $hasExchangeItems = false;
+                foreach ($items as $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $isReplacement = filter_var($item['isExchangeReplacement'] ?? false, FILTER_VALIDATE_BOOL);
+                    $exchangedQuantity = (float) ($item['exchangedQty'] ?? 0);
+                    if ($isReplacement || $exchangedQuantity > 0) {
+                        $hasExchangeItems = true;
+                    }
+                }
+
+                if ($status === 'Completed' && !$hasExchangeItems) {
+                    $metrics['deliveredOrders']++;
+                }
+                if ($status === 'Exchange delivered' || ($status === 'Completed' && $hasExchangeItems)) {
+                    $metrics['exchangeDeliveredOrders']++;
+                }
+                if ((float) ($row['paid_amount'] ?? 0) > 0) {
+                    $metrics['income'] += (float) $row['paid_amount'];
+                }
+
+                foreach ($items as $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $metrics['productsSold'] += (float) ($item['quantity'] ?? 0);
+                    $isReplacement = filter_var($item['isExchangeReplacement'] ?? false, FILTER_VALIDATE_BOOL);
+                    if ($isReplacement && $status !== 'Exchange delivered') {
+                        continue;
+                    }
+                    $quantity = max(0.0, (float) ($item['quantity'] ?? 0));
+                    if (!$isReplacement) {
+                        $quantity = max(0.0, $quantity - (float) ($item['returnedQty'] ?? 0) - (float) ($item['exchangedQty'] ?? 0));
+                    }
+                    $productId = trim((string) ($item['productId'] ?? ''));
+                    if ($quantity > 0 && $productId !== '') {
+                        $productIds[$productId] = true;
+                        $cogsItems[] = [$productId, $quantity];
+                    }
+                }
+            }
+            if (count($rows) < 500) {
+                break;
+            }
+            $lastOrderId = (string) ($rows[count($rows) - 1]['id'] ?? '');
+        } while ($lastOrderId !== '');
 
         $purchasePrices = [];
         $productIndex = 0;
@@ -5355,11 +5296,11 @@ final class OperationsApi extends BaseService
             }
         }
 
-        $cogs = 0.0;
         foreach ($cogsItems as [$productId, $quantity]) {
-            $cogs += ($purchasePrices[$productId] ?? 0.0) * $quantity;
+            $metrics['cogs'] += ($purchasePrices[$productId] ?? 0.0) * $quantity;
         }
-        return round($cogs, 2);
+        $metrics['cogs'] = round($metrics['cogs'], 2);
+        return $metrics;
     }
 
     private function buildProfitLossCacheKey(array $normalizedParams): string

@@ -178,20 +178,19 @@ try {
     ) ?? [];
     performanceReportAssertMoney((float) ($projection['quantity'] ?? 0), 17, 'MariaDB sequence projection quantity');
 
-    $companyProductsSoldMethod = new ReflectionMethod($api, 'computeCompanywiseProductsSold');
-    $companyProductsSoldMethod->setAccessible(true);
-    performanceReportAssertMoney(
-        (float) $companyProductsSoldMethod->invoke($api, ['fromDate' => $date, 'toDate' => $date], []),
-        10,
-        'Companywise set-based products sold'
-    );
-    $companyCogsMethod = new ReflectionMethod($api, 'computeCompanywiseCogs');
-    $companyCogsMethod->setAccessible(true);
-    performanceReportAssertMoney(
-        (float) $companyCogsMethod->invoke($api, ['fromDate' => $date, 'toDate' => $date], []),
-        130,
-        'Companywise batched COGS'
-    );
+    $companyMetricsMethod = new ReflectionMethod($api, 'computeCompanywiseDeliveredOrderMetrics');
+    $companyMetricsMethod->setAccessible(true);
+    $companyMetrics = $companyMetricsMethod->invoke($api, ['fromDate' => $date, 'toDate' => $date], []);
+    performanceReportAssert((int) ($companyMetrics['deliveredOrders'] ?? 0) === 4, 'Companywise delivered-order count');
+    performanceReportAssert((int) ($companyMetrics['exchangeDeliveredOrders'] ?? 0) === 1, 'Companywise exchange-delivered count');
+    performanceReportAssertMoney((float) ($companyMetrics['income'] ?? 0), 0, 'Companywise paid income');
+    performanceReportAssertMoney((float) ($companyMetrics['productsSold'] ?? 0), 10, 'Companywise products sold');
+    performanceReportAssertMoney((float) ($companyMetrics['cogs'] ?? 0), 130, 'Companywise COGS');
+    $companyReport = $api->fetchCompanywisePerformanceReport($params);
+    performanceReportAssert((int) ($companyReport['deliveredOrders'] ?? 0) === 4, 'Companywise report delivered-order count');
+    performanceReportAssert((int) ($companyReport['exchangeDeliveredOrders'] ?? 0) === 1, 'Companywise report exchange-delivered count');
+    performanceReportAssertMoney((float) ($companyReport['productsSold'] ?? 0), 10, 'Companywise report products sold');
+    performanceReportAssertMoney((float) ($companyReport['cogs'] ?? 0), 130, 'Companywise report COGS');
 
     $productReport = $api->fetchProductQuantitySoldReport($params);
     $productRows = [];

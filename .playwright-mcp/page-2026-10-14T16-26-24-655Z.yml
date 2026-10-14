@@ -1,0 +1,103 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e4]:
+    - complementary [ref=f3e5]:
+      - generic [ref=f3e6]:
+        - button [ref=f3e9] [cursor=pointer]:
+          - img "BD Hatbela" [ref=f3e10]
+        - navigation [ref=f3e11]:
+          - link [ref=f3e13] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button [ref=f3e23] [cursor=pointer]
+          - button [ref=f3e32] [cursor=pointer]
+          - button [ref=f3e41] [cursor=pointer]
+          - button [ref=f3e51] [cursor=pointer]
+          - button [ref=f3e59] [cursor=pointer]
+          - button [ref=f3e66] [cursor=pointer]
+          - button [ref=f3e76] [cursor=pointer]
+          - link [ref=f3e83] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link [ref=f3e90] [cursor=pointer]:
+            - /url: "#/reports"
+          - button [ref=f3e97] [cursor=pointer]
+        - generic [ref=f3e103]:
+          - link [ref=f3e106] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link [ref=f3e113] [cursor=pointer]:
+            - /url: "#/settings"
+          - button [ref=f3e121] [cursor=pointer]
+    - generic [ref=f3e126]:
+      - banner [ref=f3e127]:
+        - heading "Financial Reports" [level=1] [ref=f3e131]
+        - generic [ref=f3e132]:
+          - link "Point of Sale" [ref=f3e133] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f3e138] [cursor=pointer]
+          - button "9+" [ref=f3e143] [cursor=pointer]
+          - button [ref=f3e149] [cursor=pointer]:
+            - generic [ref=f3e150]:
+              - paragraph [ref=f3e151]: Fiad
+              - paragraph [ref=f3e152]: Developer
+            - img "Profile" [ref=f3e153]
+      - main [ref=f3e154]:
+        - table [ref=f3e177]:
+          - rowgroup [ref=f3e178]:
+            - row [ref=f3e179]:
+              - cell [ref=f3e180]
+              - cell [ref=f3e184]
+              - cell [ref=f3e188]
+              - cell [ref=f3e192]
+            - row [ref=f3e196]:
+              - cell [ref=f3e197]
+              - cell [ref=f3e201]
+              - cell [ref=f3e205]
+              - cell [ref=f3e209]
+            - row [ref=f3e213]:
+              - cell [ref=f3e214]
+              - cell [ref=f3e218]
+              - cell [ref=f3e222]
+              - cell [ref=f3e226]
+            - row [ref=f3e230]:
+              - cell [ref=f3e231]
+              - cell [ref=f3e235]
+              - cell [ref=f3e239]
+              - cell [ref=f3e243]
+            - row [ref=f3e247]:
+              - cell [ref=f3e248]
+              - cell [ref=f3e252]
+              - cell [ref=f3e256]
+              - cell [ref=f3e260]
+            - row [ref=f3e264]:
+              - cell [ref=f3e265]
+              - cell [ref=f3e269]
+              - cell [ref=f3e273]
+              - cell [ref=f3e277]
+            - row [ref=f3e281]:
+              - cell [ref=f3e282]
+              - cell [ref=f3e286]
+              - cell [ref=f3e290]
+              - cell [ref=f3e294]
+            - row [ref=f3e298]:
+              - cell [ref=f3e299]
+              - cell [ref=f3e303]
+              - cell [ref=f3e307]
+              - cell [ref=f3e311]
+        - generic [ref=f3e315]:
+          - paragraph [ref=f3e316]: © 2026 BD Hatbela|Version 0.3.91|All rights reserved.
+          - paragraph [ref=f3e317]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f3e318] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f3e319]:
+        - generic [ref=f3e320]: Chat with Mame
+        - button "Open chat" [ref=f3e321] [cursor=pointer]:
+          - img "Mame AI" [ref=f3e322]
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f3e323]:
+    - generic [ref=f3e324]:
+      - heading [level=3] [ref=f3e326]: Notifications
+      - button [ref=f3e327] [cursor=pointer]
+    - tablist [ref=f3e331]:
+      - tab [selected] [ref=f3e332] [cursor=pointer]: all
+      - tab [ref=f3e333] [cursor=pointer]: unread
+      - tab [ref=f3e334] [cursor=pointer]: read
+    - generic [ref=f3e335]: No notifications yet.
