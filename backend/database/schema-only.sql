@@ -4104,6 +4104,9 @@ CREATE TABLE IF NOT EXISTS external_api_request_logs (
   CONSTRAINT fk_external_api_request_logs_key FOREIGN KEY (key_id) REFERENCES external_api_keys (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Migration: 2026-10-14_report_query_indexes.sql
+CALL sp_create_idx('transactions', 'idx_transactions_report_period', 'deleted_at, type, date');
+
 DROP VIEW IF EXISTS orders_with_customer_creator;
 
 CREATE VIEW orders_with_customer_creator AS

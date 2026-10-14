@@ -4684,6 +4684,7 @@ final class OperationsApi extends BaseService
             'SELECT date, type, amount
              FROM transactions
              WHERE deleted_at IS NULL
+                               AND type IN (\'Income\', \'Expense\')
                AND date >= :income_vs_expense_from
                AND date < :income_vs_expense_to',
             [
@@ -4884,17 +4885,22 @@ final class OperationsApi extends BaseService
         // Order date bounds (unique per subquery)
         $orderDateSub1 = '';
         $orderDateSub2 = '';
+        $orderDateSub3 = '';
         if (!empty($filters['fromDate'])) {
             $orderDateSub1 = ' AND o.order_date >= :pl_ord1_from';
             $orderDateSub2 = ' AND o.order_date >= :pl_ord2_from';
+            $orderDateSub3 = ' AND o.order_date >= :pl_ord3_from';
             $companyBindings[':pl_ord1_from'] = $filters['fromDate'];
             $companyBindings[':pl_ord2_from'] = $filters['fromDate'];
+            $companyBindings[':pl_ord3_from'] = $filters['fromDate'];
         }
         if (!empty($filters['toDate'])) {
             $orderDateSub1 .= ' AND o.order_date <= :pl_ord1_to';
             $orderDateSub2 .= ' AND o.order_date <= :pl_ord2_to';
+            $orderDateSub3 .= ' AND o.order_date <= :pl_ord3_to';
             $companyBindings[':pl_ord1_to'] = $filters['toDate'];
             $companyBindings[':pl_ord2_to'] = $filters['toDate'];
+            $companyBindings[':pl_ord3_to'] = $filters['toDate'];
         }
 
         // Bill date bounds
@@ -4910,7 +4916,7 @@ final class OperationsApi extends BaseService
         }
 
         // --- Compute productsSold SQL (with PHP fallback on failure) ---
-        $productsSoldSubquery = $this->buildProfitLossProductsSoldSubquery($orderCompanyWhere3);
+        $productsSoldSubquery = $this->buildProfitLossProductsSoldSubquery($orderCompanyWhere3, $orderDateSub3);
 
         // --- Unified query: all metrics in one round-trip ---
         $sql = 'SELECT
@@ -4985,7 +4991,7 @@ final class OperationsApi extends BaseService
         $productsSold = (float) ($metrics['productsSold'] ?? 0);
         if ($productsSold === 0.0 && $grossSales > 0) {
             // SQL subquery may have failed (seq table missing), fallback to PHP
-            $productsSold = $this->computeProfitLossProductsSoldFallback($filters, $orderCompanyWhere, $companyBindings);
+            $productsSold = $this->computeProfitLossProductsSoldFallback($filters, $companyPageIds);
         }
 
         // --- Expense rows (separate query - needs GROUP BY) ---
@@ -5252,11 +5258,32 @@ final class OperationsApi extends BaseService
                 $orderConditions[] = 'o.order_date <= :cw_ps_to';
                 $bindings[':cw_ps_to'] = $filters['toDate'];
             }
+            $quantitySql = $this->orderItemJsonValue('o', 'cw_ps_item_seq', 'quantity');
+            $result = $this->database->fetchOne(
+                'SELECT COALESCE(SUM(CAST(COALESCE(NULLIF(' . $quantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS productsSold
+                 FROM orders o
+                 INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'cw_ps_item_seq') . '
+                 WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
+                $bindings
+            ) ?? [];
+            return (float) ($result['productsSold'] ?? 0);
+        } catch (\Throwable) {
+            $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
+            $bindings = [];
+            $companyWhere = $this->buildProfitLossCompanyFilter('o', 'cw_ps_fallback', $companyPageIds, $bindings);
+            if (!empty($filters['fromDate'])) {
+                $orderConditions[] = 'o.order_date >= :cw_ps_fallback_from';
+                $bindings[':cw_ps_fallback_from'] = $filters['fromDate'];
+            }
+            if (!empty($filters['toDate'])) {
+                $orderConditions[] = 'o.order_date <= :cw_ps_fallback_to';
+                $bindings[':cw_ps_fallback_to'] = $filters['toDate'];
+            }
             $rows = $this->database->fetchAll(
                 'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
                 $bindings
             );
-            $productsSold = 0;
+            $productsSold = 0.0;
             foreach ($rows as $row) {
                 foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
                     if (is_array($item)) {
@@ -5265,8 +5292,6 @@ final class OperationsApi extends BaseService
                 }
             }
             return $productsSold;
-        } catch (\Throwable) {
-            return 0.0;
         }
     }
 
@@ -5288,8 +5313,8 @@ final class OperationsApi extends BaseService
             'SELECT o.status, o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $companyWhere,
             $bindings
         );
-        $purchasePrices = [];
-        $cogs = 0.0;
+        $cogsItems = [];
+        $productIds = [];
         foreach ($rows as $row) {
             $status = trim((string) ($row['status'] ?? ''));
             foreach ($this->jsonDecodeList($row['items'] ?? null) as $item) {
@@ -5303,22 +5328,36 @@ final class OperationsApi extends BaseService
                 if (empty($item['isExchangeReplacement'])) {
                     $quantity = max(0.0, $quantity - (float) ($item['returnedQty'] ?? 0) - (float) ($item['exchangedQty'] ?? 0));
                 }
-                if ($quantity <= 0) {
-                    continue;
-                }
                 $productId = trim((string) ($item['productId'] ?? ''));
-                if ($productId === '') {
+                if ($quantity <= 0 || $productId === '') {
                     continue;
                 }
-                if (!array_key_exists($productId, $purchasePrices)) {
-                    $product = $this->database->fetchOne(
-                        'SELECT purchase_price FROM products WHERE id = :id LIMIT 1',
-                        [':id' => $productId]
-                    );
-                    $purchasePrices[$productId] = max(0.0, (float) ($product['purchase_price'] ?? 0));
-                }
-                $cogs += $purchasePrices[$productId] * $quantity;
+                $productIds[$productId] = true;
+                $cogsItems[] = [$productId, $quantity];
             }
+        }
+
+        $purchasePrices = [];
+        $productIndex = 0;
+        foreach (array_chunk(array_keys($productIds), 500) as $productIdChunk) {
+            $placeholders = [];
+            $productBindings = [];
+            foreach ($productIdChunk as $productId) {
+                $placeholder = ':cw_cogs_product_' . $productIndex++;
+                $placeholders[] = $placeholder;
+                $productBindings[$placeholder] = $productId;
+            }
+            foreach ($this->database->fetchAll(
+                'SELECT id, purchase_price FROM products WHERE id IN (' . implode(', ', $placeholders) . ')',
+                $productBindings
+            ) as $product) {
+                $purchasePrices[(string) ($product['id'] ?? '')] = max(0.0, (float) ($product['purchase_price'] ?? 0));
+            }
+        }
+
+        $cogs = 0.0;
+        foreach ($cogsItems as [$productId, $quantity]) {
+            $cogs += ($purchasePrices[$productId] ?? 0.0) * $quantity;
         }
         return round($cogs, 2);
     }
@@ -5413,7 +5452,7 @@ final class OperationsApi extends BaseService
         }
     }
 
-    private function buildProfitLossProductsSoldSubquery(string $orderCompanyWhere): string
+    private function buildProfitLossProductsSoldSubquery(string $orderCompanyWhere, string $orderDateWhere): string
     {
         try {
             $profitLossQuantitySql = $this->orderItemJsonValue('o', 'profit_loss_item_seq', 'quantity');
@@ -5421,7 +5460,7 @@ final class OperationsApi extends BaseService
                 FROM orders o
                 INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'profit_loss_item_seq') . '
                 WHERE o.deleted_at IS NULL
-                AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderCompanyWhere . '
+                AND o.status IN (\'Completed\', \'Exchange delivered\')' . $orderDateWhere . $orderCompanyWhere . '
             )';
         } catch (\Throwable) {
             return '0';
@@ -5462,11 +5501,12 @@ final class OperationsApi extends BaseService
         return ' AND (' . implode(' OR ', $orClauses) . ')';
     }
 
-    private function computeProfitLossProductsSoldFallback(array $filters, string $orderCompanyWhere, array $companyBindings): float
+    private function computeProfitLossProductsSoldFallback(array $filters, array $companyPageIds): float
     {
         try {
             $orderConditions = ['o.deleted_at IS NULL', "o.status IN ('Completed', 'Exchange delivered')"];
             $orderBindings = [];
+            $orderCompanyWhere = $this->buildProfitLossCompanyFilter('o', 'pl_fb', $companyPageIds, $orderBindings);
             if (!empty($filters['fromDate'])) {
                 $orderConditions[] = 'o.order_date >= :pl_fb_from';
                 $orderBindings[':pl_fb_from'] = $filters['fromDate'];
@@ -5476,7 +5516,7 @@ final class OperationsApi extends BaseService
                 $orderBindings[':pl_fb_to'] = $filters['toDate'];
             }
             $rows = $this->database->fetchAll(
-                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions),
+                'SELECT o.items FROM orders o WHERE ' . implode(' AND ', $orderConditions) . $orderCompanyWhere,
                 $orderBindings
             );
             $productsSold = 0;

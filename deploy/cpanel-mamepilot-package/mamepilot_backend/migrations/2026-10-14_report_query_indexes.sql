@@ -1,0 +1,1 @@
+CREATE INDEX idx_transactions_report_period ON transactions (deleted_at, type, date);

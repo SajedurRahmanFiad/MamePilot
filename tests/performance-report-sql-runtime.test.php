@@ -73,6 +73,18 @@ try {
             ':updated_at' => $createdAt,
         ]
     );
+    foreach ([[$productAId, $productAName, 20], [$productBId, $productBName, 10], [$productCId, $productCName, 5]] as [$productId, $productName, $purchasePrice]) {
+        $database->execute(
+            'INSERT INTO products (id, name, slug, purchase_price, created_by) VALUES (:id, :name, :slug, :purchase_price, :created_by)',
+            [
+                ':id' => $productId,
+                ':name' => $productName,
+                ':slug' => $productId,
+                ':purchase_price' => $purchasePrice,
+                ':created_by' => $actor['id'],
+            ]
+        );
+    }
 
     $nextOrderSeq = (int) (($database->fetchOne(
         'SELECT COALESCE(MAX(order_seq), 0) + 1 AS seq FROM orders'
@@ -83,7 +95,8 @@ try {
         string $status,
         string $items,
         float $discount,
-        float $total
+        float $total,
+        ?string $orderDate = null
     ) use (
         $database,
         $actor,
@@ -109,7 +122,7 @@ try {
                 ':id' => $id,
                 ':order_number' => 'PERF-' . strtoupper($suffix) . '-' . $stamp,
                 ':order_seq' => $nextOrderSeq + $index,
-                ':order_date' => $date,
+                ':order_date' => $orderDate ?? $date,
                 ':customer_id' => $customerId,
                 ':created_by' => $actor['id'],
                 ':status' => $status,
@@ -136,6 +149,9 @@ try {
     $insertOrder('exchange-delivered', 'Exchange delivered', json_encode([
         ['productId' => $productCId, 'productName' => $productCName, 'quantity' => 4, 'amount' => 80],
     ], JSON_THROW_ON_ERROR), 0, 80);
+    $insertOrder('outside-range', 'Completed', json_encode([
+        ['productId' => $productCId, 'productName' => $productCName, 'quantity' => 7, 'amount' => 70],
+    ], JSON_THROW_ON_ERROR), 0, 70, '2037-11-16');
 
     // Execute the exact production projection helpers directly. This ensures a
     // passing public report cannot hide a SQL syntax failure behind its legacy
@@ -160,7 +176,22 @@ try {
          WHERE o.id IN (' . implode(', ', $placeholders) . ')',
         $bindings
     ) ?? [];
-    performanceReportAssertMoney((float) ($projection['quantity'] ?? 0), 10, 'MariaDB sequence projection quantity');
+    performanceReportAssertMoney((float) ($projection['quantity'] ?? 0), 17, 'MariaDB sequence projection quantity');
+
+    $companyProductsSoldMethod = new ReflectionMethod($api, 'computeCompanywiseProductsSold');
+    $companyProductsSoldMethod->setAccessible(true);
+    performanceReportAssertMoney(
+        (float) $companyProductsSoldMethod->invoke($api, ['fromDate' => $date, 'toDate' => $date], []),
+        10,
+        'Companywise set-based products sold'
+    );
+    $companyCogsMethod = new ReflectionMethod($api, 'computeCompanywiseCogs');
+    $companyCogsMethod->setAccessible(true);
+    performanceReportAssertMoney(
+        (float) $companyCogsMethod->invoke($api, ['fromDate' => $date, 'toDate' => $date], []),
+        130,
+        'Companywise batched COGS'
+    );
 
     $productReport = $api->fetchProductQuantitySoldReport($params);
     $productRows = [];
