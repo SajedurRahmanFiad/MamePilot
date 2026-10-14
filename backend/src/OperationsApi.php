@@ -5743,48 +5743,23 @@ final class OperationsApi extends BaseService
         $bindings = [':product_quantity_completed_status' => 'Completed'];
         $this->applyDashboardDateBounds('order_date', $filters, $conditions, $bindings, 'product_quantity');
 
-        try {
-            $productQuantityIdSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'productId');
-            $productQuantityNameSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'productName');
-            $productQuantityValueSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'quantity');
-            $productQuantityAmountSql = $this->orderItemJsonValue('o', 'product_quantity_item_seq', 'amount');
-            $reportRows = array_map(
-                static fn(array $row): array => [
-                    'productName' => (string) ($row['productName'] ?? 'Unnamed Product'),
-                    'quantity' => (float) ($row['quantity'] ?? 0),
-                    'revenue' => (float) ($row['revenue'] ?? 0),
-                ],
-                $this->database->fetchAll(
-                    'SELECT
-                        exploded.productName,
-                        SUM(exploded.quantity) AS quantity,
-                        SUM(exploded.amount * (1 - CASE
-                            WHEN exploded.itemSubtotal > 0 THEN LEAST(1, exploded.orderDiscount / exploded.itemSubtotal)
-                            ELSE 0
-                        END)) AS revenue
-                     FROM (
-                        SELECT
-                            o.id,
-                            COALESCE(NULLIF(' . $productQuantityIdSql . ', \'\'), NULLIF(' . $productQuantityNameSql . ', \'\'), \'Unnamed Product\') AS productKey,
-                            COALESCE(NULLIF(' . $productQuantityNameSql . ', \'\'), \'Unnamed Product\') AS productName,
-                            CAST(COALESCE(NULLIF(' . $productQuantityValueSql . ', \'\'), \'0\') AS DECIMAL(18,4)) AS quantity,
-                            CAST(COALESCE(NULLIF(' . $productQuantityAmountSql . ', \'\'), \'0\') AS DECIMAL(18,4)) AS amount,
-                            GREATEST(COALESCE(o.discount, 0), 0) AS orderDiscount,
-                            SUM(CAST(COALESCE(NULLIF(' . $productQuantityAmountSql . ', \'\'), \'0\') AS DECIMAL(18,4))) OVER (PARTITION BY o.id) AS itemSubtotal
-                        FROM orders o
-                        INNER JOIN ' . $this->orderItemsSequenceJoin('o', 'product_quantity_item_seq') . '
-                        WHERE ' . implode(' AND ', array_map(static fn(string $condition): string => 'o.' . $condition, $conditions)) . '
-                     ) exploded
-                     GROUP BY exploded.productKey, exploded.productName',
-                    $bindings
-                )
-            );
-        } catch (\Throwable) {
+        $productMap = [];
+        $lastOrderId = '';
+        do {
+            $batchConditions = $conditions;
+            $batchBindings = $bindings;
+            if ($lastOrderId !== '') {
+                $batchConditions[] = 'id > :product_quantity_after_id';
+                $batchBindings[':product_quantity_after_id'] = $lastOrderId;
+            }
             $rows = $this->database->fetchAll(
-                'SELECT items, discount FROM orders WHERE ' . implode(' AND ', $conditions),
-                $bindings
+                'SELECT o.id, o.items, o.discount
+                 FROM orders o
+                 WHERE ' . implode(' AND ', array_map(static fn(string $condition): string => 'o.' . $condition, $batchConditions)) . '
+                 ORDER BY o.id ASC
+                 LIMIT 500',
+                $batchBindings
             );
-            $productMap = [];
             foreach ($rows as $row) {
                 $orderDiscount = max(0.0, (float) ($row['discount'] ?? 0));
                 $decodedItems = $this->jsonDecodeList($row['items'] ?? null);
@@ -5800,8 +5775,12 @@ final class OperationsApi extends BaseService
                     $productMap[$key]['revenue'] += (float) ($item['amount'] ?? 0) * (1.0 - $discountRatio);
                 }
             }
-            $reportRows = array_values($productMap);
-        }
+            if (count($rows) < 500) {
+                break;
+            }
+            $lastOrderId = (string) ($rows[count($rows) - 1]['id'] ?? '');
+        } while ($lastOrderId !== '');
+        $reportRows = array_values($productMap);
         usort($reportRows, static function (array $left, array $right): int {
             if ((float) $right['quantity'] !== (float) $left['quantity']) {
                 return (float) $right['quantity'] <=> (float) $left['quantity'];
@@ -5856,46 +5835,23 @@ final class OperationsApi extends BaseService
         $bindings = [':customer_sales_completed_status' => 'Completed'];
         $this->applyDashboardDateBounds('o.order_date', $filters, $conditions, $bindings, 'customer_sales');
 
-        try {
-            $customerSalesQuantitySql = $this->orderItemJsonValue('o', 'customer_sales_item_seq', 'quantity');
-            $reportRows = array_map(
-                static fn(array $row): array => [
-                    'name' => (string) ($row['name'] ?? 'Unknown Customer'),
-                    'orders' => (int) ($row['orders'] ?? 0),
-                    'quantity' => (float) ($row['quantity'] ?? 0),
-                    'amount' => (float) ($row['amount'] ?? 0),
-                ],
-                $this->database->fetchAll(
-                    'SELECT
-                        per_order.customerName AS name,
-                        COUNT(*) AS orders,
-                        COALESCE(SUM(per_order.quantity), 0) AS quantity,
-                        COALESCE(SUM(per_order.total), 0) AS amount
-                     FROM (
-                        SELECT
-                            o.id,
-                            COALESCE(NULLIF(o.customer_id, \'\'), COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\')) AS customerKey,
-                            COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName,
-                            o.total,
-                            COALESCE(SUM(CAST(COALESCE(NULLIF(' . $customerSalesQuantitySql . ', \'\'), \'0\') AS DECIMAL(18,4))), 0) AS quantity
-                        FROM orders o
-                        LEFT JOIN customers c ON c.id = o.customer_id
-                        LEFT JOIN ' . $this->orderItemsSequenceJoin('o', 'customer_sales_item_seq') . '
-                        WHERE ' . implode(' AND ', $conditions) . '
-                        GROUP BY o.id, o.customer_id, c.name, o.total
-                     ) per_order
-                     GROUP BY per_order.customerKey, per_order.customerName',
-                    $bindings
-                )
-            );
-        } catch (\Throwable) {
+        $customerMap = [];
+        $lastOrderId = '';
+        do {
+            $batchConditions = $conditions;
+            $batchBindings = $bindings;
+            if ($lastOrderId !== '') {
+                $batchConditions[] = 'o.id > :customer_sales_after_id';
+                $batchBindings[':customer_sales_after_id'] = $lastOrderId;
+            }
             $rows = $this->database->fetchAll(
-                'SELECT o.customer_id AS customerId, COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName, o.total, o.items
+                'SELECT o.id, o.customer_id AS customerId, COALESCE(NULLIF(c.name, \'\'), \'Unknown Customer\') AS customerName, o.total, o.items
                  FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
-                 WHERE ' . implode(' AND ', $conditions),
-                $bindings
+                 WHERE ' . implode(' AND ', $batchConditions) . '
+                 ORDER BY o.id ASC
+                 LIMIT 500',
+                $batchBindings
             );
-            $customerMap = [];
             foreach ($rows as $row) {
                 $customerId = trim((string) ($row['customerId'] ?? ''));
                 $customerName = trim((string) ($row['customerName'] ?? '')) ?: 'Unknown Customer';
@@ -5907,8 +5863,12 @@ final class OperationsApi extends BaseService
                     if (is_array($item)) $customerMap[$key]['quantity'] += (float) ($item['quantity'] ?? 0);
                 }
             }
-            $reportRows = array_values($customerMap);
-        }
+            if (count($rows) < 500) {
+                break;
+            }
+            $lastOrderId = (string) ($rows[count($rows) - 1]['id'] ?? '');
+        } while ($lastOrderId !== '');
+        $reportRows = array_values($customerMap);
         usort($reportRows, static function (array $left, array $right): int {
             if ((float) $right['amount'] !== (float) $left['amount']) {
                 return (float) $right['amount'] <=> (float) $left['amount'];

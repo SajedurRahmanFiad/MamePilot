@@ -228,6 +228,32 @@ try {
     performanceReportAssert(is_array($topProductA), 'Dashboard top-product projection omitted Product A.');
     performanceReportAssert((int) ($topProductA['qty'] ?? 0) === 5, 'Dashboard top-product quantity');
 
+    for ($index = 0; $index < 501; $index++) {
+        $insertOrder(
+            'customer-sales-batch-' . $index,
+            'Completed',
+            json_encode([['quantity' => 1]], JSON_THROW_ON_ERROR),
+            0,
+            1,
+            '2037-11-18'
+        );
+    }
+    $batchedCustomerReport = $api->fetchCustomerSalesReport([
+        'filterRange' => 'Custom',
+        'customDates' => ['from' => '2037-11-18', 'to' => '2037-11-18'],
+    ]);
+    $batchedCustomerRow = $batchedCustomerReport['rows'][0] ?? [];
+    performanceReportAssert((int) ($batchedCustomerRow['orders'] ?? 0) === 501, 'Customer Sales keyset batches must include all matching orders.');
+    performanceReportAssertMoney((float) ($batchedCustomerRow['quantity'] ?? 0), 501, 'Customer Sales keyset batch quantity');
+    performanceReportAssertMoney((float) ($batchedCustomerRow['amount'] ?? 0), 501, 'Customer Sales keyset batch amount');
+    $batchedProductReport = $api->fetchProductQuantitySoldReport([
+        'filterRange' => 'Custom',
+        'customDates' => ['from' => '2037-11-18', 'to' => '2037-11-18'],
+    ]);
+    $batchedProductRow = $batchedProductReport['rows'][0] ?? [];
+    performanceReportAssertMoney((float) ($batchedProductRow['quantity'] ?? 0), 501, 'Product Quantity keyset batch quantity');
+    performanceReportAssertMoney((float) ($batchedProductReport['totalQty'] ?? 0), 501, 'Product Quantity keyset batch total');
+
     echo "MariaDB set-based performance report projections passed.\n";
 } finally {
     if ($pdo->inTransaction()) {
