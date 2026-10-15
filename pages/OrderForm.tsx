@@ -1164,24 +1164,43 @@ const OrderForm: React.FC = () => {
             <div className="space-y-1 relative md:col-span-1">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Select {terminology.customer}</label>
               <div className="relative">
-                <button 
-                  onClick={() => setShowCustomerSearch(!showCustomerSearch)}
-                  className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
-                >
-                  {selectedCustomer ? (
-                    <div className="flex-1 overflow-hidden">
+                {selectedCustomer ? (
+                  <div className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus-within:ring-2 focus-within:ring-[#3c5a82] transition-all flex items-center group">
+                    <button onClick={() => setShowCustomerSearch(!showCustomerSearch)} className="flex-1 min-w-0 overflow-hidden text-left">
                       <span className="font-bold block text-sm text-gray-900">{selectedCustomer.name}</span>
                       <p className="text-[10px] text-gray-500 leading-none mt-0.5">{selectedCustomer.phone}</p>
                       {isVaccineCenter && (
                         <p className="text-[10px] text-gray-500 leading-none mt-1">Age: {selectedCustomer.age ?? 'N/A'}</p>
                       )}
                       <p className="text-[10px] ${theme.colors.primary[600]} italic truncate mt-1">{selectedCustomer.address}</p>
-                    </div>
-                  ) : <span className="text-gray-400 text-sm">Select {terminology.customer}...</span>}
-                  <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
-                     {ICONS.ChevronRight}
+                    </button>
+                    {can('customers.edit') && (
+                      <button
+                        title="Edit customer"
+                        onClick={() => {
+                          setCustomerToEdit(selectedCustomer);
+                          setShowCustomerSearch(false);
+                        }}
+                        className="mr-1.5 shrink-0 p-1.5 rounded-lg text-gray-400 sm:text-gray-300 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#3c5a82] hover:bg-white transition-all"
+                      >
+                        {ICONS.Edit}
+                      </button>
+                    )}
+                    <button onClick={() => setShowCustomerSearch(!showCustomerSearch)} aria-label={`Select ${terminology.customer}`} className={`shrink-0 transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
+                      {ICONS.ChevronRight}
+                    </button>
                   </div>
-                </button>
+                ) : (
+                  <button
+                    onClick={() => setShowCustomerSearch(!showCustomerSearch)}
+                    className="w-full text-left px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl hover:bg-white focus:ring-2 focus:ring-[#3c5a82] transition-all flex justify-between items-center group"
+                  >
+                    <span className="text-gray-400 text-sm">Select {terminology.customer}...</span>
+                    <div className={`transition-transform duration-200 ${showCustomerSearch ? 'rotate-90' : ''}`}>
+                      {ICONS.ChevronRight}
+                    </div>
+                  </button>
+                )}
                 
                 {showCustomerSearch && (
                   <div className="absolute top-full left-0 mt-2 w-full max-w-xs bg-white border border-gray-200 shadow-2xl rounded-lg z-[110] p-2 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
