@@ -76,6 +76,10 @@ try {
     register_shutdown_function(static function () use ($courierScheduler): void {
         $courierScheduler->triggerIfNeeded();
     });
+    $woocommerceProductSyncScheduler = new \App\WooCommerceProductSyncScheduler($database, $config);
+    register_shutdown_function(static function () use ($woocommerceProductSyncScheduler): void {
+        $woocommerceProductSyncScheduler->triggerIfNeeded();
+    });
     $serviceLifecycle = new \App\ServiceLifecycle($database, $config);
     $featureAccess = new FeatureAccess($database, $auth);
     $dispatcher = new BusinessActionDispatcher($database, $auth, $config);

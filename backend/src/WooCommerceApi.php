@@ -486,10 +486,11 @@ final class WooCommerceApi extends BaseService
             $counters['created'], $counters['matched'], $counters['updated'], $counters['skipped'], $counters['failed']
         );
         $this->database->execute(
-            'UPDATE woocommerce_stores SET products_synced = :count, last_products_synced_at = :now, last_synced_at = :now,
-                last_sync_status = :status, last_sync_message = :message, updated_at = :now WHERE id = :id',
+            'UPDATE woocommerce_stores SET products_synced = :count, last_products_synced_at = :products_synced_at, last_synced_at = :last_synced_at,
+                last_sync_status = :status, last_sync_message = :message, updated_at = :updated_at WHERE id = :id',
             [
-                ':count' => $total, ':now' => $this->database->nowUtc(),
+                ':count' => $total, ':products_synced_at' => $this->database->nowUtc(),
+                ':last_synced_at' => $this->database->nowUtc(), ':updated_at' => $this->database->nowUtc(),
                 ':status' => $counters['failed'] > 0 ? 'warning' : 'success',
                 ':message' => substr($message, 0, 1000), ':id' => $store['id'],
             ]
@@ -1028,6 +1029,29 @@ final class WooCommerceApi extends BaseService
      * @param array<string, mixed>|null $wcVariation
      * @return array{created:int, matched:int, updated:int, skipped:int}
      */
+    private function updateProductFromWooCommerce(
+        string $productId,
+        string $name,
+        string $sku,
+        float $price,
+        int $stock,
+        string $category,
+        ?string $image
+    ): void {
+        $this->database->execute(
+            'UPDATE products
+             SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock,
+                 category = :category, image = :image, updated_at = :updated_at
+             WHERE id = :id',
+            [
+                ':name' => $name, ':sku' => $sku, ':sale_price' => $price, ':stock' => $stock,
+                ':category' => $category, ':image' => $image, ':updated_at' => $this->database->nowUtc(),
+                ':id' => $productId,
+            ]
+        );
+        $this->syncLowStockNotification($productId);
+    }
+
     private function importWcProductVariation(array $store, array $wcProduct, ?array $wcVariation, string $systemUserId): array
     {
         $wcProductId = (int) ($wcProduct['id'] ?? 0);
@@ -1073,22 +1097,10 @@ final class WooCommerceApi extends BaseService
             [':store_id' => $store['id'], ':wc_product_id' => $wcProductId, ':wc_variation_id' => $wcVariationId]
         );
         if ($link !== null) {
-            if ((int) ($link['auto_created'] ?? 0) === 1) {
-                $this->database->execute(
-                    'UPDATE products
-                     SET name = :name, sku = :sku, sale_price = :sale_price, stock = :stock,
-                         category = :category, image = :image, updated_at = :updated_at
-                     WHERE id = :id',
-                    [
-                        ':name' => $name, ':sku' => $matchKey, ':sale_price' => $price, ':stock' => $stock,
-                        ':category' => $category, ':image' => $image, ':updated_at' => $this->database->nowUtc(),
-                        ':id' => $link['product_id'],
-                    ]
-                );
-                $this->syncLowStockNotification((string) $link['product_id']);
-                return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
-            }
-            return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
+            $this->updateProductFromWooCommerce(
+                (string) $link['product_id'], $name, $matchKey, $price, $stock, $category, $image
+            );
+            return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
         }
 
         $existing = $this->database->fetchOne(
@@ -1096,8 +1108,11 @@ final class WooCommerceApi extends BaseService
             [':sku' => $matchKey]
         );
         if ($existing !== null) {
+            $this->updateProductFromWooCommerce(
+                (string) $existing['id'], $name, $matchKey, $price, $stock, $category, $image
+            );
             $this->linkWcProduct((string) $store['id'], $wcProductId, $wcVariationId, $matchKey, (string) $existing['id'], false);
-            return ['created' => 0, 'matched' => 1, 'updated' => 0, 'skipped' => 0];
+            return ['created' => 0, 'matched' => 0, 'updated' => 1, 'skipped' => 0];
         }
 
         $id = $this->uuid4();

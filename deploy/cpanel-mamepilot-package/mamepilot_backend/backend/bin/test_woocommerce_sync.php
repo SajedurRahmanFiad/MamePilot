@@ -59,6 +59,38 @@ try {
 
     $auth = new Auth($config, $database);
     $woocommerce = new WooCommerceApi($database, $auth, $config, new OperationsApi($database, $auth, $config));
+    $storeRow = $database->fetchOne('SELECT * FROM woocommerce_stores WHERE id = :id', [':id' => 'woo-store-1']);
+    $database->execute(
+        'INSERT INTO products (id, name, sku, sale_price, purchase_price, stock, created_at, updated_at)
+         VALUES (:id, :name, :sku, 0, 12, 2, :created_at, :updated_at)',
+        [
+            ':id' => 'sku-matched-product', ':name' => 'Old Local Name', ':sku' => 'WOO-MATCH-950',
+            ':created_at' => $now, ':updated_at' => $now,
+        ]
+    );
+    $importProductVariation = new ReflectionMethod(WooCommerceApi::class, 'importWcProductVariation');
+    $importProductVariation->setAccessible(true);
+    $matchedProduct = [
+        'id' => 950, 'name' => 'WooCommerce Product Name', 'slug' => 'woo-match-950',
+        'sku' => 'WOO-MATCH-950', 'price' => '125.50', 'stock_quantity' => 17,
+        'images' => [['src' => 'https://shop.example.com/product.jpg']], 'categories' => [],
+    ];
+    $firstProductSync = $importProductVariation->invoke($woocommerce, $storeRow, $matchedProduct, null, 'woocommerce-system');
+    wooCheck(($firstProductSync['updated'] ?? 0) === 1, 'SKU-matched product was not counted as updated.');
+    $syncedProduct = $database->fetchOne('SELECT * FROM products WHERE id = :id', [':id' => 'sku-matched-product']);
+    wooCheck((string) ($syncedProduct['name'] ?? '') === 'WooCommerce Product Name', 'SKU-matched product name was not updated.');
+    wooCheck((int) ($syncedProduct['stock'] ?? -1) === 17, 'SKU-matched product stock was not updated.');
+    wooCheck(abs((float) ($syncedProduct['sale_price'] ?? 0) - 125.50) < 0.01, 'SKU-matched product price was not updated.');
+    wooCheck((float) ($syncedProduct['purchase_price'] ?? 0) === 12.0, 'SKU-matched product purchase price was overwritten.');
+    $matchedProduct['name'] = 'WooCommerce Product Name Updated';
+    $matchedProduct['stock_quantity'] = 19;
+    $matchedProduct['price'] = '145.00';
+    $secondProductSync = $importProductVariation->invoke($woocommerce, $storeRow, $matchedProduct, null, 'woocommerce-system');
+    wooCheck(($secondProductSync['updated'] ?? 0) === 1, 'Previously linked manual product was not counted as updated.');
+    $syncedProduct = $database->fetchOne('SELECT * FROM products WHERE id = :id', [':id' => 'sku-matched-product']);
+    wooCheck((string) ($syncedProduct['name'] ?? '') === 'WooCommerce Product Name Updated', 'Previously linked product name was not refreshed.');
+    wooCheck((int) ($syncedProduct['stock'] ?? -1) === 19, 'Previously linked product stock was not refreshed.');
+
     $first = [
         'id' => 901, 'number' => '901', 'status' => 'processing', 'currency' => 'BDT',
         'total' => '120.00', 'discount_total' => '10.00',
@@ -139,8 +171,8 @@ try {
     wooCheck(abs((float) $orders[0]['paid_amount']) < 0.01, 'Imported order touched the payment amount.');
     wooCheck(abs((float) $orders[1]['paid_amount']) < 0.01, 'Imported order touched the payment amount.');
     $placeholderProduct = $database->fetchOne(
-        'SELECT p.stock FROM products p JOIN woocommerce_product_links l ON l.product_id = p.id WHERE l.store_id = :store_id LIMIT 1',
-        [':store_id' => 'woo-store-1']
+        'SELECT p.stock FROM products p JOIN woocommerce_product_links l ON l.product_id = p.id WHERE l.store_id = :store_id AND l.wc_product_id = :wc_product_id LIMIT 1',
+        [':store_id' => 'woo-store-1', ':wc_product_id' => 501]
     );
     wooCheck((int) ($placeholderProduct['stock'] ?? 0) === 3, 'Auto-created WooCommerce product stock was not replenished for each imported order.');
 
@@ -156,7 +188,7 @@ try {
         'productLinks' => (int) ($database->fetchOne('SELECT COUNT(*) AS count FROM woocommerce_product_links')['count'] ?? 0),
         'systemUsers' => (int) ($database->fetchOne('SELECT COUNT(*) AS count FROM users WHERE is_system = 1')['count'] ?? 0),
     ];
-    wooCheck($counts === ['customers' => 1, 'orders' => 2, 'orderLinks' => 2, 'productLinks' => 1, 'systemUsers' => 1], 'Unexpected record counts.');
+    wooCheck($counts === ['customers' => 1, 'orders' => 2, 'orderLinks' => 2, 'productLinks' => 2, 'systemUsers' => 1], 'Unexpected record counts.');
 
     echo json_encode([
         'success' => true, 'signatureValidation' => 'passed', 'customerUpsert' => 'passed',
