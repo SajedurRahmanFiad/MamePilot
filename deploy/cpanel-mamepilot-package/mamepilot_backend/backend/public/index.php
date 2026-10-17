@@ -24,6 +24,7 @@ use App\OperationsApi;
 use App\OrderPostCreateEffects;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
+use App\UpdateScheduler;
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 
@@ -51,6 +52,11 @@ try {
     }
 
     $config = Config::load(dirname(__DIR__, 2));
+    try {
+        (new UpdateScheduler($config))->ensureInstalledIfDue();
+    } catch (Throwable $exception) {
+        error_log('MamePilot automatic update cron self-heal failed: ' . $exception->getMessage());
+    }
     $database = new Database($config);
     $auth = new Auth($config, $database);
     if ($externalApiRequest) {

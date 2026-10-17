@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/backend/bootstrap.php';
 
 use App\UpdateScheduler;
 use App\UpdateManager;
+use App\Config;
 
 function assertDeploymentRuntime(bool $condition, string $message): void
 {
@@ -24,6 +25,7 @@ $appSource = (string) file_get_contents($root . '/App.tsx');
 $gitDispatcherHookSource = (string) file_get_contents($root . '/src/hooks/useGitUpdateDispatcher.ts');
 $backendRouterSource = (string) file_get_contents($root . '/backend/public/index.php');
 $packageRouterSource = (string) file_get_contents($root . '/deploy/cpanel-template/public_html/api/index.php');
+$releasePackageRouterSource = (string) file_get_contents($root . '/deploy/cpanel-mamepilot-package/public_html/api/index.php');
 $appRootResolverPath = $root . '/deploy/cpanel-template/public_html/api/app-root.php';
 $appRootResolverSource = (string) file_get_contents($appRootResolverPath);
 $publicEnvExamplePath = $root . '/deploy/cpanel-template/public_html/.env.example';
@@ -68,8 +70,29 @@ assertDeploymentRuntime(
 assertDeploymentRuntime(
     str_contains($setupSource, 'new UpdateScheduler')
         && str_contains($updateManagerSource, "'automaticUpdateSchedule'")
-        && str_contains($updateManagerSource, 'new UpdateScheduler'),
-    'Fresh setup and normal update runs must install or repair the automatic update schedule.'
+        && str_contains($updateManagerSource, 'new UpdateScheduler')
+        && str_contains($backendRouterSource, 'ensureInstalledIfDue')
+        && str_contains($packageRouterSource, 'ensureInstalledIfDue')
+        && str_contains($releasePackageRouterSource, 'ensureInstalledIfDue'),
+    'Fresh setup, normal update runs, and live API traffic must install or repair the automatic update schedule.'
+);
+
+$gitCronEntryMethod = new ReflectionMethod(UpdateScheduler::class, 'gitCronEntry');
+$firstGitCronEntry = $gitCronEntryMethod->invoke(new UpdateScheduler(new Config([
+    'APP_FRONTEND_URL' => 'https://first.example.com',
+    'UPDATE_CRON_SECRET' => 'test-secret',
+    'UPDATE_APP_ROOT' => '/home/example/first_backend',
+])));
+$secondGitCronEntry = $gitCronEntryMethod->invoke(new UpdateScheduler(new Config([
+    'APP_FRONTEND_URL' => 'https://second.example.com',
+    'UPDATE_CRON_SECRET' => 'test-secret',
+    'UPDATE_APP_ROOT' => '/home/example/second_backend',
+])));
+preg_match('/# mamepilot-automatic-update:[a-f0-9]{12}/', $firstGitCronEntry, $firstMarker);
+preg_match('/# mamepilot-automatic-update:[a-f0-9]{12}/', $secondGitCronEntry, $secondMarker);
+assertDeploymentRuntime(
+    isset($firstMarker[0], $secondMarker[0]) && $firstMarker[0] !== $secondMarker[0],
+    'Git updater cron markers must be unique to each deployment.'
 );
 
 assertDeploymentRuntime(

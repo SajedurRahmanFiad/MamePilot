@@ -26,6 +26,7 @@ use App\SmsApi;
 use App\WhatsAppApi;
 use App\WooCommerceApi;
 use App\ShopifyApi;
+use App\UpdateScheduler;
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'app-root.php';
 
@@ -68,6 +69,11 @@ try {
     }
 
     $config = Config::load($appRoot);
+    try {
+        (new UpdateScheduler($config))->ensureInstalledIfDue();
+    } catch (Throwable $exception) {
+        error_log('MamePilot automatic update cron self-heal failed: ' . $exception->getMessage());
+    }
     $database = new Database($config);
     $auth = new Auth($config, $database);
     if ($externalApiRequest) {

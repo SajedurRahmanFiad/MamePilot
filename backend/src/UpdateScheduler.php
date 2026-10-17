@@ -7,6 +7,7 @@ namespace App;
 final class UpdateScheduler
 {
     private const MARKER_PREFIX = '# mamepilot-automatic-update';
+    private const SELF_HEAL_INTERVAL_SECONDS = 900;
 
     private Config $config;
 
@@ -57,6 +58,53 @@ final class UpdateScheduler
         }
 
         return ['status' => 'installed', 'message' => 'The automatic update schedule was installed.'];
+    }
+
+    public function ensureInstalledIfDue(?int $now = null): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\') {
+            return;
+        }
+
+        $owner = get_current_user();
+        $ownerHash = substr(hash('sha256', $owner), 0, 16);
+        $lockPath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR . 'mamepilot-update-cron-heal-' . $ownerHash . '.lock';
+        $lockHandle = @fopen($lockPath, 'c+');
+        if ($lockHandle === false) {
+            return;
+        }
+        if (!flock($lockHandle, LOCK_EX | LOCK_NB)) {
+            fclose($lockHandle);
+            return;
+        }
+
+        try {
+            $deploymentRoot = trim((string) ($this->config->get(
+                'UPDATE_APP_ROOT',
+                dirname(__DIR__, 2)
+            ) ?? ''));
+            if ($deploymentRoot === '') {
+                $deploymentRoot = dirname(__DIR__, 2);
+            }
+            $deploymentHash = substr(hash('sha256', self::normalizePath($deploymentRoot)), 0, 16);
+            $statePath = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+                . DIRECTORY_SEPARATOR . 'mamepilot-update-cron-heal-' . $deploymentHash . '.state';
+            $timestamp = $now ?? time();
+            $lastAttempt = (int) @file_get_contents($statePath);
+            if ($lastAttempt > 0 && $timestamp - $lastAttempt < self::SELF_HEAL_INTERVAL_SECONDS) {
+                return;
+            }
+
+            $result = $this->ensureInstalled();
+            @file_put_contents($statePath, (string) $timestamp, LOCK_EX);
+            if ($result['status'] === 'unavailable') {
+                error_log('MamePilot automatic update cron self-heal: ' . $result['message']);
+            }
+        } finally {
+            flock($lockHandle, LOCK_UN);
+            fclose($lockHandle);
+        }
     }
 
     public static function mergeCrontab(string $existing, string $entry): string
@@ -132,7 +180,14 @@ final class UpdateScheduler
     {
         $baseUrl = rtrim(trim((string) ($this->config->get('APP_FRONTEND_URL', '') ?? '')), '/');
         $secret = trim((string) ($this->config->get('UPDATE_CRON_SECRET', '') ?? ''));
-        $marker = self::MARKER_PREFIX . ':' . substr(hash('sha256', 'git-dispatch'), 0, 12);
+        $deploymentRoot = trim((string) ($this->config->get(
+            'UPDATE_APP_ROOT',
+            dirname(__DIR__, 2)
+        ) ?? ''));
+        if ($deploymentRoot === '') {
+            $deploymentRoot = dirname(__DIR__, 2);
+        }
+        $marker = self::MARKER_PREFIX . ':' . substr(hash('sha256', self::normalizePath($deploymentRoot)), 0, 12);
         $logPath = trim((string) ($this->config->get('UPDATE_CRON_LOG', '') ?? ''));
         if ($logPath === '') {
             $logPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'mamepilot-update.log';
