@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button } from './index';
+import { Button, TextArea } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -40,7 +40,12 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [specialInstruction, setSpecialInstruction] = useState('');
   const updateOrder = useUpdateOrder();
+  useEffect(() => {
+    if (isOpen) setSpecialInstruction('');
+  }, [isOpen, order?.id]);
+
   const ensureValidToken = useCallback(async (): Promise<string | null> => {
     if (!courierSettings?.pathao) return null;
 
@@ -135,9 +140,6 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         return;
       }
 
-      // Build special instruction from additional phone or notes
-      const specialInstruction = customer.phone ? `Phone: ${customer.phone}` : '';
-
       const result = await submitPathaoOrder({
         baseUrl,
         accessToken: token,
@@ -151,7 +153,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         itemQuantity: defaultQuantity || 1,
         itemWeight: defaultWeight || 1.0,
         amountToCollect: Math.max(0, Math.round(order.total)),
-        specialInstruction: specialInstruction || undefined,
+        specialInstruction: specialInstruction.trim() || undefined,
       });
 
       if (result.error) {
@@ -237,6 +239,13 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
               <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Address</label>
               <p className="text-gray-900">{customer?.address || '-'}</p>
             </div>
+            <TextArea
+              label="Special Instruction (optional)"
+              placeholder="Add delivery instructions for Pathao"
+              rows={3}
+              value={specialInstruction}
+              onChange={(event) => setSpecialInstruction(event.target.value)}
+            />
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">COD Amount</label>
               <p className="text-lg font-bold text-gray-900">৳ {order?.total?.toFixed(2) || '0.00'}</p>

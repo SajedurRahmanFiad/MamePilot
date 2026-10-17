@@ -1482,32 +1482,6 @@ const OrderForm: React.FC = () => {
             {ICONS.Plus} Add an item
           </button>
 
-          {isSofaCover && (
-            <section className="mt-3 space-y-3" aria-label="Required order collage">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-gray-800">Order Collage <span className="text-red-500">*</span></h3>
-              </div>
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
-                {savedCollageUrls.map((url, index) => (
-                  <div key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                    <img src={url} alt={`Saved collage ${index + 1}`} className="h-full w-full object-cover" />
-                    <button type="button" onClick={() => setSavedCollageUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove saved collage ${index + 1}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
-                  </div>
-                ))}
-                {collageUploads.map((upload, index) => (
-                  <div key={`${upload.name}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                    <img src={upload.dataUrl} alt={upload.name} className="h-full w-full object-cover" />
-                    <button type="button" onClick={() => setCollageUploads((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${upload.name}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
-                  </div>
-                ))}
-                <label className="flex aspect-square cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white text-gray-500 transition hover:border-blue-400 hover:bg-blue-50" aria-label="Add collage images">
-                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { void addCollageFiles(event.target.files); event.target.value = ''; }} />
-                  <span className="flex h-11 w-11 items-center justify-center rounded-md border border-gray-300"><span className="text-3xl font-light leading-none">+</span></span>
-                </label>
-              </div>
-            </section>
-          )}
-
           {showProductSearch && (
             <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white border border-gray-200 shadow-2xl rounded-lg z-[100] p-2 animate-in slide-in-from-top-2 duration-200">
               <div className="relative mb-2">
@@ -1595,6 +1569,32 @@ const OrderForm: React.FC = () => {
             </div>
           )}
         </div>
+
+        {isSofaCover && (
+          <section className="mt-3 space-y-3" aria-label="Required order collage">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-widest text-gray-800">Order Collage <span className="text-red-500">*</span></h3>
+            </div>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+              {savedCollageUrls.map((url, index) => (
+                <div key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                  <img src={url} alt={`Saved collage ${index + 1}`} className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => setSavedCollageUrls((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove saved collage ${index + 1}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
+                </div>
+              ))}
+              {collageUploads.map((upload, index) => (
+                <div key={`${upload.name}-${index}`} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                  <img src={upload.dataUrl} alt={upload.name} className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => setCollageUploads((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${upload.name}`} className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-lg leading-none text-white">×</button>
+                </div>
+              ))}
+              <label className="flex aspect-square cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white text-gray-500 transition hover:border-blue-400 hover:bg-blue-50" aria-label="Add collage images">
+                <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { void addCollageFiles(event.target.files); event.target.value = ''; }} />
+                <span className="flex h-11 w-11 items-center justify-center rounded-md border border-gray-300"><span className="text-3xl font-light leading-none">+</span></span>
+              </label>
+            </div>
+          </section>
+        )}
 
         <div className="flex flex-col md:flex-row justify-between gap-12 pt-6">
           <div className="flex-1 space-y-2">
