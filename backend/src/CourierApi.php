@@ -2245,12 +2245,12 @@ final class CourierApi extends BaseService
         $status = null;
 
         if ($normalized !== '') {
-            if (strpos($normalized, 'delivered') !== false) {
-                $status = 'Delivered';
-            } elseif (strpos($normalized, 'returned') !== false) {
-                $status = 'Returned';
-            } elseif (strpos($normalized, 'cancelled') !== false || strpos($normalized, 'canceled') !== false) {
+            if (strpos($normalized, 'cancelled') !== false || strpos($normalized, 'canceled') !== false) {
                 $status = 'Cancelled';
+            } elseif (strpos($normalized, 'return') !== false) {
+                $status = 'Returned';
+            } elseif (strpos($normalized, 'delivered') !== false) {
+                $status = 'Delivered';
             } elseif (strpos($normalized, 'picked') !== false) {
                 $status = 'Picked';
             } else {

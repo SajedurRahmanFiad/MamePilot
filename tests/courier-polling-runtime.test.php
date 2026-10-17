@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/backend/bootstrap.php';
 
 use App\CourierStatusScheduler;
+use App\CourierApi;
 
 function courierPollingAssert(bool $condition, string $message): void
 {
@@ -31,5 +32,10 @@ courierPollingAssert(str_contains($worker, 'reconcileUnmatchedWebhookEvents'), '
 courierPollingAssert(str_contains($courier, 'LIMIT {$limit} OFFSET {$offset}'), 'Legacy courier sync does not rotate bounded order windows.');
 courierPollingAssert(str_contains($setup, 'new CourierStatusScheduler') && substr_count($updates, 'new CourierStatusScheduler') >= 2, 'Fresh installs and both updater paths do not install courier fallback polling.');
 courierPollingAssert(str_contains($schema, 'CREATE TABLE IF NOT EXISTS `courier_poll_worker_state`'), 'Generated upgrade schema omits courier polling state.');
+$courierApi = (new ReflectionClass(CourierApi::class))->newInstanceWithoutConstructor();
+$pathaoClassifier = new ReflectionMethod(CourierApi::class, 'classifyPathaoStatus');
+$pathaoClassifier->setAccessible(true);
+$returnStatus = $pathaoClassifier->invoke($courierApi, 'Return Delivered');
+courierPollingAssert(($returnStatus['status'] ?? null) === 'Returned', 'Pathao polling misclassified Return Delivered as a normal delivery.');
 
 echo "Courier fallback polling runtime checks passed.\n";
