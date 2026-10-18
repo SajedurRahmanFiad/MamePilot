@@ -325,6 +325,7 @@ const SettingsPage: React.FC = () => {
   const companyJustSavedRef = useRef(false);
   const orderFirstTriggerRef = useRef(true);
   const orderJustSavedRef = useRef(false);
+  const invoiceJustSavedRef = useRef(false);
   const defaultsFirstTriggerRef = useRef(true);
   const defaultsJustSavedRef = useRef(false);
   const walletFirstTriggerRef = useRef(true);
@@ -377,7 +378,7 @@ const SettingsPage: React.FC = () => {
   }, [orderSettingsData]);
 
   React.useEffect(() => {
-    if (orderJustSavedRef.current) { orderJustSavedRef.current = false; return; }
+    if (invoiceJustSavedRef.current) { invoiceJustSavedRef.current = false; return; }
     if (invoiceSettingsData) setInvoiceSettings(invoiceSettingsData);
   }, [invoiceSettingsData]);
 
@@ -655,17 +656,19 @@ const SettingsPage: React.FC = () => {
 
   // Auto-save: Order & Invoice
   const saveOrder = useCallback(async () => {
-    orderJustSavedRef.current = true;
     const response = await batchUpdateMutation.mutateAsync({ order: orderSettings, invoice: invoiceSettings });
+    orderJustSavedRef.current = true;
+    invoiceJustSavedRef.current = true;
     if (response?.order) queryClient.setQueryData(['settings', 'order'], response.order);
     if (response?.invoice) queryClient.setQueryData(['settings', 'invoice'], response.invoice);
     saveDb();
   }, [orderSettings, invoiceSettings, batchUpdateMutation, queryClient]);
   const { isSaving: orderSaving, trigger: triggerOrderSave } = useAutoSave({ save: saveOrder });
   useEffect(() => {
+    if (!orderSettingsData || !invoiceSettingsData) return;
     if (orderFirstTriggerRef.current) { orderFirstTriggerRef.current = false; return; }
     triggerOrderSave();
-  }, [orderSettings, invoiceSettings, triggerOrderSave]);
+  }, [orderSettings, invoiceSettings, orderSettingsData, invoiceSettingsData, triggerOrderSave]);
 
   // Auto-save: Defaults
   const saveDefaults = useCallback(async () => {
