@@ -724,7 +724,7 @@ const BillForm: React.FC = () => {
                   </td>
                   <td className="px-4 py-4 text-center">
                     <div className="flex items-center justify-center gap-2">
-                      <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
+                      <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-24 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
                       {getItemUnitLabel(item.productId) && (
                         <span className="whitespace-nowrap text-xs font-semibold text-gray-500">
                           {getItemUnitLabel(item.productId)}
