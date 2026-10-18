@@ -39,6 +39,7 @@ const Products: React.FC = () => {
   const { user } = useAuth();
   const { settings: capabilitySettings } = useCapabilities(Boolean(user));
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
+  const isSofaCover = capabilitySettings?.businessMode === 'sofa_cover';
   const productLabel = terminology.item;
   const productPlural = terminology.items;
   const {
@@ -421,12 +422,14 @@ const Products: React.FC = () => {
             },
           },
           {
-            key: 'salePrice',
-            label: isAdmin ? 'Sale Price / Purchase Price' : 'Sale Price',
-            render: (salePrice, product) => (
+            key: isSofaCover ? 'purchasePrice' : 'salePrice',
+            label: isSofaCover ? 'Purchase Price' : isAdmin ? 'Sale Price / Purchase Price' : 'Sale Price',
+            render: (_price, product) => isSofaCover ? (
+              <span className="text-sm font-bold">{formatCurrency(product.purchasePrice)}</span>
+            ) : (
               <div className="flex flex-col gap-0.5">
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm font-bold`}>{formatCurrency(product.salePrice)}</span>
+                  <span className="text-sm font-bold">{formatCurrency(product.salePrice)}</span>
                 </div>
                 {isAdmin && (
                   <div className="flex items-center gap-2">
