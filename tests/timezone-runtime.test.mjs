@@ -31,6 +31,7 @@ assert.equal(
 );
 
 assert.equal(formatDateTime('2026-07-28T18:30:00Z'), '29 Jul 2026, 12:30 AM');
+assert.equal(formatDateTime('2026-07-28 18:30:00'), '29 Jul 2026, 12:30 AM');
 assert.equal(
   formatHistoryTextForTimeline('Marked as processing on 28 Jul 2026, at 11:30 PM'),
   'Marked as processing on 28 Jul 2026, at 11:30 PM',
