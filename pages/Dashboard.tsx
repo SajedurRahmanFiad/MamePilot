@@ -147,6 +147,21 @@ const EmployeeInsight: React.FC<{ label: string; value: string; detail: string; 
 
 const SectionState: React.FC<{ text: string; minHeight?: string }> = ({ text, minHeight = 'min-h-[220px]' }) => <div className={`flex items-center justify-center ${minHeight}`}><p className="text-sm font-medium text-gray-400">{text}</p></div>;
 
+const DashboardLoadingSkeleton: React.FC = () => (
+  <div role="status" aria-label="Loading dashboard" className="space-y-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="h-28 animate-pulse rounded-xl bg-gray-200/80" />
+      ))}
+    </div>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="h-64 animate-pulse rounded-xl bg-gray-200/80" />
+      ))}
+    </div>
+  </div>
+);
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
@@ -169,7 +184,11 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const canLoadDashboard = Boolean(user) && (canViewAdminDashboard || canViewEmployeeDashboard);
-  const { data: dashboardSettingsData } = useDashboardSettings(canLoadDashboard);
+  const {
+    data: dashboardSettingsData,
+    error: dashboardSettingsError,
+    refetch: refetchDashboardSettings,
+  } = useDashboardSettings(canLoadDashboard);
   const { data: systemDefaults } = useSystemDefaults();
   const dashboardSettings = useMemo(() => normalizeDashboardSettings(dashboardSettingsData), [dashboardSettingsData]);
   const assignedDashboardId = permissionsSettings?.roles.find((candidate) => candidate.roleName === role)?.dashboardId
@@ -177,7 +196,9 @@ const Dashboard: React.FC = () => {
   const dashboard = dashboardSettings.dashboards.find((candidate) => candidate.id === assignedDashboardId)
     || dashboardSettings.dashboards.find((candidate) => candidate.id === (canViewAdminDashboard ? ADMIN_DEFAULT_DASHBOARD_ID : EMPLOYEE_DEFAULT_DASHBOARD_ID))
     || dashboardSettings.dashboards[0];
-  const { data: snapshot, error } = useDashboardSnapshot(filterRange, customDates, { enabled: canLoadDashboard });
+  const { data: snapshot, error } = useDashboardSnapshot(filterRange, customDates, {
+    enabled: canLoadDashboard && dashboardSettingsData !== undefined,
+  });
   const canViewOrders = can('orders.view');
   const canViewWallet = can('wallet.view') && hasSubCapability('payroll');
 
@@ -384,9 +405,20 @@ const Dashboard: React.FC = () => {
 
       <FilterBar filterRange={filterRange} setFilterRange={setFilterRange} customDates={customDates} setCustomDates={setCustomDates} includeTime={includeTime} setIncludeTime={setIncludeTime} />
 
-      {enabledKpis.length > 0 && <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{enabledKpis.map((item) => <React.Fragment key={item.key}>{renderKpi(item.key)}</React.Fragment>)}</section>}
-      {enabledWidgets.length > 0 && <section className="flex flex-wrap gap-6">{enabledWidgets.map((item) => <div key={item.key} style={getWidgetWidthStyle(item)}>{renderWidget(item.key)}</div>)}</section>}
-      {enabledKpis.length === 0 && enabledWidgets.length === 0 && <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-8 py-16 text-center"><h2 className="text-xl font-black text-gray-900">This dashboard is empty</h2><p className="mt-2 text-sm font-medium text-gray-500">An administrator can enable KPI cards and widgets from Settings → Dashboard.</p></div>}
+      {!dashboardSettingsData ? (
+        dashboardSettingsError ? (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-medium text-amber-800">
+            <span>Dashboard settings could not be loaded.</span>
+            <button type="button" onClick={() => void refetchDashboardSettings()} className="ml-3 font-black underline underline-offset-2">Retry</button>
+          </div>
+        ) : <DashboardLoadingSkeleton />
+      ) : (
+        <>
+          {enabledKpis.length > 0 && <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{enabledKpis.map((item) => <React.Fragment key={item.key}>{renderKpi(item.key)}</React.Fragment>)}</section>}
+          {enabledWidgets.length > 0 && <section className="flex flex-wrap gap-6">{enabledWidgets.map((item) => <div key={item.key} style={getWidgetWidthStyle(item)}>{renderWidget(item.key)}</div>)}</section>}
+          {enabledKpis.length === 0 && enabledWidgets.length === 0 && <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-8 py-16 text-center"><h2 className="text-xl font-black text-gray-900">This dashboard is empty</h2><p className="mt-2 text-sm font-medium text-gray-500">An administrator can enable KPI cards and widgets from Settings → Dashboard.</p></div>}
+        </>
+      )}
     </div>
   );
 };
