@@ -71,10 +71,10 @@ final class CourierApi extends BaseService
     /**
      * @return array{status:int, body:string, json:mixed}
      */
-    private function request(string $method, string $url, array $headers = [], ?array $jsonBody = null, int $timeoutSeconds = 30): array
+    private function request(string $method, string $url, array $headers = [], array|string|null $jsonBody = null, int $timeoutSeconds = 30): array
     {
         $timeoutSeconds = max(3, min(30, $timeoutSeconds));
-        $body = $jsonBody !== null ? json_encode($jsonBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+        $body = is_array($jsonBody) ? json_encode($jsonBody, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $jsonBody;
 
         if (function_exists('curl_init')) {
             $handle = curl_init($url);
@@ -86,8 +86,10 @@ final class CourierApi extends BaseService
             foreach ($headers as $name => $value) {
                 $headerList[] = $name . ': ' . $value;
             }
-            if ($body !== null) {
+            if (is_array($jsonBody)) {
                 $headerList[] = 'Content-Type: application/json';
+            } elseif (is_string($jsonBody)) {
+                $headerList[] = 'Content-Type: application/x-www-form-urlencoded';
             }
 
             curl_setopt_array($handle, [
@@ -119,8 +121,10 @@ final class CourierApi extends BaseService
             foreach ($headers as $name => $value) {
                 $headerList[] = $name . ': ' . $value;
             }
-            if ($body !== null) {
+            if (is_array($jsonBody)) {
                 $headerList[] = 'Content-Type: application/json';
+            } elseif (is_string($jsonBody)) {
+                $headerList[] = 'Content-Type: application/x-www-form-urlencoded';
             }
 
             $context = stream_context_create([
@@ -2224,7 +2228,7 @@ final class CourierApi extends BaseService
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
             ],
-            null,
+            '',
             $this->requestTimeout($params)
         );
 
@@ -2251,10 +2255,7 @@ final class CourierApi extends BaseService
                 $status = 'Returned';
             } elseif (strpos($normalized, 'delivered') !== false) {
                 $status = 'Delivered';
-            } elseif (strpos($normalized, 'picked') !== false) {
-                $status = 'Picked';
-            } else {
-                // Any other non-empty status means the order is in transit
+            } elseif (strpos($normalized, 'picked') !== false || strpos($normalized, 'transit') !== false) {
                 $status = 'Picked';
             }
         }

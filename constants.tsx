@@ -133,6 +133,7 @@ export const getStatusColor = (status: string): string => {
     'RECEIVED': 'bg-green-100 text-green-600',
     'On Hold': 'bg-gray-100 text-gray-600',
     'Processing': 'bg-blue-100 text-blue-600',
+    'Cutting and Sewing': 'bg-amber-100 text-amber-700',
     'Courier assigned': 'bg-blue-100 text-blue-600',
     'Picked': 'bg-purple-100 text-purple-600',
     'Completed': 'bg-green-100 text-green-600',
@@ -182,7 +183,8 @@ export const getPaymentStatusBadgeColor = (status: string): string => {
   return statusMap[status] || 'bg-gray-100 text-gray-600';
 };
 
-export const getStatusDisplayName = (status: string): string => {
+export const getStatusDisplayName = (status: string, businessMode?: string): string => {
+  if (businessMode === 'sofa_cover' && status === 'Processing') return 'Printed';
   if (status === 'Completed') return 'Delivered';
   if (status === 'partially_delivered') return 'Partially Delivered';
   if (status === 'pending_partial') return 'Pending Partial';

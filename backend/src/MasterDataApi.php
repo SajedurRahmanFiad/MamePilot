@@ -1260,6 +1260,7 @@ final class MasterDataApi extends BaseService
                 purchase_price,
                 stock,
                 dynamic_pricing,
+                sofa_cover_pricing,
                 manufacturer,
                 batch_lot_number,
                 expiry_date,
@@ -1342,7 +1343,7 @@ final class MasterDataApi extends BaseService
 
         $countRow = $this->database->fetchOne("SELECT COUNT(*) AS count FROM products {$where}", $bindings);
         $rows = $this->database->fetchAll(
-            "SELECT id, name, slug, sku, category, unit_id, sale_price, purchase_price, stock, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, deleted_at, deleted_by
+            "SELECT id, name, slug, sku, category, unit_id, sale_price, purchase_price, stock, sofa_cover_pricing, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, deleted_at, deleted_by
              FROM products
              {$where}
              ORDER BY created_at DESC, id DESC
@@ -1369,6 +1370,7 @@ final class MasterDataApi extends BaseService
                 purchase_price,
                 stock,
                 dynamic_pricing,
+                sofa_cover_pricing,
                 category
              FROM products WHERE deleted_at IS NULL
              ORDER BY created_at DESC
@@ -1421,7 +1423,7 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    stock, dynamic_pricing, category, recommended_dose_sequence, 'product' AS item_type,
+                    stock, dynamic_pricing, sofa_cover_pricing, category, recommended_dose_sequence, 'product' AS item_type,
                     NULL AS population, NULL AS average_age_days
                  FROM products
                  WHERE deleted_at IS NULL AND (name LIKE :p_search_name OR sku LIKE :p_search_sku)
@@ -1438,7 +1440,7 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
+                    population AS stock, 0 AS dynamic_pricing, NULL AS sofa_cover_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
                     population, average_age_days
                  FROM batches
                  WHERE deleted_at IS NULL AND (name LIKE :b_search_name OR sku LIKE :b_search_sku)
@@ -1505,7 +1507,7 @@ final class MasterDataApi extends BaseService
         $sql = "(
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                          stock, dynamic_pricing, category, recommended_dose_sequence, 'product' AS item_type,
+                          stock, dynamic_pricing, sofa_cover_pricing, category, recommended_dose_sequence, 'product' AS item_type,
                     NULL AS population, NULL AS average_age_days
                  FROM products {$productWhere}
              )";
@@ -1516,7 +1518,7 @@ final class MasterDataApi extends BaseService
              (
                 SELECT
                     id, name, slug, sku, image, sale_price, purchase_price,
-                    population AS stock, 0 AS dynamic_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
+                    population AS stock, 0 AS dynamic_pricing, NULL AS sofa_cover_pricing, '' AS category, NULL AS recommended_dose_sequence, 'batch' AS item_type,
                     population, average_age_days
                  FROM batches
                  {$batchWhere}
@@ -1594,8 +1596,8 @@ final class MasterDataApi extends BaseService
         $slug = $this->generateProductSlug($params['slug'] ?? null, $name);
         $sku = $this->normalizeProductSku($params['sku'] ?? null);
         $this->database->execute(
-            'INSERT INTO products (id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, updated_at)
-             VALUES (:id, :name, :slug, :sku, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :manufacturer, :batch_lot_number, :expiry_date, :recommended_dose_sequence, :notes, :created_by, :created_at, :updated_at)',
+            'INSERT INTO products (id, name, slug, sku, image, category, unit_id, sale_price, purchase_price, stock, dynamic_pricing, sofa_cover_pricing, manufacturer, batch_lot_number, expiry_date, recommended_dose_sequence, notes, created_by, created_at, updated_at)
+             VALUES (:id, :name, :slug, :sku, :image, :category, :unit_id, :sale_price, :purchase_price, :stock, :dynamic_pricing, :sofa_cover_pricing, :manufacturer, :batch_lot_number, :expiry_date, :recommended_dose_sequence, :notes, :created_by, :created_at, :updated_at)',
             [
                 ':id' => $id,
                 ':name' => $name,
@@ -1608,6 +1610,7 @@ final class MasterDataApi extends BaseService
                 ':purchase_price' => $this->formatMoney($params['purchasePrice'] ?? 0),
                 ':stock' => (int) ($params['stock'] ?? 0),
                 ':dynamic_pricing' => $this->nullableString($params['dynamicPricing'] ?? null),
+                ':sofa_cover_pricing' => $this->nullableString($params['sofaCoverPricing'] ?? null),
                 ':manufacturer' => $this->nullableString($params['manufacturer'] ?? null),
                 ':batch_lot_number' => $this->nullableString($params['batchLotNumber'] ?? null),
                 ':expiry_date' => $this->nullableString($params['expiryDate'] ?? null),
@@ -1675,6 +1678,9 @@ final class MasterDataApi extends BaseService
         }
         if (array_key_exists('dynamicPricing', $updates)) {
             $payload['dynamic_pricing'] = $this->nullableString($updates['dynamicPricing']);
+        }
+        if (array_key_exists('sofaCoverPricing', $updates)) {
+            $payload['sofa_cover_pricing'] = $this->nullableString($updates['sofaCoverPricing']);
         }
         foreach ([
             'manufacturer' => 'manufacturer', 'batchLotNumber' => 'batch_lot_number', 'expiryDate' => 'expiry_date',

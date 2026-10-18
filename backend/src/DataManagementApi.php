@@ -1379,7 +1379,8 @@ final class DataManagementApi extends BaseService
                     p.sale_price AS salePrice,
                     p.purchase_price AS purchasePrice,
                     p.stock,
-                    p.dynamic_pricing AS dynamicPricing
+                    p.dynamic_pricing AS dynamicPricing,
+                    p.sofa_cover_pricing AS sofaCoverPricing
              FROM products p
              LEFT JOIN units un ON un.id = p.unit_id
              WHERE p.deleted_at IS NULL{$dateSql}
@@ -2021,6 +2022,10 @@ final class DataManagementApi extends BaseService
         if ($dynamicPricing !== '') {
             $this->jsonValue($row, 'dynamicPricing', true);
         }
+        $sofaCoverPricing = $this->text($row, 'sofaCoverPricing');
+        if ($sofaCoverPricing !== '') {
+            $this->jsonValue($row, 'sofaCoverPricing', false);
+        }
         $image = $this->normalizeUploadedFileValue(
             $this->nullableString($row['image'] ?? null),
             'product-images',
@@ -2035,6 +2040,7 @@ final class DataManagementApi extends BaseService
             'purchase_price' => $this->formatMoney(max(0, $this->number($row, 'purchasePrice'))),
             'stock' => max(0, $this->integer($row, 'stock')),
             'dynamic_pricing' => $dynamicPricing !== '' ? $dynamicPricing : null,
+            'sofa_cover_pricing' => $sofaCoverPricing !== '' ? $sofaCoverPricing : null,
         ];
 
         if ($existing !== null) {

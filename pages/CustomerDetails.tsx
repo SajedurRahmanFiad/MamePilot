@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Order, OrderStatus } from '../types';
-import { formatCurrency, ICONS } from '../constants';
+import { formatCurrency, ICONS, getStatusDisplayName } from '../constants';
 import { StatCard } from '../components';
 import { useCompanySettings, useCustomer, useOrdersByCustomerId, useOrderSettings, useUsersMini } from '../src/hooks/useQueries';
 import { useCreateOrder } from '../src/hooks/useMutations';
@@ -69,6 +69,7 @@ const CustomerDetails: React.FC = () => {
     switch (status) {
       case OrderStatus.ON_HOLD: return 'bg-gray-100 text-gray-600';
       case OrderStatus.PROCESSING: return 'bg-[#e6f0ff] text-[#3c5a82]';
+      case OrderStatus.CUTTING_AND_SEWING: return 'bg-amber-100 text-amber-700';
       case OrderStatus.PICKED: return 'bg-purple-100 text-purple-600';
       case OrderStatus.COMPLETED: return 'bg-green-100 text-green-600';
       case OrderStatus.RETURNED: return 'bg-orange-100 text-orange-700';
@@ -311,7 +312,7 @@ const CustomerDetails: React.FC = () => {
                             <td className="px-6 py-4 text-sm font-semibold text-gray-600">{creatorName}</td>
                             <td className="px-6 py-4">
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${getStatusColor(order.status)}`}>
-                                {order.status}
+                                {getStatusDisplayName(order.status, capabilitySettings?.businessMode)}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">

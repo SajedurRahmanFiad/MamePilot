@@ -2,13 +2,13 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { db } from '../db';
-import { BillStatus, OrderItem, Vendor } from '../types';
+import { BillStatus, OrderItem, Product, Vendor } from '../types';
 import { formatCurrency, ICONS } from '../constants';
 import { Button, NumericInput, VendorCreateModal } from '../components';
 import { theme } from '../theme';
-import { useBill, useSystemDefaults, useVendor, useBeSmartSettings } from '../src/hooks/useQueries';
+import { useBill, useSystemDefaults, useVendor, useBeSmartSettings, useUnits } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { fetchProductsMini, fetchProductsSearch, fetchVendorsPage, lookupVendorBySmartInput } from '../src/services/supabaseQueries';
+import { fetchProductById, fetchProductsMini, fetchProductsSearch, fetchVendorsPage, lookupVendorBySmartInput } from '../src/services/supabaseQueries';
 import { useCreateBill, useUpdateBill, useCreateVendor } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
@@ -53,6 +53,7 @@ const BillForm: React.FC = () => {
   // Query data
   const queryClient = useQueryClient();
   const { data: existingBillData, isPending: billLoading, error: billError } = useBill(id);
+  const { data: units = [] } = useUnits();
   const [showProductSearch, setShowProductSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
@@ -124,9 +125,54 @@ const BillForm: React.FC = () => {
   const [billNumber, setBillNumber] = useState('Generating...');
   const [billNumberLoading, setBillNumberLoading] = useState(false);
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [itemProductDetails, setItemProductDetails] = useState<Record<string, Product>>({});
   const [discount, setDiscount] = useState(0);
   const [shipping, setShipping] = useState(0);
   const [notes, setNotes] = useState('');
+
+  React.useEffect(() => {
+    if (items.length === 0) return;
+    let active = true;
+    const missingProductIds = Array.from(new Set(
+      items
+        .map((item) => String(item.productId || '').trim())
+        .filter((productId) => {
+          if (!productId || itemProductDetails[productId]) return false;
+          const cachedProduct = allProductsRef.current.get(productId) ?? products.find((candidate) => candidate.id === productId);
+          return !cachedProduct?.unitId;
+        }),
+    ));
+    if (missingProductIds.length === 0) return;
+
+    Promise.all(missingProductIds.map(async (productId) => {
+      try {
+        return await fetchProductById(productId);
+      } catch {
+        return null;
+      }
+    })).then((fetchedProducts) => {
+      if (!active) return;
+      setItemProductDetails((previous) => {
+        const next = { ...previous };
+        fetchedProducts.forEach((product) => {
+          if (product?.id) next[product.id] = product as Product;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [items, itemProductDetails, products]);
+
+  const getItemUnitLabel = (productId: string): string => {
+    const product = itemProductDetails[productId]
+      ?? allProductsRef.current.get(productId)
+      ?? products.find((candidate) => candidate.id === productId);
+    const unit = units.find((candidate) => candidate.id === product?.unitId);
+    return unit?.shortName || unit?.short_name || unit?.name || '';
+  };
   
 
   const [showVendorSearch, setShowVendorSearch] = useState(false);
@@ -677,7 +723,14 @@ const BillForm: React.FC = () => {
                     <NumericInput value={item.rate} onChange={(value) => updateRate(idx, value)} className="w-24 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={true} decimalPlaces={2} />
                   </td>
                   <td className="px-4 py-4 text-center">
-                    <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
+                    <div className="flex items-center justify-center gap-2">
+                      <NumericInput value={item.quantity} onChange={(value) => updateQuantity(idx, value)} className="w-16 text-center py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82]" allowDecimals={false} />
+                      {getItemUnitLabel(item.productId) && (
+                        <span className="whitespace-nowrap text-xs font-semibold text-gray-500">
+                          {getItemUnitLabel(item.productId)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <NumericInput value={item.amount} onChange={(value) => updateAmount(idx, value)} className="w-28 text-right py-2 border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] font-black" allowDecimals={true} decimalPlaces={2} />

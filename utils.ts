@@ -372,6 +372,7 @@ export const getOrderStatusHistoryField = (status: OrderStatus): string | null =
     [OrderStatus.CREATED]: 'created',
     [OrderStatus.ON_HOLD]: 'created',
     [OrderStatus.PROCESSING]: 'processing',
+    [OrderStatus.CUTTING_AND_SEWING]: 'cuttingAndSewing',
     [OrderStatus.COURIER_ASSIGNED]: 'courier',
     [OrderStatus.PICKED]: 'picked',
     [OrderStatus.COMPLETED]: 'completed',

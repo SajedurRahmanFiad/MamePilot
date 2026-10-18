@@ -18,7 +18,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { formatCurrency, getStatusColor } from '../constants';
+import { formatCurrency, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button } from '../components';
 import { useOrderSettings } from '../src/hooks/useQueries';
 import { useRevertOrderStatus } from '../src/hooks/useMutations';
@@ -193,7 +193,7 @@ const Undoer: React.FC = () => {
 
       {plan && !searching && (
         <>
-          <OrderSummary plan={plan} />
+          <OrderSummary plan={plan} businessMode={businessMode} />
 
           {!plan.hasExactHistory && (
             <div className="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-900">
@@ -288,12 +288,12 @@ const Undoer: React.FC = () => {
 
 const LoadingState = () => <div className="rounded-2xl border border-slate-200 bg-white p-14 text-center shadow-sm"><Loader2 className="mx-auto animate-spin text-[var(--primary-color,#0f2f57)]" size={30} /><p className="mt-3 text-sm font-bold text-slate-500">Building a server-verified undo plan…</p></div>;
 
-const OrderSummary: React.FC<{ plan: OrderUndoPlan }> = ({ plan }) => {
+const OrderSummary: React.FC<{ plan: OrderUndoPlan; businessMode?: BusinessMode }> = ({ plan, businessMode }) => {
   const order = plan.order;
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3"><div className="rounded-xl bg-slate-100 p-2.5 text-slate-600"><Package size={20} /></div><div><p className="text-xs font-bold text-slate-400">ORDER</p><h2 className="text-lg font-black text-slate-900">{order.orderNumber}</h2></div></div>
-      <div className="text-left sm:text-right"><p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Current status</p><span className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-black ${getStatusColor(order.status)}`}>{order.status}</span></div>
+      <div className="text-left sm:text-right"><p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Current status</p><span className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-black ${getStatusColor(order.status)}`}>{getStatusDisplayName(order.status, businessMode)}</span></div>
     </div>
     <div className="mt-5 grid grid-cols-2 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-4">
       <SummaryValue icon={<User size={14} />} label={order.customerName ? 'Customer' : 'Customer'} value={order.customerName || 'Unknown'} />

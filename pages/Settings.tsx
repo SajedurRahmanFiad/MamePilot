@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { db, saveDb } from '../db';
-import { ICONS, formatCurrency } from '../constants';
+import { ICONS, formatCurrency, getStatusDisplayName } from '../constants';
 import { Button, DashboardSettingsPanel, PermissionsSettingsPanel, NumericInput } from '../components';
 import { theme } from '../theme';
 import { OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, type BeSmartSettings, type CompanyPage, type CourierSettings, type DashboardSettings, type MetaAdsSettings, type PermissionsSettings, type Settings, type VoiceSurveySettings, type SmsSettings } from '../types';
@@ -1893,7 +1893,7 @@ const SettingsPage: React.FC = () => {
                           âœ“
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-black text-gray-900">{status}</p>
+                          <p className="text-sm font-black text-gray-900">{getStatusDisplayName(status, capabilitySettings?.businessMode)}</p>
                           <p className="mt-1 text-xs font-medium text-gray-500">
                             {checked ? 'Included in payroll calculations.' : 'Excluded from payroll calculations.'}
                           </p>
@@ -1911,7 +1911,7 @@ const SettingsPage: React.FC = () => {
                         key={status}
                         className={`rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] ${theme.colors.primary[50]} ${theme.colors.primary.text}`}
                       >
-                        {status}
+                        {getStatusDisplayName(status, capabilitySettings?.businessMode)}
                       </span>
                     ))}
                   </div>
@@ -1964,7 +1964,7 @@ const SettingsPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED).map((status) => {
+                    {ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (capabilitySettings?.businessMode === 'sofa_cover' || status !== OrderStatus.CUTTING_AND_SEWING)).map((status) => {
                       const checked = walletSettings.countedStatuses.includes(status);
 
                       return (
@@ -1983,7 +1983,7 @@ const SettingsPage: React.FC = () => {
                             className="mt-1 h-4 w-4 rounded border-gray-300 text-[#0f2f57] focus:ring-[#3c5a82]"
                           />
                           <div className="flex-1">
-                            <p className="text-sm font-black text-gray-900">{status}</p>
+                            <p className="text-sm font-black text-gray-900">{getStatusDisplayName(status, capabilitySettings?.businessMode)}</p>
                             <p className="mt-1 text-xs font-medium text-gray-500">
                               {checked ? 'Orders in this status will credit the employee wallet.' : 'Orders in this status will not credit the employee wallet.'}
                             </p>
@@ -2002,7 +2002,7 @@ const SettingsPage: React.FC = () => {
                             key={status}
                             className={`rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] ${theme.colors.primary[50]} ${theme.colors.primary.text}`}
                           >
-                            {status}
+                            {getStatusDisplayName(status, capabilitySettings?.businessMode)}
                           </span>
                         ))
                       ) : (
@@ -2375,7 +2375,7 @@ const SettingsPage: React.FC = () => {
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 outline-none focus:border-[#0f2f57]"
                       >
                         {['On Hold', 'Processing'].map((status) => (
-                          <option key={status} value={status}>{status}</option>
+                          <option key={status} value={status}>{getStatusDisplayName(status, capabilitySettings?.businessMode)}</option>
                         ))}
                       </select>
                       <span className="text-xs text-gray-400">Orders with this status will automatically trigger a voice survey call after the delay below.</span>

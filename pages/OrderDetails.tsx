@@ -260,7 +260,7 @@ const OrderDetails: React.FC = () => {
   }, [order?.status, order?.partialDeliveryActionRequired, order?.deliveryActionRequired]);
 
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
-  type OrderStatusTransitionAction = 'confirm' | 'process' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick' | 'repair' | 'repairAssignCourier' | 'repairPick' | 'repairDeliver' | 'repairReturn' | 'repairCancel';
+  type OrderStatusTransitionAction = 'confirm' | 'process' | 'cuttingAndSewing' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick' | 'repair' | 'repairAssignCourier' | 'repairPick' | 'repairDeliver' | 'repairReturn' | 'repairCancel';
   type OrderStatusTransition = {
     action: OrderStatusTransitionAction;
     label: string;
@@ -269,7 +269,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Delivery pending' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Repair processing' | 'Repair Courier Assigned' | 'Repair picked' | 'Repair delivered' | 'Repair returned' | 'Repair canceled' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Cutting and Sewing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Delivery pending' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Repair processing' | 'Repair Courier Assigned' | 'Repair picked' | 'Repair delivered' | 'Repair returned' | 'Repair canceled' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -319,8 +319,12 @@ const OrderDetails: React.FC = () => {
     () => {
       const items: OrderTimelineItem[] = [
         { label: 'Created', historyKey: 'created', description: 'Order created and held until processing begins.' },
-        { label: 'Processing', historyKey: 'processing', description: translateInventoryText('Items are being prepared and packed for shipping.') },
+        { label: 'Processing', historyKey: 'processing', description: isSofaCover ? 'The order has been printed.' : translateInventoryText('Items are being prepared and packed for shipping.') },
       ];
+
+      if (isSofaCover) {
+        items.push({ label: 'Cutting and Sewing', historyKey: 'cuttingAndSewing', description: 'The printed fabric is being cut and sewn.' });
+      }
 
       if (!canUseCourierAutomation) {
         items.push(
@@ -362,7 +366,7 @@ const OrderDetails: React.FC = () => {
       );
       return items;
     },
-    [canUseCourierAutomation, capabilitySettings?.businessMode, showExchangeTimeline, showRepairTimeline]
+    [canUseCourierAutomation, capabilitySettings?.businessMode, isSofaCover, showExchangeTimeline, showRepairTimeline]
   );
 
   const getTimelineIndex = (order?: Order) => {
@@ -395,11 +399,13 @@ const OrderDetails: React.FC = () => {
     if (order.status === OrderStatus.PENDING_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Delivery pending');
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
+    if (order.status === OrderStatus.CUTTING_AND_SEWING) return timelineItems.findIndex((item) => item.label === 'Cutting and Sewing');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
     return timelineItems.findIndex((item) => item.label === 'Created');
   };
 
   const getStatusDisplayName = (status: OrderStatus) => {
+    if (status === OrderStatus.PROCESSING && isSofaCover) return 'Printed';
     if (status === OrderStatus.REPAIR_COURIER_ASSIGNED) return 'Repair Courier Assigned';
     if (status === OrderStatus.COMPLETED) return hasExchangedItems(order) ? 'Exchange Delivered' : 'Delivered';
     if (status === OrderStatus.EXCHANGE_DELIVERED) return 'Exchange Delivered';
@@ -433,7 +439,7 @@ const OrderDetails: React.FC = () => {
         case 'Created':
           return 'Created';
         case 'Processing':
-          return 'Processing';
+          return isSofaCover ? 'Printed' : 'Processing';
         case 'Courier assigned':
         case 'Picked up':
           return item.label;
@@ -475,7 +481,7 @@ const OrderDetails: React.FC = () => {
     if (index < timelineIndex) {
       switch (item.label) {
         case 'Processing':
-          return 'Processed';
+          return isSofaCover ? 'Printed' : 'Processed';
         default:
           return item.label;
       }
@@ -484,7 +490,9 @@ const OrderDetails: React.FC = () => {
     if (index > timelineIndex) {
       switch (item.label) {
         case 'Processing':
-          return 'Process';
+          return isSofaCover ? 'Mark as Printed' : 'Process';
+        case 'Cutting and Sewing':
+          return 'Cutting and Sewing';
         case 'Courier assigned':
           return 'Assign courier';
         case 'Picked up':
@@ -640,7 +648,8 @@ const OrderDetails: React.FC = () => {
     // Build timeline entries, expanding multi-line payment history into separate events
     const baseEntries = [
       { key: 'created', label: 'Created', icon: ICONS.Plus, text: history.created || defaultCreated, timestamp: order.createdAt },
-      { key: 'processing', label: 'Processing', icon: ICONS.ChevronRight, text: history.processing, timestamp: order.statusTimestamps?.processing },
+      { key: 'processing', label: isSofaCover ? 'Printed' : 'Processing', icon: ICONS.ChevronRight, text: history.processing, timestamp: order.statusTimestamps?.processing },
+      { key: 'cuttingAndSewing', label: 'Cutting and Sewing', icon: ICONS.ChevronRight, text: history.cuttingAndSewing, timestamp: order.statusTimestamps?.cuttingAndSewing },
       { key: 'packed', label: 'Packed', icon: ICONS.ChevronRight, text: history.packed },
       { key: 'courier', label: 'Courier assigned', icon: ICONS.Courier, text: history.courier, timestamp: order.statusTimestamps?.courier },
       { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked, timestamp: order.statusTimestamps?.picked },
@@ -1099,7 +1108,7 @@ const OrderDetails: React.FC = () => {
     }
 
     const hasConfirmed = Boolean(order.paidAt || order.history?.payment);
-    const hasProcessing = order.status === OrderStatus.PROCESSING || order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.processing);
+    const hasProcessing = order.status === OrderStatus.PROCESSING || order.status === OrderStatus.CUTTING_AND_SEWING || order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.processing);
 
     // Prefer 'Start processing' for newly created or on-hold orders so the CTA reads
     // as expected in the UI (Created -> Start processing). This allows
@@ -1109,10 +1118,10 @@ const OrderDetails: React.FC = () => {
     if (isEffectivelyCreated && !hasProcessing) {
       return {
         action: 'process' as const,
-        label: 'Start processing',
+        label: isSofaCover ? 'Mark as Printed' : 'Start processing',
         nextStatus: OrderStatus.PROCESSING,
         historyKey: 'processing',
-        description: 'Move the order into processing and begin fulfillment.',
+        description: isSofaCover ? 'Confirm that the order has been printed.' : 'Move the order into processing and begin fulfillment.',
         enabled: canMoveCurrentOrderToProcessing,
       };
     }
@@ -1134,10 +1143,21 @@ const OrderDetails: React.FC = () => {
     if (!hasProcessing) {
       return {
         action: 'process' as const,
-        label: 'Start processing',
+        label: isSofaCover ? 'Mark as Printed' : 'Start processing',
         nextStatus: OrderStatus.PROCESSING,
         historyKey: 'processing',
-        description: 'Move the order into processing and begin fulfillment.',
+        description: isSofaCover ? 'Confirm that the order has been printed.' : 'Move the order into processing and begin fulfillment.',
+        enabled: canMoveCurrentOrderToProcessing,
+      };
+    }
+
+    if (isSofaCover && order.status === OrderStatus.PROCESSING) {
+      return {
+        action: 'cuttingAndSewing' as const,
+        label: 'Move to Cutting and Sewing',
+        nextStatus: OrderStatus.CUTTING_AND_SEWING,
+        historyKey: 'cuttingAndSewing',
+        description: 'Confirm that the printed fabric is moving to cutting and sewing.',
         enabled: canMoveCurrentOrderToProcessing,
       };
     }
@@ -1174,7 +1194,7 @@ const OrderDetails: React.FC = () => {
       description: 'Complete the order by marking it delivered or returned.',
       enabled: canFinalizeOrders,
     };
-  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier, capabilitySettings?.businessMode]);
+  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier, capabilitySettings?.businessMode, isSofaCover]);
 
   // Calculate payment status
   const settlementTotal = order?.status === OrderStatus.CANCELLED ? 0 : (order?.total ?? 0);
@@ -1201,9 +1221,13 @@ const OrderDetails: React.FC = () => {
     newStatus: OrderStatus,
     historyKey?: keyof Order['history'],
     historyText?: string,
-    extra?: { deliveryShippingExpenseAccountId?: string; deliveryShippingExpenseCategoryId?: string },
-  ) => {
-    if (!order) return;
+    extra?: {
+      deliveryShippingExpenseAccountId?: string;
+      deliveryShippingExpenseCategoryId?: string;
+      history?: Order['history'];
+    },
+  ): Promise<boolean> => {
+    if (!order) return false;
     try {
       const updates: Partial<Order> & { deliveryShippingExpenseAccountId?: string; deliveryShippingExpenseCategoryId?: string } = {
         status: newStatus,
@@ -1211,15 +1235,17 @@ const OrderDetails: React.FC = () => {
       };
 
       if (historyKey) {
-        updates.history = { ...order.history, [historyKey]: historyText };
+        updates.history = { ...order.history, ...extra?.history, [historyKey]: historyText };
       }
 
       await updateMutation.mutateAsync({ id: id!, updates });
       setIsActionOpen(false);
       toast.success('Order status updated successfully');
+      return true;
     } catch (err) {
       console.error('Failed to update order status:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to update order status');
+      return false;
     }
   };
 
@@ -1237,8 +1263,17 @@ const OrderDetails: React.FC = () => {
       toast.error('You do not have permission to move orders to processing.');
       return;
     }
-    const historyText = `Marked as processing by ${user.name}, on ${formatHistoryMoment(new Date())}`;
+    const historyText = `${isSofaCover ? 'Marked as printed' : 'Marked as processing'} by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(OrderStatus.PROCESSING, 'processing', historyText);
+  };
+
+  const markCuttingAndSewing = async () => {
+    if (!canMoveCurrentOrderToProcessing) {
+      toast.error('You do not have permission to move this order to cutting and sewing.');
+      return;
+    }
+    const historyText = `Moved to cutting and sewing by ${user.name}, on ${formatHistoryMoment(new Date())}`;
+    await updateStatus(OrderStatus.CUTTING_AND_SEWING, 'cuttingAndSewing', historyText);
   };
 
   const markPacked = async () => {
@@ -1250,7 +1285,7 @@ const OrderDetails: React.FC = () => {
     await updateStatus(order.status, 'packed', historyText);
   };
 
-  const assignCourier = async (details?: string) => {
+  const assignCourier = async (details?: string): Promise<string | null> => {
     if (isExchangeConsignment) {
       // Exchange consignment — don't change status, write to exchangeCourier history
       const noteText = details ? ` ${details.trim()}` : '';
@@ -1263,7 +1298,7 @@ const OrderDetails: React.FC = () => {
           history: { ...order!.history, exchangeCourier: historyText },
         },
       });
-      return;
+      return null;
     }
     if (isRepairCourierAssignment) {
       if (!canFinalizeOrders) throw new Error('You do not have permission to assign a courier for this repair.');
@@ -1281,11 +1316,10 @@ const OrderDetails: React.FC = () => {
           history: { ...order!.history, repairCourier: historyText },
         },
       });
-      return;
+      return null;
     }
     if (!canSendCurrentOrderToCourier) {
-      toast.error('You do not have permission to assign a courier to this order.');
-      return;
+      throw new Error('You do not have permission to assign a courier to this order.');
     }
     const noteText = details ? ` ${details.trim()}` : '';
     const historyText = `Courier assigned by ${user.name}, on ${formatHistoryMoment(new Date())}.${noteText}`;
@@ -1294,18 +1328,20 @@ const OrderDetails: React.FC = () => {
       const shippingCost = Number(manualShippingCost);
       if (!deliveryPerson) throw new Error('Select a delivery person.');
       if (!Number.isFinite(shippingCost) || shippingCost < 0) throw new Error('Enter a valid shipping cost.');
+      const courierHistory = `${historyText} Delivery person: ${deliveryPerson.name}.`;
       await updateMutation.mutateAsync({
         id: order!.id,
         updates: {
           status: OrderStatus.COURIER_ASSIGNED,
           deliveryPersonId: deliveryPerson.id,
           deliveryPersonShippingCost: shippingCost,
-          history: { ...order!.history, courier: `${historyText} Delivery person: ${deliveryPerson.name}.` },
+          history: { ...order!.history, courier: courierHistory },
         },
       });
-      return;
+      return courierHistory;
     }
     await updateStatus(OrderStatus.COURIER_ASSIGNED, 'courier', historyText);
+    return null;
   };
 
   const loadCourierHistory = () => {
@@ -1323,12 +1359,6 @@ const OrderDetails: React.FC = () => {
   };
 
   const openCourierSelectionModal = () => {
-    if (isSofaCover) {
-      setManualDeliveryPersonId(order?.deliveryPersonId || '');
-      setManualShippingCost(order?.deliveryPersonShippingCost == null ? '' : String(order.deliveryPersonShippingCost));
-      setShowManualCourierModal(true);
-      return;
-    }
     setShowCourierSelectionModal(true);
   };
 
@@ -1348,21 +1378,57 @@ const OrderDetails: React.FC = () => {
     } else if (option === 'pathao') {
       setShowPathao(true);
     } else {
+      if (isSofaCover) {
+        setManualDeliveryPersonId(order?.deliveryPersonId || '');
+        setManualShippingCost(order?.deliveryPersonShippingCost == null ? '' : String(order.deliveryPersonShippingCost));
+      }
       setShowManualCourierModal(true);
     }
   };
 
   const handleAssignManualCourier = async () => {
     if (!order) return;
+    const shouldAutoMarkPicked = isSofaCover && !isRepairCourierAssignment && !isExchangeConsignment;
+    const needsShippingExpense = shouldAutoMarkPicked
+      && Number(manualShippingCost) > 0
+      && !order.deliveryPersonShippingExpenseRecorded;
+    if (needsShippingExpense && (!selectedShippingAccountId || !selectedShippingCategoryId)) {
+      toast.error(translateInventoryText('Select an account and expense category before assigning the delivery person.'));
+      return;
+    }
     setIsAssigningManualCourier(true);
     try {
-      await assignCourier(manualCourierNote.trim() || 'No details');
+      const courierHistory = await assignCourier(manualCourierNote.trim() || 'No details');
+      let wasMarkedPicked = !shouldAutoMarkPicked;
+      if (shouldAutoMarkPicked) {
+        if (!canMoveCurrentOrderToPickedPermission) {
+          toast.warning('Delivery person assigned. You do not have permission to mark the order as picked.');
+        } else {
+          const shippingExpenseSelection = needsShippingExpense ? {
+            deliveryShippingExpenseAccountId: selectedShippingAccountId,
+            deliveryShippingExpenseCategoryId: selectedShippingCategoryId,
+          } : undefined;
+          wasMarkedPicked = await updateStatus(
+            OrderStatus.PICKED,
+            'picked',
+            `Marked as picked by courier, on ${formatHistoryMoment(new Date())}`,
+            {
+              ...(shippingExpenseSelection || {}),
+              history: courierHistory ? { ...order.history, courier: courierHistory } : undefined,
+            },
+          );
+        }
+      }
       setShowManualCourierModal(false);
       setManualCourierNote('');
       const wasRepairCourierAssignment = isRepairCourierAssignment;
       setIsRepairCourierAssignment(false);
       setIsExchangeConsignment(false);
-      toast.success(wasRepairCourierAssignment ? 'Repair delivery person assigned successfully.' : isExchangeConsignment ? 'Exchange courier assigned successfully.' : 'Courier assigned successfully.');
+      if (wasMarkedPicked) {
+        toast.success(wasRepairCourierAssignment ? 'Repair delivery person assigned successfully.' : isExchangeConsignment ? 'Exchange courier assigned successfully.' : shouldAutoMarkPicked ? 'Delivery person assigned and order marked as picked.' : 'Courier assigned successfully.');
+      } else if (shouldAutoMarkPicked && canMoveCurrentOrderToPickedPermission) {
+        toast.info('Delivery person assigned. The order remains at Courier assigned.');
+      }
     } catch (err) {
       console.error('Failed to assign courier manually:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to assign courier');
@@ -1395,6 +1461,14 @@ const OrderDetails: React.FC = () => {
     && Boolean(order?.deliveryPersonId)
     && Number(order?.deliveryPersonShippingCost || 0) > 0
     && (isRepairPickupTransition || !order?.deliveryPersonShippingExpenseRecorded);
+  const requiresManualCourierShippingExpenseSelection = isSofaCover
+    && showManualCourierModal
+    && !isRepairCourierAssignment
+    && !isExchangeConsignment
+    && Boolean(manualDeliveryPersonId)
+    && Number(manualShippingCost) > 0
+    && !order?.deliveryPersonShippingExpenseRecorded
+    && canMoveCurrentOrderToPickedPermission;
 
   const handleConfirmStatusTransition = async () => {
     if (!pendingStatusTransition) return;
@@ -1409,6 +1483,8 @@ const OrderDetails: React.FC = () => {
       await markConfirmed();
     } else if (pendingStatusTransition.action === 'process') {
       await markProcessing();
+    } else if (pendingStatusTransition.action === 'cuttingAndSewing') {
+      await markCuttingAndSewing();
     } else if (pendingStatusTransition.action === 'assignCourier') {
       openCourierSelectionModal();
     } else if (pendingStatusTransition.action === 'repairAssignCourier') {
@@ -1906,10 +1982,7 @@ const OrderDetails: React.FC = () => {
     const openPathaoTracking = (): boolean => {
       if (!sentToPathao || !pathaoConsignment) return false;
 
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(pathaoConsignment).catch(() => undefined);
-      }
-      toast.success(`Pathao consignment ID copied: ${pathaoConsignment}`);
+      window.open(`https://merchant.pathao.com/public-tracking?consignment_id=${encodeURIComponent(pathaoConsignment)}`, '_blank', 'noopener,noreferrer');
       closeTrackingMenu();
       return true;
     };
@@ -2352,11 +2425,24 @@ const OrderDetails: React.FC = () => {
                   <table className="w-full border border-gray-200 border-collapse text-left text-[9px] sm:text-[10px] lg:text-xs overflow-hidden rounded-lg">
                     <thead>
                       <tr style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.15), color: '#ffffff' }}>
-                        <th className="hidden sm:table-cell py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3 text-center w-10">#</th>
-                        <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">{isSofaCover ? 'Fabric Description' : 'Item Description'}</th>
-                        <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
-                        <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
-                        <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Total</th>
+                        {isSofaCover ? (
+                          <>
+                            <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Item</th>
+                            <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Fabric</th>
+                            <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Option</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Amount</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="hidden sm:table-cell py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3 text-center w-10">#</th>
+                            <th className="py-2 sm:py-3 lg:py-4 font-black text-white uppercase tracking-wide px-2 sm:px-3">Item Description</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Rate</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-center font-black text-white uppercase tracking-wide whitespace-nowrap px-1">Qty</th>
+                            <th className="py-2 sm:py-3 lg:py-4 text-right font-black text-white uppercase tracking-wide whitespace-nowrap px-2 sm:px-3">Total</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -2374,45 +2460,68 @@ const OrderDetails: React.FC = () => {
                         const effectiveAmount = item.rate * activeQty;
                         const isFullyReturned = activeQty === 0;
                         return (
-                          <tr key={idx} className={`group align-middle ${isFullyReturned ? 'opacity-50' : ''}`}>
-                            <td className="hidden sm:table-cell py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-center font-bold text-gray-500">{idx + 1}</td>
-                            <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3">
-                              <div className="flex items-center gap-2 sm:gap-3 lg:gap-3 min-w-0">
-                                {imageSrc ? (
-                                  <img src={imageSrc} className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
-                                ) : (
-                                  <div className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full border border-gray-100 shadow-sm flex items-center justify-center flex-shrink-0 text-[9px] font-black ${isFullyReturned ? 'grayscale' : ''}`} style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.92), color: themeColorHex }}>
-                                    {(item.productName || '?').slice(0, 1).toUpperCase()}
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <span className={`font-bold text-[9px] sm:text-[10px] lg:text-xs break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    {returnedQty > 0 && (
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">
-                                        Returned ×{returnedQty}
-                                      </span>
-                                    )}
-                                    {exchangedQty > 0 && (
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">
-                                        Exchanged ×{exchangedQty}
-                                      </span>
-                                    )}
+                          isSofaCover ? (
+                            <tr key={idx} className={`group align-middle ${isFullyReturned ? 'opacity-50' : ''}`}>
+                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3 font-bold text-gray-900">{item.sofaCoverType || '—'}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3">
+                                <div className="flex items-center gap-2 sm:gap-3 lg:gap-3 min-w-0">
+                                  {imageSrc ? (
+                                    <img src={imageSrc} className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
+                                  ) : (
+                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full border border-gray-100 shadow-sm flex items-center justify-center flex-shrink-0 text-[9px] font-black ${isFullyReturned ? 'grayscale' : ''}`} style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.92), color: themeColorHex }}>
+                                      {(item.productName || '?').slice(0, 1).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <span className={`font-bold text-[9px] sm:text-[10px] lg:text-xs break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {returnedQty > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">Returned ×{returnedQty}</span>}
+                                      {exchangedQty > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">Exchanged ×{exchangedQty}</span>}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="py-3 sm:py-4 lg:py-5 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
-                            <td className="py-3 sm:py-4 lg:py-5 text-center px-1 whitespace-nowrap">
-                              <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
-                              {activeQty !== item.quantity && (
-                                <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>
-                              )}
-                            </td>
-                            <td className="py-3 sm:py-4 lg:py-5 text-right px-2 sm:px-3 whitespace-nowrap">
-                              <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
-                            </td>
-                          </tr>
+                              </td>
+                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-gray-500">{item.sofaCoverType === 'Divan Cover' ? 'Seat' : item.sofaCoverOption || '—'}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-center px-1 whitespace-nowrap">
+                                <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
+                                {activeQty !== item.quantity && <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>}
+                              </td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-right text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-right px-2 sm:px-3 whitespace-nowrap">
+                                <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
+                              </td>
+                            </tr>
+                          ) : (
+                            <tr key={idx} className={`group align-middle ${isFullyReturned ? 'opacity-50' : ''}`}>
+                              <td className="hidden sm:table-cell py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-center font-bold text-gray-500">{idx + 1}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3">
+                                <div className="flex items-center gap-2 sm:gap-3 lg:gap-3 min-w-0">
+                                  {imageSrc ? (
+                                    <img src={imageSrc} className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full object-cover border border-gray-100 shadow-sm flex-shrink-0 ${isFullyReturned ? 'grayscale' : ''}`} alt={item.productName} />
+                                  ) : (
+                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 lg:w-10 lg:h-10 rounded-full border border-gray-100 shadow-sm flex items-center justify-center flex-shrink-0 text-[9px] font-black ${isFullyReturned ? 'grayscale' : ''}`} style={{ backgroundColor: mixThemeColorWithWhite(themeColorHex, 0.92), color: themeColorHex }}>
+                                      {(item.productName || '?').slice(0, 1).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <span className={`font-bold text-[9px] sm:text-[10px] lg:text-xs break-words ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{item.productName}</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {returnedQty > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-orange-100 text-orange-700">Returned ×{returnedQty}</span>}
+                                      {exchangedQty > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-blue-100 text-blue-700">Exchanged ×{exchangedQty}</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-center text-gray-500 font-bold px-1 whitespace-nowrap">{formatCurrency(item.rate)}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-center px-1 whitespace-nowrap">
+                                <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
+                                {activeQty !== item.quantity && <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>}
+                              </td>
+                              <td className="py-3 sm:py-4 lg:py-5 text-right px-2 sm:px-3 whitespace-nowrap">
+                                <span className={`font-black ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-900'}`}>{formatCurrency(effectiveAmount)}</span>
+                              </td>
+                            </tr>
+                          )
                         );
                       })}
                     </tbody>
@@ -3175,7 +3284,7 @@ const OrderDetails: React.FC = () => {
         variant="danger"
       />
 
-      {showCourierSelectionModal && !isSofaCover && (
+      {showCourierSelectionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/40" onClick={closeCourierSelectionModal} />
           <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300 max-h-[90vh] overflow-y-auto">
@@ -3302,6 +3411,35 @@ const OrderDetails: React.FC = () => {
                     Shipping cost <span className="text-red-500">*</span>
                     <input type="number" min="0" step="0.01" inputMode="decimal" value={manualShippingCost} onChange={(event) => setManualShippingCost(event.target.value)} required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
                   </label>
+                  {requiresManualCourierShippingExpenseSelection && (
+                    <div className="space-y-4 border-t border-gray-100 pt-4">
+                      <p className="text-sm font-semibold text-gray-700">Shipping expense for pickup</p>
+                      <label className="block space-y-1.5 text-sm font-semibold text-gray-700">
+                        Account <span className="text-red-500">*</span>
+                        <select
+                          value={selectedShippingAccountId}
+                          onChange={(event) => setPickedShippingAccountId(event.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          required
+                        >
+                          <option value="">Select account</option>
+                          {accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {formatCurrency(account.currentBalance)}</option>)}
+                        </select>
+                      </label>
+                      <label className="block space-y-1.5 text-sm font-semibold text-gray-700">
+                        Expense category <span className="text-red-500">*</span>
+                        <select
+                          value={selectedShippingCategoryId}
+                          onChange={(event) => setPickedShippingCategoryId(event.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          required
+                        >
+                          <option value="">Select expense category</option>
+                          {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -3330,7 +3468,7 @@ const OrderDetails: React.FC = () => {
                   variant="primary"
                   className="w-full sm:w-auto"
                   loading={isAssigningManualCourier}
-                  disabled={isAssigningManualCourier || (isSofaCover && (!manualDeliveryPersonId || manualShippingCost === ''))}
+                  disabled={isAssigningManualCourier || (isSofaCover && (!manualDeliveryPersonId || manualShippingCost === '')) || (requiresManualCourierShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId))}
                 >
                   {isAssigningManualCourier ? 'Assigning...' : isSofaCover ? 'Assign Delivery Person' : 'Assign Courier'}
                 </Button>

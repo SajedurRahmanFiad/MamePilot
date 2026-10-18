@@ -176,6 +176,7 @@ export enum OrderStatus {
   CREATED = 'Created',
   ON_HOLD = 'On Hold',
   PROCESSING = 'Processing',
+  CUTTING_AND_SEWING = 'Cutting and Sewing',
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
@@ -307,6 +308,7 @@ export interface Product {
   purchasePrice: number;
   stock: number;
   dynamicPricing?: string;
+  sofaCoverPricing?: string | null;
   manufacturer?: string | null;
   batchLotNumber?: string | null;
   expiryDate?: string | null;
@@ -498,6 +500,8 @@ export interface Unit {
 export interface OrderItem {
   productId: string;
   productName: string;
+  sofaCoverType?: 'Sofa Cover' | 'Cushion' | 'Divan Cover' | 'Chair Cover';
+  sofaCoverOption?: string;
   rate: number;
   quantity: number;
   amount: number;
@@ -945,6 +949,7 @@ export interface Order {
     created: string;
     courier?: string;
     processing?: string;
+    cuttingAndSewing?: string;
     packed?: string;
     picked?: string;
     pendingDelivered?: string;
@@ -973,6 +978,7 @@ export interface Order {
   /** Server-authored UTC instants for lifecycle changes; legacy orders fall back to history text. */
   statusTimestamps?: Partial<Record<
     | 'processing'
+    | 'cuttingAndSewing'
     | 'courier'
     | 'picked'
     | 'completed'

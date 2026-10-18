@@ -37,5 +37,13 @@ $pathaoClassifier = new ReflectionMethod(CourierApi::class, 'classifyPathaoStatu
 $pathaoClassifier->setAccessible(true);
 $returnStatus = $pathaoClassifier->invoke($courierApi, 'Return Delivered');
 courierPollingAssert(($returnStatus['status'] ?? null) === 'Returned', 'Pathao polling misclassified Return Delivered as a normal delivery.');
+$deliveredStatus = $pathaoClassifier->invoke($courierApi, 'Delivered');
+courierPollingAssert(($deliveredStatus['status'] ?? null) === 'Delivered', 'Pathao polling did not recognize Delivered.');
+$pendingStatus = $pathaoClassifier->invoke($courierApi, 'Pending');
+courierPollingAssert(($pendingStatus['status'] ?? null) === null, 'Pathao polling advanced an order that is still Pending.');
+$pickedStatus = $pathaoClassifier->invoke($courierApi, 'Picked');
+courierPollingAssert(($pickedStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize Picked.');
+$transitStatus = $pathaoClassifier->invoke($courierApi, 'In Transit');
+courierPollingAssert(($transitStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize an order that is In Transit.');
 
 echo "Courier fallback polling runtime checks passed.\n";

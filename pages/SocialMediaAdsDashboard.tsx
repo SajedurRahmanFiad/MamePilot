@@ -19,6 +19,7 @@ import { getStatusDisplayName } from '../constants';
 import { useMarketingDashboard, useMetaAdsSettings, useMetaAdsSyncStatus } from '../src/hooks/useQueries';
 import { useSyncMetaAds } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { useCapabilities } from '../src/hooks/useCapabilities';
 import {
   convertAdsAmountToBdt,
   CURRENCY_SYMBOLS,
@@ -120,6 +121,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToastNotifications();
+  const { settings: capabilitySettings } = useCapabilities();
   const { data: metaAdsSettings, isPending: settingsPending } = useMetaAdsSettings();
   const isMetaAdsConfigured = Boolean(metaAdsSettings?.appId);
   const [filterRange, setFilterRange] = useState<FilterRange>('Last 7 days');
@@ -704,7 +706,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                 <div className="mt-3 flex flex-wrap gap-2">
                   {data!.pipeline.map((row) => (
                     <span key={row.status} className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-bold text-gray-600">
-                      {getStatusDisplayName(row.status)}: {row.count}
+                      {getStatusDisplayName(row.status, capabilitySettings?.businessMode)}: {row.count}
                     </span>
                   ))}
                 </div>
@@ -744,7 +746,7 @@ const SocialMediaAdsDashboard: React.FC = () => {
                             </button>
                             <p className="text-[11px] text-gray-400">{formatDate(order.orderDate)}</p>
                           </td>
-                          <td className="px-3 py-3 text-gray-700">{getStatusDisplayName(order.status)}</td>
+                          <td className="px-3 py-3 text-gray-700">{getStatusDisplayName(order.status, capabilitySettings?.businessMode)}</td>
                           <td className="px-3 py-3 text-gray-700">
                             <p className="font-semibold">{order.campaignName || '—'}</p>
                             <p className="text-[11px] text-gray-400">{order.adName || order.sourceAd}</p>

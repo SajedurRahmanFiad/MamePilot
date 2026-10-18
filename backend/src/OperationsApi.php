@@ -1319,6 +1319,7 @@ final class OperationsApi extends BaseService
             || $this->historyValue($nextHistory, 'courier') !== $this->historyValue($existingHistory, 'courier');
 
         $processingChanged = $this->historyValue($nextHistory, 'processing') !== $this->historyValue($existingHistory, 'processing');
+        $cuttingAndSewingChanged = $this->historyValue($nextHistory, 'cuttingAndSewing') !== $this->historyValue($existingHistory, 'cuttingAndSewing');
         $pickedChanged = $this->historyValue($nextHistory, 'picked') !== $this->historyValue($existingHistory, 'picked');
         $completedChanged = $this->historyValue($nextHistory, 'completed') !== $this->historyValue($existingHistory, 'completed');
         $returnedChanged = $this->historyValue($nextHistory, 'returned') !== $this->historyValue($existingHistory, 'returned');
@@ -1358,7 +1359,15 @@ final class OperationsApi extends BaseService
             $this->assertUserCanManageOrderRecord($user, $existingRow, 'orders.cancelOwn', 'orders.cancelAny', 'You do not have permission to cancel this order.');
         }
 
-        if (($nextStatus !== $previousStatus && $nextStatus === 'Processing') || $processingChanged) {
+        $isEnteringCuttingAndSewing = $nextStatus !== $previousStatus && $nextStatus === 'Cutting and Sewing';
+        if ($isEnteringCuttingAndSewing && !$this->isSofaCoverBusinessMode()) {
+            throw new RuntimeException('Cutting and Sewing status is only available in sofa cover mode.');
+        }
+        if ($isEnteringCuttingAndSewing && $previousStatus !== 'Processing') {
+            throw new RuntimeException('Orders must be Printed before moving to Cutting and Sewing.');
+        }
+
+        if (($nextStatus !== $previousStatus && in_array($nextStatus, ['Processing', 'Cutting and Sewing'], true)) || $processingChanged || $cuttingAndSewingChanged) {
             $this->assertUserCanManageOrderRecord(
                 $user,
                 $existingRow,
@@ -1472,8 +1481,8 @@ final class OperationsApi extends BaseService
 
         if (
             array_key_exists('history', $updates)
-            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
-            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
+            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'cuttingAndSewing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'cuttingAndSewing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
         ) {
             $businessChanged = true;
         }
@@ -2575,6 +2584,7 @@ final class OperationsApi extends BaseService
             );
             $timestampKeys = [
                 'Processing' => 'processing',
+                'Cutting and Sewing' => 'cuttingAndSewing',
                 'Courier assigned' => 'courier',
                 'Picked' => 'picked',
                 'Completed' => 'completed',

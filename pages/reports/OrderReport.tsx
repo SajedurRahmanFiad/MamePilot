@@ -8,6 +8,7 @@ import { theme } from '../../theme';
 import type { FilterRange } from '../../utils';
 import { toDateTimeLocalInputValue } from '../../utils';
 import { useCompanySettings, useOrderReport } from '../../src/hooks/useQueries';
+import { useCapabilities } from '../../src/hooks/useCapabilities';
 import { normalizeCompanySettings } from '../../src/utils/companyPages';
 import type { OrderReportDateMode } from '../../types';
 
@@ -50,6 +51,11 @@ const InsightRow: React.FC<{ label: string; value: string; detail?: string; valu
 
 const OrderReport: React.FC = () => {
   const navigate = useNavigate();
+  const { settings: capabilitySettings } = useCapabilities();
+  const processingLabel = capabilitySettings?.businessMode === 'sofa_cover' ? 'Printed' : 'Processing';
+  const getDateModeLabel = (mode: OrderReportDateMode) => mode === 'processing' && capabilitySettings?.businessMode === 'sofa_cover'
+    ? 'Printed during'
+    : DATE_MODE_LABELS[mode];
   const [filterRange, setFilterRange] = useState<FilterRange>('Today');
   const [customDates, setCustomDates] = useState({ from: '', to: '' });
   const [includeTime, setIncludeTime] = useState(false);
@@ -218,7 +224,7 @@ const OrderReport: React.FC = () => {
             className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-900 outline-none transition focus:border-[var(--primary-medium,#3c5a82)] focus:bg-white focus:ring-2 focus:ring-[var(--primary-soft,#ebf4ff)]"
           >
             {ORDER_REPORT_DATE_MODES.map((mode) => (
-              <option key={mode} value={mode}>{DATE_MODE_LABELS[mode]}</option>
+              <option key={mode} value={mode}>{getDateModeLabel(mode)}</option>
             ))}
           </select>
         </div>
@@ -287,7 +293,7 @@ const OrderReport: React.FC = () => {
             ))}
           </div>
           <p className="text-center text-xs text-gray-400 mt-4">
-            {DATE_MODE_LABELS[dateMode]} {' '}
+            {getDateModeLabel(dateMode)} {' '}
             {filterRange === 'Custom'
               ? (customDates.from && customDates.to ? `${customDates.from} to ${customDates.to}` : customDates.from ? `from ${customDates.from}` : customDates.to ? `until ${customDates.to}` : 'all time')
               : filterRange === 'All Time' ? 'all time' : `this ${filterRange.toLowerCase().replace('this ', '').replace('last ', '')}`}
@@ -304,7 +310,7 @@ const OrderReport: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            <SummaryCard label="Processing" value={reportData?.processingCount ?? 0} color="border-l-yellow-400" />
+            <SummaryCard label={processingLabel} value={reportData?.processingCount ?? 0} color="border-l-yellow-400" />
             <SummaryCard label="Picked" value={reportData?.pickedCount ?? 0} color="border-l-indigo-400" />
             <SummaryCard label="Courier Assigned" value={reportData?.courierAssignedCount ?? 0} color="border-l-purple-400" />
             <SummaryCard label="On Hold" value={reportData?.onHoldCount ?? 0} color="border-l-cyan-400" />
@@ -326,7 +332,7 @@ const OrderReport: React.FC = () => {
                 <InsightRow label="Returned" value={(reportData?.returnedCount ?? 0).toLocaleString()} detail={`${returnRate}%`} valueClass="text-orange-600" />
                 <InsightRow label="Cancelled" value={(reportData?.cancelledCount ?? 0).toLocaleString()} detail={`${cancelRate}%`} valueClass="text-red-600" />
                 <InsightRow label="Exchanges" value={(reportData?.exchangeCount ?? 0).toLocaleString()} valueClass="text-blue-600" />
-                <InsightRow label="Processing" value={(reportData?.processingCount ?? 0).toLocaleString()} valueClass="text-yellow-600" />
+                <InsightRow label={processingLabel} value={(reportData?.processingCount ?? 0).toLocaleString()} valueClass="text-yellow-600" />
                 <InsightRow label="Picked" value={(reportData?.pickedCount ?? 0).toLocaleString()} valueClass="text-indigo-600" />
                 <InsightRow label="Courier Assigned" value={(reportData?.courierAssignedCount ?? 0).toLocaleString()} valueClass="text-purple-600" />
                 <InsightRow label="On Hold" value={(reportData?.onHoldCount ?? 0).toLocaleString()} valueClass="text-cyan-600" />

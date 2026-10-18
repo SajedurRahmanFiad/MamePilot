@@ -7,9 +7,10 @@ interface Props {
   onClose: () => void;
   children: React.ReactNode;
   align?: 'right' | 'left';
+  width?: number;
 }
 
-const PortalMenu: React.FC<Props> = ({ anchorEl, open, onClose, children, align = 'right' }) => {
+const PortalMenu: React.FC<Props> = ({ anchorEl, open, onClose, children, align = 'right', width = 200 }) => {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
@@ -20,7 +21,7 @@ const PortalMenu: React.FC<Props> = ({ anchorEl, open, onClose, children, align 
 
     const update = () => {
       const rect = anchorEl.getBoundingClientRect();
-      const menuWidth = 200; // approximate width used in pages
+      const menuWidth = width;
       const left = align === 'right' ? rect.right - menuWidth : rect.left;
       const top = rect.bottom + 8; // small gap
       setPos({ top, left });
@@ -33,7 +34,7 @@ const PortalMenu: React.FC<Props> = ({ anchorEl, open, onClose, children, align 
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [anchorEl, open, align]);
+  }, [anchorEl, open, align, width]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,8 +56,8 @@ const PortalMenu: React.FC<Props> = ({ anchorEl, open, onClose, children, align 
   const menu = (
     <div id="portal-menu-root" className="fixed left-0 top-0 z-[2000] pointer-events-none">
       <div
-        style={{ position: 'fixed', top: pos.top, left: pos.left }}
-        className="pointer-events-auto w-48 bg-white border border-gray-100 rounded-lg shadow-2xl py-2"
+        style={{ position: 'fixed', top: pos.top, left: pos.left, width }}
+        className="pointer-events-auto overflow-hidden rounded-lg border border-gray-100 bg-white py-2 shadow-2xl"
       >
         {children}
       </div>

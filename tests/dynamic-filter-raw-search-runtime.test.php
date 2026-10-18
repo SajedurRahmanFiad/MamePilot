@@ -40,6 +40,7 @@ $productId = substr('product-' . $stamp, 0, 64);
 $accountId = substr('account-' . $stamp, 0, 64);
 $orderId = substr('order-' . $stamp, 0, 64);
 $exchangeOrderId = substr('exchange-' . $stamp, 0, 64);
+$cuttingAndSewingOrderId = substr('cutting-' . $stamp, 0, 64);
 $billId = substr('bill-' . $stamp, 0, 64);
 $transactionId = substr('transaction-' . $stamp, 0, 64);
 
@@ -102,6 +103,18 @@ try {
             ':created_by' => $actor['id'],
         ]
     );
+    $database->execute(
+        "INSERT INTO orders (id, order_number, order_seq, order_date, customer_id, created_by, status, items, total, history)
+         VALUES (:id, :number, :seq, CURRENT_DATE, :customer_id, :created_by, 'Processing', '[]', 0, :history)",
+        [
+            ':id' => $cuttingAndSewingOrderId,
+            ':number' => 'RAW-CUTTING-' . $stamp,
+            ':seq' => $nextOrderSeq + 2,
+            ':customer_id' => $customerId,
+            ':created_by' => $actor['id'],
+            ':history' => json_encode(['processing' => 'Printed for regression test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]
+    );
 
     $nextBillSeq = (int) (($database->fetchOne('SELECT COALESCE(MAX(bill_seq), 0) + 1 AS seq FROM bills') ?? [])['seq'] ?? 1);
     $database->execute(
@@ -148,6 +161,24 @@ try {
         'updates' => ['notes' => 'Still editable before exchange pickup.'],
     ]);
     rawSearchRuntimeAssert(($updatedExchangeOrder['notes'] ?? '') === 'Still editable before exchange pickup.', 'Exchange-processing order was not editable.');
+
+    $capabilitySettings = $database->fetchOne('SELECT business_mode FROM app_capability_settings LIMIT 1');
+    if (trim((string) ($capabilitySettings['business_mode'] ?? '')) === 'sofa_cover') {
+        $cuttingAndSewingOrder = $operations->updateOrder([
+            'id' => $cuttingAndSewingOrderId,
+            'updates' => [
+                'status' => 'Cutting and Sewing',
+                'history' => [
+                    'processing' => 'Printed for regression test',
+                    'cuttingAndSewing' => 'Moved to Cutting and Sewing for regression test',
+                ],
+            ],
+        ]);
+        rawSearchRuntimeAssert(
+            ($cuttingAndSewingOrder['status'] ?? '') === 'Cutting and Sewing',
+            'A sofa-cover order could not advance from Printed to Cutting and Sewing.'
+        );
+    }
 
     $database->execute("UPDATE orders SET status = 'Exchange picked' WHERE id = :id", [':id' => $exchangeOrderId]);
     $blockedAfterPickup = false;

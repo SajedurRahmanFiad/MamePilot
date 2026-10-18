@@ -9,11 +9,11 @@ abstract class BaseService
     protected const DEFAULT_PAGE_SIZE = 25;
     protected const DEFAULT_PAYROLL_STATUSES = ['On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed', 'Exchange delivered', 'Cancelled'];
     protected const ALL_ORDER_STATUSES = [
-        'On Hold', 'Processing', 'Courier assigned', 'Picked', 'Completed',
+        'On Hold', 'Processing', 'Cutting and Sewing', 'Courier assigned', 'Picked', 'Completed',
         'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Exchange returned',
         'Exchange cancelled', 'Returned', 'Cancelled',
     ];
-    protected const ORDER_STOCK_STATUSES = ['Processing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed', 'Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
+    protected const ORDER_STOCK_STATUSES = ['Processing', 'Cutting and Sewing', 'Courier assigned', 'Picked', 'Exchange processing', 'Exchange picked', 'Exchange delivered', 'Completed', 'Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
     protected const BILL_STOCK_STATUSES = ['Received', 'Paid'];
     protected const DEFAULT_WALLET_CUTOFF_DATE = '2026-04-01';
     protected const DEFAULT_WALLET_CUTOFF_AT_UTC = '2026-03-31 18:00:00';
@@ -1304,6 +1304,7 @@ abstract class BaseService
             'purchasePrice' => (float) ($row['purchase_price'] ?? $row['purchasePrice'] ?? 0),
             'stock' => (int) ($row['stock'] ?? 0),
             'dynamicPricing' => $this->nullableString($row['dynamic_pricing'] ?? null),
+            'sofaCoverPricing' => $this->nullableString($row['sofa_cover_pricing'] ?? null),
             'manufacturer' => $this->nullableString($row['manufacturer'] ?? null),
             'batchLotNumber' => $this->nullableString($row['batch_lot_number'] ?? null),
             'expiryDate' => $this->toIso($row['expiry_date'] ?? null),

@@ -190,7 +190,7 @@ const PosOrderDetails: React.FC = () => {
             <>
               <h2 className="text-md md:text-lg font-bold text-gray-900">{order.orderNumber}</h2>
               <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${getStatusColor(order.status)}`}>
-                {getStatusDisplayName(order.status)}
+                {getStatusDisplayName(order.status, capabilitySettings?.businessMode)}
               </span>
             </>
           )}

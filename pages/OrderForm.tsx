@@ -7,11 +7,12 @@ import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { getBusinessTerminology } from '../src/utils/businessMode';
-import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings } from '../src/hooks/useQueries';
+import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings, useUnits } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchProductsSearchPage, fetchProductById, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
 import { useLocation } from 'react-router-dom';
 import { useCreateOrder, useUpdateOrder, useCreateCustomer } from '../src/hooks/useMutations';
+import PortalMenu from '../components/PortalMenu';
 import { isTempId, waitForRealId } from '../src/utils/optimisticIdMap';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -22,6 +23,64 @@ import { saveOrderFormDraft, restoreOrderFormDraft } from '../src/utils/formDraf
 import { buildHistoryBackState } from '../src/utils/navigation';
 
 type CustomerSearchOption = Pick<Customer, 'id' | 'name'> & Partial<Customer>;
+type SofaCoverItemType = NonNullable<OrderItem['sofaCoverType']>;
+type SofaCoverPriceOption = { value: string; label: string; price: number };
+
+const SOFA_COVER_ITEM_TYPES: SofaCoverItemType[] = ['Sofa Cover', 'Cushion', 'Divan Cover', 'Chair Cover'];
+
+const parseSofaCoverPricing = (product?: Product | null): Record<string, any> => {
+  if (!product?.sofaCoverPricing) return {};
+  try {
+    const parsed = JSON.parse(product.sofaCoverPricing);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const getSofaCoverPriceOptions = (type: SofaCoverItemType | undefined, product?: Product | null): SofaCoverPriceOption[] => {
+  if (type === 'Sofa Cover') {
+    const pricing = parseSofaCoverPricing(product).sofaCover || {};
+    return [
+      { value: 'Seat', label: 'Seat', price: Number(pricing.perSeat) || 0 },
+      { value: 'Foam', label: 'Foam', price: Number(pricing.perFoam) || 0 },
+    ];
+  }
+  if (type === 'Cushion') {
+    const cushions = parseSofaCoverPricing(product).cushions;
+    return Array.isArray(cushions) ? cushions.filter((cushion: { size?: string }) => Boolean(String(cushion.size || '').trim())).map((cushion: { id?: string; size?: string; price?: number }, index: number) => ({
+      value: String(cushion.id || cushion.size || index),
+      label: String(cushion.size).trim(),
+      price: Number(cushion.price) || 0,
+    })) : [];
+  }
+  if (type === 'Chair Cover') {
+    const pricing = parseSofaCoverPricing(product).chairCover || {};
+    return [
+      { value: 'Seat only', label: 'Seat only', price: Number(pricing.perSeat) || 0 },
+      { value: 'Backrest only', label: 'Backrest only', price: Number(pricing.perBackrest) || 0 },
+      { value: 'Seat+Backrest', label: 'Seat+Backrest', price: Number(pricing.perSeatAndBackrest) || 0 },
+      { value: 'Armchair', label: 'Armchair', price: Number(pricing.perArmchair) || 0 },
+    ];
+  }
+  return [];
+};
+
+const normalizeSofaCoverOption = (value?: string): string => ({
+  perSeat: 'Seat',
+  perFoam: 'Foam',
+  perBackrest: 'Backrest only',
+  perSeatAndBackrest: 'Seat+Backrest',
+  perArmchair: 'Armchair',
+}[value || ''] || value || '');
+
+const getSofaCoverItemRate = (item: OrderItem, product?: Product | null): number => {
+  if (item.sofaCoverType === 'Divan Cover') {
+    return Number(parseSofaCoverPricing(product).divanCover?.perSeat) || 0;
+  }
+  const selectedOption = normalizeSofaCoverOption(item.sofaCoverOption);
+  return getSofaCoverPriceOptions(item.sofaCoverType, product).find((option) => option.value === selectedOption)?.price || 0;
+};
 
 /**
  * Evaluate dynamic pricing rules for a product based on quantity.
@@ -148,6 +207,8 @@ const OrderForm: React.FC = () => {
   // Query data
   const queryClient = useQueryClient();
   const [showProductSearch, setShowProductSearch] = useState(false);
+  const [fabricPickerAnchor, setFabricPickerAnchor] = useState<HTMLElement | null>(null);
+  const [fabricPickerRowIndex, setFabricPickerRowIndex] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   // Cumulative map of all products seen across mini, search, and full caches.
@@ -182,7 +243,7 @@ const OrderForm: React.FC = () => {
     queryFn: ({ pageParam = 1, signal }) => fetchProductsSearchPage(debouncedSearch, pageParam, 30, { signal }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.page + 1 : undefined,
-    enabled: showProductSearch,
+    enabled: showProductSearch || isSofaCover,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -203,6 +264,7 @@ const OrderForm: React.FC = () => {
   const { data: orderSettings } = useOrderSettings();
   const { data: companySettings, isPending: companySettingsLoading } = useCompanySettings();
   const { data: systemDefaults } = useSystemDefaults();
+  const { data: units = [] } = useUnits();
   const isMultiSelectMode = (systemDefaults?.productSelectionMode ?? 'simple') === 'multi';
   
   // Mutations
@@ -227,6 +289,14 @@ const OrderForm: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [collageUploads, setCollageUploads] = useState<Array<{ dataUrl: string; name: string }>>([]);
   const [savedCollageUrls, setSavedCollageUrls] = useState<string[]>([]);
+
+  const getItemUnitLabel = (productId: string): string => {
+    const product = orderProductDetails[productId]
+      ?? allProductsRef.current.get(productId)
+      ?? products.find((candidate) => candidate.id === productId);
+    const unit = units.find((candidate) => candidate.id === product?.unitId);
+    return unit?.shortName || unit?.short_name || unit?.name || '';
+  };
   
   
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
@@ -604,13 +674,57 @@ const OrderForm: React.FC = () => {
     setSearchTerm('');
   };
 
+  const addSofaCoverRow = () => {
+    setItems((previous) => [...previous, {
+      productId: '',
+      productName: '',
+      sofaCoverType: undefined,
+      sofaCoverOption: '',
+      rate: 0,
+      quantity: 1,
+      amount: 0,
+    }]);
+  };
+
+  const updateSofaCoverRow = (index: number, updates: Partial<OrderItem>, selectedFabric?: Product) => {
+    if (selectedFabric) {
+      allProductsRef.current.set(selectedFabric.id, selectedFabric);
+      setOrderProductDetails((previous) => ({ ...previous, [selectedFabric.id]: selectedFabric }));
+    }
+    setItems((previous) => previous.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      const nextItem = { ...item, ...updates };
+      const fabric = selectedFabric
+        ?? orderProductDetails[nextItem.productId]
+        ?? allProductsRef.current.get(nextItem.productId)
+        ?? products.find((product) => product.id === nextItem.productId);
+      const rate = getSofaCoverItemRate(nextItem, fabric as Product | undefined);
+      return { ...nextItem, rate, amount: rate * nextItem.quantity };
+    }));
+  };
+
+  const selectSofaCoverFabric = (index: number, fabric: Product) => {
+    const item = items[index];
+    const options = getSofaCoverPriceOptions(item.sofaCoverType, fabric);
+    const currentOption = normalizeSofaCoverOption(item.sofaCoverOption);
+    const sofaCoverOption = options.some((option) => option.value === currentOption) ? currentOption : '';
+    updateSofaCoverRow(index, { productId: fabric.id, productName: fabric.name, sofaCoverOption }, fabric);
+    setFabricPickerAnchor(null);
+    setFabricPickerRowIndex(null);
+    setSearchTerm('');
+  };
+
   React.useEffect(() => {
-    if (!isVaccineCenter || items.length === 0) return;
+    if (items.length === 0) return;
     let active = true;
     const missingProductIds = Array.from(new Set(
       items
         .map((item) => String(item.productId || '').trim())
-        .filter((productId) => productId && !orderProductDetails[productId]),
+        .filter((productId) => {
+          if (!productId || orderProductDetails[productId]) return false;
+          const cachedProduct = allProductsRef.current.get(productId) ?? products.find((candidate) => candidate.id === productId);
+          return !cachedProduct?.unitId;
+        }),
     ));
     if (missingProductIds.length === 0) return;
 
@@ -634,12 +748,18 @@ const OrderForm: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [isVaccineCenter, items, orderProductDetails]);
+  }, [items, orderProductDetails, products]);
 
   const updateQuantity = (index: number, qty: number) => {
     const newItems = [...items];
     const item = newItems[index];
     const newQty = Math.max(1, qty);
+    if (isSofaCover) {
+      item.quantity = newQty;
+      item.amount = item.rate * newQty;
+      setItems(newItems);
+      return;
+    }
     item.quantity = newQty;
 
     // Re-evaluate dynamic pricing based on new quantity (only for products, not batches)
@@ -674,6 +794,13 @@ const OrderForm: React.FC = () => {
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
+    if (fabricPickerRowIndex === index) {
+      setFabricPickerAnchor(null);
+      setFabricPickerRowIndex(null);
+      setSearchTerm('');
+    } else if (fabricPickerRowIndex !== null && fabricPickerRowIndex > index) {
+      setFabricPickerRowIndex((current) => current === null ? null : current - 1);
+    }
   };
 
   const checkForDuplicateOrder = (orderItems: OrderItem[]): Order | null => {
@@ -681,7 +808,9 @@ const OrderForm: React.FC = () => {
     
     // Sort items by productId for comparison
     const newItemsKey = orderItems
-      .map(item => `${item.productId}:${item.quantity}`)
+      .map(item => isSofaCover
+        ? `${item.productId}:${item.sofaCoverType || ''}:${item.sofaCoverOption || ''}:${item.quantity}`
+        : `${item.productId}:${item.quantity}`)
       .sort()
       .join('|');
 
@@ -692,7 +821,9 @@ const OrderForm: React.FC = () => {
       }
 
       const existingItemsKey = existingOrder.items
-        .map(item => `${item.productId}:${item.quantity}`)
+        .map(item => isSofaCover
+          ? `${item.productId}:${item.sofaCoverType || ''}:${item.sofaCoverOption || ''}:${item.quantity}`
+          : `${item.productId}:${item.quantity}`)
         .sort()
         .join('|');
 
@@ -800,6 +931,13 @@ const OrderForm: React.FC = () => {
           : !items.length
             ? `Please add at least one ${terminology.itemLower}.`
             : 'Order number is still being generated. Please wait a moment.';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (isSofaCover && items.some((item) => !item.sofaCoverType || !item.productId || (item.sofaCoverType !== 'Divan Cover' && !item.sofaCoverOption))) {
+      const msg = 'Select a cover type, its required option, and a fabric for every item row.';
       setError(msg);
       toast.error(msg);
       return;
@@ -1379,19 +1517,106 @@ const OrderForm: React.FC = () => {
           )}
         </div>
 
+        {isSofaCover && (
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Select item</label>
+          </div>
+        )}
+
         <div className="border border-gray-100 rounded-lg overflow-x-auto bg-white">
           <table className="w-full min-w-max text-left">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{isSofaCover ? terminology.item : `${terminology.item} Item`}</th>
-                <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Rate</th>
-                <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
-                <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
-                <th className="px-4 py-4"></th>
+                {isSofaCover ? (
+                  <>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Item</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Fabric</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Option</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Rate</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
+                    <th className="px-4 py-4"></th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">{`${terminology.item} Item`}</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Rate</th>
+                    <th className="px-4 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Qty</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Amount</th>
+                    <th className="px-4 py-4"></th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {items.map((item, idx) => (
+              {isSofaCover && items.map((item, idx) => {
+                const currentFabric = orderProductDetails[item.productId]
+                  ?? allProductsRef.current.get(item.productId)
+                  ?? products.find((product) => product.id === item.productId) as Product | undefined;
+                const priceOptions = getSofaCoverPriceOptions(item.sofaCoverType, currentFabric);
+                const hasOptionSelector = Boolean(item.sofaCoverType && item.sofaCoverType !== 'Divan Cover');
+
+                return (
+                  <tr key={idx} className="group hover:bg-gray-50/50">
+                    <td className="min-w-44 px-4 py-3">
+                      <select
+                        value={item.sofaCoverType || ''}
+                        onChange={(event) => updateSofaCoverRow(idx, { sofaCoverType: (event.target.value || undefined) as SofaCoverItemType | undefined, sofaCoverOption: '' })}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      >
+                        <option value="">Select item</option>
+                        {SOFA_COVER_ITEM_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                      </select>
+                    </td>
+                    <td className="min-w-56 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          setFabricPickerRowIndex(idx);
+                          setSearchTerm('');
+                          setFabricPickerAnchor(event.currentTarget);
+                        }}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-700 outline-none hover:border-blue-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      >
+                        <span className={currentFabric ? 'font-semibold text-gray-800' : 'text-gray-400'}>{currentFabric?.name || 'Select item'}</span>
+                      </button>
+                    </td>
+                    <td className="min-w-44 px-4 py-3">
+                      {hasOptionSelector ? (
+                        <select
+                          value={item.sofaCoverOption || ''}
+                          onChange={(event) => updateSofaCoverRow(idx, { sofaCoverOption: event.target.value })}
+                          disabled={item.sofaCoverType === 'Cushion' && !currentFabric}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-50 disabled:text-gray-400"
+                        >
+                          <option value="">{item.sofaCoverType === 'Cushion' && !currentFabric ? 'Select fabric first' : 'Select option'}</option>
+                          {priceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      ) : item.sofaCoverType === 'Divan Cover' ? (
+                        <span className="px-3 text-sm text-gray-500">Seat</span>
+                      ) : (
+                        <span className="px-3 text-sm text-gray-400">Select cover type</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <NumericInput
+                        value={item.quantity}
+                        onChange={(value) => updateQuantity(idx, value)}
+                        className="w-16 text-center border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] py-2"
+                        allowDecimals={false}
+                      />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-gray-600">{item.productId && item.sofaCoverType ? formatCurrency(item.rate) : '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-black text-gray-900">{formatCurrency(item.amount)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button type="button" onClick={() => removeItem(idx)} aria-label="Remove item" className="p-2 text-red-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                        {ICONS.Delete}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!isSofaCover && items.map((item, idx) => (
                 <tr key={idx} className="group hover:bg-gray-50/50">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
@@ -1412,12 +1637,19 @@ const OrderForm: React.FC = () => {
                     )}
                   </td>
                   <td className="px-4 py-4 text-center">
-                    <NumericInput 
-                      value={item.quantity} 
-                      onChange={(value) => updateQuantity(idx, value)} 
-                      className="w-16 text-center border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] py-2"
-                      allowDecimals={false}
-                    />
+                    <div className="flex items-center justify-center gap-2">
+                      <NumericInput
+                        value={item.quantity}
+                        onChange={(value) => updateQuantity(idx, value)}
+                        className="w-16 text-center border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#3c5a82] py-2"
+                        allowDecimals={false}
+                      />
+                      {getItemUnitLabel(item.productId) && (
+                        <span className="whitespace-nowrap text-xs font-semibold text-gray-500">
+                          {getItemUnitLabel(item.productId)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right font-black text-gray-900 text-sm">{formatCurrency(item.amount)}</td>
                   <td className="px-4 py-4 text-right">
@@ -1430,6 +1662,96 @@ const OrderForm: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {isSofaCover && (
+          <div className="relative mt-2">
+            <button
+              type="button"
+              onClick={addSofaCoverRow}
+              className={`flex items-center gap-2 ${theme.colors.primary.text} font-black text-[10px] uppercase tracking-widest hover:${theme.colors.primary[50]} px-4 py-2.5 rounded-xl border-2 border-dashed ${theme.colors.primary.border} transition-all`}
+            >
+              {ICONS.Plus} Add an item
+            </button>
+          </div>
+        )}
+
+        {isSofaCover && fabricPickerRowIndex !== null && (
+          <PortalMenu
+            anchorEl={fabricPickerAnchor}
+            open={Boolean(fabricPickerAnchor)}
+            onClose={() => {
+              setFabricPickerAnchor(null);
+              setFabricPickerRowIndex(null);
+              setSearchTerm('');
+            }}
+            align="left"
+            width={Math.min(380, window.innerWidth - 24)}
+          >
+            <div className="p-2">
+              <div className="relative mb-2">
+                <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-300">{ICONS.Search}</div>
+                <input
+                  autoFocus
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search catalog..."
+                  className="w-full rounded-xl border border-gray-100 bg-gray-50 py-2.5 pl-9 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-[#3c5a82]"
+                />
+              </div>
+              <div className="max-h-[min(55vh,320px)] overflow-y-auto space-y-0.5 custom-scrollbar">
+                {productsSearchQuery.isError && productSearchSettled ? (
+                  <div className="p-4 text-center text-sm font-medium text-red-500">Unable to search fabrics. Please try again.</div>
+                ) : products.length === 0 && (!productSearchSettled || productsSearchQuery.isFetching) ? (
+                  <div className="space-y-3 p-4">
+                    <div className="h-10 w-full animate-pulse rounded-xl bg-gray-100" />
+                    <div className="h-10 w-full animate-pulse rounded-xl bg-gray-100" />
+                  </div>
+                ) : products.filter((product) => product.itemType !== 'batch').length === 0 ? (
+                  <div className="p-4 text-center text-sm font-medium text-gray-400">No fabrics found</div>
+                ) : (
+                  products.filter((product) => product.itemType !== 'batch').map((fabric) => {
+                    const pickerItem = items[fabricPickerRowIndex];
+                    const fabricPriceOptions = getSofaCoverPriceOptions(pickerItem?.sofaCoverType, fabric);
+                    const selectedPriceOption = fabricPriceOptions.find((option) => option.value === normalizeSofaCoverOption(pickerItem?.sofaCoverOption));
+                    const previewPrice = pickerItem?.sofaCoverType === 'Divan Cover'
+                      ? Number(parseSofaCoverPricing(fabric).divanCover?.perSeat) || 0
+                      : selectedPriceOption?.price;
+                    return (
+                      <button
+                        key={fabric.id}
+                        type="button"
+                        onClick={() => selectSofaCoverFabric(fabricPickerRowIndex, fabric as Product)}
+                        className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[#ebf4ff]"
+                      >
+                        {fabric.image ? <img src={fabric.image} alt="" className="h-10 w-10 shrink-0 rounded-full border border-gray-100 object-cover shadow-sm" /> : null}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-gray-800">{fabric.name}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            {previewPrice === undefined ? 'Select option to view price' : formatCurrency(previewPrice)}
+                          </p>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${(fabric.stock ?? 0) <= 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                            Stock: {fabric.stock ?? 0}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              {productsSearchQuery.hasNextPage && (
+                <button
+                  type="button"
+                  onClick={() => productsSearchQuery.fetchNextPage()}
+                  disabled={productsSearchQuery.isFetchingNextPage}
+                  className="mt-2 w-full border-t border-gray-100 px-1 pb-1 pt-2 text-xs font-bold text-gray-500 hover:text-gray-800 disabled:opacity-50"
+                >
+                  {productsSearchQuery.isFetchingNextPage ? 'Loading...' : 'Load more products'}
+                </button>
+              )}
+            </div>
+          </PortalMenu>
+        )}
 
         {isVaccineCenter && selectedCustomer && items.length > 0 && (
           <section className="border border-[#c7dff5] rounded-lg bg-[#f7fbff] p-5 space-y-4" aria-label="Vaccine dosage schedule">
@@ -1470,7 +1792,7 @@ const OrderForm: React.FC = () => {
           </section>
         )}
 
-        <div className="relative mt-2">
+        {!isSofaCover && <div className="relative mt-2">
           <button
             onClick={() => {
               setShowProductSearch(prev => !prev);
@@ -1568,12 +1890,12 @@ const OrderForm: React.FC = () => {
               )}
             </div>
           )}
-        </div>
+        </div>}
 
         {isSofaCover && (
-          <section className="mt-3 space-y-3" aria-label="Required order collage">
+          <section className="mt-6 space-y-3" aria-label="Required order collage">
             <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-gray-800">Order Collage <span className="text-red-500">*</span></h3>
+              <h3 className="ml-1 text-[10px] font-black uppercase tracking-widest text-gray-400">Order Collage <span className="text-red-500">*</span></h3>
             </div>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
               {savedCollageUrls.map((url, index) => (

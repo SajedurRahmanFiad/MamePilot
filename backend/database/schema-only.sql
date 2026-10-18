@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS products (
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   stock INT NOT NULL DEFAULT 0,
   dynamic_pricing LONGTEXT NULL,
+  sofa_cover_pricing LONGTEXT NULL,
   manufacturer VARCHAR(255) NULL,
   batch_lot_number VARCHAR(255) NULL,
   expiry_date DATE NULL,
@@ -287,6 +288,7 @@ CALL sp_add_col('units', 'is_fraction', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL sp_add_col('products', 'slug', 'VARCHAR(255) NULL');
 CALL sp_add_col('products', 'unit_id', 'VARCHAR(64) NULL');
 CALL sp_add_col('products', 'dynamic_pricing', 'LONGTEXT NULL');
+CALL sp_add_col('products', 'sofa_cover_pricing', 'LONGTEXT NULL');
 CALL sp_add_col('products', 'manufacturer', 'VARCHAR(255) NULL');
 CALL sp_add_col('products', 'batch_lot_number', 'VARCHAR(255) NULL');
 CALL sp_add_col('products', 'expiry_date', 'DATE NULL');
@@ -4106,6 +4108,9 @@ CREATE TABLE IF NOT EXISTS external_api_request_logs (
 
 -- Migration: 2026-10-14_report_query_indexes.sql
 CALL sp_create_idx('transactions', 'idx_transactions_report_period', 'deleted_at, type, date');
+
+-- Migration: 2026-10-18_sofa_cover_product_pricing.sql
+CALL sp_add_col('products', 'sofa_cover_pricing', 'LONGTEXT NULL');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

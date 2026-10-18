@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Plus, Trash2 } from 'lucide-react';
 import { db } from '../db';
 import { Product, DynamicPricingRule, UserRole, isEmployeeRole, VaccineDosageRule, VaccineScheduleRule } from '../types';
 import { Button, NumericInput } from '../components';
@@ -21,6 +22,48 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+type SofaCoverPricing = {
+  sofaCover: { perSeat: number; perFoam: number };
+  cushions: Array<{ id: string; size: string; price: number }>;
+  divanCover: { perSeat: number };
+  chairCover: { perSeat: number; perBackrest: number; perSeatAndBackrest: number; perArmchair: number };
+};
+
+const createDefaultSofaCoverPricing = (): SofaCoverPricing => ({
+  sofaCover: { perSeat: 0, perFoam: 0 },
+  cushions: [],
+  divanCover: { perSeat: 0 },
+  chairCover: { perSeat: 0, perBackrest: 0, perSeatAndBackrest: 0, perArmchair: 0 },
+});
+
+const parseSofaCoverPricing = (value?: string | null): SofaCoverPricing => {
+  const defaults = createDefaultSofaCoverPricing();
+  if (!value) return defaults;
+  try {
+    const parsed = JSON.parse(value) as Partial<SofaCoverPricing>;
+    return {
+      sofaCover: {
+        perSeat: Number(parsed.sofaCover?.perSeat) || 0,
+        perFoam: Number(parsed.sofaCover?.perFoam) || 0,
+      },
+      cushions: Array.isArray(parsed.cushions) ? parsed.cushions.map((unit: Partial<SofaCoverPricing['cushions'][number]>, index) => ({
+        id: unit.id || `cushion-${index}`,
+        size: String(unit.size || ''),
+        price: Number(unit.price) || 0,
+      })) : defaults.cushions,
+      divanCover: { perSeat: Number(parsed.divanCover?.perSeat) || 0 },
+      chairCover: {
+        perSeat: Number(parsed.chairCover?.perSeat) || 0,
+        perBackrest: Number(parsed.chairCover?.perBackrest) || 0,
+        perSeatAndBackrest: Number(parsed.chairCover?.perSeatAndBackrest) || 0,
+        perArmchair: Number(parsed.chairCover?.perArmchair) || 0,
+      },
+    };
+  } catch {
+    return defaults;
+  }
+};
+
 const ProductForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -31,6 +74,7 @@ const ProductForm: React.FC = () => {
   const { capabilities, settings: capabilitySettings, isLoading: capabilitiesLoading } = useCapabilities();
   const businessMode = capabilitySettings?.businessMode || 'general_retail';
   const isVaccineCenter = businessMode === 'vaccine_center';
+  const isSofaCover = businessMode === 'sofa_cover';
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
 
   // Check if Shopify or WooCommerce is enabled
@@ -115,6 +159,8 @@ const ProductForm: React.FC = () => {
   const [pricingRules, setPricingRules] = useState<DynamicPricingRule[]>([]);
   const [dosageRules, setDosageRules] = useState<VaccineDosageRule[]>([]);
   const [scheduleRules, setScheduleRules] = useState<VaccineScheduleRule[]>([]);
+  const [sofaCoverPricing, setSofaCoverPricing] = useState<SofaCoverPricing>(createDefaultSofaCoverPricing);
+  const hasIncompleteCushionPricing = isSofaCover && sofaCoverPricing.cushions.some(unit => !unit.size.trim() || !Number.isFinite(unit.price) || unit.price < 0);
 
   // Determine if selected unit allows fractional stock
   const selectedUnit = useMemo(() => units.find(u => u.id === form.unitId), [units, form.unitId]);
@@ -160,7 +206,7 @@ const ProductForm: React.FC = () => {
   }, [dosageRules, isVaccineCenter, scheduleRules]);
 
   // Check if save should be disabled
-  const isSaveDisabled = saving || (dynamicPricingEnabled && !pricingValidation.valid) || (isVaccineCenter && !dosageValidation.valid);
+  const isSaveDisabled = saving || (dynamicPricingEnabled && !pricingValidation.valid) || (isVaccineCenter && !dosageValidation.valid) || hasIncompleteCushionPricing;
 
   // Initialize form with existing product data when loaded
   React.useEffect(() => {
@@ -169,6 +215,7 @@ const ProductForm: React.FC = () => {
       if (existingProduct.slug) {
         setSlugTouched(true);
       }
+      setSofaCoverPricing(parseSofaCoverPricing(existingProduct.sofaCoverPricing));
       // Parse dynamic pricing if exists
       if (existingProduct.dynamicPricing) {
         try {
@@ -218,6 +265,10 @@ const ProductForm: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (hasIncompleteCushionPricing) {
+      setError('Enter a size for each cushion price or remove the empty row.');
+      return;
+    }
     if (!form.name || !form.category) {
       setError('Name and category are required');
       return;
@@ -240,6 +291,7 @@ const ProductForm: React.FC = () => {
         dynamicPricing: dynamicPricingEnabled && pricingRules.length > 0
           ? JSON.stringify(pricingRules)
           : undefined,
+        ...(isSofaCover ? { sofaCoverPricing: JSON.stringify(sofaCoverPricing) } : {}),
         ...(isVaccineCenter ? {
           manufacturer: null,
           batchLotNumber: form.batchLotNumber || null,
@@ -460,32 +512,36 @@ const ProductForm: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sale Price (BDT)</label>
-            <NumericInput 
-              value={form.salePrice}
-              onChange={value => setForm({...form, salePrice: value})}
-              className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3"
-              allowDecimals={true}
-              decimalPlaces={2}
-            />
+        {!isSofaCover && (
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1 space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sale Price (BDT)</label>
+              <NumericInput
+                value={form.salePrice}
+                onChange={value => setForm({...form, salePrice: value})}
+                className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3"
+                allowDecimals={true}
+                decimalPlaces={2}
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Purchase Price (BDT)</label>
+              <NumericInput
+                value={form.purchasePrice}
+                onChange={value => setForm({...form, purchasePrice: value})}
+                className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] text-gray-600 px-4 py-3"
+                allowDecimals={true}
+                decimalPlaces={2}
+              />
+            </div>
           </div>
-          <div className="flex-1 space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Purchase Price (BDT)</label>
-            <NumericInput 
-              value={form.purchasePrice}
-              onChange={value => setForm({...form, purchasePrice: value})}
-              className="bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] text-gray-600 px-4 py-3"
-              allowDecimals={true}
-              decimalPlaces={2}
-            />
-          </div>
-        </div>
+        )}
 
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1 space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">{isEdit ? 'Stock' : 'Opening Stock'}</label>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+              {isEdit ? 'Stock' : 'Opening Stock'} ({selectedUnit?.name || 'unit'})
+            </label>
             <NumericInput
               value={form.stock ?? 0}
               onChange={value => setForm({ ...form, stock: Math.max(0, value) })}
@@ -494,6 +550,94 @@ const ProductForm: React.FC = () => {
             />
           </div>
         </div>
+
+        {isSofaCover && (
+          <section className="space-y-6 border-t border-gray-100 pt-6">
+            <h3 className="text-sm font-bold text-gray-700">Price</h3>
+
+            <div className="max-w-xl space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Purchase Price (BDT)</label>
+              <div className="flex items-center gap-3">
+                <NumericInput
+                  value={form.purchasePrice}
+                  onChange={value => setForm({ ...form, purchasePrice: value })}
+                  className="min-w-0 flex-1 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] text-gray-600 px-4 py-3"
+                  allowDecimals={true}
+                  decimalPlaces={2}
+                />
+                <span className="shrink-0 text-sm font-semibold text-gray-500">per {selectedUnit?.name || 'unit'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Sofa Cover</h4>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Seat (BDT)
+                  <NumericInput value={sofaCoverPricing.sofaCover.perSeat} onChange={value => setSofaCoverPricing(previous => ({ ...previous, sofaCover: { ...previous.sofaCover, perSeat: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Foam (BDT)
+                  <NumericInput value={sofaCoverPricing.sofaCover.perFoam} onChange={value => setSofaCoverPricing(previous => ({ ...previous, sofaCover: { ...previous.sofaCover, perFoam: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Cushion</h4>
+                <button type="button" onClick={() => setSofaCoverPricing(previous => ({ ...previous, cushions: [...previous.cushions, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, size: '', price: 0 }] }))} className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800">
+                  <Plus size={16} aria-hidden="true" /> Add size
+                </button>
+              </div>
+              {sofaCoverPricing.cushions.map(unit => (
+                <div key={unit.id} className="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+                  <label className="space-y-1 text-xs font-bold text-gray-500">
+                    Size
+                    <input type="text" value={unit.size} onChange={event => setSofaCoverPricing(previous => ({ ...previous, cushions: previous.cushions.map(item => item.id === unit.id ? { ...item, size: event.target.value } : item) }))} className="w-full rounded-xl border bg-white px-4 py-3 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-[#3c5a82]" placeholder="Enter cushion size" />
+                  </label>
+                  <label className="space-y-1 text-xs font-bold text-gray-500">
+                    Price (BDT)
+                    <NumericInput value={unit.price} onChange={value => setSofaCoverPricing(previous => ({ ...previous, cushions: previous.cushions.map(item => item.id === unit.id ? { ...item, price: value } : item) }))} className="w-full bg-white border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                  </label>
+                  <button type="button" title="Remove cushion size" aria-label="Remove cushion size" onClick={() => setSofaCoverPricing(previous => ({ ...previous, cushions: previous.cushions.filter(item => item.id !== unit.id) }))} className="flex h-11 w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50">
+                    <Trash2 size={18} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Divan Cover</h4>
+              <label className="block max-w-xl space-y-1 text-xs font-bold text-gray-500">
+                Per Seat (BDT)
+                <NumericInput value={sofaCoverPricing.divanCover.perSeat} onChange={value => setSofaCoverPricing(previous => ({ ...previous, divanCover: { ...previous.divanCover, perSeat: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Chair Cover</h4>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Seat (BDT)
+                  <NumericInput value={sofaCoverPricing.chairCover.perSeat} onChange={value => setSofaCoverPricing(previous => ({ ...previous, chairCover: { ...previous.chairCover, perSeat: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Backrest (BDT)
+                  <NumericInput value={sofaCoverPricing.chairCover.perBackrest} onChange={value => setSofaCoverPricing(previous => ({ ...previous, chairCover: { ...previous.chairCover, perBackrest: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Seat + Backrest (BDT)
+                  <NumericInput value={sofaCoverPricing.chairCover.perSeatAndBackrest} onChange={value => setSofaCoverPricing(previous => ({ ...previous, chairCover: { ...previous.chairCover, perSeatAndBackrest: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+                <label className="space-y-1 text-xs font-bold text-gray-500">
+                  Per Armchair (BDT)
+                  <NumericInput value={sofaCoverPricing.chairCover.perArmchair} onChange={value => setSofaCoverPricing(previous => ({ ...previous, chairCover: { ...previous.chairCover, perArmchair: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+                </label>
+              </div>
+            </div>
+          </section>
+        )}
 
         {isVaccineCenter && (
           <div className="space-y-4 border-t pt-6">

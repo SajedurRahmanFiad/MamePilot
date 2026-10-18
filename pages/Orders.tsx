@@ -76,7 +76,8 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
   const { user, isLoading: authLoading } = useAuth();
   const isEmployee = isEmployeeRole(user?.role);
   const { can, canAccessRecord } = useRolePermissions();
-  const { hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
+  const { settings: capabilitySettings, hasCapability, hasSubCapability } = useCapabilities(Boolean(user));
+  const isSofaCover = capabilitySettings?.businessMode === 'sofa_cover';
   const canUseCourierAutomation = hasCapability('courier_automation');
   const canUseSteadfast = hasSubCapability('steadfast_courier');
   const canUseCarryBee = hasSubCapability('carrybee_courier');
@@ -431,9 +432,9 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
-        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED).map((status) => ({
+        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (isSofaCover || status !== OrderStatus.CUTTING_AND_SEWING)).map((status) => ({
           value: status,
-          label: getStatusDisplayName(status),
+          label: getStatusDisplayName(status, capabilitySettings?.businessMode),
         })),
       },
       {
@@ -505,7 +506,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
         allowCustomValue: true,
       },
     ];
-  }, [companyNames, courierNames, freeTextMetadataValues, orderNumberOptions, orders, users, orderSourceAdOptions]);
+  }, [capabilitySettings?.businessMode, companyNames, courierNames, freeTextMetadataValues, isSofaCover, orderNumberOptions, orders, users, orderSourceAdOptions]);
 
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
   const totalOrdersCount = ordersPage?.count ?? 0;
@@ -559,7 +560,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
             type: 'Order Status',
             operator: '=',
             value: trimmed,
-            display: getStatusDisplayName(trimmed),
+            display: getStatusDisplayName(trimmed, capabilitySettings?.businessMode),
           });
         }
       });
@@ -573,7 +574,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
             type: 'Order Status',
             operator: '≠',
             value: trimmed,
-            display: getStatusDisplayName(trimmed),
+            display: getStatusDisplayName(trimmed, capabilitySettings?.businessMode),
           });
         }
       });
@@ -678,6 +679,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     urlCreatedDates,
     users,
     getSourceAdLabel,
+    capabilitySettings?.businessMode,
   ]);
 
   useEffect(() => {
@@ -1048,10 +1050,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     const openPathaoTracking = (): boolean => {
       if (!sentToPathao || !pathaoConsignment) return false;
 
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(pathaoConsignment).catch(() => undefined);
-      }
-      toast.success(`Pathao consignment ID copied: ${pathaoConsignment}`);
+      window.open(`https://merchant.pathao.com/public-tracking?consignment_id=${encodeURIComponent(pathaoConsignment)}`, '_blank', 'noopener,noreferrer');
       return true;
     };
 
@@ -1598,7 +1597,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                     <td className="px-6 py-5 text-xs font-bold text-gray-500">{getCreatorName(order) || '—'}</td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status)}</span>
+                        <span className={`inline-flex max-w-fit px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${getStatusColor(order.status)}`}>{order.status === OrderStatus.COMPLETED && order.items?.some(i => (i.exchangedQty ?? 0) > 0) ? 'Exchange Delivered' : getStatusDisplayName(order.status, capabilitySettings?.businessMode)}</span>
                         {needsPartialAction && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black uppercase tracking-widest">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
