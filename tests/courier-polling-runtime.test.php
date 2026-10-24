@@ -32,6 +32,13 @@ courierPollingAssert(str_contains($worker, 'reconcileUnmatchedWebhookEvents'), '
 courierPollingAssert(str_contains($courier, 'LIMIT {$limit} OFFSET {$offset}'), 'Legacy courier sync does not rotate bounded order windows.');
 courierPollingAssert(str_contains($setup, 'new CourierStatusScheduler') && substr_count($updates, 'new CourierStatusScheduler') >= 2, 'Fresh installs and both updater paths do not install courier fallback polling.');
 courierPollingAssert(str_contains($schema, 'CREATE TABLE IF NOT EXISTS `courier_poll_worker_state`'), 'Generated upgrade schema omits courier polling state.');
+courierPollingAssert(
+    substr_count($courier, "'logPollingResponse' => true") === 8,
+    'One or more main or exchange courier polling lookups are not logged.'
+);
+$pollRequest = new ReflectionMethod(CourierApi::class, 'courierPollingRequest');
+$pollRequest->setAccessible(true);
+courierPollingAssert($pollRequest->getNumberOfParameters() === 8, 'Polling response logger does not capture request context and timeout.');
 $courierApi = (new ReflectionClass(CourierApi::class))->newInstanceWithoutConstructor();
 $pathaoClassifier = new ReflectionMethod(CourierApi::class, 'classifyPathaoStatus');
 $pathaoClassifier->setAccessible(true);

@@ -168,6 +168,70 @@ final class CourierApi extends BaseService
         ];
     }
 
+    /** @param array<string, mixed> $entry */
+    private function appendCourierPollingApiLog(array $entry): void
+    {
+        try {
+            $directory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'logs';
+            if (!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory)) {
+                throw new RuntimeException('Could not create courier polling log directory.');
+            }
+            @chmod($directory, 0700);
+
+            $line = json_encode(
+                $entry,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+            );
+            if (!is_string($line)) {
+                throw new RuntimeException('Could not encode courier polling API response.');
+            }
+
+            $path = $directory . DIRECTORY_SEPARATOR . 'courier-polling-api.jsonl';
+            if (file_put_contents($path, $line . PHP_EOL, FILE_APPEND | LOCK_EX) === false) {
+                throw new RuntimeException('Could not write courier polling API log.');
+            }
+            @chmod($path, 0600);
+        } catch (\Throwable $exception) {
+            error_log('Courier polling API response log failed: ' . $exception->getMessage());
+        }
+    }
+
+    /** @param array<string, string> $headers */
+    private function courierPollingRequest(
+        array $params,
+        string $provider,
+        string $reference,
+        string $method,
+        string $url,
+        array $headers,
+        array|string|null $jsonBody = null,
+        int $timeoutSeconds = 30
+    ): array {
+        if (empty($params['logPollingResponse'])) {
+            return $this->request($method, $url, $headers, $jsonBody, $timeoutSeconds);
+        }
+
+        $entry = [
+            'timestamp' => gmdate('c'),
+            'provider' => $provider,
+            'reference' => $reference,
+            'method' => strtoupper($method),
+            'url' => $url,
+        ];
+        try {
+            $response = $this->request($method, $url, $headers, $jsonBody, $timeoutSeconds);
+            $entry['httpStatus'] = $response['status'] ?? null;
+            $entry['response'] = $response;
+            $this->appendCourierPollingApiLog($entry);
+            return $response;
+        } catch (\Throwable $exception) {
+            $entry['exception'] = get_class($exception);
+            $entry['error'] = $exception->getMessage();
+            $this->appendCourierPollingApiLog($entry);
+            throw $exception;
+        }
+    }
+
     private function trimBaseUrl(array $params, string $field = 'baseUrl'): string
     {
         return rtrim(trim((string) ($params[$field] ?? '')), '/');
@@ -849,7 +913,10 @@ final class CourierApi extends BaseService
             return ['error' => 'Missing required parameters'];
         }
 
-        $response = $this->request(
+        $response = $this->courierPollingRequest(
+            $params,
+            'carrybee',
+            $consignmentId,
             'GET',
             $this->trimBaseUrl($params) . '/api/v2/orders/' . rawurlencode($consignmentId) . '/details',
             $this->carryBeeHeaders($params),
@@ -968,6 +1035,7 @@ final class CourierApi extends BaseService
                     'clientContext' => $clientContext,
                     'consignmentId' => (string) ($row['carrybee_consignment_id'] ?? ''),
                     'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                    'logPollingResponse' => true,
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
                     $errors[] = ['orderId' => $row['id'], 'orderNumber' => $row['order_number'], 'error' => $details['error'] ?? 'Unknown error'];
@@ -1130,13 +1198,18 @@ final class CourierApi extends BaseService
             return ['error' => 'Missing required parameters'];
         }
 
-        $response = $this->request(
+        $response = $this->courierPollingRequest(
+            $params,
+            'steadfast',
+            $consignmentId,
             'GET',
             $baseUrl . '/status_by_cid/' . rawurlencode($consignmentId),
             [
                 'Api-Key' => trim((string) ($params['apiKey'] ?? '')),
                 'Secret-Key' => trim((string) ($params['secretKey'] ?? '')),
-            ]
+            ],
+            null,
+            $this->requestTimeout($params)
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
@@ -1238,7 +1311,10 @@ final class CourierApi extends BaseService
             return ['error' => 'Missing required parameters'];
         }
 
-        $response = $this->request(
+        $response = $this->courierPollingRequest(
+            $params,
+            'paperfly',
+            $referenceNumber,
             'POST',
             $baseUrl . '/API-Order-Tracking',
             [
@@ -1490,6 +1566,7 @@ final class CourierApi extends BaseService
                 'paperflyKey' => $paperflyKey,
                 'referenceNumber' => $referenceNumber,
                 'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                'logPollingResponse' => true,
             ]);
 
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
@@ -1584,6 +1661,7 @@ final class CourierApi extends BaseService
                 'secretKey' => $secretKey,
                 'consignmentId' => $consignmentId,
                 'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                'logPollingResponse' => true,
             ]);
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
                 $failed += 1;
@@ -1694,6 +1772,7 @@ final class CourierApi extends BaseService
                     'secretKey' => $steadfastSecretKey,
                     'consignmentId' => $consignmentId,
                     'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                    'logPollingResponse' => true,
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1749,6 +1828,7 @@ final class CourierApi extends BaseService
                     'clientContext' => $carrybeeClientContext,
                     'consignmentId' => $consignmentId,
                     'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                    'logPollingResponse' => true,
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1809,6 +1889,7 @@ final class CourierApi extends BaseService
                     'paperflyKey' => $paperflyKey,
                     'referenceNumber' => $referenceNumber,
                     'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                    'logPollingResponse' => true,
                 ]);
                 if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -1921,6 +2002,7 @@ final class CourierApi extends BaseService
                         'accessToken' => $pathaoAccessToken,
                         'consignmentId' => $consignmentId,
                         'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                        'logPollingResponse' => true,
                     ]);
                     if (!empty($details['error']) || !is_array($details['data'] ?? null)) continue;
 
@@ -2221,7 +2303,10 @@ final class CourierApi extends BaseService
             return ['error' => 'Missing required Pathao parameters (baseUrl, accessToken, consignmentId)'];
         }
 
-        $response = $this->request(
+        $response = $this->courierPollingRequest(
+            $params,
+            'pathao',
+            $consignmentId,
             'POST',
             $baseUrl . '/aladdin/api/v1/orders/' . rawurlencode($consignmentId) . '/info',
             [
@@ -2367,6 +2452,7 @@ final class CourierApi extends BaseService
                 'accessToken' => $accessToken,
                 'consignmentId' => $consignmentId,
                 'timeoutSeconds' => (int) ($params['timeoutSeconds'] ?? 30),
+                'logPollingResponse' => true,
             ]);
 
             if (!empty($details['error']) || !is_array($details['data'] ?? null)) {
