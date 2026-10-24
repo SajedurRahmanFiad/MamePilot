@@ -236,6 +236,26 @@ try {
         && ($carrybeeIntegration['webhookIntegrationValue'] ?? '') === '40489fe0-9386-4fc9-8e92-2b2fcb9d451c',
         'CarryBee integration response header name/value defaults are incorrect.'
     );
+    $pathaoRetryPayload = courierWebhookJson([
+        'event' => 'order.created',
+        'consignment_id' => 'pathao-retry-test-' . $stamp,
+    ]);
+    $courier->handleWebhook('pathao', $pathaoRetryPayload, $pathaoHeaders);
+    $pathaoRetryEventKey = hash('sha256', 'pathao|' . $pathaoRetryPayload);
+    $database->execute(
+        "UPDATE courier_webhook_events SET received_at = '2000-01-01 00:00:00'
+         WHERE provider = 'pathao' AND event_key = :event_key",
+        [':event_key' => $pathaoRetryEventKey]
+    );
+    $courier->handleWebhook('pathao', $pathaoRetryPayload, $pathaoHeaders);
+    $pathaoRetryEvent = $database->fetchOne(
+        'SELECT received_at FROM courier_webhook_events WHERE provider = :provider AND event_key = :event_key LIMIT 1',
+        [':provider' => 'pathao', ':event_key' => $pathaoRetryEventKey]
+    );
+    courierWebhookAssert(
+        (string) ($pathaoRetryEvent['received_at'] ?? '') > '2000-01-01 00:00:00',
+        'Repeated Pathao webhook did not refresh the event log received time.'
+    );
     $database->execute(
         "UPDATE courier_settings SET carrybee_webhook_header = 'X-CB-Custom-Signature'"
     );

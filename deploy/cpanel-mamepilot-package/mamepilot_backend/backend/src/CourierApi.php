@@ -2514,7 +2514,9 @@ final class CourierApi extends BaseService
                      ) VALUES (
                         :id, :provider, :event_key, :idempotency_key, :event_name, :merchant_reference, :consignment_id,
                         :event_at, :payload, 'received', :received_at
-                     ) ON DUPLICATE KEY UPDATE event_key = VALUES(event_key)",
+                            ) ON DUPLICATE KEY UPDATE
+                                event_key = VALUES(event_key),
+                                received_at = VALUES(received_at)",
                     [
                         ':id' => $candidateId,
                         ':provider' => $provider,

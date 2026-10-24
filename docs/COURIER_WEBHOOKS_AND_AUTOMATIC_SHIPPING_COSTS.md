@@ -14,10 +14,12 @@ Open **Settings > Courier**. Each available courier shows its exact webhook URL.
 | --- | --- | --- |
 | CarryBee | `?provider=carrybee` | Copy CarryBee's webhook signature into **Webhook signature**. |
 | Paperfly | `?provider=paperfly` | Use the same secret token in Paperfly and **Webhook secret token**. |
-| Pathao | `?provider=pathao` | Use the same custom header name and value in Pathao and MamePilot. |
+| Pathao | `?provider=pathao` | MamePilot verifies incoming `X-PATHAO-Signature` against **Webhook header value**. Its separate **Merchant webhook integration secret** is returned in `X-Pathao-Merchant-Webhook-Integration-Secret` for Pathao's dashboard check. |
 | Steadfast | `?provider=steadfast` | Store the Steadfast auth token in **Webhook Auth Token**. Steadfast must send it as `Authorization: Bearer ...` and sign the raw body in `X-Signature` with HMAC-SHA256. |
 
 The URL must be public, use HTTPS, and accept a `POST` request. A successful notification receives HTTP 200. Requests with a missing or incorrect verification value are rejected.
+
+Pathao's integration check and event signature are separate. The dashboard integration UUID belongs in **Merchant webhook integration secret** and is returned by MamePilot. The secret Pathao sends in `X-PATHAO-Signature` belongs in **Webhook header value**. Accepted exact retries are processed idempotently; their existing event-log row is retained and its received time is refreshed.
 
 ### CarryBee webhook setup, step by step
 
