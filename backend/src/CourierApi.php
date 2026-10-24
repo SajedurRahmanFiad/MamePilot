@@ -2291,7 +2291,7 @@ final class CourierApi extends BaseService
 
     /**
      * Fetch Pathao order info (used for auto pickup/delivery status check).
-     * POST {baseUrl}/aladdin/api/v1/orders/{consignmentId}/info
+    * GET {baseUrl}/aladdin/api/v1/orders/{consignmentId}/info
      */
     public function fetchPathaoOrderInfo(array $params): array
     {
@@ -2307,13 +2307,13 @@ final class CourierApi extends BaseService
             $params,
             'pathao',
             $consignmentId,
-            'POST',
+            'GET',
             $baseUrl . '/aladdin/api/v1/orders/' . rawurlencode($consignmentId) . '/info',
             [
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Accept' => 'application/json',
             ],
-            '',
+            null,
             $this->requestTimeout($params)
         );
 

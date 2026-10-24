@@ -18,6 +18,11 @@ $courier = (string) file_get_contents($root . '/backend/src/CourierApi.php');
 $setup = (string) file_get_contents($root . '/backend/bin/setup.php');
 $updates = (string) file_get_contents($root . '/backend/src/UpdateManager.php');
 $schema = (string) file_get_contents($root . '/backend/database/schema-only.sql');
+$pathaoInfoStart = strpos($courier, 'public function fetchPathaoOrderInfo');
+$pathaoClassifierStart = strpos($courier, 'private function classifyPathaoStatus', $pathaoInfoStart === false ? 0 : $pathaoInfoStart);
+$pathaoInfoSource = $pathaoInfoStart === false || $pathaoClassifierStart === false
+    ? ''
+    : substr($courier, $pathaoInfoStart, $pathaoClassifierStart - $pathaoInfoStart);
 
 $merged = CourierStatusScheduler::mergeCrontab(
     "* * * * * php /home/another/backend/bin/process_courier_statuses.php --once # mamepilot-courier-status:aabbccddeeff\n",
@@ -32,6 +37,8 @@ courierPollingAssert(str_contains($worker, 'reconcileUnmatchedWebhookEvents'), '
 courierPollingAssert(str_contains($courier, 'LIMIT {$limit} OFFSET {$offset}'), 'Legacy courier sync does not rotate bounded order windows.');
 courierPollingAssert(str_contains($setup, 'new CourierStatusScheduler') && substr_count($updates, 'new CourierStatusScheduler') >= 2, 'Fresh installs and both updater paths do not install courier fallback polling.');
 courierPollingAssert(str_contains($schema, 'CREATE TABLE IF NOT EXISTS `courier_poll_worker_state`'), 'Generated upgrade schema omits courier polling state.');
+courierPollingAssert(str_contains($pathaoInfoSource, "            'GET',"), 'Pathao order-info polling must use GET.');
+courierPollingAssert(str_contains($pathaoInfoSource, "            null,\n            \$this->requestTimeout(\$params)"), 'Pathao order-info polling should not send a request body.');
 courierPollingAssert(
     substr_count($courier, "'logPollingResponse' => true") === 8,
     'One or more main or exchange courier polling lookups are not logged.'
