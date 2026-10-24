@@ -50,7 +50,15 @@ courierPollingAssert(($transitStatus['status'] ?? null) === 'Picked', 'Pathao po
 $partialStatus = $pathaoClassifier->invoke($courierApi, 'Partial Delivery');
 courierPollingAssert(($partialStatus['status'] ?? null) === 'Partially Delivered', 'Pathao polling did not recognize Partial Delivery.');
 $paidReturnStatus = $pathaoClassifier->invoke($courierApi, 'Paid Return');
-courierPollingAssert(($paidReturnStatus['status'] ?? null) === 'Returned', 'Pathao polling did not recognize Paid Return as Returned.');
+courierPollingAssert(($paidReturnStatus['status'] ?? null) === 'Partially Delivered', 'Pathao polling did not recognize Paid Return as partially delivered.');
+$paidReturnSlugStatus = $pathaoClassifier->invoke($courierApi, 'paid_return');
+courierPollingAssert(($paidReturnSlugStatus['status'] ?? null) === 'Partially Delivered', 'Pathao polling did not recognize the paid_return slug as partially delivered.');
+$pathaoPollingSource = substr($courier, strpos($courier, 'public function syncPathaoDeliveryStatuses'));
+courierPollingAssert(
+    str_contains($pathaoPollingSource, "\$updates['status'] = 'pending_partial'")
+    && str_contains($pathaoPollingSource, "\$updates['partial_delivery_action_required'] = 1"),
+    'Pathao polling partial delivery does not require confirmation.'
+);
 $webhookMapper = new ReflectionMethod(CourierApi::class, 'mapWebhookStatus');
 $webhookMapper->setAccessible(true);
 foreach ([
@@ -58,7 +66,8 @@ foreach ([
     ['Return', '', 'Returned'],
     ['Delivered', '', 'Delivered'],
     ['Partial Delivery', '', 'Partially Delivered'],
-    ['Paid Return', '', 'Returned'],
+    ['Paid Return', '', 'Partially Delivered'],
+    ['Paid_Return', '', 'Partially Delivered'],
 ] as [$eventName, $rawStatus, $expected]) {
     $mapped = $webhookMapper->invoke($courierApi, 'pathao', $eventName, $rawStatus);
     courierPollingAssert($mapped === $expected, "Pathao webhook did not map {$eventName} to {$expected}.");

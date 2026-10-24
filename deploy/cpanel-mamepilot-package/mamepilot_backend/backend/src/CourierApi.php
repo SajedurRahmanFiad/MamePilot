@@ -2241,7 +2241,7 @@ final class CourierApi extends BaseService
 
     /**
      * Classify a Pathao order status slug into a normalized status.
-     * Keywords: "picked" → Picked, "delivered" → Delivered, "returned" → Returned, "cancelled" → Cancelled
+    * Paid return is a partial-delivery state; other return statuses are Returned.
      */
     private function classifyPathaoStatus(string $orderStatusSlug): array
     {
@@ -2251,6 +2251,8 @@ final class CourierApi extends BaseService
         if ($normalized !== '') {
             if (strpos($normalized, 'cancelled') !== false || strpos($normalized, 'canceled') !== false) {
                 $status = 'Cancelled';
+            } elseif (preg_match('/paid[\\s._-]*return/', $normalized) === 1) {
+                $status = 'Partially Delivered';
             } elseif (strpos($normalized, 'return') !== false) {
                 $status = 'Returned';
             } elseif (strpos($normalized, 'partial') !== false) {
@@ -2965,6 +2967,7 @@ final class CourierApi extends BaseService
             if ($status === 'pending') return 'Picked';
             return null;
         }
+        if ($provider === 'pathao' && preg_match('/paid[\\s._-]*return/', $combined) === 1) return 'Partially Delivered';
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
         if (str_contains($combined, 'partial')) return 'Partially Delivered';
