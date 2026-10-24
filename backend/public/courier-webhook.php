@@ -50,6 +50,13 @@ try {
 
     $config = Config::load(dirname(__DIR__, 2));
     $database = new Database($config);
+    if ($provider === 'pathao') {
+        $settings = $database->fetchOne('SELECT pathao_merchant_webhook_secret FROM courier_settings LIMIT 1') ?? [];
+        $merchantSecret = trim((string) ($settings['pathao_merchant_webhook_secret'] ?? ''));
+        if ($merchantSecret !== '') {
+            header('X-Pathao-Merchant-Webhook-Integration-Secret: ' . $merchantSecret, true);
+        }
+    }
     $auth = new Auth($config, $database);
     $operations = new OperationsApi($database, $auth, $config);
     $courier = new CourierApi($database, $auth, $config, $operations);
@@ -67,10 +74,6 @@ try {
         }
     } elseif ($provider === 'pathao' && !empty($result['integrationVerified'])) {
         http_response_code(202);
-        $merchantSecret = (string) ($result['merchantWebhookSecret'] ?? '');
-        if ($merchantSecret !== '') {
-            header('X-Pathao-Merchant-Webhook-Integration-Secret: ' . $merchantSecret);
-        }
     } else {
         http_response_code(200);
     }
