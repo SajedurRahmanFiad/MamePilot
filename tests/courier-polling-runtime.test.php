@@ -43,7 +43,25 @@ $pendingStatus = $pathaoClassifier->invoke($courierApi, 'Pending');
 courierPollingAssert(($pendingStatus['status'] ?? null) === null, 'Pathao polling advanced an order that is still Pending.');
 $pickedStatus = $pathaoClassifier->invoke($courierApi, 'Picked');
 courierPollingAssert(($pickedStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize Picked.');
+$pickupStatus = $pathaoClassifier->invoke($courierApi, 'Pickup');
+courierPollingAssert(($pickupStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize Pickup.');
 $transitStatus = $pathaoClassifier->invoke($courierApi, 'In Transit');
 courierPollingAssert(($transitStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize an order that is In Transit.');
+$partialStatus = $pathaoClassifier->invoke($courierApi, 'Partial Delivery');
+courierPollingAssert(($partialStatus['status'] ?? null) === 'Partially Delivered', 'Pathao polling did not recognize Partial Delivery.');
+$paidReturnStatus = $pathaoClassifier->invoke($courierApi, 'Paid Return');
+courierPollingAssert(($paidReturnStatus['status'] ?? null) === 'Returned', 'Pathao polling did not recognize Paid Return as Returned.');
+$webhookMapper = new ReflectionMethod(CourierApi::class, 'mapWebhookStatus');
+$webhookMapper->setAccessible(true);
+foreach ([
+    ['Pickup', '', 'Picked'],
+    ['Return', '', 'Returned'],
+    ['Delivered', '', 'Delivered'],
+    ['Partial Delivery', '', 'Partially Delivered'],
+    ['Paid Return', '', 'Returned'],
+] as [$eventName, $rawStatus, $expected]) {
+    $mapped = $webhookMapper->invoke($courierApi, 'pathao', $eventName, $rawStatus);
+    courierPollingAssert($mapped === $expected, "Pathao webhook did not map {$eventName} to {$expected}.");
+}
 
 echo "Courier fallback polling runtime checks passed.\n";

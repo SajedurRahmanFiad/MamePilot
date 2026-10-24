@@ -2253,9 +2253,16 @@ final class CourierApi extends BaseService
                 $status = 'Cancelled';
             } elseif (strpos($normalized, 'return') !== false) {
                 $status = 'Returned';
+            } elseif (strpos($normalized, 'partial') !== false) {
+                $status = 'Partially Delivered';
             } elseif (strpos($normalized, 'delivered') !== false) {
                 $status = 'Delivered';
-            } elseif (strpos($normalized, 'picked') !== false || strpos($normalized, 'transit') !== false) {
+            } elseif (
+                strpos($normalized, 'picked') !== false
+                || strpos($normalized, 'pickup') !== false
+                || strpos($normalized, 'pick up') !== false
+                || strpos($normalized, 'transit') !== false
+            ) {
                 $status = 'Picked';
             }
         }
@@ -2383,7 +2390,12 @@ final class CourierApi extends BaseService
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
             $updates = ['history' => $history];
 
-            if ($statusInfo['status'] === 'Delivered') {
+            if ($statusInfo['status'] === 'Partially Delivered') {
+                $updates['status'] = 'pending_partial';
+                $updates['history']['partiallyDelivered'] = 'Marked partially delivered automatically from Pathao order status "' . $statusInfo['rawStatus'] . '" on ' . gmdate('c') . '. Action required to confirm delivered items.';
+                $updates['partial_delivery_action_required'] = 1;
+                $updates['partial_delivered_at'] = gmdate('c');
+            } elseif ($statusInfo['status'] === 'Delivered') {
                 $deliveredTarget = $this->resolveDeliveredTargetStatus((string) ($row['status'] ?? ''), gmdate('c'));
                 $updates['status'] = $deliveredTarget['status'];
                 if (($deliveredTarget['pendingDelivered'] ?? false) === true) {
@@ -2955,7 +2967,7 @@ final class CourierApi extends BaseService
         }
         if (str_contains($combined, 'cancel') || str_contains($combined, 'canceled')) return 'Cancelled';
         if (str_contains($combined, 'return')) return 'Returned';
-        if (str_contains($status, 'partial')) return 'Partially Delivered';
+        if (str_contains($combined, 'partial')) return 'Partially Delivered';
         if (
             str_contains($status, 'deliver')
             || preg_match('/(^|[._ -])delivered?($|[._ -])/', $event) === 1
