@@ -1360,6 +1360,7 @@ CREATE TABLE IF NOT EXISTS `courier_webhook_events` (
   id VARCHAR(64) NOT NULL,
   provider VARCHAR(32) NOT NULL,
   event_key CHAR(64) NOT NULL,
+  idempotency_key VARCHAR(255) NULL,
   event_name VARCHAR(128) NOT NULL,
   order_id VARCHAR(64) NULL,
   merchant_reference VARCHAR(255) NULL,
@@ -4111,6 +4112,9 @@ CALL sp_create_idx('transactions', 'idx_transactions_report_period', 'deleted_at
 
 -- Migration: 2026-10-18_sofa_cover_product_pricing.sql
 CALL sp_add_col('products', 'sofa_cover_pricing', 'LONGTEXT NULL');
+
+-- Migration: 2026-10-24_courier_webhook_idempotency_key.sql
+CALL sp_add_col('courier_webhook_events', 'idempotency_key', 'VARCHAR(255) NULL');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

@@ -86,6 +86,7 @@ try {
     echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
     $message = $exception->getMessage();
+    error_log('Courier webhook processing failed for provider ' . ($provider ?? 'unknown') . ': ' . $message);
     $isAuthenticationError = str_contains(strtolower($message), 'signature');
     $isPayloadError = str_contains(strtolower($message), 'json')
         || str_contains(strtolower($message), 'payload')

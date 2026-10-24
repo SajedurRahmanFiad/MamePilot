@@ -1190,6 +1190,7 @@ CREATE TABLE IF NOT EXISTS `courier_webhook_events` (
   id VARCHAR(64) NOT NULL,
   provider VARCHAR(32) NOT NULL,
   event_key CHAR(64) NOT NULL,
+  idempotency_key VARCHAR(255) NULL,
   event_name VARCHAR(128) NOT NULL,
   order_id VARCHAR(64) NULL,
   merchant_reference VARCHAR(255) NULL,
