@@ -2331,6 +2331,7 @@ final class CourierApi extends BaseService
     private function classifyPathaoStatus(string $orderStatusSlug): array
     {
         $normalized = strtolower(trim($orderStatusSlug));
+        $normalizedWords = preg_replace('/[._-]+/', ' ', $normalized) ?? $normalized;
         $status = null;
 
         if ($normalized !== '') {
@@ -2349,6 +2350,7 @@ final class CourierApi extends BaseService
                 || strpos($normalized, 'pickup') !== false
                 || strpos($normalized, 'pick up') !== false
                 || strpos($normalized, 'transit') !== false
+                || $normalizedWords === 'ready for delivery'
             ) {
                 $status = 'Picked';
             }
@@ -2473,9 +2475,28 @@ final class CourierApi extends BaseService
             if (empty($statusInfo['status'])) {
                 continue;
             }
-            if ($statusInfo['status'] === 'Picked' && (string) ($row['status'] ?? '') === 'Picked') continue;
-
             $history = is_array(json_decode((string) ($row['history'] ?? ''), true)) ? json_decode((string) $row['history'], true) : [];
+            $pathaoStatusNeedsDisplay = in_array(
+                preg_replace('/[._-]+/', ' ', $statusInfo['normalizedStatus']) ?? $statusInfo['normalizedStatus'],
+                ['in transit', 'ready for delivery'],
+                true
+            );
+            if (
+                $statusInfo['status'] === 'Picked'
+                && (string) ($row['status'] ?? '') === 'Picked'
+                && (
+                    ($pathaoStatusNeedsDisplay && ($history['pathaoStatus'] ?? null) === $statusInfo['rawStatus'])
+                    || (!$pathaoStatusNeedsDisplay && trim((string) ($history['pathaoStatus'] ?? '')) === '')
+                )
+            ) continue;
+
+            if ($statusInfo['status'] === 'Picked') {
+                if ($pathaoStatusNeedsDisplay) {
+                    $history['pathaoStatus'] = $statusInfo['rawStatus'];
+                } else {
+                    unset($history['pathaoStatus']);
+                }
+            }
             $updates = ['history' => $history];
 
             if ($statusInfo['status'] === 'Partially Delivered') {
@@ -3387,6 +3408,13 @@ final class CourierApi extends BaseService
     {
         $mapped = $details['mappedStatus'];
         $current = (string) ($order['status'] ?? '');
+        if (
+            $provider === 'pathao'
+            && strtolower(trim((string) ($details['eventName'] ?? ''))) === 'order.updated'
+            && $current === 'Courier assigned'
+        ) {
+            $mapped = 'Picked';
+        }
         $isExchange = (bool) ($order['isExchange'] ?? false);
         $chargeId = trim((string) ($charge['id'] ?? ''));
         $terminal = ['Completed', 'Returned', 'Cancelled', 'Exchange delivered', 'partially_delivered', 'pending_partial'];

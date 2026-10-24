@@ -61,6 +61,10 @@ $pickupStatus = $pathaoClassifier->invoke($courierApi, 'Pickup');
 courierPollingAssert(($pickupStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize Pickup.');
 $transitStatus = $pathaoClassifier->invoke($courierApi, 'In Transit');
 courierPollingAssert(($transitStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize an order that is In Transit.');
+$readyStatus = $pathaoClassifier->invoke($courierApi, 'Ready For Delivery');
+courierPollingAssert(($readyStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize Ready For Delivery.');
+$readySlugStatus = $pathaoClassifier->invoke($courierApi, 'ready_for_delivery');
+courierPollingAssert(($readySlugStatus['status'] ?? null) === 'Picked', 'Pathao polling did not recognize the ready_for_delivery slug.');
 $partialStatus = $pathaoClassifier->invoke($courierApi, 'Partial Delivery');
 courierPollingAssert(($partialStatus['status'] ?? null) === 'Partially Delivered', 'Pathao polling did not recognize Partial Delivery.');
 $paidReturnStatus = $pathaoClassifier->invoke($courierApi, 'Paid Return');
@@ -86,5 +90,21 @@ foreach ([
     $mapped = $webhookMapper->invoke($courierApi, 'pathao', $eventName, $rawStatus);
     courierPollingAssert($mapped === $expected, "Pathao webhook did not map {$eventName} to {$expected}.");
 }
+$webhookOrderUpdateBuilder = new ReflectionMethod(CourierApi::class, 'buildWebhookOrderUpdates');
+$webhookOrderUpdateBuilder->setAccessible(true);
+$pathaoUpdated = $webhookOrderUpdateBuilder->invoke($courierApi, 'pathao', [
+    'mappedStatus' => null,
+    'eventName' => 'order.updated',
+    'rawStatus' => 'order.updated',
+    'eventAt' => '2026-10-24 16:49:05',
+], ['status' => 'Courier assigned', 'history' => '{}', 'isExchange' => false], ['id' => 'test-charge']);
+courierPollingAssert(($pathaoUpdated['status'] ?? null) === 'Picked', 'Pathao order.updated did not pick up a courier-assigned order.');
+$carrybeeUpdated = $webhookOrderUpdateBuilder->invoke($courierApi, 'carrybee', [
+    'mappedStatus' => null,
+    'eventName' => 'order.updated',
+    'rawStatus' => 'order.updated',
+    'eventAt' => '2026-10-24 16:49:05',
+], ['status' => 'Courier assigned', 'history' => '{}', 'isExchange' => false], ['id' => 'test-charge']);
+courierPollingAssert(!isset($carrybeeUpdated['status']), 'CarryBee order.updated moved an order to Picked.');
 
 echo "Courier fallback polling runtime checks passed.\n";

@@ -441,8 +441,9 @@ const OrderDetails: React.FC = () => {
         case 'Processing':
           return isSofaCover ? 'Printed' : 'Processing';
         case 'Courier assigned':
-        case 'Picked up':
           return item.label;
+        case 'Picked up':
+          return order?.history?.pathaoStatus ? 'Picked' : item.label;
         case 'Delivered':
           return order?.status === OrderStatus.COMPLETED ? 'Delivered' : 'Delivering';
         case 'Partially Delivered':
@@ -2733,6 +2734,9 @@ const OrderDetails: React.FC = () => {
                               {getTimelineLabel(item, index)}
                               <span className={`text-xs font-medium ${isUnavailableBranch ? 'text-gray-400' : 'text-gray-500'}`}>{getStatusSuffix(item, index)}</span>
                             </div>
+                            {item.label === 'Picked up' && order.history?.pathaoStatus && (
+                              <div className="mt-0.5 text-xs font-medium text-gray-600">Status: {order.history.pathaoStatus}</div>
+                            )}
                             {isSofaCover && hasReachedShippingOutcome && order.deliveryPersonId && order.deliveryPersonShippingCost != null && (
                               <div className="mt-0.5 text-xs font-medium text-gray-600">Shipping cost: {formatCurrency(order.deliveryPersonShippingCost)}</div>
                             )}

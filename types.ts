@@ -952,6 +952,7 @@ export interface Order {
     cuttingAndSewing?: string;
     packed?: string;
     picked?: string;
+    pathaoStatus?: string;
     pendingDelivered?: string;
     partiallyDelivered?: string;
     partialDeliveryConfirmed?: string;

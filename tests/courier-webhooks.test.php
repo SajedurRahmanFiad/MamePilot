@@ -1001,6 +1001,28 @@ try {
         ],
     ]), $pathaoHeaders);
     courierWebhookAssert(courierWebhookOrderStatus($database, $pathaoId) === 'Picked', 'Pathao picked status did not map to Picked.');
+
+    $pathaoUpdatedId = 'cwh-pathao-updated-' . $stamp;
+    $pathaoUpdatedNumber = 'CWH-PATHAO-UPDATED-' . $stamp;
+    createCourierWebhookOrder($database, $actor, $nextSequence, $pathaoUpdatedId, $pathaoUpdatedNumber, 'Courier assigned', $customerId, [
+        'pathao' => 'PATHAO-UPDATED-' . $stamp,
+    ]);
+    $courier->handleWebhook('pathao', courierWebhookJson([
+        'consignment_id' => 'PATHAO-UPDATED-' . $stamp,
+        'merchant_order_id' => $pathaoUpdatedNumber,
+        'event' => 'order.updated',
+        'updated_at' => '2026-10-24 22:49:05',
+        'timestamp' => '2026-10-24T16:49:05+00:00',
+        'store_id' => 339775,
+        'delivery_fee' => 110,
+    ]), $pathaoHeaders);
+    courierWebhookAssert(courierWebhookOrderStatus($database, $pathaoUpdatedId) === 'Picked', 'Pathao order.updated did not move a courier-assigned order to Picked.');
+    $pathaoUpdatedCharge = $database->fetchOne(
+        'SELECT * FROM courier_order_charges WHERE provider = :provider AND consignment_id = :consignment LIMIT 1',
+        [':provider' => 'pathao', ':consignment' => 'PATHAO-UPDATED-' . $stamp]
+    );
+    courierWebhookAssert($pathaoUpdatedCharge !== null && abs((float) $pathaoUpdatedCharge['delivery_fee'] - 110.00) < 0.001, 'Pathao order.updated delivery fee was not stored.');
+
     $courier->handleWebhook('pathao', courierWebhookJson([
         'event' => 'fee.updated',
         'data' => [
