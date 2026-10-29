@@ -506,6 +506,7 @@ export interface OrderItem {
   rate: number;
   quantity: number;
   amount: number;
+  fabricStockUsed?: number;
   // Dynamic pricing fields
   originalRate?: number;
   dynamicDiscount?: number;

@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit_id VARCHAR(64) NULL,
   sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  stock INT NOT NULL DEFAULT 0,
+  stock DECIMAL(12,3) NOT NULL DEFAULT 0.000,
   dynamic_pricing LONGTEXT NULL,
   sofa_cover_pricing LONGTEXT NULL,
   manufacturer VARCHAR(255) NULL,
@@ -4115,6 +4115,9 @@ CALL sp_add_col('products', 'sofa_cover_pricing', 'LONGTEXT NULL');
 
 -- Migration: 2026-10-24_courier_webhook_idempotency_key.sql
 CALL sp_add_col('courier_webhook_events', 'idempotency_key', 'VARCHAR(255) NULL');
+
+-- Migration: 2026-10-30_fractional_product_stock.sql
+CALL sp_modify_col('products', 'stock', 'DECIMAL(12,3) NOT NULL DEFAULT 0.000');
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

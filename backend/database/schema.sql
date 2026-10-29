@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS products (
   unit_id VARCHAR(64) NULL,
   sale_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  stock INT NOT NULL DEFAULT 0,
+  stock DECIMAL(12,3) NOT NULL DEFAULT 0.000,
   dynamic_pricing LONGTEXT NULL,
   sofa_cover_pricing LONGTEXT NULL,
   manufacturer VARCHAR(255) NULL,

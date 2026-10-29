@@ -1302,7 +1302,7 @@ abstract class BaseService
             'unitId' => $this->nullableString($row['unit_id'] ?? null),
             'salePrice' => (float) ($row['sale_price'] ?? $row['salePrice'] ?? 0),
             'purchasePrice' => (float) ($row['purchase_price'] ?? $row['purchasePrice'] ?? 0),
-            'stock' => (int) ($row['stock'] ?? 0),
+            'stock' => (float) ($row['stock'] ?? 0),
             'dynamicPricing' => $this->nullableString($row['dynamic_pricing'] ?? null),
             'sofaCoverPricing' => $this->nullableString($row['sofa_cover_pricing'] ?? null),
             'manufacturer' => $this->nullableString($row['manufacturer'] ?? null),

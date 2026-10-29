@@ -1608,7 +1608,7 @@ final class MasterDataApi extends BaseService
                 ':unit_id' => $this->nullableString($params['unitId'] ?? null),
                 ':sale_price' => $this->formatMoney($params['salePrice'] ?? 0),
                 ':purchase_price' => $this->formatMoney($params['purchasePrice'] ?? 0),
-                ':stock' => (int) ($params['stock'] ?? 0),
+                ':stock' => round((float) ($params['stock'] ?? 0), 3),
                 ':dynamic_pricing' => $this->nullableString($params['dynamicPricing'] ?? null),
                 ':sofa_cover_pricing' => $this->nullableString($params['sofaCoverPricing'] ?? null),
                 ':manufacturer' => $this->nullableString($params['manufacturer'] ?? null),
@@ -1674,7 +1674,7 @@ final class MasterDataApi extends BaseService
             $payload['purchase_price'] = $this->formatMoney($updates['purchasePrice']);
         }
         if (array_key_exists('stock', $updates)) {
-            $payload['stock'] = (int) $updates['stock'];
+            $payload['stock'] = round((float) $updates['stock'], 3);
         }
         if (array_key_exists('dynamicPricing', $updates)) {
             $payload['dynamic_pricing'] = $this->nullableString($updates['dynamicPricing']);

@@ -478,18 +478,20 @@ final class OperationsApi extends BaseService
 
     /**
      * @param array<int, array<string, mixed>> $items
-     * @return array<string, int>
+     * @return array<string, float>
      */
     private function aggregateItemQuantities(array $items): array
     {
         $quantities = [];
         foreach ($items as $item) {
             $productId = trim((string) ($item['productId'] ?? ''));
-            $quantity = (int) ($item['quantity'] ?? 0);
+            $quantity = $this->isSofaCoverBusinessMode() && array_key_exists('fabricStockUsed', $item)
+                ? (float) $item['fabricStockUsed']
+                : (float) ($item['quantity'] ?? 0);
             if ($productId === '' || $quantity <= 0) {
                 continue;
             }
-            $quantities[$productId] = ($quantities[$productId] ?? 0) + $quantity;
+            $quantities[$productId] = round(($quantities[$productId] ?? 0) + $quantity, 3);
         }
 
         return $quantities;
@@ -498,7 +500,7 @@ final class OperationsApi extends BaseService
     /**
      * @param array<int, array<string, mixed>> $previousItems
      * @param array<int, array<string, mixed>> $nextItems
-     * @return array<string, int>
+      * @return array<string, float>
      */
     private function buildStockDeltas(array $previousItems, array $nextItems, int $previousCoeff, int $nextCoeff): array
     {
@@ -510,11 +512,11 @@ final class OperationsApi extends BaseService
             $deltas[$productId] = ($deltas[$productId] ?? 0) + ($quantity * $nextCoeff);
         }
 
-        return array_filter($deltas, static fn(int $delta): bool => $delta !== 0);
+        return array_filter($deltas, static fn(float $delta): bool => abs($delta) > 0.000001);
     }
 
     /**
-     * @param array<string, int> $deltas
+        * @param array<string, float> $deltas
      * @return array<int, array<string, mixed>>
      */
     private function resolveProductStockUpdates(array $deltas, string $context): array
@@ -540,10 +542,11 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException("Stock update failed in {$context}: product {$productId} was not found.");
             }
 
-            $currentStock = (int) ($row['stock'] ?? 0);
-            $nextStock = $currentStock + (int) $deltas[$productId];
+            $currentStock = (float) ($row['stock'] ?? 0);
+            $delta = round((float) $deltas[$productId], 3);
+            $nextStock = round($currentStock + $delta, 3);
             if ($nextStock < 0) {
-                $insufficient[] = sprintf('%s (need %d, have %d)', $row['name'] ?? $productId, abs((int) $deltas[$productId]), $currentStock);
+                $insufficient[] = sprintf('%s (need %s, have %s)', $row['name'] ?? $productId, rtrim(rtrim(number_format(abs($delta), 3, '.', ''), '0'), '.'), rtrim(rtrim(number_format($currentStock, 3, '.', ''), '0'), '.'));
                 continue;
             }
 
@@ -551,7 +554,7 @@ final class OperationsApi extends BaseService
                 'id' => $productId,
                 'stock' => $nextStock,
                 'previousStock' => $currentStock,
-                'delta' => (int) $deltas[$productId],
+                'delta' => $delta,
             ];
         }
 
@@ -571,7 +574,7 @@ final class OperationsApi extends BaseService
             $this->database->execute(
                 'UPDATE products SET stock = :stock, updated_at = :updated_at WHERE id = :id',
                 [
-                    ':stock' => (int) $update['stock'],
+                    ':stock' => round((float) $update['stock'], 3),
                     ':updated_at' => $this->database->nowUtc(),
                     ':id' => (string) $update['id'],
                 ]
@@ -582,7 +585,54 @@ final class OperationsApi extends BaseService
 
     private function isOrderStockApplied(?string $status): bool
     {
-        return in_array((string) $status, self::ORDER_STOCK_STATUSES, true);
+        $normalizedStatus = (string) $status;
+        if (
+            $this->isSofaCoverBusinessMode()
+            && in_array($normalizedStatus, ['Processing', 'Cutting and Sewing'], true)
+        ) {
+            return false;
+        }
+        return in_array($normalizedStatus, self::ORDER_STOCK_STATUSES, true);
+    }
+
+    /** @param array<int, array<string, mixed>> $items */
+    private function validateFabricStockUsage(array &$items): void
+    {
+        if ($items === []) {
+            throw new RuntimeException('This order has no fabric lines to deduct stock from.');
+        }
+
+        $productIds = [];
+        foreach ($items as $index => $item) {
+            $productId = trim((string) ($item['productId'] ?? ''));
+            $rawQuantity = trim((string) ($item['fabricStockUsed'] ?? ''));
+            if ($productId === '' || !preg_match('/^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/', $rawQuantity)) {
+                throw new RuntimeException('Enter the stock used for every fabric as a non-negative quantity with at most three decimal places.');
+            }
+            $items[$index]['fabricStockUsed'] = round((float) $rawQuantity, 3);
+            $productIds[] = $productId;
+        }
+
+        [$placeholders, $bindings] = $this->inClause(array_values(array_unique($productIds)), 'fabric_product');
+        $rows = $this->database->fetchAll(
+            'SELECT p.id, COALESCE(u.is_fraction, 0) AS is_fraction
+             FROM products p
+             LEFT JOIN units u ON u.id = p.unit_id
+             WHERE p.id IN (' . implode(', ', $placeholders) . ')',
+            $bindings
+        );
+        $fractionalUnits = [];
+        foreach ($rows as $row) {
+            $fractionalUnits[(string) $row['id']] = (bool) ($row['is_fraction'] ?? false);
+        }
+
+        foreach ($items as $item) {
+            $productId = trim((string) ($item['productId'] ?? ''));
+            $quantity = (float) ($item['fabricStockUsed'] ?? 0);
+            if (empty($fractionalUnits[$productId]) && floor($quantity) !== $quantity) {
+                throw new RuntimeException('Fabric stock usage must be a whole number for products using integer units.');
+            }
+        }
     }
 
     private function isBillStockApplied(?string $status): bool
@@ -1051,9 +1101,9 @@ final class OperationsApi extends BaseService
         $deltas = [];
         foreach ($stockUpdates as $update) {
             $productId = trim((string) ($update['id'] ?? ''));
-            $delta = (int) ($update['delta'] ?? 0);
-            if ($productId !== '' && $delta !== 0) {
-                $deltas[$productId] = ($deltas[$productId] ?? 0) + $delta;
+            $delta = (float) ($update['delta'] ?? 0);
+            if ($productId !== '' && abs($delta) > 0.000001) {
+                $deltas[$productId] = round(($deltas[$productId] ?? 0) + $delta, 3);
             }
         }
         return $deltas;
@@ -1459,10 +1509,28 @@ final class OperationsApi extends BaseService
         if (array_key_exists('notes', $updates) && $this->nullableString($updates['notes']) !== $this->nullableString($existingRow['notes'] ?? null)) {
             $businessChanged = true;
         }
+        $isReadyFabricUsageUpdate = false;
+        if (
+            $this->isSofaCoverBusinessMode()
+            && $previousStatus === 'Cutting and Sewing'
+            && $nextStatus === 'Ready'
+            && array_key_exists('items', $updates)
+            && is_array($updates['items'])
+        ) {
+            $previousStockNeutralItems = $this->jsonDecodeList($existingRow['items'] ?? []);
+            $nextStockNeutralItems = $updates['items'];
+            foreach ($previousStockNeutralItems as &$item) unset($item['fabricStockUsed']);
+            unset($item);
+            foreach ($nextStockNeutralItems as &$item) unset($item['fabricStockUsed']);
+            unset($item);
+            $isReadyFabricUsageUpdate = $this->encodeComparableJson($previousStockNeutralItems)
+                === $this->encodeComparableJson($nextStockNeutralItems);
+        }
         if (
             array_key_exists('items', $updates)
             && is_array($updates['items'])
             && $this->encodeComparableJson($updates['items']) !== $this->encodeComparableJson($this->jsonDecodeList($existingRow['items'] ?? []))
+            && !$isReadyFabricUsageUpdate
         ) {
             $businessChanged = true;
         }
@@ -1493,8 +1561,8 @@ final class OperationsApi extends BaseService
 
         if (
             array_key_exists('history', $updates)
-            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'cuttingAndSewing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
-            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'cuttingAndSewing', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
+            && $this->encodeComparableJson($this->filteredHistoryForComparison($nextHistory, ['processing', 'cuttingAndSewing', 'ready', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
+            !== $this->encodeComparableJson($this->filteredHistoryForComparison($existingHistory, ['processing', 'cuttingAndSewing', 'ready', 'picked', 'courier', 'completed', 'returned', 'payment', 'repairProcessing', 'repairCourier', 'repairPicked', 'repairDelivered', 'repairReturned', 'repairCancelled']))
         ) {
             $businessChanged = true;
         }
@@ -6611,6 +6679,10 @@ final class OperationsApi extends BaseService
             $nextItems = array_key_exists('items', $updates) && is_array($updates['items']) ? $updates['items'] : $previousItems;
             if (array_key_exists('items', $updates)) {
                 $nextItems = $this->canonicalizeOrderItemProductSnapshots($nextItems, 'Order');
+                $updates['items'] = $nextItems;
+            }
+            if ($this->isSofaCoverBusinessMode() && $nextStatus === 'Ready' && $previousStatus !== 'Ready') {
+                $this->validateFabricStockUsage($nextItems);
                 $updates['items'] = $nextItems;
             }
             $stockUpdates = [];
@@ -13020,7 +13092,7 @@ SQL;
                 $runningWalletEntryIds[] = trim((string) $walletEntryId);
             }
             foreach ($this->jsonDecodeAssoc($event['stock_deltas'] ?? []) as $productId => $delta) {
-                $runningStockDeltas[(string) $productId] = ($runningStockDeltas[(string) $productId] ?? 0) + (int) $delta;
+                $runningStockDeltas[(string) $productId] = round(($runningStockDeltas[(string) $productId] ?? 0) + (float) $delta, 3);
             }
             $beforeSnapshot = $this->canonicalizeOrderUndoSnapshot(
                 $this->jsonDecodeAssoc($event['before_snapshot'] ?? [])
@@ -13076,11 +13148,11 @@ SQL;
     private function undoImpactStockBlockReason(array $impact): ?string
     {
         foreach ((array) ($impact['stockAdjustments'] ?? []) as $stock) {
-            if ((int) ($stock['projectedStock'] ?? 0) < 0) {
+            if ((float) ($stock['projectedStock'] ?? 0) < 0) {
                 return sprintf(
-                    'Undo would make %s stock negative (%d). Correct the available stock before restoring this point.',
+                    'Undo would make %s stock negative (%s). Correct the available stock before restoring this point.',
                     (string) ($stock['productName'] ?? 'a product'),
-                    (int) ($stock['projectedStock'] ?? 0)
+                    rtrim(rtrim(number_format((float) ($stock['projectedStock'] ?? 0), 3, '.', ''), '0'), '.')
                 );
             }
         }
@@ -13145,7 +13217,7 @@ SQL;
         );
         $stockDeltas = [];
         foreach ($legacyUndoDeltas as $productId => $delta) {
-            $stockDeltas[(string) $productId] = -(int) $delta;
+            $stockDeltas[(string) $productId] = round(-(float) $delta, 3);
         }
         $targetSnapshot = ['status' => $targetStatus, 'history' => null];
         if (in_array((string) ($orderRow['status'] ?? ''), ['Completed', 'Returned', 'Exchange returned'], true)) {
@@ -13260,13 +13332,13 @@ SQL;
             );
             foreach ($products as $product) {
                 $productId = (string) $product['id'];
-                $reversalDelta = -(int) ($stockDeltas[$productId] ?? 0);
+                $reversalDelta = round(-(float) ($stockDeltas[$productId] ?? 0), 3);
                 $stockPreview[] = [
                     'productId' => $productId,
                     'productName' => (string) ($product['name'] ?? $productId),
-                    'currentStock' => (int) ($product['stock'] ?? 0),
+                    'currentStock' => (float) ($product['stock'] ?? 0),
                     'adjustment' => $reversalDelta,
-                    'projectedStock' => (int) ($product['stock'] ?? 0) + $reversalDelta,
+                    'projectedStock' => round((float) ($product['stock'] ?? 0) + $reversalDelta, 3),
                 ];
             }
         }

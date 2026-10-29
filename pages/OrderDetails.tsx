@@ -7,7 +7,7 @@ import { OrderStatus, Order, VaccineDosageRule, VaccineScheduleRule, type Proces
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import { Button, Dialog, Modal, FraudCheckModal, OrderCompletionModal, CommonPaymentModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, OrderReturnExchangeModal, ConfirmationStatusDot } from '../components';
 import { theme, mixThemeColorWithWhite, resolveThemeColorPalette } from '../theme';
-import { useAccounts, useCategories, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults, useCourierTrackingEvents } from '../src/hooks/useQueries';
+import { useAccounts, useCategories, useOrder, useOrderSurveyStatus, useCustomer, useProductImagesByIds, useCompanySettings, useInvoiceSettings, useUser, usePaymentMethods, useMetaAd, useCourierSettings, useSystemDefaults, useCourierTrackingEvents, useUnits } from '../src/hooks/useQueries';
 import { useUpdateOrder, useCreateOrder, useCompletePickedOrder, useAddCourierCompletionExpense, useCheckFraudCourierHistory, useDeleteOrder, useProcessOrderReturnExchange, useConfirmPartialDelivery, useTriggerSurveyCall, useRetrySurveyCall, useCancelSurveyCall } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useAuth } from '../src/contexts/AuthProvider';
@@ -117,6 +117,14 @@ const OrderDetails: React.FC = () => {
     [productQueries],
   );
   const { data: productImages = {} } = useProductImagesByIds(orderItemProductIds);
+  const { data: units = [], isPending: unitsLoading } = useUnits();
+  const unitById = useMemo(() => new Map(units.map((unit: any) => [String(unit.id), unit])), [units]);
+  const productById = useMemo(() => new Map(orderProducts.map((product) => [product.id, product])), [orderProducts]);
+  const readyFabricRows = useMemo(() => (order?.items || []).map((item, index) => {
+    const product = productById.get(item.productId);
+    const unit = product?.unitId ? unitById.get(product.unitId) : undefined;
+    return { item, index, product, unit, isFraction: Boolean(unit?.isFraction ?? unit?.is_fraction) };
+  }), [order?.items, productById, unitById]);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
   const weightUnit = companySettings?.weightUnit || 'kg';
@@ -206,6 +214,7 @@ const OrderDetails: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showStatusTransitionModal, setShowStatusTransitionModal] = useState(false);
+  const [fabricStockInputs, setFabricStockInputs] = useState<Record<number, string>>({});
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [isExchangeConsignment, setIsExchangeConsignment] = useState(false);
   const [courierHistoryData, setCourierHistoryData] = useState<any>(null);
@@ -1243,6 +1252,7 @@ const OrderDetails: React.FC = () => {
       deliveryShippingExpenseAccountId?: string;
       deliveryShippingExpenseCategoryId?: string;
       history?: Order['history'];
+      items?: Order['items'];
     },
   ): Promise<boolean> => {
     if (!order) return false;
@@ -1483,6 +1493,32 @@ const OrderDetails: React.FC = () => {
     && (isRepairPickupTransition || !order?.deliveryPersonShippingExpenseRecorded);
   const handleConfirmStatusTransition = async () => {
     if (!pendingStatusTransition) return;
+    if (pendingStatusTransition.action === 'ready') {
+      const invalidRow = readyFabricRows.find(({ index, isFraction }) => {
+        const rawValue = fabricStockInputs[index]?.trim() ?? '';
+        const value = Number(rawValue);
+        if (rawValue === '' || !Number.isFinite(value) || value < 0) return true;
+        if (!isFraction && !Number.isInteger(value)) return true;
+        return isFraction && (rawValue.split('.')[1]?.length ?? 0) > 3;
+      });
+      if (invalidRow) {
+        toast.error('Enter a valid stock quantity for every fabric, using the unit precision shown.');
+        return;
+      }
+      const nextItems = order.items.map((item, index) => ({
+        ...item,
+        fabricStockUsed: Number(fabricStockInputs[index]),
+      }));
+      setShowStatusTransitionModal(false);
+      setPendingStatusTransition(null);
+      await updateStatus(
+        OrderStatus.READY,
+        'ready',
+        `Marked as ready by ${user.name}, on ${formatHistoryMoment(new Date())}`,
+        { items: nextItems },
+      );
+      return;
+    }
     if (requiresDeliveryShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId)) {
       toast.error(translateInventoryText('Select an account and expense category before marking this item as picked.'));
       return;
@@ -1496,8 +1532,6 @@ const OrderDetails: React.FC = () => {
       await markProcessing();
     } else if (pendingStatusTransition.action === 'cuttingAndSewing') {
       await markCuttingAndSewing();
-    } else if (pendingStatusTransition.action === 'ready') {
-      await updateStatus(OrderStatus.READY, 'ready', `Marked as ready by ${user.name}, on ${formatHistoryMoment(new Date())}`);
     } else if (pendingStatusTransition.action === 'assignCourier') {
       openCourierSelectionModal();
     } else if (pendingStatusTransition.action === 'repairAssignCourier') {
@@ -1612,6 +1646,12 @@ const OrderDetails: React.FC = () => {
               setPendingStatusTransition(transition);
               setShowStatusTransitionModal(true);
               return;
+            }
+            if (transition.action === 'ready') {
+              setFabricStockInputs(Object.fromEntries((order?.items || []).map((item, index) => [
+                index,
+                item.fabricStockUsed == null ? '' : String(item.fabricStockUsed),
+              ])));
             }
             setPendingStatusTransition(transition);
             setShowStatusTransitionModal(true);
@@ -3221,7 +3261,7 @@ const OrderDetails: React.FC = () => {
         hideDateTime
       />
 
-      {isSofaCover && (pendingStatusTransition?.action === 'process' || requiresDeliveryShippingExpenseSelection) ? (
+      {isSofaCover && (pendingStatusTransition?.action === 'process' || pendingStatusTransition?.action === 'ready' || requiresDeliveryShippingExpenseSelection) ? (
         <Modal
           isOpen={showStatusTransitionModal}
           onClose={handleCancelStatusTransition}
@@ -3242,12 +3282,49 @@ const OrderDetails: React.FC = () => {
               )}
               <div className="flex w-full gap-2">
                 <Button variant="ghost" className="flex-1" disabled={updateMutation.isPending} onClick={handleCancelStatusTransition}>Cancel</Button>
-                <Button className="flex-1" loading={updateMutation.isPending} onClick={() => { void handleConfirmStatusTransition(); }}>{transitionModalConfirmText}</Button>
+                <Button
+                  className="flex-1"
+                  loading={updateMutation.isPending}
+                  disabled={updateMutation.isPending || (pendingStatusTransition?.action === 'ready' && (unitsLoading || productQueries.some((query) => query.isPending) || readyFabricRows.length === 0))}
+                  onClick={() => { void handleConfirmStatusTransition(); }}
+                >
+                  {transitionModalConfirmText}
+                </Button>
               </div>
             </div>
           )}
         >
-          {requiresDeliveryShippingExpenseSelection ? (
+          {pendingStatusTransition?.action === 'ready' ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Enter the stock used for each fabric in this invoice.</p>
+              {unitsLoading || productQueries.some((query) => query.isPending) ? (
+                <p className="text-sm text-gray-500">Loading fabric units...</p>
+              ) : readyFabricRows.length === 0 ? (
+                <p className="text-sm text-red-600">This order has no fabric lines to deduct stock from.</p>
+              ) : (
+                <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+                  {readyFabricRows.map(({ item, index, product, unit, isFraction }) => (
+                    <label key={`${item.productId}-${index}`} className="block space-y-1.5 text-sm font-semibold text-gray-700">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="truncate">{product?.name || item.productName}</span>
+                        <span className="shrink-0 text-xs font-medium text-gray-500">{unit?.name || 'Unit not set'}</span>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step={isFraction ? '0.001' : '1'}
+                        inputMode={isFraction ? 'decimal' : 'numeric'}
+                        value={fabricStockInputs[index] ?? ''}
+                        onChange={(event) => setFabricStockInputs((current) => ({ ...current, [index]: event.target.value }))}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        required
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : requiresDeliveryShippingExpenseSelection ? (
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
                 Select where to deduct the {formatCurrency(order.deliveryPersonShippingCost || 0)} {isRepairPickupTransition ? 'repair pickup' : 'delivery'} shipping cost before marking it as picked.

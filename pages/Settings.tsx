@@ -2593,7 +2593,7 @@ const SettingsPage: React.FC = () => {
                             </span>
                           )}
                         </p>
-                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{cat.type}</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{cat.type === 'Product' ? terminology.item : cat.type}</p>
                       </div>
                       <button
                         onClick={() => handleDeleteCategory(cat.id)}
