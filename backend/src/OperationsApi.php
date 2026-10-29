@@ -1324,6 +1324,7 @@ final class OperationsApi extends BaseService
         $completedChanged = $this->historyValue($nextHistory, 'completed') !== $this->historyValue($existingHistory, 'completed');
         $returnedChanged = $this->historyValue($nextHistory, 'returned') !== $this->historyValue($existingHistory, 'returned');
         $paymentChanged = $this->historyValue($nextHistory, 'payment') !== $this->historyValue($existingHistory, 'payment');
+        $repairCourierChanged = $this->historyValue($nextHistory, 'repairCourier') !== $this->historyValue($existingHistory, 'repairCourier');
         $repairStatuses = ['Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
         $repairTransitions = [
             'Repair processing' => ['Repair Courier Assigned', 'Repair canceled'],
@@ -1347,7 +1348,10 @@ final class OperationsApi extends BaseService
             $isLegacyRepairCourierPickup = $previousStatus === 'Repair processing'
                 && $nextStatus === 'Repair picked'
                 && trim((string) ($existingHistory['repairCourier'] ?? '')) !== '';
-            if (isset($repairTransitions[$previousStatus]) && !in_array($nextStatus, $repairTransitions[$previousStatus], true) && !$isLegacyRepairCourierPickup) {
+            $isRepairCourierReassignment = $previousStatus === 'Repair Courier Assigned'
+                && $nextStatus === $previousStatus
+                && $repairCourierChanged;
+            if (isset($repairTransitions[$previousStatus]) && !in_array($nextStatus, $repairTransitions[$previousStatus], true) && !$isLegacyRepairCourierPickup && !$isRepairCourierReassignment) {
                 throw new RuntimeException('Invalid repair status transition.');
             }
             if (in_array($previousStatus, ['Repair canceled', 'Repair returned'], true)) {
@@ -1367,7 +1371,15 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Orders must be Printed before moving to Cutting and Sewing.');
         }
 
-        if (($nextStatus !== $previousStatus && in_array($nextStatus, ['Processing', 'Cutting and Sewing'], true)) || $processingChanged || $cuttingAndSewingChanged) {
+        $isEnteringReady = $nextStatus !== $previousStatus && $nextStatus === 'Ready';
+        if ($isEnteringReady && !$this->isSofaCoverBusinessMode()) {
+            throw new RuntimeException('Ready status is only available in sofa cover mode.');
+        }
+        if ($isEnteringReady && $previousStatus !== 'Cutting and Sewing') {
+            throw new RuntimeException('Orders must be in Cutting and Sewing before moving to Ready.');
+        }
+
+        if (($nextStatus !== $previousStatus && in_array($nextStatus, ['Processing', 'Cutting and Sewing', 'Ready'], true)) || $processingChanged || $cuttingAndSewingChanged) {
             $this->assertUserCanManageOrderRecord(
                 $user,
                 $existingRow,
@@ -2585,6 +2597,7 @@ final class OperationsApi extends BaseService
             $timestampKeys = [
                 'Processing' => 'processing',
                 'Cutting and Sewing' => 'cuttingAndSewing',
+                'Ready' => 'ready',
                 'Courier assigned' => 'courier',
                 'Picked' => 'picked',
                 'Completed' => 'completed',
@@ -6888,6 +6901,7 @@ final class OperationsApi extends BaseService
                 && $previousStatus !== 'Picked'
                 && $deliveryPersonId !== ''
                 && empty($existingRow['delivery_person_shipping_expense_recorded'])
+                && !$this->isSofaCoverBusinessMode()
             ) {
                 $payload['delivery_person_shipping_expense_recorded'] = 1;
                 if ($deliveryPersonShippingCost > 0) {

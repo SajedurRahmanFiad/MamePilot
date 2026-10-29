@@ -12,10 +12,12 @@ function undoAssert(bool $condition, string $message): void
 $root = dirname(__DIR__);
 $operations = (string) file_get_contents($root . '/backend/src/OperationsApi.php');
 $baseService = (string) file_get_contents($root . '/backend/src/BaseService.php');
+$masterDataApi = (string) file_get_contents($root . '/backend/src/MasterDataApi.php');
 $featureAccess = (string) file_get_contents($root . '/backend/src/FeatureAccess.php');
 $migration = (string) file_get_contents($root . '/migrations/2026-07-24_order_status_undo_journal.sql');
 $statusMigration = (string) file_get_contents($root . '/migrations/2026-07-25_order_status_canonicalization.sql');
 $schemaOnly = (string) file_get_contents($root . '/backend/database/schema-only.sql');
+$types = (string) file_get_contents($root . '/types.ts');
 $page = (string) file_get_contents($root . '/pages/Undoer.tsx');
 $detailsPage = (string) file_get_contents($root . '/pages/OrderDetails.tsx');
 
@@ -26,6 +28,14 @@ undoAssert(str_contains($migration, 'stock_deltas LONGTEXT'), 'Undo events must 
 undoAssert(str_contains($schemaOnly, 'CREATE TABLE IF NOT EXISTS order_status_undo_events'), 'Generated schema-only artifact is missing undo restore points.');
 undoAssert(str_contains($statusMigration, "SET status = 'On Hold'"), 'Created orders are not migrated to the canonical On Hold status.');
 undoAssert(str_contains($statusMigration, "SET status = 'Exchange delivered'"), 'Legacy exchange deliveries are not restored to their real status.');
+undoAssert(str_contains($types, "READY = 'Ready'"), 'Ready is missing from the shared order status model.');
+undoAssert(str_contains($baseService, "'Cutting and Sewing', 'Ready', 'Courier assigned'"), 'Ready is missing from backend order status and stock handling.');
+undoAssert(str_contains($operations, "\$isEnteringReady && !\$this->isSofaCoverBusinessMode()"), 'Ready is not restricted to sofa cover mode.');
+undoAssert(str_contains($operations, "&& !\$this->isSofaCoverBusinessMode()\n            )"), 'Picked shipping expenses are not suppressed in sofa cover mode.');
+undoAssert(str_contains($operations, '$isRepairCourierReassignment'), 'Assigned repair couriers cannot be edited without changing repair status.');
+undoAssert(!str_contains($masterDataApi, "\$capabilities['courier_automation'] = false;"), 'Sofa cover mode still forcibly disables courier automation after capability overrides are saved.');
+undoAssert(str_contains($detailsPage, "label: 'Mark as Ready'") && str_contains($detailsPage, "action: 'ready'"), 'Cutting and Sewing does not advance through the Ready action.');
+undoAssert(str_contains($detailsPage, 'Edit courier assignment') && str_contains($detailsPage, 'openManualCourierEdit'), 'Assigned sofa-cover couriers cannot be edited from order actions.');
 
 undoAssert(substr_count($operations, 'recordOrderUndoEvent(') >= 4, 'All main order status workflows must record restore points.');
 undoAssert(str_contains($operations, "'complete_picked_order'"), 'Picked completion is not journalled.');

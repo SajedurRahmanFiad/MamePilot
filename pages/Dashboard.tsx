@@ -49,6 +49,7 @@ const EMPLOYEE_STATUS_STYLES: Record<OrderStatus, { valueClass: string; barClass
   [OrderStatus.ON_HOLD]: { valueClass: 'text-amber-500', barClass: 'bg-amber-500', trackClass: 'bg-amber-100' },
   [OrderStatus.PROCESSING]: { valueClass: 'text-sky-500', barClass: 'bg-sky-500', trackClass: 'bg-sky-100' },
   [OrderStatus.CUTTING_AND_SEWING]: { valueClass: 'text-amber-600', barClass: 'bg-amber-600', trackClass: 'bg-amber-100' },
+  [OrderStatus.READY]: { valueClass: 'text-emerald-600', barClass: 'bg-emerald-600', trackClass: 'bg-emerald-100' },
   [OrderStatus.COURIER_ASSIGNED]: { valueClass: 'text-blue-600', barClass: 'bg-blue-600', trackClass: 'bg-blue-100' },
   [OrderStatus.PICKED]: { valueClass: 'text-cyan-500', barClass: 'bg-cyan-500', trackClass: 'bg-cyan-100' },
   [OrderStatus.COMPLETED]: { valueClass: 'text-emerald-500', barClass: 'bg-emerald-500', trackClass: 'bg-emerald-100' },

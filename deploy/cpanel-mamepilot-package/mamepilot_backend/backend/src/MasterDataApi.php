@@ -2403,9 +2403,6 @@ final class MasterDataApi extends BaseService
         $row = $this->capabilityRow();
         $capabilities = $this->normalizeCapabilities($row['capabilities'] ?? null);
         $businessMode = $this->normalizeBusinessMode($row['business_mode'] ?? null);
-        if ($businessMode === 'sofa_cover') {
-            $capabilities['courier_automation'] = false;
-        }
         $capabilities['subCapabilities'] = $this->normalizeSubCapabilities($capabilities['subCapabilities'] ?? [], $capabilities);
         $maintenanceEnabled = !empty($row['maintenance_enabled'] ?? 0);
 

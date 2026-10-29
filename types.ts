@@ -177,6 +177,7 @@ export enum OrderStatus {
   ON_HOLD = 'On Hold',
   PROCESSING = 'Processing',
   CUTTING_AND_SEWING = 'Cutting and Sewing',
+  READY = 'Ready',
   COURIER_ASSIGNED = 'Courier assigned',
   PICKED = 'Picked',
   COMPLETED = 'Completed',
@@ -950,6 +951,7 @@ export interface Order {
     courier?: string;
     processing?: string;
     cuttingAndSewing?: string;
+    ready?: string;
     packed?: string;
     picked?: string;
     pathaoStatus?: string;
@@ -980,6 +982,7 @@ export interface Order {
   statusTimestamps?: Partial<Record<
     | 'processing'
     | 'cuttingAndSewing'
+    | 'ready'
     | 'courier'
     | 'picked'
     | 'completed'

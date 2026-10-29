@@ -432,7 +432,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
       {
         type: 'Order Status',
         operators: ['=', '≠'] as const,
-        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (isSofaCover || status !== OrderStatus.CUTTING_AND_SEWING)).map((status) => ({
+        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (isSofaCover || ![OrderStatus.CUTTING_AND_SEWING, OrderStatus.READY].includes(status))).map((status) => ({
           value: status,
           label: getStatusDisplayName(status, capabilitySettings?.businessMode),
         })),

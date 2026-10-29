@@ -215,6 +215,7 @@ const OrderDetails: React.FC = () => {
   const [manualDeliveryPersonId, setManualDeliveryPersonId] = useState('');
   const [manualShippingCost, setManualShippingCost] = useState('');
   const [isRepairCourierAssignment, setIsRepairCourierAssignment] = useState(false);
+  const [isEditingManualCourier, setIsEditingManualCourier] = useState(false);
   const [pickedShippingAccountId, setPickedShippingAccountId] = useState('');
   const [pickedShippingCategoryId, setPickedShippingCategoryId] = useState('');
 
@@ -260,7 +261,7 @@ const OrderDetails: React.FC = () => {
   }, [order?.status, order?.partialDeliveryActionRequired, order?.deliveryActionRequired]);
 
   const [isAssigningManualCourier, setIsAssigningManualCourier] = useState(false);
-  type OrderStatusTransitionAction = 'confirm' | 'process' | 'cuttingAndSewing' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick' | 'repair' | 'repairAssignCourier' | 'repairPick' | 'repairDeliver' | 'repairReturn' | 'repairCancel';
+  type OrderStatusTransitionAction = 'confirm' | 'process' | 'cuttingAndSewing' | 'ready' | 'assignCourier' | 'pick' | 'complete' | 'exchangePick' | 'repair' | 'repairAssignCourier' | 'repairPick' | 'repairDeliver' | 'repairReturn' | 'repairCancel';
   type OrderStatusTransition = {
     action: OrderStatusTransitionAction;
     label: string;
@@ -269,7 +270,7 @@ const OrderDetails: React.FC = () => {
     description: string;
     enabled: boolean;
   };
-  type OrderTimelineLabel = 'Created' | 'Processing' | 'Cutting and Sewing' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Delivery pending' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Repair processing' | 'Repair Courier Assigned' | 'Repair picked' | 'Repair delivered' | 'Repair returned' | 'Repair canceled' | 'Returned' | 'Cancelled';
+  type OrderTimelineLabel = 'Created' | 'Processing' | 'Cutting and Sewing' | 'Ready' | 'Courier assigned' | 'Picked up' | 'Delivered' | 'Delivery pending' | 'Partially Delivered' | 'Exchanged' | 'Exchange processing' | 'Exchange picked' | 'Exchange delivered' | 'Exchange returned' | 'Exchange cancelled' | 'Repair processing' | 'Repair Courier Assigned' | 'Repair picked' | 'Repair delivered' | 'Repair returned' | 'Repair canceled' | 'Returned' | 'Cancelled';
   type OrderTimelineItem = {
     label: OrderTimelineLabel;
     historyKey: keyof Order['history'];
@@ -324,6 +325,7 @@ const OrderDetails: React.FC = () => {
 
       if (isSofaCover) {
         items.push({ label: 'Cutting and Sewing', historyKey: 'cuttingAndSewing', description: 'The printed fabric is being cut and sewn.' });
+        items.push({ label: 'Ready', historyKey: 'ready', description: 'The order is ready to be assigned to a courier.' });
       }
 
       if (!canUseCourierAutomation) {
@@ -399,6 +401,7 @@ const OrderDetails: React.FC = () => {
     if (order.status === OrderStatus.PENDING_DELIVERED) return timelineItems.findIndex((item) => item.label === 'Delivery pending');
     if (order.status === OrderStatus.PICKED) return timelineItems.findIndex((item) => item.label === 'Picked up');
     if (order.status === OrderStatus.COURIER_ASSIGNED) return timelineItems.findIndex((item) => item.label === 'Courier assigned');
+    if (order.status === OrderStatus.READY) return timelineItems.findIndex((item) => item.label === 'Ready');
     if (order.status === OrderStatus.CUTTING_AND_SEWING) return timelineItems.findIndex((item) => item.label === 'Cutting and Sewing');
     if (order.status === OrderStatus.PROCESSING) return timelineItems.findIndex((item) => item.label === 'Processing');
     return timelineItems.findIndex((item) => item.label === 'Created');
@@ -494,6 +497,8 @@ const OrderDetails: React.FC = () => {
           return isSofaCover ? 'Mark as Printed' : 'Process';
         case 'Cutting and Sewing':
           return 'Cutting and Sewing';
+        case 'Ready':
+          return 'Mark as Ready';
         case 'Courier assigned':
           return 'Assign courier';
         case 'Picked up':
@@ -651,6 +656,7 @@ const OrderDetails: React.FC = () => {
       { key: 'created', label: 'Created', icon: ICONS.Plus, text: history.created || defaultCreated, timestamp: order.createdAt },
       { key: 'processing', label: isSofaCover ? 'Printed' : 'Processing', icon: ICONS.ChevronRight, text: history.processing, timestamp: order.statusTimestamps?.processing },
       { key: 'cuttingAndSewing', label: 'Cutting and Sewing', icon: ICONS.ChevronRight, text: history.cuttingAndSewing, timestamp: order.statusTimestamps?.cuttingAndSewing },
+      { key: 'ready', label: 'Ready', icon: ICONS.ChevronRight, text: history.ready, timestamp: order.statusTimestamps?.ready },
       { key: 'packed', label: 'Packed', icon: ICONS.ChevronRight, text: history.packed },
       { key: 'courier', label: 'Courier assigned', icon: ICONS.Courier, text: history.courier, timestamp: order.statusTimestamps?.courier },
       { key: 'picked', label: 'Picked up', icon: ICONS.Check, text: history.picked, timestamp: order.statusTimestamps?.picked },
@@ -1109,7 +1115,7 @@ const OrderDetails: React.FC = () => {
     }
 
     const hasConfirmed = Boolean(order.paidAt || order.history?.payment);
-    const hasProcessing = order.status === OrderStatus.PROCESSING || order.status === OrderStatus.CUTTING_AND_SEWING || order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.processing);
+    const hasProcessing = order.status === OrderStatus.PROCESSING || order.status === OrderStatus.CUTTING_AND_SEWING || order.status === OrderStatus.READY || order.status === OrderStatus.COURIER_ASSIGNED || Boolean(order.history?.processing);
 
     // Prefer 'Start processing' for newly created or on-hold orders so the CTA reads
     // as expected in the UI (Created -> Start processing). This allows
@@ -1159,6 +1165,17 @@ const OrderDetails: React.FC = () => {
         nextStatus: OrderStatus.CUTTING_AND_SEWING,
         historyKey: 'cuttingAndSewing',
         description: 'Confirm that the printed fabric is moving to cutting and sewing.',
+        enabled: canMoveCurrentOrderToProcessing,
+      };
+    }
+
+    if (isSofaCover && order.status === OrderStatus.CUTTING_AND_SEWING) {
+      return {
+        action: 'ready' as const,
+        label: 'Mark as Ready',
+        nextStatus: OrderStatus.READY,
+        historyKey: 'ready',
+        description: 'Confirm that the order is ready to be assigned to a courier.',
         enabled: canMoveCurrentOrderToProcessing,
       };
     }
@@ -1319,7 +1336,7 @@ const OrderDetails: React.FC = () => {
       });
       return null;
     }
-    if (!canSendCurrentOrderToCourier) {
+    if (!canSendCurrentOrderToCourierPermission || (!canSendCurrentOrderToCourier && !isEditingManualCourier)) {
       throw new Error('You do not have permission to assign a courier to this order.');
     }
     const noteText = details ? ` ${details.trim()}` : '';
@@ -1360,7 +1377,17 @@ const OrderDetails: React.FC = () => {
   };
 
   const openCourierSelectionModal = () => {
+    setIsEditingManualCourier(false);
     setShowCourierSelectionModal(true);
+  };
+
+  const openManualCourierEdit = () => {
+    setIsEditingManualCourier(true);
+    setIsRepairCourierAssignment(order?.status === OrderStatus.REPAIR_COURIER_ASSIGNED);
+    setIsExchangeConsignment(false);
+    setManualDeliveryPersonId(order?.deliveryPersonId || '');
+    setManualShippingCost(order?.deliveryPersonShippingCost == null ? '' : String(order.deliveryPersonShippingCost));
+    setShowManualCourierModal(true);
   };
 
   const closeCourierSelectionModal = () => {
@@ -1389,14 +1416,7 @@ const OrderDetails: React.FC = () => {
 
   const handleAssignManualCourier = async () => {
     if (!order) return;
-    const shouldAutoMarkPicked = isSofaCover && !isRepairCourierAssignment && !isExchangeConsignment;
-    const needsShippingExpense = shouldAutoMarkPicked
-      && Number(manualShippingCost) > 0
-      && !order.deliveryPersonShippingExpenseRecorded;
-    if (needsShippingExpense && (!selectedShippingAccountId || !selectedShippingCategoryId)) {
-      toast.error(translateInventoryText('Select an account and expense category before assigning the delivery person.'));
-      return;
-    }
+    const shouldAutoMarkPicked = isSofaCover && !isRepairCourierAssignment && !isExchangeConsignment && !isEditingManualCourier;
     setIsAssigningManualCourier(true);
     try {
       const courierHistory = await assignCourier(manualCourierNote.trim() || 'No details');
@@ -1405,16 +1425,11 @@ const OrderDetails: React.FC = () => {
         if (!canMoveCurrentOrderToPickedPermission) {
           toast.warning('Delivery person assigned. You do not have permission to mark the order as picked.');
         } else {
-          const shippingExpenseSelection = needsShippingExpense ? {
-            deliveryShippingExpenseAccountId: selectedShippingAccountId,
-            deliveryShippingExpenseCategoryId: selectedShippingCategoryId,
-          } : undefined;
           wasMarkedPicked = await updateStatus(
             OrderStatus.PICKED,
             'picked',
             `Marked as picked by courier, on ${formatHistoryMoment(new Date())}`,
             {
-              ...(shippingExpenseSelection || {}),
               history: courierHistory ? { ...order.history, courier: courierHistory } : undefined,
             },
           );
@@ -1423,9 +1438,13 @@ const OrderDetails: React.FC = () => {
       setShowManualCourierModal(false);
       setManualCourierNote('');
       const wasRepairCourierAssignment = isRepairCourierAssignment;
+      const wasEditingManualCourier = isEditingManualCourier;
       setIsRepairCourierAssignment(false);
+      setIsEditingManualCourier(false);
       setIsExchangeConsignment(false);
-      if (wasMarkedPicked) {
+      if (wasEditingManualCourier) {
+        toast.success(wasRepairCourierAssignment ? 'Repair delivery person assignment updated.' : 'Courier assignment updated.');
+      } else if (wasMarkedPicked) {
         toast.success(wasRepairCourierAssignment ? 'Repair delivery person assigned successfully.' : isExchangeConsignment ? 'Exchange courier assigned successfully.' : shouldAutoMarkPicked ? 'Delivery person assigned and order marked as picked.' : 'Courier assigned successfully.');
       } else if (shouldAutoMarkPicked && canMoveCurrentOrderToPickedPermission) {
         toast.info('Delivery person assigned. The order remains at Courier assigned.');
@@ -1458,19 +1477,10 @@ const OrderDetails: React.FC = () => {
   const selectedShippingCategoryId = pickedShippingCategoryId || defaultShippingCategoryId;
   const isRepairPickupTransition = pendingStatusTransition?.action === 'repairPick';
   const requiresDeliveryShippingExpenseSelection = isSofaCover
-    && (pendingStatusTransition?.action === 'pick' || isRepairPickupTransition)
+    && isRepairPickupTransition
     && Boolean(order?.deliveryPersonId)
     && Number(order?.deliveryPersonShippingCost || 0) > 0
     && (isRepairPickupTransition || !order?.deliveryPersonShippingExpenseRecorded);
-  const requiresManualCourierShippingExpenseSelection = isSofaCover
-    && showManualCourierModal
-    && !isRepairCourierAssignment
-    && !isExchangeConsignment
-    && Boolean(manualDeliveryPersonId)
-    && Number(manualShippingCost) > 0
-    && !order?.deliveryPersonShippingExpenseRecorded
-    && canMoveCurrentOrderToPickedPermission;
-
   const handleConfirmStatusTransition = async () => {
     if (!pendingStatusTransition) return;
     if (requiresDeliveryShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId)) {
@@ -1486,6 +1496,8 @@ const OrderDetails: React.FC = () => {
       await markProcessing();
     } else if (pendingStatusTransition.action === 'cuttingAndSewing') {
       await markCuttingAndSewing();
+    } else if (pendingStatusTransition.action === 'ready') {
+      await updateStatus(OrderStatus.READY, 'ready', `Marked as ready by ${user.name}, on ${formatHistoryMoment(new Date())}`);
     } else if (pendingStatusTransition.action === 'assignCourier') {
       openCourierSelectionModal();
     } else if (pendingStatusTransition.action === 'repairAssignCourier') {
@@ -2245,6 +2257,14 @@ const OrderDetails: React.FC = () => {
                       <button onClick={() => navigate(`/orders/edit/${order.id}`)} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
                         {ICONS.Edit} Edit Order
                       </button>
+                    )}
+                    {isSofaCover && order.deliveryPersonId && (
+                      ((order.status === OrderStatus.COURIER_ASSIGNED && canSendCurrentOrderToCourierPermission)
+                        || (order.status === OrderStatus.REPAIR_COURIER_ASSIGNED && canProcessReturnExchange)) && (
+                        <button onClick={() => { openManualCourierEdit(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
+                          {ICONS.Edit} Edit courier assignment
+                        </button>
+                      )
                     )}
                     {canFinalizeCurrentOrder && (
                       <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700" onClick={() => { openCompletion(); setIsActionOpen(false); }}>
@@ -3387,14 +3407,14 @@ const OrderDetails: React.FC = () => {
 
       {showManualCourierModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/40" onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); }} />
+          <div className="fixed inset-0 bg-black/40" onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); setIsEditingManualCourier(false); }} />
           <div className="relative w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in scale-in-100 duration-300">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{isRepairCourierAssignment ? 'Assign Repair Delivery Person' : isSofaCover ? 'Assign Delivery Person' : 'Manual Courier Assignment'}</h2>
-                <p className="text-sm text-gray-500">{isSofaCover ? translateInventoryText(`${isRepairCourierAssignment ? 'Choose who will pick up the item for repair' : 'Choose the delivery person'} and enter the shipping cost.`) : 'Add a note and assign the order to a courier manually.'}</p>
+                <h2 className="text-xl font-bold text-gray-900">{isEditingManualCourier ? (isRepairCourierAssignment ? 'Edit Repair Delivery Person' : 'Edit Delivery Person') : isRepairCourierAssignment ? 'Assign Repair Delivery Person' : isSofaCover ? 'Assign Delivery Person' : 'Manual Courier Assignment'}</h2>
+                <p className="text-sm text-gray-500">{isSofaCover ? translateInventoryText(`${isEditingManualCourier ? 'Update' : 'Choose'} ${isRepairCourierAssignment ? 'who will pick up the item for repair' : 'the delivery person'} and enter the shipping cost.`) : 'Add a note and assign the order to a courier manually.'}</p>
               </div>
-              <button onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); }} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
+              <button onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); setIsEditingManualCourier(false); }} className="text-gray-400 hover:text-gray-600 text-3xl leading-none">×</button>
             </div>
             <div className="p-6 space-y-4">
               {isSofaCover ? (
@@ -3415,35 +3435,6 @@ const OrderDetails: React.FC = () => {
                     Shipping cost <span className="text-red-500">*</span>
                     <input type="number" min="0" step="0.01" inputMode="decimal" value={manualShippingCost} onChange={(event) => setManualShippingCost(event.target.value)} required className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
                   </label>
-                  {requiresManualCourierShippingExpenseSelection && (
-                    <div className="space-y-4 border-t border-gray-100 pt-4">
-                      <p className="text-sm font-semibold text-gray-700">Shipping expense for pickup</p>
-                      <label className="block space-y-1.5 text-sm font-semibold text-gray-700">
-                        Account <span className="text-red-500">*</span>
-                        <select
-                          value={selectedShippingAccountId}
-                          onChange={(event) => setPickedShippingAccountId(event.target.value)}
-                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                          required
-                        >
-                          <option value="">Select account</option>
-                          {accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {formatCurrency(account.currentBalance)}</option>)}
-                        </select>
-                      </label>
-                      <label className="block space-y-1.5 text-sm font-semibold text-gray-700">
-                        Expense category <span className="text-red-500">*</span>
-                        <select
-                          value={selectedShippingCategoryId}
-                          onChange={(event) => setPickedShippingCategoryId(event.target.value)}
-                          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                          required
-                        >
-                          <option value="">Select expense category</option>
-                          {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                        </select>
-                      </label>
-                    </div>
-                  )}
                 </>
               ) : (
                 <>
@@ -3460,7 +3451,7 @@ const OrderDetails: React.FC = () => {
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
-                  onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); }}
+                  onClick={() => { setShowManualCourierModal(false); setIsRepairCourierAssignment(false); setIsEditingManualCourier(false); }}
                   variant="ghost"
                   className="w-full sm:w-auto"
                 >
@@ -3472,9 +3463,9 @@ const OrderDetails: React.FC = () => {
                   variant="primary"
                   className="w-full sm:w-auto"
                   loading={isAssigningManualCourier}
-                  disabled={isAssigningManualCourier || (isSofaCover && (!manualDeliveryPersonId || manualShippingCost === '')) || (requiresManualCourierShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId))}
+                  disabled={isAssigningManualCourier || (isSofaCover && (!manualDeliveryPersonId || manualShippingCost === ''))}
                 >
-                  {isAssigningManualCourier ? 'Assigning...' : isSofaCover ? 'Assign Delivery Person' : 'Assign Courier'}
+                  {isAssigningManualCourier ? (isEditingManualCourier ? 'Saving...' : 'Assigning...') : isEditingManualCourier ? 'Save Changes' : isSofaCover ? 'Assign Delivery Person' : 'Assign Courier'}
                 </Button>
               </div>
             </div>
