@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_commission_based TINYINT(1) NOT NULL DEFAULT 0,
   fixed_salary DECIMAL(12,2) NULL,
   unit_amount DECIMAL(12,2) NULL,
+  unit_amount_type VARCHAR(16) NULL DEFAULT 'amount',
   password_hash VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS users (
   KEY idx_users_created_at (created_at),
   KEY idx_users_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE `users`
+  ADD COLUMN IF NOT EXISTS `unit_amount_type` VARCHAR(16) NULL DEFAULT 'amount';
 CREATE TABLE IF NOT EXISTS customers (
   id VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,

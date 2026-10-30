@@ -56,6 +56,7 @@ const StandardUserForm: React.FC = () => {
     isCommissionBased: true,
     fixedSalary: null,
     unitAmount: null,
+    unitAmountType: 'amount',
     compensationType: 'commission',
   });
 
@@ -80,6 +81,7 @@ const StandardUserForm: React.FC = () => {
         isCommissionBased: Boolean(existingUser.isCommissionBased),
         fixedSalary: existingUser.fixedSalary ?? null,
         unitAmount: existingUser.unitAmount ?? null,
+        unitAmountType: existingUser.unitAmountType === 'percentage' ? 'percentage' : 'amount',
         compensationType: existingCompensationType,
       });
     }
@@ -152,6 +154,9 @@ const StandardUserForm: React.FC = () => {
     unitAmount: isEmployeeTarget && (form.compensationType === 'commission' || form.compensationType === 'hybrid')
       ? form.unitAmount ?? null
       : null,
+    unitAmountType: isEmployeeTarget && (form.compensationType === 'commission' || form.compensationType === 'hybrid')
+      ? form.unitAmountType === 'percentage' ? 'percentage' : 'amount'
+      : 'amount',
   });
 
   const handleSave = async () => {
@@ -418,14 +423,24 @@ const StandardUserForm: React.FC = () => {
 
                       {form.compensationType === 'commission' && (
                         <div className="space-y-1">
-                          <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Amount</label>
-                          <NumericInput
-                            value={form.unitAmount ?? ''}
-                            onChange={(value) => setFormValue('unitAmount', value)}
-                            placeholder="Leave empty to use global default"
-                            className="rounded-xl border bg-white"
-                          />
-                          <p className="text-xs font-medium text-gray-500">Amount per eligible order. Falls back to the global wallet setting if left empty.</p>
+                          <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Credit</label>
+                          <div className="flex gap-2">
+                            <NumericInput
+                              value={form.unitAmount ?? ''}
+                              onChange={(value) => setFormValue('unitAmount', value)}
+                              placeholder="Leave empty to use global default"
+                              className="min-w-0 flex-1 rounded-xl border bg-white"
+                              allowDecimals={form.unitAmountType === 'percentage'}
+                            />
+                            <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
+                              {(['amount', 'percentage'] as const).map((unitAmountType) => (
+                                <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white' : 'text-gray-500 hover:bg-white'}`}>
+                                  {unitAmountType === 'amount' ? '৳' : '%'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs font-medium text-gray-500">{form.unitAmountType === 'percentage' ? 'Percentage of each eligible order total.' : 'Amount per eligible order.'} Falls back to the global wallet setting if left empty.</p>
                         </div>
                       )}
 
@@ -442,14 +457,24 @@ const StandardUserForm: React.FC = () => {
                             <p className="text-xs font-medium text-gray-500">Must be greater than zero before this employee can be paid.</p>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Amount</label>
-                            <NumericInput
-                              value={form.unitAmount ?? ''}
-                              onChange={(value) => setFormValue('unitAmount', value)}
-                              placeholder="Leave empty to use global default"
-                              className="rounded-xl border bg-white"
-                            />
-                            <p className="text-xs font-medium text-gray-500">Amount per eligible order. Falls back to the global wallet setting if left empty.</p>
+                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Unit Credit</label>
+                            <div className="flex gap-2">
+                              <NumericInput
+                                value={form.unitAmount ?? ''}
+                                onChange={(value) => setFormValue('unitAmount', value)}
+                                placeholder="Leave empty to use global default"
+                                className="min-w-0 flex-1 rounded-xl border bg-white"
+                                allowDecimals={form.unitAmountType === 'percentage'}
+                              />
+                              <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
+                                {(['amount', 'percentage'] as const).map((unitAmountType) => (
+                                  <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white' : 'text-gray-500 hover:bg-white'}`}>
+                                    {unitAmountType === 'amount' ? '৳' : '%'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <p className="text-xs font-medium text-gray-500">{form.unitAmountType === 'percentage' ? 'Percentage of each eligible order total.' : 'Amount per eligible order.'} Falls back to the global wallet setting if left empty.</p>
                           </div>
                         </>
                       )}

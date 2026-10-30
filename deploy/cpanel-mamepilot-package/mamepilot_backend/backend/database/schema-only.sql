@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_commission_based TINYINT(1) NOT NULL DEFAULT 0,
   fixed_salary DECIMAL(12,2) NULL,
   unit_amount DECIMAL(12,2) NULL,
+  unit_amount_type VARCHAR(16) NULL DEFAULT 'amount',
   password_hash VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -159,6 +160,8 @@ CREATE TABLE IF NOT EXISTS users (
   KEY idx_users_created_at (created_at),
   KEY idx_users_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('users', 'unit_amount_type', 'VARCHAR(16) NULL DEFAULT ''amount''');
 
 CREATE TABLE IF NOT EXISTS customers (
   id VARCHAR(64) NOT NULL,
@@ -4156,6 +4159,8 @@ CALL sp_add_col('courier_webhook_events', 'idempotency_key', 'VARCHAR(255) NULL'
 CALL sp_modify_col('products', 'stock', 'DECIMAL(12,3) NOT NULL DEFAULT 0.000');
 
 -- Migration: 2026-10-30_wallet_percentage_delivery_person_payroll.sql
+CALL sp_add_col('users', 'unit_amount_type', 'VARCHAR(16) NULL DEFAULT ''amount''');
+
 CALL sp_add_col('payroll_settings', 'unit_amount_type', 'VARCHAR(16) NOT NULL DEFAULT ''amount''');
 
 CREATE TABLE IF NOT EXISTS delivery_person_payments (

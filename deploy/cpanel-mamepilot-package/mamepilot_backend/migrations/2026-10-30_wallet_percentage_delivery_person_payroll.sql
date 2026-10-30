@@ -1,4 +1,7 @@
 -- Add percentage wallet credits and sofa-cover delivery person payroll.
+ALTER TABLE `users`
+  ADD COLUMN IF NOT EXISTS `unit_amount_type` VARCHAR(16) NULL DEFAULT 'amount';
+
 ALTER TABLE `payroll_settings`
   ADD COLUMN IF NOT EXISTS `unit_amount_type` VARCHAR(16) NOT NULL DEFAULT 'amount';
 

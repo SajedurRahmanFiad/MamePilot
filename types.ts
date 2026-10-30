@@ -235,6 +235,7 @@ export interface User {
   compensationType?: 'commission' | 'fixed' | 'hybrid' | string;
   fixedSalary?: number | null;
   unitAmount?: number | null;
+  unitAmountType?: 'amount' | 'percentage';
   password?: string;
   createdAt?: string;
   deletedAt?: string;

@@ -1379,6 +1379,7 @@ abstract class BaseService
             'compensationType' => $compensationType,
             'fixedSalary' => $fixedSalary,
             'unitAmount' => $unitAmount,
+            'unitAmountType' => ($row['unit_amount_type'] ?? $row['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount',
             'createdAt' => $this->toIso($row['created_at'] ?? null),
             'deletedAt' => $this->toIso($row['deleted_at'] ?? null),
             'deletedBy' => $this->nullableString($row['deleted_by'] ?? null),

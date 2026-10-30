@@ -10091,10 +10091,11 @@ final class OperationsApi extends BaseService
         // Attach per-user unit_amount when the column exists
         try {
             $unitRow = $this->database->fetchOne(
-                'SELECT unit_amount FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+                'SELECT unit_amount, unit_amount_type FROM users WHERE id = :id AND deleted_at IS NULL LIMIT 1',
                 [':id' => $createdBy]
             );
             $creator['unit_amount'] = $unitRow['unit_amount'] ?? null;
+            $creator['unit_amount_type'] = $unitRow['unit_amount_type'] ?? null;
         } catch (\Throwable $e) {
             $creator['unit_amount'] = null;
         }
@@ -10132,7 +10133,7 @@ final class OperationsApi extends BaseService
         // Use per-user unit amount if set, otherwise fall back to global payroll settings
         $userUnitAmount = ($creator['unit_amount'] ?? null) !== null ? (float) $creator['unit_amount'] : null;
         $configuredUnitAmount = round($userUnitAmount ?? (float) ($effectiveSettings['unitAmount'] ?? 0), 2);
-        $unitAmountType = ($effectiveSettings['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount';
+        $unitAmountType = ($userUnitAmount !== null ? ($creator['unit_amount_type'] ?? 'amount') : ($effectiveSettings['unitAmountType'] ?? 'amount')) === 'percentage' ? 'percentage' : 'amount';
         $unitAmount = $unitAmountType === 'percentage'
             ? round(max(0.0, (float) ($order['total'] ?? 0)) * $configuredUnitAmount / 100, 2)
             : $configuredUnitAmount;

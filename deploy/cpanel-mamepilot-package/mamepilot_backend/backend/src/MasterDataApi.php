@@ -436,6 +436,10 @@ final class MasterDataApi extends BaseService
         $unitAmount = $unitAmountInput === null || $unitAmountInput === ''
             ? null
             : max(0, (float) $unitAmountInput);
+        $unitAmountType = ($params['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount';
+        if ($unitAmountType === 'percentage' && $unitAmount !== null && $unitAmount > 100) {
+            throw new RuntimeException('Commission percentage must be between 0 and 100.');
+        }
         if ($requestedRole === 'Employee' && !$isCommissionBased && ($fixedSalary === null || $fixedSalary <= 0)) {
             throw new RuntimeException('A fixed-salary employee must have a monthly salary greater than zero.');
         }
@@ -507,6 +511,11 @@ final class MasterDataApi extends BaseService
             } catch (\Throwable $e) {
                 // Column unit_amount does not exist yet – ignore
             }
+        }
+        try {
+            $this->database->execute('UPDATE users SET unit_amount_type = :uat WHERE id = :id', [':uat' => $unitAmountType, ':id' => $id]);
+        } catch (\Throwable $e) {
+            // Column unit_amount_type does not exist yet - ignore
         }
 
         return $this->fetchUserById(['id' => $id]) ?? throw new RuntimeException('Failed to create user.');
@@ -589,6 +598,14 @@ final class MasterDataApi extends BaseService
         if (array_key_exists('unitAmount', $updates) || array_key_exists('unit_amount', $updates)) {
             $unitAmount = $updates['unitAmount'] ?? $updates['unit_amount'] ?? null;
             $payload['unit_amount'] = $unitAmount === null || $unitAmount === '' ? null : max(0, (float) $unitAmount);
+        }
+        if (array_key_exists('unitAmountType', $updates) || array_key_exists('unit_amount_type', $updates)) {
+            $unitAmountType = ($updates['unitAmountType'] ?? $updates['unit_amount_type'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount';
+            $effectiveUnitAmount = array_key_exists('unit_amount', $payload) ? $payload['unit_amount'] : null;
+            if ($unitAmountType === 'percentage' && $effectiveUnitAmount !== null && $effectiveUnitAmount > 100) {
+                throw new RuntimeException('Commission percentage must be between 0 and 100.');
+            }
+            $payload['unit_amount_type'] = $unitAmountType;
         }
         if (!empty($updates['password'])) {
             $payload['password_hash'] = password_hash((string) $updates['password'], PASSWORD_BCRYPT, ['cost' => 12]);
