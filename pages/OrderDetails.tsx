@@ -1426,38 +1426,25 @@ const OrderDetails: React.FC = () => {
 
   const handleAssignManualCourier = async () => {
     if (!order) return;
-    const shouldAutoMarkPicked = isSofaCover && !isRepairCourierAssignment && !isExchangeConsignment && !isEditingManualCourier;
     setIsAssigningManualCourier(true);
     try {
-      const courierHistory = await assignCourier(manualCourierNote.trim() || 'No details');
-      let wasMarkedPicked = !shouldAutoMarkPicked;
-      if (shouldAutoMarkPicked) {
-        if (!canMoveCurrentOrderToPickedPermission) {
-          toast.warning('Delivery person assigned. You do not have permission to mark the order as picked.');
-        } else {
-          wasMarkedPicked = await updateStatus(
-            OrderStatus.PICKED,
-            'picked',
-            `Marked as picked by courier, on ${formatHistoryMoment(new Date())}`,
-            {
-              history: courierHistory ? { ...order.history, courier: courierHistory } : undefined,
-            },
-          );
-        }
-      }
+      await assignCourier(manualCourierNote.trim() || 'No details');
       setShowManualCourierModal(false);
       setManualCourierNote('');
       const wasRepairCourierAssignment = isRepairCourierAssignment;
       const wasEditingManualCourier = isEditingManualCourier;
+      const wasExchangeConsignment = isExchangeConsignment;
       setIsRepairCourierAssignment(false);
       setIsEditingManualCourier(false);
       setIsExchangeConsignment(false);
       if (wasEditingManualCourier) {
         toast.success(wasRepairCourierAssignment ? 'Repair delivery person assignment updated.' : 'Courier assignment updated.');
-      } else if (wasMarkedPicked) {
-        toast.success(wasRepairCourierAssignment ? 'Repair delivery person assigned successfully.' : isExchangeConsignment ? 'Exchange courier assigned successfully.' : shouldAutoMarkPicked ? 'Delivery person assigned and order marked as picked.' : 'Courier assigned successfully.');
-      } else if (shouldAutoMarkPicked && canMoveCurrentOrderToPickedPermission) {
-        toast.info('Delivery person assigned. The order remains at Courier assigned.');
+      } else if (wasRepairCourierAssignment) {
+        toast.success('Repair delivery person assigned successfully.');
+      } else if (wasExchangeConsignment) {
+        toast.success('Exchange courier assigned successfully.');
+      } else {
+        toast.success(isSofaCover ? 'Delivery person assigned successfully.' : 'Courier assigned successfully.');
       }
     } catch (err) {
       console.error('Failed to assign courier manually:', err);
@@ -2302,7 +2289,7 @@ const OrderDetails: React.FC = () => {
                       ((order.status === OrderStatus.COURIER_ASSIGNED && canSendCurrentOrderToCourierPermission)
                         || (order.status === OrderStatus.REPAIR_COURIER_ASSIGNED && canProcessReturnExchange)) && (
                         <button onClick={() => { openManualCourierEdit(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
-                          {ICONS.Edit} Edit courier assignment
+                          {ICONS.Edit} Edit delivery person / shipping cost
                         </button>
                       )
                     )}
