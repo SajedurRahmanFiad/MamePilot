@@ -434,7 +434,7 @@ const StandardUserForm: React.FC = () => {
                             />
                             <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
                               {(['amount', 'percentage'] as const).map((unitAmountType) => (
-                                <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white' : 'text-gray-500 hover:bg-white'}`}>
+                                <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} style={form.unitAmountType === unitAmountType ? { backgroundColor: theme.colors.primary[600], color: '#fff' } : undefined} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? '' : 'text-gray-500 hover:bg-white'}`}>
                                   {unitAmountType === 'amount' ? '৳' : '%'}
                                 </button>
                               ))}
@@ -468,7 +468,7 @@ const StandardUserForm: React.FC = () => {
                               />
                               <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
                                 {(['amount', 'percentage'] as const).map((unitAmountType) => (
-                                  <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white' : 'text-gray-500 hover:bg-white'}`}>
+                                  <button key={unitAmountType} type="button" onClick={() => setFormValue('unitAmountType', unitAmountType)} style={form.unitAmountType === unitAmountType ? { backgroundColor: theme.colors.primary[600], color: '#fff' } : undefined} className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black ${form.unitAmountType === unitAmountType ? '' : 'text-gray-500 hover:bg-white'}`}>
                                     {unitAmountType === 'amount' ? '৳' : '%'}
                                   </button>
                                 ))}

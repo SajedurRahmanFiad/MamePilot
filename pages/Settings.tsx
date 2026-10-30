@@ -1858,7 +1858,8 @@ const SettingsPage: React.FC = () => {
                             key={unitAmountType}
                             type="button"
                             onClick={() => setWalletSettings((current) => ({ ...current, unitAmountType }))}
-                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+                            style={walletSettings.unitAmountType === unitAmountType ? { backgroundColor: theme.colors.primary[600], color: '#fff' } : undefined}
+                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'shadow-sm' : 'text-gray-500 hover:bg-white'}`}
                           >
                             {unitAmountType === 'amount' ? '৳' : '%'}
                           </button>
@@ -1967,7 +1968,8 @@ const SettingsPage: React.FC = () => {
                             key={unitAmountType}
                             type="button"
                             onClick={() => setWalletSettings((current) => ({ ...current, unitAmountType }))}
-                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+                            style={walletSettings.unitAmountType === unitAmountType ? { backgroundColor: theme.colors.primary[600], color: '#fff' } : undefined}
+                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'shadow-sm' : 'text-gray-500 hover:bg-white'}`}
                           >
                             {unitAmountType === 'amount' ? '৳' : '%'}
                           </button>
