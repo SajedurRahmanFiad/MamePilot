@@ -98,11 +98,12 @@ isLoading,
           categories[0]?.id ||
           '');
       const fallbackAdditionalExpenseCategoryId =
-        (systemDefaults?.expenseCategoryId && categories.some((category) => category.id === systemDefaults.expenseCategoryId)
+        shippingCostsCategory?.id ||
+        ((systemDefaults?.expenseCategoryId && categories.some((category) => category.id === systemDefaults.expenseCategoryId)
           ? systemDefaults.expenseCategoryId
           : '') ||
         categories[0]?.id ||
-        '';
+        '');
 
       if (!next.accountId && fallbackAccountId) next.accountId = fallbackAccountId;
       if (!next.paymentMethod && fallbackPaymentMethod) next.paymentMethod = fallbackPaymentMethod;
@@ -251,7 +252,7 @@ isLoading,
                 <select
                   value={form.additionalExpenseCategoryId}
                   onChange={(event) => setForm((current) => ({ ...current, additionalExpenseCategoryId: event.target.value }))}
-                  disabled={isLoading || form.additionalExpenseAmount <= 0}
+                  disabled={isLoading}
                   className="w-full rounded-lg border border-amber-200 bg-white px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50"
                 >
                   <option value="">Select an expense category...</option>
