@@ -27,7 +27,7 @@ const PrintCollage: React.FC = () => {
   return (
     <main className="collage-print-document">
       {images.map((image, index) => (
-        <section className="collage-print-page" key={`${image}-${index}`}>
+        <section className={`collage-print-page${index < images.length - 1 ? ' collage-print-page-break' : ''}`} key={`${image}-${index}`}>
           <div className="collage-print-meta" aria-label="Collage print details">
             <span>Printed {printDate}</span>
             <span>Order {order?.orderNumber || '—'}</span>
@@ -40,7 +40,7 @@ const PrintCollage: React.FC = () => {
         @page { margin: 0; size: auto; }
         html, body, #root { margin: 0; min-height: 100%; background: #fff; }
         .collage-print-page { position: relative; box-sizing: border-box; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; break-after: auto; page-break-after: auto; }
-        .collage-print-page:not(:last-child) { break-after: page; page-break-after: always; }
+        .collage-print-page-break { break-after: page; page-break-after: always; }
         .collage-print-page img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
         .collage-print-meta { position: absolute; z-index: 1; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.7rem; color: #fff; background: rgba(15, 23, 42, 0.78); font: 600 12px/1.3 Arial, sans-serif; pointer-events: none; }
         @media print {
