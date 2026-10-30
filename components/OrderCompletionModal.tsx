@@ -288,7 +288,7 @@ isLoading,
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1">
                   <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Deduct From Account</label>
                   <select
@@ -301,23 +301,6 @@ isLoading,
                     {accounts.map((account) => (
                       <option key={account.id} value={account.id}>
                         {account.name} ({formatCurrency(account.currentBalance)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="ml-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Payment Method</label>
-                  <select
-                    value={form.paymentMethod}
-                    onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))}
-                    disabled={isLoading}
-                    className="w-full rounded-lg border border-gray-100 bg-gray-50 px-6 py-3.5 font-bold outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-                  >
-                    <option value="">Select a payment method...</option>
-                    {paymentMethods.map((paymentMethod) => (
-                      <option key={paymentMethod.id} value={paymentMethod.name}>
-                        {paymentMethod.name}
                       </option>
                     ))}
                   </select>

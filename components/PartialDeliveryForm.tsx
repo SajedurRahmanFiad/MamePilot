@@ -3,7 +3,7 @@ import { Button } from './Button';
 import { NumericInput } from './Input';
 import { formatCurrency } from '../constants';
 import { Order, ConfirmPartialDeliveryPayload } from '../types';
-import { useAccounts, usePaymentMethods, useSystemDefaults } from '../src/hooks/useQueries';
+import { useAccounts, useSystemDefaults } from '../src/hooks/useQueries';
 import { useCapabilities } from '../src/hooks/useCapabilities';
 import { translateBusinessInventoryTerms } from '../src/utils/businessMode';
 
@@ -32,14 +32,12 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
   onCancel,
 }) => {
   const { data: accounts = [] } = useAccounts();
-  const { data: paymentMethods = [] } = usePaymentMethods();
   const { data: systemDefaults } = useSystemDefaults();
   const { settings: capabilitySettings } = useCapabilities(isActive);
   const translateInventoryText = (text: string) => translateBusinessInventoryTerms(text, capabilitySettings?.businessMode);
 
   const [itemSelections, setItemSelections] = useState<ItemSelection[]>([]);
   const [accountId, setAccountId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('');
   const [note, setNote] = useState('');
   const [receivedAmount, setReceivedAmount] = useState(0);
 
@@ -62,10 +60,8 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
     setReceivedAmount(order.partialCodAmount ?? 0);
 
     const fallbackAccountId = systemDefaults?.defaultAccountId || accounts[0]?.id || '';
-    const fallbackPaymentMethod = systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '';
     setAccountId(fallbackAccountId);
-    setPaymentMethod(fallbackPaymentMethod);
-  }, [isActive, order, accounts, paymentMethods, systemDefaults]);
+  }, [isActive, order, accounts, systemDefaults]);
 
   const setItemReturnQty = (idx: number, qty: number) => {
     setItemSelections((prev) => {
@@ -106,9 +102,8 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
   const deliveredValue = totalOrderValue - returnedValue;
 
   const canSubmit = useMemo(() => {
-    if (!accountId || !paymentMethod) return false;
-    return true;
-  }, [accountId, paymentMethod]);
+    return Boolean(accountId);
+  }, [accountId]);
 
   const handleSubmit = async () => {
     if (!order) return;
@@ -120,7 +115,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
         returnQty: s.returnQty,
       })),
       accountId,
-      paymentMethod,
+      paymentMethod: systemDefaults?.defaultPaymentMethod || 'Cash',
       note,
       date: new Date().toISOString(),
       receivedAmount,
@@ -155,7 +150,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
 
       {/* Item selection */}
       <div className="space-y-3">
-        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items to mark as returned')}</p>
+        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">{translateInventoryText('Select items that are returned')}</p>
         {itemSelections.map((sel, idx) => {
           const isSelected = sel.returnQty > 0;
           return (
@@ -233,7 +228,7 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
 
       {/* Account selection */}
       <div className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Account</label>
             <select
@@ -245,20 +240,6 @@ const PartialDeliveryForm: React.FC<PartialDeliveryFormProps> = ({
               <option value="">Select account...</option>
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{acc.name} ({formatCurrency(acc.currentBalance)})</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Payment Method</label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              disabled={isLoading}
-              className="w-full rounded-lg border border-gray-100 bg-white px-3 py-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-[#3c5a82] disabled:opacity-50"
-            >
-              <option value="">Select method...</option>
-              {paymentMethods.map((pm) => (
-                <option key={pm.id} value={pm.name}>{pm.name}</option>
               ))}
             </select>
           </div>
