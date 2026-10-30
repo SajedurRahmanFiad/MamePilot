@@ -9,6 +9,8 @@ import type {
   NotificationDetailResponse,
   Customer,
   DeliveryPerson,
+  DeliveryPersonPayrollPayment,
+  DeliveryPersonPayrollSummary,
   CustomerSalesReportData,
   Order,
   OrderCreationResult,
@@ -610,6 +612,15 @@ export async function fetchPayrollHistory(params?: { paidAtFrom?: string; paidAt
 }
 export async function fetchPayrollSummaries(params: { periodStart: string; periodEnd: string; employeeId?: string; currentUser?: Pick<User, 'id' | 'role' | 'name'> | null; }): Promise<PayrollSummaryRow[]> {
   return call<PayrollSummaryRow[]>('fetchPayrollSummaries', params);
+}
+export async function fetchDeliveryPersonPayrollSummaries(params: { periodStart: string; periodEnd: string }): Promise<DeliveryPersonPayrollSummary[]> {
+  return call<DeliveryPersonPayrollSummary[]>('fetchDeliveryPersonPayrollSummaries', params);
+}
+export async function payDeliveryPersonPayroll(payload: { deliveryPersonId: string; periodStart: string; periodEnd: string; periodKind: 'month' | 'custom'; periodLabel: string; requestedAmount?: number; bonusAmount?: number; deductionAmount?: number; accountId: string; paymentMethod: string; categoryId: string; paidAt: string; note?: string; }): Promise<DeliveryPersonPayrollPayment> {
+  return call<DeliveryPersonPayrollPayment>('payDeliveryPersonPayroll', payload);
+}
+export async function deleteDeliveryPersonPayrollPayment(id: string): Promise<{ success: boolean }> {
+  return call<{ success: boolean }>('deleteDeliveryPersonPayrollPayment', { id });
 }
 export async function markPayrollPaid(payload: { employeeId: string; periodStart: string; periodEnd: string; periodKind: 'month' | 'custom'; periodLabel: string; unitAmountSnapshot: number; countedStatusesSnapshot: any[]; orderCountSnapshot: number; amountSnapshot: number; note?: string; }): Promise<PayrollPayment> {
   return call<PayrollPayment>('markPayrollPaid', payload);

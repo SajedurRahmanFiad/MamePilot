@@ -2185,6 +2185,7 @@ export interface OrderSurveySnapshot {
 
 export interface PayrollSettings {
   unitAmount: number;
+  unitAmountType: 'amount' | 'percentage';
   countedStatuses: OrderStatus[];
 }
 
@@ -2253,6 +2254,47 @@ export interface PayrollSummaryRow {
   liveOrderCountDelta?: number;
 }
 
+export interface DeliveryPersonPayrollSummary {
+  deliveryPersonId: string;
+  deliveryPersonName: string;
+  deliveryPersonPhone: string;
+  periodStart: string;
+  periodEnd: string;
+  orderCount: number;
+  baseAmount: number;
+  basePaid: number;
+  bonusPaid: number;
+  deductionPaid: number;
+  netPaid: number;
+  remainingAmount: number;
+  paymentCount: number;
+  paymentStatus: 'paid' | 'partial' | 'unpaid';
+  lastPaymentId?: string | null;
+  lastPaidAt?: string | null;
+}
+
+export interface DeliveryPersonPayrollPayment {
+  id: string;
+  deliveryPersonId: string;
+  periodStart: string;
+  periodEnd: string;
+  periodKind: 'month' | 'custom' | string;
+  periodLabel: string;
+  orderCountSnapshot: number;
+  baseAmountSnapshot: number;
+  bonusAmount: number;
+  deductionAmount: number;
+  amountSnapshot: number;
+  isPartial: boolean;
+  transactionId?: string | null;
+  accountId?: string | null;
+  paymentMethod?: string | null;
+  categoryId?: string | null;
+  paidAt: string;
+  paidBy: string;
+  note?: string | null;
+}
+
 export type WalletEntryType =
   | 'order_credit'
   | 'order_reversal'
@@ -2262,6 +2304,7 @@ export type WalletEntryType =
 
 export interface WalletSettings {
   unitAmount: number;
+  unitAmountType: 'amount' | 'percentage';
   countedStatuses: OrderStatus[];
 }
 

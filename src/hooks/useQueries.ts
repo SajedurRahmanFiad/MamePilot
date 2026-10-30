@@ -87,6 +87,7 @@ import {
   fetchPayrollEmployees,
   fetchPayrollHistory,
   fetchPayrollSummaries,
+  fetchDeliveryPersonPayrollSummaries,
   fetchWalletSettings,
   fetchEmployeeWalletCards,
   fetchEmployeeWalletCardsPage,
@@ -175,7 +176,9 @@ import type {
   PermissionsSettings,
   PayrollPayment,
   PayrollSettings,
+  DeliveryPersonPayrollSummary,
   PayrollSummaryRow,
+  DeliveryPersonPayrollSummary,
   ProductQuantitySoldReport,
   ProfitLossReport,
   CompanywisePerformanceReport,
@@ -1831,6 +1834,15 @@ export function usePayrollHistory(
     enabled: enabled && !!currentUser?.id,
     staleTime: 60 * 1000,
     refetchOnMount: false,
+  });
+}
+
+export function useDeliveryPersonPayrollSummaries(periodStart?: string, periodEnd?: string, enabled: boolean = true): UseQueryResult<DeliveryPersonPayrollSummary[], Error> {
+  return useQuery({
+    queryKey: ['delivery-person-payroll', 'summaries', periodStart, periodEnd],
+    queryFn: () => fetchDeliveryPersonPayrollSummaries({ periodStart: periodStart || '', periodEnd: periodEnd || '' }),
+    enabled: enabled && !!periodStart && !!periodEnd,
+    staleTime: 60 * 1000,
   });
 }
 

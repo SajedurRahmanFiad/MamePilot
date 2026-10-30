@@ -198,6 +198,7 @@ const SettingsPage: React.FC = () => {
   ] as OrderStatus[];
   const [walletSettings, setWalletSettings] = useState({
     unitAmount: 0,
+    unitAmountType: 'amount' as 'amount' | 'percentage',
     countedStatuses: PAYROLL_STATUS_OPTIONS,
   });
   const payrollSettings = walletSettings;
@@ -449,6 +450,7 @@ const SettingsPage: React.FC = () => {
     );
     setWalletSettings({
       ...walletSettingsData,
+      unitAmountType: walletSettingsData.unitAmountType === 'percentage' ? 'percentage' : 'amount',
       countedStatuses: countedStatuses.length > 0 ? countedStatuses : PAYROLL_STATUS_OPTIONS,
     });
   }, [walletSettingsData]);
@@ -699,7 +701,7 @@ const SettingsPage: React.FC = () => {
     walletJustSavedRef.current = true;
     const response = await batchUpdateMutation.mutateAsync({ wallet: walletSettings });
     if (response?.wallet) {
-      db.settings.payroll = { ...db.settings.payroll, unitAmount: response.wallet.unitAmount, countedStatuses: response.wallet.countedStatuses };
+      db.settings.payroll = { ...db.settings.payroll, unitAmount: response.wallet.unitAmount, unitAmountType: response.wallet.unitAmountType, countedStatuses: response.wallet.countedStatuses };
     }
     saveDb();
   }, [walletSettings, batchUpdateMutation, queryClient]);
@@ -1837,26 +1839,40 @@ const SettingsPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (৳)</label>
-                    <NumericInput
-                      value={walletSettings.unitAmount}
-                      onChange={(value) =>
-                        setWalletSettings((current) => ({
-                          ...current,
-                          unitAmount: Math.max(0, value),
-                        }))
-                      }
-                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
-                      allowDecimals={false}
-                    />
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Credit</label>
+                    <div className="flex gap-2">
+                      <NumericInput
+                        value={walletSettings.unitAmount}
+                        onChange={(value) =>
+                          setWalletSettings((current) => ({
+                            ...current,
+                            unitAmount: Math.max(0, value),
+                          }))
+                        }
+                        className="min-w-0 flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                        allowDecimals={walletSettings.unitAmountType === 'percentage'}
+                      />
+                      <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
+                        {(['amount', 'percentage'] as const).map((unitAmountType) => (
+                          <button
+                            key={unitAmountType}
+                            type="button"
+                            onClick={() => setWalletSettings((current) => ({ ...current, unitAmountType }))}
+                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+                          >
+                            {unitAmountType === 'amount' ? '৳' : '%'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <p className="text-xs font-medium text-gray-400">
-                      Employees earn this amount only when their order matches one of the payable statuses below.
+                      {walletSettings.unitAmountType === 'percentage' ? 'Employees earn this percentage of each eligible order total.' : 'Employees earn this amount for each eligible order.'}
                     </p>
                   </div>
 
                   <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] px-5 py-5">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Current Preview</p>
-                    <p className="mt-3 text-lg font-black text-gray-900">{formatCurrency(walletSettings.unitAmount)}</p>
+                    <p className="mt-3 text-lg font-black text-gray-900">{walletSettings.unitAmount}{walletSettings.unitAmountType === 'percentage' ? '%' : ' ৳'}</p>
                     <p className="mt-2 text-sm font-medium text-gray-500">
                       Applied to each new employee-created order as a wallet credit.
                     </p>
@@ -1932,26 +1948,40 @@ const SettingsPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Amount (৳)</label>
-                    <NumericInput
-                      value={walletSettings.unitAmount}
-                      onChange={(value) =>
-                        setWalletSettings((current) => ({
-                          ...current,
-                          unitAmount: Math.max(0, value),
-                        }))
-                      }
-                      className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
-                      allowDecimals={false}
-                    />
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Unit Credit</label>
+                    <div className="flex gap-2">
+                      <NumericInput
+                        value={walletSettings.unitAmount}
+                        onChange={(value) =>
+                          setWalletSettings((current) => ({
+                            ...current,
+                            unitAmount: Math.max(0, value),
+                          }))
+                        }
+                        className="min-w-0 flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+                        allowDecimals={walletSettings.unitAmountType === 'percentage'}
+                      />
+                      <div className="flex shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1">
+                        {(['amount', 'percentage'] as const).map((unitAmountType) => (
+                          <button
+                            key={unitAmountType}
+                            type="button"
+                            onClick={() => setWalletSettings((current) => ({ ...current, unitAmountType }))}
+                            className={`min-w-12 rounded-lg px-3 py-2 text-sm font-black transition ${walletSettings.unitAmountType === unitAmountType ? 'bg-[#0f2f57] text-white shadow-sm' : 'text-gray-500 hover:bg-white'}`}
+                          >
+                            {unitAmountType === 'amount' ? '৳' : '%'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <p className="text-xs font-medium text-gray-400">
-                      Employees earn this amount every time they create a new order.
+                      {walletSettings.unitAmountType === 'percentage' ? 'Employees earn this percentage of each eligible order total.' : 'Employees earn this amount for each eligible order.'}
                     </p>
                   </div>
 
                   <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] px-5 py-5">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Current Preview</p>
-                    <p className="mt-3 text-lg font-black text-gray-900">{formatCurrency(walletSettings.unitAmount)}</p>
+                    <p className="mt-3 text-lg font-black text-gray-900">{walletSettings.unitAmount}{walletSettings.unitAmountType === 'percentage' ? '%' : ' ৳'}</p>
                     <p className="mt-2 text-sm font-medium text-gray-500">
                       Applied to employee orders that are currently in the selected payable statuses.
                     </p>

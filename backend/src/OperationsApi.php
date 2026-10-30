@@ -15,6 +15,20 @@ final class OperationsApi extends BaseService
         return trim((string) ($row['business_mode'] ?? '')) === 'sofa_cover';
     }
 
+    private function assertDeliveryPayrollAccess(bool $canPay = false): array
+    {
+        if (!$this->isSofaCoverBusinessMode()) {
+            throw new RuntimeException('Delivery person payroll is available only in Sofa Cover mode.');
+        }
+        $user = $this->currentUser();
+        $role = (string) ($user['role'] ?? '');
+        $permission = $canPay ? 'payroll.pay' : 'payroll.view';
+        if (!$this->hasAdminAccess($role) && !$this->currentUserHasPermission($permission)) {
+            throw new RuntimeException('You do not have permission to manage delivery person payroll.');
+        }
+        return $user;
+    }
+
     private function pageSize(array $params): int
     {
         return max(1, min(200, (int) ($params['pageSize'] ?? self::DEFAULT_PAGE_SIZE)));
@@ -10117,7 +10131,11 @@ final class OperationsApi extends BaseService
         $isPayable = $this->isWalletStatusPayable($status, $countedStatuses);
         // Use per-user unit amount if set, otherwise fall back to global payroll settings
         $userUnitAmount = ($creator['unit_amount'] ?? null) !== null ? (float) $creator['unit_amount'] : null;
-        $unitAmount = round($userUnitAmount ?? (float) ($effectiveSettings['unitAmount'] ?? 0), 2);
+        $configuredUnitAmount = round($userUnitAmount ?? (float) ($effectiveSettings['unitAmount'] ?? 0), 2);
+        $unitAmountType = ($effectiveSettings['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount';
+        $unitAmount = $unitAmountType === 'percentage'
+            ? round(max(0.0, (float) ($order['total'] ?? 0)) * $configuredUnitAmount / 100, 2)
+            : $configuredUnitAmount;
         $transition = $this->walletOrderTransition($activeAmount, $isPayable, $unitAmount);
         if ($transition === null) {
             return;
@@ -10992,6 +11010,10 @@ final class OperationsApi extends BaseService
                 throw new RuntimeException('Commission amount per eligible order must be a valid non-negative value.');
             }
         }
+        $unitAmountType = ($params['unitAmountType'] ?? $current['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount';
+        if ($unitAmountType === 'percentage' && (float) ($params['unitAmount'] ?? $current['unitAmount']) > 100) {
+            throw new RuntimeException('Commission percentage must be between 0 and 100.');
+        }
         if (array_key_exists('countedStatuses', $params)) {
             $submittedStatuses = is_array($params['countedStatuses']) ? $params['countedStatuses'] : [];
             if ($this->normalizePayrollStatuses($submittedStatuses, false) === []) {
@@ -11004,6 +11026,7 @@ final class OperationsApi extends BaseService
             [
                 'singleton' => 1,
                 'unit_amount' => array_key_exists('unitAmount', $params) ? $this->formatMoney($params['unitAmount']) : $current['unitAmount'],
+                'unit_amount_type' => $unitAmountType,
                 'counted_statuses' => $this->jsonEncode(
                     $this->normalizePayrollStatuses(
                         is_array($params['countedStatuses'] ?? null) ? $params['countedStatuses'] : $current['countedStatuses'],
@@ -11013,9 +11036,14 @@ final class OperationsApi extends BaseService
             ],
             fn(): array => $this->fetchPayrollSettingsInternal()
         );
-        if (json_encode($current['countedStatuses']) !== json_encode($updated['countedStatuses'])) {
+        if (
+            json_encode($current['countedStatuses']) !== json_encode($updated['countedStatuses'])
+            || $current['unitAmount'] !== $updated['unitAmount']
+            || $current['unitAmountType'] !== $updated['unitAmountType']
+        ) {
             $this->database->transaction(fn() => $this->syncWalletCreditsForPayableStatuses([
                 'unitAmount' => (float) $updated['unitAmount'],
+                'unitAmountType' => $updated['unitAmountType'],
                 'countedStatuses' => $updated['countedStatuses'],
             ]));
         }
@@ -11200,6 +11228,194 @@ final class OperationsApi extends BaseService
             (string) ($left['paidAt'] ?? '')
         ));
         return $history;
+    }
+
+    public function fetchDeliveryPersonPayrollSummaries(array $params): array
+    {
+        $this->assertDeliveryPayrollAccess();
+        [$periodStart, $periodEnd] = $this->requirePayrollPeriod($params);
+        $people = $this->database->fetchAll(
+            "SELECT dp.id, dp.name, dp.phone,
+                    COUNT(o.id) AS order_count,
+                    COALESCE(SUM(o.delivery_person_shipping_cost), 0) AS base_amount
+             FROM delivery_persons dp
+             LEFT JOIN orders o
+               ON o.delivery_person_id = dp.id
+              AND o.deleted_at IS NULL
+              AND o.status = 'Completed'
+              AND COALESCE(DATE(o.completed_at), o.order_date) BETWEEN :period_start AND :period_end
+             WHERE dp.deleted_at IS NULL
+             GROUP BY dp.id, dp.name, dp.phone
+             ORDER BY dp.name ASC",
+            [':period_start' => $periodStart, ':period_end' => $periodEnd]
+        );
+        $payments = $this->database->fetchAll(
+            'SELECT delivery_person_id,
+                SUBSTRING_INDEX(GROUP_CONCAT(id ORDER BY paid_at DESC, id DESC), ",", 1) AS last_payment_id,
+                    COUNT(*) AS payment_count,
+                    COALESCE(SUM(base_amount_snapshot), 0) AS base_paid,
+                    COALESCE(SUM(bonus_amount), 0) AS bonus_paid,
+                    COALESCE(SUM(deduction_amount), 0) AS deduction_paid,
+                    COALESCE(SUM(amount_snapshot), 0) AS net_paid,
+                    MAX(paid_at) AS last_paid_at
+             FROM delivery_person_payments
+             WHERE period_start = :period_start AND period_end = :period_end
+             GROUP BY delivery_person_id',
+            [':period_start' => $periodStart, ':period_end' => $periodEnd]
+        );
+        $paymentMap = [];
+        foreach ($payments as $payment) {
+            $paymentMap[(string) $payment['delivery_person_id']] = $payment;
+        }
+
+        return array_map(function (array $person) use ($paymentMap, $periodStart, $periodEnd): array {
+            $id = (string) $person['id'];
+            $payment = $paymentMap[$id] ?? [];
+            $baseAmount = round((float) ($person['base_amount'] ?? 0), 2);
+            $basePaid = round((float) ($payment['base_paid'] ?? 0), 2);
+            $remaining = round(max(0.0, $baseAmount - $basePaid), 2);
+            return [
+                'deliveryPersonId' => $id,
+                'deliveryPersonName' => (string) ($person['name'] ?? 'Delivery person'),
+                'deliveryPersonPhone' => (string) ($person['phone'] ?? ''),
+                'periodStart' => $periodStart,
+                'periodEnd' => $periodEnd,
+                'orderCount' => (int) ($person['order_count'] ?? 0),
+                'baseAmount' => $baseAmount,
+                'basePaid' => $basePaid,
+                'bonusPaid' => round((float) ($payment['bonus_paid'] ?? 0), 2),
+                'deductionPaid' => round((float) ($payment['deduction_paid'] ?? 0), 2),
+                'netPaid' => round((float) ($payment['net_paid'] ?? 0), 2),
+                'remainingAmount' => $remaining,
+                'paymentCount' => (int) ($payment['payment_count'] ?? 0),
+                'paymentStatus' => $payment === [] ? 'unpaid' : ($remaining > 0.01 ? 'partial' : 'paid'),
+                'lastPaymentId' => $payment['last_payment_id'] ?? null,
+                'lastPaidAt' => $payment['last_paid_at'] ?? null,
+            ];
+        }, $people);
+    }
+
+    public function payDeliveryPersonPayroll(array $params): array
+    {
+        $currentUser = $this->assertDeliveryPayrollAccess(true);
+        $deliveryPersonId = trim((string) ($params['deliveryPersonId'] ?? ''));
+        if ($deliveryPersonId === '') throw new RuntimeException('Select a delivery person to pay.');
+        [$periodStart, $periodEnd] = $this->requirePayrollPeriod($params);
+        $bonusAmount = round((float) ($params['bonusAmount'] ?? 0), 2);
+        $deductionAmount = round((float) ($params['deductionAmount'] ?? 0), 2);
+        if ($bonusAmount < 0 || $deductionAmount < 0 || !is_finite($bonusAmount) || !is_finite($deductionAmount)) {
+            throw new RuntimeException('Bonus and deduction amounts must be valid non-negative values.');
+        }
+
+        return $this->database->transaction(function () use ($currentUser, $deliveryPersonId, $periodStart, $periodEnd, $bonusAmount, $deductionAmount, $params): array {
+            $person = $this->database->fetchOne(
+                'SELECT * FROM delivery_persons WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $deliveryPersonId]
+            );
+            if ($person === null) throw new RuntimeException('Delivery person not found.');
+
+            $baseRow = $this->database->fetchOne(
+                "SELECT COUNT(*) AS order_count, COALESCE(SUM(delivery_person_shipping_cost), 0) AS base_amount
+                 FROM orders
+                 WHERE delivery_person_id = :delivery_person_id
+                   AND deleted_at IS NULL
+                   AND status = 'Completed'
+                   AND COALESCE(DATE(completed_at), order_date) BETWEEN :period_start AND :period_end",
+                [':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd]
+            ) ?? [];
+            $paidRow = $this->database->fetchOne(
+                'SELECT COALESCE(SUM(base_amount_snapshot), 0) AS base_paid
+                 FROM delivery_person_payments
+                 WHERE delivery_person_id = :delivery_person_id AND period_start = :period_start AND period_end = :period_end',
+                [':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd]
+            ) ?? [];
+            $baseAmount = round((float) ($baseRow['base_amount'] ?? 0), 2);
+            $remainingBase = round(max(0.0, $baseAmount - (float) ($paidRow['base_paid'] ?? 0)), 2);
+            $requestedAmount = round((float) ($params['requestedAmount'] ?? 0), 2);
+            $baseToPay = $requestedAmount > 0 ? min($remainingBase, $requestedAmount) : $remainingBase;
+            if ($baseToPay <= 0 && $bonusAmount <= 0) throw new RuntimeException('There is no unpaid delivery person amount for this period.');
+            if ($deductionAmount > round($baseToPay + $bonusAmount, 2)) throw new RuntimeException('Deduction cannot exceed base pay plus bonus.');
+            $netAmount = round($baseToPay + $bonusAmount - $deductionAmount, 2);
+            if ($netAmount <= 0) throw new RuntimeException('Net payroll payment must be greater than zero.');
+
+            $accountId = trim((string) ($params['accountId'] ?? ''));
+            $paymentMethod = trim((string) ($params['paymentMethod'] ?? ''));
+            $categoryId = trim((string) ($params['categoryId'] ?? ''));
+            if ($accountId === '' || $paymentMethod === '' || $categoryId === '') throw new RuntimeException('Payment account, method, and expense category are required.');
+            $account = $this->database->fetchOne('SELECT id, current_balance FROM accounts WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $accountId]);
+            if ($account === null) throw new RuntimeException('Selected payment account was not found.');
+            if ($netAmount > (float) ($account['current_balance'] ?? 0)) throw new RuntimeException('Selected account does not have enough balance.');
+            if ($this->database->fetchOne("SELECT id FROM categories WHERE id = :id AND LOWER(type) = 'expense' LIMIT 1", [':id' => $categoryId]) === null) throw new RuntimeException('Select a valid expense category.');
+            if ($this->database->fetchOne('SELECT id FROM payment_methods WHERE name = :name AND is_active = 1 LIMIT 1', [':name' => $paymentMethod]) === null) throw new RuntimeException('Select an active payment method.');
+
+            $paymentId = $this->uuid4();
+            $transactionId = $this->uuid4();
+            $paidAt = $this->normalizeDateTimeInputWithCurrentLocalTime((string) ($params['paidAt'] ?? $this->database->nowUtc()));
+            $createdAt = $this->database->nowUtc();
+            $periodLabel = trim((string) ($params['periodLabel'] ?? '')) ?: ($periodStart . ' - ' . $periodEnd);
+            $note = $this->nullableString($params['note'] ?? null);
+            $isPartial = $baseToPay < $remainingBase - 0.01;
+            $description = 'Delivery person payroll for ' . (string) ($person['name'] ?? 'Delivery person') . ' (' . $periodLabel . ')';
+            $transaction = $this->createTransactionRecord([
+                'id' => $transactionId,
+                'date' => $paidAt,
+                'type' => 'Expense',
+                'category' => $categoryId,
+                'accountId' => $accountId,
+                'amount' => $netAmount,
+                'description' => $description,
+                'referenceId' => $paymentId,
+                'paymentMethod' => $paymentMethod,
+                'history' => [],
+            ], (string) $currentUser['id'], $currentUser);
+            if ((string) ($transaction['approvalStatus'] ?? 'approved') !== 'approved') throw new RuntimeException('Delivery payroll payments require an immediately approved expense transaction.');
+
+            $this->database->execute(
+                'INSERT INTO delivery_person_payments (
+                    id, delivery_person_id, period_start, period_end, period_kind, period_label,
+                    order_count_snapshot, base_amount_snapshot, bonus_amount, deduction_amount,
+                    amount_snapshot, is_partial, transaction_id, account_id, payment_method,
+                    category_id, paid_at, paid_by, note, created_at, updated_at
+                ) VALUES (
+                    :id, :delivery_person_id, :period_start, :period_end, :period_kind, :period_label,
+                    :order_count_snapshot, :base_amount_snapshot, :bonus_amount, :deduction_amount,
+                    :amount_snapshot, :is_partial, :transaction_id, :account_id, :payment_method,
+                    :category_id, :paid_at, :paid_by, :note, :created_at, :updated_at
+                )',
+                [
+                    ':id' => $paymentId, ':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd,
+                    ':period_kind' => in_array((string) ($params['periodKind'] ?? ''), ['month', 'custom'], true) ? $params['periodKind'] : 'custom',
+                    ':period_label' => $periodLabel, ':order_count_snapshot' => (int) ($baseRow['order_count'] ?? 0),
+                    ':base_amount_snapshot' => $this->formatMoney($baseToPay), ':bonus_amount' => $this->formatMoney($bonusAmount),
+                    ':deduction_amount' => $this->formatMoney($deductionAmount), ':amount_snapshot' => $this->formatMoney($netAmount),
+                    ':is_partial' => $isPartial ? 1 : 0, ':transaction_id' => $transactionId, ':account_id' => $accountId,
+                    ':payment_method' => $paymentMethod, ':category_id' => $categoryId, ':paid_at' => $paidAt,
+                    ':paid_by' => (string) $currentUser['id'], ':note' => $note, ':created_at' => $createdAt, ':updated_at' => $createdAt,
+                ]
+            );
+            return $this->database->fetchOne('SELECT * FROM delivery_person_payments WHERE id = :id LIMIT 1', [':id' => $paymentId]) ?: [];
+        });
+    }
+
+    public function deleteDeliveryPersonPayrollPayment(array $params): array
+    {
+        $actor = $this->assertDeliveryPayrollAccess(true);
+        $paymentId = trim((string) ($params['id'] ?? ''));
+        if ($paymentId === '') throw new RuntimeException('Missing delivery person payroll payment ID.');
+        return $this->database->transaction(function () use ($actor, $paymentId): array {
+            $payment = $this->database->fetchOne('SELECT * FROM delivery_person_payments WHERE id = :id LIMIT 1 FOR UPDATE', [':id' => $paymentId]);
+            if ($payment === null) throw new RuntimeException('Delivery person payroll payment was not found.');
+            $transactionId = trim((string) ($payment['transaction_id'] ?? ''));
+            if ($transactionId !== '') {
+                $transaction = $this->database->fetchOne('SELECT id, account_id, amount, account_effect_applied FROM transactions WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE', [':id' => $transactionId]);
+                if ($transaction !== null) {
+                    $this->applyTransactionAccountEffect([$transaction], 'revert');
+                    $this->softDeleteTransactionRowsByIds([$transactionId], $this->database->nowUtc(), (string) $actor['id']);
+                }
+            }
+            $this->database->execute('DELETE FROM delivery_person_payments WHERE id = :id', [':id' => $paymentId]);
+            return ['success' => true];
+        });
     }
 
     public function fetchPayrollSummaries(array $params): array
@@ -11411,6 +11627,7 @@ final class OperationsApi extends BaseService
         $payroll = $this->fetchPayrollSettingsInternal();
         return [
             'unitAmount' => (float) $payroll['unitAmount'],
+            'unitAmountType' => $payroll['unitAmountType'],
             'countedStatuses' => $payroll['countedStatuses'],
         ];
     }
@@ -11427,11 +11644,13 @@ final class OperationsApi extends BaseService
             : $current['countedStatuses'];
         $updated = $this->updatePayrollSettings([
             'unitAmount' => $params['unitAmount'] ?? $current['unitAmount'],
+            'unitAmountType' => $params['unitAmountType'] ?? $current['unitAmountType'],
             'countedStatuses' => $nextStatuses,
         ]);
 
         $wallet = [
             'unitAmount' => (float) $updated['unitAmount'],
+            'unitAmountType' => $updated['unitAmountType'],
             'countedStatuses' => $updated['countedStatuses'],
         ];
 

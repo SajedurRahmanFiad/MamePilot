@@ -154,6 +154,7 @@ try {
         }
         $walletPayload = $updates['wallet'] ?? (isset($updates['payroll']) ? [
             'unitAmount' => $updates['payroll']['unitAmount'] ?? null,
+            'unitAmountType' => $updates['payroll']['unitAmountType'] ?? null,
             'countedStatuses' => $updates['payroll']['countedStatuses'] ?? null,
         ] : null);
 

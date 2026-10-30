@@ -924,12 +924,15 @@ CREATE TABLE IF NOT EXISTS payroll_settings (
   id VARCHAR(64) NOT NULL,
   singleton TINYINT(1) NOT NULL DEFAULT 1,
   unit_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  unit_amount_type VARCHAR(16) NOT NULL DEFAULT 'amount',
   counted_statuses LONGTEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_payroll_settings_singleton (singleton)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL sp_add_col('payroll_settings', 'unit_amount_type', 'VARCHAR(16) NOT NULL DEFAULT ''amount''');
 
 CREATE TABLE IF NOT EXISTS delivery_persons (
   id VARCHAR(64) NOT NULL,
@@ -953,6 +956,39 @@ CREATE TABLE IF NOT EXISTS delivery_persons (
   KEY idx_delivery_persons_name (name),
   KEY idx_delivery_persons_deleted_at (deleted_at),
   CONSTRAINT fk_delivery_persons_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS delivery_person_payments (
+  id VARCHAR(64) NOT NULL,
+  delivery_person_id VARCHAR(64) NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  period_kind VARCHAR(16) NOT NULL,
+  period_label VARCHAR(255) NOT NULL,
+  order_count_snapshot INT NOT NULL DEFAULT 0,
+  base_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  bonus_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  deduction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  is_partial TINYINT(1) NOT NULL DEFAULT 0,
+  transaction_id VARCHAR(64) NULL,
+  account_id VARCHAR(64) NULL,
+  payment_method VARCHAR(255) NULL,
+  category_id VARCHAR(64) NULL,
+  paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_by VARCHAR(64) NOT NULL,
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_delivery_person_payments_person_period (delivery_person_id, period_start, period_end),
+  KEY idx_delivery_person_payments_paid_at (paid_at),
+  UNIQUE KEY uq_delivery_person_payments_transaction (transaction_id),
+  CONSTRAINT fk_delivery_person_payments_person FOREIGN KEY (delivery_person_id) REFERENCES delivery_persons (id) ON DELETE CASCADE,
+  CONSTRAINT fk_delivery_person_payments_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE SET NULL,
+  CONSTRAINT fk_delivery_person_payments_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_delivery_person_payments_category FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_delivery_person_payments_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -4118,6 +4154,42 @@ CALL sp_add_col('courier_webhook_events', 'idempotency_key', 'VARCHAR(255) NULL'
 
 -- Migration: 2026-10-30_fractional_product_stock.sql
 CALL sp_modify_col('products', 'stock', 'DECIMAL(12,3) NOT NULL DEFAULT 0.000');
+
+-- Migration: 2026-10-30_wallet_percentage_delivery_person_payroll.sql
+CALL sp_add_col('payroll_settings', 'unit_amount_type', 'VARCHAR(16) NOT NULL DEFAULT ''amount''');
+
+CREATE TABLE IF NOT EXISTS delivery_person_payments (
+  id VARCHAR(64) NOT NULL,
+  delivery_person_id VARCHAR(64) NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  period_kind VARCHAR(16) NOT NULL,
+  period_label VARCHAR(255) NOT NULL,
+  order_count_snapshot INT NOT NULL DEFAULT 0,
+  base_amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  bonus_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  deduction_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  amount_snapshot DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  is_partial TINYINT(1) NOT NULL DEFAULT 0,
+  transaction_id VARCHAR(64) NULL,
+  account_id VARCHAR(64) NULL,
+  payment_method VARCHAR(255) NULL,
+  category_id VARCHAR(64) NULL,
+  paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_by VARCHAR(64) NOT NULL,
+  note TEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_delivery_person_payments_person_period (delivery_person_id, period_start, period_end),
+  KEY idx_delivery_person_payments_paid_at (paid_at),
+  UNIQUE KEY uq_delivery_person_payments_transaction (transaction_id),
+  CONSTRAINT fk_delivery_person_payments_person FOREIGN KEY (delivery_person_id) REFERENCES delivery_persons (id) ON DELETE CASCADE,
+  CONSTRAINT fk_delivery_person_payments_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE SET NULL,
+  CONSTRAINT fk_delivery_person_payments_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_delivery_person_payments_category FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_delivery_person_payments_paid_by FOREIGN KEY (paid_by) REFERENCES users (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP VIEW IF EXISTS orders_with_customer_creator;
 

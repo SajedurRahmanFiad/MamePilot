@@ -2289,7 +2289,7 @@ const OrderDetails: React.FC = () => {
                       ((order.status === OrderStatus.COURIER_ASSIGNED && canSendCurrentOrderToCourierPermission)
                         || (order.status === OrderStatus.REPAIR_COURIER_ASSIGNED && canProcessReturnExchange)) && (
                         <button onClick={() => { openManualCourierEdit(); setIsActionOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
-                          {ICONS.Edit} Edit delivery person / shipping cost
+                          {ICONS.Edit} Edit courier assignment
                         </button>
                       )
                     )}

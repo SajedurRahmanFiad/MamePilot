@@ -224,6 +224,13 @@ const rawSidebarConfig: SidebarConfigItem[] = [
         icon: ICONS.Payroll,
         visible: ({ can, hasSubCapability }) => can('payroll.view') && hasSubCapability('payroll'),
       },
+      {
+        key: 'delivery-person-payroll',
+        label: 'Delivery Person Payroll',
+        to: '/delivery-person-payroll',
+        icon: ICONS.Payroll,
+        visible: ({ can, hasSubCapability, businessMode }) => businessMode === 'sofa_cover' && can('payroll.view') && hasSubCapability('payroll'),
+      },
     ],
   },
   {

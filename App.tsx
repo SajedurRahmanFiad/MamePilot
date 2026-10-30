@@ -102,6 +102,7 @@ const VendorForm = lazyPage(() => import('./pages/VendorForm'));
 const VendorDetails = lazyPage(() => import('./pages/VendorDetails'));
 const Reports = lazyPage(() => import('./pages/Reports'));
 const Payroll = lazyPage(() => import('./pages/Payroll'));
+const DeliveryPersonPayroll = lazyPage(() => import('./pages/DeliveryPersonPayroll'));
 const HumanResourceDashboard = lazyPage(() => import('./pages/HumanResourceDashboard'));
 const SocialMediaAdsDashboard = lazyPage(() => import('./pages/SocialMediaAdsDashboard'));
 const MetaAds = lazyPage(() => import('./pages/MetaAds'));
@@ -536,6 +537,13 @@ preloaders.add(DeveloperNotes.preload);
             : canAccessEmployeeWallet
               ? <Navigate to="/wallet" replace />
               : <Navigate to={defaultProtectedRoute} replace />
+          : <Navigate to="/login" replace />
+      } />
+      <Route path="/delivery-person-payroll" element={
+        isAuthenticated
+          ? (capabilitiesLoading ? <RouteFallback /> : capabilitySettings?.businessMode === 'sofa_cover' && can('payroll.view') && hasSubCapability('payroll')
+            ? <Layout><DeliveryPersonPayroll /></Layout>
+            : <Navigate to={defaultProtectedRoute} replace />)
           : <Navigate to="/login" replace />
       } />
       <Route path="/recycle-bin" element={

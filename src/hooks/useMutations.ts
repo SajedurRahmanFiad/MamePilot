@@ -94,6 +94,8 @@ import {
   updateWalletSettings,
   payEmployeeWallet,
   deleteEmployeeWalletPayout,
+  payDeliveryPersonPayroll,
+  deleteDeliveryPersonPayrollPayment,
   batchUpdateSettings,
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
@@ -145,6 +147,7 @@ import type {
   DashboardSettings,
   PayrollPayment,
   PayrollSettings,
+  DeliveryPersonPayrollPayment,
   ServiceSubscriptionOverview,
   TransactionApprovalDecision,
   TransactionApprovalReviewResult,
@@ -3010,6 +3013,42 @@ export function useDeleteEmployeeWalletPayout(): UseMutationResult<
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function usePayDeliveryPersonPayroll(): UseMutationResult<
+  DeliveryPersonPayrollPayment,
+  Error,
+  Parameters<typeof payDeliveryPersonPayroll>[0],
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: payDeliveryPersonPayroll,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['delivery-person-payroll'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useDeleteDeliveryPersonPayrollPayment(): UseMutationResult<
+  { success: boolean },
+  Error,
+  { id: string },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }) => deleteDeliveryPersonPayrollPayment(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['delivery-person-payroll'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateDashboardQueries(queryClient);

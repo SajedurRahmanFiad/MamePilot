@@ -1634,6 +1634,7 @@ abstract class BaseService
     {
         return [
             'unitAmount' => 0.0,
+            'unitAmountType' => 'amount',
             'countedStatuses' => self::DEFAULT_PAYROLL_STATUSES,
         ];
     }
@@ -1645,6 +1646,7 @@ abstract class BaseService
     {
         return [
             'unitAmount' => (float) ($row['unit_amount'] ?? $row['unitAmount'] ?? 0),
+            'unitAmountType' => ($row['unit_amount_type'] ?? $row['unitAmountType'] ?? 'amount') === 'percentage' ? 'percentage' : 'amount',
             'countedStatuses' => $this->normalizePayrollStatuses(
                 $this->jsonDecodeList($row['counted_statuses'] ?? $row['countedStatuses'] ?? []),
                 true
