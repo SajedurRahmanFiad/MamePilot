@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MinusCircle } from 'lucide-react';
 import { Button, LoadingOverlay, Modal, NumericInput } from '../components';
 import { formatCurrency } from '../constants';
@@ -49,6 +49,16 @@ const DeliveryPersonPayroll: React.FC = () => {
   const netAmount = form.isPartial ? requestedAmount : fullNetAmount;
   const canSubmit = !!selectedCard && !!form.accountId && !!form.paymentMethod && !!form.categoryId && netAmount > 0 && form.deductionAmount <= baseAmount + form.bonusAmount && !accountsLoading && !paymentMethodsLoading && !categoriesLoading;
 
+  useEffect(() => {
+    if (!selectedCard) return;
+    setForm((current) => ({
+      ...current,
+      accountId: current.accountId || systemDefaults?.defaultAccountId || accounts[0]?.id || '',
+      paymentMethod: current.paymentMethod || systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '',
+      categoryId: current.categoryId || payrollCategory?.id || '',
+    }));
+  }, [selectedCard, systemDefaults, accounts, paymentMethods, payrollCategory]);
+
   const openPayment = (card: DeliveryPersonPayrollSummary) => {
     setSelectedCard(card);
     setForm({
@@ -56,8 +66,8 @@ const DeliveryPersonPayroll: React.FC = () => {
       deductionAmount: 0,
       isPartial: false,
       partialAmount: card.remainingAmount,
-      accountId: systemDefaults?.defaultAccountId || '',
-      paymentMethod: systemDefaults?.defaultPaymentMethod || '',
+      accountId: systemDefaults?.defaultAccountId || accounts[0]?.id || '',
+      paymentMethod: systemDefaults?.defaultPaymentMethod || paymentMethods[0]?.name || '',
       categoryId: payrollCategory?.id || '',
       paidAt: getTodayDate(),
       note: '',
