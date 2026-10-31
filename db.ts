@@ -39,6 +39,7 @@ const defaultSettings: Settings = {
   },
   payroll: {
     unitAmount: 0,
+    unitAmountType: 'amount',
     countedStatuses: [
       OrderStatus.ON_HOLD,
       OrderStatus.PROCESSING,

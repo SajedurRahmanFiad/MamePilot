@@ -10,6 +10,7 @@ export interface PayrollPeriodSelection {
 
 export interface PayrollPeriod {
   mode: PayrollPeriodMode;
+  periodKind: PayrollPeriodMode;
   periodStart: string;
   periodEnd: string;
   periodLabel: string;
@@ -50,6 +51,7 @@ export const buildMonthlyPayrollPeriod = (selectedMonth: string): PayrollPeriod 
 
   return {
     mode: 'month',
+    periodKind: 'month',
     periodStart: formatDateOnly(start),
     periodEnd: formatDateOnly(end),
     periodLabel: new Intl.DateTimeFormat('en-BD', {
@@ -74,6 +76,7 @@ export const buildCustomPayrollPeriod = (
 
   return {
     mode: 'custom',
+    periodKind: 'custom',
     periodStart,
     periodEnd,
     periodLabel: buildDateRangeLabel(periodStart, periodEnd),

@@ -156,7 +156,7 @@ const StandardUserForm: React.FC = () => {
       : null,
     unitAmountType: isEmployeeTarget && (form.compensationType === 'commission' || form.compensationType === 'hybrid')
       ? form.unitAmountType === 'percentage' ? 'percentage' : 'amount'
-      : 'amount',
+      : 'amount' as User['unitAmountType'],
   });
 
   const handleSave = async () => {

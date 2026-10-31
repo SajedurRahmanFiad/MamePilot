@@ -1620,6 +1620,7 @@ export interface Settings {
   courier: CourierSettings;
   payroll: {
     unitAmount: number;
+    unitAmountType: 'amount' | 'percentage';
     countedStatuses: OrderStatus[];
   };
   permissions?: PermissionsSettings;
