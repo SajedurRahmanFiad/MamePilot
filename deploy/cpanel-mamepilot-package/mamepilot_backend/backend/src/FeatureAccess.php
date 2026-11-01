@@ -80,6 +80,7 @@ final class FeatureAccess
         'fetchProductsSearch' => 'inventory',
         'fetchProductsSearchPage' => 'inventory',
         'createProduct' => 'inventory',
+        'duplicateProduct' => 'inventory',
         'updateProduct' => 'inventory',
         'deleteProduct' => 'inventory',
         'fetchOrders' => ['sales', 'pos'],

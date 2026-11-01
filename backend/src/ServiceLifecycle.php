@@ -26,6 +26,7 @@ final class ServiceLifecycle
         'createOrder',
         'createPaymentMethod',
         'createProduct',
+        'duplicateProduct',
         'createTransaction',
         'createRecurringTransaction',
         'createTransfer',

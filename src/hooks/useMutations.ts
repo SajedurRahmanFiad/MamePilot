@@ -39,6 +39,7 @@ import {
   updateVendor,
   deleteVendor,
   createProduct,
+  duplicateProduct,
   updateProduct,
   deleteProduct,
   createCategory,
@@ -2032,6 +2033,20 @@ export function useCreateProduct(): UseMutationResult<Product, Error, Partial<Pr
 
       // Ensure paginated product tables refetch if key shapes didn't match optimistic patch
       invalidateResourceQueries(queryClient, 'products');
+      invalidateRecycleBin(queryClient);
+    },
+  });
+}
+
+export function useDuplicateProduct(): UseMutationResult<Product, Error, string, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: duplicateProduct,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['product', data.id], data);
+      invalidateResourceQueries(queryClient, 'products');
+      queryClient.invalidateQueries({ queryKey: ['productsMini'] });
+      queryClient.invalidateQueries({ queryKey: ['productsSearch'] });
       invalidateRecycleBin(queryClient);
     },
   });

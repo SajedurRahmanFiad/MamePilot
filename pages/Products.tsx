@@ -11,7 +11,7 @@ import { theme } from '../theme';
 import { useProductImagesByIds, useProductsPage, useSystemDefaults, useUsersMini, useProductFilterOptions, useUnits } from '../src/hooks/useQueries';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { DEFAULT_PAGE_SIZE } from '../src/services/supabaseQueries';
-import { useDeleteProduct } from '../src/hooks/useMutations';
+import { useDeleteProduct, useDuplicateProduct } from '../src/hooks/useMutations';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import { useSearch } from '../src/contexts/SearchContext';
@@ -86,6 +86,7 @@ const Products: React.FC = () => {
   }, [queryClient]);
   const { data: productFilterOpts } = useProductFilterOptions();
   const deleteProductMutation = useDeleteProduct();
+  const duplicateProductMutation = useDuplicateProduct();
   const isAdmin = hasAdminAccess(user?.role);
   const { can } = useRolePermissions();
   const canCreateProducts = can('products.create');
@@ -306,6 +307,16 @@ const Products: React.FC = () => {
     }
   };
 
+  const handleDuplicate = async (productId: string) => {
+    try {
+      const duplicate = await duplicateProductMutation.mutateAsync(productId);
+      toast.success(`${productLabel} duplicated as ${duplicate.name}`);
+    } catch (err) {
+      console.error(`Failed to duplicate ${productLabel.toLowerCase()}:`, err);
+      toast.error(`Failed to duplicate ${productLabel.toLowerCase()}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
@@ -463,6 +474,17 @@ const Products: React.FC = () => {
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate(`/products/edit/${productId}`, { state: buildHistoryBackState(location) });
+                      }}
+                    />
+                  )}
+                  {canCreateProducts && (
+                    <IconButton
+                      icon={ICONS.Copy}
+                      variant="secondary"
+                      title="Duplicate"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicate(productId);
                       }}
                     />
                   )}

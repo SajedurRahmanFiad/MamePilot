@@ -1643,6 +1643,52 @@ final class MasterDataApi extends BaseService
         return $this->fetchProductById(['id' => $id]) ?? throw new RuntimeException('Failed to create product.');
     }
 
+    public function duplicateProduct(array $params): array
+    {
+        $this->currentUser();
+        $source = $this->fetchProductById(['id' => $params['id'] ?? null]);
+        if ($source === null) {
+            throw new RuntimeException('Product not found.');
+        }
+
+        $baseName = preg_replace('/\s+\(\d+\)$/u', '', trim((string) ($source['name'] ?? ''))) ?? trim((string) ($source['name'] ?? ''));
+        $baseSlug = preg_replace('/-\d+$/', '', trim((string) ($source['slug'] ?? ''))) ?? trim((string) ($source['slug'] ?? ''));
+        $baseSku = preg_replace('/-\d+$/', '', trim((string) ($source['sku'] ?? ''))) ?? trim((string) ($source['sku'] ?? ''));
+        $counter = 1;
+
+        do {
+            $name = $baseName . ' (' . $counter . ')';
+            $slug = $this->generateProductSlug($baseSlug !== '' ? $baseSlug . '-' . $counter : null, $name);
+            $sku = $baseSku !== '' ? $baseSku . '-' . $counter : null;
+            $conflict = $this->database->fetchOne(
+                'SELECT id FROM products
+                 WHERE deleted_at IS NULL AND (LOWER(name) = LOWER(:name) OR (:slug IS NOT NULL AND LOWER(slug) = LOWER(:slug)) OR (:sku IS NOT NULL AND LOWER(sku) = LOWER(:sku)))
+                 LIMIT 1',
+                [':name' => $name, ':slug' => $slug, ':sku' => $sku]
+            );
+            $counter++;
+        } while ($conflict !== null);
+
+        return $this->createProduct([
+            'name' => $name,
+            'slug' => $slug,
+            'sku' => $sku,
+            'category' => $source['category'] ?? null,
+            'image' => $source['image'] ?? null,
+            'unitId' => $source['unitId'] ?? null,
+            'salePrice' => $source['salePrice'] ?? 0,
+            'purchasePrice' => $source['purchasePrice'] ?? 0,
+            'stock' => $source['stock'] ?? 0,
+            'dynamicPricing' => $source['dynamicPricing'] ?? null,
+            'sofaCoverPricing' => $source['sofaCoverPricing'] ?? null,
+            'manufacturer' => $source['manufacturer'] ?? null,
+            'batchLotNumber' => $source['batchLotNumber'] ?? null,
+            'expiryDate' => $source['expiryDate'] ?? null,
+            'recommendedDoseSequence' => $source['recommendedDoseSequence'] ?? null,
+            'notes' => $source['notes'] ?? null,
+        ]);
+    }
+
     public function updateProduct(array $params): array
     {
         $this->currentUser();

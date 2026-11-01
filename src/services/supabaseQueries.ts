@@ -351,6 +351,7 @@ export async function fetchProductsSearchPage(q: string, page: number = 1, pageS
   return call<{ data: Product[]; page: number; pageSize: number; hasMore: boolean }>('fetchProductsSearchPage', { q, page, pageSize }, options);
 }
 export async function createProduct(product: Omit<Product, 'id'>) { return call<Product>('createProduct', product); }
+export async function duplicateProduct(id: string) { return call<Product>('duplicateProduct', { id }); }
 export async function updateProduct(id: string, updates: Partial<Product>) { return call<Product>('updateProduct', { id, updates }); }
 export async function deleteProduct(id: string) { await remove('deleteProduct', id); }
 
