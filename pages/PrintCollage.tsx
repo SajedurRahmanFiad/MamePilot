@@ -42,7 +42,7 @@ const PrintCollage: React.FC = () => {
         .collage-print-page { position: relative; box-sizing: border-box; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; break-after: auto; page-break-after: auto; }
         .collage-print-page-break { break-after: page; page-break-after: always; }
         .collage-print-page img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
-        .collage-print-meta { position: absolute; z-index: 1; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.7rem; color: #fff; background: rgba(15, 23, 42, 0.78); font: 600 12px/1.3 Arial, sans-serif; pointer-events: none; }
+        .collage-print-meta { position: absolute; z-index: 1; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.7rem; color: #fff; background: rgba(15, 23, 42, 0.78); font: 600 16px/1.3 Arial, sans-serif; pointer-events: none; }
         @media print {
           .collage-print-page { width: 100vw; height: 100vh; }
           .collage-print-meta { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
