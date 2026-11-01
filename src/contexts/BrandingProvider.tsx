@@ -57,7 +57,7 @@ export const BrandingProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     dataUpdatedAt: globalBrandingUpdatedAt,
     isSuccess: globalBrandingQuerySucceeded,
     refetch: verifyGlobalBranding,
-  } = useGlobalBranding(whiteLabelEnabled);
+  } = useGlobalBranding(true);
   const [verifiedGlobalBranding, setVerifiedGlobalBranding] = useState<{ name: string; logo: string; version: string } | null>(null);
   const [verifiedGlobalBrandingAt, setVerifiedGlobalBrandingAt] = useState(0);
   const [globalBrandingResolution, setGlobalBrandingResolution] = useState<'loading' | 'ready' | 'unavailable'>('loading');

@@ -324,6 +324,7 @@ const SettingsPage: React.FC = () => {
   // `justSavedRef` — set to true before a save call, consumed by init effects to skip re-initializing from server response.
   const companyFirstTriggerRef = useRef(true);
   const companyJustSavedRef = useRef(false);
+  const companyHydratedRef = useRef(false);
   const orderFirstTriggerRef = useRef(true);
   const orderJustSavedRef = useRef(false);
   const invoiceJustSavedRef = useRef(false);
@@ -353,6 +354,10 @@ const SettingsPage: React.FC = () => {
   React.useEffect(() => {
     if (companyJustSavedRef.current) { companyJustSavedRef.current = false; return; }
     const normalized = normalizeCompanySettings(companySettingsData || db.settings.company);
+    if (companySettingsData) {
+      companyHydratedRef.current = true;
+      db.settings.company = normalized;
+    }
     setCompanySettings(normalized);
     if (!expandedCompanyPagesInitRef.current) {
       expandedCompanyPagesInitRef.current = true;
@@ -632,6 +637,7 @@ const SettingsPage: React.FC = () => {
 
   // Auto-save: Company
   const saveCompany = useCallback(async () => {
+    if (!companyHydratedRef.current) return;
     companyJustSavedRef.current = true;
     const normalizedCompany = normalizeCompanySettings(companySettings);
     const response = await batchUpdateMutation.mutateAsync({ company: normalizedCompany });
@@ -653,6 +659,7 @@ const SettingsPage: React.FC = () => {
   const { isSaving: companySaving, trigger: triggerCompanySave } = useAutoSave({ save: saveCompany });
   useEffect(() => {
     if (companyFirstTriggerRef.current) { companyFirstTriggerRef.current = false; return; }
+    if (!companyHydratedRef.current) return;
     triggerCompanySave();
   }, [companySettings, triggerCompanySave]);
 

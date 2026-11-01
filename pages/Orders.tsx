@@ -7,13 +7,13 @@ import { Order, OrderStatus, ORDER_STATUS_VALUES, hasAdminAccess, isEmployeeRole
 import { formatCurrency, ICONS, getPaymentStatusBadgeColor, getPaymentStatusLabel, getStatusColor, getStatusDisplayName } from '../constants';
 import FilterBar, { FilterRange } from '../components/FilterBar';
 import DynamicFilterBar, { formatDateDisplay, type CombinedFilter } from '../components/DynamicFilterBar';
-import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, CommonPaymentModal, ConfirmationStatusDot } from '../components';
+import { Button, TableLoadingSkeleton, OrderCompletionModal, type OrderCompletionFormState, SteadfastModal, CarryBeeModal, PaperflyModal, PathaoModal, Dialog, ConfirmationStatusDot } from '../components';
 import { theme } from '../theme';
 import { useAuth } from '../src/contexts/AuthProvider';
 import { db } from '../db';
-import { useAccounts, useOrdersPage, useUsersMini, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAdOptions, useCourierSettings, usePaymentMethods, useOrderFilterOptions } from '../src/hooks/useQueries';
+import { useAccounts, useOrdersPage, useUsersMini, useOrderSettings, useSystemDefaults, useCompanySettings, useMetaAdOptions, useCourierSettings, useOrderFilterOptions } from '../src/hooks/useQueries';
 import Pagination from '../src/components/Pagination';
-import { useAddCourierCompletionExpense, useCompletePickedOrder, useConfirmPartialDelivery, useCreateOrder, useDeleteOrder, useUpdateOrder, useCreateTransaction } from '../src/hooks/useMutations';
+import { useAddCourierCompletionExpense, useCompletePickedOrder, useConfirmPartialDelivery, useCreateOrder, useDeleteOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
@@ -26,7 +26,6 @@ import {
   decodeDynamicTextFilterValue,
   encodeDynamicTextFilterValue,
   formatDate,
-  formatDateTimeParts,
   getDateTimeFilters,
   getCurrentTime,
   getCourierAutoFinalizedOutcome,
@@ -180,21 +179,10 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
   const [courierSelectionOrderId, setCourierSelectionOrderId] = useState<string | null>(null);
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [completionForm, setCompletionForm] = useState<OrderCompletionFormState>(createCompletionForm());
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
-  const [paymentForm, setPaymentForm] = useState({
-    date: getTodayDate(),
-    time: getCurrentTime(),
-    accountId: db.settings.defaults.defaultAccountId || '',
-    amount: 0,
-    paymentMethod: db.settings.defaults.defaultPaymentMethod || '',
-  });
 
   const { data: users = [] } = useUsersMini();
   const { data: accounts = [] } = useAccounts();
   const { data: courierSettings } = useCourierSettings();
-  const { data: paymentMethods = [] } = usePaymentMethods();
-  const updateMutation = useUpdateOrder();
   const createTransactionMutation = useCreateTransaction();
   const confirmPartialDeliveryMutation = useConfirmPartialDelivery();
 
@@ -409,104 +397,29 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
 
   const companyNames = useMemo(() => {
     const fromFilterOpts = orderFilterOpts?.companyNames || [];
-    const fromSettings = (companySettings?.pages || []).map(p => String(p.name || '').trim()).filter(Boolean);
+    const fromSettings = (companySettings?.pages || []).map((page) => String(page.name || '').trim()).filter(Boolean);
     const globalName = String(companySettings?.name || '').trim();
     return Array.from(new Set([...fromSettings, globalName, ...fromFilterOpts].filter(Boolean)));
   }, [orderFilterOpts, companySettings]);
-
-  const orderSourceAdOptions = useMemo<Array<{ value: string; label: string }>>(() => sourceAdOptions, [sourceAdOptions]);
-
-  const orderNumberOptions = useMemo(() => {
-    return orderFilterOpts?.orderNumbers || [];
-  }, [orderFilterOpts]);
-
-  const courierNames = useMemo(() => {
-    const configuredNames = orderFilterOpts?.courierNames || [];
-    return Array.from(new Set(['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other', ...configuredNames]));
-  }, [orderFilterOpts]);
-
+  const orderSourceAdOptions = useMemo(() => sourceAdOptions, [sourceAdOptions]);
+  const orderNumberOptions = useMemo(() => orderFilterOpts?.orderNumbers || [], [orderFilterOpts]);
+  const courierNames = useMemo(() => Array.from(new Set(['SteadFast', 'CarryBee', 'Paperfly', 'Pathao', 'Manual/Other', ...(orderFilterOpts?.courierNames || [])])), [orderFilterOpts]);
   const orderFilterDefinitions = useMemo(() => {
     const customerNameValues = orderFilterOpts?.customerNames || [];
     const customerPhoneValues = orderFilterOpts?.customerPhones || [];
     return [
-      {
-        type: 'Order Status',
-        operators: ['=', '≠'] as const,
-        values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (isSofaCover || ![OrderStatus.CUTTING_AND_SEWING, OrderStatus.READY].includes(status))).map((status) => ({
-          value: status,
-          label: getStatusDisplayName(status, capabilitySettings?.businessMode),
-        })),
-      },
-      {
-        type: 'Payment Status',
-        operators: ['=', '≠'] as const,
-        values: ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'],
-      },
-      {
-        type: 'Source Ad',
-        operators: ['=', '≠'] as const,
-        renderOptions: (query: string) => {
-          const normalizedQuery = query.trim().toLowerCase();
-          return orderSourceAdOptions.filter((option) =>
-            !normalizedQuery || option.label.toLowerCase().includes(normalizedQuery) || option.value.toLowerCase().includes(normalizedQuery)
-          );
-        },
-      },
-      {
-        type: 'Created by',
-        operators: ['=', '≠'] as const,
-        renderOptions: (query: string) => {
-          const list = [
-            { value: 'admins', label: 'Admins' },
-            { value: 'employees', label: 'Employees' },
-            { value: 'developers', label: 'Developers' },
-            ...users
-              .slice()
-              .sort((a, b) => a.role.localeCompare(b.role))
-              .map((u) => ({ value: u.id, label: `${u.role}: ${u.name}` })),
-          ];
-          return query
-            ? list.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
-            : list;
-        },
-      },
-      {
-        type: 'Created',
-        operators: ['on', 'before', 'after', 'within'] as const,
-        valueType: 'date' as const,
-      },
-      {
-        type: 'Order ID',
-        operators: ['=', '≠', 'contains', 'does not contain'] as const,
-        values: orderNumberOptions,
-        allowCustomValue: true,
-      },
-      {
-        type: 'Customer Name',
-        operators: ['=', '≠', 'contains', 'does not contain'] as const,
-        values: customerNameValues,
-        allowCustomValue: true,
-      },
-      {
-        type: 'Customer Phone',
-        operators: ['=', '≠', 'contains', 'does not contain'] as const,
-        values: customerPhoneValues,
-        allowCustomValue: true,
-      },
-      {
-        type: 'Company',
-        operators: ['=', '≠', 'contains', 'does not contain'] as const,
-        values: companyNames,
-        allowCustomValue: true,
-      },
-      {
-        type: 'Assigned courier',
-        operators: ['=', '≠'] as const,
-        values: courierNames,
-        allowCustomValue: true,
-      },
+      { type: 'Order Status', operators: ['=', '≠'] as const, values: ORDER_STATUS_VALUES.filter((status) => status !== OrderStatus.CREATED && (isSofaCover || ![OrderStatus.CUTTING_AND_SEWING, OrderStatus.READY].includes(status))).map((status) => ({ value: status, label: getStatusDisplayName(status, capabilitySettings?.businessMode) })) },
+      { type: 'Payment Status', operators: ['=', '≠'] as const, values: ['Paid', 'Partially Paid', 'Unpaid', 'Overpaid', 'Refunded'] },
+      { type: 'Source Ad', operators: ['=', '≠'] as const, renderOptions: (query: string) => { const normalized = query.trim().toLowerCase(); return orderSourceAdOptions.filter((option) => !normalized || option.label.toLowerCase().includes(normalized) || option.value.toLowerCase().includes(normalized)); } },
+      { type: 'Created by', operators: ['=', '≠'] as const, renderOptions: (query: string) => { const list = [{ value: 'admins', label: 'Admins' }, { value: 'employees', label: 'Employees' }, { value: 'developers', label: 'Developers' }, ...users.slice().sort((a, b) => a.role.localeCompare(b.role)).map((user) => ({ value: user.id, label: `${user.role}: ${user.name}` }))]; return query ? list.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())) : list; } },
+      { type: 'Created', operators: ['on', 'before', 'after', 'within'] as const, valueType: 'date' as const },
+      { type: 'Order ID', operators: ['=', '≠', 'contains', 'does not contain'] as const, values: orderNumberOptions, allowCustomValue: true },
+      { type: 'Customer Name', operators: ['=', '≠', 'contains', 'does not contain'] as const, values: customerNameValues, allowCustomValue: true },
+      { type: 'Customer Phone', operators: ['=', '≠', 'contains', 'does not contain'] as const, values: customerPhoneValues, allowCustomValue: true },
+      { type: 'Company', operators: ['=', '≠', 'contains', 'does not contain'] as const, values: companyNames, allowCustomValue: true },
+      { type: 'Assigned courier', operators: ['=', '≠'] as const, values: courierNames, allowCustomValue: true },
     ];
-  }, [capabilitySettings?.businessMode, companyNames, courierNames, freeTextMetadataValues, isSofaCover, orderNumberOptions, orders, users, orderSourceAdOptions]);
+  }, [capabilitySettings?.businessMode, companyNames, courierNames, isSofaCover, orderFilterOpts, orderNumberOptions, orderSourceAdOptions, users]);
 
   const showOrdersTableLoading = !canLoadOrders || ordersLoading;
   const totalOrdersCount = ordersPage?.count ?? 0;
@@ -1137,66 +1050,6 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
     setCourierSelectionOrderId(null);
   };
 
-  const canAddPayment = (order: Order) => {
-    return order.status !== OrderStatus.CANCELLED && order.paidAmount < getOrderSettlementTotal(order);
-  };
-
-  const openPayment = (order: Order) => {
-    setPaymentOrder(order);
-    setPaymentForm({
-      date: getTodayDate(),
-      time: getCurrentTime(),
-      accountId: db.settings.defaults.defaultAccountId || '',
-      amount: Math.max(order.total - order.paidAmount, 0),
-      paymentMethod: db.settings.defaults.defaultPaymentMethod || paymentMethods[0]?.name || '',
-    });
-    setShowPaymentModal(true);
-  };
-
-  const handleAddPayment = async () => {
-    if (!paymentOrder) return;
-
-    if (!paymentForm.accountId) {
-      toast.error('Please select an account');
-      return;
-    }
-    if (paymentForm.amount <= 0) {
-      toast.error('Please enter an amount to record payment');
-      return;
-    }
-
-    try {
-      const fullDatetime = buildLocalDateTime(paymentForm.date, paymentForm.time) || new Date();
-      const isoDatetime = fullDatetime.toISOString();
-      const selectedAccount = accounts.find((account) => account.id === paymentForm.accountId);
-      const method = paymentForm.paymentMethod || db.settings.defaults.defaultPaymentMethod || 'Cash';
-      const { date: paymentDate, time: paymentTime } = formatDateTimeParts(fullDatetime);
-      const historyText = `Payment of ${formatCurrency(paymentForm.amount)} received by ${user?.name || 'Unknown'} via ${method} in ${selectedAccount?.name || 'Unknown account'} on ${paymentDate}, at ${paymentTime}`;
-      const existingPaymentHistory = String(paymentOrder.history?.payment || '').trim();
-      const updatedHistory = {
-        ...paymentOrder.history,
-        payment: existingPaymentHistory ? `${existingPaymentHistory}\n${historyText}` : historyText,
-      };
-
-      await updateMutation.mutateAsync({
-        id: paymentOrder.id,
-        updates: {
-          history: updatedHistory as any,
-          paymentAmount: paymentForm.amount,
-          paymentAccountId: paymentForm.accountId,
-          paymentMethod: method,
-          paymentDate: isoDatetime,
-        },
-      });
-      setShowPaymentModal(false);
-      setPaymentOrder(null);
-      toast.success('Payment recorded successfully');
-    } catch (err) {
-      console.error('Failed to record payment:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to record payment');
-    }
-  };
-
   const isCourierConfigured = (courier: 'steadfast' | 'carrybee' | 'paperfly' | 'pathao') => {
     if (!courierSettings) return false;
     if (courier === 'steadfast') return !!(courierSettings.steadfast?.apiKey && courierSettings.steadfast?.secretKey);
@@ -1540,14 +1393,12 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                             : false;
                 const canSendSelectedOrderToCourier = canSendOrderToCourier(order, sentToAnyCourier);
                 const canTrackSelectedOrder = sentToAnyCourier;
-                const canAddPaymentSelectedOrder = canAddPayment(order);
                 const hasRowActions =
                   canEditSelectedOrder
                   || canFinalizeSelectedOrder
                   || canAddCourierCompletionExpense
                   || canSendSelectedOrderToCourier
                   || canTrackSelectedOrder
-                  || canAddPaymentSelectedOrder
                   || canDeleteSelectedOrder(order);
                 const settlementTotal = getOrderSettlementTotal(order);
                 const needsPartialAction = (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired;
@@ -1687,10 +1538,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                                   {ICONS.Plus} {courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}
                                 </button>
                               )}
-                              {canAddPaymentSelectedOrder && (
-                                <button onClick={() => { openPayment(order); setOpenActionsMenu(null); setAnchorEl(null); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2 font-bold text-green-600">{ICONS.Banking} Add Payment</button>
-                              )}
-                              {(canEditSelectedOrder || canFinalizeSelectedOrder || canAddPaymentSelectedOrder) && (canTrackSelectedOrder || canSendSelectedOrderToCourier) && (
+                              {(canEditSelectedOrder || canFinalizeSelectedOrder) && (canTrackSelectedOrder || canSendSelectedOrderToCourier) && (
                                 <div className="border-t my-1"></div>
                               )}
                               {canTrackSelectedOrder && (
@@ -1739,9 +1587,6 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
                               {canAddCourierCompletionExpense && courierCompletionExpenseOutcome && (
                                 <button onClick={() => openCourierCompletionExpense(order)} className="p-2.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-all" title={courierCompletionExpenseOutcome === 'Delivered' ? 'Add Additional Expense' : 'Add Return Expense'}>{ICONS.Plus}</button>
                               )}
-                          {canAddPaymentSelectedOrder && (
-                            <button onClick={() => openPayment(order)} className="p-2.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-xl transition-all" title="Add Payment">{ICONS.Banking}</button>
-                          )}
                           {canTrackSelectedOrder && (
                             <button onClick={() => handleOpenTracking(order)} className="p-2.5 text-[#0f2f57] hover:bg-[#ebf4ff] rounded-xl transition-all" title="Tracking">{ICONS.Courier}</button>
                           )}
@@ -1936,19 +1781,6 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
               })()
             : null
         }
-      />
-      <CommonPaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => { setShowPaymentModal(false); setPaymentOrder(null); }}
-        onSubmit={handleAddPayment}
-        accounts={accounts}
-        paymentForm={paymentForm}
-        setPaymentForm={setPaymentForm}
-        paymentMethods={paymentMethods}
-        isLoading={updateMutation.isPending}
-        title="Add Payment"
-        buttonText="Save Payment"
-        hideDateTime
       />
     </div>
   );
