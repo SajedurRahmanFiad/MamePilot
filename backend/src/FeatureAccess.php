@@ -508,13 +508,6 @@ final class FeatureAccess
             }
         }
 
-        if ((string) ($row['business_mode'] ?? '') === 'sofa_cover') {
-            $capabilities['courier_automation'] = false;
-            foreach (['steadfast_courier', 'carrybee_courier', 'paperfly_courier', 'pathao_courier'] as $key) {
-                $capabilities['subCapabilities'][$key] = false;
-            }
-        }
-
         return $capabilities;
     }
 
