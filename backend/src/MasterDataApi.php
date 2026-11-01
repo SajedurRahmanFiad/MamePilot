@@ -1662,7 +1662,7 @@ final class MasterDataApi extends BaseService
             $sku = $baseSku !== '' ? $baseSku . '-' . $counter : null;
             $conflict = $this->database->fetchOne(
                 'SELECT id FROM products
-                 WHERE deleted_at IS NULL AND (LOWER(name) = LOWER(:name) OR (:slug IS NOT NULL AND LOWER(slug) = LOWER(:slug)) OR (:sku IS NOT NULL AND LOWER(sku) = LOWER(:sku)))
+                 WHERE deleted_at IS NULL AND (LOWER(name) = LOWER(:name) OR LOWER(slug) = LOWER(:slug) OR LOWER(sku) = LOWER(:sku))
                  LIMIT 1',
                 [':name' => $name, ':slug' => $slug, ':sku' => $sku]
             );

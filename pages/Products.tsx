@@ -480,7 +480,7 @@ const Products: React.FC = () => {
                   {canCreateProducts && (
                     <IconButton
                       icon={ICONS.Copy}
-                      variant="secondary"
+                      variant="primary"
                       title="Duplicate"
                       onClick={(e) => {
                         e.stopPropagation();
