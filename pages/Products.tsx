@@ -479,7 +479,7 @@ const Products: React.FC = () => {
                   )}
                   {canCreateProducts && (
                     <IconButton
-                      icon={ICONS.Copy}
+                      icon={ICONS.Duplicate}
                       variant="primary"
                       title="Duplicate"
                       onClick={(e) => {

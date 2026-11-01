@@ -29,6 +29,14 @@ const checkboxClassName =
   'h-4 w-4 rounded border border-gray-300 accent-[var(--primary-color,#0f2f57)] focus:ring-[var(--primary-medium,#3c5a82)] focus:ring-offset-0';
 
 const DISPLAYED_PERMISSION_KEYS = STORED_PERMISSION_KEYS.filter((key) => key !== 'dashboard.viewAdmin' && key !== 'dashboard.viewEmployee');
+const SOFA_COVER_PERMISSION_KEYS = new Set<PermissionKey>([
+  'orders.moveToPrintedOwn',
+  'orders.moveToPrintedAny',
+  'orders.moveToCuttingAndSewingOwn',
+  'orders.moveToCuttingAndSewingAny',
+  'orders.moveToReadyOwn',
+  'orders.moveToReadyAny',
+]);
 
 const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ value, onChange, dashboards, hasUnsavedChanges = false }) => {
   const { settings: capabilitySettings } = useCapabilities();
@@ -38,10 +46,11 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     return SECTION_ORDER.map((section) => ({
       section,
       items: PERMISSION_DEFINITIONS.filter((definition) => definition.section === section
+        && (businessMode === 'sofa_cover' || !SOFA_COVER_PERMISSION_KEYS.has(definition.key as PermissionKey))
         && definition.key !== 'dashboard.viewAdmin'
         && definition.key !== 'dashboard.viewEmployee'),
     })).filter((group) => group.items.length > 0);
-  }, []);
+  }, [businessMode]);
 
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [draftRoleName, setDraftRoleName] = useState('');

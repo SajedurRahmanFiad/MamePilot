@@ -1443,13 +1443,31 @@ final class OperationsApi extends BaseService
             throw new RuntimeException('Orders must be in Cutting and Sewing before moving to Ready.');
         }
 
-        if (($nextStatus !== $previousStatus && in_array($nextStatus, ['Processing', 'Cutting and Sewing', 'Ready'], true)) || $processingChanged || $cuttingAndSewingChanged) {
+        if (($nextStatus !== $previousStatus && $nextStatus === 'Processing') || $processingChanged) {
             $this->assertUserCanManageOrderRecord(
                 $user,
                 $existingRow,
-                'orders.moveOnHoldToProcessingOwn',
-                'orders.moveOnHoldToProcessingAny',
+                $this->isSofaCoverBusinessMode() ? 'orders.moveToPrintedOwn' : 'orders.moveOnHoldToProcessingOwn',
+                $this->isSofaCoverBusinessMode() ? 'orders.moveToPrintedAny' : 'orders.moveOnHoldToProcessingAny',
                 'You do not have permission to move this order to processing.'
+            );
+        }
+        if (($nextStatus !== $previousStatus && $nextStatus === 'Cutting and Sewing') || $cuttingAndSewingChanged) {
+            $this->assertUserCanManageOrderRecord(
+                $user,
+                $existingRow,
+                'orders.moveToCuttingAndSewingOwn',
+                'orders.moveToCuttingAndSewingAny',
+                'You do not have permission to move this order to cutting and sewing.'
+            );
+        }
+        if ($nextStatus !== $previousStatus && $nextStatus === 'Ready') {
+            $this->assertUserCanManageOrderRecord(
+                $user,
+                $existingRow,
+                'orders.moveToReadyOwn',
+                'orders.moveToReadyAny',
+                'You do not have permission to move this order to ready.'
             );
         }
 

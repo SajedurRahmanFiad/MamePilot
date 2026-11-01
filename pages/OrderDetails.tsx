@@ -971,6 +971,21 @@ const OrderDetails: React.FC = () => {
     'orders.moveOnHoldToProcessingOwn',
     'orders.moveOnHoldToProcessingAny',
   ) : false;
+  const canMoveCurrentOrderToPrinted = order ? canAccessRecord(
+    order.createdBy,
+    'orders.moveToPrintedOwn',
+    'orders.moveToPrintedAny',
+  ) : false;
+  const canMoveCurrentOrderToCuttingAndSewing = order ? canAccessRecord(
+    order.createdBy,
+    'orders.moveToCuttingAndSewingOwn',
+    'orders.moveToCuttingAndSewingAny',
+  ) : false;
+  const canMoveCurrentOrderToReady = order ? canAccessRecord(
+    order.createdBy,
+    'orders.moveToReadyOwn',
+    'orders.moveToReadyAny',
+  ) : false;
   const canSendCurrentOrderToCourierPermission = order ? canAccessRecord(
     order.createdBy,
     'orders.sendToCourierOwn',
@@ -1138,7 +1153,7 @@ const OrderDetails: React.FC = () => {
         nextStatus: OrderStatus.PROCESSING,
         historyKey: 'processing',
         description: isSofaCover ? 'Confirm that the order has been printed.' : 'Move the order into processing and begin fulfillment.',
-        enabled: canMoveCurrentOrderToProcessing,
+        enabled: isSofaCover ? canMoveCurrentOrderToPrinted : canMoveCurrentOrderToProcessing,
       };
     }
     const hasPacked = Boolean(order.history?.packed);
@@ -1174,7 +1189,7 @@ const OrderDetails: React.FC = () => {
         nextStatus: OrderStatus.CUTTING_AND_SEWING,
         historyKey: 'cuttingAndSewing',
         description: 'Confirm that the printed fabric is moving to cutting and sewing.',
-        enabled: canMoveCurrentOrderToProcessing,
+        enabled: canMoveCurrentOrderToCuttingAndSewing,
       };
     }
 
@@ -1185,7 +1200,7 @@ const OrderDetails: React.FC = () => {
         nextStatus: OrderStatus.READY,
         historyKey: 'ready',
         description: 'Confirm that the order is ready to be assigned to a courier.',
-        enabled: canMoveCurrentOrderToProcessing,
+        enabled: canMoveCurrentOrderToReady,
       };
     }
 
@@ -1221,7 +1236,7 @@ const OrderDetails: React.FC = () => {
       description: 'Complete the order by marking it delivered or returned.',
       enabled: canFinalizeOrders,
     };
-  }, [order, canMoveCurrentOrderToProcessing, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier, capabilitySettings?.businessMode, isSofaCover]);
+  }, [order, canMoveCurrentOrderToProcessing, canMoveCurrentOrderToPrinted, canMoveCurrentOrderToCuttingAndSewing, canMoveCurrentOrderToReady, canSendCurrentOrderToCourier, canMoveCurrentOrderToPickedPermission, canFinalizeOrders, sentToExchangeCourier, canAssignExchangeCourier, capabilitySettings?.businessMode, isSofaCover]);
 
   // Calculate payment status
   const settlementTotal = order?.status === OrderStatus.CANCELLED ? 0 : (order?.total ?? 0);
@@ -1287,7 +1302,7 @@ const OrderDetails: React.FC = () => {
   };
 
   const markProcessing = async () => {
-    if (!canMoveCurrentOrderToProcessing) {
+    if (!(isSofaCover ? canMoveCurrentOrderToPrinted : canMoveCurrentOrderToProcessing)) {
       toast.error('You do not have permission to move orders to processing.');
       return;
     }
@@ -1296,12 +1311,25 @@ const OrderDetails: React.FC = () => {
   };
 
   const markCuttingAndSewing = async () => {
-    if (!canMoveCurrentOrderToProcessing) {
+    if (!canMoveCurrentOrderToCuttingAndSewing) {
       toast.error('You do not have permission to move this order to cutting and sewing.');
       return;
     }
     const historyText = `Moved to cutting and sewing by ${user.name}, on ${formatHistoryMoment(new Date())}`;
     await updateStatus(OrderStatus.CUTTING_AND_SEWING, 'cuttingAndSewing', historyText);
+  };
+
+  const markReady = async (items: Order['items']) => {
+    if (!canMoveCurrentOrderToReady) {
+      toast.error('You do not have permission to move this order to ready.');
+      return;
+    }
+    await updateStatus(
+      OrderStatus.READY,
+      'ready',
+      `Marked as ready by ${user.name}, on ${formatHistoryMoment(new Date())}`,
+      { items },
+    );
   };
 
   const markPacked = async () => {
@@ -1498,12 +1526,7 @@ const OrderDetails: React.FC = () => {
       }));
       setShowStatusTransitionModal(false);
       setPendingStatusTransition(null);
-      await updateStatus(
-        OrderStatus.READY,
-        'ready',
-        `Marked as ready by ${user.name}, on ${formatHistoryMoment(new Date())}`,
-        { items: nextItems },
-      );
+      await markReady(nextItems);
       return;
     }
     if (requiresDeliveryShippingExpenseSelection && (!selectedShippingAccountId || !selectedShippingCategoryId)) {

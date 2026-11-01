@@ -147,6 +147,42 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     section: 'Orders',
   },
   {
+    key: 'orders.moveToPrintedOwn',
+    label: 'Orders: Move to Printed (Own)',
+    description: 'Move the current user’s sofa cover orders to Printed.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.moveToPrintedAny',
+    label: 'Orders: Move to Printed (Any)',
+    description: 'Move any user’s sofa cover orders to Printed.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.moveToCuttingAndSewingOwn',
+    label: 'Orders: Move to Cutting and Sewing (Own)',
+    description: 'Move the current user’s sofa cover orders from Printed to Cutting and Sewing.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.moveToCuttingAndSewingAny',
+    label: 'Orders: Move to Cutting and Sewing (Any)',
+    description: 'Move any user’s sofa cover orders from Printed to Cutting and Sewing.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.moveToReadyOwn',
+    label: 'Orders: Move to Ready (Own)',
+    description: 'Move the current user’s sofa cover orders from Cutting and Sewing to Ready.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.moveToReadyAny',
+    label: 'Orders: Move to Ready (Any)',
+    description: 'Move any user’s sofa cover orders from Cutting and Sewing to Ready.',
+    section: 'Orders',
+  },
+  {
     key: 'orders.sendToCourierOwn',
     label: 'Orders: Send to Courier (Own)',
     description: 'Submit the current user’s orders to courier services.',
