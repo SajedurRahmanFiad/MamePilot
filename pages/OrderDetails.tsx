@@ -1006,6 +1006,11 @@ const OrderDetails: React.FC = () => {
     'orders.markReturnedOwn',
     'orders.markReturnedAny',
   ) : false;
+  const canRecordCurrentOrderRefund = order ? canAccessRecord(
+    order.createdBy,
+    'orders.recordRefundOwn',
+    'orders.recordRefundAny',
+  ) : false;
   const canFinalizeOrders = canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned;
   const courierCompletionExpenseOutcome = order
     ? order.status === OrderStatus.COMPLETED
@@ -1732,6 +1737,10 @@ const OrderDetails: React.FC = () => {
 
       // Validate refund fields if a refund amount is entered
       if (!isExpenseOnly && completionForm.refundAmount > 0) {
+        if (!canRecordCurrentOrderRefund) {
+          toast.error('You do not have permission to record order refunds.');
+          return;
+        }
         if (!completionForm.refundAccountId) {
           toast.error('Please select a refund account');
           return;
@@ -3226,6 +3235,7 @@ const OrderDetails: React.FC = () => {
         isLoading={completePickedOrderMutation.isPending || addCourierCompletionExpenseMutation.isPending || confirmPartialDeliveryMutation.isPending}
         allowDeliveredOutcome={completionExpenseOnly ? completionForm.outcome === 'Delivered' : canMarkCurrentOrderCompleted}
         allowReturnedOutcome={completionExpenseOnly ? completionForm.outcome === 'Returned' : canMarkCurrentOrderReturned}
+        allowRefund={canRecordCurrentOrderRefund}
         allowPartialDeliveryOutcome={!!order && (order.status === OrderStatus.PARTIALLY_DELIVERED || order.status === OrderStatus.PENDING_PARTIAL) && order.partialDeliveryActionRequired && (canMarkCurrentOrderCompleted || canMarkCurrentOrderReturned)}
         onSubmitPartialDelivery={handleConfirmPartialDelivery}
         partialDeliveryLoading={confirmPartialDeliveryMutation.isPending}

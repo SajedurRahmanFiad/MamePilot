@@ -1388,6 +1388,8 @@ final class OperationsApi extends BaseService
         $completedChanged = $this->historyValue($nextHistory, 'completed') !== $this->historyValue($existingHistory, 'completed');
         $returnedChanged = $this->historyValue($nextHistory, 'returned') !== $this->historyValue($existingHistory, 'returned');
         $paymentChanged = $this->historyValue($nextHistory, 'payment') !== $this->historyValue($existingHistory, 'payment');
+        $paymentAmount = round((float) ($updates['paymentAmount'] ?? 0), 2);
+        $refundAmount = round((float) ($updates['refundAmount'] ?? 0), 2);
         $repairCourierChanged = $this->historyValue($nextHistory, 'repairCourier') !== $this->historyValue($existingHistory, 'repairCourier');
         $repairStatuses = ['Repair processing', 'Repair Courier Assigned', 'Repair picked', 'Repair delivered', 'Repair canceled', 'Repair returned'];
         $repairTransitions = [
@@ -1498,6 +1500,24 @@ final class OperationsApi extends BaseService
                 'orders.markCompletedOwn',
                 'orders.markCompletedAny',
                 'You do not have permission to mark this order as completed.'
+            );
+        }
+        if ($paymentAmount > 0) {
+            $this->assertUserCanManageOrderRecord(
+                $user,
+                $existingRow,
+                'orders.recordPaymentOwn',
+                'orders.recordPaymentAny',
+                'You do not have permission to record order payments.'
+            );
+        }
+        if ($refundAmount > 0) {
+            $this->assertUserCanManageOrderRecord(
+                $user,
+                $existingRow,
+                'orders.recordRefundOwn',
+                'orders.recordRefundAny',
+                'You do not have permission to record order refunds.'
             );
         }
 
@@ -7333,6 +7353,15 @@ final class OperationsApi extends BaseService
                     'You do not have permission to mark this order as completed.'
                 );
             }
+            if ($refundAmount > 0) {
+                $this->assertUserCanManageOrderRecord(
+                    $actor,
+                    $orderRow,
+                    'orders.recordRefundOwn',
+                    'orders.recordRefundAny',
+                    'You do not have permission to record order refunds.'
+                );
+            }
 
             $previousStatus = trim((string) ($orderRow['status'] ?? ''));
             $terminalStatuses = ['Completed', 'Cancelled', 'Returned', 'Exchange delivered', 'Exchange returned', 'Exchange cancelled', 'partially_delivered', 'pending_partial', 'pending_delivered'];
@@ -7738,6 +7767,12 @@ final class OperationsApi extends BaseService
                 );
             if (!$hasPermission) {
                 throw new RuntimeException('You do not have permission to process returns/exchanges. Enable "Orders: Process Return/Exchange" in Settings → Permissions.');
+            }
+            if ($extraCollectionAmount > 0) {
+                $this->assertUserCanManageOrderRecord($actor, $orderRow, 'orders.recordPaymentOwn', 'orders.recordPaymentAny', 'You do not have permission to record order payments.');
+            }
+            if ($refundAmount > 0) {
+                $this->assertUserCanManageOrderRecord($actor, $orderRow, 'orders.recordRefundOwn', 'orders.recordRefundAny', 'You do not have permission to record order refunds.');
             }
 
             $currentStatus = trim((string) ($orderRow['status'] ?? ''));
@@ -8877,9 +8912,9 @@ final class OperationsApi extends BaseService
                 $this->assertUserCanManageBillRecord(
                     $actor,
                     $existingRow,
-                    'bills.markPaidOwn',
-                    'bills.markPaidAny',
-                    'You do not have permission to record bill payments or refunds.'
+                    $paymentAmount > 0 ? 'bills.recordPaymentOwn' : 'bills.recordRefundOwn',
+                    $paymentAmount > 0 ? 'bills.recordPaymentAny' : 'bills.recordRefundAny',
+                    $paymentAmount > 0 ? 'You do not have permission to record bill payments.' : 'You do not have permission to record bill refunds.'
                 );
                 $accountId = trim((string) ($updates['accountId'] ?? ''));
                 if ($accountId === '') {
@@ -9084,6 +9119,9 @@ final class OperationsApi extends BaseService
                 );
             if (!$hasPermission) {
                 throw new RuntimeException('You do not have permission to process bill returns. Enable "Bills: Process Return" in Settings → Permissions.');
+            }
+            if ($refundAmount > 0) {
+                $this->assertUserCanManageBillRecord($actor, $billRow, 'bills.recordRefundOwn', 'bills.recordRefundAny', 'You do not have permission to record bill refunds.');
             }
 
             $currentStatus = trim((string) ($billRow['status'] ?? ''));

@@ -340,6 +340,8 @@ const BillDetails: React.FC = () => {
     'bills.markReceivedAny',
   );
   const canMarkCurrentBillPaid = canAccessRecord(bill.createdBy, 'bills.markPaidOwn', 'bills.markPaidAny');
+  const canRecordBillPayment = canAccessRecord(bill.createdBy, 'bills.recordPaymentOwn', 'bills.recordPaymentAny');
+  const canRecordBillRefund = canAccessRecord(bill.createdBy, 'bills.recordRefundOwn', 'bills.recordRefundAny');
   const canCancelCurrentBill = canAccessRecord(bill.createdBy, 'bills.cancelOwn', 'bills.cancelAny');
   const canProcessReturn = canAccessRecord(bill.createdBy, 'bills.processReturnOwn', 'bills.processReturnAny');
   const isVoidedBeforeReceipt = bill.status === BillStatus.CANCELLED
@@ -441,7 +443,7 @@ const BillDetails: React.FC = () => {
 
   const handlePayment = async () => {
     if (!bill) return;
-    if (!canMarkCurrentBillPaid) {
+    if (!canRecordBillPayment) {
       toast.error('You do not have permission to record bill payments.');
       return;
     }
@@ -489,7 +491,7 @@ const BillDetails: React.FC = () => {
 
   const openPayment = () => {
     if (!bill) return;
-    if (!canMarkCurrentBillPaid) {
+    if (!canRecordBillPayment) {
       toast.error('You do not have permission to record bill payments.');
       return;
     }
@@ -504,6 +506,10 @@ const BillDetails: React.FC = () => {
 
   const openRefund = () => {
     if (!bill) return;
+    if (!canRecordBillRefund) {
+      toast.error('You do not have permission to record bill refunds.');
+      return;
+    }
     const refundDue = Math.max(bill.paidAmount - settlementTotal, 0);
     if (refundDue <= 0) {
       toast.info('There is no vendor refund due on this bill.');
@@ -833,7 +839,7 @@ const BillDetails: React.FC = () => {
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={openPayment}
-                    disabled={!canMarkCurrentBillPaid || bill.paidAmount >= settlementTotal || bill.status === BillStatus.RETURNED || bill.status === BillStatus.CANCELLED}
+                    disabled={!canRecordBillPayment || bill.paidAmount >= settlementTotal || bill.status === BillStatus.RETURNED || bill.status === BillStatus.CANCELLED}
                     className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     Add Payment
@@ -841,7 +847,7 @@ const BillDetails: React.FC = () => {
                   <button
                     type="button"
                     onClick={openRefund}
-                    disabled={!canMarkCurrentBillPaid || bill.paidAmount <= settlementTotal}
+                    disabled={!canRecordBillRefund || bill.paidAmount <= settlementTotal}
                     className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Record Vendor Refund

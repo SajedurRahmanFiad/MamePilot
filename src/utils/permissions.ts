@@ -243,6 +243,30 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     section: 'Orders',
   },
   {
+    key: 'orders.recordPaymentOwn',
+    label: 'Orders: Record Payment (Own)',
+    description: 'Add a customer payment to orders created by the current user.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.recordPaymentAny',
+    label: 'Orders: Record Payment (Any)',
+    description: 'Add a customer payment to orders created by any user.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.recordRefundOwn',
+    label: 'Orders: Record Refund (Own)',
+    description: 'Record a customer refund for orders created by the current user.',
+    section: 'Orders',
+  },
+  {
+    key: 'orders.recordRefundAny',
+    label: 'Orders: Record Refund (Any)',
+    description: 'Record a customer refund for orders created by any user.',
+    section: 'Orders',
+  },
+  {
     key: 'orders.print',
     label: 'Print Orders',
     description: 'Print order invoices and receipts.',
@@ -378,6 +402,30 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: 'bills.markPaidAny',
     label: 'Bills: Mark Paid (Any)',
     description: 'Record payments for bills created by any user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.recordPaymentOwn',
+    label: 'Bills: Record Payment (Own)',
+    description: 'Add a vendor payment to bills created by the current user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.recordPaymentAny',
+    label: 'Bills: Record Payment (Any)',
+    description: 'Add a vendor payment to bills created by any user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.recordRefundOwn',
+    label: 'Bills: Record Refund (Own)',
+    description: 'Record a vendor refund for bills created by the current user.',
+    section: 'Bills',
+  },
+  {
+    key: 'bills.recordRefundAny',
+    label: 'Bills: Record Refund (Any)',
+    description: 'Record a vendor refund for bills created by any user.',
     section: 'Bills',
   },
   {
@@ -886,6 +934,22 @@ export function normalizeRolePermissionMap(
     }
     if (typeof raw[anyKey] !== 'boolean') {
       next[anyKey] = legacyValue && legacyPermissionGrantsAnyAccess(normalizedRoleName);
+    }
+  }
+
+  const paymentPermissionAliases: Array<[PermissionKey, PermissionKey]> = [
+    ['orders.recordPaymentOwn', 'orders.markCompletedOwn'],
+    ['orders.recordPaymentAny', 'orders.markCompletedAny'],
+    ['orders.recordRefundOwn', 'orders.processReturnExchangeOwn'],
+    ['orders.recordRefundAny', 'orders.processReturnExchangeAny'],
+    ['bills.recordPaymentOwn', 'bills.markPaidOwn'],
+    ['bills.recordPaymentAny', 'bills.markPaidAny'],
+    ['bills.recordRefundOwn', 'bills.processReturnOwn'],
+    ['bills.recordRefundAny', 'bills.processReturnAny'],
+  ];
+  for (const [newKey, legacyKey] of paymentPermissionAliases) {
+    if (typeof raw[newKey] !== 'boolean') {
+      next[newKey] = Boolean(next[legacyKey]);
     }
   }
 

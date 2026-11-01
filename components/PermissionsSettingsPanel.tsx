@@ -14,7 +14,7 @@ import {
   isReservedPermissionRole,
   normalizeRoleName,
 } from '../src/utils/permissions';
-import { EMPLOYEE_DEFAULT_DASHBOARD_ID, dashboardHasScope } from '../src/dashboardConfig';
+import { EMPLOYEE_DEFAULT_DASHBOARD_ID } from '../src/dashboardConfig';
 
 type PermissionsSettingsPanelProps = {
   value: PermissionsSettings;
@@ -168,11 +168,7 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       ? {
           ...role,
           dashboardId,
-          permissions: roleName === 'Admin' ? role.permissions : {
-            ...role.permissions,
-            'dashboard.viewAdmin': dashboardHasScope(dashboard, 'admin'),
-            'dashboard.viewEmployee': dashboardHasScope(dashboard, 'employee'),
-          },
+              permissions: role.permissions,
         }
       : role);
     onChange(next);
@@ -251,8 +247,6 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
       dashboardId: draftDashboardId,
       permissions: {
         ...draftPermissions,
-        'dashboard.viewAdmin': dashboardHasScope(selectedDashboard, 'admin'),
-        'dashboard.viewEmployee': dashboardHasScope(selectedDashboard, 'employee'),
       },
       createdAt: null,
       updatedAt: null,

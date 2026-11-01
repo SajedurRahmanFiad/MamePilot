@@ -33,6 +33,7 @@ interface OrderCompletionModalProps {
   isLoading: boolean;
   allowDeliveredOutcome?: boolean;
   allowReturnedOutcome?: boolean;
+  allowRefund?: boolean;
   allowPartialDeliveryOutcome?: boolean;
   onSubmitPartialDelivery?: (payload: ConfirmPartialDeliveryPayload) => void | Promise<void>;
   partialDeliveryLoading?: boolean;
@@ -50,6 +51,7 @@ const OrderCompletionModal: React.FC<OrderCompletionModalProps> = ({
 isLoading,
   allowDeliveredOutcome = true,
   allowReturnedOutcome = true,
+  allowRefund = true,
   allowPartialDeliveryOutcome = false,
   onSubmitPartialDelivery,
   partialDeliveryLoading = false,
@@ -336,7 +338,7 @@ isLoading,
               </div>
 
               {/* Refund section for partially paid orders */}
-              {!expenseOnly && order.paidAmount > 0 && (
+              {!expenseOnly && allowRefund && order.paidAmount > 0 && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-black text-emerald-700 uppercase tracking-widest">Refund to {terminology.customer}</p>

@@ -126,6 +126,10 @@ abstract class BaseService
         'orders.markReturnedAny',
         'orders.processReturnExchangeOwn',
         'orders.processReturnExchangeAny',
+        'orders.recordPaymentOwn',
+        'orders.recordPaymentAny',
+        'orders.recordRefundOwn',
+        'orders.recordRefundAny',
         'orders.print',
         'customers.view',
         'customers.create',
@@ -149,6 +153,10 @@ abstract class BaseService
         'bills.markReceivedAny',
         'bills.markPaidOwn',
         'bills.markPaidAny',
+        'bills.recordPaymentOwn',
+        'bills.recordPaymentAny',
+        'bills.recordRefundOwn',
+        'bills.recordRefundAny',
         'bills.processReturnOwn',
         'bills.processReturnAny',
         'bills.print',
@@ -2104,6 +2112,21 @@ abstract class BaseService
             }
         }
 
+        foreach ([
+            ['orders.recordPaymentOwn', 'orders.markCompletedOwn'],
+            ['orders.recordPaymentAny', 'orders.markCompletedAny'],
+            ['orders.recordRefundOwn', 'orders.processReturnExchangeOwn'],
+            ['orders.recordRefundAny', 'orders.processReturnExchangeAny'],
+            ['bills.recordPaymentOwn', 'bills.markPaidOwn'],
+            ['bills.recordPaymentAny', 'bills.markPaidAny'],
+            ['bills.recordRefundOwn', 'bills.processReturnOwn'],
+            ['bills.recordRefundAny', 'bills.processReturnAny'],
+        ] as [$newKey, $legacyKey]) {
+            if (!array_key_exists($newKey, $raw) && array_key_exists($legacyKey, $permissions)) {
+                $permissions[$newKey] = $permissions[$legacyKey];
+            }
+        }
+
         return $permissions;
     }
 
@@ -2402,9 +2425,6 @@ abstract class BaseService
             if ($dashboardId === '') $dashboardId = $this->fallbackDashboardIdForPermissions($normalizedPermissions);
             if ($this->dashboardConfigurationById($dashboardId) === null) {
                 $dashboardId = $roleName === 'Admin' ? self::ADMIN_DEFAULT_DASHBOARD_ID : self::EMPLOYEE_DEFAULT_DASHBOARD_ID;
-            }
-            if ($roleName !== 'Admin') {
-                $dashboardId = $this->applyDashboardPermissions($normalizedPermissions, $dashboardId);
             }
             $rolesByName[$roleName] = [
                 'roleName' => $roleName,

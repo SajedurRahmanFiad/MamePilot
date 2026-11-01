@@ -5113,9 +5113,6 @@ final class MasterDataApi extends BaseService
             if ($this->dashboardConfigurationById($dashboardId) === null) {
                 throw new RuntimeException('Select a valid dashboard for every role.');
             }
-            if ($roleName !== 'Admin') {
-                $dashboardId = $this->applyDashboardPermissions($permissions, $dashboardId);
-            }
             $now = $this->database->nowUtc();
             $isCustom = !$this->isBuiltInPermissionRole($roleName);
             if ($isCustom) {
