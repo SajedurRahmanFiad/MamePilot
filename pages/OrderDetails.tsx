@@ -120,11 +120,28 @@ const OrderDetails: React.FC = () => {
   const { data: units = [], isPending: unitsLoading } = useUnits();
   const unitById = useMemo(() => new Map(units.map((unit: any) => [String(unit.id), unit])), [units]);
   const productById = useMemo(() => new Map(orderProducts.map((product) => [product.id, product])), [orderProducts]);
-  const readyFabricRows = useMemo(() => (order?.items || []).map((item, index) => {
-    const product = productById.get(item.productId);
-    const unit = product?.unitId ? unitById.get(product.unitId) : undefined;
-    return { item, index, product, unit, isFraction: Boolean(unit?.isFraction ?? unit?.is_fraction) };
-  }), [order?.items, productById, unitById]);
+  const readyFabricRows = useMemo(() => {
+    const seenProductIds = new Set<string>();
+    return (order?.items || []).map((item, index) => {
+      const productId = String(item.productId || '').trim();
+      const product = productById.get(item.productId);
+      const unit = product?.unitId ? unitById.get(product.unitId) : undefined;
+      return {
+        item,
+        index,
+        productId,
+        inputKey: productId || `item-${index}`,
+        product,
+        unit,
+        isFraction: Boolean(unit?.isFraction ?? unit?.is_fraction),
+      };
+    }).filter(({ productId }) => {
+      if (!productId) return true;
+      if (seenProductIds.has(productId)) return false;
+      seenProductIds.add(productId);
+      return true;
+    });
+  }, [order?.items, productById, unitById]);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
   const weightUnit = companySettings?.weightUnit || 'kg';
@@ -214,7 +231,7 @@ const OrderDetails: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showStatusTransitionModal, setShowStatusTransitionModal] = useState(false);
-  const [fabricStockInputs, setFabricStockInputs] = useState<Record<number, string>>({});
+  const [fabricStockInputs, setFabricStockInputs] = useState<Record<string, string>>({});
   const [showCourierSelectionModal, setShowCourierSelectionModal] = useState(false);
   const [isExchangeConsignment, setIsExchangeConsignment] = useState(false);
   const [courierHistoryData, setCourierHistoryData] = useState<any>(null);
@@ -1519,8 +1536,8 @@ const OrderDetails: React.FC = () => {
   const handleConfirmStatusTransition = async () => {
     if (!pendingStatusTransition) return;
     if (pendingStatusTransition.action === 'ready') {
-      const invalidRow = readyFabricRows.find(({ index, isFraction }) => {
-        const rawValue = fabricStockInputs[index]?.trim() ?? '';
+      const invalidRow = readyFabricRows.find(({ inputKey, isFraction }) => {
+        const rawValue = fabricStockInputs[inputKey]?.trim() ?? '';
         const value = Number(rawValue);
         if (rawValue === '' || !Number.isFinite(value) || value < 0) return true;
         if (!isFraction && !Number.isInteger(value)) return true;
@@ -1530,10 +1547,23 @@ const OrderDetails: React.FC = () => {
         toast.error('Enter a valid stock quantity for every fabric, using the unit precision shown.');
         return;
       }
-      const nextItems = order.items.map((item, index) => ({
-        ...item,
-        fabricStockUsed: Number(fabricStockInputs[index]),
-      }));
+      const firstItemIndexByProductId = new Map<string, number>();
+      order.items.forEach((item, index) => {
+        const productId = String(item.productId || '').trim();
+        if (productId && !firstItemIndexByProductId.has(productId)) {
+          firstItemIndexByProductId.set(productId, index);
+        }
+      });
+      const nextItems = order.items.map((item, index) => {
+        const productId = String(item.productId || '').trim();
+        const inputKey = productId || `item-${index}`;
+        return {
+          ...item,
+          fabricStockUsed: !productId || firstItemIndexByProductId.get(productId) === index
+            ? Number(fabricStockInputs[inputKey])
+            : 0,
+        };
+      });
       setShowStatusTransitionModal(false);
       setPendingStatusTransition(null);
       await markReady(nextItems);
@@ -1668,10 +1698,16 @@ const OrderDetails: React.FC = () => {
               return;
             }
             if (transition.action === 'ready') {
-              setFabricStockInputs(Object.fromEntries((order?.items || []).map((item, index) => [
-                index,
-                item.fabricStockUsed == null ? '' : String(item.fabricStockUsed),
-              ])));
+              setFabricStockInputs((order?.items || []).reduce<Record<string, string>>((inputs, item, index) => {
+                const productId = String(item.productId || '').trim();
+                const inputKey = productId || `item-${index}`;
+                if (item.fabricStockUsed == null) {
+                  inputs[inputKey] ??= '';
+                } else {
+                  inputs[inputKey] = String(Number(inputs[inputKey] || 0) + Number(item.fabricStockUsed));
+                }
+                return inputs;
+              }, {}));
             }
             setPendingStatusTransition(transition);
             setShowStatusTransitionModal(true);
@@ -3344,8 +3380,8 @@ const OrderDetails: React.FC = () => {
                 <p className="text-sm text-red-600">This order has no fabric lines to deduct stock from.</p>
               ) : (
                 <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
-                  {readyFabricRows.map(({ item, index, product, unit, isFraction }) => (
-                    <label key={`${item.productId}-${index}`} className="block space-y-1.5 text-sm font-semibold text-gray-700">
+                  {readyFabricRows.map(({ item, inputKey, product, unit, isFraction }) => (
+                    <label key={inputKey} className="block space-y-1.5 text-sm font-semibold text-gray-700">
                       <span className="flex items-center justify-between gap-3">
                         <span className="truncate">{product?.name || item.productName}</span>
                         <span className="shrink-0 text-xs font-medium text-gray-500">{unit?.name || 'Unit not set'}</span>
@@ -3355,8 +3391,8 @@ const OrderDetails: React.FC = () => {
                         min="0"
                         step={isFraction ? '0.001' : '1'}
                         inputMode={isFraction ? 'decimal' : 'numeric'}
-                        value={fabricStockInputs[index] ?? ''}
-                        onChange={(event) => setFabricStockInputs((current) => ({ ...current, [index]: event.target.value }))}
+                        value={fabricStockInputs[inputKey] ?? ''}
+                        onChange={(event) => setFabricStockInputs((current) => ({ ...current, [inputKey]: event.target.value }))}
                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                         required
                       />
