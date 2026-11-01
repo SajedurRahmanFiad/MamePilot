@@ -1006,6 +1006,11 @@ const OrderDetails: React.FC = () => {
     'orders.markReturnedOwn',
     'orders.markReturnedAny',
   ) : false;
+  const canRecordCurrentOrderPayment = order ? canAccessRecord(
+    order.createdBy,
+    'orders.recordPaymentOwn',
+    'orders.recordPaymentAny',
+  ) : false;
   const canRecordCurrentOrderRefund = order ? canAccessRecord(
     order.createdBy,
     'orders.recordRefundOwn',
@@ -1823,6 +1828,10 @@ const OrderDetails: React.FC = () => {
 
   const openPayment = () => {
     if (!order) return;
+    if (!canRecordCurrentOrderPayment) {
+      toast.error('You do not have permission to record order payments.');
+      return;
+    }
 
     setPaymentForm({
       date: getTodayDate(),
@@ -1836,6 +1845,10 @@ const OrderDetails: React.FC = () => {
 
   const openRefund = () => {
     if (!order) return;
+    if (!canRecordCurrentOrderRefund) {
+      toast.error('You do not have permission to record order refunds.');
+      return;
+    }
 
     const refundDue = Math.max(order.paidAmount - settlementTotal, 0);
 
@@ -1862,6 +1875,10 @@ const OrderDetails: React.FC = () => {
 
   const handleAddPayment = async () => {
     if (!order) return;
+    if (!canRecordCurrentOrderPayment) {
+      toast.error('You do not have permission to record order payments.');
+      return;
+    }
 
     if (!paymentForm.accountId) {
       toast.error('Please select an account');
@@ -1903,6 +1920,10 @@ const OrderDetails: React.FC = () => {
 
   const handleRefund = async () => {
     if (!order) return;
+    if (!canRecordCurrentOrderRefund) {
+      toast.error('You do not have permission to record order refunds.');
+      return;
+    }
 
     if (!refundForm.accountId) {
       toast.error('Please select an account');
@@ -2716,7 +2737,7 @@ const OrderDetails: React.FC = () => {
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={openPayment}
-                    disabled={order.paidAmount >= settlementTotal || order.status === OrderStatus.CANCELLED}
+                    disabled={!canRecordCurrentOrderPayment || order.paidAmount >= settlementTotal || order.status === OrderStatus.CANCELLED}
                     className={`w-full py-2.5 ${theme.colors.primary[600]} hover:${theme.colors.primary[700]} text-white font-bold rounded-lg shadow-md transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     Add Payment
@@ -2724,7 +2745,7 @@ const OrderDetails: React.FC = () => {
                   <button
                     type="button"
                     onClick={openRefund}
-                    disabled={order.paidAmount <= 0}
+                    disabled={!canRecordCurrentOrderRefund || order.paidAmount <= 0}
                     className="w-full py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 font-bold rounded-lg transition-all active:scale-95 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Issue Refund
