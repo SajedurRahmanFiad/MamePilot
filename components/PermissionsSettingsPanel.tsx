@@ -178,6 +178,22 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     onChange(next);
   };
 
+  const setRoleDashboardAccess = (roleName: string, enabled: boolean) => {
+    if (roleName === 'Admin') return;
+    const next = clonePermissionsSettings(value);
+    next.roles = next.roles.map((role) => role.roleName === roleName
+      ? {
+          ...role,
+          permissions: {
+            ...role.permissions,
+            'dashboard.viewAdmin': enabled,
+            'dashboard.viewEmployee': enabled,
+          },
+        }
+      : role);
+    onChange(next);
+  };
+
   const resetRoleModal = () => {
     setDraftRoleName('');
     setDraftPermissions(getDefaultPermissionsForRole('Employee'));
@@ -192,6 +208,14 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
     setDraftPermissions((current) => ({
       ...current,
       [permissionKey]: !current[permissionKey],
+    }));
+  };
+
+  const setDraftDashboardAccess = (enabled: boolean) => {
+    setDraftPermissions((current) => ({
+      ...current,
+      'dashboard.viewAdmin': enabled,
+      'dashboard.viewEmployee': enabled,
     }));
   };
 
@@ -371,7 +395,21 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
                   )}
                 </div>
 
-                <label className="mt-5 block space-y-2">
+                <label className="mt-5 flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    className={`${checkboxClassName} mt-0.5 shrink-0`}
+                    checked={Boolean(selectedRole.permissions['dashboard.viewAdmin'] || selectedRole.permissions['dashboard.viewEmployee'])}
+                    disabled={isAdminRole}
+                    onChange={(event) => setRoleDashboardAccess(selectedRole.roleName, event.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-gray-900">Enable dashboard page</span>
+                    <span className="mt-1 block text-xs font-medium text-gray-500">Allow this role to open its assigned dashboard.</span>
+                  </span>
+                </label>
+
+                <label className="mt-3 block space-y-2">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">Dashboard</span>
                   <select
                     value={selectedRole.dashboardId}
@@ -494,7 +532,20 @@ const PermissionsSettingsPanel: React.FC<PermissionsSettingsPanelProps> = ({ val
 
             <div className="flex-1 overflow-y-auto px-8 py-6">
               <div className="space-y-6">
-                <div className="space-y-2">
+                <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    className={`${checkboxClassName} mt-0.5 shrink-0`}
+                    checked={Boolean(draftPermissions['dashboard.viewAdmin'] || draftPermissions['dashboard.viewEmployee'])}
+                    onChange={(event) => setDraftDashboardAccess(event.target.checked)}
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-gray-900">Enable dashboard page</span>
+                    <span className="mt-1 block text-xs font-medium text-gray-500">Allow this role to open its assigned dashboard.</span>
+                  </span>
+                </label>
+
+                <div className="mt-3 space-y-2">
                   <label className="text-xs font-black uppercase tracking-[0.18em] text-gray-400">Role Name</label>
                   <input
                     type="text"
