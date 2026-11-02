@@ -3512,7 +3512,7 @@ const OrderDetails: React.FC = () => {
             )}
             
             <div className="space-y-4 p-6">
-              {canUseSteadfast && isCourierConfigured('steadfast') && (
+              {canUseSteadfast && (isSofaCover || isCourierConfigured('steadfast')) && (
                 <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('steadfast')}
@@ -3524,7 +3524,7 @@ const OrderDetails: React.FC = () => {
                   <span>Steadfast</span>
                 </Button>
               )}
-              {canUseCarryBee && isCourierConfigured('carrybee') && (
+              {canUseCarryBee && (isSofaCover || isCourierConfigured('carrybee')) && (
                 <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('carrybee')}
@@ -3536,7 +3536,7 @@ const OrderDetails: React.FC = () => {
                   <span>CarryBee</span>
                 </Button>
               )}
-              {canUsePaperfly && isCourierConfigured('paperfly') && (
+              {canUsePaperfly && (isSofaCover || isCourierConfigured('paperfly')) && (
                 <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('paperfly')}
@@ -3548,7 +3548,7 @@ const OrderDetails: React.FC = () => {
                   <span>Paperfly</span>
                 </Button>
               )}
-              {canUsePathao && isCourierConfigured('pathao') && (
+              {canUsePathao && (isSofaCover || isCourierConfigured('pathao')) && (
                 <Button
                   type="button"
                   onClick={() => handleSelectCourierOption('pathao')}
