@@ -166,7 +166,68 @@ const DeliveryPersonPayroll: React.FC = () => {
       )}
 
       <Modal isOpen={!!selectedCard} onClose={() => setSelectedCard(null)} title="Review Delivery Person Payroll" size="lg" footer={<><Button type="button" variant="ghost" onClick={() => setSelectedCard(null)}>Cancel</Button><Button type="button" variant="primary" onClick={submitPayment} loading={payMutation.isPending} disabled={!canSubmit}>{`Record ${formatCurrency(netAmount)}`}</Button></>}>
-        {selectedCard && <div className="space-y-5"><div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] p-5"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Delivery person</p><p className="mt-2 text-lg font-black text-gray-900">{selectedCard.deliveryPersonName}</p><p className="mt-1 text-sm font-medium text-gray-500">{activePeriod?.periodLabel} · {selectedCard.orderCount} delivered orders</p></div><div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-gray-50 p-4"><p className="text-[9px] font-black uppercase tracking-wider text-gray-400">Unpaid shipping cost</p><p className="mt-2 text-lg font-black text-gray-900">{formatCurrency(baseAmount)}</p></div><div className="rounded-xl bg-[#e8f0fa] p-4"><p className="text-[9px] font-black uppercase tracking-wider text-[#3c5a82]">Net payment</p><p className="mt-2 text-lg font-black text-[#0f2f57]">{formatCurrency(netAmount)}</p></div></div><div className="grid gap-4 md:grid-cols-2"><NumericInput label="Bonus" value={form.bonusAmount} onChange={(value) => setForm((current) => ({ ...current, bonusAmount: Math.max(0, value) }))} min={0} /><NumericInput label="Deduction" value={form.deductionAmount} onChange={(value) => setForm((current) => ({ ...current, deductionAmount: Math.max(0, value) }))} min={0} error={form.deductionAmount > baseAmount + form.bonusAmount ? 'Deduction exceeds available pay.' : undefined} /></div><label className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4"><span><span className="block text-sm font-bold text-amber-800">Partial payment</span><span className="block text-xs font-medium text-amber-700">Pay less now and carry the rest forward.</span></span><input type="checkbox" checked={form.isPartial} onChange={(event) => setForm((current) => ({ ...current, isPartial: event.target.checked, partialAmount: event.target.checked ? Math.max(0, fullNetAmount) : 0 }))} className="h-5 w-5 rounded border-gray-300 text-amber-600" /></label>{form.isPartial && <NumericInput label="Amount to pay now" value={form.partialAmount} onChange={(value) => setForm((current) => ({ ...current, partialAmount: Math.max(0, Math.min(value, fullNetAmount)) }))} min={0} max={fullNetAmount} /> }<div className="grid gap-4 md:grid-cols-2"><label className="space-y-2"><span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment account</span><select value={form.accountId} onChange={(event) => setForm((current) => ({ ...current, accountId: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold"><option value="">Select an account</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label className="space-y-2"><span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment method</span><select value={form.paymentMethod} onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold"><option value="">Select a method</option>{paymentMethods.map((method) => <option key={method.id} value={method.name}>{method.name}</option>)}</select></label><label className="space-y-2"><span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment date</span><input type="date" value={form.paidAt} onChange={(event) => setForm((current) => ({ ...current, paidAt: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold" /></label><div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"><p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Expense category</p><p className="mt-2 text-sm font-black text-gray-900">{expenseCategories.find((category) => category.id === form.categoryId)?.name || 'Select a category'}</p></div></div><label className="space-y-2"><span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment note</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} className="min-h-[90px] w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium" placeholder="Optional payment note" /></label></div>}
+        {selectedCard && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-[#d6e3f0] bg-[#f8fbff] p-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Delivery person</p>
+              <p className="mt-2 text-lg font-black text-gray-900">{selectedCard.deliveryPersonName}</p>
+              <p className="mt-1 text-sm font-medium text-gray-500">{activePeriod?.periodLabel} · {selectedCard.orderCount} delivered orders</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-gray-50 p-4">
+                <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">Unpaid shipping cost</p>
+                <p className="mt-2 text-lg font-black text-gray-900">{formatCurrency(baseAmount)}</p>
+              </div>
+              <div className="rounded-xl bg-[#e8f0fa] p-4">
+                <p className="text-[9px] font-black uppercase tracking-wider text-[#3c5a82]">Net payment</p>
+                <p className="mt-2 text-lg font-black text-[#0f2f57]">{formatCurrency(netAmount)}</p>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <NumericInput label="Bonus" value={form.bonusAmount} onChange={(value) => setForm((current) => ({ ...current, bonusAmount: Math.max(0, value) }))} min={0} />
+              <NumericInput label="Deduction" value={form.deductionAmount} onChange={(value) => setForm((current) => ({ ...current, deductionAmount: Math.max(0, value) }))} min={0} error={form.deductionAmount > baseAmount + form.bonusAmount ? 'Deduction exceeds available pay.' : undefined} />
+            </div>
+            <label className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <span>
+                <span className="block text-sm font-bold text-amber-800">Partial payment</span>
+                <span className="block text-xs font-medium text-amber-700">Pay less now and carry the rest forward.</span>
+              </span>
+              <input type="checkbox" checked={form.isPartial} onChange={(event) => setForm((current) => ({ ...current, isPartial: event.target.checked, partialAmount: event.target.checked ? Math.max(0, fullNetAmount) : 0 }))} className="h-5 w-5 rounded border-gray-300 text-amber-600" />
+            </label>
+            {form.isPartial && <NumericInput label="Amount to pay now" value={form.partialAmount} onChange={(value) => setForm((current) => ({ ...current, partialAmount: Math.max(0, Math.min(value, fullNetAmount)) }))} min={0} max={fullNetAmount} />}
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment account</span>
+                <select value={form.accountId} onChange={(event) => setForm((current) => ({ ...current, accountId: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold">
+                  <option value="">Select an account</option>
+                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment method</span>
+                <select value={form.paymentMethod} onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold">
+                  <option value="">Select a method</option>
+                  {paymentMethods.map((method) => <option key={method.id} value={method.name}>{method.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment date</span>
+                <input type="date" value={form.paidAt} onChange={(event) => setForm((current) => ({ ...current, paidAt: event.target.value }))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold" />
+              </label>
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Expense category</span>
+                <select value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))} disabled={categoriesLoading || expenseCategories.length === 0} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60">
+                  <option value="">Select an expense category</option>
+                  {expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">Payment note</span>
+              <textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} className="min-h-[90px] w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium" placeholder="Optional payment note" />
+            </label>
+          </div>
+        )}
       </Modal>
 
       <Modal isOpen={!!deletingPaymentId} onClose={() => setDeletingPaymentId(null)} title="Delete Delivery Person Payroll Payment" size="md" footer={<><Button type="button" variant="ghost" onClick={() => setDeletingPaymentId(null)}>Cancel</Button><Button type="button" variant="danger" onClick={deletePayment} loading={deleteMutation.isPending}>Delete payment</Button></>}><div className="space-y-4 text-center"><MinusCircle className="mx-auto text-rose-600" size={32} /><p className="text-sm font-medium text-gray-600">The linked expense and account deduction will be reverted.</p></div></Modal>
