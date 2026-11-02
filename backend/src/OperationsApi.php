@@ -3886,24 +3886,17 @@ final class OperationsApi extends BaseService
                 $orderCounts['exchangeTotal'] += $count;
                 $orderTotals['exchangeTotal'] += $total;
             }
-            if (!$statusAtBasis) {
-                $orderCounts['total'] += $count;
-                $orderTotals['total'] += $total;
-            }
         }
 
-        if ($statusAtBasis) {
-            // The Total Orders card always keeps its creation-based meaning,
-            // so its aggregate is derived from a created_at-bounded query.
-            $totalOrderRow = $this->database->fetchOne(
-                'SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
-                 FROM orders
-                 WHERE ' . implode(' AND ', $totalOrderConditions),
-                $totalOrderBindings
-            ) ?? [];
-            $orderCounts['total'] += (int) ($totalOrderRow['count'] ?? 0);
-            $orderTotals['total'] += (float) ($totalOrderRow['total'] ?? 0);
-        }
+        // Total Orders includes every status, including business-mode-specific statuses.
+        $totalOrderRow = $this->database->fetchOne(
+            'SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total
+             FROM orders
+             WHERE ' . implode(' AND ', $totalOrderConditions),
+            $totalOrderBindings
+        ) ?? [];
+        $orderCounts['total'] = (int) ($totalOrderRow['count'] ?? 0);
+        $orderTotals['total'] = (float) ($totalOrderRow['total'] ?? 0);
 
         $orderSettlementTotalSql = "(CASE WHEN status = 'Cancelled' THEN 0 ELSE total END)";
         $paymentStatusSql = "(CASE

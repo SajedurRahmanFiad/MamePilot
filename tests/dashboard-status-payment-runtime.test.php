@@ -32,6 +32,9 @@ $orderCounts = is_array($admin['orderCounts'] ?? null) ? $admin['orderCounts'] :
 $orderTotals = is_array($admin['orderTotals'] ?? null) ? $admin['orderTotals'] : [];
 $paymentCounts = is_array($admin['paymentCounts'] ?? null) ? $admin['paymentCounts'] : [];
 $paymentTotals = is_array($admin['paymentTotals'] ?? null) ? $admin['paymentTotals'] : [];
+$allOrders = $database->fetchOne(
+    'SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS total FROM orders WHERE deleted_at IS NULL'
+) ?? [];
 
 $exchangeKeys = ['exchangeProcessing', 'exchangePicked', 'exchangeDelivered', 'exchangeReturned', 'exchangeCancelled'];
 $paymentKeys = ['paid', 'partiallyPaid', 'unpaid', 'overpaid', 'refunded'];
@@ -48,6 +51,8 @@ $exchangeCount = array_sum(array_map(static fn(string $key): int => (int) $order
 $exchangeTotal = array_sum(array_map(static fn(string $key): float => (float) $orderTotals[$key], $exchangeKeys));
 dashboardStatusPaymentAssert($exchangeCount === (int) $orderCounts['exchangeTotal'], 'The Exchanged Orders count does not equal its exact exchange statuses.');
 dashboardStatusPaymentAssert(abs($exchangeTotal - (float) $orderTotals['exchangeTotal']) < 0.01, 'The Exchanged Orders total does not equal its exact exchange statuses.');
+dashboardStatusPaymentAssert((int) $orderCounts['total'] === (int) ($allOrders['count'] ?? 0), 'Total Orders does not include every order status.');
+dashboardStatusPaymentAssert(abs((float) $orderTotals['total'] - (float) ($allOrders['total'] ?? 0)) < 0.01, 'Total Orders value does not include every order status.');
 dashboardStatusPaymentAssert(array_sum($paymentCounts) === (int) $orderCounts['total'], 'Payment-status counts do not cover all dashboard orders.');
 dashboardStatusPaymentAssert(abs(array_sum($paymentTotals) - (float) $orderTotals['total']) < 0.01, 'Payment-status totals do not cover all dashboard order value.');
 

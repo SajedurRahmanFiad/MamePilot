@@ -980,10 +980,12 @@ const OrderDetails: React.FC = () => {
       ? (courierSettings?.fraudChecker?.fraudspyApiKey || courierSettings?.fraudChecker?.apiKey)
       : courierSettings?.fraudChecker?.apiKey)?.trim()
   );
-  const canUseSteadfast = hasSubCapability('steadfast_courier');
-  const canUseCarryBee = hasSubCapability('carrybee_courier');
-  const canUsePaperfly = hasSubCapability('paperfly_courier');
-  const canUsePathao = hasSubCapability('pathao_courier');
+  const canUseCourierProvider = (subCapability: 'steadfast_courier' | 'carrybee_courier' | 'paperfly_courier' | 'pathao_courier') =>
+    hasSubCapability(subCapability) || (isSofaCover && hasCapability('courier_automation'));
+  const canUseSteadfast = canUseCourierProvider('steadfast_courier');
+  const canUseCarryBee = canUseCourierProvider('carrybee_courier');
+  const canUsePaperfly = canUseCourierProvider('paperfly_courier');
+  const canUsePathao = canUseCourierProvider('pathao_courier');
   const isValidFraudPhone = /^0\d{10}$/.test(normalizedOrderPhone);
   const canRunFraudChecker = canUseFraudChecker && isFraudCheckerConfigured && isValidFraudPhone;
   const orderCreatedAt = order?.createdAt ? new Date(order.createdAt).getTime() : 0;
