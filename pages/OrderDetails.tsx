@@ -45,6 +45,20 @@ const formatDoseDate = (date: Date): string => {
   return `${day}${suffix} ${date.toLocaleString('en-US', { month: 'long' })}, ${date.getFullYear()}`;
 };
 
+const getSofaCoverOptionLabel = (option: string | undefined, type: string | undefined, pricing?: string | null): string => {
+  if (type === 'Divan Cover') return 'Seat';
+  if (!option) return '—';
+  if (type !== 'Cushion' || !pricing) return option;
+
+  try {
+    const cushions = JSON.parse(pricing)?.cushions;
+    const cushion = Array.isArray(cushions) ? cushions.find((entry: { id?: string }) => entry.id === option) : undefined;
+    return String(cushion?.size || option);
+  } catch {
+    return option;
+  }
+};
+
 const addMonths = (date: Date, months: number): Date => {
   const result = new Date(date);
   const originalDay = result.getDate();
@@ -2618,7 +2632,7 @@ const OrderDetails: React.FC = () => {
                                   </div>
                                 </div>
                               </td>
-                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-gray-500">{item.sofaCoverType === 'Divan Cover' ? 'Seat' : item.sofaCoverOption || '—'}</td>
+                              <td className="py-3 sm:py-4 lg:py-5 px-2 sm:px-3 text-gray-500">{getSofaCoverOptionLabel(item.sofaCoverOption, item.sofaCoverType, productById.get(item.productId)?.sofaCoverPricing)}</td>
                               <td className="py-3 sm:py-4 lg:py-5 text-center px-1 whitespace-nowrap">
                                 <span className={`font-bold ${isFullyReturned ? 'line-through text-gray-400' : 'text-gray-500'}`}>{activeQty}</span>
                                 {activeQty !== item.quantity && <span className="text-gray-300 text-[9px] ml-1">(of {item.quantity})</span>}
