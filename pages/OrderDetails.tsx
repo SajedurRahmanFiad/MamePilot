@@ -46,6 +46,7 @@ const formatDoseDate = (date: Date): string => {
 };
 
 const getSofaCoverOptionLabel = (option: string | undefined, type: string | undefined, pricing?: string | null): string => {
+  if (type === 'Tea table Cover' || type === 'Stool Cover') return 'N/A';
   if (type === 'Divan Cover') return 'Seat';
   if (!option) return '—';
   if (type !== 'Cushion' || !pricing) return option;

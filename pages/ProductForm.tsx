@@ -24,6 +24,8 @@ function slugify(text: string): string {
 
 type SofaCoverPricing = {
   sofaCover: { perSeat: number; perFoam: number };
+  teaTableCover: number;
+  stoolCover: number;
   cushions: Array<{ id: string; size: string; price: number }>;
   divanCover: { perSeat: number };
   chairCover: { perSeat: number; perBackrest: number; perSeatAndBackrest: number; perArmchair: number };
@@ -31,6 +33,8 @@ type SofaCoverPricing = {
 
 const createDefaultSofaCoverPricing = (): SofaCoverPricing => ({
   sofaCover: { perSeat: 0, perFoam: 0 },
+  teaTableCover: 0,
+  stoolCover: 0,
   cushions: [],
   divanCover: { perSeat: 0 },
   chairCover: { perSeat: 0, perBackrest: 0, perSeatAndBackrest: 0, perArmchair: 0 },
@@ -46,6 +50,8 @@ const parseSofaCoverPricing = (value?: string | null): SofaCoverPricing => {
         perSeat: Number(parsed.sofaCover?.perSeat) || 0,
         perFoam: Number(parsed.sofaCover?.perFoam) || 0,
       },
+      teaTableCover: Number(parsed.teaTableCover) || 0,
+      stoolCover: Number(parsed.stoolCover) || 0,
       cushions: Array.isArray(parsed.cushions) ? parsed.cushions.map((unit: Partial<SofaCoverPricing['cushions'][number]>, index) => ({
         id: unit.id || `cushion-${index}`,
         size: String(unit.size || ''),
@@ -581,6 +587,22 @@ const ProductForm: React.FC = () => {
                   <NumericInput value={sofaCoverPricing.sofaCover.perFoam} onChange={value => setSofaCoverPricing(previous => ({ ...previous, sofaCover: { ...previous.sofaCover, perFoam: value } }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
                 </label>
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Tea table Cover</h4>
+              <label className="block max-w-xl space-y-1 text-xs font-bold text-gray-500">
+                Price (BDT)
+                <NumericInput value={sofaCoverPricing.teaTableCover} onChange={value => setSofaCoverPricing(previous => ({ ...previous, teaTableCover: value }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">Stool Cover</h4>
+              <label className="block max-w-xl space-y-1 text-xs font-bold text-gray-500">
+                Price (BDT)
+                <NumericInput value={sofaCoverPricing.stoolCover} onChange={value => setSofaCoverPricing(previous => ({ ...previous, stoolCover: value }))} className="w-full bg-gray-50 border rounded-xl focus:ring-2 focus:ring-[#3c5a82] px-4 py-3" allowDecimals decimalPlaces={2} />
+              </label>
             </div>
 
             <div className="space-y-3">

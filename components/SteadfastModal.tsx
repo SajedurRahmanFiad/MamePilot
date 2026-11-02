@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
@@ -26,6 +27,7 @@ function formatHistoryMoment(): string {
 }
 
 export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose, order, customer, isExchangeConsignment }) => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: courierSettings } = useCourierSettings();
   const { settings: capabilitySettings } = useCapabilities(Boolean(isOpen));
@@ -33,6 +35,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
   const toast = useToastNotifications();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [credentialsMissing, setCredentialsMissing] = useState(false);
   const updateOrder = useUpdateOrder();
 
   if (!isOpen) return null;
@@ -40,6 +43,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
   const handleSubmit = async () => {
     if (submitting) return;
     setError(null);
+    setCredentialsMissing(false);
 
     if (!order || !customer) {
       setError('Missing order or customer information');
@@ -52,29 +56,16 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
     const freshCourierSettings = queryClient.getQueryData<any>(['settings', 'courier']) || courierSettings;
 
     if (!freshCourierSettings?.steadfast) {
-      setError('No Steadfast credentials configured');
-      console.error('[SteadfastModal] No Steadfast settings');
+      setCredentialsMissing(true);
+      setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
       return;
     }
 
     const { baseUrl, apiKey, secretKey, invoice = '' } = freshCourierSettings.steadfast;
 
-    // Detailed logging for debugging
-    console.log('[SteadfastModal] ======== SUBMISSION DEBUG ========');
-    console.log('[SteadfastModal] baseUrl:', baseUrl);
-    console.log('[SteadfastModal] baseUrl type:', typeof baseUrl);
-    console.log('[SteadfastModal] baseUrl empty?:', baseUrl === '' || !baseUrl);
-    console.log('[SteadfastModal] apiKey:', apiKey ? `${apiKey.substring(0, 5)}...` : 'EMPTY/NULL');
-    console.log('[SteadfastModal] apiKey type:', typeof apiKey);
-    console.log('[SteadfastModal] secretKey:', secretKey ? `${secretKey.substring(0, 5)}...` : 'EMPTY/NULL');
-    console.log('[SteadfastModal] secretKey type:', typeof secretKey);
-
-    if (!baseUrl || !apiKey || !secretKey) {
-      setError(`Incomplete Steadfast credentials - baseUrl: ${!!baseUrl}, apiKey: ${!!apiKey}, secretKey: ${!!secretKey}`);
-      console.error('[SteadfastModal] Incomplete credentials');
-      console.error('[SteadfastModal] baseUrl value:', JSON.stringify(baseUrl));
-      console.error('[SteadfastModal] apiKey value:', JSON.stringify(apiKey));
-      console.error('[SteadfastModal] secretKey value:', JSON.stringify(secretKey));
+    if (![baseUrl, apiKey, secretKey].every((value) => String(value || '').trim())) {
+      setCredentialsMissing(true);
+      setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
       return;
     }
 
@@ -255,6 +246,11 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
                 <p className="font-semibold">Error:</p>
                 <p>{error}</p>
+                {credentialsMissing && (
+                  <Button type="button" variant="secondary" className="mt-3" onClick={() => navigate('/settings?tab=courier')}>
+                    Open Courier Settings
+                  </Button>
+                )}
               </div>
             )}
             <div>

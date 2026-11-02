@@ -516,7 +516,7 @@ export interface Unit {
 export interface OrderItem {
   productId: string;
   productName: string;
-  sofaCoverType?: 'Sofa Cover' | 'Cushion' | 'Divan Cover' | 'Chair Cover';
+  sofaCoverType?: 'Sofa Cover' | 'Cushion' | 'Divan Cover' | 'Chair Cover' | 'Tea table Cover' | 'Stool Cover';
   sofaCoverOption?: string;
   rate: number;
   quantity: number;

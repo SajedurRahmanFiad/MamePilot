@@ -26,7 +26,7 @@ type CustomerSearchOption = Pick<Customer, 'id' | 'name'> & Partial<Customer>;
 type SofaCoverItemType = NonNullable<OrderItem['sofaCoverType']>;
 type SofaCoverPriceOption = { value: string; label: string; price: number };
 
-const SOFA_COVER_ITEM_TYPES: SofaCoverItemType[] = ['Sofa Cover', 'Cushion', 'Divan Cover', 'Chair Cover'];
+const SOFA_COVER_ITEM_TYPES: SofaCoverItemType[] = ['Sofa Cover', 'Cushion', 'Divan Cover', 'Chair Cover', 'Tea table Cover', 'Stool Cover'];
 
 const parseSofaCoverPricing = (product?: Product | null): Record<string, any> => {
   if (!product?.sofaCoverPricing) return {};
@@ -75,9 +75,10 @@ const normalizeSofaCoverOption = (value?: string): string => ({
 }[value || ''] || value || '');
 
 const getSofaCoverItemRate = (item: OrderItem, product?: Product | null): number => {
-  if (item.sofaCoverType === 'Divan Cover') {
-    return Number(parseSofaCoverPricing(product).divanCover?.perSeat) || 0;
-  }
+  const pricing = parseSofaCoverPricing(product);
+  if (item.sofaCoverType === 'Divan Cover') return Number(pricing.divanCover?.perSeat) || 0;
+  if (item.sofaCoverType === 'Tea table Cover') return Number(pricing.teaTableCover) || 0;
+  if (item.sofaCoverType === 'Stool Cover') return Number(pricing.stoolCover) || 0;
   const selectedOption = normalizeSofaCoverOption(item.sofaCoverOption);
   return getSofaCoverPriceOptions(item.sofaCoverType, product).find((option) => option.value === selectedOption)?.price || 0;
 };
@@ -936,7 +937,7 @@ const OrderForm: React.FC = () => {
       return;
     }
 
-    if (isSofaCover && items.some((item) => !item.sofaCoverType || !item.productId || (item.sofaCoverType !== 'Divan Cover' && !item.sofaCoverOption))) {
+    if (isSofaCover && items.some((item) => !item.sofaCoverType || !item.productId || (!['Divan Cover', 'Tea table Cover', 'Stool Cover'].includes(item.sofaCoverType) && !item.sofaCoverOption))) {
       const msg = 'Select a cover type, its required option, and a fabric for every item row.';
       setError(msg);
       toast.error(msg);
@@ -1554,7 +1555,7 @@ const OrderForm: React.FC = () => {
                   ?? allProductsRef.current.get(item.productId)
                   ?? products.find((product) => product.id === item.productId) as Product | undefined;
                 const priceOptions = getSofaCoverPriceOptions(item.sofaCoverType, currentFabric);
-                const hasOptionSelector = Boolean(item.sofaCoverType && item.sofaCoverType !== 'Divan Cover');
+                const hasOptionSelector = Boolean(item.sofaCoverType && !['Divan Cover', 'Tea table Cover', 'Stool Cover'].includes(item.sofaCoverType));
 
                 return (
                   <tr key={idx} className="group hover:bg-gray-50/50">
@@ -1594,6 +1595,8 @@ const OrderForm: React.FC = () => {
                         </select>
                       ) : item.sofaCoverType === 'Divan Cover' ? (
                         <span className="px-3 text-sm text-gray-500">Seat</span>
+                      ) : item.sofaCoverType === 'Tea table Cover' || item.sofaCoverType === 'Stool Cover' ? (
+                        <span className="px-3 text-sm text-gray-500">N/A</span>
                       ) : (
                         <span className="px-3 text-sm text-gray-400">Select cover type</span>
                       )}
@@ -1714,9 +1717,14 @@ const OrderForm: React.FC = () => {
                     const pickerItem = items[fabricPickerRowIndex];
                     const fabricPriceOptions = getSofaCoverPriceOptions(pickerItem?.sofaCoverType, fabric);
                     const selectedPriceOption = fabricPriceOptions.find((option) => option.value === normalizeSofaCoverOption(pickerItem?.sofaCoverOption));
+                    const fabricPricing = parseSofaCoverPricing(fabric);
                     const previewPrice = pickerItem?.sofaCoverType === 'Divan Cover'
-                      ? Number(parseSofaCoverPricing(fabric).divanCover?.perSeat) || 0
-                      : selectedPriceOption?.price;
+                      ? Number(fabricPricing.divanCover?.perSeat) || 0
+                      : pickerItem?.sofaCoverType === 'Tea table Cover'
+                        ? Number(fabricPricing.teaTableCover) || 0
+                        : pickerItem?.sofaCoverType === 'Stool Cover'
+                          ? Number(fabricPricing.stoolCover) || 0
+                          : selectedPriceOption?.price;
                     return (
                       <button
                         key={fabric.id}

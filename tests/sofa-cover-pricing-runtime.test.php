@@ -37,12 +37,16 @@ $stamp = substr(hash('sha256', uniqid('sofa-pricing-', true)), 0, 20);
 $productId = 'sofa-pricing-' . $stamp;
 $initialPricing = json_encode([
     'sofaCover' => ['perSeat' => 1250, 'perFoam' => 450],
+    'teaTableCover' => 700,
+    'stoolCover' => 350,
     'cushions' => [['id' => 'small', 'size' => 'Small', 'price' => 300]],
     'divanCover' => ['perSeat' => 950],
     'chairCover' => ['perSeat' => 250, 'perBackrest' => 400, 'perSeatAndBackrest' => 600, 'perArmchair' => 850],
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $updatedPricing = json_encode([
     'sofaCover' => ['perSeat' => 1350, 'perFoam' => 500],
+    'teaTableCover' => 750,
+    'stoolCover' => 400,
     'cushions' => [
         ['id' => 'small', 'size' => 'Small', 'price' => 325],
         ['id' => 'large', 'size' => 'Large', 'price' => 475],
