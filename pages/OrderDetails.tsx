@@ -157,6 +157,7 @@ const OrderDetails: React.FC = () => {
       return true;
     });
   }, [order?.items, productById, unitById]);
+  const fabricConsumptionRows = readyFabricRows.filter(({ item }) => item.fabricStockUsed != null);
   const { data: companySettings } = useCompanySettings();
   const { data: invoiceSettings } = useInvoiceSettings();
   const weightUnit = companySettings?.weightUnit || 'kg';
@@ -3049,6 +3050,22 @@ const OrderDetails: React.FC = () => {
               </button>
               {isSectionExpanded('metadata') && (
                 <div className="p-4 space-y-4">
+                  {isSofaCover && fabricConsumptionRows.length > 0 && (
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-emerald-700">Fabric Consumption</p>
+                      <div className="space-y-1">
+                        {fabricConsumptionRows.map(({ item, product, unit, inputKey }) => (
+                          <p key={inputKey} className="flex justify-between gap-3 text-sm text-gray-700">
+                            <span className="min-w-0 truncate">{product?.name || item.productName}</span>
+                            <span className="shrink-0 font-semibold text-gray-900">
+                              {Number(item.fabricStockUsed).toLocaleString(undefined, { maximumFractionDigits: 3 })} {unit?.short_name || unit?.name || 'units'}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Ad Information */}
                   {sourceAdInfo ? (
                     <button
