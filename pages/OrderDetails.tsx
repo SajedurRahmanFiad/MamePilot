@@ -16,7 +16,7 @@ import { handlePrintOrder } from '../src/utils/printUtils';
 import { buildHistoryBackState, getPreservedRouteState } from '../src/utils/navigation';
 import { useRolePermissions } from '../src/hooks/useRolePermissions';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { getBusinessTerminology, translateBusinessInventoryTerms } from '../src/utils/businessMode';
+import { getBusinessTerminology, isSofaCoverOrderStatusEditable, translateBusinessInventoryTerms } from '../src/utils/businessMode';
 import {
   buildLocalDateTime,
   formatActivityStatusTimestamp,
@@ -1296,7 +1296,11 @@ const OrderDetails: React.FC = () => {
   if (orderError || !order) return <div className="p-8 text-center text-gray-500">{orderError?.message || 'Order not found.'}</div>;
   const additionalExpenses = order.additionalExpenses ?? [];
   let canEditCurrentOrder = false;
-  if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
+  if (isSofaCover && isSofaCoverOrderStatusEditable(order.status)) {
+    canEditCurrentOrder = (order.status === OrderStatus.PICKED && !!isAdminAccessUser)
+      || can('orders.editAny')
+      || (can('orders.editOwn') && order.createdBy === user?.id);
+  } else if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
     canEditCurrentOrder = can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
   } else if (order.status === OrderStatus.PICKED) {
     // Admins and Developers are allowed to edit picked orders

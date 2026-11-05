@@ -1,4 +1,15 @@
-import type { BusinessMode } from '../../types';
+import { OrderStatus, type BusinessMode } from '../../types';
+
+const SOFA_COVER_NON_EDITABLE_ORDER_STATUSES: OrderStatus[] = [
+  OrderStatus.COMPLETED,
+  OrderStatus.RETURNED,
+  OrderStatus.CANCELLED,
+  OrderStatus.PARTIALLY_DELIVERED,
+  OrderStatus.EXCHANGE_DELIVERED,
+];
+
+export const isSofaCoverOrderStatusEditable = (status: OrderStatus): boolean =>
+  !SOFA_COVER_NON_EDITABLE_ORDER_STATUSES.includes(status);
 
 export const isVaccineCenterMode = (businessMode?: BusinessMode | null): boolean => businessMode === 'vaccine_center';
 

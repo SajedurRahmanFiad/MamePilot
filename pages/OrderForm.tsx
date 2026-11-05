@@ -6,7 +6,7 @@ import { formatCurrency, ICONS } from '../constants';
 import { Button, CustomerCreateModal, NumericInput, DuplicateOrderModal } from '../components';
 import { theme } from '../theme';
 import { useCapabilities } from '../src/hooks/useCapabilities';
-import { getBusinessTerminology } from '../src/utils/businessMode';
+import { getBusinessTerminology, isSofaCoverOrderStatusEditable } from '../src/utils/businessMode';
 import { useCompanySettings, useCustomer, useMetaAdOptions, useOrder, useOrderSettings, useOrdersByCustomerId, useSystemDefaults, useBeSmartSettings, useUnits } from '../src/hooks/useQueries';
 import { useQueryClient, useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchProductsSearchPage, fetchProductById, fetchCustomersPage, getNextOrderNumber, getErrorMessage, lookupCustomerBySmartInput } from '../src/services/supabaseQueries';
@@ -458,16 +458,16 @@ const OrderForm: React.FC = () => {
     // user input while editing.
     if (existingOrderData && !initializedRef.current) {
       if (isEdit) {
-          // Exchange-processing orders remain editable until the courier picks
-          // the exchange parcel. Admin/Developer users retain the existing
-          // exception for ordinary Picked orders.
-          if (![OrderStatus.ON_HOLD, OrderStatus.EXCHANGE_PROCESSING].includes(existingOrderData.status)) {
-            const allowedForPicked = existingOrderData.status === OrderStatus.PICKED && isAdminAccessUser;
-            if (!allowedForPicked) {
-              toast.warning('Orders can only be edited while On Hold, while an exchange is processing, or by an admin after an ordinary pickup.');
-              navigate('/orders');
-              return;
-            }
+          const allowedByStatus = isSofaCover
+            ? isSofaCoverOrderStatusEditable(existingOrderData.status)
+            : [OrderStatus.ON_HOLD, OrderStatus.EXCHANGE_PROCESSING].includes(existingOrderData.status)
+              || (existingOrderData.status === OrderStatus.PICKED && isAdminAccessUser);
+          if (!allowedByStatus) {
+            toast.warning(isSofaCover
+              ? 'Delivered, returned, cancelled, partially delivered, or exchanged orders cannot be edited.'
+              : 'Orders can only be edited while On Hold, while an exchange is processing, or by an admin after an ordinary pickup.');
+            navigate('/orders');
+            return;
           }
 
           const canEditExistingOrder =
@@ -524,7 +524,7 @@ const OrderForm: React.FC = () => {
           }
         });
     }
-  }, [can, canAccessRecord, existingOrderData, isEdit, navigate, normalizedCompanySettings, toast, user?.id]);
+  }, [can, canAccessRecord, existingOrderData, isEdit, isSofaCover, navigate, normalizedCompanySettings, toast, user?.id]);
 
   React.useEffect(() => {
     if (companySettingsLoading || pageId || companyPages.length === 0) {

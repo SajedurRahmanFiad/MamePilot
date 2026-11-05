@@ -16,6 +16,7 @@ import Pagination from '../src/components/Pagination';
 import { useAddCourierCompletionExpense, useCompletePickedOrder, useConfirmPartialDelivery, useCreateOrder, useDeleteOrder, useCreateTransaction } from '../src/hooks/useMutations';
 import { DEFAULT_PAGE_SIZE, fetchOrderById } from '../src/services/supabaseQueries';
 import { useToastNotifications } from '../src/contexts/ToastContext';
+import { isSofaCoverOrderStatusEditable } from '../src/utils/businessMode';
 import { useUrlSyncedSearchQuery } from '../src/hooks/useUrlSyncedSearchQuery';
 import { handlePrintOrder } from '../src/utils/printUtils';
 import { buildHistoryBackState, getPositivePageParam } from '../src/utils/navigation';
@@ -752,6 +753,11 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
   };
 
   const canEditOrder = (order: Order) => {
+    if (isSofaCover && isSofaCoverOrderStatusEditable(order.status)) {
+      if (order.status === OrderStatus.PICKED && hasAdminAccess(user?.role)) return true;
+      return can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
+    }
+
     if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
       if (can('orders.editAny')) return true;
       return can('orders.editOwn') && order.createdBy === user?.id;
