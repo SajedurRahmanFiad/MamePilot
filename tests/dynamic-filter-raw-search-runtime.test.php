@@ -163,7 +163,8 @@ try {
     rawSearchRuntimeAssert(($updatedExchangeOrder['notes'] ?? '') === 'Still editable before exchange pickup.', 'Exchange-processing order was not editable.');
 
     $capabilitySettings = $database->fetchOne('SELECT business_mode FROM app_capability_settings LIMIT 1');
-    if (trim((string) ($capabilitySettings['business_mode'] ?? '')) === 'sofa_cover') {
+    $isSofaCoverMode = trim((string) ($capabilitySettings['business_mode'] ?? '')) === 'sofa_cover';
+    if ($isSofaCoverMode) {
         $cuttingAndSewingOrder = $operations->updateOrder([
             'id' => $cuttingAndSewingOrderId,
             'updates' => [
@@ -181,18 +182,41 @@ try {
     }
 
     $database->execute("UPDATE orders SET status = 'Exchange picked' WHERE id = :id", [':id' => $exchangeOrderId]);
-    $blockedAfterPickup = false;
-    try {
+    if ($isSofaCoverMode) {
         $operations->updateOrder([
             'id' => $exchangeOrderId,
-            'updates' => ['notes' => 'This edit must be blocked.'],
+            'updates' => ['notes' => 'Still editable while exchange is active.'],
         ]);
-    } catch (RuntimeException $exception) {
-        $blockedAfterPickup = str_contains($exception->getMessage(), 'can no longer be edited');
+        foreach (['Completed', 'Returned', 'Cancelled', 'partially_delivered', 'Exchange delivered'] as $terminalStatus) {
+            $database->execute(
+                'UPDATE orders SET status = :status WHERE id = :id',
+                [':status' => $terminalStatus, ':id' => $exchangeOrderId]
+            );
+            $blockedAfterTerminalStatus = false;
+            try {
+                $operations->updateOrder([
+                    'id' => $exchangeOrderId,
+                    'updates' => ['notes' => 'This terminal order edit must be blocked.'],
+                ]);
+            } catch (RuntimeException $exception) {
+                $blockedAfterTerminalStatus = str_contains($exception->getMessage(), 'can no longer be edited');
+            }
+            rawSearchRuntimeAssert($blockedAfterTerminalStatus, "{$terminalStatus} order remained editable in sofa-cover mode.");
+        }
+    } else {
+        $blockedAfterPickup = false;
+        try {
+            $operations->updateOrder([
+                'id' => $exchangeOrderId,
+                'updates' => ['notes' => 'This edit must be blocked.'],
+            ]);
+        } catch (RuntimeException $exception) {
+            $blockedAfterPickup = str_contains($exception->getMessage(), 'can no longer be edited');
+        }
+        rawSearchRuntimeAssert($blockedAfterPickup, 'Exchange-picked order remained editable through the API.');
     }
-    rawSearchRuntimeAssert($blockedAfterPickup, 'Exchange-picked order remained editable through the API.');
 
-    echo "Raw-search SQL coverage and exchange edit-window runtime tests passed.\n";
+    echo "Raw-search SQL coverage and mode-specific order edit-window runtime tests passed.\n";
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

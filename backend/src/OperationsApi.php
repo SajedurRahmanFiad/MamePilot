@@ -1321,10 +1321,10 @@ final class OperationsApi extends BaseService
         $role = (string) ($user['role'] ?? '');
         $createdBy = (string) ($row['created_by'] ?? '');
         $status = (string) ($row['status'] ?? '');
-        if (
-            in_array($status, ['On Hold', 'Exchange processing'], true)
-            && $this->userHasScopedPermissionForRecord($user, $createdBy, 'orders.editOwn', 'orders.editAny')
-        ) {
+        $editableStatus = $this->isSofaCoverBusinessMode()
+            ? !in_array($status, ['Completed', 'Returned', 'Cancelled', 'partially_delivered', 'Exchange delivered'], true)
+            : in_array($status, ['On Hold', 'Exchange processing'], true);
+        if ($editableStatus && $this->userHasScopedPermissionForRecord($user, $createdBy, 'orders.editOwn', 'orders.editAny')) {
             return;
         }
 
