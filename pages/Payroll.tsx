@@ -879,27 +879,6 @@ const Payroll: React.FC = () => {
         />
       </section>
 
-      <section className="grid gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-gray-400">Current wallet outstanding</p>
-          <p className="mt-1 text-base font-black text-gray-900">{walletOverviewError ? 'Unavailable' : formatCurrency(walletSummary.totalBalance)}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-gray-400">Employees with balance</p>
-          <p className="mt-1 text-base font-black text-gray-900">{walletOverviewError ? 'Unavailable' : walletSummary.employeesDue}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-gray-400">Current unit rate</p>
-          <p className="mt-1 text-base font-black text-gray-900">{walletSettingsError ? 'Unavailable' : formatCurrency(walletSettings.unitAmount)}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-gray-400">Compensation mix</p>
-          <p className="mt-1 text-sm font-black text-gray-900">
-            {walletOverviewError ? 'Unavailable' : `${walletSummary.fixedSalaryEmployees} fixed · ${walletSummary.hybridEmployees ?? 0} hybrid · ${Math.max(0, totalEmployees - walletSummary.fixedSalaryEmployees - (walletSummary.hybridEmployees ?? 0))} commission`}
-          </p>
-        </div>
-      </section>
-
       <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
