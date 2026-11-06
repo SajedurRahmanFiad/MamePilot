@@ -88,6 +88,8 @@ import {
   fetchPayrollHistory,
   fetchPayrollSummaries,
   fetchDeliveryPersonPayrollSummaries,
+  fetchDeliveryPersonPayrollCreditsPage,
+  fetchDeliveryPersonPayrollPaymentsPage,
   fetchWalletSettings,
   fetchEmployeeWalletCards,
   fetchEmployeeWalletCardsPage,
@@ -1842,6 +1844,24 @@ export function useDeliveryPersonPayrollSummaries(periodStart?: string, periodEn
     queryKey: ['delivery-person-payroll', 'summaries', periodStart, periodEnd],
     queryFn: () => fetchDeliveryPersonPayrollSummaries({ periodStart: periodStart || '', periodEnd: periodEnd || '' }),
     enabled: enabled && !!periodStart && !!periodEnd,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDeliveryPersonPayrollCreditsPage(page: number, pageSize: number, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['delivery-person-payroll', 'credits', page, pageSize],
+    queryFn: () => fetchDeliveryPersonPayrollCreditsPage(page, pageSize),
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDeliveryPersonPayrollPaymentsPage(page: number, pageSize: number, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['delivery-person-payroll', 'payments', page, pageSize],
+    queryFn: () => fetchDeliveryPersonPayrollPaymentsPage(page, pageSize),
+    enabled,
     staleTime: 60 * 1000,
   });
 }

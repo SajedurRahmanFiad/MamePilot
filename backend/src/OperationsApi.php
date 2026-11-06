@@ -11300,7 +11300,7 @@ final class OperationsApi extends BaseService
             'SELECT delivery_person_id,
                 SUBSTRING_INDEX(GROUP_CONCAT(id ORDER BY paid_at DESC, id DESC), ",", 1) AS last_payment_id,
                     COUNT(*) AS payment_count,
-                    COALESCE(SUM(base_amount_snapshot), 0) AS base_paid,
+                    COALESCE(SUM(base_amount_snapshot - credit_amount_snapshot), 0) AS base_paid,
                     COALESCE(SUM(bonus_amount), 0) AS bonus_paid,
                     COALESCE(SUM(deduction_amount), 0) AS deduction_paid,
                     COALESCE(SUM(amount_snapshot), 0) AS net_paid,
@@ -11315,12 +11315,35 @@ final class OperationsApi extends BaseService
             $paymentMap[(string) $payment['delivery_person_id']] = $payment;
         }
 
-        return array_map(function (array $person) use ($paymentMap, $periodStart, $periodEnd): array {
+        $credits = $this->database->fetchAll(
+            'SELECT delivery_person_id, COALESCE(SUM(amount), 0) AS credit_total
+             FROM delivery_person_payroll_credits
+             GROUP BY delivery_person_id'
+        );
+        $creditMap = [];
+        foreach ($credits as $credit) {
+            $creditMap[(string) $credit['delivery_person_id']] = (float) ($credit['credit_total'] ?? 0);
+        }
+        $creditPayments = $this->database->fetchAll(
+            'SELECT delivery_person_id, COALESCE(SUM(credit_amount_snapshot), 0) AS credit_paid
+             FROM delivery_person_payments
+             GROUP BY delivery_person_id'
+        );
+        $creditPaidMap = [];
+        foreach ($creditPayments as $creditPayment) {
+            $creditPaidMap[(string) $creditPayment['delivery_person_id']] = (float) ($creditPayment['credit_paid'] ?? 0);
+        }
+
+        return array_map(function (array $person) use ($paymentMap, $creditMap, $creditPaidMap, $periodStart, $periodEnd): array {
             $id = (string) $person['id'];
             $payment = $paymentMap[$id] ?? [];
-            $baseAmount = round((float) ($person['base_amount'] ?? 0), 2);
+            $orderBaseAmount = round((float) ($person['base_amount'] ?? 0), 2);
             $basePaid = round((float) ($payment['base_paid'] ?? 0), 2);
-            $remaining = round(max(0.0, $baseAmount - $basePaid), 2);
+            $creditTotal = max(0.0, (float) ($creditMap[$id] ?? 0));
+            $creditPaid = max(0.0, (float) ($creditPaidMap[$id] ?? 0));
+            $creditBalance = round(max(0.0, $creditTotal - $creditPaid), 2);
+            $baseAmount = round($orderBaseAmount + $creditBalance, 2);
+            $remaining = round(max(0.0, $orderBaseAmount - $basePaid) + $creditBalance, 2);
             return [
                 'deliveryPersonId' => $id,
                 'deliveryPersonName' => (string) ($person['name'] ?? 'Delivery person'),
@@ -11330,6 +11353,7 @@ final class OperationsApi extends BaseService
                 'orderCount' => (int) ($person['order_count'] ?? 0),
                 'baseAmount' => $baseAmount,
                 'basePaid' => $basePaid,
+                'additionalCreditBalance' => $creditBalance,
                 'bonusPaid' => round((float) ($payment['bonus_paid'] ?? 0), 2),
                 'deductionPaid' => round((float) ($payment['deduction_paid'] ?? 0), 2),
                 'netPaid' => round((float) ($payment['net_paid'] ?? 0), 2),
@@ -11340,6 +11364,145 @@ final class OperationsApi extends BaseService
                 'lastPaidAt' => $payment['last_paid_at'] ?? null,
             ];
         }, $people);
+    }
+
+    public function fetchDeliveryPersonPayrollCreditsPage(array $params): array
+    {
+        $this->assertDeliveryPayrollAccess();
+        $pageSize = $this->pageSize($params);
+        $offset = $this->pageOffset($params);
+        $count = (int) (($this->database->fetchOne(
+            'SELECT COUNT(*) AS total FROM delivery_person_payroll_credits'
+        ) ?? [])['total'] ?? 0);
+        $rows = $this->database->fetchAll(
+            'SELECT c.id, c.delivery_person_id, dp.name AS delivery_person_name,
+                    c.amount, c.note, c.created_at, c.created_by,
+                    u.name AS credited_by_name
+             FROM delivery_person_payroll_credits c
+             INNER JOIN delivery_persons dp ON dp.id = c.delivery_person_id
+             LEFT JOIN users u ON u.id = c.created_by
+             ORDER BY c.created_at DESC, c.id DESC
+             LIMIT ' . $pageSize . ' OFFSET ' . $offset
+        );
+        $data = array_map(fn(array $row): array => [
+            'id' => (string) $row['id'],
+            'deliveryPersonId' => (string) $row['delivery_person_id'],
+            'deliveryPersonName' => (string) ($row['delivery_person_name'] ?? 'Delivery person'),
+            'amount' => round((float) ($row['amount'] ?? 0), 2),
+            'note' => $row['note'] ?? null,
+            'createdAt' => $this->toIso($row['created_at'] ?? null),
+            'createdBy' => (string) ($row['created_by'] ?? ''),
+            'creditedByName' => (string) ($row['credited_by_name'] ?? 'Unknown'),
+        ], $rows);
+
+        return ['data' => $data, 'count' => $count];
+    }
+
+    public function fetchDeliveryPersonPayrollPaymentsPage(array $params): array
+    {
+        $this->assertDeliveryPayrollAccess();
+        $pageSize = $this->pageSize($params);
+        $offset = $this->pageOffset($params);
+        $count = (int) (($this->database->fetchOne(
+            'SELECT COUNT(*) AS total FROM delivery_person_payments'
+        ) ?? [])['total'] ?? 0);
+        $rows = $this->database->fetchAll(
+            'SELECT p.*, dp.name AS delivery_person_name,
+                    a.name AS account_name, u.name AS paid_by_name
+             FROM delivery_person_payments p
+             INNER JOIN delivery_persons dp ON dp.id = p.delivery_person_id
+             LEFT JOIN accounts a ON a.id = p.account_id
+             LEFT JOIN users u ON u.id = p.paid_by
+             ORDER BY p.paid_at DESC, p.id DESC
+             LIMIT ' . $pageSize . ' OFFSET ' . $offset
+        );
+        $data = array_map(fn(array $row): array => [
+            'id' => (string) $row['id'],
+            'deliveryPersonId' => (string) $row['delivery_person_id'],
+            'deliveryPersonName' => (string) ($row['delivery_person_name'] ?? 'Delivery person'),
+            'periodStart' => (string) $row['period_start'],
+            'periodEnd' => (string) $row['period_end'],
+            'periodKind' => (string) $row['period_kind'],
+            'periodLabel' => (string) $row['period_label'],
+            'orderCountSnapshot' => (int) ($row['order_count_snapshot'] ?? 0),
+            'baseAmountSnapshot' => round((float) ($row['base_amount_snapshot'] ?? 0), 2),
+            'creditAmountSnapshot' => round((float) ($row['credit_amount_snapshot'] ?? 0), 2),
+            'bonusAmount' => round((float) ($row['bonus_amount'] ?? 0), 2),
+            'deductionAmount' => round((float) ($row['deduction_amount'] ?? 0), 2),
+            'amountSnapshot' => round((float) ($row['amount_snapshot'] ?? 0), 2),
+            'isPartial' => (bool) ($row['is_partial'] ?? false),
+            'transactionId' => $row['transaction_id'] ?? null,
+            'accountId' => $row['account_id'] ?? null,
+            'accountName' => $row['account_name'] ?? null,
+            'paymentMethod' => $row['payment_method'] ?? null,
+            'categoryId' => $row['category_id'] ?? null,
+            'paidAt' => $this->toIso($row['paid_at'] ?? null),
+            'paidBy' => (string) ($row['paid_by'] ?? ''),
+            'paidByName' => (string) ($row['paid_by_name'] ?? 'Unknown'),
+            'note' => $row['note'] ?? null,
+        ], $rows);
+
+        return ['data' => $data, 'count' => $count];
+    }
+
+    public function createDeliveryPersonPayrollCredit(array $params): array
+    {
+        $currentUser = $this->assertDeliveryPayrollAccess(true);
+        $deliveryPersonId = trim((string) ($params['deliveryPersonId'] ?? ''));
+        if ($deliveryPersonId === '') {
+            throw new RuntimeException('Select a delivery person to credit.');
+        }
+        if (!is_numeric($params['amount'] ?? null)) {
+            throw new RuntimeException('Enter a valid credit amount.');
+        }
+        $amount = round((float) $params['amount'], 2);
+        if (!is_finite($amount) || $amount <= 0 || $amount > 9999999999.99) {
+            throw new RuntimeException('Credit amount must be greater than zero and within the supported limit.');
+        }
+        $note = $this->nullableString($params['note'] ?? null);
+        if ($note !== null && strlen($note) > 4000) {
+            throw new RuntimeException('Credit note cannot exceed 4000 characters.');
+        }
+
+        return $this->database->transaction(function () use ($currentUser, $deliveryPersonId, $amount, $note): array {
+            $person = $this->database->fetchOne(
+                'SELECT id, name FROM delivery_persons WHERE id = :id AND deleted_at IS NULL LIMIT 1 FOR UPDATE',
+                [':id' => $deliveryPersonId]
+            );
+            if ($person === null) {
+                throw new RuntimeException('Delivery person not found.');
+            }
+
+            $id = $this->uuid4();
+            $createdAt = $this->database->nowUtc();
+            $this->database->execute(
+                'INSERT INTO delivery_person_payroll_credits (
+                    id, delivery_person_id, amount, note, created_by, created_at, updated_at
+                ) VALUES (
+                    :id, :delivery_person_id, :amount, :note, :created_by, :created_at, :updated_at
+                )',
+                [
+                    ':id' => $id,
+                    ':delivery_person_id' => $deliveryPersonId,
+                    ':amount' => $this->formatMoney($amount),
+                    ':note' => $note,
+                    ':created_by' => (string) $currentUser['id'],
+                    ':created_at' => $createdAt,
+                    ':updated_at' => $createdAt,
+                ]
+            );
+
+            return [
+                'id' => $id,
+                'deliveryPersonId' => $deliveryPersonId,
+                'deliveryPersonName' => (string) $person['name'],
+                'amount' => $amount,
+                'note' => $note,
+                'createdAt' => $this->toIso($createdAt),
+                'createdBy' => (string) $currentUser['id'],
+                'creditedByName' => (string) ($currentUser['name'] ?? ''),
+            ];
+        });
     }
 
     public function payDeliveryPersonPayroll(array $params): array
@@ -11371,15 +11534,25 @@ final class OperationsApi extends BaseService
                 [':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd]
             ) ?? [];
             $paidRow = $this->database->fetchOne(
-                'SELECT COALESCE(SUM(base_amount_snapshot), 0) AS base_paid
+                'SELECT COALESCE(SUM(base_amount_snapshot - credit_amount_snapshot), 0) AS order_base_paid
                  FROM delivery_person_payments
                  WHERE delivery_person_id = :delivery_person_id AND period_start = :period_start AND period_end = :period_end',
                 [':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd]
             ) ?? [];
-            $baseAmount = round((float) ($baseRow['base_amount'] ?? 0), 2);
-            $remainingBase = round(max(0.0, $baseAmount - (float) ($paidRow['base_paid'] ?? 0)), 2);
+            $creditRow = $this->database->fetchOne(
+                'SELECT
+                    (SELECT COALESCE(SUM(amount), 0) FROM delivery_person_payroll_credits WHERE delivery_person_id = :credit_person_id)
+                    - (SELECT COALESCE(SUM(credit_amount_snapshot), 0) FROM delivery_person_payments WHERE delivery_person_id = :paid_credit_person_id)
+                    AS credit_balance',
+                [':credit_person_id' => $deliveryPersonId, ':paid_credit_person_id' => $deliveryPersonId]
+            ) ?? [];
+            $orderBaseAmount = round((float) ($baseRow['base_amount'] ?? 0), 2);
+            $remainingOrderBase = round(max(0.0, $orderBaseAmount - (float) ($paidRow['order_base_paid'] ?? 0)), 2);
+            $creditBalance = round(max(0.0, (float) ($creditRow['credit_balance'] ?? 0)), 2);
+            $remainingBase = round($remainingOrderBase + $creditBalance, 2);
             $requestedAmount = round((float) ($params['requestedAmount'] ?? 0), 2);
             $baseToPay = $requestedAmount > 0 ? min($remainingBase, $requestedAmount) : $remainingBase;
+            $creditAmountToPay = round(min($creditBalance, max(0.0, $baseToPay - $remainingOrderBase)), 2);
             if ($baseToPay <= 0 && $bonusAmount <= 0) throw new RuntimeException('There is no unpaid delivery person amount for this period.');
             if ($deductionAmount > round($baseToPay + $bonusAmount, 2)) throw new RuntimeException('Deduction cannot exceed base pay plus bonus.');
             $netAmount = round($baseToPay + $bonusAmount - $deductionAmount, 2);
@@ -11420,12 +11593,12 @@ final class OperationsApi extends BaseService
             $this->database->execute(
                 'INSERT INTO delivery_person_payments (
                     id, delivery_person_id, period_start, period_end, period_kind, period_label,
-                    order_count_snapshot, base_amount_snapshot, bonus_amount, deduction_amount,
+                    order_count_snapshot, base_amount_snapshot, credit_amount_snapshot, bonus_amount, deduction_amount,
                     amount_snapshot, is_partial, transaction_id, account_id, payment_method,
                     category_id, paid_at, paid_by, note, created_at, updated_at
                 ) VALUES (
                     :id, :delivery_person_id, :period_start, :period_end, :period_kind, :period_label,
-                    :order_count_snapshot, :base_amount_snapshot, :bonus_amount, :deduction_amount,
+                    :order_count_snapshot, :base_amount_snapshot, :credit_amount_snapshot, :bonus_amount, :deduction_amount,
                     :amount_snapshot, :is_partial, :transaction_id, :account_id, :payment_method,
                     :category_id, :paid_at, :paid_by, :note, :created_at, :updated_at
                 )',
@@ -11433,7 +11606,8 @@ final class OperationsApi extends BaseService
                     ':id' => $paymentId, ':delivery_person_id' => $deliveryPersonId, ':period_start' => $periodStart, ':period_end' => $periodEnd,
                     ':period_kind' => in_array((string) ($params['periodKind'] ?? ''), ['month', 'custom'], true) ? $params['periodKind'] : 'custom',
                     ':period_label' => $periodLabel, ':order_count_snapshot' => (int) ($baseRow['order_count'] ?? 0),
-                    ':base_amount_snapshot' => $this->formatMoney($baseToPay), ':bonus_amount' => $this->formatMoney($bonusAmount),
+                    ':base_amount_snapshot' => $this->formatMoney($baseToPay), ':credit_amount_snapshot' => $this->formatMoney($creditAmountToPay),
+                    ':bonus_amount' => $this->formatMoney($bonusAmount),
                     ':deduction_amount' => $this->formatMoney($deductionAmount), ':amount_snapshot' => $this->formatMoney($netAmount),
                     ':is_partial' => $isPartial ? 1 : 0, ':transaction_id' => $transactionId, ':account_id' => $accountId,
                     ':payment_method' => $paymentMethod, ':category_id' => $categoryId, ':paid_at' => $paidAt,

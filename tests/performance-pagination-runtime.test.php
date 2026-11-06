@@ -496,6 +496,89 @@ try {
     performancePaginationAssert((int) ($percentageWalletCard['creditedOrders'] ?? 0) === 1, 'Percentage employee credited-order count.');
     performancePaginationAssert((float) ($percentageWalletCard['baseEarned'] ?? 0) === 31.25, 'Percentage employee wallet amount.');
 
+    // Delivery payroll adjustments are transaction-free credits, remain
+    // outstanding until paid, and appear in both paginated ledgers.
+    $capability = $database->fetchOne('SELECT id FROM app_capability_settings LIMIT 1');
+    if ($capability === null) {
+        $database->execute(
+            'INSERT INTO app_capability_settings (id, business_mode, created_at, updated_at)
+             VALUES (:id, \'sofa_cover\', :created_at, :updated_at)',
+            [':id' => substr('payroll-capability-' . $stamp, 0, 64), ':created_at' => $now, ':updated_at' => $now]
+        );
+    } else {
+        $database->execute(
+            'UPDATE app_capability_settings SET business_mode = \'sofa_cover\' WHERE id = :id',
+            [':id' => $capability['id']]
+        );
+    }
+    $deliveryPersonId = substr('payroll-delivery-' . $stamp, 0, 64);
+    $database->execute(
+        'INSERT INTO delivery_persons (id, name, phone, created_at, updated_at)
+         VALUES (:id, :name, :phone, :created_at, :updated_at)',
+        [
+            ':id' => $deliveryPersonId,
+            ':name' => 'Payroll Delivery ' . $stamp,
+            ':phone' => 'payroll-' . $stamp,
+            ':created_at' => $now,
+            ':updated_at' => $now,
+        ]
+    );
+    $transactionCountBeforeCredit = (int) (($database->fetchOne('SELECT COUNT(*) AS total FROM transactions') ?? [])['total'] ?? 0);
+    $deliveryCredit = $operations->createDeliveryPersonPayrollCredit([
+        'deliveryPersonId' => $deliveryPersonId,
+        'amount' => 123.45,
+        'note' => 'Runtime test credit',
+    ]);
+    $transactionCountAfterCredit = (int) (($database->fetchOne('SELECT COUNT(*) AS total FROM transactions') ?? [])['total'] ?? 0);
+    performancePaginationAssert($transactionCountAfterCredit === $transactionCountBeforeCredit, 'Delivery payroll credit must not create a transaction.');
+    $deliveryCredits = $operations->fetchDeliveryPersonPayrollCreditsPage(['page' => 1, 'pageSize' => 200]);
+    $deliveryCreditRow = array_values(array_filter(
+        $deliveryCredits['data'] ?? [],
+        static fn(array $credit): bool => (string) ($credit['id'] ?? '') === (string) ($deliveryCredit['id'] ?? '')
+    ))[0] ?? [];
+    performancePaginationAssert((string) ($deliveryCreditRow['note'] ?? '') === 'Runtime test credit', 'Paginated delivery-credit history maps note and row.');
+
+    $deliverySummary = array_values(array_filter(
+        $operations->fetchDeliveryPersonPayrollSummaries(['periodStart' => $payrollDate, 'periodEnd' => $payrollDate]),
+        static fn(array $summary): bool => (string) ($summary['deliveryPersonId'] ?? '') === $deliveryPersonId
+    ))[0] ?? [];
+    performancePaginationAssert((float) ($deliverySummary['additionalCreditBalance'] ?? 0) === 123.45, 'Additional payroll credit increases outstanding balance.');
+    performancePaginationAssert((float) ($deliverySummary['remainingAmount'] ?? 0) === 123.45, 'Additional payroll credit is payable.');
+    $deliveryPaymentId = substr('payroll-delivery-payment-' . $stamp, 0, 64);
+    $database->execute(
+        'INSERT INTO delivery_person_payments (
+            id, delivery_person_id, period_start, period_end, period_kind, period_label,
+            base_amount_snapshot, credit_amount_snapshot, amount_snapshot, paid_by, paid_at, created_at, updated_at
+         ) VALUES (
+            :id, :delivery_person_id, :period_start, :period_end, \'month\', :period_label,
+            23.45, 23.45, 23.45, :paid_by, :paid_at, :created_at, :updated_at
+         )',
+        [
+            ':id' => $deliveryPaymentId,
+            ':delivery_person_id' => $deliveryPersonId,
+            ':period_start' => $payrollDate,
+            ':period_end' => $payrollDate,
+            ':period_label' => $payrollDate,
+            ':paid_by' => $actor['id'],
+            ':paid_at' => $now,
+            ':created_at' => $now,
+            ':updated_at' => $now,
+        ]
+    );
+    $deliverySummaryAfterPayment = array_values(array_filter(
+        $operations->fetchDeliveryPersonPayrollSummaries(['periodStart' => $payrollDate, 'periodEnd' => $payrollDate]),
+        static fn(array $summary): bool => (string) ($summary['deliveryPersonId'] ?? '') === $deliveryPersonId
+    ))[0] ?? [];
+    performancePaginationAssert((float) ($deliverySummaryAfterPayment['additionalCreditBalance'] ?? 0) === 100.0, 'Recorded credit payment reduces the carried credit balance.');
+    $deliveryPayments = $operations->fetchDeliveryPersonPayrollPaymentsPage(['page' => 1, 'pageSize' => 200]);
+    performancePaginationAssert(
+        count(array_filter(
+            $deliveryPayments['data'] ?? [],
+            static fn(array $payment): bool => (string) ($payment['id'] ?? '') === $deliveryPaymentId
+        )) === 1,
+        'Paginated delivery payroll payment history includes its payment.'
+    );
+
     // Notifications: the summary and paginated feed share one central-sync
     // throttle, while read receipts remain visible in paginated history.
     $claimMethod = new ReflectionMethod($masterData, 'claimCentralNotificationSyncWindow');

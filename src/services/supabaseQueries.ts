@@ -10,6 +10,7 @@ import type {
   Customer,
   DeliveryPerson,
   DeliveryPersonPayrollPayment,
+  DeliveryPersonPayrollCredit,
   DeliveryPersonPayrollSummary,
   CustomerSalesReportData,
   Order,
@@ -616,6 +617,15 @@ export async function fetchPayrollSummaries(params: { periodStart: string; perio
 }
 export async function fetchDeliveryPersonPayrollSummaries(params: { periodStart: string; periodEnd: string }): Promise<DeliveryPersonPayrollSummary[]> {
   return call<DeliveryPersonPayrollSummary[]>('fetchDeliveryPersonPayrollSummaries', params);
+}
+export async function fetchDeliveryPersonPayrollCreditsPage(page: number, pageSize: number): Promise<{ data: DeliveryPersonPayrollCredit[]; count: number }> {
+  return call<{ data: DeliveryPersonPayrollCredit[]; count: number }>('fetchDeliveryPersonPayrollCreditsPage', { page, pageSize });
+}
+export async function fetchDeliveryPersonPayrollPaymentsPage(page: number, pageSize: number): Promise<{ data: DeliveryPersonPayrollPayment[]; count: number }> {
+  return call<{ data: DeliveryPersonPayrollPayment[]; count: number }>('fetchDeliveryPersonPayrollPaymentsPage', { page, pageSize });
+}
+export async function createDeliveryPersonPayrollCredit(payload: { deliveryPersonId: string; amount: number; note?: string }): Promise<DeliveryPersonPayrollCredit> {
+  return call<DeliveryPersonPayrollCredit>('createDeliveryPersonPayrollCredit', payload);
 }
 export async function payDeliveryPersonPayroll(payload: { deliveryPersonId: string; periodStart: string; periodEnd: string; periodKind: 'month' | 'custom'; periodLabel: string; requestedAmount?: number; bonusAmount?: number; deductionAmount?: number; accountId: string; paymentMethod: string; categoryId: string; paidAt: string; note?: string; }): Promise<DeliveryPersonPayrollPayment> {
   return call<DeliveryPersonPayrollPayment>('payDeliveryPersonPayroll', payload);

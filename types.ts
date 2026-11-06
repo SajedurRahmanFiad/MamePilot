@@ -2279,6 +2279,7 @@ export interface DeliveryPersonPayrollSummary {
   orderCount: number;
   baseAmount: number;
   basePaid: number;
+  additionalCreditBalance?: number;
   bonusPaid: number;
   deductionPaid: number;
   netPaid: number;
@@ -2298,17 +2299,31 @@ export interface DeliveryPersonPayrollPayment {
   periodLabel: string;
   orderCountSnapshot: number;
   baseAmountSnapshot: number;
+  creditAmountSnapshot?: number;
   bonusAmount: number;
   deductionAmount: number;
   amountSnapshot: number;
   isPartial: boolean;
   transactionId?: string | null;
   accountId?: string | null;
+  accountName?: string | null;
   paymentMethod?: string | null;
   categoryId?: string | null;
   paidAt: string;
   paidBy: string;
+  paidByName?: string;
   note?: string | null;
+}
+
+export interface DeliveryPersonPayrollCredit {
+  id: string;
+  deliveryPersonId: string;
+  deliveryPersonName: string;
+  amount: number;
+  note?: string | null;
+  createdAt: string;
+  createdBy: string;
+  creditedByName: string;
 }
 
 export type WalletEntryType =

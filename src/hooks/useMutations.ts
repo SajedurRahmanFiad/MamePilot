@@ -97,6 +97,7 @@ import {
   deleteEmployeeWalletPayout,
   payDeliveryPersonPayroll,
   deleteDeliveryPersonPayrollPayment,
+  createDeliveryPersonPayrollCredit,
   batchUpdateSettings,
   restoreDeletedItem,
   permanentlyDeleteDeletedItem,
@@ -3049,6 +3050,21 @@ export function usePayDeliveryPersonPayroll(): UseMutationResult<
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       invalidateDashboardQueries(queryClient);
+    },
+  });
+}
+
+export function useCreateDeliveryPersonPayrollCredit(): UseMutationResult<
+  Awaited<ReturnType<typeof createDeliveryPersonPayrollCredit>>,
+  Error,
+  Parameters<typeof createDeliveryPersonPayrollCredit>[0],
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createDeliveryPersonPayrollCredit,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['delivery-person-payroll'] });
     },
   });
 }
