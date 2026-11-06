@@ -9,6 +9,9 @@
 
 ## Commands
 
+- `php backend/bin/repair_employee_order_credits.php`
+  Reconciles employee commission credits against current payroll settings and order statuses in one transaction, then reports any credits or reversals added. Back up the database before running it after a commission-calculation fix.
+
 - `npm run backend:setup`
   Creates `bdhatbela_management` and applies [`schema.sql`](/f:/Projects/React/BDHATBELA-MANAGEMENT-FINAL/backend/database/schema.sql)
 

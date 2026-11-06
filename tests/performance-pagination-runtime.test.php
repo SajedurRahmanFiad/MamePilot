@@ -426,6 +426,76 @@ try {
     performancePaginationAssert((float) ($walletCard['totalPaid'] ?? 0) === 20.0, 'Wallet payout aggregate.');
     performancePaginationAssert((int) ($walletCard['creditedOrders'] ?? 0) === 1, 'Wallet credited-order aggregate.');
 
+    // Percentage commission resync must read the persisted order total even
+    // when the caller only supplies order identity/status fields.
+    $percentageEmployeeId = substr('percentage-employee-' . $stamp, 0, 64);
+    $percentageEmployeeName = 'Percentage Payroll ' . $stamp;
+    $database->execute(
+        'INSERT INTO users (
+            id, name, phone, role, is_commission_based, fixed_salary, created_at, updated_at
+         ) VALUES (
+            :id, :name, :phone, \'Employee\', 1, NULL, :created_at, :updated_at
+         )',
+        [
+            ':id' => $percentageEmployeeId,
+            ':name' => $percentageEmployeeName,
+            ':phone' => 'percentage-' . $stamp,
+            ':created_at' => $now,
+            ':updated_at' => $now,
+        ]
+    );
+    $payrollDate = (new DateTimeImmutable($now, new DateTimeZone('UTC')))
+        ->setTimezone(new DateTimeZone($config->timezone()))
+        ->format('Y-m-d');
+    $percentageOrderId = substr('percentage-order-' . $stamp, 0, 64);
+    $nextOrderSeq = (int) (($database->fetchOne('SELECT COALESCE(MAX(order_seq), 0) + 1 AS seq FROM orders') ?? [])['seq'] ?? 1);
+    $database->execute(
+        "UPDATE payroll_settings SET unit_amount = 12.5, unit_amount_type = 'percentage' WHERE singleton = 1"
+    );
+    $payrollSettings = $operations->fetchWalletSettings();
+    $payableStatus = (string) (($payrollSettings['countedStatuses'][0] ?? null) ?: 'Completed');
+    $database->execute(
+        'INSERT INTO orders (
+            id, order_number, order_seq, order_date, customer_id, created_by,
+            status, items, total, history, created_at, updated_at
+         ) VALUES (
+            :id, :order_number, :order_seq, :order_date, :customer_id, :created_by,
+            :status, \'[]\', 250, \'{}\', :created_at, :updated_at
+         )',
+        [
+            ':id' => $percentageOrderId,
+            ':order_number' => 'PERCENTAGE-PERF-' . $stamp,
+            ':order_seq' => $nextOrderSeq,
+            ':order_date' => $payrollDate,
+            ':customer_id' => substr('deleted-customer-0-' . $stamp, 0, 64),
+            ':created_by' => $percentageEmployeeId,
+            ':status' => $payableStatus,
+            ':created_at' => $now,
+            ':updated_at' => $now,
+        ]
+    );
+    $syncWalletCreditsMethod = new ReflectionMethod($operations, 'syncWalletCreditsForPayableStatuses');
+    $syncWalletCreditsMethod->setAccessible(true);
+    $syncWalletCreditsMethod->invoke($operations, $payrollSettings);
+    $percentageSummary = $operations->fetchPayrollSummaries([
+        'periodStart' => $payrollDate,
+        'periodEnd' => $payrollDate,
+        'employeeId' => $percentageEmployeeId,
+    ])[0] ?? [];
+    performancePaginationAssert((int) ($percentageSummary['countedOrderCount'] ?? 0) === 1, 'Percentage commission payroll summary must include the eligible order.');
+    performancePaginationAssert((float) ($percentageSummary['estimatedAmount'] ?? 0) === 31.25, 'Percentage commission must be calculated from the persisted order total.');
+    $percentageWalletPage = $operations->fetchEmployeeWalletCardsPage([
+        'page' => 1,
+        'pageSize' => 10,
+        'search' => $stamp,
+    ]);
+    $percentageWalletCard = array_values(array_filter(
+        $percentageWalletPage['data'] ?? [],
+        static fn(array $card): bool => (string) ($card['employeeId'] ?? '') === $percentageEmployeeId
+    ))[0] ?? [];
+    performancePaginationAssert((int) ($percentageWalletCard['creditedOrders'] ?? 0) === 1, 'Percentage employee credited-order count.');
+    performancePaginationAssert((float) ($percentageWalletCard['baseEarned'] ?? 0) === 31.25, 'Percentage employee wallet amount.');
+
     // Notifications: the summary and paginated feed share one central-sync
     // throttle, while read receipts remain visible in paginated history.
     $claimMethod = new ReflectionMethod($masterData, 'claimCentralNotificationSyncWindow');

@@ -10118,7 +10118,7 @@ final class OperationsApi extends BaseService
         // order. This is especially important now that re-eligibility appends
         // a new credit event instead of deleting reversal history.
         $lockedOrder = $this->database->fetchOne(
-            'SELECT id FROM orders WHERE id = :id LIMIT 1 FOR UPDATE',
+            'SELECT id, total FROM orders WHERE id = :id LIMIT 1 FOR UPDATE',
             [':id' => $orderId]
         );
         if ($lockedOrder === null) {
@@ -10184,7 +10184,7 @@ final class OperationsApi extends BaseService
         $configuredUnitAmount = round($userUnitAmount ?? (float) ($effectiveSettings['unitAmount'] ?? 0), 2);
         $unitAmountType = ($userUnitAmount !== null ? ($creator['unit_amount_type'] ?? 'amount') : ($effectiveSettings['unitAmountType'] ?? 'amount')) === 'percentage' ? 'percentage' : 'amount';
         $unitAmount = $unitAmountType === 'percentage'
-            ? round(max(0.0, (float) ($order['total'] ?? 0)) * $configuredUnitAmount / 100, 2)
+            ? round(max(0.0, (float) ($lockedOrder['total'] ?? 0)) * $configuredUnitAmount / 100, 2)
             : $configuredUnitAmount;
         $transition = $this->walletOrderTransition($activeAmount, $isPayable, $unitAmount);
         if ($transition === null) {
@@ -10862,9 +10862,6 @@ final class OperationsApi extends BaseService
         }
 
         $effectiveSettings = $walletSettings ?? $this->fetchWalletSettings();
-        $countedStatuses = is_array($effectiveSettings['countedStatuses'] ?? null)
-            ? $effectiveSettings['countedStatuses']
-            : [];
         $employeeIds = array_map(static fn(array $employee): string => (string) ($employee['id'] ?? ''), $employees);
         $walletAmounts = $this->fetchLiveWalletAmountsByEmployeeIds($employeeIds);
         $localNow = new \DateTimeImmutable('now', new \DateTimeZone($this->config->timezone()));
