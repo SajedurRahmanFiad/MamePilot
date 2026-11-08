@@ -280,13 +280,19 @@ const ProductForm: React.FC = () => {
       return;
     }
 
+      const shouldUpdateSlug = !isEdit || Boolean(
+        existingProduct &&
+        form.slug !== existingProduct.slug &&
+        (slugTouched || form.name !== existingProduct.name)
+      );
+
     setSaving(true);
     setError(null);
 
     try {
       const productData: Omit<Product, 'id'> = {
         name: form.name || '',
-        slug: form.slug ? slugify(form.slug) : undefined,
+        slug: shouldUpdateSlug && form.slug ? slugify(form.slug) : undefined,
         sku: showSkuField ? (form.sku?.trim() || undefined) : undefined,
         category: form.category || '',
         image: form.image || '/uploads/Empty_product.png',
