@@ -174,6 +174,7 @@ Authorization: Bearer {accessToken}
   "recipient_address": "House 12, Road 5, Dhanmondi, Dhaka",
   "delivery_type": 48,
   "item_type": 2,
+  "item_description": "Product One, Product Two",
   "special_instruction": "Call before delivery",
   "item_quantity": 1,
   "item_weight": 0.5,
@@ -194,6 +195,7 @@ Authorization: Bearer {accessToken}
 | `recipient_area` | int | No | Selected Pathao area ID within the zone |
 | `delivery_type` | int | **Yes** | Delivery speed (see enum values below) |
 | `item_type` | int | **Yes** | Item category (see enum values below) |
+| `item_description` | string | No | Comma-separated product names from the order |
 | `special_instruction` | string \| null | No | Delivery notes / special instructions (e.g., "Call before delivery") |
 | `item_quantity` | int | **Yes** | Number of items in the parcel |
 | `item_weight` | float | **Yes** | Weight of the parcel in kg |
@@ -212,6 +214,7 @@ Authorization: Bearer {accessToken}
 | `recipient_area` | Optional caller-provided Pathao area ID; omitted by the Add to Pathao modal |
 | `delivery_type` | Request body `deliveryType` override, or setting `pathaoDefaultDeliveryType` (default `48`) |
 | `item_type` | Request body `itemType` override, or setting `pathaoDefaultItemType` (default `2`) |
+| `item_description` | Product names from the order's selected items, joined with commas |
 | `special_instruction` | Order's `processedInfo.additionalPhone` (if present), otherwise falls back to the `selectedNote` parameter passed by the caller |
 | `item_quantity` | Request body `itemQuantity` override, or setting `pathaoDefaultQuantity` (default `1`) |
 | `item_weight` | Request body `itemWeight` override, or setting `pathaoDefaultWeight` (default `1.0`) |

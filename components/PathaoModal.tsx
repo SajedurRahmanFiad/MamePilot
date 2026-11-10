@@ -154,6 +154,7 @@ export const PathaoModal: React.FC<PathaoModalProps> = ({ isOpen, onClose, order
         itemWeight: defaultWeight || 1.0,
         amountToCollect: Math.max(0, Math.round(order.total)),
         specialInstruction: specialInstruction.trim() || undefined,
+        itemDescription: order.items.map((item) => item.productName.trim()).filter(Boolean).join(', '),
       });
 
       if (result.error) {

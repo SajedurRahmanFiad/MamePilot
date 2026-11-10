@@ -2249,6 +2249,7 @@ final class CourierApi extends BaseService
             'recipient_address' => $recipientAddress,
             'delivery_type' => (int) ($params['deliveryType'] ?? 48),
             'item_type' => (int) ($params['itemType'] ?? 2),
+            'item_description' => trim((string) ($params['itemDescription'] ?? '')),
             'item_quantity' => (int) ($params['itemQuantity'] ?? 1),
             'item_weight' => (float) ($params['itemWeight'] ?? 1.0),
             'amount_to_collect' => max(0, (int) round((float) ($params['amountToCollect'] ?? 0))),
