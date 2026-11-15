@@ -6715,6 +6715,49 @@ final class OperationsApi extends BaseService
             $nextStatus = array_key_exists('status', $updates)
                 ? $this->canonicalOrderStatus((string) $updates['status'], $nextHistory)
                 : $previousStatus;
+            $statusHistoryFieldMap = [
+                'Processing' => 'processing',
+                'Cutting and Sewing' => 'cuttingAndSewing',
+                'Ready' => 'ready',
+                'Courier assigned' => 'courier',
+                'Picked' => 'picked',
+                'Completed' => 'completed',
+                'pending_delivered' => 'completed',
+                'partially_delivered' => 'partiallyDelivered',
+                'pending_partial' => 'partiallyDelivered',
+                'Returned' => 'returned',
+                'Cancelled' => 'cancelled',
+                'Exchange processing' => 'exchangeProcessing',
+                'Exchange picked' => 'exchangePicked',
+                'Exchange delivered' => 'exchangeDelivered',
+                'Exchange returned' => 'exchangeReturned',
+                'Exchange cancelled' => 'exchangeCancelled',
+                'Repair processing' => 'repairProcessing',
+                'Repair Courier Assigned' => 'repairCourier',
+                'Repair picked' => 'repairPicked',
+                'Repair delivered' => 'repairDelivered',
+                'Repair returned' => 'repairReturned',
+                'Repair canceled' => 'repairCancelled',
+            ];
+            $statusHistoryField = $statusHistoryFieldMap[$nextStatus] ?? null;
+            if ($nextStatus !== $previousStatus && $statusHistoryField !== null) {
+                $previousStatusHistory = trim((string) ($previousHistory[$statusHistoryField] ?? ''));
+                $nextStatusHistory = trim((string) ($nextHistory[$statusHistoryField] ?? ''));
+                if ($nextStatusHistory === '' || $nextStatusHistory === $previousStatusHistory) {
+                    $actorName = trim((string) ($actor['name'] ?? '')) ?: trim((string) ($actor['id'] ?? '')) ?: 'System';
+                    $localStatusChangedAt = (new \DateTimeImmutable($this->database->nowUtc(), new \DateTimeZone('UTC')))
+                        ->setTimezone(new \DateTimeZone($this->config->timezone()));
+                    $statusLabel = ucfirst(str_replace('_', ' ', $nextStatus));
+                    $historyText = sprintf(
+                        'Status changed to %s by %s, on %s.',
+                        $statusLabel,
+                        $actorName,
+                        $localStatusChangedAt->format('j M Y, h:i A')
+                    );
+                    $nextHistory[$statusHistoryField] = $this->appendHistoryText($previousStatusHistory, $historyText);
+                    $updates['history'] = $nextHistory;
+                }
+            }
             $collageUrlsForValidation = array_key_exists('collageUrls', $updates)
                 ? (is_array($updates['collageUrls']) ? $updates['collageUrls'] : [])
                 : $this->jsonDecodeList($existingRow['collage_urls'] ?? []);
