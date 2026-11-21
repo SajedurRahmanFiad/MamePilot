@@ -460,12 +460,12 @@ const OrderForm: React.FC = () => {
       if (isEdit) {
           const allowedByStatus = isSofaCover
             ? isSofaCoverOrderStatusEditable(existingOrderData.status)
-            : [OrderStatus.ON_HOLD, OrderStatus.EXCHANGE_PROCESSING].includes(existingOrderData.status)
+            : [OrderStatus.ON_HOLD, OrderStatus.PROCESSING, OrderStatus.EXCHANGE_PROCESSING].includes(existingOrderData.status)
               || (existingOrderData.status === OrderStatus.PICKED && isAdminAccessUser);
           if (!allowedByStatus) {
             toast.warning(isSofaCover
               ? 'Delivered, returned, cancelled, partially delivered, or exchanged orders cannot be edited.'
-              : 'Orders can only be edited while On Hold, while an exchange is processing, or by an admin after an ordinary pickup.');
+              : 'Orders can only be edited while On Hold or Processing, while an exchange is processing, or by an admin after an ordinary pickup.');
             navigate('/orders');
             return;
           }

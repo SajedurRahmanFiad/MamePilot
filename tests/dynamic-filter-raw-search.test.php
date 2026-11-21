@@ -65,11 +65,11 @@ rawSearchAssert(str_contains($metaAds, "\$params['rawSearch']"), 'Meta Ads does 
 rawSearchAssert(str_contains($metaAds, 'raw_search_campaign'), 'Meta Ads raw search does not cover related campaign data.');
 
 rawSearchAssert(
-    str_contains($operations, "in_array(\$status, ['On Hold', 'Exchange processing'], true)")
-        && str_contains($ordersPage, 'OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING')
-        && str_contains($orderForm, '[OrderStatus.ON_HOLD, OrderStatus.EXCHANGE_PROCESSING]')
-        && str_contains($orderDetails, 'OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING'),
-    'Exchange-processing orders are not editable consistently across list, form, detail, and API gates.'
+    str_contains($operations, "in_array(\$status, ['On Hold', 'Processing', 'Exchange processing'], true)")
+        && str_contains($ordersPage, 'OrderStatus.ON_HOLD || order.status === OrderStatus.PROCESSING || order.status === OrderStatus.EXCHANGE_PROCESSING')
+        && str_contains($orderForm, '[OrderStatus.ON_HOLD, OrderStatus.PROCESSING, OrderStatus.EXCHANGE_PROCESSING]')
+        && str_contains($orderDetails, 'OrderStatus.ON_HOLD || order.status === OrderStatus.PROCESSING || order.status === OrderStatus.EXCHANGE_PROCESSING'),
+    'On-hold, processing, and exchange-processing orders are not editable consistently across list, form, detail, and API gates.'
 );
 rawSearchAssert(
     !str_contains($ordersPage, 'order.status === OrderStatus.PICKED || order.status === OrderStatus.EXCHANGE_PICKED) && hasAdminAccess'),

@@ -1,0 +1,273 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e27]:
+    - complementary [ref=f1e28]:
+      - generic [ref=f1e29]:
+        - button [ref=f1e32] [cursor=pointer]:
+          - img "Mame Pilot" [ref=f1e33]
+        - navigation [ref=f1e34]:
+          - link "Dashboard" [ref=f1e36] [cursor=pointer]:
+            - /url: "#/dashboard"
+          - button "Inventory" [ref=f1e46] [cursor=pointer]
+          - button "Sales" [ref=f1e55] [cursor=pointer]
+          - button "Customer Relationship" [ref=f1e64] [cursor=pointer]
+          - button "Purchases" [ref=f1e74] [cursor=pointer]
+          - button "Banking" [ref=f1e82] [cursor=pointer]
+          - button "Human Resource" [ref=f1e89] [cursor=pointer]
+          - button "Marketing" [ref=f1e99] [cursor=pointer]
+          - link "Grow your business" [ref=f1e106] [cursor=pointer]:
+            - /url: "#/grow-your-business"
+          - link "Reports" [ref=f1e113] [cursor=pointer]:
+            - /url: "#/reports"
+          - button "Recovery" [ref=f1e120] [cursor=pointer]
+        - generic [ref=f1e126]:
+          - link "Subscriptions" [ref=f1e129] [cursor=pointer]:
+            - /url: "#/subscriptions"
+          - link "Settings" [ref=f1e136] [cursor=pointer]:
+            - /url: "#/settings"
+          - button "Developer-only" [ref=f1e144] [cursor=pointer]
+    - generic [ref=f1e149]:
+      - generic [ref=f1e151]:
+        - paragraph [ref=f1e156]: Your subscription will expire soon. Please make the payment within 25 Nov 2026.
+        - button "Open Subscriptions" [ref=f1e157] [cursor=pointer]
+      - banner [ref=f1e158]:
+        - heading "Transaction Ledger" [level=1] [ref=f1e162]
+        - generic [ref=f1e163]:
+          - link "Point of Sale" [ref=f1e164] [cursor=pointer]:
+            - /url: "#/pos"
+          - button "Quick actions" [ref=f1e169] [cursor=pointer]
+          - button "Notifications" [ref=f1e174] [cursor=pointer]
+          - button [ref=f1e179] [cursor=pointer]:
+            - generic [ref=f1e180]:
+              - paragraph [ref=f1e181]: Fiad
+              - paragraph [ref=f1e182]: Developer
+            - img "Profile" [ref=f1e183]
+      - main [ref=f1e184]:
+        - generic [ref=f1e185]:
+          - generic [ref=f1e186]:
+            - generic [ref=f1e189]:
+              - generic [ref=f1e191]:
+                - button "All Time" [ref=f1e192] [cursor=pointer]
+                - button "Today" [ref=f1e193] [cursor=pointer]
+                - button "This Week" [ref=f1e194] [cursor=pointer]
+                - button "This Month" [ref=f1e195] [cursor=pointer]
+                - button "This Year" [ref=f1e196] [cursor=pointer]
+                - button "Custom" [ref=f1e197] [cursor=pointer]
+              - button "Refresh" [ref=f1e198] [cursor=pointer]
+            - generic [ref=f1e201]:
+              - button "Income" [ref=f1e202] [cursor=pointer]
+              - button "Expense" [ref=f1e206] [cursor=pointer]
+          - generic [ref=f1e212]:
+            - textbox "Search Transactions" [active] [ref=f1e215]:
+              - /placeholder: Search Transactions or select filters
+            - generic [ref=f1e459]:
+              - button "Created by" [ref=f1e460] [cursor=pointer]
+              - button "Category" [ref=f1e461] [cursor=pointer]
+              - button "Type" [ref=f1e462] [cursor=pointer]
+              - button "Account" [ref=f1e463] [cursor=pointer]
+              - button "Contact" [ref=f1e464] [cursor=pointer]
+              - button "Payment Method" [ref=f1e465] [cursor=pointer]
+              - button "Approval Status" [ref=f1e466] [cursor=pointer]
+          - table [ref=f1e222]:
+            - rowgroup [ref=f1e223]:
+              - row [ref=f1e224]:
+                - columnheader "Date" [ref=f1e225]
+                - columnheader "Type" [ref=f1e226]
+                - columnheader "Contact" [ref=f1e227]
+                - columnheader "Category / Notes" [ref=f1e228]
+                - columnheader "Amount" [ref=f1e229]
+            - rowgroup [ref=f1e230]:
+              - row [ref=f1e231]:
+                - cell "1 Oct 2026 11:09 PM" [ref=f1e232]:
+                  - generic [ref=f1e233]:
+                    - generic [ref=f1e234]: 1 Oct 2026
+                    - generic [ref=f1e235]: 11:09 PM
+                - cell "Expense" [ref=f1e236]
+                - cell "Test2 Customer" [ref=f1e239]:
+                  - generic [ref=f1e240]:
+                    - generic [ref=f1e241]: Test2
+                    - generic [ref=f1e242]: Customer
+                - cell [ref=f1e243]:
+                  - generic [ref=f1e244]:
+                    - paragraph [ref=f1e245]: Shipping Costs
+                    - paragraph [ref=f1e246]: "Repair shipping cost for Order #ORD-45 (Test delivery boy)"
+                - cell "-৳ 150" [ref=f1e247]
+              - row [ref=f1e249]:
+                - cell "1 Oct 2026 10:42 PM" [ref=f1e250]:
+                  - generic [ref=f1e251]:
+                    - generic [ref=f1e252]: 1 Oct 2026
+                    - generic [ref=f1e253]: 10:42 PM
+                - cell "Expense" [ref=f1e254]
+                - cell "Test2 Customer" [ref=f1e257]:
+                  - generic [ref=f1e258]:
+                    - generic [ref=f1e259]: Test2
+                    - generic [ref=f1e260]: Customer
+                - cell [ref=f1e261]:
+                  - generic [ref=f1e262]:
+                    - paragraph [ref=f1e263]: Shipping Costs
+                    - paragraph [ref=f1e264]: "Delivery shipping cost for Order #ORD-45 (Test delivery boy)"
+                - cell "-৳ 130" [ref=f1e265]
+              - row [ref=f1e267]:
+                - cell "1 Oct 2026 10:07 PM" [ref=f1e268]:
+                  - generic [ref=f1e269]:
+                    - generic [ref=f1e270]: 1 Oct 2026
+                    - generic [ref=f1e271]: 10:07 PM
+                - cell "Expense" [ref=f1e272]
+                - cell "Debug C Customer" [ref=f1e275]:
+                  - generic [ref=f1e276]:
+                    - generic [ref=f1e277]: Debug C
+                    - generic [ref=f1e278]: Customer
+                - cell [ref=f1e279]:
+                  - generic [ref=f1e280]:
+                    - paragraph [ref=f1e281]: Shipping Costs
+                    - paragraph [ref=f1e282]: "Repair shipping cost for Order #ORD-44 (Test delivery boy)"
+                - cell "-৳ 120" [ref=f1e283]
+              - row [ref=f1e285]:
+                - cell "1 Oct 2026 09:01 PM" [ref=f1e286]:
+                  - generic [ref=f1e287]:
+                    - generic [ref=f1e288]: 1 Oct 2026
+                    - generic [ref=f1e289]: 09:01 PM
+                - cell "Expense" [ref=f1e290]
+                - cell "Debug C Customer" [ref=f1e293]:
+                  - generic [ref=f1e294]:
+                    - generic [ref=f1e295]: Debug C
+                    - generic [ref=f1e296]: Customer
+                - cell [ref=f1e297]:
+                  - generic [ref=f1e298]:
+                    - paragraph [ref=f1e299]: Shipping Costs
+                    - paragraph [ref=f1e300]: "Delivery shipping cost for Order #ORD-44 (Test delivery boy)"
+                - cell "-৳ 150" [ref=f1e301]
+              - row [ref=f1e303]:
+                - cell "3 Sept 2026 03:35 PM" [ref=f1e304]:
+                  - generic [ref=f1e305]:
+                    - generic [ref=f1e306]: 3 Sept 2026
+                    - generic [ref=f1e307]: 03:35 PM
+                - cell "Expense" [ref=f1e308]
+                - cell "-" [ref=f1e311]
+                - cell [ref=f1e312]:
+                  - generic [ref=f1e313]:
+                    - paragraph [ref=f1e314]: Payroll
+                    - paragraph [ref=f1e315]: Payroll payout to Hurmuz Ali (Sep 2026 (partial payment of 10000.00); base 15000.00, bonus 0.00, deduction 0.00)
+                - cell "-৳ 10,000" [ref=f1e316]
+              - row [ref=f1e318] [cursor=pointer]:
+                - cell "20 Aug 2026 11:36 PM" [ref=f1e319]:
+                  - generic [ref=f1e320]:
+                    - generic [ref=f1e321]: 20 Aug 2026
+                    - generic [ref=f1e322]: 11:36 PM
+                - cell "Income" [ref=f1e323]
+                - cell "POS Scoping Test Customer Customer" [ref=f1e326]:
+                  - generic [ref=f1e327]:
+                    - generic [ref=f1e328]: POS Scoping Test Customer
+                    - generic [ref=f1e329]: Customer
+                - cell [ref=f1e330]:
+                  - generic [ref=f1e331]:
+                    - paragraph [ref=f1e332]: Sales
+                    - paragraph [ref=f1e333]: "Payment for Order #ORD-40"
+                - cell "+৳ 305" [ref=f1e334]
+              - row [ref=f1e336]:
+                - cell "2 Aug 2026 04:00 PM" [ref=f1e337]:
+                  - generic [ref=f1e338]:
+                    - generic [ref=f1e339]: 2 Aug 2026
+                    - generic [ref=f1e340]: 04:00 PM
+                - cell "Expense" [ref=f1e341]
+                - cell "Debug C Customer" [ref=f1e344]:
+                  - generic [ref=f1e345]:
+                    - generic [ref=f1e346]: Debug C
+                    - generic [ref=f1e347]: Customer
+                - cell [ref=f1e348]:
+                  - generic [ref=f1e349]:
+                    - paragraph [ref=f1e350]: Shipping Costs
+                    - paragraph [ref=f1e351]: "Courier shipping cost (Carrybee) for Order #DBG-c22cb267fd67"
+                - cell "-৳ 98" [ref=f1e352]
+              - row [ref=f1e354]:
+                - cell "2 Aug 2026 04:00 PM" [ref=f1e355]:
+                  - generic [ref=f1e356]:
+                    - generic [ref=f1e357]: 2 Aug 2026
+                    - generic [ref=f1e358]: 04:00 PM
+                - cell "Expense" [ref=f1e359]
+                - cell "Debug C Customer" [ref=f1e362]:
+                  - generic [ref=f1e363]:
+                    - generic [ref=f1e364]: Debug C
+                    - generic [ref=f1e365]: Customer
+                - cell [ref=f1e366]:
+                  - generic [ref=f1e367]:
+                    - paragraph [ref=f1e368]: Shipping Costs
+                    - paragraph [ref=f1e369]: "Courier shipping cost (Carrybee) for Order #DBG-629d080530af"
+                - cell "-৳ 98" [ref=f1e370]
+              - row [ref=f1e372] [cursor=pointer]:
+                - cell "16 Aug 2026 05:12 AM" [ref=f1e373]:
+                  - generic [ref=f1e374]:
+                    - generic [ref=f1e375]: 16 Aug 2026
+                    - generic [ref=f1e376]: 05:12 AM
+                - cell "Income" [ref=f1e377]
+                - cell "Debug C Customer" [ref=f1e380]:
+                  - generic [ref=f1e381]:
+                    - generic [ref=f1e382]: Debug C
+                    - generic [ref=f1e383]: Customer
+                - cell [ref=f1e384]:
+                  - generic [ref=f1e385]:
+                    - paragraph [ref=f1e386]: Sales
+                    - paragraph [ref=f1e387]: "Automatic courier delivery payment for Order #DBG-629d080530af"
+                - cell "+৳ 2,000" [ref=f1e388]
+              - row [ref=f1e390]:
+                - cell "2 Aug 2026 04:00 PM" [ref=f1e391]:
+                  - generic [ref=f1e392]:
+                    - generic [ref=f1e393]: 2 Aug 2026
+                    - generic [ref=f1e394]: 04:00 PM
+                - cell "Expense" [ref=f1e395]
+                - cell "Debug C Customer" [ref=f1e398]:
+                  - generic [ref=f1e399]:
+                    - generic [ref=f1e400]: Debug C
+                    - generic [ref=f1e401]: Customer
+                - cell [ref=f1e402]:
+                  - generic [ref=f1e403]:
+                    - paragraph [ref=f1e404]: Shipping Costs
+                    - paragraph [ref=f1e405]: "Courier shipping cost (Carrybee) for Order #DBG-c18afd39dce6"
+                - cell "-৳ 98" [ref=f1e406]
+          - generic [ref=f1e408]:
+            - generic [ref=f1e409]:
+              - paragraph [ref=f1e410]: Filtered Transactions
+              - paragraph [ref=f1e411]: "20"
+              - paragraph [ref=f1e412]: Matching records across all filtered pages.
+            - generic [ref=f1e413]:
+              - paragraph [ref=f1e414]: Total Income
+              - paragraph [ref=f1e415]: ৳ 47,355
+              - paragraph [ref=f1e416]: Sum of all income transactions in view.
+            - generic [ref=f1e417]:
+              - paragraph [ref=f1e418]: Total Expense
+              - paragraph [ref=f1e419]: ৳ 30,195
+              - paragraph [ref=f1e420]: Sum of all expense transactions in view.
+            - generic [ref=f1e421]:
+              - paragraph [ref=f1e422]: Net Total
+              - paragraph [ref=f1e423]: ৳ 17,159
+              - paragraph [ref=f1e424]: Income minus expenses for filtered transactions.
+          - generic [ref=f1e425]:
+            - generic [ref=f1e426]: Showing 1 - 10 of 20 transactions
+            - generic [ref=f1e427]:
+              - generic [ref=f1e428]: Page 1 of 2
+              - generic [ref=f1e429]:
+                - button "«" [disabled] [ref=f1e430]
+                - button "‹" [disabled] [ref=f1e431]
+                - textbox [ref=f1e433]: "1"
+                - button "›" [ref=f1e434] [cursor=pointer]
+                - button "»" [ref=f1e435] [cursor=pointer]
+        - generic [ref=f1e436]:
+          - paragraph [ref=f1e437]: © 2026 Mame Pilot|Version 0.4.64|All rights reserved.
+          - paragraph [ref=f1e438]:
+            - text: developed by
+            - link "Md Sajedur Rahman Fiad" [ref=f1e439] [cursor=pointer]:
+              - /url: https://sajedurrahmanfiad.me
+      - generic [ref=f1e440]:
+        - generic [ref=f1e441]: Chat with Mame
+        - button "Open chat" [ref=f1e442] [cursor=pointer]:
+          - img "Mame AI" [ref=f1e443]
+  - generic [aria-hidden] [ref=f1e26]: "-20,000"
+  - button "Close notifications"
+  - dialog [aria-hidden] [ref=f1e444]:
+    - generic [ref=f1e445]:
+      - heading [level=3] [ref=f1e447]: Notifications
+      - button [ref=f1e448] [cursor=pointer]
+    - tablist [ref=f1e452]:
+      - tab [selected] [ref=f1e453] [cursor=pointer]: all
+      - tab [ref=f1e454] [cursor=pointer]: unread
+      - tab [ref=f1e455] [cursor=pointer]: read
+    - generic [ref=f1e456]: No notifications yet.

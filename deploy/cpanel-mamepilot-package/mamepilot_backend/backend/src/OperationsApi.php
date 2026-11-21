@@ -1323,7 +1323,7 @@ final class OperationsApi extends BaseService
         $status = (string) ($row['status'] ?? '');
         $editableStatus = $this->isSofaCoverBusinessMode()
             ? !in_array($status, ['Completed', 'Returned', 'Cancelled', 'partially_delivered', 'Exchange delivered'], true)
-            : in_array($status, ['On Hold', 'Exchange processing'], true);
+            : in_array($status, ['On Hold', 'Processing', 'Exchange processing'], true);
         if ($editableStatus && $this->userHasScopedPermissionForRecord($user, $createdBy, 'orders.editOwn', 'orders.editAny')) {
             return;
         }

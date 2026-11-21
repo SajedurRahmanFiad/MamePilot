@@ -758,7 +758,7 @@ const Orders: React.FC<{ mode?: 'orders' | 'pos' }> = ({ mode = 'orders' }) => {
       return can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
     }
 
-    if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
+    if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.PROCESSING || order.status === OrderStatus.EXCHANGE_PROCESSING) {
       if (can('orders.editAny')) return true;
       return can('orders.editOwn') && order.createdBy === user?.id;
     }

@@ -1300,7 +1300,7 @@ const OrderDetails: React.FC = () => {
     canEditCurrentOrder = (order.status === OrderStatus.PICKED && !!isAdminAccessUser)
       || can('orders.editAny')
       || (can('orders.editOwn') && order.createdBy === user?.id);
-  } else if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.EXCHANGE_PROCESSING) {
+  } else if (order.status === OrderStatus.ON_HOLD || order.status === OrderStatus.PROCESSING || order.status === OrderStatus.EXCHANGE_PROCESSING) {
     canEditCurrentOrder = can('orders.editAny') || (can('orders.editOwn') && order.createdBy === user?.id);
   } else if (order.status === OrderStatus.PICKED) {
     // Admins and Developers are allowed to edit picked orders
