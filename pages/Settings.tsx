@@ -2634,14 +2634,17 @@ const SettingsPage: React.FC = () => {
                         </p>
                         <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{cat.type === 'Product' ? terminology.item : cat.type}</p>
                       </div>
-                      <button
-                        onClick={() => handleDeleteCategory(cat.id)}
-                        disabled={!!cat.isSystem}
-                        title={cat.isSystem ? 'System categories cannot be deleted' : 'Delete'}
-                        className={`px-2 ${cat.isSystem ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:text-red-700'}`}
-                      >
-                        {ICONS.Delete}
-                      </button>
+                      {cat.isSystem || ['income_sales', 'expense_purchases', 'expense_shipping'].includes(cat.id) ? (
+                        <span title={`${cat.name} cannot be deleted`} className="text-gray-300 px-2">{ICONS.Lock}</span>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          title="Delete"
+                          className="px-2 text-red-500 hover:text-red-700"
+                        >
+                          {ICONS.Delete}
+                        </button>
+                      )}
                     </div>
                   ))}
                   {categories.length === 0 && (
@@ -2675,13 +2678,8 @@ const SettingsPage: React.FC = () => {
                       <div className="flex-1">
                         <p className="font-bold text-gray-800 flex items-center gap-2">
                           {pm.name}
-                          {pm.id === 'cash' && (
-                            <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 bg-gray-100 border border-gray-200 rounded-md px-1.5 py-0.5" title="System payment method">
-                              {ICONS.Lock} System
-                            </span>
-                          )}
                         </p>
-                        <p className="text-xs text-gray-400 mt-1">{pm.id === 'cash' ? 'Required system payment method — always available in the register.' : (pm.description || 'No description')}</p>
+                        {pm.id !== 'cash' && <p className="text-xs text-gray-400 mt-1">{pm.description || 'No description'}</p>}
                       </div>
                       {pm.id === 'cash' ? (
                         <span title="Cash cannot be deleted" className="text-gray-300 px-2">

@@ -162,7 +162,7 @@ const Transactions: React.FC = () => {
     [effectiveFilterRange, effectiveCustomDates]
   );
   const categoryNameMap = useMemo(
-    () => new Map(allCategories.map((category) => [category.id, category.name || category.id])),
+    () => new Map(allCategories.map((category) => [category.id, category.name || (category.id === 'income_sales' ? 'Sales' : category.id)])),
     [allCategories]
   );
   const createdByIds = useMemo(() => {
@@ -197,7 +197,7 @@ const Transactions: React.FC = () => {
     allCategories
       .filter((category) => categoryTypes.includes(category.type))
       .forEach((category) => {
-        optionMap.set(category.id, category.name || category.id);
+        optionMap.set(category.id, category.name || (category.id === 'income_sales' ? 'Sales' : category.id));
       });
 
     if (effectiveTypeTab === 'All' || effectiveTypeTab === 'Transfer') {
@@ -216,7 +216,7 @@ const Transactions: React.FC = () => {
   const allCategoryOptions = useMemo(() => {
     const optionMap = new Map<string, string>();
     allCategories.forEach((category) => {
-      optionMap.set(category.id, category.name || category.id);
+      optionMap.set(category.id, category.name || (category.id === 'income_sales' ? 'Sales' : category.id));
     });
     optionMap.set('Transfer', 'Transfer');
     optionMap.set('expense_purchases', optionMap.get('expense_purchases') || 'Purchases');
@@ -370,14 +370,15 @@ const Transactions: React.FC = () => {
             : user ? `${user.role}: ${user.name}` : effectiveCreatedByNotFilter;
       filters.push({ id: 'created-by-not', type: 'Created by', operator: '≠' as const, value: effectiveCreatedByNotFilter, display });
     }
-    if (effectiveCategoryFilter !== 'all') {
-      const category = allCategoryOptions.find((c) => c.value === effectiveCategoryFilter);
-      filters.push({ id: 'category', type: 'Category', operator: '=' as const, value: effectiveCategoryFilter, display: category?.label || effectiveCategoryFilter });
-    }
-    if (effectiveCategoryNotFilter) {
-      const category = allCategoryOptions.find((c) => c.value === effectiveCategoryNotFilter);
-      filters.push({ id: 'category-not', type: 'Category', operator: '≠' as const, value: effectiveCategoryNotFilter, display: category?.label || effectiveCategoryNotFilter });
-    }
+    const selectedCategoryIds = effectiveCategoryFilter === 'all' ? [] : effectiveCategoryFilter.split(',').filter(Boolean);
+    selectedCategoryIds.forEach((value, index) => {
+      const category = allCategoryOptions.find((c) => c.value === value);
+      filters.push({ id: `category-${index}`, type: 'Category', operator: '=' as const, value, display: category?.label || (value === 'income_sales' ? 'Sales' : value) });
+    });
+    effectiveCategoryNotFilter.split(',').filter(Boolean).forEach((value, index) => {
+      const category = allCategoryOptions.find((c) => c.value === value);
+      filters.push({ id: `category-not-${index}`, type: 'Category', operator: '≠' as const, value, display: category?.label || (value === 'income_sales' ? 'Sales' : value) });
+    });
     if (effectiveTypeTab !== 'All') {
       filters.push({ id: 'type', type: 'Type', operator: '=' as const, value: effectiveTypeTab });
     }
@@ -832,7 +833,7 @@ const Transactions: React.FC = () => {
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
-                          <p className="text-sm font-bold text-gray-800">{categoryNameMap.get(transaction.category) || transaction.category || 'Uncategorized'}</p>
+                          <p className="text-sm font-bold text-gray-800">{categoryNameMap.get(transaction.category) || (transaction.category === 'income_sales' ? 'Sales' : transaction.category) || 'Uncategorized'}</p>
                           <p className="text-xs text-gray-400 italic max-w-xs truncate">{transaction.description}</p>
                           {transaction.approvalStatus === 'pending' && (
                             <p className="mt-1 text-[11px] font-bold text-amber-700">Awaiting admin approval</p>

@@ -1977,7 +1977,7 @@ final class MasterDataApi extends BaseService
             'SELECT is_system FROM categories WHERE id = :id LIMIT 1',
             [':id' => $id]
         );
-        if ($category && $category['is_system']) {
+        if (($category && $category['is_system']) || in_array($id, ['income_sales', 'expense_purchases', 'expense_shipping'], true)) {
             throw new RuntimeException('System categories cannot be deleted.');
         }
         

@@ -252,6 +252,21 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
     [filterDefinitions, defaultFilterDefinitions]
   );
 
+  const filterValueLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    effectiveFilterDefinitions.forEach((definition) => {
+      const options = [
+        ...(definition.values ?? []).map((item) => typeof item === 'string' ? { value: item, label: item } : item),
+        ...(definition.suggestions ?? []).map((value) => ({ value, label: value })),
+        ...(definition.renderOptions?.('') ?? []),
+      ];
+      options.forEach((option) => {
+        labels.set(`${definition.type}\u0000${String(option.value)}`, String(option.label || option.value));
+      });
+    });
+    return labels;
+  }, [effectiveFilterDefinitions]);
+
   const filteredTypes = useMemo(() => {
     const q = inputValue.trim().toLowerCase();
     if (!q) return effectiveFilterDefinitions.map((def) => def.type);
@@ -663,7 +678,7 @@ const DynamicFilterBar: React.FC<DynamicFilterBarProps> = ({ users = [], custome
                   <div key={f.id} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-gray-200 text-sm font-bold">
                     <span className="opacity-80">{f.type}</span>
                     <span>{f.operator}</span>
-                    <span className="font-normal">{f.display ?? f.value}</span>
+                    <span className="font-normal">{f.display ?? filterValueLabels.get(`${f.type}\u0000${f.value}`) ?? findFilterDefinition(f.type)?.valueLabelFormatter?.(f.value) ?? f.value}</span>
                     <button type="button" onClick={() => handleRemoveFilter(f.id)} className="ml-2 text-gray-400">×</button>
                   </div>
                 ))}
