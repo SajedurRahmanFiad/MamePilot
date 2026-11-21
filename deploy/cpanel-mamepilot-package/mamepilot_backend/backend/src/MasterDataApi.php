@@ -1890,8 +1890,26 @@ final class MasterDataApi extends BaseService
         return ['success' => true];
     }
 
+    private function ensureSystemRecords(): void
+    {
+        $this->database->execute(
+            "INSERT INTO categories (id, name, type, color, is_system)
+             VALUES
+                ('income_sales', 'Sales', 'Income', '#10B981', 1),
+                ('expense_purchases', 'Purchases', 'Expense', '#EF4444', 1),
+                ('expense_shipping', 'Shipping Costs', 'Expense', '#EF4444', 1)
+             ON DUPLICATE KEY UPDATE id = id"
+        );
+        $this->database->execute(
+            "INSERT INTO payment_methods (id, name, description, is_active)
+             VALUES ('cash', 'Cash', 'Cash payment', 1)
+             ON DUPLICATE KEY UPDATE id = id"
+        );
+    }
+
     public function fetchCategories(array $params = []): array
     {
+        $this->ensureSystemRecords();
         $type = trim((string) ($params['type'] ?? ''));
         $sql = 'SELECT * FROM categories';
         $bindings = [];
@@ -1987,6 +2005,7 @@ final class MasterDataApi extends BaseService
 
     public function fetchPaymentMethods(array $params = []): array
     {
+        $this->ensureSystemRecords();
         $activeOnly = !array_key_exists('activeOnly', $params) || (bool) $params['activeOnly'];
         $sql = 'SELECT * FROM payment_methods';
         if ($activeOnly) {

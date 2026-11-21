@@ -9351,13 +9351,23 @@ final class OperationsApi extends BaseService
             $where .= ' AND twr.type <> :type_not';
             $bindings[':type_not'] = trim((string) $filters['typeNot']);
         }
-        if (!empty($filters['category'])) {
-            $where .= ' AND twr.category = :category';
-            $bindings[':category'] = trim((string) $filters['category']);
+        $categoryIds = array_values(array_filter(
+            array_map('trim', explode(',', (string) ($filters['category'] ?? ''))),
+            static fn(string $id): bool => $id !== ''
+        ));
+        if ($categoryIds !== []) {
+            [$placeholders, $categoryBindings] = $this->inClause($categoryIds, 'transaction_category');
+            $where .= ' AND twr.category IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $categoryBindings;
         }
-        if (!empty($filters['categoryNot'])) {
-            $where .= ' AND twr.category <> :category_not';
-            $bindings[':category_not'] = trim((string) $filters['categoryNot']);
+        $excludedCategoryIds = array_values(array_filter(
+            array_map('trim', explode(',', (string) ($filters['categoryNot'] ?? ''))),
+            static fn(string $id): bool => $id !== ''
+        ));
+        if ($excludedCategoryIds !== []) {
+            [$placeholders, $categoryNotBindings] = $this->inClause($excludedCategoryIds, 'transaction_category_not');
+            $where .= ' AND twr.category NOT IN (' . implode(', ', $placeholders) . ')';
+            $bindings += $categoryNotBindings;
         }
         $this->appendEncodedTextFilter($where, $bindings, 'twr.accountName', trim((string) ($filters['account'] ?? '')), 'transaction_account');
         $this->appendEncodedTextFilter($where, $bindings, 'twr.accountName', trim((string) ($filters['accountNot'] ?? '')), 'transaction_account_not', true);
