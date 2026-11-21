@@ -51,6 +51,6 @@ For local MariaDB, the defaults already match:
 
 ## External Data API
 
-The scoped integration API exposes paginated reads for orders, customers, transactions, bills, vendors, and accounts at `/api/v1`. Separate create, update, and delete scopes are available for orders, customers, bills, and vendors; transactions and accounts remain read-only. Integration keys are revocable and require `APP_API_KEY_PEPPER` to be configured in the backend environment.
+The scoped integration API exposes paginated reads for orders, customers, transactions, bills, vendors, accounts, and products at `/api/v1`. Separate create, update, and delete scopes are available for orders, customers, bills, vendors, and products; transactions and accounts remain read-only. Integration keys are revocable and require `APP_API_KEY_PEPPER` to be configured in the backend environment.
 
 See [docs/EXTERNAL_DATA_API.md](../docs/EXTERNAL_DATA_API.md) for the full filter catalog, authentication setup, pagination and incremental-sync behavior. The machine-readable contract is [docs/external-data-api.openapi.yaml](../docs/external-data-api.openapi.yaml).

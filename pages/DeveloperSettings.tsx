@@ -19,7 +19,8 @@ type ApiKeyScope =
   | 'orders.create' | 'orders.update' | 'orders.delete'
   | 'customers.create' | 'customers.update' | 'customers.delete'
   | 'vendors.create' | 'vendors.update' | 'vendors.delete'
-  | 'bills.create' | 'bills.update' | 'bills.delete';
+  | 'bills.create' | 'bills.update' | 'bills.delete'
+  | 'products.read' | 'products.create' | 'products.update' | 'products.delete';
 type ApiKeyRecord = {
   id: string;
   label: string;
@@ -39,6 +40,7 @@ const API_KEY_READ_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> =
   { scope: 'bills.read', label: 'Bills' },
   { scope: 'vendors.read', label: 'Vendors' },
   { scope: 'accounts.read', label: 'Accounts' },
+  { scope: 'products.read', label: 'Products' },
   { scope: 'accounts.read_balance', label: 'Account balances' },
 ];
 const API_KEY_WRITE_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
@@ -54,6 +56,9 @@ const API_KEY_WRITE_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> 
   { scope: 'bills.create', label: 'Create bills' },
   { scope: 'bills.update', label: 'Update bills' },
   { scope: 'bills.delete', label: 'Delete bills' },
+  { scope: 'products.create', label: 'Create products' },
+  { scope: 'products.update', label: 'Update products' },
+  { scope: 'products.delete', label: 'Delete products' },
 ];
 type MaintenanceContentForm = {
   imageUrl: string;

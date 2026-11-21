@@ -51,6 +51,10 @@ final class ExternalApiFilters
             'name', 'type', 'min_opening_balance', 'max_opening_balance',
             'min_current_balance', 'max_current_balance',
         ],
+        'products' => [
+            'name', 'sku', 'category', 'unit_id', 'manufacturer', 'created_by_id', 'created_by_ids',
+            'min_sale_price', 'max_sale_price', 'min_purchase_price', 'max_purchase_price', 'min_stock', 'max_stock',
+        ],
     ];
 
     private const SORT_FIELDS = [
@@ -60,6 +64,7 @@ final class ExternalApiFilters
         'bills' => ['created_at', 'bill_date', 'bill_number', 'total', 'paid_amount', 'status'],
         'vendors' => ['created_at', 'name', 'total_purchases', 'due_amount'],
         'accounts' => ['created_at', 'name', 'type', 'current_balance'],
+        'products' => ['created_at', 'name', 'sku', 'category', 'sale_price', 'purchase_price', 'stock'],
     ];
 
     private const NUMERIC_FILTERS = [
@@ -67,6 +72,7 @@ final class ExternalApiFilters
         'total_orders_min', 'total_orders_max', 'due_min', 'due_max',
         'total_purchases_min', 'total_purchases_max', 'payable_min', 'payable_max',
         'min_opening_balance', 'max_opening_balance', 'min_current_balance', 'max_current_balance',
+        'min_sale_price', 'max_sale_price', 'min_purchase_price', 'max_purchase_price', 'min_stock', 'max_stock',
     ];
 
     private const DATE_FILTERS = [
@@ -279,6 +285,7 @@ final class ExternalApiFilters
             ['total_orders_min', 'total_orders_max'], ['due_min', 'due_max'],
             ['total_purchases_min', 'total_purchases_max'], ['payable_min', 'payable_max'],
             ['min_opening_balance', 'max_opening_balance'], ['min_current_balance', 'max_current_balance'],
+            ['min_sale_price', 'max_sale_price'], ['min_purchase_price', 'max_purchase_price'], ['min_stock', 'max_stock'],
         ] as [$minimumKey, $maximumKey]) {
             if (isset($filters[$minimumKey], $filters[$maximumKey]) && $filters[$minimumKey] > $filters[$maximumKey]) {
                 throw new InvalidArgumentException($minimumKey . ' cannot exceed ' . $maximumKey . '.');

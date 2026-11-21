@@ -39,7 +39,7 @@ externalApiFilterAssert($utcDate['filters']['created_from'] === '2026-10-11 06:0
 $inclusiveEnd = ExternalApiFilters::normalize('orders', ['created_to' => '2026-10-11']);
 externalApiFilterAssert($inclusiveEnd['filters']['created_to'] === '2026-10-11 23:59:59', 'Date-only upper bounds should include the full day.');
 
-foreach (['customers', 'transactions', 'bills', 'vendors', 'accounts'] as $resource) {
+foreach (['customers', 'transactions', 'bills', 'vendors', 'accounts', 'products'] as $resource) {
     $normalized = ExternalApiFilters::normalize($resource, ['page' => '2', 'page_size' => '25']);
     externalApiFilterAssert($normalized['page'] === 2, $resource . ' should use the common pagination contract.');
 }
@@ -55,6 +55,10 @@ externalApiFilterExpectInvalid(
 externalApiFilterExpectInvalid(
     static fn() => ExternalApiFilters::normalize('orders', ['min_amount' => '500', 'max_amount' => '200']),
     'Inverted numeric ranges must be rejected.'
+);
+externalApiFilterExpectInvalid(
+    static fn() => ExternalApiFilters::normalize('products', ['min_stock' => '8', 'max_stock' => '2']),
+    'Inverted product stock ranges must be rejected.'
 );
 externalApiFilterExpectInvalid(
     static fn() => ExternalApiFilters::normalize('orders', ['min_amount' => '-1']),
@@ -88,5 +92,15 @@ externalApiFilterExpectInvalid(
     static fn() => ExternalApiFilters::normalize('orders', ['status_event' => 'delivered,returned', 'status_changed_from' => '2026-10-01']),
     'Status event filters accept one event at a time.'
 );
+$products = ExternalApiFilters::normalize('products', [
+    'name' => 'Panel',
+    'sku' => 'P-100',
+    'min_sale_price' => '10.5',
+    'max_sale_price' => '25',
+    'min_stock' => '0',
+    'created_by_ids' => 'user-a,user-b',
+]);
+externalApiFilterAssert($products['filters']['min_sale_price'] === 10.5, 'Product price filters should normalize numeric values.');
+externalApiFilterAssert($products['filters']['created_by_ids'] === ['user-a', 'user-b'], 'Product creator filters should normalize ID lists.');
 
 echo "External API filter tests passed.\n";

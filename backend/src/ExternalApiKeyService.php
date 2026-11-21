@@ -31,6 +31,10 @@ final class ExternalApiKeyService
         'bills.create',
         'bills.update',
         'bills.delete',
+        'products.read',
+        'products.create',
+        'products.update',
+        'products.delete',
     ];
 
     public function __construct(

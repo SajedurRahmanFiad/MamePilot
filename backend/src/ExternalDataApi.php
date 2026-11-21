@@ -46,6 +46,14 @@ final class ExternalDataApi extends BaseService
             ],
             'search' => ['v.id', 'v.name', 'v.phone', 'v.address'],
         ],
+        'products' => [
+            'table' => 'products', 'alias' => 'p', 'permission' => 'products.view', 'action' => 'fetchProductsSearchPage',
+            'scope' => 'products.read', 'sort' => [
+                'created_at' => 'p.created_at', 'name' => 'p.name', 'sku' => 'p.sku', 'category' => 'p.category',
+                'sale_price' => 'p.sale_price', 'purchase_price' => 'p.purchase_price', 'stock' => 'p.stock',
+            ],
+            'search' => ['p.id', 'p.name', 'p.slug', 'p.sku', 'p.category', 'p.manufacturer'],
+        ],
         'accounts' => [
             'table' => 'accounts', 'alias' => 'a', 'permission' => 'accounts.view', 'action' => 'fetchAccounts',
             'scope' => 'accounts.read', 'sort' => [
@@ -111,6 +119,21 @@ final class ExternalDataApi extends BaseService
             ],
             'DELETE' => [
                 'scope' => 'bills.delete', 'action' => 'deleteBill', 'status' => 200,
+                'fields' => [],
+            ],
+        ],
+        'products' => [
+            'POST' => [
+                'scope' => 'products.create', 'action' => 'createProduct', 'status' => 201, 'permission' => 'products.create',
+                'fields' => ['name', 'slug', 'sku', 'category', 'unitId', 'salePrice', 'purchasePrice', 'stock', 'dynamicPricing', 'sofaCoverPricing', 'manufacturer', 'batchLotNumber', 'expiryDate', 'recommendedDoseSequence', 'notes'],
+                'required' => ['name'],
+            ],
+            'PATCH' => [
+                'scope' => 'products.update', 'action' => 'updateProduct', 'status' => 200, 'permission' => 'products.edit',
+                'fields' => ['name', 'slug', 'sku', 'category', 'unitId', 'salePrice', 'purchasePrice', 'stock', 'dynamicPricing', 'sofaCoverPricing', 'manufacturer', 'batchLotNumber', 'expiryDate', 'recommendedDoseSequence', 'notes'],
+            ],
+            'DELETE' => [
+                'scope' => 'products.delete', 'action' => 'deleteProduct', 'status' => 200, 'permission' => 'products.delete',
                 'fields' => [],
             ],
         ],
@@ -204,7 +227,7 @@ final class ExternalDataApi extends BaseService
             throw new ApiException('The API key issuer does not have permission to modify this resource.', 403, 'PERMISSION_DENIED');
         }
 
-        if (in_array($resource, ['customers', 'vendors'], true) && !in_array($mutation['action'], ['createCustomer', 'createVendor'], true)) {
+        if (in_array($resource, ['customers', 'vendors', 'products'], true) && !in_array($mutation['action'], ['createCustomer', 'createVendor', 'createProduct'], true)) {
             $table = self::RESOURCE_CONFIG[$resource]['table'];
             $existing = $this->database->fetchOne(
                 "SELECT id FROM `{$table}` WHERE id = :id AND deleted_at IS NULL LIMIT 1",
@@ -222,8 +245,8 @@ final class ExternalDataApi extends BaseService
         }
 
         $arguments = match ($mutation['action']) {
-            'updateOrder', 'deleteOrder', 'updateCustomer', 'deleteCustomer', 'updateVendor', 'deleteVendor', 'updateBill', 'deleteBill'
-                => $mutation['action'] === 'updateOrder' || $mutation['action'] === 'updateCustomer' || $mutation['action'] === 'updateVendor' || $mutation['action'] === 'updateBill'
+            'updateOrder', 'deleteOrder', 'updateCustomer', 'deleteCustomer', 'updateVendor', 'deleteVendor', 'updateBill', 'deleteBill', 'updateProduct', 'deleteProduct'
+                => $mutation['action'] === 'updateOrder' || $mutation['action'] === 'updateCustomer' || $mutation['action'] === 'updateVendor' || $mutation['action'] === 'updateBill' || $mutation['action'] === 'updateProduct'
                     ? ['id' => $recordId, 'updates' => $payload]
                     : ['id' => $recordId],
             default => $payload,
@@ -235,6 +258,9 @@ final class ExternalDataApi extends BaseService
         } catch (ApiException $exception) {
             throw $exception;
         } catch (\PDOException $exception) {
+            if ($resource === 'products' && (int) ($exception->errorInfo[1] ?? 0) === 1062) {
+                throw new ApiException('A product with this slug or SKU already exists.', 409, 'DUPLICATE_PRODUCT');
+            }
             throw $exception;
         } catch (\RuntimeException $exception) {
             $message = $exception->getMessage();
@@ -295,8 +321,8 @@ final class ExternalDataApi extends BaseService
                 throw new ApiException($field . ' must be a non-empty string.', 422, 'INVALID_WRITE_PAYLOAD');
             }
         }
-        $nullableStringFields = ['address', 'notes', 'pageId', 'sourceAd'];
-        foreach (['name', 'phone', 'address', 'notes', 'orderDate', 'billDate', 'status', 'pageId', 'sourceAd', 'billNumber', 'accountId', 'paymentMethod', 'transactionDate', 'additionalExpenseCategoryId'] as $field) {
+        $nullableStringFields = ['address', 'notes', 'pageId', 'sourceAd', 'slug', 'sku', 'category', 'unitId', 'dynamicPricing', 'sofaCoverPricing', 'manufacturer', 'batchLotNumber', 'expiryDate', 'recommendedDoseSequence'];
+        foreach (['name', 'phone', 'address', 'notes', 'orderDate', 'billDate', 'status', 'pageId', 'sourceAd', 'billNumber', 'accountId', 'paymentMethod', 'transactionDate', 'additionalExpenseCategoryId', 'slug', 'sku', 'category', 'unitId', 'dynamicPricing', 'sofaCoverPricing', 'manufacturer', 'batchLotNumber', 'expiryDate', 'recommendedDoseSequence'] as $field) {
             if (array_key_exists($field, $body) && !(in_array($field, $nullableStringFields, true) && $body[$field] === null) && !is_string($body[$field])) {
                 $expectedType = in_array($field, $nullableStringFields, true) ? 'a string or null' : 'a string';
                 throw new ApiException($field . ' must be ' . $expectedType . '.', 422, 'INVALID_WRITE_PAYLOAD');
@@ -305,13 +331,13 @@ final class ExternalDataApi extends BaseService
         if (isset($body['name']) && trim($body['name']) === '') {
             throw new ApiException('name must not be empty.', 422, 'INVALID_WRITE_PAYLOAD');
         }
-        foreach (['orderDate', 'billDate'] as $field) {
+        foreach (['orderDate', 'billDate', 'expiryDate'] as $field) {
             if (isset($body[$field]) && (preg_match('/^\d{4}-\d{2}-\d{2}$/', $body[$field]) !== 1
                 || !checkdate((int) substr($body[$field], 5, 2), (int) substr($body[$field], 8, 2), (int) substr($body[$field], 0, 4)))) {
                 throw new ApiException($field . ' must be a valid YYYY-MM-DD date.', 422, 'INVALID_WRITE_PAYLOAD');
             }
         }
-        foreach (['subtotal', 'discount', 'shipping', 'total', 'paymentAmount', 'refundAmount', 'additionalExpenseAmount'] as $field) {
+        foreach (['subtotal', 'discount', 'shipping', 'total', 'paymentAmount', 'refundAmount', 'additionalExpenseAmount', 'salePrice', 'purchasePrice', 'stock'] as $field) {
             if (array_key_exists($field, $body) && ((!is_int($body[$field]) && !is_float($body[$field])) || $body[$field] < 0)) {
                 throw new ApiException($field . ' must be a non-negative JSON number.', 422, 'INVALID_WRITE_PAYLOAD');
             }
@@ -420,6 +446,7 @@ final class ExternalDataApi extends BaseService
             'transactions' => 't.id, t.date, t.type, t.category, t.account_id, t.to_account_id, t.amount, t.description, t.reference_id, t.contact_id, t.payment_method, t.created_by, t.approval_status, t.account_effect_applied, t.created_at, t.updated_at, t.deleted_at, t.deleted_by',
             'bills' => 'b.id, b.bill_number, b.bill_date, b.vendor_id, b.created_by, b.status, b.items, b.subtotal, b.discount, b.shipping, b.total, b.paid_amount, b.notes, b.history, b.created_at, b.updated_at, b.deleted_at, b.deleted_by',
             'vendors' => 'v.id, v.name, v.phone, v.address, v.total_purchases, v.due_amount, v.created_by, v.created_at, v.updated_at, v.deleted_at, v.deleted_by',
+            'products' => 'p.id, p.name, p.slug, p.sku, p.category, p.unit_id, p.sale_price, p.purchase_price, p.stock, p.dynamic_pricing, p.sofa_cover_pricing, p.manufacturer, p.batch_lot_number, p.expiry_date, p.recommended_dose_sequence, p.notes, p.created_by, p.created_at, p.updated_at, p.deleted_at, p.deleted_by',
             'accounts' => in_array('accounts.read_balance', $scopes, true)
                 ? 'a.id, a.name, a.type, a.opening_balance, a.current_balance, a.created_at, a.updated_at'
                 : 'a.id, a.name, a.type, a.created_at, a.updated_at',
@@ -537,8 +564,30 @@ final class ExternalDataApi extends BaseService
             'transactions' => $this->appendTransactionFilters($where, $bindings, $filters),
             'bills' => $this->appendBillFilters($where, $bindings, $filters),
             'vendors' => $this->appendVendorFilters($where, $bindings, $filters),
+            'products' => $this->appendExternalProductFilters($where, $bindings, $filters),
             'accounts' => $this->appendAccountFilters($where, $bindings, $filters),
         };
+    }
+
+    /** @param list<string> $where
+     *  @param array<string, mixed> $bindings
+     *  @param array<string, mixed> $filters
+     */
+    private function appendExternalProductFilters(array &$where, array &$bindings, array $filters): void
+    {
+        foreach (['name' => 'p.name', 'sku' => 'p.sku', 'category' => 'p.category', 'manufacturer' => 'p.manufacturer'] as $key => $column) {
+            $this->appendLikeFilter($where, $bindings, $filters, $key, $column);
+        }
+        $this->appendExactFilter($where, $bindings, $filters, 'unit_id', 'p.unit_id');
+        $this->appendExactFilter($where, $bindings, $filters, 'created_by_id', 'p.created_by');
+        $this->appendInFilter($where, $bindings, $filters, 'created_by_ids', 'p.created_by');
+        foreach ([
+            ['min_sale_price', 'p.sale_price', '>='], ['max_sale_price', 'p.sale_price', '<='],
+            ['min_purchase_price', 'p.purchase_price', '>='], ['max_purchase_price', 'p.purchase_price', '<='],
+            ['min_stock', 'p.stock', '>='], ['max_stock', 'p.stock', '<='],
+        ] as [$key, $column, $operator]) {
+            $this->appendNumericCondition($where, $bindings, $filters, $key, $column, $operator);
+        }
     }
 
     /** @param list<string> $where
@@ -923,6 +972,7 @@ final class ExternalDataApi extends BaseService
             'transactions' => $this->mapTransaction($row),
             'bills' => $this->mapBill($row),
             'vendors' => $this->mapVendor($row),
+            'products' => $this->mapProduct($row),
             'accounts' => $this->mapAccount($row),
         };
 
@@ -932,6 +982,7 @@ final class ExternalDataApi extends BaseService
             'transactions' => ['id', 'date', 'type', 'category', 'accountId', 'accountName', 'toAccountId', 'amount', 'description', 'referenceId', 'contactId', 'contactName', 'contactType', 'paymentMethod', 'createdBy', 'creatorName', 'approvalStatus', 'accountEffectApplied', 'createdAt', 'deletedAt', 'deletedBy'],
             'bills' => ['id', 'billNumber', 'billDate', 'vendorId', 'vendorName', 'vendorPhone', 'vendorAddress', 'createdBy', 'creatorName', 'status', 'items', 'subtotal', 'discount', 'shipping', 'total', 'paidAmount', 'notes', 'history', 'createdAt', 'deletedAt', 'deletedBy'],
             'vendors' => ['id', 'name', 'phone', 'address', 'totalPurchases', 'dueAmount', 'createdBy', 'createdAt', 'deletedAt', 'deletedBy'],
+            'products' => ['id', 'name', 'slug', 'sku', 'category', 'unitId', 'salePrice', 'purchasePrice', 'stock', 'dynamicPricing', 'sofaCoverPricing', 'manufacturer', 'batchLotNumber', 'expiryDate', 'recommendedDoseSequence', 'notes', 'createdBy', 'createdAt', 'deletedAt', 'deletedBy'],
             'accounts' => in_array('accounts.read_balance', $scopes, true)
                 ? ['id', 'name', 'type', 'openingBalance', 'currentBalance']
                 : ['id', 'name', 'type'],

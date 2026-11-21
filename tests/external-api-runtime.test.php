@@ -49,7 +49,7 @@ $previousAuthorization = $_SERVER['HTTP_AUTHORIZATION'] ?? null;
 $sessionToken = $auth->issueToken($developer);
 $scopes = [
     'orders.read', 'customers.read', 'transactions.read', 'bills.read',
-    'vendors.read', 'accounts.read', 'accounts.read_balance',
+    'vendors.read', 'accounts.read', 'accounts.read_balance', 'products.read',
 ];
 $filtersByResource = [
     'orders' => ['delivery_status' => 'delivered', 'payment_status' => 'unpaid', 'min_amount' => '200', 'max_amount' => '400'],
@@ -58,6 +58,7 @@ $filtersByResource = [
     'bills' => ['payment_status' => 'unpaid', 'min_amount' => '0'],
     'vendors' => ['total_purchases_min' => '0', 'payable_min' => '0'],
     'accounts' => ['min_current_balance' => '0'],
+    'products' => ['min_sale_price' => '0', 'max_stock' => '100'],
 ];
 
 try {
@@ -151,6 +152,34 @@ try {
             externalApiRuntimeAssert(($updatedVendor['status'] ?? 0) === 200, 'Vendor update did not return HTTP 200.');
             $deletedVendor = $api->handleRequest('DELETE', '/api/v1/vendors/' . $vendorId, [], []);
             externalApiRuntimeAssert(($deletedVendor['body']['data']['deleted'] ?? false) === true, 'Vendor delete did not return a soft-delete confirmation.');
+
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $sessionToken;
+            $productKey = $keyService->handleManagementRequest('POST', null, [
+                'label' => 'Temporary external API product write test',
+                'scopes' => ['products.read', 'products.create', 'products.update', 'products.delete'],
+            ]);
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . (string) ($productKey['api_key'] ?? '');
+            $productSku = 'EXT-API-' . strtoupper(bin2hex(random_bytes(6)));
+            $createdProduct = $api->handleRequest('POST', '/api/v1/products', [], [
+                'name' => 'External API runtime product ' . bin2hex(random_bytes(4)),
+                'sku' => $productSku,
+                'category' => 'API test',
+                'salePrice' => 12.5,
+                'purchasePrice' => 7.25,
+                'stock' => 0,
+            ]);
+            externalApiRuntimeAssert(($createdProduct['status'] ?? 0) === 201, 'Product creation did not return HTTP 201.');
+            $productId = (string) ($createdProduct['body']['data']['id'] ?? '');
+            externalApiRuntimeAssert($productId !== '', 'Product creation did not return a record ID.');
+            $productRead = $api->handleRequest('GET', '/api/v1/products/' . $productId, [], []);
+            externalApiRuntimeAssert(($productRead['body']['data']['sku'] ?? '') === $productSku, 'Product read did not return the created SKU.');
+            externalApiRuntimeAssert(!array_key_exists('image', $productRead['body']['data'] ?? []), 'Product reads must not expose stored image paths.');
+            $productUpdate = $api->handleRequest('PATCH', '/api/v1/products/' . $productId, [], ['salePrice' => 15.75]);
+            externalApiRuntimeAssert(($productUpdate['status'] ?? 0) === 200, 'Product update did not return HTTP 200.');
+            $productList = $api->handleRequest('GET', '/api/v1/products', ['sku' => $productSku, 'page_size' => '1'], []);
+            externalApiRuntimeAssert(count($productList['body']['data'] ?? []) === 1, 'Product filters did not find the created SKU.');
+            $deletedProduct = $api->handleRequest('DELETE', '/api/v1/products/' . $productId, [], []);
+            externalApiRuntimeAssert(($deletedProduct['body']['data']['deleted'] ?? false) === true, 'Product delete did not return a soft-delete confirmation.');
 
             $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $secret;
             foreach ($filtersByResource as $resource => $filters) {

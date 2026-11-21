@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MamePilot External Data API
   version: 1.0.0
-  description: Scoped integration API. Orders, customers, bills, and vendors support scoped writes; transactions and accounts are read-only.
+  description: Scoped integration API. Orders, customers, bills, vendors, and products support scoped writes; transactions and accounts are read-only.
 servers:
   - url: https://YOUR-DOMAIN/api/v1
     description: Production API
@@ -459,6 +459,102 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '429': {$ref: '#/components/responses/RateLimited'}
+  /products:
+    get:
+      operationId: listProducts
+      summary: List filtered products
+      parameters:
+        - {$ref: '#/components/parameters/Page'}
+        - {$ref: '#/components/parameters/PageSize'}
+        - {$ref: '#/components/parameters/Ids'}
+        - {$ref: '#/components/parameters/Search'}
+        - {$ref: '#/components/parameters/CreatedFrom'}
+        - {$ref: '#/components/parameters/CreatedTo'}
+        - {$ref: '#/components/parameters/UpdatedFrom'}
+        - {$ref: '#/components/parameters/UpdatedTo'}
+        - {$ref: '#/components/parameters/UpdatedSince'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+        - {$ref: '#/components/parameters/SortProducts'}
+        - {$ref: '#/components/parameters/SortDirection'}
+        - {$ref: '#/components/parameters/ProductName'}
+        - {$ref: '#/components/parameters/ProductSku'}
+        - {$ref: '#/components/parameters/ProductCategory'}
+        - {$ref: '#/components/parameters/ProductUnitId'}
+        - {$ref: '#/components/parameters/ProductManufacturer'}
+        - {$ref: '#/components/parameters/CreatedById'}
+        - {$ref: '#/components/parameters/CreatedByIds'}
+        - {$ref: '#/components/parameters/MinSalePrice'}
+        - {$ref: '#/components/parameters/MaxSalePrice'}
+        - {$ref: '#/components/parameters/MinPurchasePrice'}
+        - {$ref: '#/components/parameters/MaxPurchasePrice'}
+        - {$ref: '#/components/parameters/MinStock'}
+        - {$ref: '#/components/parameters/MaxStock'}
+      responses:
+        '200': {$ref: '#/components/responses/Collection'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidFilter'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      operationId: createProduct
+      summary: Create a product
+      description: Requires products.create and the issuer's current MamePilot products.create permission. Uploaded images are not accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductCreate'}
+      responses:
+        '201': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /products/{id}:
+    get:
+      operationId: getProduct
+      summary: Get one product
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+        - {$ref: '#/components/parameters/IncludeDeleted'}
+      responses:
+        '200': {$ref: '#/components/responses/SingleRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateProduct
+      summary: Partially update a product
+      description: Requires products.update and the issuer's current MamePilot products.edit permission. Uploaded images are not accepted.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    delete:
+      operationId: deleteProduct
+      summary: Soft-delete a product
+      description: Requires products.delete and the issuer's current MamePilot products.delete permission. Products referenced by inventory-bearing orders or bills cannot be deleted.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /accounts:
     get:
       operationId: listAccounts
@@ -529,7 +625,7 @@ paths:
                   uniqueItems: true
                   items:
                     type: string
-                    enum: [orders.read, customers.read, transactions.read, bills.read, vendors.read, accounts.read, accounts.read_balance, orders.create, orders.update, orders.delete, customers.create, customers.update, customers.delete, bills.create, bills.update, bills.delete, vendors.create, vendors.update, vendors.delete]
+                    enum: [orders.read, customers.read, transactions.read, bills.read, vendors.read, accounts.read, accounts.read_balance, products.read, orders.create, orders.update, orders.delete, customers.create, customers.update, customers.delete, bills.create, bills.update, bills.delete, vendors.create, vendors.update, vendors.delete, products.create, products.update, products.delete]
                 expires_at:
                   type: [string, 'null']
                   format: date-time
@@ -654,6 +750,18 @@ components:
     TotalPurchasesMax: {name: total_purchases_max, in: query, schema: {type: number, minimum: 0}}
     PayableMin: {name: payable_min, in: query, schema: {type: number, minimum: 0}}
     PayableMax: {name: payable_max, in: query, schema: {type: number, minimum: 0}}
+    SortProducts: {name: sort_by, in: query, schema: {type: string, enum: [created_at, name, sku, category, sale_price, purchase_price, stock], default: created_at}}
+    ProductName: {name: name, in: query, schema: {type: string, maxLength: 255}}
+    ProductSku: {name: sku, in: query, schema: {type: string, maxLength: 255}}
+    ProductCategory: {name: category, in: query, schema: {type: string, maxLength: 255}}
+    ProductUnitId: {name: unit_id, in: query, schema: {type: string}}
+    ProductManufacturer: {name: manufacturer, in: query, schema: {type: string, maxLength: 255}}
+    MinSalePrice: {name: min_sale_price, in: query, schema: {type: number, minimum: 0}}
+    MaxSalePrice: {name: max_sale_price, in: query, schema: {type: number, minimum: 0}}
+    MinPurchasePrice: {name: min_purchase_price, in: query, schema: {type: number, minimum: 0}}
+    MaxPurchasePrice: {name: max_purchase_price, in: query, schema: {type: number, minimum: 0}}
+    MinStock: {name: min_stock, in: query, schema: {type: number, minimum: 0}}
+    MaxStock: {name: max_stock, in: query, schema: {type: number, minimum: 0}}
     AccountType: {name: type, in: query, schema: {type: string, enum: [Bank, Cash]}}
     MinOpeningBalance: {name: min_opening_balance, in: query, schema: {type: number, minimum: 0}}
     MaxOpeningBalance: {name: max_opening_balance, in: query, schema: {type: number, minimum: 0}}
@@ -859,6 +967,46 @@ components:
         transactionDate: {type: string, format: date-time}
         additionalExpenseAmount: {type: number, minimum: 0}
         additionalExpenseCategoryId: {type: string}
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        slug: {type: [string, 'null'], maxLength: 255}
+        sku: {type: [string, 'null'], maxLength: 191}
+        category: {type: [string, 'null'], maxLength: 255}
+        unitId: {type: [string, 'null']}
+        salePrice: {type: number, minimum: 0}
+        purchasePrice: {type: number, minimum: 0}
+        stock: {type: number, minimum: 0}
+        dynamicPricing: {type: [string, 'null']}
+        sofaCoverPricing: {type: [string, 'null']}
+        manufacturer: {type: [string, 'null'], maxLength: 255}
+        batchLotNumber: {type: [string, 'null'], maxLength: 255}
+        expiryDate: {type: [string, 'null'], format: date}
+        recommendedDoseSequence: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
+    ProductUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        slug: {type: [string, 'null'], maxLength: 255}
+        sku: {type: [string, 'null'], maxLength: 191}
+        category: {type: [string, 'null'], maxLength: 255}
+        unitId: {type: [string, 'null']}
+        salePrice: {type: number, minimum: 0}
+        purchasePrice: {type: number, minimum: 0}
+        stock: {type: number, minimum: 0}
+        dynamicPricing: {type: [string, 'null']}
+        sofaCoverPricing: {type: [string, 'null']}
+        manufacturer: {type: [string, 'null'], maxLength: 255}
+        batchLotNumber: {type: [string, 'null'], maxLength: 255}
+        expiryDate: {type: [string, 'null'], format: date}
+        recommendedDoseSequence: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
     ExternalRecord:
       type: object
       description: Resource-specific projected fields are documented in EXTERNAL_DATA_API.md; sensitive fields are omitted by design.
