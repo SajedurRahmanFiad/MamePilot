@@ -55,6 +55,67 @@ final class ExternalDataApi extends BaseService
         ],
     ];
 
+    private const WRITE_CONFIG = [
+        'orders' => [
+            'POST' => [
+                'scope' => 'orders.create', 'action' => 'createOrder', 'status' => 201,
+                'fields' => ['customerId', 'orderDate', 'items', 'subtotal', 'discount', 'shipping', 'total', 'notes', 'pageId', 'sourceAd'],
+                'required' => ['customerId', 'items'],
+            ],
+            'PATCH' => [
+                'scope' => 'orders.update', 'action' => 'updateOrder', 'status' => 200,
+                'fields' => ['customerId', 'orderDate', 'items', 'subtotal', 'discount', 'shipping', 'total', 'notes', 'status', 'paymentAmount', 'refundAmount', 'accountId', 'paymentMethod', 'transactionDate'],
+            ],
+            'DELETE' => [
+                'scope' => 'orders.delete', 'action' => 'deleteOrder', 'status' => 200,
+                'fields' => [],
+            ],
+        ],
+        'customers' => [
+            'POST' => [
+                'scope' => 'customers.create', 'action' => 'createCustomer', 'status' => 201, 'permission' => 'customers.create',
+                'fields' => ['name', 'phone', 'address'], 'required' => ['name'],
+            ],
+            'PATCH' => [
+                'scope' => 'customers.update', 'action' => 'updateCustomer', 'status' => 200, 'permission' => 'customers.edit',
+                'fields' => ['name', 'phone', 'address'],
+            ],
+            'DELETE' => [
+                'scope' => 'customers.delete', 'action' => 'deleteCustomer', 'status' => 200, 'permission' => 'customers.delete',
+                'fields' => [],
+            ],
+        ],
+        'vendors' => [
+            'POST' => [
+                'scope' => 'vendors.create', 'action' => 'createVendor', 'status' => 201, 'permission' => 'vendors.create',
+                'fields' => ['name', 'phone', 'address'], 'required' => ['name'],
+            ],
+            'PATCH' => [
+                'scope' => 'vendors.update', 'action' => 'updateVendor', 'status' => 200, 'permission' => 'vendors.edit',
+                'fields' => ['name', 'phone', 'address'],
+            ],
+            'DELETE' => [
+                'scope' => 'vendors.delete', 'action' => 'deleteVendor', 'status' => 200, 'permission' => 'vendors.delete',
+                'fields' => [],
+            ],
+        ],
+        'bills' => [
+            'POST' => [
+                'scope' => 'bills.create', 'action' => 'createBill', 'status' => 201,
+                'fields' => ['vendorId', 'billDate', 'items', 'subtotal', 'discount', 'shipping', 'total', 'notes'],
+                'required' => ['vendorId', 'items'],
+            ],
+            'PATCH' => [
+                'scope' => 'bills.update', 'action' => 'updateBill', 'status' => 200,
+                'fields' => ['vendorId', 'billDate', 'billNumber', 'items', 'subtotal', 'discount', 'shipping', 'total', 'notes', 'status', 'paymentAmount', 'refundAmount', 'accountId', 'paymentMethod', 'transactionDate', 'additionalExpenseAmount', 'additionalExpenseCategoryId'],
+            ],
+            'DELETE' => [
+                'scope' => 'bills.delete', 'action' => 'deleteBill', 'status' => 200,
+                'fields' => [],
+            ],
+        ],
+    ];
+
     public static function matchesPath(string $path): bool
     {
         return preg_match('#(?:^|/)api/v1(?:/|$)#', $path) === 1
@@ -79,8 +140,13 @@ final class ExternalDataApi extends BaseService
         if (!isset(self::RESOURCE_CONFIG[$resource])) {
             throw new ApiException('Unknown external API resource.', 404, 'RESOURCE_NOT_FOUND');
         }
-        if ($method !== 'GET') {
-            throw new ApiException('External data endpoints are read-only.', 405, 'METHOD_NOT_ALLOWED');
+
+        $mutation = $method === 'GET' ? null : (self::WRITE_CONFIG[$resource][$method] ?? null);
+        if ($method !== 'GET' && $mutation === null) {
+            throw new ApiException('This method is not supported for the external API resource.', 405, 'METHOD_NOT_ALLOWED');
+        }
+        if ($mutation !== null && (($method === 'POST' && $recordId !== '') || ($method !== 'POST' && $recordId === ''))) {
+            throw new ApiException('Use the collection path for creation and the record path for updates or deletion.', 404, 'RESOURCE_NOT_FOUND');
         }
 
         $secret = Http::bearerToken();
@@ -90,13 +156,17 @@ final class ExternalDataApi extends BaseService
         $keyService = new ExternalApiKeyService($this->database, $this->auth, $this->config);
         $keyContext = $keyService->authenticate($secret, $resource);
         try {
-            $scope = self::RESOURCE_CONFIG[$resource]['scope'];
-            if (!in_array($scope, $keyContext['scopes'], true)) {
-                throw new ApiException('API key does not have access to this resource.', 403, 'INSUFFICIENT_SCOPE');
-            }
+            if ($mutation !== null) {
+                $response = $this->mutateResource($resource, $recordId, $query, $body, $mutation, $keyContext);
+            } else {
+                $scope = self::RESOURCE_CONFIG[$resource]['scope'];
+                if (!in_array($scope, $keyContext['scopes'], true)) {
+                    throw new ApiException('API key does not have access to this resource.', 403, 'INSUFFICIENT_SCOPE');
+                }
 
-            $resourceApi = new self($this->database, $keyContext['auth'], $this->config);
-            $response = $resourceApi->readResource($resource, $recordId, $query, $keyContext);
+                $resourceApi = new self($this->database, $keyContext['auth'], $this->config);
+                $response = $resourceApi->readResource($resource, $recordId, $query, $keyContext);
+            }
             $keyService->logRequest($keyContext['id'], $resource, $method, $response['status']);
             return $response;
         } catch (ApiException $exception) {
@@ -105,6 +175,168 @@ final class ExternalDataApi extends BaseService
         } catch (\Throwable $exception) {
             $keyService->logRequest($keyContext['id'], $resource, $method, 500);
             throw $exception;
+        }
+    }
+
+    /** @param array<string, mixed> $mutation
+     *  @param array{auth: Auth, id: string, scopes: list<string>} $keyContext
+     *  @return array{status: int, body: array<string, mixed>}
+     */
+    private function mutateResource(string $resource, string $recordId, array $query, array $body, array $mutation, array $keyContext): array
+    {
+        if ($query !== []) {
+            throw new ApiException('Write requests do not accept query parameters.', 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        if (!in_array($mutation['scope'], $keyContext['scopes'], true)) {
+            throw new ApiException('API key does not have permission for this write operation.', 403, 'INSUFFICIENT_SCOPE');
+        }
+
+        if ($mutation['fields'] === []) {
+            if ($body !== []) {
+                throw new ApiException('Delete requests do not accept a request body.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+            $payload = [];
+        } else {
+            $payload = $this->validateMutationPayload($body, $mutation);
+        }
+        $resourceApi = new self($this->database, $keyContext['auth'], $this->config);
+        if (isset($mutation['permission']) && !$resourceApi->currentUserHasPermission($mutation['permission'])) {
+            throw new ApiException('The API key issuer does not have permission to modify this resource.', 403, 'PERMISSION_DENIED');
+        }
+
+        if (in_array($resource, ['customers', 'vendors'], true) && !in_array($mutation['action'], ['createCustomer', 'createVendor'], true)) {
+            $table = self::RESOURCE_CONFIG[$resource]['table'];
+            $existing = $this->database->fetchOne(
+                "SELECT id FROM `{$table}` WHERE id = :id AND deleted_at IS NULL LIMIT 1",
+                [':id' => $recordId]
+            );
+            if ($existing === null) {
+                throw new ApiException('Record not found.', 404, 'RECORD_NOT_FOUND');
+            }
+        }
+
+        if (in_array($mutation['action'], ['createCustomer', 'createVendor'], true)) {
+            $this->assertContactPhoneAvailable($resource, trim((string) ($payload['phone'] ?? '')));
+        } elseif (in_array($mutation['action'], ['updateCustomer', 'updateVendor'], true) && isset($payload['phone'])) {
+            $this->assertContactPhoneAvailable($resource, trim((string) $payload['phone']), $recordId);
+        }
+
+        $arguments = match ($mutation['action']) {
+            'updateOrder', 'deleteOrder', 'updateCustomer', 'deleteCustomer', 'updateVendor', 'deleteVendor', 'updateBill', 'deleteBill'
+                => $mutation['action'] === 'updateOrder' || $mutation['action'] === 'updateCustomer' || $mutation['action'] === 'updateVendor' || $mutation['action'] === 'updateBill'
+                    ? ['id' => $recordId, 'updates' => $payload]
+                    : ['id' => $recordId],
+            default => $payload,
+        };
+
+        try {
+            $result = (new BusinessActionDispatcher($this->database, $keyContext['auth'], $this->config))
+                ->dispatch($mutation['action'], $arguments);
+        } catch (ApiException $exception) {
+            throw $exception;
+        } catch (\PDOException $exception) {
+            throw $exception;
+        } catch (\RuntimeException $exception) {
+            $message = $exception->getMessage();
+            $isMissingRecord = stripos($message, 'not found') !== false || stripos($message, 'no longer exists') !== false;
+            $isRecordPermissionFailure = $recordId !== '' && in_array($resource, ['orders', 'bills'], true) && stripos($message, 'permission') !== false;
+            $status = $isMissingRecord || $isRecordPermissionFailure
+                ? 404
+                : (stripos($message, 'permission') !== false ? 403 : 422);
+            $code = match ($status) {
+                404 => 'RECORD_NOT_FOUND',
+                403 => 'PERMISSION_DENIED',
+                default => 'INVALID_WRITE',
+            };
+            throw new ApiException($message, $status, $code);
+        }
+
+        if (!is_array($result)) {
+            throw new ApiException('The write operation did not return a record.', 404, 'RECORD_NOT_FOUND');
+        }
+        if (str_starts_with($mutation['action'], 'delete')) {
+            return ['status' => $mutation['status'], 'body' => ['data' => ['id' => $recordId, 'deleted' => true]]];
+        }
+
+        $id = trim((string) ($result['id'] ?? $recordId));
+        return ['status' => $mutation['status'], 'body' => ['data' => ['id' => $id]]];
+    }
+
+    /** @param array<string, mixed> $body
+     *  @param array<string, mixed> $mutation
+     *  @return array<string, mixed>
+     */
+    private function validateMutationPayload(array $body, array $mutation): array
+    {
+        if ($body === [] || array_is_list($body)) {
+            throw new ApiException('Write request body must be a non-empty JSON object.', 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        $unknownFields = array_diff(array_keys($body), $mutation['fields']);
+        if ($unknownFields !== []) {
+            throw new ApiException('Unsupported write field: ' . (string) reset($unknownFields), 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        foreach ($mutation['required'] ?? [] as $field) {
+            if (!array_key_exists($field, $body) || $body[$field] === '' || $body[$field] === null) {
+                throw new ApiException($field . ' is required.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+        }
+        if (array_key_exists('items', $body) && (!is_array($body['items']) || !array_is_list($body['items']) || $body['items'] === [])) {
+            throw new ApiException('items must be a non-empty JSON array.', 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        if (isset($body['items'])) {
+            foreach ($body['items'] as $item) {
+                if (!is_array($item) || $item === [] || array_is_list($item)) {
+                    throw new ApiException('Each item must be a non-empty JSON object.', 422, 'INVALID_WRITE_PAYLOAD');
+                }
+            }
+        }
+        foreach (['customerId', 'vendorId'] as $field) {
+            if (array_key_exists($field, $body) && (!is_string($body[$field]) || trim($body[$field]) === '')) {
+                throw new ApiException($field . ' must be a non-empty string.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+        }
+        $nullableStringFields = ['address', 'notes', 'pageId', 'sourceAd'];
+        foreach (['name', 'phone', 'address', 'notes', 'orderDate', 'billDate', 'status', 'pageId', 'sourceAd', 'billNumber', 'accountId', 'paymentMethod', 'transactionDate', 'additionalExpenseCategoryId'] as $field) {
+            if (array_key_exists($field, $body) && !(in_array($field, $nullableStringFields, true) && $body[$field] === null) && !is_string($body[$field])) {
+                $expectedType = in_array($field, $nullableStringFields, true) ? 'a string or null' : 'a string';
+                throw new ApiException($field . ' must be ' . $expectedType . '.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+        }
+        if (isset($body['name']) && trim($body['name']) === '') {
+            throw new ApiException('name must not be empty.', 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        foreach (['orderDate', 'billDate'] as $field) {
+            if (isset($body[$field]) && (preg_match('/^\d{4}-\d{2}-\d{2}$/', $body[$field]) !== 1
+                || !checkdate((int) substr($body[$field], 5, 2), (int) substr($body[$field], 8, 2), (int) substr($body[$field], 0, 4)))) {
+                throw new ApiException($field . ' must be a valid YYYY-MM-DD date.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+        }
+        foreach (['subtotal', 'discount', 'shipping', 'total', 'paymentAmount', 'refundAmount', 'additionalExpenseAmount'] as $field) {
+            if (array_key_exists($field, $body) && ((!is_int($body[$field]) && !is_float($body[$field])) || $body[$field] < 0)) {
+                throw new ApiException($field . ' must be a non-negative JSON number.', 422, 'INVALID_WRITE_PAYLOAD');
+            }
+        }
+        if ((float) ($body['paymentAmount'] ?? 0) > 0 && (float) ($body['refundAmount'] ?? 0) > 0) {
+            throw new ApiException('Record either a payment or a refund, not both.', 422, 'INVALID_WRITE_PAYLOAD');
+        }
+        return $body;
+    }
+
+    private function assertContactPhoneAvailable(string $resource, string $phone, string $exceptId = ''): void
+    {
+        if ($phone === '') {
+            return;
+        }
+        $table = self::RESOURCE_CONFIG[$resource]['table'];
+        $sql = "SELECT id FROM `{$table}` WHERE phone = :phone AND deleted_at IS NULL";
+        $bindings = [':phone' => $phone];
+        if ($exceptId !== '') {
+            $sql .= ' AND id <> :except_id';
+            $bindings[':except_id'] = $exceptId;
+        }
+        $existing = $this->database->fetchOne($sql . ' LIMIT 1', $bindings);
+        if ($existing !== null) {
+            throw new ApiException('A record with this phone already exists.', 409, 'DUPLICATE_CONTACT');
         }
     }
 

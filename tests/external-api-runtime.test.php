@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/backend/bootstrap.php';
 
 use App\Auth;
+use App\ApiException;
 use App\Config;
 use App\Database;
 use App\ExternalApiKeyService;
@@ -73,6 +74,85 @@ try {
 
             $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $secret;
             $api = new ExternalDataApi($database, $auth, $config);
+            try {
+                $api->handleRequest('POST', '/api/v1/orders', [], ['unexpected' => 'value']);
+                throw new RuntimeException('Read-only key unexpectedly passed a write request.');
+            } catch (ApiException $exception) {
+                externalApiRuntimeAssert($exception->httpStatus() === 403, 'A read-only key must not pass a write-scope check.');
+            }
+
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $sessionToken;
+            $writeKey = $keyService->handleManagementRequest('POST', null, [
+                'label' => 'Temporary external API write-scope test',
+                'scopes' => ['orders.create'],
+            ]);
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . (string) ($writeKey['api_key'] ?? '');
+            try {
+                $api->handleRequest('POST', '/api/v1/orders', [], ['unexpected' => 'value']);
+                throw new RuntimeException('Write payload unexpectedly accepted an unknown field.');
+            } catch (ApiException $exception) {
+                externalApiRuntimeAssert($exception->httpStatus() === 422, 'A granted write scope should reach strict payload validation.');
+            }
+            try {
+                $api->handleRequest('PATCH', '/api/v1/orders/test-order', [], ['status' => 'On Hold']);
+                throw new RuntimeException('Create scope unexpectedly authorized an update request.');
+            } catch (ApiException $exception) {
+                externalApiRuntimeAssert($exception->httpStatus() === 403, 'Create and update scopes must be independent.');
+            }
+            try {
+                $api->handleRequest('POST', '/api/v1/orders', [], [
+                    'customerId' => 'test-customer',
+                    'items' => [['productId' => 'test-product']],
+                    'orderDate' => '2026-99-31',
+                ]);
+                throw new RuntimeException('Malformed order date was unexpectedly accepted.');
+            } catch (ApiException $exception) {
+                externalApiRuntimeAssert($exception->httpStatus() === 422, 'Malformed order dates must be rejected.');
+            }
+            try {
+                $api->handleRequest('POST', '/api/v1/transactions', [], []);
+                throw new RuntimeException('Transaction writes are not supported.');
+            } catch (ApiException $exception) {
+                externalApiRuntimeAssert($exception->httpStatus() === 405, 'Transactions must remain read-only.');
+            }
+
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $sessionToken;
+            $contactKey = $keyService->handleManagementRequest('POST', null, [
+                'label' => 'Temporary external API contact write test',
+                'scopes' => [
+                    'customers.create', 'customers.update', 'customers.delete',
+                    'vendors.create', 'vendors.update', 'vendors.delete',
+                ],
+            ]);
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . (string) ($contactKey['api_key'] ?? '');
+            $contactPhone = 'api-test-' . bin2hex(random_bytes(6));
+            $createdCustomer = $api->handleRequest('POST', '/api/v1/customers', [], [
+                'name' => 'External API runtime test',
+                'phone' => $contactPhone,
+                'address' => 'Before update',
+            ]);
+            externalApiRuntimeAssert(($createdCustomer['status'] ?? 0) === 201, 'Customer creation did not return HTTP 201.');
+            $customerId = (string) ($createdCustomer['body']['data']['id'] ?? '');
+            externalApiRuntimeAssert($customerId !== '', 'Customer creation did not return a record ID.');
+            $updatedCustomer = $api->handleRequest('PATCH', '/api/v1/customers/' . $customerId, [], ['address' => 'After update']);
+            externalApiRuntimeAssert(($updatedCustomer['status'] ?? 0) === 200, 'Customer update did not return HTTP 200.');
+            $deletedCustomer = $api->handleRequest('DELETE', '/api/v1/customers/' . $customerId, [], []);
+            externalApiRuntimeAssert(($deletedCustomer['body']['data']['deleted'] ?? false) === true, 'Customer delete did not return a soft-delete confirmation.');
+
+            $createdVendor = $api->handleRequest('POST', '/api/v1/vendors', [], [
+                'name' => 'External API runtime test',
+                'phone' => 'api-test-' . bin2hex(random_bytes(6)),
+                'address' => 'Before update',
+            ]);
+            externalApiRuntimeAssert(($createdVendor['status'] ?? 0) === 201, 'Vendor creation did not return HTTP 201.');
+            $vendorId = (string) ($createdVendor['body']['data']['id'] ?? '');
+            externalApiRuntimeAssert($vendorId !== '', 'Vendor creation did not return a record ID.');
+            $updatedVendor = $api->handleRequest('PATCH', '/api/v1/vendors/' . $vendorId, [], ['address' => 'After update']);
+            externalApiRuntimeAssert(($updatedVendor['status'] ?? 0) === 200, 'Vendor update did not return HTTP 200.');
+            $deletedVendor = $api->handleRequest('DELETE', '/api/v1/vendors/' . $vendorId, [], []);
+            externalApiRuntimeAssert(($deletedVendor['body']['data']['deleted'] ?? false) === true, 'Vendor delete did not return a soft-delete confirmation.');
+
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $secret;
             foreach ($filtersByResource as $resource => $filters) {
                 $response = $api->handleRequest('GET', '/api/v1/' . $resource, $filters + ['page_size' => '1'], []);
                 externalApiRuntimeAssert(($response['status'] ?? 0) === 200, $resource . ' collection did not return HTTP 200.');

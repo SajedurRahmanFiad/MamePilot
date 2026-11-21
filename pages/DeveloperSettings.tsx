@@ -14,7 +14,12 @@ import { DEFAULT_MAINTENANCE_CONTENT } from '../src/config/maintenance';
 import LlmSettingsPanel from '../components/LlmSettingsPanel';
 
 type TabId = 'license' | 'copyright' | 'payment-gateway' | 'fraud-checker' | 'maintenance' | 'llms' | 'agent' | 'business_growth' | 'email' | 'awajdigital' | 'sms-service' | 'api';
-type ApiKeyScope = 'orders.read' | 'customers.read' | 'transactions.read' | 'bills.read' | 'vendors.read' | 'accounts.read' | 'accounts.read_balance';
+type ApiKeyScope =
+  | 'orders.read' | 'customers.read' | 'transactions.read' | 'bills.read' | 'vendors.read' | 'accounts.read' | 'accounts.read_balance'
+  | 'orders.create' | 'orders.update' | 'orders.delete'
+  | 'customers.create' | 'customers.update' | 'customers.delete'
+  | 'vendors.create' | 'vendors.update' | 'vendors.delete'
+  | 'bills.create' | 'bills.update' | 'bills.delete';
 type ApiKeyRecord = {
   id: string;
   label: string;
@@ -27,7 +32,7 @@ type ApiKeyRecord = {
 };
 type ApiKeyCreateResponse = ApiKeyRecord & { api_key: string };
 
-const API_KEY_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
+const API_KEY_READ_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
   { scope: 'orders.read', label: 'Orders' },
   { scope: 'customers.read', label: 'Customers' },
   { scope: 'transactions.read', label: 'Transactions' },
@@ -35,6 +40,20 @@ const API_KEY_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
   { scope: 'vendors.read', label: 'Vendors' },
   { scope: 'accounts.read', label: 'Accounts' },
   { scope: 'accounts.read_balance', label: 'Account balances' },
+];
+const API_KEY_WRITE_SCOPE_OPTIONS: Array<{ scope: ApiKeyScope; label: string }> = [
+  { scope: 'orders.create', label: 'Create orders' },
+  { scope: 'orders.update', label: 'Update orders' },
+  { scope: 'orders.delete', label: 'Delete orders' },
+  { scope: 'customers.create', label: 'Create customers' },
+  { scope: 'customers.update', label: 'Update customers' },
+  { scope: 'customers.delete', label: 'Delete customers' },
+  { scope: 'vendors.create', label: 'Create vendors' },
+  { scope: 'vendors.update', label: 'Update vendors' },
+  { scope: 'vendors.delete', label: 'Delete vendors' },
+  { scope: 'bills.create', label: 'Create bills' },
+  { scope: 'bills.update', label: 'Update bills' },
+  { scope: 'bills.delete', label: 'Delete bills' },
 ];
 type MaintenanceContentForm = {
   imageUrl: string;
@@ -1299,7 +1318,7 @@ const DeveloperSettings: React.FC = () => {
               <section className="space-y-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm md:p-8">
                 <div>
                   <h3 className="text-xl font-black text-gray-900">API access</h3>
-                  <p className="mt-1 text-sm text-gray-500">Create a scoped key for external read-only integrations.</p>
+                  <p className="mt-1 text-sm text-gray-500">Grant only the read and write access this integration needs.</p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -1329,7 +1348,7 @@ const DeveloperSettings: React.FC = () => {
                 <fieldset className="space-y-3">
                   <legend className="text-xs font-black uppercase tracking-widest text-gray-400">Read scopes</legend>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {API_KEY_SCOPE_OPTIONS.map(({ scope, label }) => {
+                    {API_KEY_READ_SCOPE_OPTIONS.map(({ scope, label }) => {
                       const selected = apiKeyScopes.includes(scope);
                       const balanceNeedsAccountRead = scope === 'accounts.read_balance' && !apiKeyScopes.includes('accounts.read');
                       return (
@@ -1354,6 +1373,27 @@ const DeveloperSettings: React.FC = () => {
                       );
                     })}
                   </div>
+                </fieldset>
+
+                <fieldset className="space-y-3">
+                  <legend className="text-xs font-black uppercase tracking-widest text-gray-400">Write scopes</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {API_KEY_WRITE_SCOPE_OPTIONS.map(({ scope, label }) => (
+                      <label key={scope} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={apiKeyScopes.includes(scope)}
+                          onChange={() => toggleApiKeyScope(scope)}
+                          className="h-4 w-4 accent-[#0f2f57]"
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-semibold">{label}</span>
+                          <span className="block break-all text-xs text-gray-400">{scope}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-700">Delete scopes soft-delete records. Order and bill changes can affect stock, payments, and related transactions.</p>
                 </fieldset>
 
                 <Button

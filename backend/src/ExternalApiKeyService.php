@@ -19,6 +19,18 @@ final class ExternalApiKeyService
         'vendors.read',
         'accounts.read',
         'accounts.read_balance',
+        'orders.create',
+        'orders.update',
+        'orders.delete',
+        'customers.create',
+        'customers.update',
+        'customers.delete',
+        'vendors.create',
+        'vendors.update',
+        'vendors.delete',
+        'bills.create',
+        'bills.update',
+        'bills.delete',
     ];
 
     public function __construct(

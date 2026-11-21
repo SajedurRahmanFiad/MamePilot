@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: MamePilot External Data API
   version: 1.0.0
-  description: Read-only, scoped integration API for orders, customers, transactions, bills, vendors, and accounts.
+  description: Scoped integration API. Orders, customers, bills, and vendors support scoped writes; transactions and accounts are read-only.
 servers:
   - url: https://YOUR-DOMAIN/api/v1
     description: Production API
@@ -59,6 +59,21 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/InvalidFilter'}
         '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      operationId: createOrder
+      summary: Create an order
+      description: Requires orders.create and the issuer's current MamePilot orders.create permission. New orders start On Hold.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderCreate'}
+      responses:
+        '201': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /orders/{id}:
     get:
       operationId: getOrder
@@ -71,6 +86,36 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateOrder
+      summary: Partially update an order
+      description: Requires orders.update. Existing order ownership, lifecycle, payment, stock, and feature permissions remain enforced; inaccessible records return 404.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    delete:
+      operationId: deleteOrder
+      summary: Soft-delete an order
+      description: Requires orders.delete. Existing ownership checks and linked transaction/stock handling remain enforced; inaccessible records return 404.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /customers:
     get:
       operationId: listCustomers
@@ -104,6 +149,22 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/InvalidFilter'}
         '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      operationId: createCustomer
+      summary: Create a customer
+      description: Requires customers.create and the issuer's current MamePilot customers.create permission. Only name, phone, and address are accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ContactCreate'}
+      responses:
+        '201': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /customers/{id}:
     get:
       operationId: getCustomer
@@ -116,6 +177,37 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateCustomer
+      summary: Partially update a customer
+      description: Requires customers.update and the issuer's current MamePilot customers.edit permission.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ContactUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    delete:
+      operationId: deleteCustomer
+      summary: Soft-delete a customer
+      description: Requires customers.delete and the issuer's current MamePilot customers.delete permission.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /transactions:
     get:
       operationId: listTransactions
@@ -219,6 +311,21 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/InvalidFilter'}
         '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      operationId: createBill
+      summary: Create a bill
+      description: Requires bills.create and the issuer's current MamePilot bills.create permission. New bills start On Hold.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BillCreate'}
+      responses:
+        '201': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /bills/{id}:
     get:
       operationId: getBill
@@ -231,6 +338,36 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateBill
+      summary: Partially update a bill
+      description: Requires bills.update. Existing ownership, lifecycle, payment/refund, stock, and feature permissions remain enforced; inaccessible records return 404.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BillUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    delete:
+      operationId: deleteBill
+      summary: Soft-delete a bill
+      description: Requires bills.delete. Existing ownership checks and linked transaction/stock handling remain enforced; inaccessible records return 404.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /vendors:
     get:
       operationId: listVendors
@@ -263,6 +400,22 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/InvalidFilter'}
         '429': {$ref: '#/components/responses/RateLimited'}
+    post:
+      operationId: createVendor
+      summary: Create a vendor
+      description: Requires vendors.create and the issuer's current MamePilot vendors.create permission. Only name, phone, and address are accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ContactCreate'}
+      responses:
+        '201': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /vendors/{id}:
     get:
       operationId: getVendor
@@ -275,6 +428,37 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateVendor
+      summary: Partially update a vendor
+      description: Requires vendors.update and the issuer's current MamePilot vendors.edit permission.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ContactUpdate'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/InvalidWrite'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+    delete:
+      operationId: deleteVendor
+      summary: Soft-delete a vendor
+      description: Requires vendors.delete and the issuer's current MamePilot vendors.delete permission.
+      parameters:
+        - {$ref: '#/components/parameters/RecordId'}
+      responses:
+        '200': {$ref: '#/components/responses/MutationDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
   /accounts:
     get:
       operationId: listAccounts
@@ -345,7 +529,7 @@ paths:
                   uniqueItems: true
                   items:
                     type: string
-                    enum: [orders.read, customers.read, transactions.read, bills.read, vendors.read, accounts.read, accounts.read_balance]
+                    enum: [orders.read, customers.read, transactions.read, bills.read, vendors.read, accounts.read, accounts.read_balance, orders.create, orders.update, orders.delete, customers.create, customers.update, customers.delete, bills.create, bills.update, bills.delete, vendors.create, vendors.update, vendors.delete]
                 expires_at:
                   type: [string, 'null']
                   format: date-time
@@ -495,6 +679,33 @@ components:
             required: [data]
             properties:
               data: {$ref: '#/components/schemas/ExternalRecord'}
+    MutationResult:
+      description: Created or updated record identifier. Fetch the record separately if a read scope is available.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                type: object
+                required: [id]
+                properties:
+                  id: {type: string}
+    MutationDeleted:
+      description: Soft-delete confirmation.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                type: object
+                required: [id, deleted]
+                properties:
+                  id: {type: string}
+                  deleted: {type: boolean, const: true}
     KeyList:
       description: API key metadata. Secrets and hashes are never returned.
       content:
@@ -534,12 +745,120 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ApiError'}
+    InvalidWrite:
+      description: Invalid write body or rejected business operation.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Conflict:
+      description: A conflicting record already exists.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
     RateLimited:
       description: More than 120 requests per minute for this key.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ApiError'}
   schemas:
+    DocumentItems:
+      type: array
+      minItems: 1
+      items:
+        type: object
+        required: [productId, quantity, rate]
+        additionalProperties: true
+        properties:
+          productId: {type: string, minLength: 1}
+          productName: {type: string}
+          quantity: {type: integer, minimum: 1}
+          rate: {type: number, minimum: 0}
+          amount: {type: number, minimum: 0}
+    OrderCreate:
+      type: object
+      additionalProperties: false
+      required: [customerId, items]
+      properties:
+        customerId: {type: string, minLength: 1}
+        orderDate: {type: string, format: date}
+        items: {$ref: '#/components/schemas/DocumentItems'}
+        subtotal: {type: number, minimum: 0}
+        discount: {type: number, minimum: 0}
+        shipping: {type: number, minimum: 0}
+        total: {type: number, minimum: 0}
+        notes: {type: [string, 'null']}
+        pageId: {type: [string, 'null']}
+        sourceAd: {type: [string, 'null']}
+    OrderUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        customerId: {type: string, minLength: 1}
+        orderDate: {type: string, format: date}
+        items: {$ref: '#/components/schemas/DocumentItems'}
+        subtotal: {type: number, minimum: 0}
+        discount: {type: number, minimum: 0}
+        shipping: {type: number, minimum: 0}
+        total: {type: number, minimum: 0}
+        notes: {type: [string, 'null']}
+        status: {type: string}
+        paymentAmount: {type: number, minimum: 0}
+        refundAmount: {type: number, minimum: 0}
+        accountId: {type: string}
+        paymentMethod: {type: string}
+        transactionDate: {type: string, format: date-time}
+    ContactCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        phone: {type: string, maxLength: 255}
+        address: {type: [string, 'null'], maxLength: 255}
+    ContactUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        phone: {type: string, maxLength: 255}
+        address: {type: [string, 'null'], maxLength: 255}
+    BillCreate:
+      type: object
+      additionalProperties: false
+      required: [vendorId, items]
+      properties:
+        vendorId: {type: string, minLength: 1}
+        billDate: {type: string, format: date}
+        items: {$ref: '#/components/schemas/DocumentItems'}
+        subtotal: {type: number, minimum: 0}
+        discount: {type: number, minimum: 0}
+        shipping: {type: number, minimum: 0}
+        total: {type: number, minimum: 0}
+        notes: {type: [string, 'null']}
+    BillUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        vendorId: {type: string, minLength: 1}
+        billDate: {type: string, format: date}
+        billNumber: {type: string}
+        items: {$ref: '#/components/schemas/DocumentItems'}
+        subtotal: {type: number, minimum: 0}
+        discount: {type: number, minimum: 0}
+        shipping: {type: number, minimum: 0}
+        total: {type: number, minimum: 0}
+        notes: {type: [string, 'null']}
+        status: {type: string}
+        paymentAmount: {type: number, minimum: 0}
+        refundAmount: {type: number, minimum: 0}
+        accountId: {type: string}
+        paymentMethod: {type: string}
+        transactionDate: {type: string, format: date-time}
+        additionalExpenseAmount: {type: number, minimum: 0}
+        additionalExpenseCategoryId: {type: string}
     ExternalRecord:
       type: object
       description: Resource-specific projected fields are documented in EXTERNAL_DATA_API.md; sensitive fields are omitted by design.

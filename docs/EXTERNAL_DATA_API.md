@@ -1,6 +1,6 @@
 # External Data API
 
-This API provides read-only access to MamePilot orders, customers, transactions, bills, vendors, and accounts. It is intended for server-to-server use by a separate application. It does not expose the internal action-dispatch API.
+This API provides scoped access to MamePilot orders, customers, transactions, bills, vendors, and accounts. Integrations can create, update, and soft-delete orders, customers, bills, and vendors when granted the corresponding write scopes. Transactions and accounts remain read-only. It is intended for server-to-server use by a separate application and does not expose the internal action-dispatch API.
 
 ## Base URL and Authentication
 
@@ -26,7 +26,7 @@ Content-Type: application/json
 {"label":"Customer automation","scopes":["orders.read","customers.read","transactions.read"],"expires_at":"2027-10-11T00:00:00Z"}
 ```
 
-Supported scopes are `orders.read`, `customers.read`, `transactions.read`, `bills.read`, `vendors.read`, `accounts.read`, and `accounts.read_balance`. `accounts.read_balance` requires `accounts.read`. Account balance fields and balance filters are unavailable without the extra balance scope.
+Supported read scopes are `orders.read`, `customers.read`, `transactions.read`, `bills.read`, `vendors.read`, `accounts.read`, and `accounts.read_balance`. `accounts.read_balance` requires `accounts.read`. Account balance fields and balance filters are unavailable without the extra balance scope. Write scopes are `orders.create`, `orders.update`, `orders.delete`, `customers.create`, `customers.update`, `customers.delete`, `bills.create`, `bills.update`, `bills.delete`, `vendors.create`, `vendors.update`, and `vendors.delete`. Each write operation requires its matching scope and the issuing user must still have the corresponding MamePilot permission.
 
 Key administration routes require an existing MamePilot administrator/developer session token, not an integration key:
 
@@ -34,7 +34,22 @@ Key administration routes require an existing MamePilot administrator/developer 
 - `GET /keys`: list key metadata. Does not return secrets or hashes.
 - `DELETE /keys/{id}`: revoke a key.
 
-No data endpoint supports writes. The consumer may save and replay its own filter parameters; MamePilot does not store named filter presets.
+The consumer may save and replay its own filter parameters; MamePilot does not store named filter presets.
+
+## Write Operations
+
+Write requests use the same integration key and resource path as reads. `POST /{resource}` creates a record, `PATCH /{resource}/{id}` partially updates one, and `DELETE /{resource}/{id}` soft-deletes one. `PUT` is not supported. Successful creates return HTTP 201; updates and deletes return HTTP 200. Mutation responses contain only the record ID (and `deleted: true` for a delete), so a separate read scope is needed to fetch the resulting record. Write requests do not accept query parameters or unknown body fields. Create and update bodies use the camelCase field names below.
+
+| Resource | Create fields | Update fields |
+|---|---|---|
+| Orders | `customerId` (required), `items` (non-empty array, required), `orderDate`, `subtotal`, `discount`, `shipping`, `total`, `notes`, `pageId`, `sourceAd` | `customerId`, `orderDate`, `items`, `subtotal`, `discount`, `shipping`, `total`, `notes`, `status`, `paymentAmount`, `refundAmount`, `accountId`, `paymentMethod`, `transactionDate` |
+| Customers | `name` (required), `phone`, `address` | `name`, `phone`, `address` |
+| Bills | `vendorId` (required), `items` (non-empty array, required), `billDate`, `subtotal`, `discount`, `shipping`, `total`, `notes` | `vendorId`, `billDate`, `billNumber`, `items`, `subtotal`, `discount`, `shipping`, `total`, `notes`, `status`, `paymentAmount`, `refundAmount`, `accountId`, `paymentMethod`, `transactionDate`, `additionalExpenseAmount`, `additionalExpenseCategoryId` |
+| Vendors | `name` (required), `phone`, `address` | `name`, `phone`, `address` |
+
+Each order or bill `items` entry requires `productId`, a positive integer `quantity`, and a non-negative numeric `rate`. `amount` is optional and defaults to `rate × quantity`; if supplied it must match. `subtotal` must equal the sum of item amounts, and `total` must equal `subtotal - discount + shipping` (not below zero). Order and bill dates, when supplied, must use `YYYY-MM-DD`.
+
+Order and bill creation starts in `On Hold`; the API does not accept client-supplied record IDs, paid totals, histories, creator fields, or derived customer/vendor balances. Payment and refund fields on updates go through the existing transaction logic and require the issuer's relevant payment/refund permission. Other status changes and edits retain the application's own permission, lifecycle, stock, and feature checks. Order/bill record-level permission denials return 404 to avoid exposing record existence. Deleting an order or bill also applies the existing related stock and transaction handling. Duplicate customer/vendor phone numbers return HTTP 409 instead of silently updating an existing record. Transactions and accounts do not have write routes or write scopes.
 
 ## Collection Behavior
 
@@ -63,7 +78,7 @@ Unknown parameters, invalid enums, unsupported sorts, malformed dates, too many 
 
 ## Orders
 
-Routes: `GET /orders`, `GET /orders/{id}`. Requires `orders.read` and current `orders.view` permission.
+Routes: `GET /orders`, `GET /orders/{id}`, `POST /orders`, `PATCH /orders/{id}`, `DELETE /orders/{id}`. Read routes require `orders.read`; write routes require the matching write scope and current MamePilot permission.
 
 Filters:
 
@@ -94,7 +109,7 @@ The delivery filter is a normalized convenience, not a promise that every histor
 
 ## Customers
 
-Routes: `GET /customers`, `GET /customers/{id}`. Requires `customers.read` and current `customers.view` permission.
+Routes: `GET /customers`, `GET /customers/{id}`, `POST /customers`, `PATCH /customers/{id}`, `DELETE /customers/{id}`. Read routes require `customers.read`; write routes require the matching write scope and current MamePilot permission.
 
 Filters: `name` and `address` use case-insensitive contains matching; `phone` uses contains matching; `created_by_id` is exact and `created_by_ids` is a comma-separated list; `total_orders_min`/`total_orders_max` and `due_min`/`due_max` are inclusive numeric bounds; `include_walkin=true|false` controls the POS walk-in customer (default false). Common filters also apply.
 
@@ -110,7 +125,7 @@ Filters: `type`, `type_in`, and `type_not` accept `Income`, `Expense`, or `Trans
 
 ## Bills
 
-Routes: `GET /bills`, `GET /bills/{id}`. Requires `bills.read` and current `bills.view` permission.
+Routes: `GET /bills`, `GET /bills/{id}`, `POST /bills`, `PATCH /bills/{id}`, `DELETE /bills/{id}`. Read routes require `bills.read`; write routes require the matching write scope and current MamePilot permission.
 
 Filters: `status` and `status_not` accept `On Hold`, `Processing`, `Received`, `Paid`, `Returned`, or `Cancelled`; `bill_status` accepts normalized `on_hold`, `processing`, `received`, `returned`, or `cancelled`; `payment_status` accepts `unpaid`, `partially_paid`, `paid`, `overpaid`, or `refunded`; `vendor_id` is exact and `vendor_ids` is a comma-separated list; `vendor_name`, `vendor_phone`, and `bill_number` use contains matching; `created_by_id` is exact and `created_by_ids` is a comma-separated list; `min_amount`/`max_amount`, `min_paid`/`max_paid`, and `min_due`/`max_due` are inclusive; `bill_date_from`/`bill_date_to` bound bill date. Common filters also apply.
 
@@ -120,7 +135,7 @@ Filters: `status` and `status_not` accept `On Hold`, `Processing`, `Received`, `
 
 ## Vendors
 
-Routes: `GET /vendors`, `GET /vendors/{id}`. Requires `vendors.read` and current `vendors.view` permission.
+Routes: `GET /vendors`, `GET /vendors/{id}`, `POST /vendors`, `PATCH /vendors/{id}`, `DELETE /vendors/{id}`. Read routes require `vendors.read`; write routes require the matching write scope and current MamePilot permission.
 
 Filters: `name`, `phone`, and `address` use case-insensitive contains matching; `created_by_id` is exact and `created_by_ids` is a comma-separated list; `total_purchases_min`/`total_purchases_max` bound the purchase count; `payable_min`/`payable_max` bound due amount. Common filters also apply.
 
@@ -145,7 +160,7 @@ All collection resource records expose `updatedAt` from the source row. Orders, 
 - Rate limit: 120 requests per integration key per minute. Exceeding it returns HTTP 429 and `code: RATE_LIMIT_EXCEEDED`.
 - `page_size` is capped at 200; ID lists at 100; `search` and scalar text filters at 255 characters.
 - API audit rows record key ID, resource, HTTP method, status, and time only. Filter values, secrets, and request/response bodies are not logged.
-- Error bodies use `error` and `code`; validation errors use HTTP 422, missing/invalid keys use 401, missing scopes/permissions use 403, missing resources use 404, unsupported methods use 405, rate limit uses 429, and unexpected failures use 500 with a request ID.
+- Error bodies use `error` and `code`; validation errors use HTTP 422, duplicate customer/vendor phones use 409, missing/invalid keys use 401, missing scopes and non-record permissions use 403, missing or inaccessible order/bill records use 404, unsupported methods use 405, rate limit uses 429, and unexpected failures use 500 with a request ID.
 - Use HTTPS, store the key server-side, grant only required scopes, rotate keys by creating a replacement and revoking the old key, and do not log Authorization headers.
 
 ## Examples
