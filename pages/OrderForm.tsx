@@ -223,7 +223,7 @@ const OrderForm: React.FC = () => {
   const isSofaCover = capabilitySettings?.businessMode === 'sofa_cover';
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
-  const smartCustomerSelection = hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
+  const smartCustomerSelection = !isEdit && hasBeSmart && Boolean(beSmartSettings?.smartOrderCustomerSelection);
   const [orderSmartInput, setOrderSmartInput] = useState('');
   const [smartLookupUsed, setSmartLookupUsed] = useState(false);
   const [smartLookupLoading, setSmartLookupLoading] = useState(false);

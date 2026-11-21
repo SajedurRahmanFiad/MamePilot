@@ -32,7 +32,7 @@ const BillForm: React.FC = () => {
   const terminology = getBusinessTerminology(capabilitySettings?.businessMode);
   const hasBeSmart = Boolean(capabilities.be_smart);
   const { data: beSmartSettings, isPending: smartSettingsLoading } = useBeSmartSettings(hasBeSmart);
-  const smartVendorSelection = hasBeSmart && Boolean(beSmartSettings?.smartBillVendorSelection);
+  const smartVendorSelection = !isEdit && hasBeSmart && Boolean(beSmartSettings?.smartBillVendorSelection);
   const [billSmartInput, setBillSmartInput] = useState('');
   const [smartLookupUsed, setSmartLookupUsed] = useState(false);
   const [smartLookupLoading, setSmartLookupLoading] = useState(false);
