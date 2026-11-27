@@ -141,6 +141,10 @@ final class BusinessActionDispatcher
                 continue;
             }
 
+            if ($action === 'submitSteadfastOrder' && $agentCourierOrderId !== '') {
+                return $this->dispatchSteadfastOrder($service, $payload, $agentCourierOrderId);
+            }
+
             $result = $service->{$action}($payload);
             if ($agentCourierOrderId !== '' && is_array($result) && empty($result['error'])) {
                 return $this->finalizeCourierSubmission($action, $agentCourierOrderId, $result, $payload);
@@ -152,6 +156,57 @@ final class BusinessActionDispatcher
         }
 
         throw new RuntimeException('Unknown business action: ' . $action);
+    }
+
+    /** @return array<string, mixed> */
+    private function dispatchSteadfastOrder(object $service, array $payload, string $orderId): array
+    {
+        $lockName = 'mpsteadfast:' . sha1($orderId);
+        $lock = $this->database->fetchOne('SELECT GET_LOCK(:lock_name, 10) AS acquired', [':lock_name' => $lockName]);
+        if ((int) ($lock['acquired'] ?? 0) !== 1) {
+            return ['error' => 'A Steadfast submission for this order is already in progress. Please wait and check the order before trying again.'];
+        }
+
+        try {
+            $order = $this->operations->fetchOrderById(['id' => $orderId]);
+            if (!is_array($order)) {
+                return ['error' => 'The selected order no longer exists.'];
+            }
+
+            $consignmentId = trim((string) ($order['steadfastConsignmentId'] ?? ''));
+            $invoice = trim((string) ($order['steadfastInvoice'] ?? ''));
+            if ($consignmentId !== '' || $invoice !== '') {
+                $reference = $consignmentId !== '' ? 'Consignment ID: ' . $consignmentId : 'invoice: ' . $invoice;
+                return ['error' => 'This order has already been submitted or has an unresolved Steadfast attempt (' . $reference . '). Check Steadfast before retrying.'];
+            }
+
+            $invoice = trim((string) ($payload['invoice'] ?? ''));
+            if ($invoice === '') {
+                return ['error' => 'A Steadfast invoice is required before submission.'];
+            }
+            try {
+                $this->operations->updateOrder(['id' => $orderId, 'updates' => ['steadfastInvoice' => $invoice]]);
+            } catch (\Throwable $exception) {
+                return ['error' => 'Could not reserve this order for Steadfast: ' . $exception->getMessage()];
+            }
+
+            $result = $service->submitSteadfastOrder($payload);
+            if (is_array($result) && empty($result['error'])) {
+                return $this->finalizeCourierSubmission('submitSteadfastOrder', $orderId, $result, $payload);
+            }
+            if (is_array($result) && !empty($result['definitiveFailure'])) {
+                try {
+                    $this->operations->updateOrder(['id' => $orderId, 'updates' => ['steadfastInvoice' => null]]);
+                } catch (\Throwable $exception) {
+                    $result['error'] = trim((string) ($result['error'] ?? 'Steadfast rejected the request.'))
+                        . ' The local submission marker could not be cleared; verify the order in Steadfast before retrying.';
+                }
+                unset($result['definitiveFailure']);
+            }
+            return is_array($result) ? $result : ['error' => 'Steadfast returned an invalid response.'];
+        } finally {
+            $this->database->fetchOne('SELECT RELEASE_LOCK(:lock_name) AS released', [':lock_name' => $lockName]);
+        }
     }
 
     private function isCourierSubmission(string $action): bool
@@ -231,6 +286,7 @@ final class BusinessActionDispatcher
             return array_merge($payload, (array) ($settings['steadfast'] ?? []), $common, [
                 'invoice' => trim((string) ($steadfast['invoice'] ?? '')) ?: (string) ($order['orderNumber'] ?? ''),
                 'codAmount' => (float) ($order['total'] ?? 0),
+                'note' => trim((string) ($payload['note'] ?? '')),
             ]);
         }
         if (in_array($action, ['submitCarryBeeOrder', 'submitCarryBeeExchangeOrder'], true)) {

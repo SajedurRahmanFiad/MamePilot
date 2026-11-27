@@ -1121,10 +1121,10 @@ final class CourierApi extends BaseService
         $baseUrl = $this->trimBaseUrl($params);
         $invoice = trim((string) ($params['invoice'] ?? ''));
         if ($baseUrl === '' || trim((string) ($params['apiKey'] ?? '')) === '' || trim((string) ($params['secretKey'] ?? '')) === '' || $invoice === '') {
-            return ['error' => 'Missing required parameters'];
+            return ['error' => 'Missing required parameters', 'definitiveFailure' => true];
         }
         if (strlen($invoice) > 100 || preg_match('/^[A-Za-z0-9_-]+$/', $invoice) !== 1) {
-            return ['error' => 'Invoice must be unique and can only contain letters, numbers, hyphens, and underscores'];
+            return ['error' => 'Invoice must be unique and can only contain letters, numbers, hyphens, and underscores', 'definitiveFailure' => true];
         }
         $orderId = trim((string) ($params['orderId'] ?? ''));
         if ($orderId !== '') {
@@ -1135,7 +1135,7 @@ final class CourierApi extends BaseService
                 [':invoice' => $invoice, ':order_id' => $orderId]
             );
             if ($duplicate !== null) {
-                return ['error' => 'Invoice must be unique; this value is already used by another order'];
+                return ['error' => 'Invoice must be unique; this value is already used by another order', 'definitiveFailure' => true];
             }
         }
 
@@ -1152,12 +1152,16 @@ final class CourierApi extends BaseService
                 'recipient_phone' => trim((string) ($params['recipientPhone'] ?? '')),
                 'recipient_address' => trim((string) ($params['recipientAddress'] ?? '')),
                 'cod_amount' => (float) ($params['codAmount'] ?? 0),
+                'note' => trim((string) ($params['note'] ?? '')),
             ]
         );
 
         if ($response['status'] < 200 || $response['status'] >= 300) {
             $detail = $response['json']['message'] ?? $response['json']['error'] ?? $response['body'] ?? '';
-            return ['error' => 'HTTP ' . $response['status'] . ($detail !== '' ? ': ' . $detail : '')];
+            return [
+                'error' => 'HTTP ' . $response['status'] . ($detail !== '' ? ': ' . $detail : ''),
+                'definitiveFailure' => $response['status'] >= 400 && $response['status'] < 500 && $response['status'] !== 409,
+            ];
         }
 
         return is_array($response['json']) ? $response['json'] : ['error' => 'Invalid response'];

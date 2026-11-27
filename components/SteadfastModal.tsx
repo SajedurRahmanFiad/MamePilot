@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button } from './index';
+import { Button, TextArea } from './index';
 import { OrderStatus, type Order, type Customer } from '../types';
 import { useCourierSettings } from '../src/hooks/useQueries';
 import { useCapabilities } from '../src/hooks/useCapabilities';
@@ -36,12 +36,18 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [credentialsMissing, setCredentialsMissing] = useState(false);
+  const [specialInstruction, setSpecialInstruction] = useState('');
+  const submissionInFlight = useRef(false);
   const updateOrder = useUpdateOrder();
+
+  useEffect(() => {
+    if (isOpen) setSpecialInstruction('');
+  }, [isOpen, order?.id]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submissionInFlight.current) return;
     setError(null);
     setCredentialsMissing(false);
 
@@ -51,26 +57,27 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
       return;
     }
 
-    // Refetch courier settings to get the latest credentials
-    await queryClient.invalidateQueries({ queryKey: ['settings', 'courier'] });
-    const freshCourierSettings = queryClient.getQueryData<any>(['settings', 'courier']) || courierSettings;
-
-    if (!freshCourierSettings?.steadfast) {
-      setCredentialsMissing(true);
-      setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
-      return;
-    }
-
-    const { baseUrl, apiKey, secretKey, invoice = '' } = freshCourierSettings.steadfast;
-
-    if (![baseUrl, apiKey, secretKey].every((value) => String(value || '').trim())) {
-      setCredentialsMissing(true);
-      setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
-      return;
-    }
-
+    submissionInFlight.current = true;
     setSubmitting(true);
     try {
+      // Refetch courier settings to get the latest credentials
+      await queryClient.invalidateQueries({ queryKey: ['settings', 'courier'] });
+      const freshCourierSettings = queryClient.getQueryData<any>(['settings', 'courier']) || courierSettings;
+
+      if (!freshCourierSettings?.steadfast) {
+        setCredentialsMissing(true);
+        setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
+        return;
+      }
+
+      const { baseUrl, apiKey, secretKey, invoice = '' } = freshCourierSettings.steadfast;
+
+      if (![baseUrl, apiKey, secretKey].every((value) => String(value || '').trim())) {
+        setCredentialsMissing(true);
+        setError('Configure the Steadfast Base URL, API Key, and Secret Key before sending orders.');
+        return;
+      }
+
       console.log('[SteadfastModal] ======== PREPARING SUBMISSION ========');
       console.log('[SteadfastModal] Order Number:', order.orderNumber);
       console.log('[SteadfastModal] Customer Name:', customer.name);
@@ -89,6 +96,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         recipientPhone: customer.phone,
         recipientAddress: customer.address,
         codAmount: order.total,
+        note: specialInstruction.trim() || undefined,
       });
 
       console.log('[SteadfastModal] ======== SUBMISSION RESULT ========');
@@ -115,6 +123,11 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
 
       console.log('[SteadfastModal] Order submitted successfully to Steadfast');
       const consignmentId = (
+        result?.providerResult?.consignment?.consignment_id ??
+        result?.providerResult?.consignment?.consignmentId ??
+        result?.providerResult?.consignment_id ??
+        result?.providerResult?.consignmentId ??
+        result?.order?.steadfastConsignmentId ??
         result?.consignment?.consignment_id ??
         result?.consignment?.consignmentId ??
         result?.consignment_id ??
@@ -126,6 +139,11 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         null
       );
       const trackingLink = (
+        result?.providerResult?.consignment?.tracking_link ??
+        result?.providerResult?.consignment?.trackingLink ??
+        result?.providerResult?.tracking_link ??
+        result?.providerResult?.trackingLink ??
+        result?.order?.steadfastTrackingLink ??
         result?.consignment?.tracking_link ??
         result?.consignment?.trackingLink ??
         result?.tracking_link ??
@@ -137,6 +155,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
         null
       );
       const courierStatus = (
+        result?.providerResult?.consignment?.status ??
         result?.consignment?.status ??
         result?.data?.consignment?.status ??
         (typeof result?.status === 'string' ? result.status : null) ??
@@ -197,6 +216,7 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
 
       setError(errorMsg);
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -269,6 +289,13 @@ export const SteadfastModal: React.FC<SteadfastModalProps> = ({ isOpen, onClose,
               <label className="block text-sm font-semibold text-gray-700 mb-1">{terminology.customer} Address</label>
               <p className="text-gray-900">{customer?.address || '-'}</p>
             </div>
+            <TextArea
+              label="Special Instruction (optional)"
+              placeholder="Add delivery instructions for Steadfast"
+              rows={3}
+              value={specialInstruction}
+              onChange={(event) => setSpecialInstruction(event.target.value)}
+            />
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">COD Amount</label>
               <p className="text-lg font-bold text-gray-900">৳ {order?.total?.toFixed(2) || '0.00'}</p>

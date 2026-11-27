@@ -28,9 +28,32 @@ $assert(
 $assert(
     str_contains($modal, 'tracking_link')
         && str_contains($modal, 'steadfastTrackingLink')
+        && str_contains($modal, 'result?.providerResult?.consignment_id')
+        && str_contains($modal, 'result?.order?.steadfastConsignmentId')
         && str_contains($modal, 'consignment_id')
         && str_contains($modal, 'steadfastConsignmentId'),
     'Steadfast response identifiers are not mapped to their dedicated order fields.'
+);
+$assert(
+    str_contains($modal, 'note: specialInstruction.trim() || undefined')
+        && str_contains($dispatcher, "'note' => trim((string) (\$payload['note'] ?? ''))")
+        && str_contains($courierApi, "'note' => trim((string) (\$params['note'] ?? ''))"),
+    'Steadfast special instructions are not sent as the provider note.'
+);
+$assert(
+    str_contains($modal, 'submissionInFlight.current')
+        && str_contains($dispatcher, "GET_LOCK(:lock_name, 10)")
+        && str_contains($dispatcher, "RELEASE_LOCK(:lock_name)")
+        && str_contains($dispatcher, "'steadfastInvoice' => \$invoice")
+        && str_contains($dispatcher, "!empty(\$result['definitiveFailure'])")
+        && str_contains($dispatcher, "'steadfastInvoice'")
+        && str_contains($dispatcher, "'steadfastConsignmentId'"),
+    'Steadfast duplicate submissions are not guarded in the modal and backend.'
+);
+$assert(
+    str_contains($details, 'href={`tel:${orderPhone.replace(/[^\\d+]/g, \'\')}`}')
+        && str_contains($details, '<MapPin size={16} />'),
+    'Order invoice customer phone links or address icon sizing are missing.'
 );
 $assert(
     str_contains($details, 'order.steadfastTrackingLink')
@@ -41,7 +64,7 @@ $assert(
 );
 $assert(
     str_contains($settings, 'Custom Invoice')
-        && str_contains($settings, '/^[A-Za-z0-9_-]+$/')
+        && str_contains($settings, 'pattern="[A-Za-z0-9_\\-]*"')
         && str_contains($masterData, "preg_match('/^[A-Za-z0-9_-]+$/'"),
     'Custom Steadfast invoice validation is incomplete across UI and backend.'
 );
